@@ -24,6 +24,7 @@
   import { alertError } from 'src/ts/alert'
   import { parseTriggerV2Import } from './triggerV2Import'
   import { isServerUnsupportedTriggerEffectType } from 'src/ts/process/triggerServerSupport'
+  import { hasDragType, RISU_EFFECT_DRAG_TYPE, RISU_TRIGGER_DRAG_TYPE } from 'src/ts/dragTypes'
 
   interface Props {
     value?: triggerscript[]
@@ -2003,6 +2004,7 @@
 
     isDragging = true
     e.dataTransfer?.setData('text', 'trigger')
+    e.dataTransfer?.setData(RISU_TRIGGER_DRAG_TYPE, 'true')
     if (triggerDrag.source.id !== null) {
       e.dataTransfer?.setData('triggerId', triggerDrag.source.id)
     }
@@ -2031,6 +2033,7 @@
   }
 
   const handleTriggerDrop = (target: TriggerDropTarget | null, e: DragEvent) => {
+    if (!hasDragType(e.dataTransfer?.types, RISU_TRIGGER_DRAG_TYPE)) return
     e.preventDefault()
     e.stopPropagation()
     const data = e.dataTransfer?.getData('text')
@@ -2296,6 +2299,7 @@
     }
     isEffectDragging = true
     e.dataTransfer?.setData('text', 'effect')
+    e.dataTransfer?.setData(RISU_EFFECT_DRAG_TYPE, 'true')
     return true
   }
 
@@ -2338,6 +2342,7 @@
   }
 
   const handleEffectDrop = (target: EffectDropTarget | null, e: DragEvent) => {
+    if (!hasDragType(e.dataTransfer?.types, RISU_EFFECT_DRAG_TYPE)) return
     e.preventDefault()
     e.stopPropagation()
     const data = e.dataTransfer?.getData('text')
@@ -2828,7 +2833,12 @@
               bind:this={triggerScrollRef}
               onscroll={scrollManager.handleTriggerScroll}
               ondragover={(e) => {
-                if (!isMobileScreen && isDragging && triggerScrollRef) {
+                if (
+                  !isMobileScreen &&
+                  isDragging &&
+                  hasDragType(e.dataTransfer.types, RISU_TRIGGER_DRAG_TYPE) &&
+                  triggerScrollRef
+                ) {
                   const rect = e.currentTarget.getBoundingClientRect()
                   const autoScrollDirection = scrollManager.checkAutoScrollZone(e.clientY, rect)
 
@@ -2864,7 +2874,7 @@
                     class:shadow-lg={isDragging && dragOverIndex === i}
                     role="listitem"
                     ondragover={(e) => {
-                      if (!isMobileScreen) {
+                      if (!isMobileScreen && hasDragType(e.dataTransfer.types, RISU_TRIGGER_DRAG_TYPE)) {
                         e.preventDefault()
                       }
                     }}
@@ -2918,7 +2928,7 @@
                         scrollManager.stopAutoScroll()
                       }}
                       ondragover={(e) => {
-                        if (!isMobileScreen) {
+                        if (!isMobileScreen && hasDragType(e.dataTransfer.types, RISU_TRIGGER_DRAG_TYPE)) {
                           e.preventDefault()
                           const rect = e.currentTarget.getBoundingClientRect()
                           const mouseY = e.clientY
@@ -3003,7 +3013,7 @@
                 class:shadow-lg={isDragging && dragOverIndex === value.length}
                 role="listitem"
                 ondragover={(e) => {
-                  if (!isMobileScreen) {
+                  if (!isMobileScreen && hasDragType(e.dataTransfer.types, RISU_TRIGGER_DRAG_TYPE)) {
                     e.preventDefault()
                     dragOverIndex = value.length
                   }
@@ -3121,7 +3131,12 @@
               bind:this={menu0Container}
               onscroll={scrollManager.handleMenu0Scroll}
               ondragover={(e) => {
-                if (!isMobileScreen && isEffectDragging && menu0Container) {
+                if (
+                  !isMobileScreen &&
+                  isEffectDragging &&
+                  hasDragType(e.dataTransfer.types, RISU_EFFECT_DRAG_TYPE) &&
+                  menu0Container
+                ) {
                   const rect = e.currentTarget.getBoundingClientRect()
                   const autoScrollDirection = scrollManager.checkAutoScrollZone(e.clientY, rect)
 
@@ -3191,7 +3206,11 @@
                   class:shadow-lg={isEffectDragging && effectDragOverIndex === i}
                   role="listitem"
                   ondragover={(e) => {
-                    if (!isMobileScreen && isEffectDragging) {
+                    if (
+                      !isMobileScreen &&
+                      isEffectDragging &&
+                      hasDragType(e.dataTransfer.types, RISU_EFFECT_DRAG_TYPE)
+                    ) {
                       e.preventDefault()
                     }
                   }}
@@ -3208,7 +3227,11 @@
                   class:hover:bg-selected={selectedEffectIndex !== i}
                   class:bg-selected={selectedEffectIndex === i}
                   ondragover={(e) => {
-                    if (!isMobileScreen && isEffectDragging) {
+                    if (
+                      !isMobileScreen &&
+                      isEffectDragging &&
+                      hasDragType(e.dataTransfer.types, RISU_EFFECT_DRAG_TYPE)
+                    ) {
                       e.preventDefault()
                       const rect = e.currentTarget.getBoundingClientRect()
                       const mouseY = e.clientY
@@ -3385,7 +3408,7 @@
                       : 0)}
                 role="listitem"
                 ondragover={(e) => {
-                  if (!isMobileScreen && isEffectDragging) {
+                  if (!isMobileScreen && isEffectDragging && hasDragType(e.dataTransfer.types, RISU_EFFECT_DRAG_TYPE)) {
                     e.preventDefault()
                   }
                 }}

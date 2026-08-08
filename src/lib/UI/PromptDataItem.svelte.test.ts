@@ -16,6 +16,7 @@ vi.mock('src/ts/server/resourceState.svelte', () => ({
 
 import PromptDataItemTestHost from './PromptDataItem.testHost.svelte'
 import { language } from 'src/lang'
+import { RISU_PROMPT_DRAG_TYPE } from 'src/ts/dragTypes'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -36,6 +37,37 @@ afterEach(() => {
 })
 
 describe('PromptDataItem disclosure control', () => {
+  it('scopes prompt drags and leaves external file drops unconsumed', async () => {
+    component = mount(PromptDataItemTestHost, { target })
+    await tick()
+
+    const dragHandle = target.querySelector<HTMLElement>('[draggable="true"]')
+    const promptRow = dragHandle?.parentElement
+    if (!promptRow || !dragHandle) throw new Error('Prompt drag targets not found')
+
+    const types: string[] = []
+    const setData = vi.fn((type: string) => {
+      if (!types.includes(type)) types.push(type)
+    })
+    const dragStart = new Event('dragstart', { bubbles: true, cancelable: true })
+    Object.defineProperty(dragStart, 'dataTransfer', {
+      value: { setData, setDragImage: vi.fn(), types },
+    })
+    dragHandle.dispatchEvent(dragStart)
+    expect(setData).toHaveBeenCalledWith(RISU_PROMPT_DRAG_TYPE, 'true')
+
+    const externalTransfer = { types: ['Files'] }
+    const dragOver = new Event('dragover', { bubbles: true, cancelable: true })
+    Object.defineProperty(dragOver, 'dataTransfer', { value: externalTransfer })
+    promptRow.dispatchEvent(dragOver)
+    const drop = new Event('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(drop, 'dataTransfer', { value: externalTransfer })
+    promptRow.dispatchEvent(drop)
+
+    expect(dragOver.defaultPrevented).toBe(false)
+    expect(drop.defaultPrevented).toBe(false)
+  })
+
   it('names the remove and move actions for their prompt item', async () => {
     component = mount(PromptDataItemTestHost, { target })
     await tick()

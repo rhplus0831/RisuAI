@@ -73,10 +73,23 @@
   import { alertError } from './ts/alert'
   import { moodLightMode } from './ts/moodLightMode'
   import { isMoodLightCharacterVisible } from './ts/moodLightMembership'
+  import { hasDragType, RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes'
 
   let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
   let aprilFoolsPage = $state(0)
   let keepingSessionAlive = $state(false)
+
+  function getMainDropEffect(event: DragEvent): DataTransfer['dropEffect'] {
+    const types = event.dataTransfer?.types
+    if (hasDragType(types, RISU_SIDEBAR_DRAG_TYPE) || hasDragType(types, RISU_APP_INTERNAL_DRAG_TYPE)) {
+      return 'none'
+    }
+    return hasDragType(types, 'Files') ? 'copy' : 'none'
+  }
+
+  function markAppInternalDrag(event: DragEvent): void {
+    event.dataTransfer?.setData(RISU_APP_INTERNAL_DRAG_TYPE, 'true')
+  }
 
   function closeResponsiveSidebar(): void {
     if ($sideBarClosing) return
@@ -150,39 +163,41 @@
 <main
   class="flex bg-bg w-full h-full max-w-100vw text-textcolor"
   ondragover={(e) => {
-    if (e.dataTransfer.types.includes('application/x-risu-internal')) {
-      return
-    }
     e.preventDefault()
-    e.dataTransfer.dropEffect = 'link'
+    e.dataTransfer.dropEffect = getMainDropEffect(e)
   }}
+  ondragstart={markAppInternalDrag}
   ondrop={async (e) => {
-    e.preventDefault()
-    if (e.dataTransfer.types.includes('application/x-risu-internal')) {
+    const types = e.dataTransfer.types
+    if (hasDragType(types, RISU_APP_INTERNAL_DRAG_TYPE) || hasDragType(types, RISU_SIDEBAR_DRAG_TYPE)) {
+      e.preventDefault()
       return
     }
     const file = e.dataTransfer.files[0]
-    if (file) {
-      try {
-        const name = file.name.toLowerCase()
+    if (!file) {
+      e.preventDefault()
+      return
+    }
+    e.preventDefault()
+    try {
+      const name = file.name.toLowerCase()
 
-        if (name.endsWith('.risup')) {
-          const data = new Uint8Array(await file.arrayBuffer())
-          await importPreset({ name: file.name, data })
-        } else if (name.endsWith('.risum')) {
-          const data = new Uint8Array(await file.arrayBuffer())
-          await importRisuModuleData(data)
-          return
-        } else {
-          await importCharacterProcess({
-            name: file.name,
-            data: file,
-          })
-          checkCharOrder()
-        }
-      } catch (error) {
-        alertError(error as Error)
+      if (name.endsWith('.risup')) {
+        const data = new Uint8Array(await file.arrayBuffer())
+        await importPreset({ name: file.name, data })
+      } else if (name.endsWith('.risum')) {
+        const data = new Uint8Array(await file.arrayBuffer())
+        await importRisuModuleData(data)
+        return
+      } else {
+        await importCharacterProcess({
+          name: file.name,
+          data: file,
+        })
+        checkCharOrder()
       }
+    } catch (error) {
+      alertError(error as Error)
     }
   }}
   onclick={() => {

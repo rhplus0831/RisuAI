@@ -82,6 +82,7 @@ vi.mock('../../ts/alert', async (importActual) => {
 })
 
 import Botpreset from './botpreset.svelte'
+import { RISU_PRESET_DRAG_TYPE } from 'src/ts/dragTypes'
 import ListedPersona from './listedPersona.svelte'
 import { clearCachedServerCommandRevision, type ServerCommandResult } from 'src/ts/server/commands'
 import { setResourceWriteGuardEnabled } from 'src/ts/server/resourceWriteGuard.svelte'
@@ -412,11 +413,18 @@ function pickerSelectionControl(kind: 'model' | 'prompt' | 'persona', id: string
   return row.querySelector<HTMLElement>('[data-risu-picker-select]') ?? row
 }
 
-function createPresetDataTransfer(): DataTransfer {
+function createPresetDataTransfer(initialTypes: string[] = []): DataTransfer {
   const values = new Map<string, string>()
+  const types = [...initialTypes]
   return {
+    get types() {
+      return types
+    },
     getData: vi.fn((type: string) => values.get(type) ?? ''),
-    setData: vi.fn((type: string, value: string) => values.set(type, value)),
+    setData: vi.fn((type: string, value: string) => {
+      values.set(type, value)
+      if (!types.includes(type)) types.push(type)
+    }),
   } as unknown as DataTransfer
 }
 
@@ -1029,7 +1037,7 @@ describe('generation settings picker mode', () => {
     const dataTransfer = createPresetDataTransfer()
     dispatchPresetDragEvent(pickerRow('prompt', 'preset-b'), 'dragstart', dataTransfer)
     expect(dataTransfer.setData).toHaveBeenCalledWith('presetId', 'preset-b')
-    expect(dataTransfer.setData).toHaveBeenCalledWith('application/x-risu-internal', 'true')
+    expect(dataTransfer.setData).toHaveBeenCalledWith(RISU_PRESET_DRAG_TYPE, 'true')
 
     const [presetA, presetB] = getDatabase().promptPresets
     getDatabase().promptPresets = [presetB, presetC, presetA]
@@ -1040,6 +1048,19 @@ describe('generation settings picker mode', () => {
 
     expect(presetSpies.reorderPromptPresets).toHaveBeenCalledOnce()
     expect(presetSpies.reorderPromptPresets).toHaveBeenCalledWith(0, 3)
+  })
+
+  it('leaves external file drops for the app-level importer', () => {
+    mountPresetPicker('global')
+    const targetRow = pickerRow('prompt', 'preset-a')
+    const dataTransfer = createPresetDataTransfer(['Files'])
+
+    const dragOver = dispatchPresetDragEvent(targetRow, 'dragover', dataTransfer)
+    const drop = dispatchPresetDragEvent(targetRow, 'drop', dataTransfer)
+
+    expect(dragOver.defaultPrevented).toBe(false)
+    expect(drop.defaultPrevented).toBe(false)
+    expect(presetSpies.reorderPromptPresets).not.toHaveBeenCalled()
   })
 
   it('drops on the top half of a preset row before that row', () => {

@@ -37,6 +37,7 @@ vi.mock('src/ts/process/modules', () => ({
 
 import ModelProfileList from './ModelProfileList.svelte'
 import { language } from 'src/lang'
+import { RISU_MODEL_PROFILE_DRAG_TYPE } from 'src/ts/dragTypes'
 import { resolveModelProfile } from 'src/ts/model/modelProfileResolver'
 import { finishPendingModelMutation, getPendingModelMutations } from 'src/ts/model/modelProfileMutations'
 import { MASKED_PROVIDER_SECRET } from 'src/ts/providerSecretMask'
@@ -82,12 +83,19 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   return { promise, resolve }
 }
 
-function createProfileDataTransfer(): DataTransfer {
+function createProfileDataTransfer(initialTypes: string[] = []): DataTransfer {
   const values = new Map<string, string>()
+  const types = [...initialTypes]
   return {
     effectAllowed: 'uninitialized',
+    get types() {
+      return types
+    },
     getData: vi.fn((type: string) => values.get(type) ?? ''),
-    setData: vi.fn((type: string, value: string) => values.set(type, value)),
+    setData: vi.fn((type: string, value: string) => {
+      values.set(type, value)
+      if (!types.includes(type)) types.push(type)
+    }),
   } as unknown as DataTransfer
 }
 
@@ -96,11 +104,12 @@ function dispatchProfileDragEvent(
   type: 'dragstart' | 'dragover' | 'drop',
   dataTransfer: DataTransfer,
   clientY = 0,
-): void {
+): Event {
   const event = new Event(type, { bubbles: true, cancelable: true })
   Object.defineProperty(event, 'dataTransfer', { value: dataTransfer })
   Object.defineProperty(event, 'clientY', { value: clientY })
   element.dispatchEvent(event)
+  return event
 }
 
 function clearPendingModelMutations(): void {
@@ -208,12 +217,28 @@ describe('ModelProfileList', () => {
     dispatchProfileDragEvent(endDropZone, 'drop', dataTransfer)
     await flushAsync()
 
-    expect(dataTransfer.setData).toHaveBeenCalledWith('application/x-risu-internal', 'true')
+    expect(dataTransfer.setData).toHaveBeenCalledWith(RISU_MODEL_PROFILE_DRAG_TYPE, 'true')
     expect(commandSpies.reorderModelProfilesDurably).toHaveBeenCalledWith([
       { kind: 'profile', profileId: 'profile-b' },
       { kind: 'profile', profileId: 'profile-c' },
       { kind: 'profile', profileId: 'profile-a' },
     ])
+  })
+
+  it('leaves external file drops for the app-level importer', async () => {
+    component = mount(ModelProfileList, { target })
+    await tick()
+
+    const row = target.querySelector<HTMLElement>('[data-model-profile-row]')
+    if (!row) throw new Error('Profile drop target not found')
+    const dataTransfer = createProfileDataTransfer(['Files'])
+
+    const dragOver = dispatchProfileDragEvent(row, 'dragover', dataTransfer)
+    const drop = dispatchProfileDragEvent(row, 'drop', dataTransfer)
+
+    expect(dragOver.defaultPrevented).toBe(false)
+    expect(drop.defaultPrevented).toBe(false)
+    expect(commandSpies.reorderModelProfilesDurably).not.toHaveBeenCalled()
   })
 
   it('renders, reorders, and confirms deletion of a divider', async () => {

@@ -10,6 +10,7 @@
   import TextInput from './GUI/TextInput.svelte'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import { normalizePromptBlockRoleForType } from 'src/ts/process/promptTemplateNormalization'
+  import { hasDragType, RISU_PROMPT_DRAG_TYPE } from 'src/ts/dragTypes'
 
   interface Props {
     promptItem: PromptItem
@@ -155,6 +156,7 @@
   class:opacity-50={isDragging}
   class:scale-95={isDragging}
   ondragover={(e) => {
+    if (!hasDragType(e.dataTransfer.types, RISU_PROMPT_DRAG_TYPE)) return
     e.preventDefault()
     if (isDragging || interactionsDisabled) return
 
@@ -169,6 +171,7 @@
     }
   }}
   ondrop={(e) => {
+    if (!hasDragType(e.dataTransfer.types, RISU_PROMPT_DRAG_TYPE)) return
     e.preventDefault()
     e.stopPropagation()
     if (interactionsDisabled) return
@@ -189,6 +192,7 @@
       onDragStart(promptItem)
       e.dataTransfer.setData('text', 'prompt')
       e.dataTransfer.setData('prompt', JSON.stringify(promptItem))
+      e.dataTransfer.setData(RISU_PROMPT_DRAG_TYPE, 'true')
 
       const dragElement = document.createElement('div')
       dragElement.textContent = getName(promptItem)

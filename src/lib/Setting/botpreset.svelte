@@ -49,6 +49,7 @@
     ensurePromptTemplateHydrated,
     promptTemplateOwnerUsesSelectedFallback,
   } from 'src/ts/server/promptTemplateHydration'
+  import { hasDragType, RISU_PRESET_DRAG_TYPE } from 'src/ts/dragTypes'
 
   type ModernPreset = ModelPreset | PromptPreset
   type ModernPresetKind = 'model' | 'prompt'
@@ -361,6 +362,7 @@
   }
 
   function handlePresetDrop(targetPresetId: string | null | undefined, e: DragEvent) {
+    if (!hasDragType(e.dataTransfer?.types, RISU_PRESET_DRAG_TYPE)) return
     e.preventDefault()
     e.stopPropagation()
     const data = e.dataTransfer?.getData('text')
@@ -535,6 +537,7 @@
           class:hover:bg-gray-600={!isDragging}
           role="listitem"
           ondragover={(e) => {
+            if (!hasDragType(e.dataTransfer.types, RISU_PRESET_DRAG_TYPE)) return
             e.preventDefault()
             dragOverIndex = visibleIndex
           }}
@@ -579,7 +582,7 @@
             draggedPreset = { kind: presetKind, id: presetId }
             e.dataTransfer?.setData('text', 'preset')
             e.dataTransfer?.setData('presetId', presetId)
-            e.dataTransfer?.setData('application/x-risu-internal', 'true')
+            e.dataTransfer?.setData(RISU_PRESET_DRAG_TYPE, 'true')
           }}
           ondragend={() => {
             isDragging = false
@@ -587,6 +590,7 @@
             draggedPreset = null
           }}
           ondragover={(e) => {
+            if (!hasDragType(e.dataTransfer.types, RISU_PRESET_DRAG_TYPE)) return
             e.preventDefault()
             const rect = e.currentTarget.getBoundingClientRect()
             dragOverIndex = e.clientY < rect.top + rect.height / 2 ? visibleIndex : visibleIndex + 1
@@ -705,6 +709,7 @@
         class:shadow-lg={isDragging && dragOverIndex === visibleModernPresetEntries.length}
         role="listitem"
         ondragover={(e) => {
+          if (!hasDragType(e.dataTransfer.types, RISU_PRESET_DRAG_TYPE)) return
           e.preventDefault()
           dragOverIndex = visibleModernPresetEntries.length
         }}

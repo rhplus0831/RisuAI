@@ -3,6 +3,7 @@ import { get, writable } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppRoute } from './ts/router'
 import type { Database, character } from './ts/storage/database.svelte'
+import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes'
 
 const routePath = '/character/char-a/chat-a'
 const characterRoute: AppRoute = {
@@ -532,21 +533,36 @@ describe('App route/refreeze mounted DOM behavior', () => {
     expect(appRouteDomMocks.closeGridRoute).toHaveBeenCalledOnce()
   })
 
-  it('does not override the negotiated operation for an internal drag', () => {
+  it('marks in-app drags and keeps them out of the file-import path', () => {
     const main = target.querySelector('main')
     expect(main).not.toBeNull()
 
+    const setData = vi.fn()
+    const dragStartEvent = new Event('dragstart', { bubbles: true, cancelable: true })
+    Object.defineProperty(dragStartEvent, 'dataTransfer', { value: { setData } })
+    main?.dispatchEvent(dragStartEvent)
+    expect(setData).toHaveBeenCalledWith(RISU_APP_INTERNAL_DRAG_TYPE, 'true')
+
     const dataTransfer = {
       dropEffect: 'move',
-      types: ['application/x-risu-internal'],
+      types: [RISU_SIDEBAR_DRAG_TYPE],
     }
     const dragOverEvent = new Event('dragover', { bubbles: true, cancelable: true })
     Object.defineProperty(dragOverEvent, 'dataTransfer', { value: dataTransfer })
 
     main?.dispatchEvent(dragOverEvent)
 
-    expect(dataTransfer.dropEffect).toBe('move')
-    expect(dragOverEvent.defaultPrevented).toBe(false)
+    expect(dataTransfer.dropEffect).toBe('none')
+    expect(dragOverEvent.defaultPrevented).toBe(true)
+
+    const dropEvent = new Event('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(dropEvent, 'dataTransfer', {
+      value: { files: [{ name: 'ignored.charx' }], types: [RISU_APP_INTERNAL_DRAG_TYPE] },
+    })
+    main?.dispatchEvent(dropEvent)
+
+    expect(dropEvent.defaultPrevented).toBe(true)
+    expect(appRouteDomMocks.importCharacterProcess).not.toHaveBeenCalled()
   })
 
   it('contains and restores focus while the responsive sidebar is open and closes it with Escape', async () => {

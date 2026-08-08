@@ -20,6 +20,7 @@ vi.mock('./process/modules', async (importActual) => {
 
 import { initHotkey } from './hotkey'
 import { alertCardExport, alertConfirm, alertPluginConfirm, cardExportCancelMessage } from './alert'
+import { RISU_PRESET_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './dragTypes'
 import { alertStore, PlaygroundStore, selectedCharID, settingsOpen } from './stores.svelte'
 import { testDatabaseState } from './__tests__/resourceDatabaseState'
 
@@ -57,6 +58,28 @@ beforeEach(() => {
 })
 
 describe('global hotkey route ownership', () => {
+  it('runs character auto-scroll only for sidebar drags', () => {
+    const scrollToActiveCharacter = vi.fn()
+    window.addEventListener('scrollToActiveCharacter', scrollToActiveCharacter)
+
+    try {
+      for (const dragType of [RISU_PRESET_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE]) {
+        const event = new Event('dragover', { bubbles: true, cancelable: true })
+        Object.defineProperties(event, {
+          altKey: { value: false },
+          ctrlKey: { value: true },
+          dataTransfer: { value: { types: [dragType] } },
+          shiftKey: { value: false },
+        })
+        document.dispatchEvent(event)
+      }
+
+      expect(scrollToActiveCharacter).toHaveBeenCalledOnce()
+    } finally {
+      window.removeEventListener('scrollToActiveCharacter', scrollToActiveCharacter)
+    }
+  })
+
   it('routes the Settings shortcut through the router in both directions', async () => {
     await press('s', { ctrlKey: true })
     expect(hotkeyNavigationMocks.openSettingsRoute).toHaveBeenCalledOnce()

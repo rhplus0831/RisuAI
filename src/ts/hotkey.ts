@@ -30,6 +30,7 @@ import {
   settingsOpen,
 } from './stores.svelte'
 import { language } from 'src/lang'
+import { hasDragType, RISU_SIDEBAR_DRAG_TYPE } from './dragTypes'
 import { updateTextThemeAndCSS } from './gui/colorscheme'
 import { defaultHotkeys } from './defaulthotkeys'
 import { doingChat, previewBody, sendChat } from './process/index.svelte'
@@ -359,8 +360,7 @@ export function initHotkey() {
     'dragover',
     (ev) => {
       if (ev.ctrlKey && !ev.shiftKey && !ev.altKey) {
-        const types = ev.dataTransfer?.types || []
-        const isCharacterDrag = types.includes('application/x-risu-internal')
+        const isCharacterDrag = hasDragType(ev.dataTransfer?.types, RISU_SIDEBAR_DRAG_TYPE)
 
         if (isCharacterDrag) {
           const db = getDatabase()

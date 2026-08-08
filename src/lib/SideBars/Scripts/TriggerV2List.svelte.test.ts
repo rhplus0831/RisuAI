@@ -32,6 +32,7 @@ vi.mock('src/lib/UI/GUI/Portal.svelte', async () => {
 import TriggerV2ListHarness from './TriggerV2List.testHarness.svelte'
 import type { triggerscript } from 'src/ts/process/triggers'
 import { language } from 'src/lang'
+import { RISU_EFFECT_DRAG_TYPE, RISU_TRIGGER_DRAG_TYPE } from 'src/ts/dragTypes'
 import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
 type MountedComponent = Parameters<typeof unmount>[0] & {
@@ -117,18 +118,27 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   return { promise, resolve }
 }
 
-function createDragDataTransfer(): DataTransfer {
+function createDragDataTransfer(initialTypes: string[] = []): DataTransfer {
   const values = new Map<string, string>()
+  const types = [...initialTypes]
   return {
+    get types() {
+      return types
+    },
     getData: (type: string) => values.get(type) ?? '',
     setData: (type: string, value: string) => {
       values.set(type, value)
+      if (!types.includes(type)) types.push(type)
     },
     setDragImage: vi.fn(),
   } as unknown as DataTransfer
 }
 
-function dispatchDragEvent(element: Element, type: 'dragstart' | 'drop', dataTransfer: DataTransfer): Event {
+function dispatchDragEvent(
+  element: Element,
+  type: 'dragstart' | 'dragend' | 'drop',
+  dataTransfer: DataTransfer,
+): Event {
   const event = new Event(type, { bubbles: true, cancelable: true })
   Object.defineProperty(event, 'dataTransfer', { value: dataTransfer })
   element.dispatchEvent(event)
@@ -574,6 +584,44 @@ describe('TriggerV2List effect display', () => {
       'Alpha',
       'Beta',
     ])
+  })
+
+  it('scopes trigger and effect drags and leaves external file drops unconsumed', async () => {
+    component = mount(TriggerV2ListHarness, {
+      target,
+      props: {
+        initialValue: [
+          { comment: 'Header', type: 'manual', conditions: [], effect: [] },
+          {
+            comment: 'Alpha',
+            type: 'manual',
+            conditions: [],
+            effect: [{ type: 'v2Comment', value: 'One', indent: 0 }],
+          },
+        ],
+      },
+    }) as MountedComponent
+    await settle()
+    await openEditor()
+
+    const triggerTransfer = createDragDataTransfer()
+    dispatchDragEvent(triggerButton('Alpha'), 'dragstart', triggerTransfer)
+    expect(Array.from(triggerTransfer.types)).toContain(RISU_TRIGGER_DRAG_TYPE)
+    dispatchDragEvent(triggerButton('Alpha'), 'dragend', triggerTransfer)
+
+    triggerButton('Alpha').click()
+    await settle()
+    const effectHandle = effectDragHandle('One')
+    const effectTransfer = createDragDataTransfer()
+    dispatchDragEvent(effectHandle, 'dragstart', effectTransfer)
+    expect(Array.from(effectTransfer.types)).toContain(RISU_EFFECT_DRAG_TYPE)
+    dispatchDragEvent(effectHandle, 'dragend', effectTransfer)
+
+    const dropTarget = target.querySelector<HTMLElement>('[role="listitem"]')
+    expect(dropTarget).toBeTruthy()
+    const externalDrop = dispatchDragEvent(dropTarget!, 'drop', createDragDataTransfer(['Files']))
+
+    expect(externalDrop.defaultPrevented).toBe(false)
   })
 
   it('rebases a multi-selection and its shift-selection anchor after an unselected drag', async () => {

@@ -57,11 +57,8 @@
     type CharacterFolderImageUploadOperation,
   } from 'src/ts/server/characterFolderImageUpload'
   import { createSidebarCharacterListMemo, type SidebarCharacterListItem } from './sidebarCharList'
-  import {
-    createSidebarCharacterDragController,
-    isSidebarCharacterDrag,
-    SIDEBAR_CHARACTER_DRAG_TYPE,
-  } from './sidebarDrag'
+  import { createSidebarCharacterDragController, isSidebarCharacterDrag } from './sidebarDrag'
+  import { RISU_SIDEBAR_DRAG_TYPE } from 'src/ts/dragTypes'
   import {
     characterRoutePath,
     closeSettingsRoute,
@@ -501,7 +498,7 @@
     if (!sidebarCharacterDrag.begin(ind, getDatabase().characterOrder)) return
 
     e.dataTransfer.setData('text/plain', '')
-    e.dataTransfer.setData(SIDEBAR_CHARACTER_DRAG_TYPE, 'true')
+    e.dataTransfer.setData(RISU_SIDEBAR_DRAG_TYPE, 'true')
     const avatar = e.currentTarget.querySelector('.avatar')
     if (avatar) {
       e.dataTransfer.setDragImage(avatar, 10, 10)

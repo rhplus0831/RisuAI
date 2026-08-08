@@ -38,6 +38,7 @@
   import { getDatabase } from 'src/ts/storage/database.svelte'
   import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
   import { sortableOptions } from 'src/ts/util'
+  import { hasDragType, RISU_MODEL_PROFILE_DRAG_TYPE } from 'src/ts/dragTypes'
   import Sortable, { type SortableEvent } from 'sortablejs'
   import ModelProfileEditorDrawer from './ModelProfileEditorDrawer.svelte'
   import ModelRuntimeDefaultsEditor from './ModelRuntimeDefaultsEditor.svelte'
@@ -379,7 +380,7 @@
     draggedOrderKey = orderKey
     event.dataTransfer?.setData('text', 'model-profile-order')
     event.dataTransfer?.setData('orderKey', orderKey)
-    event.dataTransfer?.setData('application/x-risu-internal', 'true')
+    event.dataTransfer?.setData(RISU_MODEL_PROFILE_DRAG_TYPE, 'true')
     if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
   }
 
@@ -425,6 +426,7 @@
   }
 
   function handleProfileDrop(targetOrderKey: string | undefined, event: DragEvent): void {
+    if (!hasDragType(event.dataTransfer?.types, RISU_MODEL_PROFILE_DRAG_TYPE)) return
     event.preventDefault()
     const draggedKey = draggedOrderKey
     const transferredKey = event.dataTransfer?.getData('orderKey')
@@ -562,6 +564,7 @@
           class:h-2={draggedOrderKey && dragOverIndex === index}
           class:bg-blue-500={draggedOrderKey && dragOverIndex === index}
           ondragover={(event) => {
+            if (!hasDragType(event.dataTransfer.types, RISU_MODEL_PROFILE_DRAG_TYPE)) return
             event.preventDefault()
             dragOverIndex = index
           }}
@@ -580,6 +583,7 @@
             ondragstart={(event) => startProfileDrag(orderKey, event)}
             ondragend={finishProfileDrag}
             ondragover={(event) => {
+              if (!hasDragType(event.dataTransfer.types, RISU_MODEL_PROFILE_DRAG_TYPE)) return
               event.preventDefault()
               const rect = event.currentTarget.getBoundingClientRect()
               dragOverIndex = event.clientY < rect.top + rect.height / 2 ? index : index + 1
@@ -650,6 +654,7 @@
             ondragstart={(event) => startProfileDrag(orderKey, event, true)}
             ondragend={finishProfileDrag}
             ondragover={(event) => {
+              if (!hasDragType(event.dataTransfer.types, RISU_MODEL_PROFILE_DRAG_TYPE)) return
               event.preventDefault()
               const rect = event.currentTarget.getBoundingClientRect()
               dragOverIndex = event.clientY < rect.top + rect.height / 2 ? index : index + 1
@@ -683,6 +688,7 @@
         class:h-2={draggedOrderKey && dragOverIndex === profileItems.length}
         class:bg-blue-500={draggedOrderKey && dragOverIndex === profileItems.length}
         ondragover={(event) => {
+          if (!hasDragType(event.dataTransfer.types, RISU_MODEL_PROFILE_DRAG_TYPE)) return
           event.preventDefault()
           dragOverIndex = profileItems.length
         }}
