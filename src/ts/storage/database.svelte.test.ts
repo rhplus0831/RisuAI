@@ -369,6 +369,20 @@ describe('promptTemplateIdsNeedNormalization', () => {
 })
 
 describe('settings database normalization', () => {
+  it('defaults OpenAI Flex processing off while preserving an explicit opt-in', () => {
+    seedPresetDatabase()
+    const legacyData = clonePlain(getDatabase())
+    delete (legacyData as Partial<Database>).openAIFlexProcessing
+
+    setDatabase(legacyData)
+    expect(getDatabase().openAIFlexProcessing).toBe(false)
+
+    const enabledData = clonePlain(getDatabase())
+    enabledData.openAIFlexProcessing = true
+    setDatabase(enabledData)
+    expect(getDatabase().openAIFlexProcessing).toBe(true)
+  })
+
   it('normalizes chat load counts and migrates the fork legacy initial-tail setting', () => {
     seedPresetDatabase()
     const data = clonePlain(getDatabase())

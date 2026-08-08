@@ -182,6 +182,8 @@ const languageKoreanBase = {
       '활성화되면 번역 후 후처리 대신 번역 전 마크다운과 따옴표를 전처리하는 이전 번역 방식을 사용합니다.',
     luaHelp:
       'Lua 스크립트를 트리거 스크립트로 사용할 수 있습니다. onInput, onOutput, onStart 함수를 정의할 수 있습니다. onInput은 사용자가 메시지를 보낼 때, onOutput은 캐릭터가 메시지를 보낼 때, onStart는 채팅이 시작될 때 호출됩니다. 자세한 내용은 문서를 참조하세요.',
+    openAIFlexProcessing:
+      'OpenAI Flex 응답은 일반 응답에 비해 느리지만, 더 저렴한 가격(배치 API 가격)에 응답을 받을 수 있습니다. 이 토글은 공식 OpenAI Chat Completions 요청에만 적용됩니다.',
     claudeCachingExperimental:
       'Claude 캐싱은 모델 비용을 줄일 수 있는 실험적 기능이지만, 리롤 없이 사용하면 비용이 증가할 수도 있습니다. 실험적 기능이므로 불안정할 수 있으며 향후 동작이 변경될 수 있습니다.',
     urllora:
@@ -1594,6 +1596,7 @@ const languageKoreanBase = {
   promptInfoEmptyToggle: '활성화된 커스텀 토글이 없습니다.',
   promptInfoEmptyText: '저장된 프롬프트 텍스트가 없습니다.',
   escapeOutput: '출력 이스케이프',
+  openAIFlexProcessing: 'OpenAI Flex 처리',
   claudeBatching: 'Claude 배칭',
   claude1HourCaching: 'Claude 1시간 캐싱',
   folderNameInput: '새 폴더 이름을 입력해주세요',

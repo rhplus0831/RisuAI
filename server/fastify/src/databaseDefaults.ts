@@ -481,6 +481,7 @@ export function normalizeDatabaseDefaults(
   normalizeFallbackModels(database)
   setDefault(database, 'customModels', [])
   setDefault(database, 'authRefreshes', [])
+  setDefault(database, 'openAIFlexProcessing', false)
   setDefault(database, 'rememberToolUsage', true)
   setDefault(database, 'simplifiedToolUse', false)
   setDefault(database, 'halfStreaming', false)

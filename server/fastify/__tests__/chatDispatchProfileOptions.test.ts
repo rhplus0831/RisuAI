@@ -552,6 +552,88 @@ describe('dispatchChatProvider final wire controls', () => {
     expect(captured[0].body.verbosity).toBe('medium')
   })
 
+  it('sends Flex processing on official OpenAI Chat Completions requests', async () => {
+    const database = db({
+      aiModel: 'gpt-5',
+      openAIKey: 'sk-openai',
+      openAIFlexProcessing: true,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureOpenAIRequests()
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe('https://api.openai.com/v1/chat/completions')
+    expect(captured[0].body.service_tier).toBe('flex')
+  })
+
+  it('sends Flex processing when a custom Chat Completions URL targets the official OpenAI host', async () => {
+    const database = db({
+      aiModel: 'reverse_proxy',
+      customProxyRequestModel: 'gpt-5',
+      customAPIFormat: LLMFormat.OpenAICompatible,
+      forceReplaceUrl: 'https://api.openai.com/v1/chat/completions',
+      proxyKey: 'sk-openai',
+      autofillRequestUrl: true,
+      openAIFlexProcessing: true,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureOpenAIRequests()
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe('https://api.openai.com/v1/chat/completions')
+    expect(captured[0].body.service_tier).toBe('flex')
+  })
+
+  it.each([
+    {
+      label: 'the toggle is off',
+      database: db({ aiModel: 'gpt-5', openAIKey: 'sk-openai', openAIFlexProcessing: false } as Partial<Database>),
+    },
+    {
+      label: 'a custom endpoint is not OpenAI',
+      database: db({
+        aiModel: 'reverse_proxy',
+        customProxyRequestModel: 'custom-model',
+        customAPIFormat: LLMFormat.OpenAICompatible,
+        forceReplaceUrl: 'https://custom.example/v1/chat/completions',
+        proxyKey: 'sk-custom',
+        autofillRequestUrl: true,
+        openAIFlexProcessing: true,
+      } as Partial<Database>),
+    },
+    {
+      label: 'the provider is OpenRouter',
+      database: db({
+        aiModel: 'openrouter',
+        openrouterKey: 'sk-openrouter',
+        openrouterRequestModel: 'openai/gpt-5',
+        openAIFlexProcessing: true,
+      } as Partial<Database>),
+    },
+    {
+      label: 'the provider is NanoGPT',
+      database: db({
+        aiModel: 'nanogpt',
+        nanogptKey: 'sk-nano',
+        nanogptRequestModel: 'gpt-5',
+        nanogptUseSubscriptionEndpoint: false,
+        openAIFlexProcessing: true,
+      } as Partial<Database>),
+    },
+  ])('omits global Flex processing when $label', async ({ database }) => {
+    const profile = resolveModelProfile({ database })
+    const captured = captureOpenAIRequests()
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].body.service_tier).toBeUndefined()
+  })
+
   it('omits json_schema response_format for a noStructuredOutput model on the live OpenAI path', async () => {
     const database = db({
       aiModel: 'gpt-5.4-pro',
@@ -2424,7 +2506,10 @@ describe('dispatchChatProvider profile providerOptions', () => {
     })
     const captured = captureOpenAIRequests()
 
-    await dispatchWithProfile(profile, db({ openAIKey: 'flat-openai-key' } as Partial<Database>))
+    await dispatchWithProfile(
+      profile,
+      db({ openAIKey: 'flat-openai-key', openAIFlexProcessing: true } as Partial<Database>),
+    )
 
     expect(captured).toHaveLength(1)
     expect(captured[0].url).toBe('https://api.llmgateway.io/v1/chat/completions')

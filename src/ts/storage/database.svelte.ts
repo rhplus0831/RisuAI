@@ -3346,6 +3346,7 @@ export function setDatabase(data: Database) {
   data.fallbackModels = normalizeLegacyFallbackModels(data.fallbackModels)
   data.customModels ??= []
   data.authRefreshes ??= []
+  data.openAIFlexProcessing ??= false
   data.rememberToolUsage ??= true
   data.simplifiedToolUse ??= false
   data.halfStreaming ??= false
@@ -4215,6 +4216,7 @@ export interface Database {
   }[]
   promptInfoInsideChat: boolean
   promptTextInfoInsideChat: boolean
+  openAIFlexProcessing: boolean
   claudeBatching: boolean
   claude1HourCaching: boolean
   rememberToolUsage: boolean

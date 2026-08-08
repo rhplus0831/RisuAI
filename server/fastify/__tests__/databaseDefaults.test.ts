@@ -74,6 +74,7 @@ describe('database defaults', () => {
     expect(database.useMonacoEditorOnDesktop).toBe(false)
     expect(database.useMonacoEditorOnMobile).toBe(false)
     expect(database.applyAdditionalParamsToAll).toBe(false)
+    expect(database.openAIFlexProcessing).toBe(false)
     expect(database.autoTranslate).toBeUndefined()
     expect(database.showGlobalLorebookAndRegex).toBe(false)
     expect(database.moodLightMembership).toEqual({ characterIds: [], folders: [] })
@@ -132,6 +133,12 @@ describe('database defaults', () => {
     const database = normalizeDatabaseDefaults({ applyAdditionalParamsToAll: true }, { providerDefaults: false })
 
     expect(database.applyAdditionalParamsToAll).toBe(true)
+  })
+
+  it('preserves an enabled OpenAI Flex processing preference', () => {
+    const database = normalizeDatabaseDefaults({ openAIFlexProcessing: true }, { providerDefaults: false })
+
+    expect(database.openAIFlexProcessing).toBe(true)
   })
 
   it('preserves an explicit floating-input opt-out', () => {

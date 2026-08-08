@@ -93,6 +93,7 @@ interface OpenAIResolveInput {
   reasoningEffort?: unknown
   verbosity?: unknown
   serviceTier?: unknown
+  flexProcessing?: unknown
   routing?: unknown
   seed?: unknown
   responseFormat?: unknown
@@ -114,6 +115,14 @@ interface OpenAIResolveInput {
 
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1'
 
+function isOfficialOpenAIUrl(rawUrl: string): boolean {
+  try {
+    return new URL(rawUrl).hostname === 'api.openai.com'
+  } catch {
+    return false
+  }
+}
+
 export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest | null {
   if (typeof input.model !== 'string' || input.model.length === 0) return null
   if (!Array.isArray(input.messages)) return null
@@ -126,6 +135,14 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
       : undefined
   const temperature =
     typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
+  const endpointUrl =
+    typeof input.endpointUrl === 'string' && input.endpointUrl.length > 0 ? input.endpointUrl : undefined
+  const serviceTier =
+    typeof input.serviceTier === 'string'
+      ? input.serviceTier
+      : input.flexProcessing === true && isOfficialOpenAIUrl(endpointUrl ?? baseUrl)
+        ? 'flex'
+        : undefined
 
   const numeric = (value: unknown): number | undefined =>
     typeof value === 'number' && Number.isFinite(value) ? value : undefined
@@ -137,7 +154,7 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
     messages: input.messages,
     apiKey,
     baseUrl,
-    endpointUrl: typeof input.endpointUrl === 'string' && input.endpointUrl.length > 0 ? input.endpointUrl : undefined,
+    endpointUrl,
     maxTokens,
     temperature,
     topP: numeric(input.topP),
@@ -149,7 +166,7 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
     presencePenalty: numeric(input.presencePenalty),
     reasoningEffort: typeof input.reasoningEffort === 'string' ? input.reasoningEffort : undefined,
     verbosity: typeof input.verbosity === 'string' ? input.verbosity : undefined,
-    serviceTier: typeof input.serviceTier === 'string' ? input.serviceTier : undefined,
+    serviceTier,
     routing: typeof input.routing === 'string' ? input.routing : undefined,
     seed: numeric(input.seed),
     responseFormat: record(input.responseFormat),

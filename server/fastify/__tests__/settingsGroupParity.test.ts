@@ -55,6 +55,11 @@ describe('settings group parity', () => {
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.advanced).toContain('inputHooks')
   })
 
+  it('keeps OpenAI Flex processing in the provider settings projection', () => {
+    expect(SETTINGS_GROUP_KEYS.providers).toContain('openAIFlexProcessing')
+    expect(SERVER_SETTINGS_KEYS_BY_GROUP.providers).toContain('openAIFlexProcessing')
+  })
+
   it('keeps chat screen width in the display settings projection', () => {
     expect(SETTINGS_GROUP_KEYS.display).toContain('chatScreenWidth')
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.display).toContain('chatScreenWidth')

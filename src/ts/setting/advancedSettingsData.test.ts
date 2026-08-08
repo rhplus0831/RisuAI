@@ -26,6 +26,19 @@ describe('advanced settings data', () => {
     )
   })
 
+  it('includes the experimental OpenAI Flex processing toggle', () => {
+    expect(advancedSettingsItems).toContainEqual(
+      expect.objectContaining({
+        id: 'adv.openAIFlex',
+        type: 'check',
+        bindKey: 'openAIFlexProcessing',
+        labelKey: 'openAIFlexProcessing',
+        helpKey: 'openAIFlexProcessing',
+        showExperimental: true,
+      }),
+    )
+  })
+
   it('includes the legacy global lorebook and regex menu visibility toggle', () => {
     expect(advancedSettingsItems).toContainEqual(
       expect.objectContaining({

@@ -144,6 +144,27 @@ describe('resolveOpenAIRequest', () => {
     expect(r?.baseUrl).toBe('https://api.openai.com/v1')
   })
 
+  it('resolves Flex processing only for the official OpenAI endpoint', () => {
+    const official = resolveOpenAIRequest({
+      model: 'gpt-4o',
+      messages: [],
+      apiKey: 'sk-x',
+      flexProcessing: true,
+      signal: new AbortController().signal,
+    })
+    const custom = resolveOpenAIRequest({
+      model: 'gpt-4o',
+      messages: [],
+      apiKey: 'sk-x',
+      baseUrl: 'https://custom.example/v1',
+      flexProcessing: true,
+      signal: new AbortController().signal,
+    })
+
+    expect(official?.serviceTier).toBe('flex')
+    expect(custom?.serviceTier).toBeUndefined()
+  })
+
   it('drops a non-positive maxTokens', () => {
     const r = resolveOpenAIRequest({
       model: 'gpt-4o',

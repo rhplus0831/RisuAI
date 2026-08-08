@@ -241,6 +241,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   ollamaURL: 'providers',
   ooba: 'providers',
   openAIKey: 'providers',
+  openAIFlexProcessing: 'providers',
   openaiCompatImage: 'media',
   openrouterFallback: 'providers',
   openrouterKey: 'providers',

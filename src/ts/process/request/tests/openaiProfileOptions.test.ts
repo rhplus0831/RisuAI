@@ -128,6 +128,44 @@ afterEach(() => {
 })
 
 describe('requestOpenAI profile provider options', () => {
+  it('adds Flex processing to official OpenAI Chat Completions requests only when enabled', async () => {
+    const profileDatabase = db({ aiModel: 'gpt-5', openAIKey: 'sk-openai' } as Partial<Database>)
+    const profile = resolveModelProfile({ database: profileDatabase })
+    setDatabase(db({ aiModel: 'gpt-5', openAIKey: 'sk-openai', openAIFlexProcessing: true } as Partial<Database>))
+
+    const enabled = await preview(makeArg(profile))
+    expect(enabled.url).toBe('https://api.openai.com/v1/chat/completions')
+    expect(enabled.body.service_tier).toBe('flex')
+
+    setDatabase(db({ aiModel: 'gpt-5', openAIKey: 'sk-openai', openAIFlexProcessing: false } as Partial<Database>))
+    const disabled = await preview(makeArg(profile))
+    expect(disabled.body.service_tier).toBeUndefined()
+  })
+
+  it('adds Flex processing to a custom profile that targets the official OpenAI host', async () => {
+    const modelId = 'xcustom:::official-openai'
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: modelId,
+        customModels: [
+          customModel({
+            id: modelId,
+            internalId: 'gpt-5',
+            url: 'https://api.openai.com/v1/chat/completions',
+            key: 'sk-openai',
+          }),
+        ] as Database['customModels'],
+        openAIFlexProcessing: true,
+      }),
+    })
+    setDatabase(db({ openAIFlexProcessing: true } as Partial<Database>))
+
+    const payload = await preview(makeArg(profile))
+
+    expect(payload.url).toBe('https://api.openai.com/v1/chat/completions')
+    expect(payload.body.service_tier).toBe('flex')
+  })
+
   it('uses reverse_proxy profile URL, key, request model, additional params, Ooba hoist, and Ooba args over flat DB conflicts', async () => {
     const profile = resolveModelProfile({
       database: db({
@@ -191,6 +229,7 @@ describe('requestOpenAI profile provider options', () => {
             params: 'profile_param="custom-profile"\nheader::X-Custom-Profile=profile-header',
           }),
         ] as Database['customModels'],
+        openAIFlexProcessing: true,
       }),
     })
     setDatabase(
@@ -205,6 +244,7 @@ describe('requestOpenAI profile provider options', () => {
             params: 'flat_param="custom-flat"\nheader::X-Custom-Flat=flat-header',
           }),
         ] as Database['customModels'],
+        openAIFlexProcessing: true,
       }),
     )
 
@@ -225,6 +265,7 @@ describe('requestOpenAI profile provider options', () => {
     expect(payload.body.model).toBe('profile-custom-wire')
     expect(payload.body.profile_param).toBe('custom-profile')
     expect(payload.body.flat_param).toBeUndefined()
+    expect(payload.body.service_tier).toBeUndefined()
   })
 
   it('uses reverse_proxy Mistral profile URL, key, request model, extra headers, and params over flat and arg conflicts', async () => {
@@ -354,6 +395,7 @@ describe('requestOpenAI profile provider options', () => {
           only: ['flat-only'],
           ignore: ['flat-ignore'],
         },
+        openAIFlexProcessing: true,
       } as Partial<Database>),
     )
 
@@ -371,6 +413,7 @@ describe('requestOpenAI profile provider options', () => {
       only: ['profile-only'],
       ignore: ['profile-ignore'],
     })
+    expect(payload.body.service_tier).toBeUndefined()
   })
 
   it('uses the OpenRouter profile key for risu/free catalog lookup and sends the returned free model', async () => {
@@ -464,6 +507,7 @@ describe('requestOpenAI profile provider options', () => {
         nanogptRequestModel: 'flat/nano-model',
         nanogptProvider: 'flat-provider',
         nanogptUseSubscriptionEndpoint: false,
+        openAIFlexProcessing: true,
       } as Partial<Database>),
     )
 
@@ -473,6 +517,7 @@ describe('requestOpenAI profile provider options', () => {
     expect(payload.headers.Authorization).toBe('Bearer sk-profile-nano')
     expect(payload.headers['X-Provider']).toBe('profile-provider')
     expect(payload.body.model).toBe('profile/nano-model')
+    expect(payload.body.service_tier).toBeUndefined()
   })
 
   it('uses key-identifier profile key and base URL over conflicting flat OaiCompAPIKeys', async () => {

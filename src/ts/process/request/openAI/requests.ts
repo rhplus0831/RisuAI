@@ -1,7 +1,7 @@
 import { language } from 'src/lang'
 import { alertError } from 'src/ts/alert'
 import { getDatabase } from 'src/ts/storage/database.svelte'
-import { LLMFlags, LLMFormat } from 'src/ts/model/modellist'
+import { LLMFlags, LLMFormat, LLMProvider } from 'src/ts/model/modellist'
 import { strongBan, tokenizeNum } from 'src/ts/tokenizer'
 import { getFreeOpenRouterModels } from 'src/ts/model/openrouter'
 import { addFetchLog, fetchNative, globalFetch, textifyReadableStream } from 'src/ts/globalApi.svelte'
@@ -39,6 +39,19 @@ interface LocalNetworkRequestOptions {
 const CHAT_COMPLETIONS_SUFFIX = '/chat/completions'
 const RESPONSES_SUFFIX = '/responses'
 const COMPLETIONS_SUFFIX = '/completions'
+
+function isOfficialOpenAIURL(url: string): boolean {
+  try {
+    return new URL(url).hostname === 'api.openai.com'
+  } catch {
+    return false
+  }
+}
+
+function shouldUseOpenAIFlexProcessing(aiModel: string, url: string, provider: LLMProvider): boolean {
+  const isCustomEndpoint = aiModel === 'reverse_proxy' || aiModel === 'custom-api' || aiModel.startsWith('xcustom:::')
+  return (provider === LLMProvider.OpenAI || isCustomEndpoint) && isOfficialOpenAIURL(url)
+}
 
 function appendOperationPath(baseUrl: string, suffix: string): string {
   const trimmed = baseUrl.replace(/\/+$/, '')
@@ -717,6 +730,11 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
         replacerURL += '/v1/chat/completions'
       }
     }
+  }
+
+  const resolvedProvider = resolvedProfile?.modelInfo.provider ?? arg.modelInfo.provider
+  if (db.openAIFlexProcessing && shouldUseOpenAIFlexProcessing(aiModel, replacerURL, resolvedProvider)) {
+    body.service_tier = 'flex'
   }
 
   let headers: Record<string, string> = {

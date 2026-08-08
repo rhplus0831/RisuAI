@@ -379,6 +379,15 @@ export const advancedSettingsItems: SettingItem[] = [
     classes: 'mt-4',
   },
   {
+    id: 'adv.openAIFlex',
+    type: 'check',
+    labelKey: 'openAIFlexProcessing',
+    bindKey: 'openAIFlexProcessing',
+    helpKey: 'openAIFlexProcessing',
+    showExperimental: true,
+    classes: 'mt-4',
+  },
+  {
     id: 'adv.claudeCache',
     type: 'check',
     labelKey: 'claude1HourCaching',

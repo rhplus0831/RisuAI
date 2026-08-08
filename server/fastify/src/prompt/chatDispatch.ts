@@ -1,7 +1,7 @@
 import type { Database } from '../../../../src/ts/storage/database.svelte'
 import type { DatabaseSync } from 'node:sqlite'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
-import { LLMFlags, LLMFormat, type LLMFormat as LLMFormatValue } from '../../../../src/ts/model/types'
+import { LLMFlags, LLMFormat, LLMProvider, type LLMFormat as LLMFormatValue } from '../../../../src/ts/model/types'
 import { OpenAIModels } from '../../../../src/ts/model/providers/openai'
 import type { CompletionResult, CompletionStreamFrame } from '../generation/frames.js'
 import { stripCoTFromCompletionFrames } from '../generation/stripCoT.js'
@@ -1298,6 +1298,13 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       reasoningEffort: isLLMGatewayProfile ? llmGatewayOptions?.reasoningEffort : parameters.reasoningEffort,
       verbosity: isLLMGatewayProfile ? llmGatewayOptions?.verbosity : parameters.verbosity,
       serviceTier: llmGatewayOptions?.serviceTier,
+      flexProcessing:
+        db.openAIFlexProcessing === true &&
+        (info.provider === LLMProvider.OpenAI ||
+          profile.modelId === 'reverse_proxy' ||
+          profile.modelId === 'custom-api' ||
+          profile.modelId.startsWith('xcustom:::') ||
+          profile.status.providerId === 'custom-api'),
       routing: llmGatewayOptions?.routing,
       seed: db.generationSeed,
       responseFormat: openAIChatResponseFormat(db, info.flags),
