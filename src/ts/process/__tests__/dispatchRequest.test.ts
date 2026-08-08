@@ -202,6 +202,21 @@ describe('dispatchRequest - success branches', () => {
     if (result.status !== 'success') throw new Error('unexpected status')
     expect(result.generationInfo.model).toBe('model:gpt-fallback')
   })
+
+  it('preserves a V3 plugin provider id in generation metadata', async () => {
+    seedDb()
+    providerState.next = {
+      type: 'success',
+      result: 'plugin response',
+      model: 'pluginmodel:::provider-a',
+    }
+
+    const { args } = baseArgs()
+    const result = await dispatchRequest(args)
+
+    if (result.status !== 'success') throw new Error('unexpected status')
+    expect(result.generationInfo.model).toBe('model:pluginmodel:::provider-a')
+  })
 })
 
 describe('dispatchRequest - failure branches', () => {

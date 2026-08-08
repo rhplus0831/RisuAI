@@ -755,7 +755,8 @@ export async function requestChatData(
 
       trys += 1
       if (trys > db.requestRetrys) {
-        if (fallbackIndex === fallbackAttempts.length - 1 || da.model === 'custom') {
+        const isPluginModel = da.model === 'custom' || da.model?.startsWith('pluginmodel:::')
+        if (fallbackIndex === fallbackAttempts.length - 1 || isPluginModel) {
           return da
         }
         break
@@ -1471,13 +1472,13 @@ async function requestOoba(arg: RequestDataArgumentExtended): Promise<requestDat
 
 async function requestPlugin(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const db = getDatabase()
+  const isV3Model = arg.aiModel.startsWith('pluginmodel:::')
+  const responseModel = isV3Model ? arg.aiModel : 'custom'
   try {
     const formated = arg.formated
     const maxTokens = arg.maxTokens
     const bias = arg.biasString
-    const model = arg.aiModel.startsWith('pluginmodel:::')
-      ? arg.aiModel.replace('pluginmodel:::', '')
-      : db.currentPluginProvider
+    const model = isV3Model ? arg.aiModel.replace('pluginmodel:::', '') : db.currentPluginProvider
     const v2Function = pluginV2.providers.get(model)
 
     if (arg.previewBody) {
@@ -1520,13 +1521,13 @@ async function requestPlugin(arg: RequestDataArgumentExtended): Promise<requestD
       return {
         type: 'fail',
         result: language.errors.unknownModel,
-        model: 'custom',
+        model: responseModel,
       }
     } else if (!d.success) {
       return {
         type: 'fail',
         result: d.content instanceof ReadableStream ? await new Response(d.content).text() : d.content,
-        model: 'custom',
+        model: responseModel,
       }
     } else if (d.content instanceof ReadableStream) {
       let fullText = ''
@@ -1542,13 +1543,13 @@ async function requestPlugin(arg: RequestDataArgumentExtended): Promise<requestD
       return {
         type: 'streaming',
         result: d.content.pipeThrough(piper),
-        model: 'custom',
+        model: responseModel,
       }
     } else {
       return {
         type: 'success',
         result: d.content ?? '',
-        model: 'custom',
+        model: responseModel,
       }
     }
   } catch (error) {
@@ -1556,7 +1557,7 @@ async function requestPlugin(arg: RequestDataArgumentExtended): Promise<requestD
     return {
       type: 'fail',
       result: `Plugin Error from ${db.currentPluginProvider}: ` + JSON.stringify(error),
-      model: 'custom',
+      model: responseModel,
     }
   }
 }
