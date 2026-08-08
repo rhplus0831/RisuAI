@@ -60,6 +60,13 @@ describe('settings group parity', () => {
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.display).toContain('chatScreenWidth')
   })
 
+  it('keeps chat load counts in the display settings projection', () => {
+    for (const key of ['chatLoadInitialPages', 'chatLoadAdditionalPages']) {
+      expect(SETTINGS_GROUP_KEYS.display).toContain(key)
+      expect(SERVER_SETTINGS_KEYS_BY_GROUP.display).toContain(key)
+    }
+  })
+
   it('keeps the translation-notification defer cap in the display settings projection', () => {
     expect(SETTINGS_GROUP_KEYS.display).toContain('autoTranslateNotificationDeferCapSeconds')
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.display).toContain('autoTranslateNotificationDeferCapSeconds')

@@ -113,7 +113,7 @@
     isChatMessageHydrationPending,
   } from 'src/ts/server/chatMessageHydration.svelte'
   import { buildTranscriptWindowIdentity, getLoadPagesForMessageJump } from './DefaultChatScreen.loadPages'
-  import { normalizeChatDisplayTailCount } from 'src/ts/chatDisplayTailCount'
+  import { getAdditionalChatLoadPages, getInitialChatLoadPages } from 'src/ts/chatLoadPages'
   import { guardActiveChatGenerationSettingsForSend } from 'src/ts/activeChatGenerationSettings'
   import { characterRoutePath, currentRoute, navigate } from 'src/ts/router'
   import { createLatestOperationGuard } from 'src/ts/server/staleStateGuards'
@@ -190,7 +190,7 @@
   let openMenu = $state(false)
   let chatMenuButton: HTMLButtonElement | null = $state(null)
   let chatMenuElement: HTMLDivElement | null = $state(null)
-  let loadPages = $state(normalizeChatDisplayTailCount(getDatabase().chatDisplayTailCount))
+  let loadPages = $state(getInitialChatLoadPages(getDatabase()))
   let doingDraftHook = $state(false)
   let doingBtwHook = $state(false)
   let showBtwHookDialog = $state(false)
@@ -315,7 +315,7 @@
     }
     return target.chatPage === currentCharacter.chatPage
   })
-  let configuredChatLoadPages = $derived(normalizeChatDisplayTailCount(getDatabase().chatDisplayTailCount))
+  let configuredChatLoadPages = $derived(getInitialChatLoadPages(getDatabase()))
   // The open chat ships as a message-less shell until the chat-messages resource
   // resolves; show a loading state over the message area until then so the
   // history does not flash in over the greeting-only stub.
@@ -2051,7 +2051,7 @@
           getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message
             .length > loadPages
         ) {
-          void expandTranscriptWindow(loadPages + 15)
+          void expandTranscriptWindow(loadPages + getAdditionalChatLoadPages(getDatabase()))
         }
         const chatTarget = e.target as HTMLElement
         const chatsContainer = chatTarget.querySelector<HTMLElement>('[data-default-chat-chats-container]')

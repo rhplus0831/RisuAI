@@ -61,6 +61,8 @@ describe('database defaults', () => {
     expect(database.reducedMotion).toBe(false)
     expect(database.floatingChatInput).toBe(true)
     expect(database.chatScreenWidth).toBe(900)
+    expect(database.chatLoadInitialPages).toBe(30)
+    expect(database.chatLoadAdditionalPages).toBe(15)
     expect(database.autoTranslateNotificationDeferCapSeconds).toBe(180)
     expect(database.paragraphBreakBySentences).toBe(false)
     expect(database.paragraphBreakSentenceCount).toBe(3)
@@ -105,6 +107,19 @@ describe('database defaults', () => {
       scriptAux: {},
       overrides: {},
     })
+  })
+
+  it('normalizes configurable chat load counts', () => {
+    const database = normalizeDatabaseDefaults(
+      {
+        chatLoadInitialPages: 12.9,
+        chatLoadAdditionalPages: 0,
+      },
+      { providerDefaults: false },
+    )
+
+    expect(database.chatLoadInitialPages).toBe(12)
+    expect(database.chatLoadAdditionalPages).toBe(15)
   })
 
   it('preserves an enabled app reduced-motion preference', () => {

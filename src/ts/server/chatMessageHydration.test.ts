@@ -231,8 +231,8 @@ describe('chat message hydration bridge', () => {
     expect(projectionState.fetchChat).toHaveBeenCalledTimes(1)
   })
 
-  it('uses the configured active chat tail window size', async () => {
-    ;(testDatabaseState.db as { chatDisplayTailCount?: number }).chatDisplayTailCount = 12
+  it('uses the configured initial chat load count for the active window size', async () => {
+    ;(testDatabaseState.db as { chatLoadInitialPages?: number }).chatLoadInitialPages = 12
     projectionState.fetchChat.mockResolvedValue(okResult('chat-1', [{ role: 'user', data: 'hi', chatId: 'm1' }]))
 
     await hydrateActiveChat()

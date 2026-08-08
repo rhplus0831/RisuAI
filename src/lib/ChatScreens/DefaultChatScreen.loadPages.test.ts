@@ -402,7 +402,8 @@ function seedDatabase(messageCounts: number[]) {
     alwaysScrollToNewMessage: false,
     autoScrollToNewMessage: false,
     characters: messageCounts.map((count, index) => makeCharacter(index, count)),
-    chatDisplayTailCount: 30,
+    chatLoadInitialPages: 30,
+    chatLoadAdditionalPages: 15,
     chatScreenWidth: 900,
     enableRisuaiProTools: false,
     fixedChatTextarea: false,
@@ -1122,9 +1123,9 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(loadPageMocks.stopTTS).toHaveBeenCalledTimes(1)
   })
 
-  it('uses the configured display tail count for the initial chat window', async () => {
+  it('uses the configured initial chat load count for the initial chat window', async () => {
     seedDatabase([80])
-    getResourceDatabase().chatDisplayTailCount = 12
+    getResourceDatabase().chatLoadInitialPages = 12
 
     mountScreen()
 
@@ -1137,12 +1138,28 @@ describe('DefaultChatScreen transcript window state', () => {
     })
   })
 
-  it('resizes the mounted transcript when the configured tail count changes', async () => {
+  it('uses the configured additional chat load count when scrolling to older messages', async () => {
+    seedDatabase([80])
+    getResourceDatabase().chatLoadInitialPages = 12
+    getResourceDatabase().chatLoadAdditionalPages = 7
+    mountScreen()
+
+    await waitFor(() => expect(messageRowIndexes()).toHaveLength(12))
+    const screen = target.querySelector<HTMLElement>('.default-chat-screen')!
+    screen.dispatchEvent(new Event('scroll'))
+
+    await waitFor(() => {
+      expect(loadPageMocks.hydrateActiveChatWindow).toHaveBeenCalledWith(19)
+      expect(messageRowIndexes()).toHaveLength(19)
+    })
+  })
+
+  it('resizes the mounted transcript when the configured initial load count changes', async () => {
     seedDatabase([80])
     mountScreen()
     await waitFor(() => expect(messageRowIndexes()).toHaveLength(30))
 
-    getResourceDatabase().chatDisplayTailCount = 10
+    getResourceDatabase().chatLoadInitialPages = 10
     await waitFor(() => {
       const indexes = messageRowIndexes()
       expect(indexes).toHaveLength(10)
@@ -1150,7 +1167,7 @@ describe('DefaultChatScreen transcript window state', () => {
       expect(indexes).not.toContain(69)
     })
 
-    getResourceDatabase().chatDisplayTailCount = 60
+    getResourceDatabase().chatLoadInitialPages = 60
     await waitFor(() => {
       expect(loadPageMocks.hydrateActiveChatWindow).toHaveBeenCalledWith(60)
       const indexes = messageRowIndexes()
@@ -1161,18 +1178,18 @@ describe('DefaultChatScreen transcript window state', () => {
     })
   })
 
-  it('discards an older tail-count hydration after the active chat and setting change', async () => {
+  it('discards an older load-count hydration after the active chat and setting change', async () => {
     seedDatabase([80, 70])
     const hydration = createDeferred<boolean>()
     loadPageMocks.hydrateActiveChatWindow.mockReturnValueOnce(hydration.promise)
     mountScreen()
     await waitFor(() => expect(messageRowIndexes()).toHaveLength(30))
 
-    getResourceDatabase().chatDisplayTailCount = 60
+    getResourceDatabase().chatLoadInitialPages = 60
     await waitFor(() => expect(loadPageMocks.hydrateActiveChatWindow).toHaveBeenCalledWith(60))
 
     switchToCharacterChat(1)
-    getResourceDatabase().chatDisplayTailCount = 10
+    getResourceDatabase().chatLoadInitialPages = 10
     await waitFor(() => expect(messageRowIndexes()).toHaveLength(10))
 
     hydration.resolve(true)

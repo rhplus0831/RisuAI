@@ -26,7 +26,7 @@ import {
 } from './hydrationReads'
 import { canUseServerResourceReads } from './resourceReads'
 import { beginHydrationRequest, recordBulkHydration, recordHydrationStaleDrop } from './protocolDiagnostics'
-import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT, normalizeChatDisplayTailCount } from '../chatDisplayTailCount'
+import { DEFAULT_CHAT_LOAD_INITIAL_PAGES, getInitialChatLoadPages } from '../chatLoadPages'
 import { setChatStructureHydrationHooks } from './chatStructureHydrationHooks'
 import {
   captureCharacterLorebookBodyProjectionEpoch,
@@ -40,7 +40,7 @@ import { reapplyRetainedChatBodyProjections } from './chatRetainedProjection'
 import { acknowledgeHydratedGenerationPersistences } from '../process/generationPersistenceState'
 
 export const BULK_HYDRATION_BATCH_SIZE = 32
-export const ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW = DEFAULT_CHAT_DISPLAY_TAIL_COUNT
+export const ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW = DEFAULT_CHAT_LOAD_INITIAL_PAGES
 
 // The bootstrap ships chat *stubs* (empty message[]). This bridge hydrates a
 // chat's messages when it is opened and re-hydrates the open chat after a
@@ -490,12 +490,9 @@ function hydrationWarning(scope: string, message: string): void {
 
 /** Hydrate the currently-open chat's messages (no-op if already hydrated). */
 export async function hydrateActiveChat(options: { force?: boolean; loadPages?: number } = {}): Promise<void> {
-  await hydrateActiveChatWindow(
-    options.loadPages ?? normalizeChatDisplayTailCount(getDatabase().chatDisplayTailCount),
-    {
-      force: options.force,
-    },
-  )
+  await hydrateActiveChatWindow(options.loadPages ?? getInitialChatLoadPages(getDatabase()), {
+    force: options.force,
+  })
 }
 
 /**

@@ -116,6 +116,11 @@ import {
 } from '../server/staleStateGuards'
 import { isServerChatMessagePlaceholder, SERVER_UNLOADED_CHAT_MESSAGE_MARKER } from '../server/chatMessagePlaceholders'
 import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT, normalizeChatDisplayTailCount } from '../chatDisplayTailCount'
+import {
+  DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES,
+  DEFAULT_CHAT_LOAD_INITIAL_PAGES,
+  normalizeChatLoadPages,
+} from '../chatLoadPages'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
 import { optimisticallyRehomeGenerationReferences } from '../generationReferenceCascade'
 import { normalizeMoodLightMembership } from '../moodLightMembership'
@@ -2764,6 +2769,14 @@ export function setDatabase(data: Database) {
   data.chatDisplayTailCount = normalizeChatDisplayTailCount(
     data.chatDisplayTailCount ?? DEFAULT_CHAT_DISPLAY_TAIL_COUNT,
   )
+  data.chatLoadInitialPages = normalizeChatLoadPages(
+    data.chatLoadInitialPages ?? data.chatDisplayTailCount,
+    DEFAULT_CHAT_LOAD_INITIAL_PAGES,
+  )
+  data.chatLoadAdditionalPages = normalizeChatLoadPages(
+    data.chatLoadAdditionalPages,
+    DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES,
+  )
   if (checkNullish(data.customBackground)) {
     data.customBackground = ''
   }
@@ -3818,6 +3831,8 @@ export interface Database {
   currentPluginProvider: string
   zoomsize: number
   chatDisplayTailCount?: number
+  chatLoadInitialPages?: number
+  chatLoadAdditionalPages?: number
   customBackground: string
   textgenWebUIStreamURL: string
   textgenWebUIBlockingURL: string

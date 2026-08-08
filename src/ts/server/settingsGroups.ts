@@ -82,6 +82,8 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   customAPIFormat: 'providers',
   customBackground: 'display',
   chatDisplayTailCount: 'display',
+  chatLoadInitialPages: 'display',
+  chatLoadAdditionalPages: 'display',
   chatScreenWidth: 'display',
   chatGenerationTogglePresets: 'sidebar',
   customCSS: 'display',

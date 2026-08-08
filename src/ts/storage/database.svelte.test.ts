@@ -369,6 +369,19 @@ describe('promptTemplateIdsNeedNormalization', () => {
 })
 
 describe('settings database normalization', () => {
+  it('normalizes chat load counts and migrates the fork legacy initial-tail setting', () => {
+    seedPresetDatabase()
+    const data = clonePlain(getDatabase())
+    data.chatDisplayTailCount = 18
+    delete data.chatLoadInitialPages
+    data.chatLoadAdditionalPages = 7.9
+
+    setDatabase(data)
+
+    expect(getDatabase().chatLoadInitialPages).toBe(18)
+    expect(getDatabase().chatLoadAdditionalPages).toBe(7)
+  })
+
   it('normalizes prompt roles across top-level, legacy, and modern preset templates', () => {
     seedPresetDatabase()
     const data = clonePlain(getDatabase()) as unknown as Record<string, unknown>

@@ -90,6 +90,23 @@ export const advancedSettingsItems: SettingItem[] = [
     options: { min: 0, max: 4096 },
   },
   {
+    id: 'adv.chatLoadInitial',
+    type: 'number',
+    labelKey: 'chatLoadInitialPages',
+    bindKey: 'chatLoadInitialPages',
+    helpKey: 'chatLoadInitialPages',
+    classes: 'mt-4',
+    options: { min: 1 },
+  },
+  {
+    id: 'adv.chatLoadAdditional',
+    type: 'number',
+    labelKey: 'chatLoadAdditionalPages',
+    bindKey: 'chatLoadAdditionalPages',
+    helpKey: 'chatLoadAdditionalPages',
+    options: { min: 1 },
+  },
+  {
     id: 'adv.assetAlloc',
     type: 'number',
     labelKey: 'assetMaxDifference',

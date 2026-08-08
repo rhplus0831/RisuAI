@@ -5,6 +5,27 @@ vi.mock('../gui/heightMode', () => ({ updateHeightMode: vi.fn() }))
 import { advancedSettingsItems } from './advancedSettingsData'
 
 describe('advanced settings data', () => {
+  it('includes configurable initial and additional chat load counts', () => {
+    expect(advancedSettingsItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'adv.chatLoadInitial',
+          type: 'number',
+          bindKey: 'chatLoadInitialPages',
+          helpKey: 'chatLoadInitialPages',
+          options: { min: 1 },
+        }),
+        expect.objectContaining({
+          id: 'adv.chatLoadAdditional',
+          type: 'number',
+          bindKey: 'chatLoadAdditionalPages',
+          helpKey: 'chatLoadAdditionalPages',
+          options: { min: 1 },
+        }),
+      ]),
+    )
+  })
+
   it('includes the legacy global lorebook and regex menu visibility toggle', () => {
     expect(advancedSettingsItems).toContainEqual(
       expect.objectContaining({

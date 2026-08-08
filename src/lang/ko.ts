@@ -1950,6 +1950,10 @@ export const languageKorean = {
       '준비된 입력은 표시된 CBS 자리표시자(예: `{{currentUserMessage}}`)가 에이전트 지침에 삽입된 경우에만 해당 에이전트용 컨텍스트로 수집됩니다. 에이전트 지침에서 해당 내용이 들어갈 위치에 자리표시자를 넣으세요. 최대 입력 문자 수는 수집되는 내용에도 적용됩니다. 메인 초안은 이 에이전트를 메인 응답 이후에 사용할 때만 제공됩니다.',
     chatDisplayTailCount:
       '채팅을 열 때 렌더링하고 불러올 최신 메시지 수를 설정합니다. 값을 낮추면 큰 채팅을 더 빠르게 열 수 있습니다. 기본값은 30입니다.',
+    chatLoadInitialPages:
+      '채팅 화면을 열 때 처음 렌더링할 최근 채팅 메시지 개수입니다. 값이 높을수록 더 많은 기록을 바로 볼 수 있지만 긴 채팅을 열 때 무거워질 수 있습니다.',
+    chatLoadAdditionalPages:
+      '위로 스크롤할 때마다 추가로 렌더링할 이전 채팅 메시지 개수입니다. 값이 높을수록 반복 로딩은 줄지만 한 번의 로딩이 무거워질 수 있습니다.',
     keepSessionAlive:
       '브라우저에서 탭을 활성 상태로 유지하고 비활성 상태로 인해 세션이 만료되지 않도록 합니다. 적용하려면 새로고침이 필요할 수 있습니다.\n\n- **소리 사용**: 일정 간격으로 무음 오디오를 재생하여 세션을 유지합니다. 대부분의 브라우저에서 가장 호환성이 높고 효과적인 방식입니다.\n',
     coldstorage:
@@ -2329,6 +2333,8 @@ export const languageKorean = {
   settingsExportedWithoutClipboard:
     '버그 제보용 설정을 내보냈지만 클립보드를 사용할 수 없습니다. 대신 다운로드한 파일을 사용하세요.',
   chatDisplayTailCount: '처음 표시할 채팅 메시지 수',
+  chatLoadInitialPages: '채팅 초기 로딩 개수',
+  chatLoadAdditionalPages: '채팅 추가 로딩 개수',
   pluginMutation: {
     saving: '플러그인 변경 사항을 저장하는 중…',
     queued: '플러그인 변경 사항이 이 기기에 저장되었으며 자동으로 다시 시도합니다.',

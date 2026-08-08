@@ -1,6 +1,6 @@
-import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT } from '../../ts/chatDisplayTailCount'
+import { DEFAULT_CHAT_LOAD_INITIAL_PAGES } from '../../ts/chatLoadPages'
 
-export const DEFAULT_CHAT_LOAD_PAGES = DEFAULT_CHAT_DISPLAY_TAIL_COUNT
+export const DEFAULT_CHAT_LOAD_PAGES = DEFAULT_CHAT_LOAD_INITIAL_PAGES
 export const CHAT_JUMP_LOAD_PADDING = 5
 
 export interface TranscriptWindowIdentityInput {

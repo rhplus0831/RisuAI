@@ -3,6 +3,11 @@ import { prebuiltNAIpresets, prebuiltPresets } from '../../../src/ts/process/tem
 import { defaultHotkeys, RETIRED_HOTKEY_ACTIONS } from '../../../src/ts/defaulthotkeys.js'
 import { LLMFormat } from '../../../src/ts/model/types.js'
 import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT } from '../../../src/ts/chatDisplayTailCount.js'
+import {
+  DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES,
+  DEFAULT_CHAT_LOAD_INITIAL_PAGES,
+  normalizeChatLoadPages,
+} from '../../../src/ts/chatLoadPages.js'
 import { createExtractedModelPreset, createExtractedPromptPreset } from '../../../src/ts/presetSplit.js'
 import {
   createDefaultLegacyFallbackModels,
@@ -220,6 +225,14 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'chatScreenWidth', 900)
   setDefault(database, 'autoTranslateNotificationDeferCapSeconds', 180)
   setDefault(database, 'chatDisplayTailCount', DEFAULT_CHAT_DISPLAY_TAIL_COUNT)
+  database.chatLoadInitialPages = normalizeChatLoadPages(
+    database.chatLoadInitialPages ?? database.chatDisplayTailCount,
+    DEFAULT_CHAT_LOAD_INITIAL_PAGES,
+  )
+  database.chatLoadAdditionalPages = normalizeChatLoadPages(
+    database.chatLoadAdditionalPages,
+    DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES,
+  )
   setDefault(database, 'customBackground', '')
   if (providerDefaults) {
     setDefault(database, 'textgenWebUIStreamURL', 'wss://localhost/api/')

@@ -439,6 +439,10 @@ export const languageEnglish = {
       'Adjusts the size of the close (X) button in the top right corner of the settings window. Default is 24.',
     chatDisplayTailCount:
       'Controls how many latest chat messages are rendered and hydrated when opening a chat. Lower values can make large chats open faster. Default is 30.',
+    chatLoadInitialPages:
+      'Number of recent chat messages to render when a chat screen opens. Higher values show more history immediately but can make long chats heavier to open.',
+    chatLoadAdditionalPages:
+      'Number of older chat messages to render each time you scroll to the top. Higher values reduce repeated loading but can make each load heavier.',
     showTypingEffect: 'When enabled, it will show a typing indicator while the assistant is generating a response.',
     dynamicOutputPrompt: 'When enabled, the schema information will be included in the request.',
     realmDirectOpen:
@@ -2256,6 +2260,8 @@ export const languageEnglish = {
   dynamicOutputPrompt: 'Dynamic Output Prompt',
   settingsCloseButtonSize: 'Settings Close Button Size',
   chatDisplayTailCount: 'Initial Chat Messages to Display',
+  chatLoadInitialPages: 'Initial Chat Load Count',
+  chatLoadAdditionalPages: 'Additional Chat Load Count',
   translating: 'Translating...',
   stackTraceTranslationFailed: 'Stack trace translation failed. Showing original obfuscated stack trace below.',
   apply: 'Apply',
