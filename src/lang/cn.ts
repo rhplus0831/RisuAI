@@ -1580,6 +1580,7 @@ export const languageChinese = {
   inputHookName: '钩子名称',
   inputHookPrompt: '钩子提示词',
   inputHookModel: '模型',
+  inputHookTranslation: '翻译',
   inputHookInheritOtherAxModel: '继承其他辅助模型',
   inputHookDelete: '删除钩子',
   inputHookDraftLabel: '草稿',

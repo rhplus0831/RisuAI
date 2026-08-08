@@ -277,6 +277,9 @@ High-risk chat areas:
   legacy hooks and hooks configured to inherit use the `otherAx` model role. Hook prompts
   support `{{slot::content}}`, `{{slot::draft}}`, and the bounded
   `{{slot::history::N}}` / `{{slot::historytrans::N}}` windows (`N` is 1–50).
+  A Draft hook's optional **Translation** setting keeps the existing review
+  step, then sends the reviewed hook output as the user message and stores the
+  original composer text in the message's source-bound translation field.
   History access expands the resident tail only as far as needed and shares the
   translator history renderer's disabled/comment boundary, greeting, persisted
   translation, and token-budget semantics.

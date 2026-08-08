@@ -1664,6 +1664,7 @@ export const languageSpanish = {
   inputHookName: 'Nombre del hook',
   inputHookPrompt: 'Prompt del hook',
   inputHookModel: 'Modelo',
+  inputHookTranslation: 'Traducción',
   inputHookInheritOtherAxModel: 'Heredar modelo auxiliar',
   inputHookDelete: 'Eliminar hook',
   inputHookDraftLabel: 'Borrador',

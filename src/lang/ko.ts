@@ -1805,6 +1805,7 @@ const languageKoreanBase = {
   inputHookName: '훅 이름',
   inputHookPrompt: '훅 프롬프트',
   inputHookModel: '모델',
+  inputHookTranslation: '번역',
   inputHookInheritOtherAxModel: '기타 보조 모델 상속',
   inputHookDelete: '훅 삭제',
   inputHookDraftLabel: '초안',

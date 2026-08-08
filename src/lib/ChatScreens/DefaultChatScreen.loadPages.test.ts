@@ -2,6 +2,7 @@ import { mount, tick, unmount } from 'svelte'
 import { get } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ActiveChatTarget, AppendCurrentChatUserMessageResult } from 'src/ts/chatCommands'
+import { sha256Hex } from 'src/ts/sha256Fallback'
 
 const loadPageMocks = vi.hoisted(() => ({
   abortActiveGeneration: vi.fn(),
@@ -1792,9 +1793,52 @@ describe('DefaultChatScreen transcript window state', () => {
       expect.objectContaining({ role: 'user', data: '  Ready draft  ' }),
       expect.objectContaining({ expectedTarget: expectedActiveTarget(0) }),
     )
+    const [sentMessage] = loadPageMocks.appendCurrentChatUserMessageForSend.mock.calls[0]
+    expect(sentMessage).not.toHaveProperty('translation')
     await waitFor(() => {
       expect(composer.value).toBe('')
       expect(draft.value).toBe('')
+    })
+  })
+
+  it('stores the original composer text as the translation for an enabled Draft hook', async () => {
+    seedDatabase([1])
+    const hook = {
+      id: 'translation-hook',
+      name: 'Translation Hook',
+      type: 'draft' as const,
+      prompt: 'prompt',
+      translation: true,
+    }
+    getResourceDatabase().inputHooks = [hook]
+    getResourceDatabase().characters[0].chats[0].selectedDraftHookId = hook.id
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-draft-input"]')).toBeTruthy())
+    const composer = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    const draft = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-draft-input"]')!
+    composer.value = 'Original composer text'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    draft.value = 'Draft hook output'
+    draft.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-draft-send"]')!.click()
+
+    await waitFor(() => expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledOnce())
+    const [sentMessage] = loadPageMocks.appendCurrentChatUserMessageForSend.mock.calls[0]
+    expect(sentMessage).toMatchObject({
+      role: 'user',
+      data: 'Draft hook output',
+      translation: {
+        text: 'Original composer text',
+        source: 'raw',
+        sourceHash: await sha256Hex('Draft hook output'),
+        targetLanguage: 'original',
+        inputLanguage: 'auto',
+        translatorType: 'llm',
+        settingsHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        updatedAt: expect.any(Number),
+      },
     })
   })
 

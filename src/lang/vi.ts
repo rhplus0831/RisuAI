@@ -1652,6 +1652,7 @@ export const languageVietnamese = {
   inputHookName: 'Tên hook',
   inputHookPrompt: 'Prompt của hook',
   inputHookModel: 'Mô hình',
+  inputHookTranslation: 'Bản dịch',
   inputHookInheritOtherAxModel: 'Kế thừa mô hình phụ trợ khác',
   inputHookDelete: 'Xóa hook',
   inputHookDraftLabel: 'Bản nháp',

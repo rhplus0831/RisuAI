@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
@@ -80,6 +81,27 @@ describe('messageStore CRUD', () => {
     expect(getAllChatIdsWithMessages(db)).toEqual(['chat-1'])
     expect(activeMessageIdExistsInChat(db, 'm2', 'chat-1')).toBe(true)
     expect(activeMessageIdExistsInChat(db, 'm2', 'chat-other')).toBe(false)
+  })
+
+  it('keeps a source-valid Draft-hook translation and clears it after the sent text changes', () => {
+    const db = makeDb(makeDataDir())
+    const data = 'Draft hook output{{inlayed::asset-a}}'
+    const translation = {
+      text: 'Original composer text',
+      source: 'raw',
+      sourceHash: createHash('sha256').update(data).digest('hex'),
+      targetLanguage: 'original',
+      inputLanguage: 'auto',
+      translatorType: 'llm',
+      settingsHash: 'a'.repeat(64),
+      updatedAt: 123,
+    }
+    replaceChatMessages(db, 'chat-1', [msg('m1', 'user', data, { translation })])
+
+    expect(getChatMessages(db, 'chat-1')).toEqual([msg('m1', 'user', data, { translation })])
+
+    expect(updateActiveMessageById(db, 'm1', { data: 'Edited Draft output' })).toMatchObject({ ok: true })
+    expect(getChatMessages(db, 'chat-1')).toEqual([msg('m1', 'user', 'Edited Draft output', { translation: null })])
   })
 
   it('reads ranges by logical row offset even when stored seq values are sparse', () => {

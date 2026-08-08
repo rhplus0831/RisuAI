@@ -3784,6 +3784,8 @@ export type InputHook = {
   name: string
   type: 'draft' | 'btw'
   prompt: string
+  /** Store the original composer text as the sent Draft message's translation. */
+  translation?: boolean
   /** Missing on legacy hooks; omission inherits the Other Auxiliary model role. */
   model?: InputHookModel
 }

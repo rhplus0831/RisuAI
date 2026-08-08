@@ -2,6 +2,7 @@
   import { PlusIcon, TrashIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import Button from 'src/lib/UI/GUI/Button.svelte'
+  import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
   import OptionInput from 'src/lib/UI/GUI/OptionInput.svelte'
   import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
   import TextAreaInput from 'src/lib/UI/GUI/TextAreaInput.svelte'
@@ -43,6 +44,7 @@
         type: newHookType,
         prompt: '',
         model: { mode: 'inheritOtherAx' },
+        ...(newHookType === 'draft' ? { translation: false } : {}),
       })
     })
   }
@@ -131,6 +133,13 @@
           <span class="inline-flex items-center gap-2"><TrashIcon size={16} />{language.inputHookDelete}</span>
         </Button>
       </div>
+
+      {#if hook.type === 'draft'}
+        <CheckInput
+          name={language.inputHookTranslation}
+          check={hook.translation === true}
+          onChange={(translation) => updateHook(index, { translation })} />
+      {/if}
 
       <label class="flex flex-col gap-1">
         <span class="text-sm text-textcolor2">{language.inputHookPrompt}</span>

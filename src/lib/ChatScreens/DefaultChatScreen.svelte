@@ -131,6 +131,7 @@
     type DefaultChatComposerDraftGeneration,
   } from './DefaultChatScreen.composerDrafts'
   import { runInputHook, type InputHookHistoryContext } from 'src/ts/process/inputHooks'
+  import { createDraftHookTranslation } from 'src/ts/process/draftHookTranslation'
   import { maximumHistorySlotCount } from 'src/ts/translator/historySlots'
   import InputHookPickerDialog from './InputHookPickerDialog.svelte'
   import {
@@ -1492,11 +1493,26 @@
       const selectedCharacter = getDatabase().characters[activeTarget.selectedCharID]
       const liveChat = selectedCharacter?.chats[activeTarget.chatPage]
       if (!liveChat) return
+      const messageData = `${composerOperation.draftText}${appendInlayMarkers(composerOperation.fileInput)}`
+      const liveDraftHook = getDatabase().inputHooks?.find(
+        (hook) => hook.id === liveChat.selectedDraftHookId && hook.type === 'draft',
+      )
+      const translation =
+        liveDraftHook?.translation === true
+          ? await createDraftHookTranslation({
+              hook: liveDraftHook,
+              messageData,
+              originalText: composerOperation.messageInput,
+            })
+          : undefined
+      if (!isActiveChatTargetFresh(activeTarget) || !isCurrentComposerOperation(composerOperation)) return
+
       const userMessage: Message = {
         role: 'user',
-        data: `${composerOperation.draftText}${appendInlayMarkers(composerOperation.fileInput)}`,
+        data: messageData,
         time: Date.now(),
         name: null,
+        ...(translation ? { translation } : {}),
       }
       const preflight = preflightChatSendBeforeMutation({
         currentChar: selectedCharacter,

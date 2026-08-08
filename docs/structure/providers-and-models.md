@@ -285,7 +285,11 @@ drops oldest entries until the combined source/translated rendering fits
 for that bounded window and rejects stale chat/composer ownership.
 Each input hook can select a durable model profile. Hooks without a selection,
 including legacy hook records without a `model` field, inherit the `otherAx`
-model role and its normal fallback behavior.
+model role and its normal fallback behavior. Draft hooks can also opt into
+**Translation** behavior: the reviewed Draft output becomes the sent message's
+raw text, while the original composer text is stored as its source-bound
+translation. The source hash covers the exact sent text, including inlay
+markers, so later source edits invalidate the paired original text normally.
 `src/ts/process/inputHooks.test.ts`,
 `src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts`, and
 `server/fastify/__tests__/rawMessageTranslation.test.ts` are the durable

@@ -61,6 +61,10 @@ function modelSelect(name: string): HTMLSelectElement {
   return select!
 }
 
+function translationCheckbox(): HTMLInputElement | null {
+  return target.querySelector<HTMLInputElement>(`input[type="checkbox"][aria-label="${language.inputHookTranslation}"]`)
+}
+
 beforeEach(() => {
   inputHookSettingsMocks.setInputHooks([
     {
@@ -134,6 +138,31 @@ describe('InputHookSettings model profiles', () => {
     target.querySelector<HTMLButtonElement>(`button[aria-label="${language.inputHookAdd}"]`)!.click()
     await tick()
 
-    expect(inputHookSettingsMocks.readInputHooks().at(-1)?.model).toEqual({ mode: 'inheritOtherAx' })
+    expect(inputHookSettingsMocks.readInputHooks().at(-1)).toMatchObject({
+      model: { mode: 'inheritOtherAx' },
+      translation: false,
+    })
+  })
+
+  it('shows and persists Translation only for Draft hooks', async () => {
+    const checkbox = translationCheckbox()
+    expect(checkbox).toBeTruthy()
+    expect(checkbox!.checked).toBe(false)
+
+    checkbox!.click()
+    await tick()
+    expect(inputHookSettingsMocks.readInputHooks()[0].translation).toBe(true)
+
+    inputHookSettingsMocks.setInputHooks([
+      {
+        id: 'btw-hook',
+        name: 'BTW Hook',
+        type: 'btw',
+        prompt: 'Answer this.',
+        translation: true,
+      },
+    ])
+    await tick()
+    expect(translationCheckbox()).toBeNull()
   })
 })

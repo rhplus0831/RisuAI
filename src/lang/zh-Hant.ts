@@ -1658,6 +1658,7 @@ export const languageChineseTraditional = {
   inputHookName: '鉤子名稱',
   inputHookPrompt: '鉤子提示詞',
   inputHookModel: '模型',
+  inputHookTranslation: '翻譯',
   inputHookInheritOtherAxModel: '繼承其他輔助模型',
   inputHookDelete: '刪除鉤子',
   inputHookDraftLabel: '草稿',
