@@ -56,4 +56,4 @@ architecture (see `STRUCTURE.md` and `docs/structure/`).
 
 | Sweep | Range | Status |
 | --- | --- | --- |
-| [2026-08-07](sweep-2026-08-07.md) | `71c476e9c..f3f0242fb` (85 units) | porting in progress — F6, F3, F2 done; F1 skipped |
+| [2026-08-07](sweep-2026-08-07.md) | `71c476e9c..f3f0242fb` (85 units) | porting in progress — F6, F3, F2, fixes u5/u70/u81a done; F1 skipped |
