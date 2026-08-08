@@ -807,6 +807,20 @@ describe('accessibility database normalization', () => {
     setDatabase(disabledData)
     expect(getDatabase().floatingChatInput).toBe(false)
   })
+
+  it('defaults the all-model additional-parameters opt-in to false and preserves true', () => {
+    seedPresetDatabase()
+    const legacyData = clonePlain(getDatabase())
+    delete (legacyData as unknown as Record<string, unknown>).applyAdditionalParamsToAll
+
+    setDatabase(legacyData)
+    expect(getDatabase().applyAdditionalParamsToAll).toBe(false)
+
+    const enabledData = clonePlain(getDatabase())
+    enabledData.applyAdditionalParamsToAll = true
+    setDatabase(enabledData)
+    expect(getDatabase().applyAdditionalParamsToAll).toBe(true)
+  })
 })
 
 describe('sentence paragraph database normalization', () => {

@@ -1318,6 +1318,7 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'proxyKey',
     'bias',
     'additionalParams',
+    'applyAdditionalParamsToAll',
     'aiModel',
     'subModel',
     'modelRoles',
@@ -1667,6 +1668,7 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
 }
 
 const BOOLEAN_SETTING_KEYS = new Set([
+  'applyAdditionalParamsToAll',
   'askRemoval',
   'autoContinueChat',
   'autoScrollToNewMessage',

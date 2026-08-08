@@ -42,6 +42,11 @@ describe('settings group contracts', () => {
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.display).toContain('reducedMotion')
   })
 
+  it('persists the all-model additional-parameters opt-in with provider settings', () => {
+    expect(SERVER_SETTINGS_GROUP_BY_KEY.applyAdditionalParamsToAll).toBe('providers')
+    expect(SERVER_SETTINGS_KEYS_BY_GROUP.providers).toContain('applyAdditionalParamsToAll')
+  })
+
   it('persists the floating chat input through the sidebar settings group', () => {
     expect(SERVER_SETTINGS_GROUP_BY_KEY.floatingChatInput).toBe('sidebar')
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.sidebar).toContain('floatingChatInput')

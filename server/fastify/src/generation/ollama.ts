@@ -1,3 +1,4 @@
+import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult, CompletionStreamFrame } from './frames.js'
 import { STREAM_BUFFER_OVERFLOW_ERROR, streamBufferExceedsCap } from './sse.js'
 import { readBoundedBodyText } from './body.js'
@@ -16,6 +17,7 @@ export interface OllamaRequest {
   think?: boolean | 'low' | 'medium' | 'high'
   tools?: OllamaTool[]
   extraHeaders?: Record<string, string>
+  additionalParams?: Array<[string, string]>
   signal: AbortSignal
 }
 
@@ -56,6 +58,7 @@ interface OllamaResolveInput {
   think?: unknown
   tools?: unknown
   extraHeaders?: Record<string, string>
+  additionalParams?: Array<[string, string]>
   signal: AbortSignal
 }
 
@@ -187,6 +190,7 @@ export function resolveOllamaRequest(input: OllamaResolveInput): OllamaRequest |
     think,
     tools,
     extraHeaders: input.extraHeaders,
+    additionalParams: input.additionalParams,
     signal: input.signal,
   }
 }
@@ -220,6 +224,18 @@ function buildPayload(req: OllamaRequest, stream: boolean): Record<string, unkno
   if (req.think !== undefined) body.think = req.think
   if (req.tools !== undefined && req.tools.length > 0) body.tools = req.tools
   return body
+}
+
+function buildRequestInit(req: OllamaRequest, stream: boolean): { body: string; headers: Record<string, string> } {
+  const body = buildPayload(req, stream)
+  const requestHeaders = headers(req)
+  if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
+    applyAdditionalParameters(body, requestHeaders, req.additionalParams)
+  }
+  // Streaming is a transport invariant chosen by the caller, not a user body
+  // override. This matches the retained browser builder's post-DSL reset.
+  body.stream = stream
+  return { body: JSON.stringify(body), headers: requestHeaders }
 }
 
 export interface OllamaResponseMessage {
@@ -291,10 +307,11 @@ export async function runOllamaRaw(req: OllamaRequest): Promise<OllamaRawResult>
 
   let response: Response
   try {
+    const init = buildRequestInit(req, false)
     response = await fetch(endpoint(req), {
       method: 'POST',
-      headers: headers(req),
-      body: JSON.stringify(buildPayload(req, false)),
+      headers: init.headers,
+      body: init.body,
       signal: req.signal,
     })
   } catch (err) {
@@ -363,10 +380,11 @@ export async function* runOllamaStream(req: OllamaRequest): AsyncGenerator<Compl
   const url = endpoint(req)
   let response: Response
   try {
+    const init = buildRequestInit(req, true)
     response = await fetch(url, {
       method: 'POST',
-      headers: headers(req),
-      body: JSON.stringify(buildPayload(req, true)),
+      headers: init.headers,
+      body: init.body,
       signal: req.signal,
     })
   } catch (err) {

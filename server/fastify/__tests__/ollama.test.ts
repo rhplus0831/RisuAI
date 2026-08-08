@@ -258,6 +258,36 @@ describe('runOllama (buffered)', () => {
     ])
   })
 
+  it('applies additional parameters and headers while preserving buffered stream:false', async () => {
+    let captured: RequestInit | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = init
+      return ok({ message: { role: 'assistant', content: 'x' }, done: true })
+    })
+    const resolved = resolveOllamaRequest({
+      model: 'llama3',
+      messages: [{ role: 'user', content: 'hi' }],
+      baseUrl: 'http://localhost:11434',
+      temperature: 0.4,
+      additionalParams: [
+        ['options.temperature', '0.9'],
+        ['custom_flag', 'true'],
+        ['stream', 'true'],
+        ['header::X-Global-Trace', 'ollama'],
+      ],
+      signal: new AbortController().signal,
+    })!
+
+    await runOllama(resolved)
+
+    expect(JSON.parse(captured!.body as string)).toMatchObject({
+      stream: false,
+      custom_flag: true,
+      options: { temperature: 0.9 },
+    })
+    expect((captured!.headers as Record<string, string>)['X-Global-Trace']).toBe('ollama')
+  })
+
   it.each([
     ['off', false],
     ['on', true],

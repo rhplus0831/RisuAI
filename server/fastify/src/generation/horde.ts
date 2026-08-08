@@ -1,3 +1,4 @@
+import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult } from './frames.js'
 import { readBoundedBodyJson, readBoundedBodyText } from './body.js'
 import { extractApiResponseMetadata, mergeApiResponseMetadata } from './apiMetadata.js'
@@ -36,6 +37,7 @@ export interface HordeRequest {
   temperature?: number
   topK?: number
   topP?: number
+  additionalParams?: Array<[string, string]>
   /** Override poll interval for deterministic tests. Defaults to 2 s. */
   pollIntervalMs?: number
   /** Override wall-clock timeout. Defaults to 5 min. */
@@ -52,6 +54,7 @@ interface HordeResolveInput {
   temperature?: unknown
   topK?: unknown
   topP?: unknown
+  additionalParams?: Array<[string, string]>
   pollIntervalMs?: unknown
   timeoutMs?: unknown
   signal: AbortSignal
@@ -91,6 +94,7 @@ export function resolveHordeRequest(input: HordeResolveInput): HordeRequest | nu
     temperature,
     topK,
     topP,
+    additionalParams: input.additionalParams,
     pollIntervalMs,
     timeoutMs,
     signal: input.signal,
@@ -119,6 +123,15 @@ function buildAsyncPayload(req: HordeRequest): Record<string, unknown> {
     payload.models = [req.model, req.model.trim(), ' ' + req.model, req.model + ' ']
   }
   return payload
+}
+
+function buildAsyncRequestInit(req: HordeRequest): { body: string; headers: Record<string, string> } {
+  const body = buildAsyncPayload(req)
+  const headers: Record<string, string> = { 'content-type': 'application/json', apikey: req.apiKey }
+  if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
+    applyAdditionalParameters(body, headers, req.additionalParams)
+  }
+  return { body: JSON.stringify(body), headers }
 }
 
 interface AsyncResponse {
@@ -204,10 +217,11 @@ export async function runHorde(req: HordeRequest): Promise<CompletionResult> {
   // Step 1: submit the async job.
   let asyncResp: Response
   try {
+    const init = buildAsyncRequestInit(req)
     asyncResp = await fetch(`${HORDE_BASE_URL}/generate/text/async`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', apikey: req.apiKey },
-      body: JSON.stringify(buildAsyncPayload(req)),
+      headers: init.headers,
+      body: init.body,
       signal: req.signal,
     })
   } catch (err) {

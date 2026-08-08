@@ -1622,6 +1622,7 @@ export const languageEnglish = {
   log: 'Log',
   popularityLevelDesc: 'Popularity increases with downloads, etc. To estimate, 3.7 popularity is about 1 downloads.',
   additionalParams: 'Additional Parameters',
+  applyAdditionalParamsToAll: 'Apply Additional Parameters to All Models',
   heightMode: 'Height Mode',
   useAdvancedEditor: 'Use Advanced Editor',
   noWaitForTranslate: 'No Wait for Translate',

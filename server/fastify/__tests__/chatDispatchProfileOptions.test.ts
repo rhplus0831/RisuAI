@@ -614,6 +614,41 @@ describe('dispatchChatProvider final wire controls', () => {
 })
 
 describe('dispatchChatProvider profile providerOptions', () => {
+  it.each([
+    { enabled: true, expectedApplied: true },
+    { enabled: false, expectedApplied: false },
+  ])(
+    'applies ordinary Gemini flat body/header params only when the all-model opt-in is $enabled',
+    async ({ enabled, expectedApplied }) => {
+      const database = db({
+        aiModel: 'gemini-2.5-flash',
+        google: { accessToken: 'profile-google-key', projectId: '' },
+        applyAdditionalParamsToAll: enabled,
+        additionalParams: [
+          ['globalFlag', 'true'],
+          ['header::X-Global-Trace', 'enabled'],
+        ],
+      } as Partial<Database>)
+      const profile = resolveModelProfile({
+        database,
+        lookupModelInfo: (_database, id) =>
+          geminiModelInfo({
+            id,
+            internalID: 'models/gemini-opt-in-wire-model',
+            provider: LLMProvider.GoogleCloud,
+            format: LLMFormat.GoogleCloud,
+          }),
+      })
+      const captured = captureDispatchRequests(okGeminiResponse())
+
+      await dispatchWithProfile(profile, database)
+
+      expect(captured).toHaveLength(1)
+      expect(captured[0].body.globalFlag).toBe(expectedApplied ? true : undefined)
+      expect(captured[0].headers['X-Global-Trace']).toBe(expectedApplied ? 'enabled' : undefined)
+    },
+  )
+
   it('emits metadata-only prompt reformat metrics when provider flags change rows', async () => {
     const profile = resolveModelProfile({
       database: db({

@@ -184,6 +184,14 @@ export const accessibilitySettingsItems: SettingItem[] = [
     keywords: ['bulk', 'enable', 'multiple'],
   },
   {
+    id: 'acc.applyAdditionalParamsToAll',
+    type: 'check',
+    labelKey: 'applyAdditionalParamsToAll',
+    bindKey: 'applyAdditionalParamsToAll',
+    getValue: (db) => db.applyAdditionalParamsToAll === true,
+    keywords: ['apply', 'additional', 'parameters', 'all', 'models'],
+  },
+  {
     id: 'acc.showTranslationLoading',
     type: 'check',
     labelKey: 'showTranslationLoading',

@@ -3151,6 +3151,7 @@ export function setDatabase(data: Database) {
   data.modules ??= []
   data.enabledModules ??= []
   data.additionalParams ??= []
+  data.applyAdditionalParamsToAll ??= false
   data.heightMode ??= 'normal'
   data.antiClaudeOverload ??= false
   data.ollamaURL ??= ''
@@ -4024,6 +4025,7 @@ export interface Database {
   sideMenuRerollButton?: boolean
   requestInfoInsideChat?: boolean
   additionalParams: [string, string][]
+  applyAdditionalParamsToAll: boolean
   heightMode: string
   noWaitForTranslate: boolean
   antiClaudeOverload: boolean

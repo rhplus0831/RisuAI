@@ -1,3 +1,4 @@
+import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult } from './frames.js'
 import { extractApiResponseMetadata } from './apiMetadata.js'
 import { flattenForLegacyInstruct } from './openaiLegacyInstruct.js'
@@ -13,6 +14,7 @@ export interface KoboldRequest {
   topK?: number
   topA?: number
   repetitionPenalty?: number
+  additionalParams?: Array<[string, string]>
   signal: AbortSignal
 }
 
@@ -26,6 +28,7 @@ interface ResolveInput {
   topK?: unknown
   topA?: unknown
   repetitionPenalty?: unknown
+  additionalParams?: Array<[string, string]>
   signal: AbortSignal
 }
 
@@ -67,6 +70,7 @@ export function resolveKoboldRequest(input: ResolveInput): KoboldRequest | null 
     topK,
     topA,
     repetitionPenalty,
+    additionalParams: input.additionalParams,
     signal: input.signal,
   }
 }
@@ -98,6 +102,15 @@ function buildPayload(req: KoboldRequest): Record<string, unknown> {
   return body
 }
 
+function buildRequestInit(req: KoboldRequest): { body: string; headers: Record<string, string> } {
+  const body = buildPayload(req)
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
+    applyAdditionalParameters(body, headers, req.additionalParams)
+  }
+  return { body: JSON.stringify(body), headers }
+}
+
 interface KoboldResponse {
   results?: Array<{ text?: unknown }>
 }
@@ -109,10 +122,11 @@ export async function runKobold(req: KoboldRequest): Promise<CompletionResult> {
 
   let response: Response
   try {
+    const init = buildRequestInit(req)
     response = await fetch(endpoint(req), {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(buildPayload(req)),
+      headers: init.headers,
+      body: init.body,
       signal: req.signal,
     })
   } catch (err) {

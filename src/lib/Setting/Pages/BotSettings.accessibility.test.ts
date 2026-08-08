@@ -20,6 +20,14 @@ describe('BotSettings icon action names', () => {
   })
 })
 
+describe('BotSettings additional parameters visibility', () => {
+  it('shows the table for all model controls and checks its own row count for the empty state', () => {
+    expect(source).toContain('{#if showModelOthersControls}')
+    expect(source).not.toContain('{#if showModelOthersControls && usesReverseProxyModel}')
+    expect(source).toContain('{#if activeAdditionalParamsDraft.value.length === 0}')
+  })
+})
+
 describe('BotSettings direct slider names', () => {
   it('keeps every direct slider named for its parameter in each mutually exclusive model section', () => {
     const sliderTags = source.match(/<SliderInput\b[\s\S]*?\/>/g) ?? []

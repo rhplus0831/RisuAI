@@ -40,6 +40,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   aiModel: 'providers',
   ainconfig: 'providers',
   additionalParams: 'providers',
+  applyAdditionalParamsToAll: 'providers',
   alwaysScrollToNewMessage: 'sidebar',
   animationSpeed: 'display',
   reducedMotion: 'display',

@@ -9,7 +9,13 @@ import { callTool, decodeToolCall, encodeToolCall } from '../mcp/mcp'
 import { alertError } from 'src/ts/alert'
 import { addFetchLog } from 'src/ts/globalApi.svelte'
 import type { RequestDataArgumentExtended, requestDataResponse, StreamResponseChunk } from './request'
-import { applyAdditionalParameters, applyParameters, getAdditionalParameters, type LLMParameter } from './shared'
+import {
+  applyAdditionalParameters,
+  applyParameters,
+  getAdditionalParameters,
+  getRequestAdditionalParameters,
+  type LLMParameter,
+} from './shared'
 import { bodyIntercepterStore } from 'src/ts/stores.svelte'
 import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
 
@@ -583,9 +589,18 @@ export async function requestGoogleCloudVertex(arg: RequestDataArgumentExtended)
     body.tools = undefined
   }
 
-  if (arg.aiModel === 'reverse_proxy' || arg.aiModel?.startsWith('xcustom:::')) {
-    body = applyAdditionalParameters(body, headers, getAdditionalParameters(arg.aiModel))
-  }
+  if (resolvedProfile) Object.assign(headers, providerOptions.extraHeaders ?? {})
+  body = applyAdditionalParameters(
+    body,
+    headers,
+    resolvedProfile
+      ? getRequestAdditionalParameters(
+          arg.aiModel,
+          providerOptions.additionalParams ?? [],
+          providerOptions.extraHeaders,
+        )
+      : getAdditionalParameters(arg.aiModel),
+  )
 
   if (arg.previewBody) {
     return {

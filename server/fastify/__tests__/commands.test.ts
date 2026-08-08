@@ -732,6 +732,15 @@ describe('Phase 9-1 command foundation', () => {
     expect(res.statusCode).toBe(400)
     expect(res.json().error).toBe('streamGeminiThoughts must be a boolean')
 
+    const badAdditionalParamsOptIn = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/providers',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { applyAdditionalParamsToAll: 'yes' } },
+    })
+    expect(badAdditionalParamsOptIn.statusCode).toBe(400)
+    expect(badAdditionalParamsOptIn.json().error).toBe('applyAdditionalParamsToAll must be a boolean')
+
     const emptyMinP = await harness.app.inject({
       method: 'PATCH',
       url: '/api/v1/commands/settings/runtime',
@@ -3535,6 +3544,7 @@ describe('Phase 9-2a scalar settings groups', () => {
           ainconfig: { top_p: 0.7, top_k: 90 },
           bias: [['token', -10]],
           additionalParams: [['stop', 'value']],
+          applyAdditionalParamsToAll: true,
           huggingfaceKey: 'huggingface-secret',
         },
       },
@@ -3764,6 +3774,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       ainconfig: { top_p: 0.7, top_k: 90 },
       bias: [['token', -10]],
       additionalParams: [['stop', 'value']],
+      applyAdditionalParamsToAll: true,
       huggingfaceKey: MASKED_PROVIDER_SECRET,
       maxContext: 12000,
       useStreaming: true,

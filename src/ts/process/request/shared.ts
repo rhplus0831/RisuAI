@@ -78,7 +78,7 @@ export function getAdditionalParameters(aiModel?: string): [string, string][] {
   }
 
   if (!aiModel.startsWith('xcustom:::')) {
-    return []
+    return db.applyAdditionalParamsToAll === true ? [...(db.additionalParams ?? [])] : []
   }
 
   const found = db.customModels.find((model) => model.id === aiModel)
@@ -96,6 +96,29 @@ export function getAdditionalParameters(aiModel?: string): [string, string][] {
   }
 
   return additionalParams
+}
+
+/**
+ * Resolve additional parameters for a profile-aware browser request. Special
+ * reverse-proxy/custom-model profiles keep their existing profile-owned
+ * snapshot; ordinary models receive opt-in globals first and profile rows
+ * last so profile-owned additional parameters win conflicts.
+ */
+export function getRequestAdditionalParameters(
+  aiModel: string | undefined,
+  profileAdditionalParams?: [string, string][],
+  profileExtraHeaders?: Record<string, string>,
+): [string, string][] {
+  if (!aiModel) return []
+  if (profileAdditionalParams === undefined) return getAdditionalParameters(aiModel)
+  if (aiModel === 'reverse_proxy' || aiModel.startsWith('xcustom:::')) return [...profileAdditionalParams]
+
+  const profileHeaderNames = new Set(Object.keys(profileExtraHeaders ?? {}).map((header) => header.toLocaleLowerCase()))
+  const globalParams = getAdditionalParameters(aiModel).filter(([key]) => {
+    if (!key.startsWith('header::')) return true
+    return !profileHeaderNames.has(key.slice('header::'.length).toLocaleLowerCase())
+  })
+  return [...globalParams, ...profileAdditionalParams]
 }
 
 export function applyAdditionalParameters<T extends Record<string, any>>(

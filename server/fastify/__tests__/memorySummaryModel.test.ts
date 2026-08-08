@@ -90,6 +90,36 @@ describe('resolveMemorySummaryModel', () => {
     })
   })
 
+  it('applies opted-in flat additional parameters to an ordinary memory provider', () => {
+    const result = resolveMemorySummaryModel(
+      database({
+        modelRoles: { memory: 'openrouter' } as Database['modelRoles'],
+        openrouterKey: 'openrouter-secret',
+        openrouterRequestModel: 'openai/gpt-4o-mini',
+        additionalParams: [
+          ['temperature', '0.2'],
+          ['header::X-Global-Trace', 'memory'],
+        ],
+        applyAdditionalParamsToAll: true,
+      }),
+      'memory',
+    )
+
+    expect(result).toMatchObject({
+      ok: true,
+      request: {
+        options: {
+          openrouter: {
+            additionalParams: [
+              ['temperature', '0.2'],
+              ['header::X-Global-Trace', 'memory'],
+            ],
+          },
+        },
+      },
+    })
+  })
+
   it('builds NanoGPT memory requests from resolved profile provider options', () => {
     const result = resolveMemorySummaryModel(
       database({

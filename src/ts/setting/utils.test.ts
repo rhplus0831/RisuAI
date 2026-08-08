@@ -356,6 +356,18 @@ describe('server-backed data-driven settings', () => {
     expect(item?.getValue?.({ floatingChatInput: false } as never)).toBe(false)
   })
 
+  it('exposes the default-off global additional-parameters opt-in under Accessibility', () => {
+    const item = accessibilitySettingsItems.find((candidate) => candidate.id === 'acc.applyAdditionalParamsToAll')
+
+    expect(item).toMatchObject({
+      type: 'check',
+      labelKey: 'applyAdditionalParamsToAll',
+      bindKey: 'applyAdditionalParamsToAll',
+    })
+    expect(item?.getValue?.({ applyAdditionalParamsToAll: undefined } as never)).toBe(false)
+    expect(item?.getValue?.({ applyAdditionalParamsToAll: true } as never)).toBe(true)
+  })
+
   it('keeps Display custom-control watchers disjoint from renderer-owned bindings', () => {
     const rendererKeys = new Set(
       collectSettingItems(displaySettingsItems).flatMap((item) =>

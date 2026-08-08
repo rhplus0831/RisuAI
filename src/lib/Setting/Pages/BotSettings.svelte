@@ -2173,7 +2173,7 @@
       </Accordion>
     {/if}
 
-    {#if showModelOthersControls && usesReverseProxyModel}
+    {#if showModelOthersControls}
       <Accordion styled name="{language.additionalParams} " help="additionalParams">
         <table class="contain w-full max-w-full tabler">
           <tbody>

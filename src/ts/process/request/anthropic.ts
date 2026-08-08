@@ -12,7 +12,12 @@ import type { MultiModal } from '../index.svelte'
 import { extractJSON } from '../templates/jsonSchema'
 import { callTool, decodeToolCall, encodeToolCall } from '../mcp/mcp'
 import type { RequestDataArgumentExtended, requestDataResponse, StreamResponseChunk } from './request'
-import { applyAdditionalParameters, applyParameters, getAdditionalParameters } from './shared'
+import {
+  applyAdditionalParameters,
+  applyParameters,
+  getAdditionalParameters,
+  getRequestAdditionalParameters,
+} from './shared'
 
 interface Claude3TextBlock {
   type: 'text'
@@ -456,7 +461,7 @@ export async function requestClaude(arg: RequestDataArgumentExtended): Promise<r
 
   const bedrock = arg.modelInfo.format === LLMFormat.AWSBedrockClaude
   const additionalParams = hasResolvedProfile
-    ? (providerOptions?.additionalParams ?? [])
+    ? getRequestAdditionalParameters(aiModel, providerOptions?.additionalParams ?? [], providerOptions?.extraHeaders)
     : getAdditionalParameters(aiModel)
   const hasCustomAnthropicBeta = additionalParams.some(([key]) => {
     return key.startsWith('header::') && key.slice('header::'.length).toLocaleLowerCase() === 'anthropic-beta'

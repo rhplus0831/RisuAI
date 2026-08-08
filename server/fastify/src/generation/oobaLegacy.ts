@@ -1,3 +1,4 @@
+import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult } from './frames.js'
 import { extractApiResponseMetadata } from './apiMetadata.js'
 import { flattenForLegacyInstruct } from './openaiLegacyInstruct.js'
@@ -32,6 +33,7 @@ export interface OobaLegacyRequest {
   skipSpecialTokens?: boolean
   stoppingStrings?: string[]
   apiKey?: string
+  additionalParams?: Array<[string, string]>
   signal: AbortSignal
 }
 
@@ -64,6 +66,7 @@ interface ResolveInput {
   skipSpecialTokens?: unknown
   stoppingStrings?: unknown
   apiKey?: unknown
+  additionalParams?: Array<[string, string]>
   signal: AbortSignal
 }
 
@@ -150,6 +153,7 @@ export function resolveOobaLegacyRequest(input: ResolveInput): OobaLegacyRequest
     skipSpecialTokens: boolean(input.skipSpecialTokens),
     stoppingStrings,
     apiKey,
+    additionalParams: input.additionalParams,
     signal: input.signal,
   }
 }
@@ -198,6 +202,15 @@ function headers(req: OobaLegacyRequest): Record<string, string> {
   return h
 }
 
+function buildRequestInit(req: OobaLegacyRequest): { body: string; headers: Record<string, string> } {
+  const body = buildPayload(req)
+  const requestHeaders = headers(req)
+  if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
+    applyAdditionalParameters(body, requestHeaders, req.additionalParams)
+  }
+  return { body: JSON.stringify(body), headers: requestHeaders }
+}
+
 interface OobaResponse {
   results?: Array<{ text?: unknown }>
 }
@@ -209,10 +222,11 @@ export async function runOobaLegacy(req: OobaLegacyRequest): Promise<CompletionR
 
   let response: Response
   try {
+    const init = buildRequestInit(req)
     response = await fetch(endpoint(req), {
       method: 'POST',
-      headers: headers(req),
-      body: JSON.stringify(buildPayload(req)),
+      headers: init.headers,
+      body: init.body,
       signal: req.signal,
     })
   } catch (err) {

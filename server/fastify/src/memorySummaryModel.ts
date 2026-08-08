@@ -3,6 +3,7 @@ import { resolveModelProfile } from '../../../src/ts/model/modelProfileResolver.
 import type { Database } from '../../../src/ts/storage/database.svelte'
 import { resolveMemoryModelCapability } from '../../../src/ts/model/memoryModelCapability.js'
 import { type OpenAICompatibleOptions, type OpenAICompatibleProvider } from './generation/openaiCompatible.js'
+import { getProfileAdditionalParameters } from './generation/additionalParams.js'
 
 export interface MemorySummaryModelRequest {
   provider: OpenAICompatibleProvider
@@ -35,27 +36,36 @@ export function resolveMemorySummaryModel(db: Database, requestedModel: string):
     request: {
       provider: provider.provider,
       model: profile.requestModel,
-      options: buildMemorySummaryOptions(provider.provider, profile.providerOptions),
+      options: buildMemorySummaryOptions(db, profile.modelId, provider.provider, profile.providerOptions),
     },
   }
 }
 
 function buildMemorySummaryOptions(
+  db: Database,
+  modelId: string,
   provider: OpenAICompatibleProvider,
   options: ModelProfileProviderOptions,
 ): OpenAICompatibleOptions {
+  const additionalParams = getProfileAdditionalParameters(db, modelId, options.additionalParams, options.extraHeaders)
   if (provider === 'nanogpt') {
     return {
       nanogpt: withoutUndefined({
         apiKey: options.apiKey,
         providerHint: options.nanogpt?.providerHint,
         useSubscription: options.nanogpt?.useSubscriptionEndpoint,
+        additionalParams: additionalParams.length > 0 ? additionalParams : undefined,
       }),
     }
   }
 
   if (provider === 'openrouter') {
-    return { openrouter: withoutUndefined({ apiKey: options.apiKey }) }
+    return {
+      openrouter: withoutUndefined({
+        apiKey: options.apiKey,
+        additionalParams: additionalParams.length > 0 ? additionalParams : undefined,
+      }),
+    }
   }
 
   return {
@@ -63,7 +73,7 @@ function buildMemorySummaryOptions(
       apiKey: options.apiKey,
       baseUrl: options.baseUrl,
       extraHeaders: options.extraHeaders,
-      additionalParams: options.additionalParams,
+      additionalParams: additionalParams.length > 0 ? additionalParams : undefined,
       oobaSystemHoist: options.reverseProxy?.oobaSystemHoist === true ? true : undefined,
     }),
   }

@@ -61,6 +61,7 @@ import {
   type RequestHistoryContext,
 } from '../requestHistory.js'
 import { persistServerInlayAsset } from '../inlayAssetPersistence.js'
+import { getProfileAdditionalParameters } from '../generation/additionalParams.js'
 
 export interface ChatDispatchHistoryInput {
   db: DatabaseSync
@@ -1166,6 +1167,13 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
     throw new Error(route.reason)
   }
   const provider = route.provider
+  const resolvedAdditionalParams = getProfileAdditionalParameters(
+    db,
+    profile.modelId,
+    profile.providerOptions.additionalParams,
+    profile.providerOptions.extraHeaders,
+  )
+  const dispatchAdditionalParams = resolvedAdditionalParams.length > 0 ? resolvedAdditionalParams : undefined
 
   const configuredModel = resolveProviderModel(db, info, provider, profile)
   let model = configuredModel
@@ -1256,6 +1264,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
     const request = resolveEchoRequest({
       message: isDebugEchoProfile ? resolveDebugEchoMessage(profile) : db.echoMessage,
       delayMs: isDebugEchoProfile ? 0 : (db.echoDelay ?? 0) * 1000,
+      additionalParams: dispatchAdditionalParams,
       signal,
     })
     return stream ? runEchoStream(request) : bufferedResultFrames(runEcho(request))
@@ -1300,7 +1309,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       deepSeekThinkingOutput: info.flags.includes(LLMFlags.deepSeekThinkingOutput),
       logitBias: resolveOpenAILogitBias(args.biases ?? [], model, tokenizerEncodingFromDb(db)),
       extraHeaders: variant.extraHeaders,
-      additionalParams: variant.additionalParams,
+      additionalParams: dispatchAdditionalParams,
       oobaSystemHoist: variant.oobaSystemHoist,
       oobaArgs: variant.oobaArgs,
       signal,
@@ -1348,7 +1357,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       deepSeekThinkingOutput: info.flags.includes(LLMFlags.deepSeekThinkingOutput),
       logitBias: resolveOpenAILogitBias(args.biases ?? [], model, tokenizerEncodingFromDb(db)),
       extraHeaders: variant.extraHeaders,
-      additionalParams: variant.additionalParams,
+      additionalParams: dispatchAdditionalParams,
       oobaSystemHoist: variant.oobaSystemHoist,
       oobaArgs: variant.oobaArgs,
       signal,
@@ -1382,7 +1391,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       supportsXHighEffort: info.flags.includes(LLMFlags.claudeXHighEffort),
       oneHourCache: db.claude1HourCaching === true,
       extraHeaders: providerOptions.extraHeaders,
-      additionalParams: providerOptions.additionalParams,
+      additionalParams: dispatchAdditionalParams,
       signal,
       tools: args.tools,
       toolRounds: args.toolRounds,
@@ -1404,7 +1413,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       frequencyPenalty: parameters.frequencyPenalty,
       topP: parameters.topP,
       extraHeaders: providerOptions.extraHeaders,
-      additionalParams: providerOptions.additionalParams,
+      additionalParams: dispatchAdditionalParams,
       signal,
     })
     if (!request) throw new Error('options.mistral.apiKey is required')
@@ -1428,7 +1437,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       presencePenalty: parameters.presencePenalty,
       frequencyPenalty: parameters.frequencyPenalty,
       extraHeaders: providerOptions.extraHeaders,
-      additionalParams: providerOptions.additionalParams,
+      additionalParams: dispatchAdditionalParams,
       signal,
     })
     if (!request) throw new Error('cohere requires a user message to generate a response')
@@ -1457,7 +1466,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       noCivilIntegrity: info.flags.includes(LLMFlags.noCivilIntegrity),
       responseSchema: geminiResponseSchema(db, args.schema),
       extraHeaders: providerOptions.extraHeaders,
-      additionalParams: providerOptions.additionalParams,
+      additionalParams: dispatchAdditionalParams,
       streamThoughts: db.streamGeminiThoughts === true,
       signal,
       trace,
@@ -1500,7 +1509,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       presencePenalty: parameters.presencePenalty,
       frequencyPenalty: parameters.frequencyPenalty,
       extraHeaders: variant.extraHeaders,
-      additionalParams: variant.additionalParams,
+      additionalParams: dispatchAdditionalParams,
       signal,
     })
     if (!request) throw new Error('options["openai-legacy-instruct"].apiKey is required')
@@ -1535,7 +1544,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       // privacy contract; Ollama Cloud does not accept this OpenAI-only field.
       store: profile.modelId === 'ollama-cloud' ? undefined : false,
       extraHeaders: variant.extraHeaders,
-      additionalParams: variant.additionalParams,
+      additionalParams: dispatchAdditionalParams,
       signal,
     })
     if (!request) throw new Error('options["openai-responses"].apiKey is required')
@@ -1554,6 +1563,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       topK: parameters.topK,
       topA: parameters.topA,
       repetitionPenalty: parameters.repetitionPenalty,
+      additionalParams: dispatchAdditionalParams,
       signal,
     })
     if (!request) throw new Error('options.kobold.baseUrl is required')
@@ -1597,6 +1607,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       stoppingStrings:
         db.localStopStrings?.map((value) => value.replace(/\\n/gu, '\n')) ??
         buildOobaLegacyStopStrings(ooba?.formating?.userPrefix ?? '', db.username ?? 'User'),
+      additionalParams: dispatchAdditionalParams,
       signal,
     })
     if (!request) throw new Error('options["ooba-legacy"].baseUrl is required')
@@ -1624,6 +1635,8 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       topP: parameters.topP,
       topK: parameters.topK,
       think: resolveOllamaThinkMode(profile.providerOptions.ollama?.thinkingMode ?? db.ollamaThinkingMode),
+      extraHeaders: profile.providerOptions.extraHeaders,
+      additionalParams: dispatchAdditionalParams,
       signal,
     })
     if (!request) throw new Error('options.ollama.baseUrl is required')
@@ -1651,6 +1664,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       adaptiveThinkingEffort: db.adaptiveThinkingEffort,
       supportsAdaptiveThinking: info.flags.includes(LLMFlags.claudeAdaptiveThinking),
       supportsXHighEffort: info.flags.includes(LLMFlags.claudeXHighEffort),
+      additionalParams: dispatchAdditionalParams,
       signal,
     })
     if (!request) throw new Error('bedrock could not resolve request from the given options')
@@ -1668,6 +1682,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       temperature,
       topK: normalizeDispatchSampler(db.top_k),
       topP: normalizeDispatchSampler(db.top_p),
+      additionalParams: dispatchAdditionalParams,
       signal,
     })
     if (!request) throw new Error('options.horde.prompt is required')

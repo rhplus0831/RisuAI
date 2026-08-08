@@ -71,6 +71,7 @@ describe('database defaults', () => {
     expect(database.showSavingIcon).toBe(true)
     expect(database.useMonacoEditorOnDesktop).toBe(false)
     expect(database.useMonacoEditorOnMobile).toBe(false)
+    expect(database.applyAdditionalParamsToAll).toBe(false)
     expect(database.autoTranslate).toBeUndefined()
     expect(database.showGlobalLorebookAndRegex).toBe(false)
     expect(database.moodLightMembership).toEqual({ characterIds: [], folders: [] })
@@ -110,6 +111,12 @@ describe('database defaults', () => {
     const database = normalizeDatabaseDefaults({ reducedMotion: true }, { providerDefaults: false })
 
     expect(database.reducedMotion).toBe(true)
+  })
+
+  it('preserves the all-model additional-parameters opt-in', () => {
+    const database = normalizeDatabaseDefaults({ applyAdditionalParamsToAll: true }, { providerDefaults: false })
+
+    expect(database.applyAdditionalParamsToAll).toBe(true)
   })
 
   it('preserves an explicit floating-input opt-out', () => {

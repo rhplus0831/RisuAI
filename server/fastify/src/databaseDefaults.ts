@@ -367,6 +367,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'modules', [])
   setDefault(database, 'enabledModules', [])
   setDefault(database, 'additionalParams', [])
+  setDefault(database, 'applyAdditionalParamsToAll', false)
   setDefault(database, 'heightMode', 'normal')
   normalizeAntiServerOverload(database)
   setDefault(database, 'ollamaURL', '')

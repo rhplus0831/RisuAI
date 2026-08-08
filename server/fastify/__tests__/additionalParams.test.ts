@@ -2,8 +2,84 @@ import { describe, expect, it } from 'vitest'
 import {
   applyAdditionalParameters,
   coerceAdditionalParams,
+  getAdditionalParameters,
+  getProfileAdditionalParameters,
   parseAdditionalParamJsonValue,
 } from '../src/generation/additionalParams.js'
+
+describe('getAdditionalParameters sources', () => {
+  const flat: Array<[string, string]> = [
+    ['globalFlag', 'true'],
+    ['header::X-Global', 'enabled'],
+  ]
+
+  it('keeps ordinary models default-off and requires the literal opt-in boolean', () => {
+    expect(getAdditionalParameters({ additionalParams: flat }, 'gpt-5')).toEqual([])
+    expect(getAdditionalParameters({ additionalParams: flat, applyAdditionalParamsToAll: 'true' }, 'gpt-5')).toEqual([])
+    expect(getAdditionalParameters({ additionalParams: flat, applyAdditionalParamsToAll: true }, 'gpt-5')).toEqual(flat)
+  })
+
+  it('returns no parameters without a model even when the opt-in is enabled', () => {
+    expect(getAdditionalParameters({ additionalParams: flat, applyAdditionalParamsToAll: true })).toEqual([])
+  })
+
+  it('preserves reverse-proxy and custom-model source isolation', () => {
+    const database = {
+      additionalParams: flat,
+      applyAdditionalParamsToAll: true,
+      customModels: [
+        {
+          id: 'xcustom:::owned',
+          params: 'customFlag=true\nheader::X-Custom=owned\nvalue=two=parts\nignored',
+        },
+      ],
+    }
+    expect(getAdditionalParameters(database, 'reverse_proxy')).toEqual(flat)
+    expect(getAdditionalParameters(database, 'xcustom:::owned')).toEqual([
+      ['customFlag', 'true'],
+      ['header::X-Custom', 'owned'],
+      ['value', 'two=parts'],
+    ])
+  })
+
+  it('applies globals before profile rows and lets profile headers and params win', () => {
+    const resolved = getProfileAdditionalParameters(
+      {
+        additionalParams: [
+          ['priority', 'global'],
+          ['globalOnly', 'true'],
+          ['header::X-Owned', 'global'],
+          ['header::X-Global', 'global'],
+        ],
+        applyAdditionalParamsToAll: true,
+      },
+      'gpt-5',
+      [
+        ['priority', 'profile'],
+        ['header::X-Global', 'profile'],
+      ],
+      { 'x-owned': 'profile-extra-header' },
+    )
+
+    expect(resolved).toEqual([
+      ['priority', 'global'],
+      ['globalOnly', 'true'],
+      ['header::X-Global', 'global'],
+      ['priority', 'profile'],
+      ['header::X-Global', 'profile'],
+    ])
+  })
+
+  it('keeps resolved special-model profile rows exclusive from conflicting flat state', () => {
+    const database = { additionalParams: flat, applyAdditionalParamsToAll: true }
+    expect(getProfileAdditionalParameters(database, 'reverse_proxy', [['profileOnly', 'true']])).toEqual([
+      ['profileOnly', 'true'],
+    ])
+    expect(getProfileAdditionalParameters(database, 'xcustom:::owned', [['customOnly', 'true']])).toEqual([
+      ['customOnly', 'true'],
+    ])
+  })
+})
 
 describe('parseAdditionalParamJsonValue', () => {
   it('parses strict JSON', () => {

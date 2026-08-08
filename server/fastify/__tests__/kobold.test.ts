@@ -78,6 +78,30 @@ describe('runKobold', () => {
     expect(capturedUrl).toBe('http://localhost:5001/api/v1/generate')
   })
 
+  it('applies additional parameters after building the body and injects headers', async () => {
+    let captured: RequestInit | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = init
+      return ok({ results: [{ text: 'x' }] })
+    })
+    const resolved = resolveKoboldRequest({
+      messages: [{ role: 'user', content: 'hi' }],
+      baseUrl: 'http://localhost:5001',
+      temperature: 0.7,
+      additionalParams: [
+        ['temperature', '0.25'],
+        ['custom_flag', 'true'],
+        ['header::X-Global-Trace', 'kobold'],
+      ],
+      signal: new AbortController().signal,
+    })!
+
+    await runKobold(resolved)
+
+    expect(JSON.parse(captured!.body as string)).toMatchObject({ temperature: 0.25, custom_flag: true })
+    expect((captured!.headers as Record<string, string>)['X-Global-Trace']).toBe('kobold')
+  })
+
   it('returns fail with raw body on non-2xx', async () => {
     vi.stubGlobal('fetch', async () => new Response('overloaded', { status: 503 }))
     const resolved = resolveKoboldRequest({

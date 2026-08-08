@@ -571,6 +571,13 @@ durable profile context when present, then from flat compatibility settings when
 needed. Browser projections mask secrets through
 `server/fastify/src/providerSecrets.ts`; settings writes resolve masked
 sentinels back to current stored secrets.
+The legacy flat `additionalParams` table applies to every ordinary provider only
+when `applyAdditionalParamsToAll` is explicitly enabled; missing keys in older
+databases remain default-off. Reverse-proxy profiles continue to use the flat
+table and custom-model profiles continue to use their own `key=value` rows
+regardless of that toggle. For ordinary profiles, global rows apply after the
+provider body is built but before profile-owned rows, so profile values and
+explicit profile headers retain precedence.
 Provider adapters may be incremental or buffered. `/api/v1/generate/chat` maps
 both shapes to chat SSE frames and wraps buffered outputs as token/done frames,
 while direct `/api/v1/generate/completion` rejects streaming for buffered

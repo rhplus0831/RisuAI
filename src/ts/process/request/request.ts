@@ -29,7 +29,13 @@ import { requestGoogleCloudVertex } from './google'
 import { requestOpenAI, requestOpenAILegacyInstruct, requestOpenAIResponseAPI } from './openAI/requests'
 import { resolveServerCompletionRoute, requestServerCompletion } from './serverCompletion'
 import type { ServerToolCall, ServerToolRound } from './serverToolProtocol'
-import { applyAdditionalParameters, applyParameters, type ModelModeExtended } from './shared'
+import {
+  applyAdditionalParameters,
+  applyParameters,
+  getAdditionalParameters,
+  getRequestAdditionalParameters,
+  type ModelModeExtended,
+} from './shared'
 
 export type ToolCall = {
   name: string
@@ -127,6 +133,17 @@ async function withHalfStreamingMode(
   const resolved = await response
   if (resolved.type !== 'streaming' || !halfStreaming) return resolved
   return { ...resolved, halfStreaming: true }
+}
+
+function additionalParamsForRequest(arg: RequestDataArgumentExtended): [string, string][] {
+  const providerOptions = arg.resolvedProfile?.providerOptions
+  return arg.resolvedProfile
+    ? getRequestAdditionalParameters(
+        arg.aiModel,
+        providerOptions?.additionalParams ?? [],
+        providerOptions?.extraHeaders,
+      )
+    : getAdditionalParameters(arg.aiModel)
 }
 
 type OllamaThinkMode = boolean | 'low' | 'medium' | 'high'
@@ -1091,19 +1108,21 @@ async function requestNovelAI(arg: RequestDataArgumentExtended): Promise<request
     cfg_uc: '',
   }
 
-  const body = {
+  let body: Record<string, any> = {
     input: prompt,
     model: aiModel === 'novelai_kayra' ? 'kayra-v1' : 'clio-v1',
     parameters: payload,
   }
+  const headers: Record<string, string> = {
+    Authorization: 'Bearer ' + (arg.key ?? db.novelai.token),
+  }
+  body = applyAdditionalParameters(body, headers, additionalParamsForRequest(arg))
 
   const da = await globalFetch(
     aiModel === 'novelai_kayra' ? 'https://text.novelai.net/ai/generate' : 'https://api.novelai.net/ai/generate',
     {
       body: body,
-      headers: {
-        Authorization: 'Bearer ' + (arg.key ?? db.novelai.token),
-      },
+      headers,
       abortSignal,
       chatId: arg.chatId,
     },
@@ -1184,7 +1203,7 @@ async function requestOobaLegacy(arg: RequestDataArgumentExtended): Promise<requ
   }
 
   const profileApiKey = providerOptions?.apiKey?.trim()
-  const headers = hasResolvedProfile
+  const headers: Record<string, string> = hasResolvedProfile
     ? profileApiKey
       ? {
           'X-API-KEY': profileApiKey,
@@ -1195,6 +1214,9 @@ async function requestOobaLegacy(arg: RequestDataArgumentExtended): Promise<requ
       : {
           'X-API-KEY': db.mancerHeader,
         }
+
+  if (hasResolvedProfile) Object.assign(headers, providerOptions?.extraHeaders ?? {})
+  bodyTemplate = applyAdditionalParameters(bodyTemplate, headers, additionalParamsForRequest(arg))
 
   if (arg.previewBody) {
     return {
@@ -1413,19 +1435,23 @@ async function requestOoba(arg: RequestDataArgumentExtended): Promise<requestDat
     }
   }
 
+  const headers: Record<string, string> = {}
+  bodyTemplate = applyAdditionalParameters(bodyTemplate, headers, additionalParamsForRequest(arg))
+
   if (arg.previewBody) {
     return {
       type: 'success',
       result: JSON.stringify({
         url: urlStr,
         body: bodyTemplate,
-        headers: {},
+        headers,
       }),
     }
   }
 
   const response = await globalFetch(urlStr, {
     body: bodyTemplate,
+    headers,
     chatId: arg.chatId,
     abortSignal: arg.abortSignal,
   })
@@ -1537,11 +1563,20 @@ async function requestPlugin(arg: RequestDataArgumentExtended): Promise<requestD
 
 async function requestEcho(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const db = getDatabase()
-  const delay = db.echoDelay ?? 0
-  const message = db.echoMessage ?? 'Echo Message'
+  const body = applyAdditionalParameters(
+    {
+      delayMs: (db.echoDelay ?? 0) * 1000,
+      message: db.echoMessage ?? 'Echo Message',
+    },
+    {},
+    additionalParamsForRequest(arg),
+  )
+  const delayMs =
+    typeof body.delayMs === 'number' && Number.isFinite(body.delayMs) && body.delayMs > 0 ? body.delayMs : 0
+  const message = typeof body.message === 'string' ? body.message : (db.echoMessage ?? 'Echo Message')
 
-  if (delay > 0) {
-    await sleep(delay * 1000)
+  if (delayMs > 0) {
+    await sleep(delayMs)
   }
 
   return {
@@ -1574,7 +1609,7 @@ async function requestKobold(arg: RequestDataArgumentExtended): Promise<requestD
     url.pathname = 'api/v1/generate'
   }
 
-  const body = applyParameters(
+  let body = applyParameters(
     {
       prompt: prompt,
       max_length: maxTokens,
@@ -1590,6 +1625,10 @@ async function requestKobold(arg: RequestDataArgumentExtended): Promise<requestD
       modelId: arg.aiModel,
     },
   ) as KoboldGenerationInputSchema
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+  }
+  body = applyAdditionalParameters(body, headers, additionalParamsForRequest(arg)) as KoboldGenerationInputSchema
 
   if (arg.previewBody) {
     return {
@@ -1597,7 +1636,7 @@ async function requestKobold(arg: RequestDataArgumentExtended): Promise<requestD
       result: JSON.stringify({
         url: url.toString(),
         body: body,
-        headers: {},
+        headers,
       }),
     }
   }
@@ -1605,9 +1644,7 @@ async function requestKobold(arg: RequestDataArgumentExtended): Promise<requestD
   const da = await globalFetch(url.toString(), {
     method: 'POST',
     body: body,
-    headers: {
-      'content-type': 'application/json',
-    },
+    headers,
     abortSignal,
     chatId: arg.chatId,
   })
@@ -1644,12 +1681,12 @@ async function requestNovelList(arg: RequestDataArgumentExtended): Promise<reque
     logit_bias.push(bia[0])
     logit_bias_values.push(bia[1].toString())
   }
-  const headers = {
+  const headers: Record<string, string> = {
     Authorization: `Bearer ${auth_key}`,
     'Content-Type': 'application/json',
   }
 
-  const send_body = {
+  let send_body: Record<string, any> = {
     text: stringlizeAINChat(formated, currentChar?.name ?? '', arg.continue),
     length: maxTokens,
     temperature: temperature,
@@ -1666,6 +1703,7 @@ async function requestNovelList(arg: RequestDataArgumentExtended): Promise<reque
     logit_bias: logit_bias.length > 0 ? logit_bias.join('<<|>>') : undefined,
     logit_bias_values: logit_bias_values.length > 0 ? logit_bias_values.join('|') : undefined,
   }
+  send_body = applyAdditionalParameters(send_body, headers, additionalParamsForRequest(arg))
 
   if (arg.previewBody) {
     return {
@@ -1780,13 +1818,29 @@ async function requestOllama(arg: RequestDataArgumentExtended): Promise<requestD
   const messages = await buildOllamaMessages(formated)
   const tools = createOllamaToolDefinitions(arg.tools)
   const hasTools = tools.length > 0
-  const requestBody = {
+  let requestBody: {
+    model: string
+    messages: OllamaMessage[]
+    stream: boolean
+    think?: OllamaThinkMode
+    tools?: OllamaToolDefinition[]
+    [key: string]: any
+  } = {
     model: ollamaModel,
     messages,
     stream: arg.useStreaming,
     think: ollamaThinkMode,
     ...(hasTools ? { tools } : {}),
   }
+  const customHeaders: Record<string, string> = {
+    ...(isCloud && !cloudToolProtocol && ollamaApiKey ? { Authorization: 'Bearer ' + ollamaApiKey } : {}),
+    ...(!cloudToolProtocol ? (providerOptions?.extraHeaders ?? {}) : {}),
+  }
+  requestBody = applyAdditionalParameters(
+    requestBody,
+    cloudToolProtocol ? {} : customHeaders,
+    additionalParamsForRequest(arg),
+  )
 
   if (arg.previewBody) {
     return {
@@ -1797,7 +1851,7 @@ async function requestOllama(arg: RequestDataArgumentExtended): Promise<requestD
         source: ollamaModelSource,
         stream: arg.useStreaming,
         think: ollamaThinkMode,
-        headers: isCloud ? { Authorization: 'Bearer ' + ollamaApiKey } : {},
+        headers: customHeaders,
         body: requestBody,
       }),
     }
@@ -1805,7 +1859,7 @@ async function requestOllama(arg: RequestDataArgumentExtended): Promise<requestD
 
   const ollama = new Ollama({
     host: isCloud ? 'https://ollama.com' : localBaseUrl,
-    headers: isCloud && !cloudToolProtocol && ollamaApiKey ? { Authorization: 'Bearer ' + ollamaApiKey } : undefined,
+    headers: Object.keys(customHeaders).length > 0 ? customHeaders : undefined,
     fetch: isCloud && cloudToolProtocol ? createOllamaCloudFetch(cloudToolEndpoint, cloudToolAuth) : undefined,
   })
 
@@ -2006,10 +2060,8 @@ async function requestCohere(arg: RequestDataArgumentExtended): Promise<requestD
     'Content-Type': 'application/json',
   }
 
-  if (hasResolvedProfile) {
-    Object.assign(headers, providerOptions?.extraHeaders ?? {})
-    body = applyAdditionalParameters(body, headers, providerOptions?.additionalParams ?? [])
-  }
+  if (hasResolvedProfile) Object.assign(headers, providerOptions?.extraHeaders ?? {})
+  body = applyAdditionalParameters(body, headers, additionalParamsForRequest(arg))
 
   const url = requestURL ?? arg.customURL ?? 'https://api.cohere.com/v1/chat'
 
@@ -2087,7 +2139,7 @@ async function requestHorde(arg: RequestDataArgumentExtended): Promise<requestDa
   const topK = hasResolvedProfile ? (runtimeOptions?.topK ?? db.top_k) : db.top_k
   const topP = hasResolvedProfile ? (runtimeOptions?.topP ?? db.top_p) : db.top_p
 
-  const argument = {
+  let argument: Record<string, any> = {
     prompt: prompt,
     params: {
       n: 1,
@@ -2118,14 +2170,16 @@ async function requestHorde(arg: RequestDataArgumentExtended): Promise<requestDa
   } else if (db.hordeConfig.apiKey.length > 2) {
     apiKey = db.hordeConfig.apiKey
   }
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    apikey: apiKey,
+  }
+  argument = applyAdditionalParameters(argument, headers, additionalParamsForRequest(arg))
 
   const da = await fetch('https://stablehorde.net/api/v2/generate/text/async', {
     body: JSON.stringify(argument),
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      apikey: apiKey,
-    },
+    headers,
     signal: abortSignal,
   })
 

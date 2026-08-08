@@ -7,9 +7,8 @@
  * reverse_proxy paths stay aligned with the local browser path.
  *
  * Each entry is a `[key, value]` pair drawn from the per-model `params`
- * string (or `db.additionalParams` for reverse_proxy). Both come from
- * user-authored text on the SPA, so the value side carries a small typing
- * DSL:
+ * string, a profile, or `db.additionalParams`. These come from user-authored
+ * settings, so the value side carries a small typing DSL:
  *   - `{{none}}` removes the field (or header)
  *   - `header::Name` keys target the headers map instead of the body
  *   - `json::<value>` JSON-parses the right-hand side (with a relaxed
@@ -204,4 +203,86 @@ export function coerceAdditionalParams(raw: unknown): Array<[string, string]> | 
     out.push([k, v])
   }
   return out
+}
+
+interface AdditionalParamsDatabaseLike {
+  additionalParams?: unknown
+  applyAdditionalParamsToAll?: unknown
+  customModels?: unknown
+}
+
+function normalizeAdditionalParams(raw: unknown): Array<[string, string]> {
+  if (!Array.isArray(raw)) return []
+  const out: Array<[string, string]> = []
+  for (const row of raw) {
+    if (Array.isArray(row) && typeof row[0] === 'string' && typeof row[1] === 'string') {
+      out.push([row[0], row[1]])
+    }
+  }
+  return out
+}
+
+function parseCustomModelParams(raw: unknown): Array<[string, string]> {
+  if (typeof raw !== 'string' || raw.length === 0) return []
+  const out: Array<[string, string]> = []
+  for (const line of raw.split('\n')) {
+    const split = line.split('=')
+    if (split.length >= 2) out.push([split[0], split.slice(1).join('=')])
+  }
+  return out
+}
+
+/**
+ * Resolve the legacy flat/custom source with the final upstream selection
+ * semantics. Existing server databases may not carry the opt-in key, so only
+ * the literal boolean `true` enables ordinary-model inheritance.
+ */
+export function getAdditionalParameters(
+  database: AdditionalParamsDatabaseLike,
+  aiModel?: string,
+): Array<[string, string]> {
+  if (!aiModel) return []
+  if (aiModel === 'reverse_proxy') return normalizeAdditionalParams(database.additionalParams)
+  if (!aiModel.startsWith('xcustom:::')) {
+    return database.applyAdditionalParamsToAll === true ? normalizeAdditionalParams(database.additionalParams) : []
+  }
+
+  const models = Array.isArray(database.customModels) ? database.customModels : []
+  const entry = models.find(
+    (candidate) =>
+      !!candidate &&
+      typeof candidate === 'object' &&
+      !Array.isArray(candidate) &&
+      (candidate as { id?: unknown }).id === aiModel,
+  ) as { params?: unknown } | undefined
+  return parseCustomModelParams(entry?.params)
+}
+
+function additionalParamHeaderName(key: string): string | null {
+  return key.startsWith('header::') ? key.slice('header::'.length).toLocaleLowerCase() : null
+}
+
+/**
+ * Merge global and profile-owned sources for a resolved dispatch. The special
+ * reverse-proxy/custom-model sources remain profile-exclusive, matching the
+ * resolver's existing snapshot precedence. For ordinary models the opt-in
+ * global rows run first and profile additional parameters run last. Global
+ * header rows also yield to explicitly profile-owned extra headers.
+ */
+export function getProfileAdditionalParameters(
+  database: AdditionalParamsDatabaseLike,
+  aiModel: string | undefined,
+  profileAdditionalParams: unknown,
+  profileExtraHeaders?: Record<string, string>,
+): Array<[string, string]> {
+  if (!aiModel) return []
+  const profileRows = normalizeAdditionalParams(profileAdditionalParams)
+  if (aiModel === 'reverse_proxy' || aiModel.startsWith('xcustom:::')) return profileRows
+
+  const profileHeaderNames = new Set(Object.keys(profileExtraHeaders ?? {}).map((header) => header.toLocaleLowerCase()))
+  const globalRows = getAdditionalParameters(database, aiModel).filter(([key]) => {
+    const headerName = additionalParamHeaderName(key)
+    return headerName === null || !profileHeaderNames.has(headerName)
+  })
+  return [...globalRows, ...profileRows]
 }

@@ -13,7 +13,12 @@ import { applyChatTemplate } from '../../templates/chatTemplate'
 import { supportsInlayImage } from '../../files/inlays'
 import { callTool, decodeToolCall, encodeToolCall } from '../../mcp/mcp'
 import type { RequestDataArgumentExtended, requestDataResponse, StreamResponseChunk } from '../request'
-import { applyAdditionalParameters, applyParameters, getAdditionalParameters } from '../shared'
+import {
+  applyAdditionalParameters,
+  applyParameters,
+  getAdditionalParameters,
+  getRequestAdditionalParameters,
+} from '../shared'
 
 import type {
   Contents,
@@ -475,10 +480,18 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
     const headers: Record<string, string> = {
       Authorization: 'Bearer ' + (hasResolvedProfile ? (providerOptions?.apiKey ?? '') : (arg.key ?? db.mistralKey)),
     }
-    if (hasResolvedProfile) {
-      Object.assign(headers, providerOptions?.extraHeaders ?? {})
-      body = applyAdditionalParameters(body, headers, providerOptions?.additionalParams ?? [])
-    }
+    if (hasResolvedProfile) Object.assign(headers, providerOptions?.extraHeaders ?? {})
+    body = applyAdditionalParameters(
+      body,
+      headers,
+      hasResolvedProfile
+        ? getRequestAdditionalParameters(
+            aiModel,
+            providerOptions?.additionalParams ?? [],
+            providerOptions?.extraHeaders,
+          )
+        : getAdditionalParameters(aiModel),
+    )
 
     const targs = {
       body,
@@ -749,13 +762,13 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
     }
     body.n = hasResolvedProfile ? (runtimeOptions?.genTime ?? db.genTime) : db.genTime
   }
-  if (aiModel === 'reverse_proxy' || aiModel.startsWith('xcustom:::')) {
-    body = applyAdditionalParameters(
-      body,
-      headers,
-      hasResolvedProfile ? (providerOptions?.additionalParams ?? []) : getAdditionalParameters(aiModel),
-    )
-  }
+  body = applyAdditionalParameters(
+    body,
+    headers,
+    hasResolvedProfile
+      ? getRequestAdditionalParameters(aiModel, providerOptions?.additionalParams ?? [], providerOptions?.extraHeaders)
+      : getAdditionalParameters(aiModel),
+  )
 
   // Some aux flows are intentionally non-streaming (e.g. memory/translate).
   // If custom Additional Parameters contains stream=true, force non-stream mode back.
@@ -1151,9 +1164,13 @@ export async function requestOpenAILegacyInstruct(arg: RequestDataArgumentExtend
     Object.assign(headers, providerOptions?.extraHeaders ?? {})
   }
 
-  if (hasResolvedProfile && (aiModel === 'reverse_proxy' || aiModel.startsWith('xcustom:::'))) {
-    body = applyAdditionalParameters(body, headers, providerOptions?.additionalParams ?? [])
-  }
+  body = applyAdditionalParameters(
+    body,
+    headers,
+    hasResolvedProfile
+      ? getRequestAdditionalParameters(aiModel, providerOptions?.additionalParams ?? [], providerOptions?.extraHeaders)
+      : getAdditionalParameters(aiModel),
+  )
 
   if (arg.previewBody) {
     return {
@@ -1548,13 +1565,13 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
     Object.assign(headers, providerOptions?.extraHeaders ?? {})
   }
 
-  if (aiModel === 'reverse_proxy' || aiModel?.startsWith('xcustom:::')) {
-    body = applyAdditionalParameters(
-      body,
-      headers,
-      hasResolvedProfile ? (providerOptions?.additionalParams ?? []) : getAdditionalParameters(aiModel),
-    )
-  }
+  body = applyAdditionalParameters(
+    body,
+    headers,
+    hasResolvedProfile
+      ? getRequestAdditionalParameters(aiModel, providerOptions?.additionalParams ?? [], providerOptions?.extraHeaders)
+      : getAdditionalParameters(aiModel),
+  )
 
   if (arg.previewBody) {
     return {

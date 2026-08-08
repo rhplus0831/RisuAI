@@ -13,7 +13,7 @@ import {
   type ResolvedModelProfile,
 } from '../../../src/ts/model/modelProfileResolver.js'
 import { filterResponseHeaders } from './proxy.js'
-import { applyAdditionalParameters } from './generation/additionalParams.js'
+import { applyAdditionalParameters, getProfileAdditionalParameters } from './generation/additionalParams.js'
 import { MASKED_PROVIDER_SECRET } from './providerSecrets.js'
 import { attachAbort } from './requestAbort.js'
 import { loadServerIntentCompletionSettings } from './repository.js'
@@ -289,10 +289,17 @@ function resolveTarget(database: Database, query: OllamaCloudToolQuery): Resolve
     throw new Error('selected Ollama Cloud credential is unavailable')
   }
 
+  const profileAdditionalParams = durableProviderOptions?.additionalParams ?? profile.providerOptions.additionalParams
+  const profileExtraHeaders = durableProviderOptions?.extraHeaders ?? profile.providerOptions.extraHeaders ?? {}
   return {
-    additionalParams: durableProviderOptions?.additionalParams ?? profile.providerOptions.additionalParams ?? [],
+    additionalParams: getProfileAdditionalParameters(
+      database,
+      profile.modelId,
+      profileAdditionalParams,
+      profileExtraHeaders,
+    ),
     apiKey,
-    extraHeaders: durableProviderOptions?.extraHeaders ?? profile.providerOptions.extraHeaders ?? {},
+    extraHeaders: profileExtraHeaders,
     model,
     profile,
     protocol,

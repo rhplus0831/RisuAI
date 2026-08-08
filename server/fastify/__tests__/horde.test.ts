@@ -153,6 +153,39 @@ describe('runHorde', () => {
     expect(sent.models).toBeUndefined()
   })
 
+  it('applies additional parameters and headers to the async submission', async () => {
+    let captured: RequestInit | null = null
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/async')) {
+        captured = init ?? null
+        return jsonResp({ id: 'job-params' }, 202)
+      }
+      return jsonResp({ done: true, generations: [{ text: 'x' }] })
+    })
+    const resolved = resolveHordeRequest({
+      prompt: 'hi',
+      model: 'auto',
+      temperature: 0.7,
+      additionalParams: [
+        ['params.temperature', '0.2'],
+        ['custom_flag', 'true'],
+        ['header::X-Global-Trace', 'horde'],
+      ],
+      pollIntervalMs: 1,
+      signal: new AbortController().signal,
+    })!
+
+    const pending = runHorde(resolved)
+    await vi.advanceTimersByTimeAsync(5)
+    await pending
+
+    expect(JSON.parse(captured!.body as string)).toMatchObject({
+      params: { temperature: 0.2 },
+      custom_flag: true,
+    })
+    expect((captured!.headers as Record<string, string>)['X-Global-Trace']).toBe('horde')
+  })
+
   it('omits absent sampler fields from the async payload', async () => {
     let captured: { init?: RequestInit } | null = null
     vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
