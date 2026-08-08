@@ -202,6 +202,7 @@
   let showFloatingInputButton = $state(false)
   let floatingInputOpen = $state(false)
   let floatingInputCollapsed = $state(false)
+  let floatingDraftShowsOriginal = $state(false)
   let floatingInputButton: HTMLButtonElement | null = $state(null)
   let chatScreenRoot: HTMLDivElement | null = $state(null)
   let chatScrollContainer: HTMLDivElement | null = $state(null)
@@ -301,6 +302,21 @@
     if (!selectedId) return undefined
     return draftHooks.find((hook) => hook.id === selectedId)
   })
+  let floatingDraftConversionActive = $derived(
+    floatingInputOpen && Boolean(selectedDraftHook) && draftText.trim().length > 0,
+  )
+  let floatingDraftPreviewVisible = $derived(floatingDraftConversionActive && !floatingDraftShowsOriginal)
+  let floatingComposerValue = $derived(floatingDraftPreviewVisible ? draftText : messageInput)
+  let floatingDraftConversionWasActive = false
+
+  $effect(() => {
+    const active = floatingDraftConversionActive
+    if (!active || !floatingDraftConversionWasActive) {
+      floatingDraftShowsOriginal = false
+    }
+    floatingDraftConversionWasActive = active
+  })
+
   let showDraftArea = $derived(Boolean(selectedDraftHook || draftText.length > 0 || btwText.length > 0))
   let hookRunActive = $derived(doingDraftHook || doingBtwHook)
   let canContinueFromMenu = $derived(currentChat.length >= 2 && currentChat[currentChat.length - 1]?.role === 'char')
@@ -422,6 +438,13 @@
 
   function floatingInputEnabled(): boolean {
     return getDatabase().floatingChatInput !== false && !getDatabase().fixedChatTextarea
+  }
+
+  function toggleFloatingDraftConversion(): void {
+    if (!floatingDraftConversionActive) return
+
+    floatingDraftShowsOriginal = !floatingDraftShowsOriginal
+    void tick().then(updateInputSize)
   }
 
   function trackChatContentGeometry(node: HTMLElement, configuredWidth: number) {
@@ -1262,6 +1285,7 @@
         return
       }
       draftText = nextDraft
+      floatingDraftShowsOriginal = false
       markComposerDraftChanged('draft')
       updateInputSizeAll()
     } catch (error) {
@@ -2123,20 +2147,32 @@
           aria-label={language.messageInput}
           class="peer text-input-area focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-transparent rounded-md rounded-r-none input-text text-xl grow border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full placeholder:text-sm"
           class:ml-4={getDatabase().useChatSticker}
-          bind:value={messageInput}
+          value={floatingComposerValue}
+          readonly={floatingDraftPreviewVisible}
           bind:this={inputEle}
           onkeydown={(e) => {
-            if (shouldSendFromComposerKeydown(e)) {
+            if (!floatingDraftPreviewVisible && shouldSendFromComposerKeydown(e)) {
               send()
               e.preventDefault()
             }
-            if (e.key.toLocaleLowerCase() === 'm' && e.ctrlKey) {
+            if (!floatingDraftPreviewVisible && e.key.toLocaleLowerCase() === 'm' && e.ctrlKey) {
               reroll()
               e.preventDefault()
             }
           }}
-          onpaste={(e) => void handleComposerPaste(e)}
-          oninput={() => {
+          onpaste={(e) => {
+            if (floatingDraftPreviewVisible) {
+              e.preventDefault()
+              return
+            }
+            void handleComposerPaste(e)
+          }}
+          oninput={(e) => {
+            if (floatingDraftPreviewVisible) {
+              e.currentTarget.value = draftText
+              return
+            }
+            messageInput = e.currentTarget.value
             markComposerDraftChanged('message')
             updateInputSizeAll()
             updateInputTransateMessage(false)
@@ -2151,6 +2187,18 @@
             onclick={abortChat}
             style:height={inputHeight}>
             <div class="risu-ongoing-pulse loadmove chat-process-stage-{$chatProcessStage}"></div>
+          </button>
+        {:else if floatingDraftConversionActive}
+          <button
+            type="button"
+            data-testid="default-chat-convert-button"
+            aria-label={language.inputHookConvert}
+            aria-pressed={floatingDraftShowsOriginal}
+            title={language.inputHookConvert}
+            onclick={toggleFloatingDraftConversion}
+            class="flex justify-center border-y border-darkborderc items-center text-textcolor p-3 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors"
+            style:height={inputHeight}>
+            <RefreshCcwIcon />
           </button>
         {:else}
           <button

@@ -1818,6 +1818,7 @@ const languageKoreanBase = {
   inputHookBtwResult: 'BTW 결과',
   inputHookBtwDismiss: 'BTW 결과 닫기',
   inputHookSendDraft: '초안 보내기',
+  inputHookConvert: '변환',
 } satisfies DeepPartial<typeof import('./en').languageEnglish>
 
 export const languageKorean = {

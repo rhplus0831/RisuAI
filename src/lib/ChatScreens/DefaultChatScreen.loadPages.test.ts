@@ -859,6 +859,114 @@ describe('DefaultChatScreen floating action accessibility', () => {
     expect(composer.value).toBe('keep this draft')
   })
 
+  it('toggles a non-empty Draft in Floating mode and applies original-text edits when Floating ends', async () => {
+    seedDatabase([2])
+    const hook = { id: 'draft-hook', name: 'Draft Hook', type: 'draft' as const, prompt: 'prompt' }
+    getResourceDatabase().inputHooks = [hook]
+    getResourceDatabase().characters[0].chats[0].selectedDraftHookId = hook.id
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-draft-input"]')).toBeTruthy())
+    const screen = target.querySelector<HTMLElement>('.default-chat-screen')!
+    const composer = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    const draft = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-draft-input"]')!
+    composer.value = 'Original composer text'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    draft.value = 'Reviewed Draft text'
+    draft.dispatchEvent(new Event('input', { bubbles: true }))
+
+    screen.scrollTop = -80
+    screen.dispatchEvent(new Event('scroll'))
+    await settle()
+
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeTruthy()
+    expect(composer.value).toBe('Reviewed Draft text')
+    expect(composer.readOnly).toBe(true)
+    expect(target.querySelector('[data-testid="default-chat-send-button"]')).toBeNull()
+    const convertButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-convert-button"]')!
+    expect(convertButton).toBeTruthy()
+    expect(convertButton.getAttribute('aria-label')).toBe('inputHookConvert')
+    expect(convertButton.getAttribute('aria-pressed')).toBe('false')
+
+    convertButton.click()
+    await settle()
+
+    expect(composer.value).toBe('Original composer text')
+    expect(composer.readOnly).toBe(false)
+    expect(convertButton.getAttribute('aria-pressed')).toBe('true')
+
+    composer.value = 'Original edited while Floating'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    convertButton.click()
+    await settle()
+
+    expect(composer.value).toBe('Reviewed Draft text')
+    expect(composer.readOnly).toBe(true)
+    expect(convertButton.getAttribute('aria-pressed')).toBe('false')
+
+    screen.scrollTop = 0
+    screen.dispatchEvent(new Event('scroll'))
+    await settle()
+
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeNull()
+    expect(target.querySelector('[data-testid="default-chat-convert-button"]')).toBeNull()
+    expect(target.querySelector('[data-testid="default-chat-send-button"]')).toBeTruthy()
+    expect(composer.value).toBe('Original edited while Floating')
+    expect(composer.readOnly).toBe(false)
+  })
+
+  it('keeps the normal Floating composer when an assigned Draft hook has no Draft content', async () => {
+    seedDatabase([2])
+    const hook = { id: 'draft-hook', name: 'Draft Hook', type: 'draft' as const, prompt: 'prompt' }
+    getResourceDatabase().inputHooks = [hook]
+    getResourceDatabase().characters[0].chats[0].selectedDraftHookId = hook.id
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy())
+    const screen = target.querySelector<HTMLElement>('.default-chat-screen')!
+    const composer = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    composer.value = 'Original only'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    screen.scrollTop = -80
+    screen.dispatchEvent(new Event('scroll'))
+    await settle()
+
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeTruthy()
+    expect(target.querySelector('[data-testid="default-chat-convert-button"]')).toBeNull()
+    expect(target.querySelector('[data-testid="default-chat-send-button"]')).toBeTruthy()
+    expect(composer.value).toBe('Original only')
+    expect(composer.readOnly).toBe(false)
+  })
+
+  it('keeps the normal Floating composer when Draft content has no assigned Draft hook', async () => {
+    seedDatabase([2])
+    const hook = { id: 'draft-hook', name: 'Draft Hook', type: 'draft' as const, prompt: 'prompt' }
+    getResourceDatabase().inputHooks = [hook]
+    getResourceDatabase().characters[0].chats[0].selectedDraftHookId = hook.id
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-draft-input"]')).toBeTruthy())
+    const screen = target.querySelector<HTMLElement>('.default-chat-screen')!
+    const composer = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    const draft = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-draft-input"]')!
+    composer.value = 'Original text'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    draft.value = 'Orphaned Draft text'
+    draft.dispatchEvent(new Event('input', { bubbles: true }))
+    delete getResourceDatabase().characters[0].chats[0].selectedDraftHookId
+    await settle()
+
+    screen.scrollTop = -80
+    screen.dispatchEvent(new Event('scroll'))
+    await settle()
+
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeTruthy()
+    expect(target.querySelector('[data-testid="default-chat-convert-button"]')).toBeNull()
+    expect(target.querySelector('[data-testid="default-chat-send-button"]')).toBeTruthy()
+    expect(composer.value).toBe('Original text')
+    expect(composer.readOnly).toBe(false)
+  })
+
   it('names attachment removal for the selected attachment', async () => {
     seedDatabase([1])
     loadPageMocks.postChatFile.mockResolvedValueOnce([{ type: 'asset', data: 'asset-a' }])

@@ -1234,6 +1234,7 @@ export const languageEnglish = {
   inputHookBtwResult: 'BTW Result',
   inputHookBtwDismiss: 'Dismiss BTW Result',
   inputHookSendDraft: 'Send Draft',
+  inputHookConvert: 'Convert',
   settingsNavLegacyBotPresets: 'Legacy Bot Presets',
   settingsNavUserPersona: 'User Persona',
   settingsNavMemory: 'Memory',

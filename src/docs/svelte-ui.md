@@ -216,6 +216,10 @@ hiding the overlay collapses it into the floating icon until the user reopens
 it or changes chats. Opening or hiding it preserves transcript scroll and draft
 state; the floating overflow menu can return to the bottom or hide the
 composer, and chat changes or disabling the setting clear the floating state.
+When the active chat has a selected Draft hook and a non-blank reviewed Draft,
+the floating composer initially shows that Draft read-only and replaces Send
+with a Convert toggle. The toggle exposes the editable original composer text;
+edits remain authoritative across toggles and after the floating overlay closes.
 `src/lib/ChatScreens/DefaultChatScreen.svelte` measures the
 rendered content column with `ResizeObserver` so the trigger, composer, and
 overflow menus stay aligned across `chatScreenWidth`, custom containing blocks,
