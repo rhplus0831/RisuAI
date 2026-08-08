@@ -33,6 +33,12 @@ registration also updates browser compatibility maps such as
 `pluginV2.providers` / `providerOptions` and provider stores; unload cleanup is
 guarded by provider ownership and active generation state.
 
+`getCurrentLorebookEntries` returns detached raw entries from the current
+character, chat, and active client modules without exposing the server's
+request-scoped activation or token-budget state. The fork hydrates a stubbed
+current-character lorebook before returning the snapshot and fails closed when
+that authoritative read is unavailable.
+
 Plugin V3 code runs through an opaque-origin iframe RPC boundary nested inside
 a trusted guard iframe. The outer guard contains only the RPC relay and uses
 `frame-src 'none'` / `child-src 'none'`; that parent policy governs later

@@ -55,9 +55,12 @@ const mockLegacyPluginApis = vi.hoisted(() => ({
 }))
 
 const mockChatHydration = vi.hoisted(() => ({
+  ensureCharacterLorebookHydrated: vi.fn(async () => true),
   hydrateChatMessages: vi.fn(async () => undefined),
   isChatMessageTranscriptHydrated: vi.fn(() => false),
 }))
+
+const mockModuleLorebooks = vi.hoisted(() => ({ entries: [] as any[] }))
 
 const mockPermissionForage = vi.hoisted(() => {
   const values = new Map<string, unknown>()
@@ -300,6 +303,10 @@ vi.mock('src/ts/process/request/request', () => ({
   requestChatDataMain: vi.fn(),
 }))
 
+vi.mock('src/ts/process/modules', () => ({
+  getModuleLorebooks: () => mockModuleLorebooks.entries,
+}))
+
 vi.mock('src/ts/process/ttsHooks', () => ({
   registerTTSPreprocessor: vi.fn(),
   unregisterTTSPreprocessor: vi.fn(),
@@ -322,7 +329,11 @@ import {
   chatPanelStore,
 } from 'src/ts/stores.svelte'
 import { dispatchDurableServerBackedSettingsPatch } from 'src/ts/server/settingsBridge.svelte'
-import { hydrateChatMessages, isChatMessageTranscriptHydrated } from 'src/ts/server/chatMessageHydration.svelte'
+import {
+  ensureCharacterLorebookHydrated,
+  hydrateChatMessages,
+  isChatMessageTranscriptHydrated,
+} from 'src/ts/server/chatMessageHydration.svelte'
 import { dispatchUpdatePlugin } from 'src/ts/pluginCommands'
 import { updateColorScheme, updateTextThemeAndCSS } from 'src/ts/gui/colorscheme'
 import { registerMCPModule, unregisterMCPModule } from 'src/ts/process/mcp/pluginmcp'
@@ -382,6 +393,8 @@ beforeEach(async () => {
   vi.mocked(prepareCompatibleChatUpdateScoped).mockClear()
   vi.mocked(hydrateChatMessages).mockReset()
   vi.mocked(hydrateChatMessages).mockResolvedValue(undefined)
+  vi.mocked(ensureCharacterLorebookHydrated).mockReset()
+  vi.mocked(ensureCharacterLorebookHydrated).mockResolvedValue(true)
   vi.mocked(isChatMessageTranscriptHydrated).mockReset()
   vi.mocked(isChatMessageTranscriptHydrated).mockReturnValue(false)
   vi.mocked(appendCurrentChatUserMessageForSend).mockReset()
@@ -406,12 +419,53 @@ beforeEach(async () => {
   mockPermissionForage.getItem.mockClear()
   mockPermissionForage.setItem.mockClear()
   mockPermissionForage.removeItem.mockClear()
+  mockModuleLorebooks.entries = []
   await __v3PluginLifecycleTestHooks.reset()
 })
 
 afterEach(async () => {
   await __v3PluginLifecycleTestHooks.reset()
   vi.restoreAllMocks()
+})
+
+describe('V3 current lorebook entries', () => {
+  it('hydrates and snapshots raw character, chat, and active-module entries in source order', async () => {
+    const characterEntry = { id: 'character-lore', content: 'character' }
+    const chatEntry = { id: 'chat-lore', content: 'chat' }
+    const moduleEntry = { id: 'module-lore', content: 'module' }
+    mockDbState.db.characters = {
+      'char-a': {
+        chaId: 'character-a',
+        chatPage: 0,
+        globalLore: [characterEntry],
+        chats: [{ localLore: [chatEntry] }],
+      },
+    }
+    mockModuleLorebooks.entries = [moduleEntry]
+    const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
+
+    const result = await api.getCurrentLorebookEntries()
+
+    expect(ensureCharacterLorebookHydrated).toHaveBeenCalledWith('character-a')
+    expect(result).toEqual([characterEntry, chatEntry, moduleEntry])
+    result[0].content = 'mutated snapshot'
+    expect(characterEntry.content).toBe('character')
+  })
+
+  it('fails closed instead of returning a plausible empty character lorebook when hydration is unavailable', async () => {
+    mockDbState.db.characters = {
+      'char-a': {
+        chaId: 'character-a',
+        chatPage: 0,
+        globalLore: [],
+        chats: [{ localLore: [] }],
+      },
+    }
+    vi.mocked(ensureCharacterLorebookHydrated).mockResolvedValueOnce(false)
+    const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
+
+    await expect(api.getCurrentLorebookEntries()).rejects.toThrow('Current character lorebook is unavailable')
+  })
 })
 
 describe('V3 durable setter acknowledgement', () => {

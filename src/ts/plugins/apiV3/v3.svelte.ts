@@ -52,6 +52,7 @@ import { sendChat as processSendChat, doingChat } from 'src/ts/process/index.sve
 import { getModelInfo } from 'src/ts/model/modellist'
 import type { ModelModeExtended } from 'src/ts/process/request/shared'
 import { requestChatDataMain } from 'src/ts/process/request/request'
+import { getModuleLorebooks } from 'src/ts/process/modules'
 import {
   registerTTSPreprocessor,
   unregisterTTSPreprocessor,
@@ -64,7 +65,11 @@ import {
   type TTSHookFn,
 } from 'src/ts/process/ttsHooks'
 import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
-import { hydrateChatMessages, isChatMessageTranscriptHydrated } from 'src/ts/server/chatMessageHydration.svelte'
+import {
+  ensureCharacterLorebookHydrated,
+  hydrateChatMessages,
+  isChatMessageTranscriptHydrated,
+} from 'src/ts/server/chatMessageHydration.svelte'
 import { assertNoUnsupportedCharacterChanges, assertNoUnsupportedChatChanges } from '../unsupportedServerWriteGuard'
 import { applyAttemptedFieldRollback } from 'src/ts/server/staleStateGuards'
 import { clearInMemoryPluginPermissions, getPluginPermission } from '../pluginPermissions'
@@ -1431,6 +1436,21 @@ const makeRisuaiAPIV3 = (
       const db = getDatabase()
       const charId = get(selectedCharID)
       return db.characters[charId].chatPage
+    },
+    getCurrentLorebookEntries: async () => {
+      const characterIndex = get(selectedCharID)
+      let character = getDatabase().characters[characterIndex]
+      if (!character) return []
+
+      if (character.chaId && !(await ensureCharacterLorebookHydrated(character.chaId))) {
+        throw new Error('Current character lorebook is unavailable')
+      }
+      assertV3InstanceCurrent(instance)
+
+      character = getDatabase().characters[characterIndex]
+      if (!character) return []
+      const chat = character.chats?.[character.chatPage]
+      return $state.snapshot([...(character.globalLore ?? []), ...(chat?.localLore ?? []), ...getModuleLorebooks()])
     },
     //New names for character APIs, to match API naming conventions
     getCharacter: oldApis.getChar,
