@@ -101,6 +101,25 @@
 // ============================================================================
 
 /**
+ * Inlay asset shape returned by `risuai.readInlay`.
+ * `data` is a base64 data URI for image, audio, and video assets.
+ */
+interface InlayAssetForPlugin {
+  /** Asset data string */
+  data: string
+  /** File extension without a leading dot */
+  ext: string
+  /** Original asset filename */
+  name: string
+  /** Asset category */
+  type: 'image' | 'video' | 'audio' | 'signature'
+  /** Pixel height for images/videos */
+  height?: number
+  /** Pixel width for images/videos */
+  width?: number
+}
+
+/**
  * MCP tool definition
  */
 interface MCPToolDef {
@@ -1856,6 +1875,16 @@ interface RisuaiPluginAPI {
    * @returns Image data
    */
   readImage(path?: string): Promise<any>
+
+  /**
+   * Reads a user-attached inlay asset by the ID found in an
+   * `{{inlayed::<id>}}` message placeholder. In Fastify mode this resolves the
+   * ID through the authenticated inlay catalog and immutable asset endpoint.
+   *
+   * @param id - Inlay catalog asset ID or legacy alias
+   * @returns The inlay data and metadata, or null when no asset exists
+   */
+  readInlay(id: string): Promise<InlayAssetForPlugin | null>
 
   /**
    * Saves an asset

@@ -62,6 +62,8 @@ const mockChatHydration = vi.hoisted(() => ({
 
 const mockModuleLorebooks = vi.hoisted(() => ({ entries: [] as any[] }))
 
+const mockInlays = vi.hoisted(() => ({ getInlayAsset: vi.fn() }))
+
 const mockPermissionForage = vi.hoisted(() => {
   const values = new Map<string, unknown>()
   return {
@@ -307,6 +309,8 @@ vi.mock('src/ts/process/modules', () => ({
   getModuleLorebooks: () => mockModuleLorebooks.entries,
 }))
 
+vi.mock('src/ts/process/files/inlays', () => mockInlays)
+
 vi.mock('src/ts/process/ttsHooks', () => ({
   registerTTSPreprocessor: vi.fn(),
   unregisterTTSPreprocessor: vi.fn(),
@@ -338,6 +342,7 @@ import { dispatchUpdatePlugin } from 'src/ts/pluginCommands'
 import { updateColorScheme, updateTextThemeAndCSS } from 'src/ts/gui/colorscheme'
 import { registerMCPModule, unregisterMCPModule } from 'src/ts/process/mcp/pluginmcp'
 import { appendCurrentChatUserMessageForSend, prepareCompatibleChatUpdateScoped } from 'src/ts/chatCommands'
+import { getInlayAsset } from 'src/ts/process/files/inlays'
 import { sendChat as processSendChat } from 'src/ts/process/index.svelte'
 import {
   __v3PluginLifecycleTestHooks,
@@ -420,6 +425,7 @@ beforeEach(async () => {
   mockPermissionForage.setItem.mockClear()
   mockPermissionForage.removeItem.mockClear()
   mockModuleLorebooks.entries = []
+  vi.mocked(getInlayAsset).mockReset()
   await __v3PluginLifecycleTestHooks.reset()
 })
 
@@ -465,6 +471,38 @@ describe('V3 current lorebook entries', () => {
     const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
 
     await expect(api.getCurrentLorebookEntries()).rejects.toThrow('Current character lorebook is unavailable')
+  })
+})
+
+describe('V3 inlay reads', () => {
+  it('returns only the public plugin shape from the fork inlay reader', async () => {
+    vi.mocked(getInlayAsset).mockResolvedValueOnce({
+      data: 'data:image/png;base64,aGVsbG8=',
+      ext: 'png',
+      name: 'hello.png',
+      type: 'image',
+      width: 32,
+      height: 16,
+      serverAssetId: 'server-only-id',
+    })
+    const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
+
+    await expect(api.readInlay('catalog-or-alias-id')).resolves.toEqual({
+      data: 'data:image/png;base64,aGVsbG8=',
+      ext: 'png',
+      name: 'hello.png',
+      type: 'image',
+      width: 32,
+      height: 16,
+    })
+    expect(getInlayAsset).toHaveBeenCalledWith('catalog-or-alias-id')
+  })
+
+  it('returns null when the catalog path cannot resolve an inlay', async () => {
+    vi.mocked(getInlayAsset).mockResolvedValueOnce(null)
+    const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
+
+    await expect(api.readInlay('missing')).resolves.toBeNull()
   })
 })
 

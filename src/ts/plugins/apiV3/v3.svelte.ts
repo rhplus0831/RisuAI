@@ -46,6 +46,7 @@ import { checkCharOrder, getFetchLogs } from 'src/ts/globalApi.svelte'
 import { builtInColorSchemes, updateColorScheme, updateTextThemeAndCSS, type ColorScheme } from 'src/ts/gui/colorscheme'
 import { get } from 'svelte/store'
 import { registerMCPModule, unregisterMCPModule } from 'src/ts/process/mcp/pluginmcp'
+import { getInlayAsset } from 'src/ts/process/files/inlays'
 import { getLLMCache, searchLLMCache } from 'src/ts/translator/translator'
 import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer, type LLMModel } from 'src/ts/model/types'
 import { sendChat as processSendChat, doingChat } from 'src/ts/process/index.svelte'
@@ -1115,6 +1116,18 @@ const makeRisuaiAPIV3 = (
     setDatabase: oldApis.setDatabase,
     loadPlugins: oldApis.loadPlugins,
     readImage: oldApis.readImage,
+    readInlay: async (id: string) => {
+      const inlay = await getInlayAsset(id)
+      if (!inlay || typeof inlay.data !== 'string') return null
+      return {
+        data: inlay.data,
+        ext: inlay.ext,
+        name: inlay.name,
+        type: inlay.type,
+        ...(inlay.height !== undefined ? { height: inlay.height } : {}),
+        ...(inlay.width !== undefined ? { width: inlay.width } : {}),
+      }
+    },
     saveAsset: oldApis.saveAsset,
     //Same functionality, but new implementation
     getDatabase: async (includeOnly: string[] | 'all' = 'all') => {

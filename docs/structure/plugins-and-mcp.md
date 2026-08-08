@@ -39,6 +39,10 @@ request-scoped activation or token-budget state. The fork hydrates a stubbed
 current-character lorebook before returning the snapshot and fails closed when
 that authoritative read is unavailable.
 
+`readInlay` resolves an inlay asset id or legacy alias through the browser's
+server-backed inlay catalog adapter, reads immutable bytes from
+`/api/v1/assets/:id`, and returns the Plugin V3 data-string/metadata shape.
+
 Plugin V3 code runs through an opaque-origin iframe RPC boundary nested inside
 a trusted guard iframe. The outer guard contains only the RPC relay and uses
 `frame-src 'none'` / `child-src 'none'`; that parent policy governs later
