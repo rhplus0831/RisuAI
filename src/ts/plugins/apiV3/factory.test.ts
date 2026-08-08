@@ -24,7 +24,9 @@ describe('SandboxHost lifecycle', () => {
     expect(iframe.srcdoc).toContain("guest.sandbox.add('allow-scripts')")
     expect(iframe.srcdoc).toContain("guest.setAttribute('csp'")
     expect(iframe.srcdoc).toContain('seenTransferables')
-    expect(iframe.srcdoc).toContain("typeof ReadableStream !== 'undefined'")
+    expect(iframe.srcdoc).not.toContain("typeof ReadableStream !== 'undefined'")
+    expect(iframe.srcdoc).toContain('const ports = [...event.ports]')
+    expect(iframe.srcdoc).toContain("__type: 'STREAM_PORT'")
     expect(V3_SANDBOX_CSP).toContain("connect-src 'none'")
     expect(V3_SANDBOX_CSP).toContain("script-src 'unsafe-inline' 'wasm-unsafe-eval'")
     expect(V3_SANDBOX_CSP).toContain('img-src data: blob:')
@@ -130,6 +132,120 @@ describe('SandboxHost lifecycle', () => {
       (call) => (call[0] as { reqId?: string }).reqId === 'cyclic-transferables',
     )
     expect((responseCall as unknown[] | undefined)?.[2]).toEqual([buffer])
+  })
+
+  it('bridges response streams with pull-based backpressure', async () => {
+    const iframe = document.createElement('iframe')
+    document.body.appendChild(iframe)
+    const pull = vi.fn()
+    const cancel = vi.fn()
+    let chunk = 0
+    const stream = new ReadableStream<string>(
+      {
+        pull(controller) {
+          pull()
+          controller.enqueue(`chunk-${++chunk}`)
+        },
+        cancel,
+      },
+      { highWaterMark: 0 },
+    )
+    const host = new SandboxHost({ getStream: () => stream })
+    host.run(iframe, '')
+    const postMessage = vi.spyOn(iframe.contentWindow!, 'postMessage').mockImplementation(() => undefined)
+
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: iframe.contentWindow,
+        data: {
+          type: 'CALL_ROOT',
+          reqId: 'stream-response',
+          method: 'getStream',
+          args: [],
+        },
+      }),
+    )
+
+    await vi.waitFor(() =>
+      expect(
+        postMessage.mock.calls.find((call) => (call[0] as { reqId?: string }).reqId === 'stream-response'),
+      ).toBeDefined(),
+    )
+    const responseCall = postMessage.mock.calls.find(
+      (call) => (call[0] as { reqId?: string }).reqId === 'stream-response',
+    )!
+    expect((responseCall[0] as { result: unknown }).result).toEqual({
+      __type: 'STREAM_PORT',
+      portIndex: 0,
+    })
+    expect(pull).not.toHaveBeenCalled()
+
+    const port = ((responseCall as unknown[])[2] as Transferable[])[0] as MessagePort
+    const chunks: unknown[] = []
+    port.onmessage = (event) => chunks.push(event.data)
+    port.postMessage({ pull: true })
+
+    await vi.waitFor(() => expect(chunks).toEqual([{ done: false, value: 'chunk-1' }]))
+    expect(pull).toHaveBeenCalledTimes(1)
+
+    host.terminate()
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalledTimes(1))
+    port.close()
+  })
+
+  it('errors an active callback-result stream when the sandbox terminates', async () => {
+    const iframe = document.createElement('iframe')
+    document.body.appendChild(iframe)
+    let callback: (() => Promise<ReadableStream<string>>) | undefined
+    const host = new SandboxHost({
+      registerCallback(value: typeof callback) {
+        callback = value
+      },
+    })
+    host.run(iframe, '')
+    const postMessage = vi.spyOn(iframe.contentWindow!, 'postMessage').mockImplementation(() => undefined)
+
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: iframe.contentWindow,
+        data: {
+          type: 'CALL_ROOT',
+          reqId: 'register-stream-callback',
+          method: 'registerCallback',
+          args: [{ __type: 'CALLBACK_REF', id: 'stream-callback' }],
+        },
+      }),
+    )
+    await vi.waitFor(() => expect(callback).toBeTypeOf('function'))
+
+    const callbackResult = callback!()
+    await vi.waitFor(() =>
+      expect(
+        postMessage.mock.calls.find((call) => (call[0] as { type?: string }).type === 'INVOKE_CALLBACK'),
+      ).toBeDefined(),
+    )
+    const callbackRequest = postMessage.mock.calls.find(
+      (call) => (call[0] as { type?: string }).type === 'INVOKE_CALLBACK',
+    )![0] as { reqId: string }
+    const channel = new MessageChannel()
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: iframe.contentWindow,
+        data: {
+          type: 'CALLBACK_RETURN',
+          reqId: callbackRequest.reqId,
+          result: { __type: 'STREAM_PORT', portIndex: 0 },
+        },
+        ports: [channel.port1],
+      }),
+    )
+
+    const reader = (await callbackResult).getReader()
+    const rejection = expect(reader.read()).rejects.toThrow('Sandbox terminated')
+    host.terminate()
+
+    await rejection
+    channel.port2.close()
   })
 
   it('rejects a pending iframe execution when the sandbox terminates', async () => {

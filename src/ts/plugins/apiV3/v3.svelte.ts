@@ -1039,7 +1039,7 @@ const makeRisuaiAPIV3 = (
       func: (
         arg: PluginV2ProviderArgument,
         abortSignal?: AbortSignal,
-      ) => Promise<{ success: boolean; content: string }>,
+      ) => Promise<{ success: boolean; content: string | ReadableStream<string> }>,
       options?: PluginV3ProviderOptions,
     ) => {
       console.warn(

@@ -327,6 +327,12 @@ entry from the same plugin owner and removes owned entries on unload/reset;
 cleanup. UI placement is mapped in
 [Svelte UI](../../src/docs/svelte-ui.md#component-ownership).
 
+V3 unload also releases owner-scoped document listeners, mutation observers,
+plugin-channel listeners, pending sandbox work, and active stream ports. RPC
+`ReadableStream` results cross the sandbox through pull-controlled
+`MessagePort` bridges so plugin fetch/provider streaming keeps backpressure and
+terminates promptly with its sandbox.
+
 - `src/lib/Setting/Pages/PluginSettings.svelte` manages import, enable/delete,
   arguments, explicit update checks/install, and V3 development/hot reload.
 - `src/lib/Playground/PlaygroundMCP.svelte` lists MCP metadata/tools and can run

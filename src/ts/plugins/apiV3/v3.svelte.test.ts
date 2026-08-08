@@ -1840,4 +1840,28 @@ describe('V3 plugin lifecycle cleanup', () => {
 
     expect(disconnectSpy).toHaveBeenCalledTimes(1)
   })
+
+  it('removes plugin channel listeners when their owning plugin unloads', async () => {
+    const pluginAData = {
+      ...seedV3Plugin('plugin-a'),
+      allowedIPC: ['plugin-b'],
+    }
+    const pluginBData = {
+      ...seedV3Plugin('plugin-b'),
+      allowedIPC: ['plugin-a'],
+    }
+    mockDbState.db.plugins = [pluginAData, pluginBData]
+    const pluginA = __v3PluginLifecycleTestHooks.createTrackedApi(pluginAData)
+    const pluginB = __v3PluginLifecycleTestHooks.createTrackedApi(pluginBData)
+    const listener = vi.fn()
+
+    ;(pluginA.api as any).addPluginChannelListener('updates', listener)
+    ;(pluginB.api as any).postPluginChannelMessage('plugin-a', 'updates', 'first')
+    expect(listener).toHaveBeenCalledOnce()
+
+    await __v3PluginLifecycleTestHooks.unloadInstance(pluginA.instance)
+    ;(pluginB.api as any).postPluginChannelMessage('plugin-a', 'updates', 'second')
+
+    expect(listener).toHaveBeenCalledOnce()
+  })
 })
