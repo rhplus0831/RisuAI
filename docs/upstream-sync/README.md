@@ -56,4 +56,4 @@ architecture (see `STRUCTURE.md` and `docs/structure/`).
 
 | Sweep | Range | Status |
 | --- | --- | --- |
-| [2026-08-07](sweep-2026-08-07.md) | `71c476e9c..f3f0242fb` (85 units) | nearly complete — only u3, u10, u82 remain; F1 + u81b skipped |
+| [2026-08-07](sweep-2026-08-07.md) | `71c476e9c..f3f0242fb` (85 units) | COMPLETE 2026-08-08 — all units dispositioned; F1 + u81b skipped by decision |
