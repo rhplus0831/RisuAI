@@ -17,6 +17,11 @@ export interface InputHookHistoryContext extends HistorySlotContext {
   maxTokens: number
 }
 
+function inputHookProfileId(hook: InputHook): string | undefined {
+  if (hook.model?.mode !== 'modelProfile' || typeof hook.model.profileId !== 'string') return undefined
+  return hook.model.profileId.trim() || undefined
+}
+
 export async function runInputHook(
   hook: InputHook,
   slots: { content: string; draft: string },
@@ -66,12 +71,14 @@ export async function runInputHook(
             content: slots.content,
           },
         ])
+  const profileIdOverride = inputHookProfileId(hook)
   const rq = await requestChatData(
     {
       formated,
       bias: {},
       useStreaming: false,
       noMultiGen: true,
+      ...(profileIdOverride ? { profileIdOverride } : {}),
     },
     'otherAx',
     abortSignal ?? null,

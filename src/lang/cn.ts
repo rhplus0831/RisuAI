@@ -1579,6 +1579,8 @@ export const languageChinese = {
   inputHookAdd: '添加钩子',
   inputHookName: '钩子名称',
   inputHookPrompt: '钩子提示词',
+  inputHookModel: '模型',
+  inputHookInheritOtherAxModel: '继承其他辅助模型',
   inputHookDelete: '删除钩子',
   inputHookDraftLabel: '草稿',
   inputHookDraftPlaceholder: '钩子输出将显示在这里。发送前可以编辑。',

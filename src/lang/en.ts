@@ -1220,6 +1220,8 @@ export const languageEnglish = {
   inputHookAdd: 'Add Hook',
   inputHookName: 'Hook Name',
   inputHookPrompt: 'Hook Prompt',
+  inputHookModel: 'Model',
+  inputHookInheritOtherAxModel: 'Inherit Other Auxiliary model',
   inputHookDelete: 'Delete Hook',
   inputHookDraftLabel: 'Draft',
   inputHookDraftPlaceholder: 'Hook output will appear here. You can edit it before sending.',

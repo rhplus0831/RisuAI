@@ -1686,6 +1686,8 @@ export const languageGerman = {
   inputHookAdd: 'Hook hinzufügen',
   inputHookName: 'Hook-Name',
   inputHookPrompt: 'Hook-Anweisung',
+  inputHookModel: 'Modell',
+  inputHookInheritOtherAxModel: 'Modell „Weitere Hilfsaufgaben“ übernehmen',
   inputHookDelete: 'Hook löschen',
   inputHookDraftLabel: 'Entwurf',
   inputHookDraftPlaceholder: 'Die Hook-Ausgabe erscheint hier und kann vor dem Senden bearbeitet werden.',

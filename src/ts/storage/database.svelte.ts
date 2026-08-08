@@ -3777,11 +3777,15 @@ export interface DynamicOutput {
   dynamicRequest: boolean
 }
 
+export type InputHookModel = { mode: 'inheritOtherAx' } | { mode: 'modelProfile'; profileId: string }
+
 export type InputHook = {
   id: string
   name: string
   type: 'draft' | 'btw'
   prompt: string
+  /** Missing on legacy hooks; omission inherits the Other Auxiliary model role. */
+  model?: InputHookModel
 }
 
 export interface Database {

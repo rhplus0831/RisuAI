@@ -1663,6 +1663,8 @@ export const languageSpanish = {
   inputHookAdd: 'Añadir hook',
   inputHookName: 'Nombre del hook',
   inputHookPrompt: 'Prompt del hook',
+  inputHookModel: 'Modelo',
+  inputHookInheritOtherAxModel: 'Heredar modelo auxiliar',
   inputHookDelete: 'Eliminar hook',
   inputHookDraftLabel: 'Borrador',
   inputHookDraftPlaceholder: 'La salida del hook aparecerá aquí. Puedes editarla antes de enviarla.',

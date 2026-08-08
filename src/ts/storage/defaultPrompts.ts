@@ -39,6 +39,7 @@ export function createDefaultInputHooks() {
       name: 'Translate',
       type: 'draft' as const,
       prompt: defaultInputTranslatorPrompt,
+      model: { mode: 'inheritOtherAx' as const },
     },
   ]
 }

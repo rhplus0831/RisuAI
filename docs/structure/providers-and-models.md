@@ -240,7 +240,7 @@ callers.
 | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `src/ts/translator/presets.ts`, `src/ts/translator/pipeline.ts`     | Translator preset normalization/import/export and ordered-step prompt/output execution.                                             |
 | `src/ts/translator/historySlots.ts`                                 | Shared source/translated history-slot parsing, filtering, greeting fallback, and token-bounded rendering.                           |
-| `src/ts/process/inputHooks.ts`                                      | Non-streaming draft/BTW hook dispatch, including shared history-slot substitution through the `otherAx` model role.                 |
+| `src/ts/process/inputHooks.ts`                                      | Non-streaming draft/BTW hook dispatch, including shared history-slot substitution and optional per-hook profile overrides of the `otherAx` model role. |
 | `src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte`    | Multi-step translator preset editor and model-profile selection UI.                                                                |
 | `server/fastify/src/translation/rawMessageTranslation.ts`           | Google, DeepL, DeepLX, and LLM dispatch plus protected raw-line handling and server history-slot rendering.                         |
 | `server/fastify/src/translation/serverMessageTranslation.ts`        | Detached provider work followed by source/previous-translation/job-fenced targeted message persistence.                            |
@@ -283,6 +283,9 @@ drops oldest entries until the combined source/translated rendering fits
 `translatorHistoryMaxTokens` (2,048 by default). Before an input hook runs,
 `src/lib/ChatScreens/DefaultChatScreen.svelte` hydrates enough transcript pages
 for that bounded window and rejects stale chat/composer ownership.
+Each input hook can select a durable model profile. Hooks without a selection,
+including legacy hook records without a `model` field, inherit the `otherAx`
+model role and its normal fallback behavior.
 `src/ts/process/inputHooks.test.ts`,
 `src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts`, and
 `server/fastify/__tests__/rawMessageTranslation.test.ts` are the durable

@@ -56,6 +56,7 @@ describe('database defaults', () => {
         type: 'draft',
         prompt:
           'Translate the following user message into English. Preserve names, commands, markdown, and inlay tags. Output only the translated message.',
+        model: { mode: 'inheritOtherAx' },
       },
     ])
     expect(database.reducedMotion).toBe(false)

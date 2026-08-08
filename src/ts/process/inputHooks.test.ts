@@ -87,6 +87,30 @@ describe('runInputHook', () => {
     expect(requestMessages()).toBe(parsed)
   })
 
+  it('uses a hook model profile override while retaining the Other Auxiliary role', async () => {
+    const selectedHook: InputHook = {
+      ...hook('Rewrite the content.'),
+      model: { mode: 'modelProfile', profileId: '  hook-profile  ' },
+    }
+
+    await runInputHook(selectedHook, { content: 'composer text', draft: '' })
+
+    expect(testState.requestChatData).toHaveBeenCalledWith(
+      {
+        formated: [
+          { role: 'system', content: 'Rewrite the content.' },
+          { role: 'user', content: 'composer text' },
+        ],
+        bias: {},
+        useStreaming: false,
+        noMultiGen: true,
+        profileIdOverride: 'hook-profile',
+      },
+      'otherAx',
+      null,
+    )
+  })
+
   it('falls back to system prompt plus content when no slot marker exists', async () => {
     await runInputHook(hook('Rewrite the content.'), { content: 'composer text', draft: 'ignored draft' })
 

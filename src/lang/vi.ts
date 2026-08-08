@@ -1651,6 +1651,8 @@ export const languageVietnamese = {
   inputHookAdd: 'Thêm hook',
   inputHookName: 'Tên hook',
   inputHookPrompt: 'Prompt của hook',
+  inputHookModel: 'Mô hình',
+  inputHookInheritOtherAxModel: 'Kế thừa mô hình phụ trợ khác',
   inputHookDelete: 'Xóa hook',
   inputHookDraftLabel: 'Bản nháp',
   inputHookDraftPlaceholder: 'Kết quả hook sẽ xuất hiện ở đây. Bạn có thể sửa trước khi gửi.',
