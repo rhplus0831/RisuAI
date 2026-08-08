@@ -12,6 +12,13 @@ import {
   installPushNotificationForegroundCleanup,
   installPushNotificationNavigationListener,
 } from './ts/server/pushNotifications'
+import { alertError } from './ts/alert'
+import { language } from './lang'
+
+window.addEventListener('vite:preloadError', (event) => {
+  console.error('Chunk load error detected:', event)
+  alertError(language.preloadError)
+})
 
 installRouter()
 installPushNotificationNavigationListener()

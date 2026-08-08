@@ -1,5 +1,6 @@
 export const languageEnglish = {
   unknownInteractionTime: 'Unknown',
+  preloadError: 'The server has been updated or the network connection has been lost. Please refresh the page.',
   mutationStatusQueued: 'Queued',
   mutationStatusFailed: 'Save failed',
   messageMutationPending: 'Saving message change…',

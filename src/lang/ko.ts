@@ -22,6 +22,7 @@ const languageKoreanBase = {
   chatGenerationTogglePresetNoSources: '사용 가능한 활성 토글 소스가 없습니다.',
   chatGenerationTogglePresetBack: '뒤로',
   unknownInteractionTime: '알 수 없음',
+  preloadError: '서버가 업데이트되었거나 네트워크 연결이 끊어졌습니다. 페이지를 새로고침해 주세요.',
   regexDisplayUpdatePending: '편집을 멈추면 채팅 표시가 업데이트됩니다.',
   secretInput: {
     savedPlaceholder: '저장된 인증 정보',

@@ -1,6 +1,7 @@
 import { checkNullish } from './util'
 import { sha256Hex } from './sha256Fallback'
 import { get } from 'svelte/store'
+import streamSaver from 'streamsaver'
 import { type Database, defaultSdDataFunc, getDatabase, appVer, getCurrentCharacter } from './storage/database.svelte'
 import { checkRisuUpdate } from './update'
 import {
@@ -1063,7 +1064,6 @@ export class LocalWriter {
    * @returns {Promise<boolean>} - A promise that resolves to a boolean indicating success.
    */
   async init(name = 'Binary', ext = ['bin']): Promise<boolean> {
-    const streamSaver = await import('streamsaver')
     const writableStream = streamSaver.createWriteStream(name + '.' + ext[0])
     this.writer = writableStream.getWriter()
     return true
