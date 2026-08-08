@@ -18,6 +18,7 @@ import { tokenize, type TokenEncoding } from './tokens.js'
 import { ensureTokenizerLoadedForDb, tokenizerEncodingFromDb } from './tokenizerConfig.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 import { getChatDefaultVariables, readChatVariable } from './chatVarDefaults.js'
+import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
 
 /**
  * Lorebook activation: constant + keyword + recursive.
@@ -92,12 +93,11 @@ export interface LoreEntryActive {
   order: number
   priority: number
   /**
-   * Token count of the decorator-stripped `prompt` under the
-   * encoding resolved from the active database tokenizer. Populated
-   * so the priority-desc budget filter has something to
-   * drop. Like the SPA (`lorebook.svelte.ts`), this is computed
-   * once at activation time and not refreshed after `inject_lore`
-   * mutates `prompt`.
+   * Token count of the decorator-stripped, CBS-evaluated `prompt` under
+   * the encoding resolved from the active database tokenizer. Populated so
+   * the priority-desc budget filter has something to drop. Like the SPA
+   * (`lorebook.svelte.ts`), this is computed once at activation time and not
+   * refreshed after `inject_lore` mutates `prompt`.
    */
   tokens: number
   source: string
@@ -125,6 +125,8 @@ export interface ActivateLorebookInput {
   database: Database
   currentChar: character
   currentChat: Chat
+  /** Request-scoped CBS coordinates/memo reused by the live assembly path. */
+  cbsContext?: ExpandContext
   /**
    * Retained for activation callers that also track their selected model.
    * Token counts use `database` as the authoritative tokenizer config,
@@ -176,6 +178,18 @@ function writeStickyChatVar(input: ActivateLorebookInput, key: string, value: st
 
 function loreId(entry: loreBook): string {
   return entry.id ?? String(pickHashRand(5555, entry.content))
+}
+
+function countLorebookTokens(input: ActivateLorebookInput, prompt: string, encoding: TokenEncoding): number {
+  const evaluated = isRisuChatParserFixedPoint(prompt)
+    ? prompt
+    : expandVariables(prompt, {
+        ...input.cbsContext,
+        database: input.database,
+        chara: input.currentChar,
+        runVar: false,
+      }).text
+  return tokenize(evaluated, encoding)
 }
 
 interface SearchArg {
@@ -865,7 +879,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
         role,
         order,
         priority,
-        tokens: tokenize(stripped, encoding),
+        tokens: countLorebookTokens(input, stripped, encoding),
         source: entry.comment || `lorebook ${i}`,
         inject,
       })
@@ -1222,7 +1236,7 @@ export async function activateLorebookAsync(input: ActivateLorebookInput): Promi
         role,
         order,
         priority,
-        tokens: tokenize(stripped, encoding),
+        tokens: countLorebookTokens(input, stripped, encoding),
         source: entry.comment || `lorebook ${i}`,
         inject,
       })

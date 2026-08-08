@@ -27,6 +27,7 @@ import {
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { ensureCharacterLorebookHydrated } from '../server/chatMessageHydration.svelte'
 import { isAgentOnlyLorebookEntry } from '../agentLorebookInputs'
+import { risuChatParser } from '../parser/parser.svelte'
 
 // Scoped pre-edit rollback for the discrete lorebook editor actions below
 // Snapshot only the one collection the action edits (`type`/`mode`
@@ -815,7 +816,9 @@ export async function loadLoreBookV3Prompt() {
           prompt: content,
           role: role,
           order: order,
-          tokens: await tokenize(content),
+          // Count the text that reaches context. runVar stays false so cutoff
+          // preflight cannot fire chat-variable writes such as {{setvar}}.
+          tokens: await tokenize(risuChatParser(content, { chara: char })),
           priority: priority,
           source: fullLore[i].comment || `lorebook ${i}`,
           inject: inject ?? null,

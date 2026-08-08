@@ -1694,6 +1694,7 @@ export function fillLorebookSlots(state: AssemblyState): void {
     database: db,
     currentChar,
     currentChat,
+    cbsContext: state.ctx,
     model: db.aiModel,
     writeChatVar: (key, value) => {
       const persisted = currentPersistedChat(state)
@@ -1719,6 +1720,7 @@ export async function fillLorebookSlotsAsync(state: AssemblyState): Promise<void
     database: db,
     currentChar,
     currentChat,
+    cbsContext: state.ctx,
     model: db.aiModel,
     writeChatVar: (key, value) => {
       const persisted = currentPersistedChat(state)

@@ -1258,6 +1258,46 @@ describe('Phase 7-7d activateLorebook — budget truncation', () => {
     expect(report.actives[0].tokens).toBe(3)
   })
 
+  it('counts CBS-evaluated content for cutoff without firing variable writes', () => {
+    const currentChat = makeChat({ scriptstate: {} })
+    const collapsedBranch = 'large hidden branch '.repeat(40)
+    const currentChar = makeChar({
+      chatPage: 0,
+      chats: [currentChat],
+      globalLore: [
+        makeLore({
+          comment: 'collapsed',
+          content: `{{#if 0}}{{setvar::preflightGuard::changed}}${collapsedBranch}{{/}}tiny`,
+        }),
+      ],
+      loreSettings: { tokenBudget: 1, scanDepth: 5, recursiveScanning: true },
+    })
+    const database = makeDb({ characters: [currentChar], currentChar: 0 } as Partial<Database>)
+
+    const report = activateLorebook({ database, currentChar, currentChat })
+
+    expect(report.actives).toHaveLength(1)
+    expect(report.actives[0]).toMatchObject({ source: 'collapsed', tokens: 1 })
+    expect(report.actives[0].prompt).toContain(collapsedBranch)
+    expect(currentChat.scriptstate).toEqual({})
+  })
+
+  it('rejects raw-small CBS source when its evaluated content exceeds the cutoff', () => {
+    const currentChat = makeChat()
+    const currentChar = makeChar({
+      chatPage: 0,
+      chats: [currentChat],
+      desc: 'large expanded description '.repeat(40),
+      globalLore: [makeLore({ comment: 'expanded', content: '{{description}}' })],
+      loreSettings: { tokenBudget: 2, scanDepth: 5, recursiveScanning: true },
+    })
+    const database = makeDb({ characters: [currentChar], currentChar: 0 } as Partial<Database>)
+
+    const report = activateLorebook({ database, currentChar, currentChat })
+
+    expect(report.actives).toEqual([])
+  })
+
   it('routes to o200k_base when the database model is in the o200k prefix list', () => {
     // `café résumé 漢字` diverges: cl100k_base → 9, o200k_base → 6.
     const lore = makeLore({ comment: 'a', content: 'café résumé 漢字' })
