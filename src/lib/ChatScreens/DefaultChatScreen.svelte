@@ -32,6 +32,7 @@
     ScrollToMessageStore,
     additionalChatMenu,
     additionalFloatingActionButtons,
+    chatPanelStore,
     easyPanelStore,
   } from '../../ts/stores.svelte'
   import { RegexDisplayReloadPointer } from '../../ts/process/regexDisplayReload'
@@ -2336,6 +2337,18 @@
             markComposerDraftChanged('message')
           }}
           {send} />
+      {/if}
+
+      {#if chatPanelStore.length > 0}
+        <div class="chat-screen-content-width my-2 flex flex-col gap-2">
+          {#each chatPanelStore as panel (`${panel.pluginName}:${panel.id}`)}
+            <section
+              class={`rounded-md border border-darkborderc bg-darkbg/80 p-3 text-textcolor ${panel.className ?? ''}`}
+              data-plugin-chat-panel={panel.id}>
+              {@html panel.html}
+            </section>
+          {/each}
+        </div>
       {/if}
 
       {#if getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message?.[0]?.data?.startsWith(coldStorageHeader)}

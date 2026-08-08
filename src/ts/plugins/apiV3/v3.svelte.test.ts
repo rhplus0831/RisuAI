@@ -121,6 +121,7 @@ vi.mock('src/ts/stores.svelte', () => ({
   additionalHamburgerMenu: [],
   additionalSettingsMenu: [],
   bodyIntercepterStore: [],
+  chatPanelStore: [],
   hotReloading: makeStore(false),
   selectedCharID: makeStore('char-a'),
 }))
@@ -131,6 +132,7 @@ vi.mock('../../stores.svelte', () => ({
   additionalHamburgerMenu: [],
   additionalSettingsMenu: [],
   bodyIntercepterStore: [],
+  chatPanelStore: [],
   hotReloading: makeStore(false),
   selectedCharID: makeStore('char-a'),
 }))
@@ -317,6 +319,7 @@ import {
   additionalFloatingActionButtons,
   additionalHamburgerMenu,
   additionalSettingsMenu,
+  chatPanelStore,
 } from 'src/ts/stores.svelte'
 import { dispatchDurableServerBackedSettingsPatch } from 'src/ts/server/settingsBridge.svelte'
 import { hydrateChatMessages, isChatMessageTranscriptHydrated } from 'src/ts/server/chatMessageHydration.svelte'
@@ -1567,6 +1570,34 @@ describe('V3 plugin lifecycle cleanup', () => {
 
     await __v3PluginLifecycleTestHooks.unloadInstance(runtime.instance)
     expect(additionalChatMenu).toHaveLength(0)
+  })
+
+  it('replaces, explicitly unregisters, and unloads only the plugin-owned chat panel', async () => {
+    const pluginA = __v3PluginLifecycleTestHooks.createTrackedApi(seedV3Plugin('plugin-a'))
+    const pluginB = __v3PluginLifecycleTestHooks.createTrackedApi(seedV3Plugin('plugin-b'))
+    const apiA = pluginA.api as any
+    const apiB = pluginB.api as any
+
+    apiA.setChatPanel('<img src="https://attacker.example/pixel"><span>first</span>', {
+      id: 'shared-panel',
+      className: 'plugin-panel',
+    })
+    apiA.setChatPanel('<strong>replacement</strong>', { id: 'shared-panel' })
+    apiB.setChatPanel('<span>other owner</span>', { id: 'shared-panel' })
+
+    expect(chatPanelStore).toHaveLength(2)
+    expect(chatPanelStore[0]).toMatchObject({
+      id: 'shared-panel',
+      pluginName: 'plugin-a',
+      html: '<strong>replacement</strong>',
+    })
+    expect(chatPanelStore[0].html).not.toContain('attacker.example')
+
+    apiA.unregisterUIPart('shared-panel')
+    expect(chatPanelStore.map((panel) => panel.pluginName)).toEqual(['plugin-b'])
+
+    await __v3PluginLifecycleTestHooks.unloadInstance(pluginB.instance)
+    expect(chatPanelStore).toHaveLength(0)
   })
 
   it('scopes shared UI ids to each plugin owner', async () => {

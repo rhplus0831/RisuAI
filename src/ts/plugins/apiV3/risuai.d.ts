@@ -1563,6 +1563,18 @@ interface RisuaiPluginAPI {
   ): Promise<UIPartResponse>
 
   /**
+   * Sets HTML content in a panel between the chat composer and transcript.
+   * Calling this again with the same ID replaces the plugin's panel in place.
+   * Pass `null` or an empty string to remove it. Panel HTML is sanitized, and
+   * all panels owned by the plugin are removed automatically on unload.
+   *
+   * @param content - Sanitized panel HTML, or null/empty to remove the panel
+   * @param options - Optional stable ID and additional section class names
+   * @returns The stable panel ID
+   */
+  setChatPanel(content: string | null, options?: { id?: string; className?: string }): Promise<UIPartResponse>
+
+  /**
    * Unregisters a UI part
    * @param id - UI part ID returned during registration
    */

@@ -32,9 +32,12 @@ import {
   additionalHamburgerMenu,
   additionalSettingsMenu,
   bodyIntercepterStore,
+  chatPanelStore,
   selectedCharID,
+  type ChatPanelDef,
   type MenuDef,
 } from 'src/ts/stores.svelte'
+import DOMPurify from 'dompurify'
 import { v4 } from 'uuid'
 import { sleep } from 'src/ts/util'
 import { alertConfirm, alertError, alertNormal } from 'src/ts/alert'
@@ -697,6 +700,11 @@ type V3OwnedMenuDef = MenuDef & {
   __v3OwnerToken: string
 }
 
+type V3OwnedChatPanelDef = ChatPanelDef & {
+  __v3OwnerGeneration: number
+  __v3OwnerToken: string
+}
+
 const ownMenuDef = (menuDef: MenuDef, instance: V3PluginInstance): V3OwnedMenuDef => {
   return {
     ...menuDef,
@@ -714,6 +722,23 @@ const makeMenuUnloadCallback = (menuDef: V3OwnedMenuDef, menuStore: MenuDef[]) =
     if (index !== -1) {
       menuStore.splice(index, 1)
     }
+  }
+}
+
+const removeOwnedChatPanel = (id: string, instance: V3PluginInstance) => {
+  const index = chatPanelStore.findIndex((item) => {
+    const owned = item as V3OwnedChatPanelDef
+    return item.id === id && item.pluginName === instance.name && owned.__v3OwnerGeneration === instance.generation
+  })
+  if (index !== -1) chatPanelStore.splice(index, 1)
+}
+
+const makeChatPanelUnloadCallback = (panel: V3OwnedChatPanelDef) => {
+  return () => {
+    const index = chatPanelStore.findIndex(
+      (item) => (item as V3OwnedChatPanelDef).__v3OwnerToken === panel.__v3OwnerToken,
+    )
+    if (index !== -1) chatPanelStore.splice(index, 1)
   }
 }
 
@@ -1588,6 +1613,42 @@ const makeRisuaiAPIV3 = (
       addPluginUnloadCallback(plugin.name, makeMenuUnloadCallback(menuDef, targetStore), instance.generation)
       return { id }
     },
+    setChatPanel: (
+      content: string | null,
+      options: {
+        id?: string
+        className?: string
+      } = {},
+    ) => {
+      const id = options.id || `${plugin.name}:default`
+      if (content === null || content === '') {
+        removeOwnedChatPanel(id, instance)
+        return { id }
+      }
+      if (typeof content !== 'string') {
+        throw new Error('content must be a string or null')
+      }
+
+      const panel: V3OwnedChatPanelDef = {
+        id,
+        pluginName: plugin.name,
+        html: sanitizePluginNetworkDeadHtml(content),
+        className:
+          typeof options.className === 'string'
+            ? DOMPurify.sanitize(options.className, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] })
+            : undefined,
+        __v3OwnerGeneration: instance.generation,
+        __v3OwnerToken: v4(),
+      }
+      const existingIndex = chatPanelStore.findIndex((item) => {
+        const owned = item as V3OwnedChatPanelDef
+        return item.id === id && item.pluginName === plugin.name && owned.__v3OwnerGeneration === instance.generation
+      })
+      if (existingIndex === -1) chatPanelStore.push(panel)
+      else chatPanelStore[existingIndex] = panel
+      addPluginUnloadCallback(plugin.name, makeChatPanelUnloadCallback(panel), instance.generation)
+      return { id }
+    },
     registerMCP: registerOwnedMCP,
     unregisterMCP: (identifier: string) => unregisterMCPModule(identifier),
     unregisterUIPart: (id: string) => {
@@ -1607,6 +1668,7 @@ const makeRisuaiAPIV3 = (
       removeFromMenuStore(additionalFloatingActionButtons)
       removeFromMenuStore(additionalHamburgerMenu)
       removeFromMenuStore(additionalChatMenu)
+      removeOwnedChatPanel(id, instance)
     },
     log: (message: string) => {
       console.log(`[RisuAI Plugin: ${plugin.name}] ${message}`)
@@ -1926,6 +1988,7 @@ export const __v3PluginLifecycleTestHooks = {
     additionalFloatingActionButtons.splice(0, additionalFloatingActionButtons.length)
     additionalHamburgerMenu.splice(0, additionalHamburgerMenu.length)
     additionalChatMenu.splice(0, additionalChatMenu.length)
+    chatPanelStore.splice(0, chatPanelStore.length)
     bodyIntercepterStore.splice(0, bodyIntercepterStore.length)
     pluginV2.providers.clear()
     pluginV2.providerOptions.clear()

@@ -305,10 +305,11 @@ payloads, but they are not server-persisted unless a later command stores them.
 
 ## UI Surfaces
 
-Plugin V3 registers four visible surface families through
+Plugin V3 registers five visible surface families through
 `src/ts/stores.svelte.ts`: `additionalSettingsMenu`,
 `additionalFloatingActionButtons`, `additionalHamburgerMenu`, and
-`additionalChatMenu`. `src/ts/plugins/apiV3/v3.svelte.ts` replaces an existing
+`additionalChatMenu`, plus sanitized chat-body panels through `chatPanelStore`
+and `setChatPanel`. `src/ts/plugins/apiV3/v3.svelte.ts` replaces an existing
 entry from the same plugin owner and removes owned entries on unload/reset;
 `src/lib/Setting/Settings.svelte`, `src/lib/SideBars/Sidebar.svelte`, and
 `src/lib/ChatScreens/DefaultChatScreen.svelte` consume the stores.
