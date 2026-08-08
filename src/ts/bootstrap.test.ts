@@ -201,7 +201,6 @@ vi.mock('./plugins/plugins.svelte', () => ({
 vi.mock('./alert', () => ({
   alertError: vi.fn(),
   alertMd: vi.fn(),
-  alertTOS: vi.fn(async () => true),
   waitAlert: vi.fn(async () => undefined),
 }))
 vi.mock('./gui/animation', () => ({ updateReducedMotion: vi.fn() }))

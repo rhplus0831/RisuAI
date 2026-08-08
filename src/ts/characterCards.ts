@@ -8,7 +8,7 @@ import {
   alertNormal,
   alertProgress,
   alertStore,
-  alertTOS,
+  alertRealmTerms,
   alertWait,
 } from './alert'
 import {
@@ -1918,7 +1918,7 @@ export async function downloadRisuHub(
 ) {
   try {
     if (!arg.forceRedirect) {
-      if (!(await alertTOS())) {
+      if (!(await alertRealmTerms())) {
         return
       }
     }

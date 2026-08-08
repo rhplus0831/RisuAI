@@ -61,7 +61,7 @@ vi.mock('./alert', () => ({
   alertStore: {
     set: alertState.alertStoreSet,
   },
-  alertTOS: vi.fn(),
+  alertRealmTerms: vi.fn(),
   alertWait: alertState.alertWait,
 }))
 

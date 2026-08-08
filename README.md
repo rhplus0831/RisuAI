@@ -61,11 +61,11 @@ not define current behavior.
 
 ### Build and serve
 
-Build the web client with the self-host legal flag and serve it through Fastify:
+Build the web client and serve it through Fastify:
 
 ```
 pnpm install
-pnpm build:site
+pnpm build
 pnpm api:start
 ```
 

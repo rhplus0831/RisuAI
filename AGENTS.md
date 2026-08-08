@@ -7,7 +7,7 @@
 - Use `pnpm dev:agent` when you need a full-stack development server.
 - For an agent-controlled API server that does not restart on every source edit, run `pnpm api:dev:flag` instead of `pnpm api:dev`. It restarts only when `.risu-api-restart` is created or touched (`touch .risu-api-restart`), then deletes that flag after the restart request is consumed.
 - The frontend is available at `http://localhost:6418`; Fastify runs on port `6419` and is proxied through `/api` on the frontend server.
-- `pnpm dev:agent` bypasses password authentication and Terms of Service confirmation for agent-run browser sessions.
+- `pnpm dev:agent` bypasses password authentication and RisuRealm terms confirmation for agent-run browser sessions.
 - `pnpm dev:agent` runs against a disposable `data-agent/` sandbox and cannot
   mutate the human database. Its default `clone` mode takes an online SQLite
   snapshot and links or copies `assets/` and `save/`, while intentionally

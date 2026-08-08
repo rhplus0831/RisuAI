@@ -17,7 +17,7 @@ commands, generation, assets, storage, Realm import, plugins, or MCP.
 
 | Symptom                                                                              | Inspect first                                                                                                                                                                         | Then inspect                                                                                                                                                                |
 | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App is stuck on legal, loading, settings, grid, or chat                              | `src/App.svelte`, `src/main.ts`, `src/ts/bootstrap.ts`                                                                                                                                | `src/ts/stores.svelte.ts`, `src/ts/router.ts`, `src/styles.css`                                                                                                             |
+| App is stuck on loading, settings, grid, or chat                                     | `src/App.svelte`, `src/main.ts`, `src/ts/bootstrap.ts`                                                                                                                                | `src/ts/stores.svelte.ts`, `src/ts/router.ts`, `src/styles.css`                                                                                                             |
 | App reports writer takeover or becomes a frozen offline view                         | `src/ts/server/activeWriterSession.ts`, `src/ts/server/events.ts`                                                                                                                     | `src/styles.css`, `src/ts/bootstrap.ts`, `src/ts/server/commands.ts`                                                                                                        |
 | URL, back/forward, settings section, playground tool, or character route is wrong    | `src/ts/router.ts`, `src/App.svelte` route effects                                                                                                                                    | `src/ts/router.test.ts`, `src/App.routeEffect.dom.test.ts`                                                                                                                  |
 | Theme, motion, spacing, clipping, colors, font, UI scale, or custom CSS is wrong     | `src/styles.css`, `src/ts/gui/colorscheme.ts`, `src/ts/gui/animation.ts`, `src/ts/gui/guisize.ts`                                                                                     | `src/lib/Setting/Pages/DisplaySettings.svelte`, `src/ts/setting/accessibilitySettingsData.ts`                                                                               |
@@ -40,7 +40,7 @@ commands, generation, assets, storage, Realm import, plugins, or MCP.
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `index.html`          | Mounts `#app` and loads `/src/main.ts`.                                                                                                                                                                                            |
 | `src/main.ts`         | Imports polyfills/storage state, installs the router, push-navigation listener, and viewport guard, mounts `App.svelte`, then installs smoke/startup/hotkey behavior and removes `#preloading`.                  |
-| `src/App.svelte`      | Main render switch and overlay host. It owns legal/loading/settings/grid/sidebar/chat priority and global modal mounting.                                                                                                          |
+| `src/App.svelte`      | Main render switch and overlay host. It owns loading/settings/grid/sidebar/chat priority and global modal mounting.                                                                                                                |
 | `src/styles.css`      | Tailwind v4 import, theme variable defaults, full-height app CSS, global chat text CSS, and Tailwind compatibility base rules.                                                                                                     |
 | `src/ts/bootstrap.ts` | Browser startup coordinator. It loads Fastify resources, starts hydration/events/bridges, then updates UI-derived CSS state.                                                                                                       |
 | `src/ts/platform.ts`  | Fastify-only platform flag. `isFastifyServer` is hard-coded true.                                                                                                                                                                  |
@@ -60,13 +60,12 @@ translator-preset exchange entrypoints are mapped in
 
 `src/App.svelte` renders in this order:
 
-1. Legal/setup screen when `VITE_RISU_LEGAL_CONFIGURED` is unset/falsy.
-2. April 1 joke screen.
-3. Loading screen while `$loadedStore` is false.
-4. `CustomGUISettingMenu` when `$CustomGUISettingMenuStore` is true.
-5. `Settings` when `$settingsOpen` is true.
-6. `GridCatalog` when `$currentRoute.kind === 'grid'`.
-7. Normal shell: `Sidebar` plus `ChatScreen`.
+1. April 1 joke screen.
+2. Loading screen while `$loadedStore` is false.
+3. `CustomGUISettingMenu` when `$CustomGUISettingMenuStore` is true.
+4. `Settings` when `$settingsOpen` is true.
+5. `GridCatalog` when `$currentRoute.kind === 'grid'`.
+6. Normal shell: `Sidebar` plus `ChatScreen`.
 
 App-hosted overlays mount after the main branch. The common blockers are
 `AlertComp`, Realm popup/frame, preset/persona lists, bookmarks, Hypa V3 modal
@@ -177,7 +176,7 @@ Important route/store facts:
 | `src/lib/Setting/Pages/`    | Concrete settings pages. Some are thin `SettingRenderer` hosts; others are large stateful pages.                                                                                                                                  |
 | `src/lib/UI/`               | Shared higher-level UI: accordions, menus, model pickers, provider pickers, prompt rows, Realm UI.                                                                                                                                |
 | `src/lib/UI/GUI/`           | Shared primitive controls: buttons/icon buttons, text/optional/number/textarea/resizable textarea/syntax-highlighted textarea/select/option/slider/color inputs, segmented control, portals, multilingual fields, sidebar arrows. |
-| `src/lib/Others/`           | App-level and miscellaneous UI: alerts, Mood Light-filtered grid/trash catalog, bookmark/chat-list modals, Hypa V3, popup editor, loadout, Iris, and legal/setup.                                                                 |
+| `src/lib/Others/`           | App-level and miscellaneous UI: alerts, Mood Light-filtered grid/trash catalog, bookmark/chat-list modals, Hypa V3, popup editor, loadout, and Iris.                                                                            |
 | `src/lib/Playground/`       | Playground menu and tools for parser/tokenizer/MCP/image/translation/subtitles/inlays/tool conversion.                                                                                                                            |
 | `src/lib/Mobile/`           | Mobile components. `MobileCharacters` is active through `GridCatalog` and applies the Mood Light partition; the full mobile shell files are currently not mounted by `App.svelte`.                                                |
 | `src/lib/LiteUI/`           | Lite/hub card support. `LiteMain.svelte` is not the live app entrypoint.                                                                                                                                                          |
@@ -852,4 +851,4 @@ pnpm smoke:fastify-browser
 
 Use `pnpm dev:agent` when an agent needs the full-stack app in a browser. It
 serves the frontend at `http://localhost:6418`, proxies Fastify on port `6419`,
-and bypasses auth/TOS for agent sessions. Stop it when finished.
+and bypasses auth/RisuRealm terms for agent sessions. Stop it when finished.

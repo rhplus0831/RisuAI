@@ -34,7 +34,6 @@ test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)
   page.on('console', (m) => diagnostics.push(`console.${m.type()}: ${m.text()}`))
   page.on('pageerror', (e) => diagnostics.push(`pageerror: ${e.message}`))
 
-  await page.addInitScript(() => localStorage.setItem('tos4', 'true'))
   await page.goto(harness.baseUrl)
   await expect
     .poll(() => page.evaluate(() => Boolean(window.__RISU_FASTIFY_BROWSER_SMOKE__)), {

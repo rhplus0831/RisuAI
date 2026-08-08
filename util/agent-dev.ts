@@ -116,8 +116,7 @@ spawnManaged('api', 'pnpm', ['exec', 'tsx', 'watch', 'server/fastify/src/index.t
 spawnManaged('vite', 'pnpm', ['exec', 'vite', '--host', host, '--port', String(frontendPort), '--strictPort'], {
   ...process.env,
   RISU_API_PROXY_TARGET: `http://localhost:${apiPort}`,
-  VITE_RISU_LEGAL_CONFIGURED: process.env.VITE_RISU_LEGAL_CONFIGURED ?? 'TRUE',
-  VITE_RISU_AGENT_DEV_IGNORE_TOS: process.env.VITE_RISU_AGENT_DEV_IGNORE_TOS ?? 'TRUE',
+  VITE_RISU_AGENT_DEV_IGNORE_REALM_TERMS: process.env.VITE_RISU_AGENT_DEV_IGNORE_REALM_TERMS ?? 'TRUE',
 })
 
 process.once('SIGINT', () => void shutdown(0))

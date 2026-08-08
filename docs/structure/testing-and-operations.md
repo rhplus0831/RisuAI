@@ -11,13 +11,12 @@ pin a `packageManager`; the lockfile is pnpm lockfile v9.
 | Command                            | Purpose                                                                                                                                                                       |
 | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm dev`                         | Start Vite client dev server on `0.0.0.0:5174`.                                                                                                                               |
-| `pnpm dev:agent`                   | Start full-stack agent dev server: frontend `6418`, Fastify `6419`, trace mode `agent`, auth/TOS bypass, and disposable `data-agent/` sandbox defaults.                       |
-| `pnpm dev:human`                   | Start full-stack human trace server: frontend `6002`, Fastify `6001`, trace mode `human`, password auth enabled and TOS bypassed by default unless overridden.                |
+| `pnpm dev:agent`                   | Start full-stack agent dev server: frontend `6418`, Fastify `6419`, trace mode `agent`, auth/RisuRealm-terms bypass, and disposable `data-agent/` sandbox defaults.            |
+| `pnpm dev:human`                   | Start full-stack human trace server: frontend `6002`, Fastify `6001`, trace mode `human`, password auth enabled and RisuRealm terms bypassed by default unless overridden.    |
 | `pnpm api:dev`                     | Start Fastify with `tsx watch server/fastify/src/index.ts`.                                                                                                                   |
 | `pnpm api:dev:flag`                | Start Fastify through `util/api-flag-dev.ts`; restarts only when `.risu-api-restart` is touched/created.                                                                      |
 | `pnpm api:start`                   | Start Fastify once with `tsx server/fastify/src/index.ts`.                                                                                                                    |
 | `pnpm build`                       | Vite build with sourcemaps.                                                                                                                                                   |
-| `pnpm build:site`                  | Production client build with `VITE_RISU_LEGAL_CONFIGURED=TRUE`.                                                                                                               |
 | `pnpm preview`                     | Vite preview server for a built client bundle.                                                                                                                                |
 | `pnpm check`                       | Run `svelte-check --tsconfig ./tsconfig.json`.                                                                                                                                |
 | `pnpm check:server`                | Emit client-library declarations, then typecheck strict Fastify and Playwright browser-smoke projects without emitting server code.                                           |
@@ -32,7 +31,7 @@ pin a `packageManager`; the lockfile is pnpm lockfile v9.
 | `pnpm test:all`                    | Run format, Svelte, strict server/browser-smoke TypeScript, frontend tests, explicit gates, the UI coverage gate, server tests, and browser smoke; preserve any failing lane. |
 | `pnpm coverage:ui-map`             | Run the focused UI coverage gate and write reports to `coverage/ui-map`.                                                                                                      |
 | `pnpm api:test`                    | Compatibility alias for `pnpm test:server`.                                                                                                                                   |
-| `pnpm smoke:fastify-browser`       | Build site, then run Playwright Fastify browser smoke.                                                                                                                        |
+| `pnpm smoke:fastify-browser`       | Build the client, then run Playwright Fastify browser smoke.                                                                                                                  |
 | `pnpm analyze:db <path>`           | Analyze `.risu`, JSON, raw database JSON, or data dirs containing `db.json`; SQLite sidecars are copied when present. Add `--json` for machine-readable output.               |
 | `pnpm ts:agent <command>`          | Run the tsserver-backed agent debugging wrapper for navigation, diagnostics, symbols, code actions, imports, and renames.                                                     |
 | `pnpm format`, `pnpm format:check` | Prettier write/check.                                                                                                                                                         |
@@ -77,8 +76,8 @@ served; `src/ts/platform.ts` still makes the browser Fastify-backed.
 respect `RISU_AGENT_DEV_HOST` / `RISU_AGENT_DEV_PORT` /
 `RISU_AGENT_API_PORT`, default `RISU_AGENT_DEV_AUTH_BYPASS=TRUE` for
 `dev:agent` and `FALSE` for `dev:human` unless overridden, default
-`RISU_API_STATIC_ROOT=none`, default `VITE_RISU_LEGAL_CONFIGURED=TRUE` and
-`VITE_RISU_AGENT_DEV_IGNORE_TOS=TRUE`, and proxy `/api` to the spawned API port.
+`RISU_API_STATIC_ROOT=none`, default `VITE_RISU_AGENT_DEV_IGNORE_REALM_TERMS=TRUE`,
+and proxy `/api` to the spawned API port.
 The shared runner host defaults to `127.0.0.1`, not the network-visible Fastify
 default, because agent mode bypasses authentication; set `RISU_AGENT_DEV_HOST`
 explicitly only when a wider bind is intentional.
@@ -140,7 +139,7 @@ content and should not be shared casually.
 To serve a built SPA through Fastify:
 
 ```sh
-pnpm build:site
+pnpm build
 pnpm api:start
 ```
 
@@ -330,14 +329,13 @@ Local/dev:
 | `RISU_TS_AGENT_TSSERVER_LOG`     | unset                                           | Set to `1` or a path to capture verbose `pnpm ts:agent` tsserver logs.                                                            |
 | `RISU_TS_AGENT_TIMEOUT_MS`       | `30000`                                         | Default tsserver request timeout for `pnpm ts:agent`; `--timeout-ms` overrides it.                                                |
 | `RISU_TS_AGENT_DEBUG`            | unset                                           | Echo tsserver stderr while debugging `pnpm ts:agent`.                                                                             |
-| `VITE_RISU_AGENT_DEV_IGNORE_TOS` | `TRUE` in full-stack runners                    | Set by `pnpm dev:agent` / `pnpm dev:human`; ordinary Vite/build leaves it unset. `alertTOS()` returns accepted when set.          |
+| `VITE_RISU_AGENT_DEV_IGNORE_REALM_TERMS` | `TRUE` in full-stack runners                    | Set by `pnpm dev:agent` / `pnpm dev:human`; ordinary Vite/build leaves it unset. `alertRealmTerms()` returns accepted when set. |
 
 Client/build:
 
 | Variable                                                                         | Notes                                                                                                                   |
 | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `RISU_API_PROXY_TARGET`                                                          | Vite dev proxy target for `/api`.                                                                                       |
-| `VITE_RISU_LEGAL_CONFIGURED`                                                     | Controls legal/setup gating in builds and smoke.                                                                        |
 | `VITE_FASTIFY_BROWSER_SMOKE`                                                     | Enables browser smoke hook and fixed smoke password setup/login.                                                        |
 | `VITE_RISU_LITE`                                                                 | Enables lite-mode consumers in settings/theme/legacy mobile code; does not mount `LiteMain` or the legacy mobile shell. |
 | `VITE_AD_CLIENT`, `VITE_AD_CLIENT_MOBILE`, `VITE_AD_SLOT`, `VITE_AD_SLOT_MOBILE` | Ad UI configuration.                                                                                                    |

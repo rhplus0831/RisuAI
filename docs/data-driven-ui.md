@@ -53,14 +53,11 @@ Driver tags used below:
 ## App shell, routing, and home
 
 - **`APP-01` — Root render priority (`B`, `L`, `A`)**
-  - Variants: Strictly replaces the whole app with legal notice, April Fools page, bootstrap loading, custom-GUI editor, settings, character grid, or normal sidebar/chat. A higher branch hides every lower one. Loading has an independently changing status line.
+  - Variants: Strictly replaces the whole app with the April Fools page, bootstrap loading, custom-GUI editor, settings, character grid, or normal sidebar/chat. A higher branch hides every lower one. Loading has an independently changing status line.
   - Owners: `src/App.svelte`; `src/ts/bootstrap.ts`
 - **`APP-02` — URL/store routing (`L`, `R`, `A`)**
   - Variants: Settings section, playground tool, grid, inlay explorer, bare character, character chat, and home all select different content. Unknown settings/tool slugs fall back to their menu; an unknown root clears route-owned state and reaches home rather than a not-found page. Active generation can canonicalize navigation to its owner.
   - Owners: `src/ts/router.ts`; `src/App.svelte`
-- **`APP-03` — Legal configuration and browser language (`B`)**
-  - Variants: A falsy `VITE_RISU_LEGAL_CONFIGURED` hides all application data. The legal page independently chooses Chinese, Korean, or English fallback from `navigator.language`.
-  - Owners: `src/App.svelte`; `src/lib/Others/Legal.svelte`
 - **`APP-04` — Bootstrap/resource readiness (`A`, `R`)**
   - Variants: Spinner plus changing startup status, then the routed app after settings/collections/characters, durable-mutation replay, selected character, hydration, plugins, and CSS state are prepared.
   - Owners: `src/App.svelte`; `src/ts/bootstrap.ts`; `src/ts/stores.svelte.ts`
@@ -71,8 +68,8 @@ Driver tags used below:
   - Variants: `VITE_RISU_LITE=TRUE` removes chat/model setup, display/accessibility, lore/regex, plugin/module, and advanced/about settings groups; language, hotkeys, and backup remain.
   - Owners: `src/ts/lite.ts`; `src/lib/Setting/Settings.svelte`
 - **`APP-07` — Application language (`R`, `B`)**
-  - Variants: Most labels/help/options switch among the selected resource language, with English deep-merge fallback. The legal page and Iris intro have separate browser/resource-language selection paths.
-  - Owners: `src/lang/index.ts`; `src/ts/setting/languageSettingsData.svelte.ts`; `src/lib/Others/Legal.svelte`; `src/lib/Others/IrisModal.svelte`
+  - Variants: Most labels/help/options switch among the selected resource language, with English deep-merge fallback. The Iris intro has a separate browser/resource-language selection path.
+  - Owners: `src/lang/index.ts`; `src/ts/setting/languageSettingsData.svelte.ts`; `src/lib/Others/IrisModal.svelte`
 - **`APP-08` — Date-gated content (`B`, `L`)**
   - Variants: April 1 can replace the app with a two-step fake search page. The home title changes for holidays; Christmas/anniversary clicking reveals a score/timer minigame after five clicks.
   - Owners: `src/App.svelte`; `src/lib/UI/Title.svelte`
@@ -264,7 +261,7 @@ UI.
   - Variants: Alert, Realm detail, model/prompt/legacy preset picker, persona picker, bookmarks, Hypa modal/progress, plugin warning, arbitrary popup, EasyPanel, popup editor, loadout, Iris, and custom-sidebar config can mount over any main screen.
   - Owners: `src/App.svelte`
 - **`MODAL-02` — Shared alert matrix (`L`, `R`, `A`, `X`)**
-  - Variants: Main dialog variants for normal/error/wait/ask/input/select/TOS/Markdown/select-character/request-data/add-character/chat-options/progress; separate card export, toast, module selector, branch graph, and request-log inspector. `pluginconfirm` is dormant because it has no production caller.
+  - Variants: Main dialog variants for normal/error/wait/ask/input/select/RisuRealm terms/Markdown/select-character/request-data/add-character/chat-options/progress; separate card export, toast, module selector, branch graph, and request-log inspector. `pluginconfirm` is dormant because it has no production caller.
   - Owners: `src/ts/alert.ts`; `src/lib/Others/AlertComp.svelte`
 - **`MODAL-03` — Alert substate (`R`, `A`, `L`)**
   - Variants: Error network subtext/stack/translated details/copied status; determinate/legacy/indeterminate progress; encoded select display/options; input datalist; request-data tabs and missing/present log/prompt info; export choices/warnings by module/preset/character assets; request-log empty/list/success/failure/expanded/copied. Result-bearing dialogs queue while passive alerts defer.

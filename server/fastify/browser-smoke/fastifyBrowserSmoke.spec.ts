@@ -294,8 +294,6 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
 })
 
 test('core chat controls and blocking alerts remain accessible across responsive viewports', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('tos4', 'true'))
-
   for (const viewport of [
     { name: 'desktop', width: 1280, height: 800 },
     { name: 'mobile', width: 390, height: 844 },

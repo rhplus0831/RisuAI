@@ -85,7 +85,7 @@ initializes hotkeys, and removes the preloading element.
 12. Show the one-time insecure-origin warning when the page lacks a secure
     context, then apply startup UI state such as `botSettingAtStart`.
 13. Set `loadedStore`, select the persisted character, start DOM observers,
-    register dynamic models, run module update, and show TOS as needed.
+    register dynamic models, and run module update. RisuRealm terms are requested only at the Realm download boundary.
 
 Visible startup bugs often sit at the boundary between `loadedStore`,
 `selectedCharID`, resource application, route application, lazy body reads, and

@@ -14,7 +14,7 @@ const alertState = vi.hoisted(() => ({
   alertNormal: vi.fn(),
   alertProgress: vi.fn(),
   alertStoreSet: vi.fn(),
-  alertTOS: vi.fn(),
+  alertRealmTerms: vi.fn(),
   alertWait: vi.fn(),
 }))
 
@@ -53,7 +53,7 @@ vi.mock('./alert', () => ({
   alertStore: {
     set: alertState.alertStoreSet,
   },
-  alertTOS: alertState.alertTOS,
+  alertRealmTerms: alertState.alertRealmTerms,
   alertWait: alertState.alertWait,
 }))
 
@@ -160,6 +160,8 @@ vi.mock('./process/files/inlays', () => ({
 vi.mock('./process/processzip', () => ({
   CharXImporter: class {},
   CharXWriter: class {},
+  DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES: 50 * 1024 * 1024,
+  formatCharXEntrySizeLimit: vi.fn((bytes: number) => `${bytes} bytes`),
 }))
 
 vi.mock('./process/modules', () => ({
@@ -263,7 +265,7 @@ beforeEach(() => {
     goCharacterOnImport: false,
   }
   alertState.alertConfirm.mockResolvedValue(true)
-  alertState.alertTOS.mockResolvedValue(true)
+  alertState.alertRealmTerms.mockResolvedValue(true)
   globalApiState.checkCharOrder.mockImplementation(() => undefined)
   presetImportState.importPreset.mockResolvedValue('applied')
   realmImportState.importRealmCharacterFromServer.mockResolvedValue(okRealmImport('char-imported'))
@@ -375,6 +377,21 @@ describe('Realm URL imports', () => {
 })
 
 describe('Realm character import finish refresh', () => {
+  it('requests Realm terms before a standard catalog download', async () => {
+    await downloadRisuHub('realm-id')
+
+    expect(alertState.alertRealmTerms).toHaveBeenCalledTimes(1)
+    expect(realmImportState.importRealmCharacterFromServer).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not start a Realm import when its terms are declined', async () => {
+    alertState.alertRealmTerms.mockResolvedValue(false)
+
+    await downloadRisuHub('realm-id')
+
+    expect(realmImportState.importRealmCharacterFromServer).not.toHaveBeenCalled()
+  })
+
   it('passes the pending charx token when retrying after low-level confirmation', async () => {
     realmImportState.importRealmCharacterFromServer
       .mockResolvedValueOnce({ status: 'low-level-access', pendingImportToken: 'pending-token' })

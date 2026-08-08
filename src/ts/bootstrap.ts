@@ -2,7 +2,7 @@ import { get } from 'svelte/store'
 import { getDatabase, setResourceWriteGuardEnabled, type Database } from './storage/database.svelte'
 import { botMakerMode, selectedCharID, loadedStore, LoadingStatusState } from './stores.svelte'
 import { loadPlugins, startPluginRuntimeSync } from './plugins/plugins.svelte'
-import { alertError, alertMd, alertTOS, waitAlert } from './alert'
+import { alertError, alertMd, waitAlert } from './alert'
 import { updateReducedMotion } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
 import { language } from 'src/lang'
@@ -257,11 +257,6 @@ export async function loadData(): Promise<void> {
       startObserveDom()
       registerModelDynamic()
       moduleUpdate()
-      alertTOS().then((a) => {
-        if (a === false) {
-          location.reload()
-        }
-      })
     } catch (error) {
       alertError(error)
       await waitAlert()

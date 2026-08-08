@@ -283,7 +283,6 @@ import {
 } from './ts/stores.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from './ts/server/resourceState.svelte'
 
-vi.stubEnv('VITE_RISU_LEGAL_CONFIGURED', 'true')
 const { default: App } = await import('./App.svelte')
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -388,7 +387,6 @@ async function mountApp() {
 
 describe('App route/refreeze mounted DOM behavior', () => {
   beforeEach(async () => {
-    vi.stubEnv('VITE_RISU_LEGAL_CONFIGURED', 'true')
     target = document.createElement('div')
     document.body.appendChild(target)
     window.history.replaceState(null, '', routePath)

@@ -56,7 +56,6 @@
   import PopupEditor from './lib/Others/PopupEditor.svelte'
   import LoadoutModal from './lib/Others/LoadoutModal.svelte'
   import IrisModal from './lib/Others/IrisModal.svelte'
-  import Legal from './lib/Others/Legal.svelte'
   import CustomSidebarConfig from './lib/Others/CustomSidebarConfig.svelte'
   import { importRisuModuleData } from './ts/process/modules'
   import {
@@ -204,9 +203,7 @@
       }
     }
   }}>
-  {#if !import.meta.env.VITE_RISU_LEGAL_CONFIGURED}
-    <Legal />
-  {:else if aprilFools}
+  {#if aprilFools}
     <div class="bg-[#212121] w-full h-screen min-h-screen text-black flex relative">
       <div class="w-full max-w-3xl mx-auto py-8 px-4 flex justify-center items-center">
         <div class="flex flex-col w-full items-center text-[#bbbbbb]">

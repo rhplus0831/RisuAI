@@ -57,7 +57,7 @@ export function initHotkey() {
           resolveAlertSelection(activeAlert.dialogOwner, null)
         } else if (['addchar', 'chatOptions', 'selectChar', 'selectModule'].includes(activeAlert.type)) {
           resolveAlertWorkflow(activeAlert.dialogOwner, activeAlert.type === 'addchar' ? 'cancel' : '')
-        } else if (!['wait', 'wait2', 'progress', 'login', 'tos'].includes(activeAlert.type)) {
+        } else if (!['wait', 'wait2', 'progress', 'login', 'realmTerms'].includes(activeAlert.type)) {
           alertStore.set({ type: 'none', msg: '' })
         }
         ev.preventDefault()

@@ -13,7 +13,7 @@ import {
   bodyIntercepterStore,
 } from './stores.svelte'
 import { loadPlugins } from './plugins/plugins.svelte'
-import { alertError, alertMd, alertNormal, alertSelect, alertTOS, waitAlert } from './alert'
+import { alertError, alertMd, alertNormal, alertSelect, waitAlert } from './alert'
 import { characterURLImport } from './characterCards'
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from './storage/defaultPrompts'
 import { AutoStorage } from './storage/autoStorage'

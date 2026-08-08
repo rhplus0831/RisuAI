@@ -18,7 +18,7 @@ export interface alertData {
     | 'markdown'
     | 'select'
     | 'login'
-    | 'tos'
+    | 'realmTerms'
     | 'cardexport'
     | 'requestdata'
     | 'addchar'
@@ -73,7 +73,14 @@ interface InputRequest {
   resolve: (value: string) => void
 }
 
-type WorkflowAlertType = 'addchar' | 'chatOptions' | 'login' | 'selectChar' | 'cardexport' | 'tos' | 'selectModule'
+type WorkflowAlertType =
+  | 'addchar'
+  | 'chatOptions'
+  | 'login'
+  | 'selectChar'
+  | 'cardexport'
+  | 'realmTerms'
+  | 'selectModule'
 
 interface WorkflowRequest {
   kind: 'workflow'
@@ -126,7 +133,7 @@ const responseDialogTypes = new Set<alertData['type']>([
   'login',
   'selectChar',
   'cardexport',
-  'tos',
+  'realmTerms',
   'selectModule',
 ])
 const passivePresentationTypes = new Set<alertData['type']>([
@@ -690,24 +697,20 @@ export async function alertCardExport(type: string = ''): Promise<CardExportResu
   return parseCardExportResult(await queueWorkflow('cardexport', '', type))
 }
 
-export async function alertTOS() {
-  if (import.meta.env.VITE_RISU_AGENT_DEV_IGNORE_TOS === 'TRUE') {
+export async function alertRealmTerms() {
+  if (import.meta.env.VITE_RISU_AGENT_DEV_IGNORE_REALM_TERMS === 'TRUE') {
     return true
   }
 
+  // Preserve acceptance recorded by the original shared application/Realm prompt.
   if (localStorage.getItem('tos4') === 'true') {
     return true
   }
 
-  const result = await queueWorkflow('tos', 'tos')
+  const result = await queueWorkflow('realmTerms', 'realmTerms')
 
   if (result === 'yes') {
     localStorage.setItem('tos4', 'true')
-    return true
-  }
-
-  if (localStorage.getItem('tos2') && Date.now() - new Date('2026-05-15').getTime() < 0) {
-    // The tos2 acceptance was honored only during the grace period ending 2026-05-15.
     return true
   }
 

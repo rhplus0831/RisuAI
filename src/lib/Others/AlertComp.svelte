@@ -121,7 +121,7 @@
     if ($alertStore.type === 'select') return language.select
     if ($alertStore.type === 'selectChar') return language.select
     if ($alertStore.type === 'input') return language.input
-    if ($alertStore.type === 'tos') return language.termsOfService
+    if ($alertStore.type === 'realmTerms') return language.realm.termsTitle
     return $alertStore.msg || 'Risuai'
   })
 
@@ -396,41 +396,34 @@
             {/await}
           </span>
         </div>
-      {:else if $alertStore.type === 'tos'}
+      {:else if $alertStore.type === 'realmTerms'}
         <div class="text-textcolor">
-          You should accept
-          <a
-            href="https://account.sionyw.com/terms"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="text-green-600 hover:text-green-500 transition-colors duration-200 cursor-pointer"
-            onclick={(event) => {
-              event.preventDefault()
-              openURL('https://account.sionyw.com/terms')
-            }}>Terms of Service</a>
-
-          and
-
-          <a
-            href="https://account.sionyw.com/privacy"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="text-green-600 hover:text-green-500 transition-colors duration-200 cursor-pointer"
-            onclick={(event) => {
-              event.preventDefault()
-              openURL('https://account.sionyw.com/privacy')
-            }}>Privacy Policy</a>
-
-          to continue
+          <p>{language.realm.termsPrompt}</p>
+          <ul class="mt-2 list-disc pl-6">
+            <li>
+              <a
+                href="https://account.sionyw.com/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-green-600 hover:text-green-500 transition-colors duration-200 cursor-pointer"
+                onclick={(event) => {
+                  event.preventDefault()
+                  openURL('https://account.sionyw.com/terms')
+                }}>{language.realm.termsLink}</a>
+            </li>
+            <li>
+              <a
+                href="https://account.sionyw.com/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-green-600 hover:text-green-500 transition-colors duration-200 cursor-pointer"
+                onclick={(event) => {
+                  event.preventDefault()
+                  openURL('https://account.sionyw.com/privacy')
+                }}>{language.realm.privacyLink}</a>
+            </li>
+          </ul>
         </div>
-
-        {#if localStorage.getItem('tos2') && Date.now() - new Date('2026-05-15').getTime() < 0}
-          <div class="text-gray-500 mt-4 text-sm">
-            You can still continue using Risuai using original terms until {new Date(
-              '2026-05-15',
-            ).toLocaleDateString()}.
-          </div>
-        {/if}
       {:else if $alertStore.type === 'pluginconfirm'}
         {@const parts = $alertStore.msg.split('\n\n')}
         {@const mainPart = parts[0]}
@@ -523,20 +516,20 @@
               resolveAlertConfirmation($alertStore.dialogOwner, false)
             }}>NO</Button>
         </div>
-      {:else if $alertStore.type === 'tos' && import.meta.env.VITE_RISU_LEGAL_CONFIGURED}
-        {@const tosOwner = $alertStore.dialogOwner}
+      {:else if $alertStore.type === 'realmTerms'}
+        {@const realmTermsOwner = $alertStore.dialogOwner}
         <div class="flex gap-2 w-full">
           <Button
             className="mt-4 grow"
             onclick={() => {
-              resolveAlertWorkflow(tosOwner, 'yes')
-            }}>Accept</Button>
+              resolveAlertWorkflow(realmTermsOwner, 'yes')
+            }}>{language.realm.acceptTerms}</Button>
           <Button
             styled={'outlined'}
             className="mt-4 grow"
             onclick={() => {
-              resolveAlertWorkflow(tosOwner, 'no')
-            }}>Do not Accept</Button>
+              resolveAlertWorkflow(realmTermsOwner, 'no')
+            }}>{language.realm.declineTerms}</Button>
         </div>
       {:else if $alertStore.type === 'select'}
         {@const hasDisplay = $alertStore.msg.startsWith('__DISPLAY__')}

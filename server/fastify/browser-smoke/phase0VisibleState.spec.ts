@@ -232,9 +232,6 @@ function attachDiagnostics(page: Page): () => string {
 }
 
 async function boot(page: Page): Promise<void> {
-  // Pre-accept the Terms-of-Service gate so its z-50 modal never blocks clicks.
-  // (The smoke build renders the TOS modal; agent dev mode skips it via env.)
-  await page.addInitScript(() => localStorage.setItem('tos4', 'true'))
   await page.goto(harness.baseUrl)
   await waitForBrowserLoaded(page)
 }
