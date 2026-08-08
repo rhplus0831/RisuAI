@@ -1473,13 +1473,13 @@ export async function runTrigger(
     return null
   }
 
-  function setLocalVar(key: string, value: string, indent: number) {
+  function setLocalVar(key: string, value: string, indent: number): boolean {
     if (!localVarScopes || localVarScopes.length === 0) {
       localVarScopes = [{}]
     }
     const currentScope = localVarScopes[localVarScopes.length - 1]
     if (!currentScope) {
-      return
+      return false
     }
 
     const finalValue = value === null || value === undefined ? 'null' : value
@@ -1498,7 +1498,12 @@ export async function runTrigger(
       currentScope[targetIndent] = {}
     }
 
+    if (currentScope[targetIndent][key] === finalValue) {
+      return false
+    }
+
     currentScope[targetIndent][key] = finalValue
+    return true
   }
 
   function declareLocalVar(key: string, value: string, indent: number) {
@@ -1566,23 +1571,29 @@ export async function runTrigger(
     })
   }
 
-  function setVar(key: string, value: string) {
+  function setVar(key: string, value: string): boolean {
     if (arg.displayMode) {
+      if (tempVars[key] === value) {
+        return false
+      }
       tempVars[key] = value
-      return
+      return true
     }
 
     const localVar = getLocalVar(key)
     if (localVar !== null) {
-      setLocalVar(key, value, currentIndent)
-      return
+      return setLocalVar(key, value, currentIndent)
+    }
+
+    const stateKey = '$' + key
+    if (chat.scriptstate?.[stateKey] === value) {
+      return false
     }
 
     const shouldDispatchLiveSideEffect = shouldApplyLiveChatSideEffects()
     const previous = shouldDispatchLiveSideEffect ? captureScriptstateRollback() : null
     varChanged = true
     chat.scriptstate ??= {}
-    const stateKey = '$' + key
     chat.scriptstate[stateKey] = value
     if (shouldDispatchLiveSideEffect) {
       syncActiveChatScriptstate()
@@ -1590,6 +1601,7 @@ export async function runTrigger(
     if (chat.id && previous) {
       dispatchPatchChatScriptstateScoped(chat.id, { [stateKey]: value }, [], previous)
     }
+    return true
   }
 
   const buildResult = async () => {

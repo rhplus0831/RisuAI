@@ -477,6 +477,28 @@ describe('trigger durable writes under the resource guard', () => {
     expect(cmd.body.patch.$score).toBe('7')
   })
 
+  it('skips an identical v2SetVar without dispatching a scriptstate command', async () => {
+    const calls = stubCommandFetch()
+    testDatabaseState.db.characters[0].chats[0].scriptstate = { $score: '7' }
+    setResourceWriteGuardEnabled(true)
+    const char = characterWithTriggers([
+      {
+        comment: 'set-same',
+        type: 'manual',
+        conditions: [],
+        effect: [{ type: 'v2SetVar', var: 'score', operator: '=', valueType: 'value', value: '7' }],
+      },
+    ])
+
+    const result = await runTrigger(char, 'manual', {
+      chat: char.chats[char.chatPage],
+      manualName: 'set-same',
+    })
+
+    expect((result?.chat.scriptstate as Record<string, string>).$score).toBe('7')
+    expect(calls.filter((call) => call.url.endsWith('/scriptstate'))).toHaveLength(0)
+  })
+
   it('keeps guarded deferred var and author-note side effects on the returned chat', async () => {
     const calls = stubCommandFetch()
     setResourceWriteGuardEnabled(true)

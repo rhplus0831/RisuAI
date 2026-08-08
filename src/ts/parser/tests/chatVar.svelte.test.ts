@@ -109,6 +109,12 @@ test('can set a chat variable over its default value', () => {
   expect(getChatVar('template')).toBe('overridden')
 })
 
+test('reports whether a chat variable write changed stored state', () => {
+  expect(setChatVar('status', 'ready')).toBe(true)
+  expect(setChatVar('status', 'ready')).toBe(false)
+  expect(getChatVar('status')).toBe('ready')
+})
+
 test('can get a global chat variable', () => {
   fc.assert(
     fc.property(

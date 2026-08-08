@@ -188,6 +188,77 @@ describe('server Lua runtime — pure edit-hook dispatch', () => {
     expect(engine.varChanged).toBe(true)
   })
 
+  it('returns lightweight chat fields and a bounded recent-chat array', async () => {
+    const chat = makeChat({
+      message: [
+        { role: 'user', data: 'older', time: 41 },
+        { role: 'char', data: 'latest' },
+      ] as Chat['message'],
+    })
+    const { ctx } = makeRuntime({ chat })
+    const code = `
+      function onStart(id)
+        return json.encode({
+          firstData = getChatData(id, 0),
+          lastRole = getChatRole(id, -1),
+          missingData = getChatData(id, 99),
+          missingRole = getChatRole(id, 99),
+          recent = getRecentChats(id, 1.9)
+        })
+      end
+    `
+
+    const result = await runServerLua({ code, mode: 'start' }, ctx)
+
+    expect(result.error).toBeUndefined()
+    expect(JSON.parse(result.res as string)).toEqual({
+      firstData: 'older',
+      lastRole: 'char',
+      missingData: '',
+      missingRole: '',
+      recent: [{ role: 'char', data: 'latest', time: 0 }],
+    })
+  })
+
+  it('keeps unchanged setters nil and does not mark state changed or stop generation', async () => {
+    const { ctx, engine } = makeRuntime({
+      scriptstate: { $same: 'value', $__sameState: '"value"' },
+    })
+    const code = `
+      function onStart(id)
+        local chatResult = setChatVar(id, 'same', 'value')
+        local stateResult = setState(id, 'sameState', 'value')
+        local changedResult = setStateChanged(id, 'sameState', 'value')
+        return type(chatResult) .. '|' .. type(stateResult) .. '|' .. type(changedResult)
+      end
+    `
+
+    const result = await runServerLua({ code, mode: 'start' }, ctx)
+
+    expect(result.res).toBe('nil|nil|nil')
+    expect(result.stopSending).toBe(false)
+    expect(engine.varChanged).toBe(false)
+  })
+
+  it('returns true only when the changed setter variants write a new value', async () => {
+    const { ctx, engine } = makeRuntime()
+    const code = `
+      function onStart(id)
+        local chatChanged = setChatVarChanged(id, 'mood', 'curious')
+        local stateChanged = setStateChanged(id, 'turns', 7)
+        return tostring(chatChanged) .. '|' .. tostring(stateChanged)
+      end
+    `
+
+    const result = await runServerLua({ code, mode: 'start' }, ctx)
+
+    expect(result.res).toBe('true|true')
+    expect(result.stopSending).toBe(false)
+    expect(engine.getVar('mood')).toBe('curious')
+    expect(engine.getVar('__turns')).toBe('7')
+    expect(engine.varChanged).toBe(true)
+  })
+
   it('gates setChatVar by access key — a forged id cannot write', async () => {
     const { ctx, engine } = makeRuntime()
     const code = `

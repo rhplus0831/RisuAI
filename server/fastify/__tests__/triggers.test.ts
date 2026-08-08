@@ -511,20 +511,40 @@ describe('Phase 7-9b trigger var engine', () => {
 
   it('writes scriptstate, flips varChanged, and propagates to the db chat', () => {
     const engine = makeEngine()
-    engine.setVar('hp', '5')
+    expect(engine.setVar('hp', '5')).toBe(true)
     expect(engine.workingChat.scriptstate?.['$hp']).toBe('5')
     expect(engine.varChanged).toBe(true)
     // The persisted db chat now shares the working chat's scriptstate object.
     expect(engine.db.characters[0].chats[0].scriptstate).toBe(engine.workingChat.scriptstate)
   })
 
+  it('skips an identical persistent write without marking or propagating state', () => {
+    const engine = makeEngine({ scriptstate: { $hp: '5' } })
+    const persistedState = engine.db.characters[0].chats[0].scriptstate
+
+    expect(engine.setVar('hp', '5')).toBe(false)
+    expect(engine.varChanged).toBe(false)
+    expect(engine.db.characters[0].chats[0].scriptstate).toBe(persistedState)
+    expect(engine.db.characters[0].chats[0].scriptstate).not.toBe(engine.workingChat.scriptstate)
+  })
+
   it('local variables shadow scriptstate and stay local on write', () => {
     const engine = makeEngine({ scriptstate: { $x: 'global' } })
     engine.declareLocalVar('x', 'local', 0)
     expect(engine.getVar('x')).toBe('local')
-    engine.setVar('x', 'updated')
+    expect(engine.setVar('x', 'updated')).toBe(true)
     expect(engine.getVar('x')).toBe('updated')
     expect(engine.workingChat.scriptstate?.['$x']).toBe('global')
+    expect(engine.varChanged).toBe(false)
+  })
+
+  it('reports identical local writes as unchanged', () => {
+    const engine = makeEngine({ scriptstate: { $x: 'global' } })
+    engine.declareLocalVar('x', 'local', 0)
+
+    expect(engine.setVar('x', 'local')).toBe(false)
+    expect(engine.setLocalVar('x', 'local', 0)).toBe(false)
+    expect(engine.getVar('x')).toBe('local')
     expect(engine.varChanged).toBe(false)
   })
 
@@ -542,7 +562,8 @@ describe('Phase 7-9b trigger var engine', () => {
   it('displayMode keeps writes in tempVars and leaves scriptstate untouched', () => {
     const tempVars: Record<string, string> = {}
     const engine = makeEngine({ displayMode: true, tempVars })
-    engine.setVar('x', '5')
+    expect(engine.setVar('x', '5')).toBe(true)
+    expect(engine.setVar('x', '5')).toBe(false)
     expect(tempVars.x).toBe('5')
     expect(engine.getVar('x')).toBe('5')
     expect(engine.workingChat.scriptstate?.['$x']).toBeUndefined()

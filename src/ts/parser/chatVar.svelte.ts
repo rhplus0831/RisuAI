@@ -30,7 +30,7 @@ export function getChatVar(key: string): string {
   return state.toString()
 }
 
-export function setChatVar(key: string, value: string): void {
+export function setChatVar(key: string, value: string): boolean {
   const selectedChar = get(selectedCharID)
   const previous = currentChatScriptstateSnapshot()
   let updated = false
@@ -47,6 +47,7 @@ export function setChatVar(key: string, value: string): void {
   if (updated) {
     dispatchCurrentChatScriptstatePatch({ ['$' + key]: value }, [], previous)
   }
+  return updated
 }
 
 export function getGlobalChatVar(key: string): string {

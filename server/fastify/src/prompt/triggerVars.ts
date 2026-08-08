@@ -54,9 +54,9 @@ export interface TriggerVarEngineOptions {
 
 export interface TriggerVarEngine {
   getVar(key: string): string
-  setVar(key: string, value: string): void
+  setVar(key: string, value: string): boolean
   declareLocalVar(key: string, value: string, indent: number): void
-  setLocalVar(key: string, value: string, indent: number): void
+  setLocalVar(key: string, value: string, indent: number): boolean
   clearLocalVarsAtIndent(indent: number): void
   /** Sets the effect loop's current indent (drives local-scope writes). */
   setIndent(indent: number): void
@@ -95,13 +95,13 @@ export function createTriggerVarEngine(opts: TriggerVarEngineOptions): TriggerVa
     return null
   }
 
-  function setLocalVar(key: string, value: string, indent: number): void {
+  function setLocalVar(key: string, value: string, indent: number): boolean {
     if (!localVarScopes || localVarScopes.length === 0) {
       localVarScopes = [{}]
     }
     const currentScope = localVarScopes[localVarScopes.length - 1]
     if (!currentScope) {
-      return
+      return false
     }
 
     const finalValue = value === null || value === undefined ? 'null' : value
@@ -120,7 +120,12 @@ export function createTriggerVarEngine(opts: TriggerVarEngineOptions): TriggerVa
       currentScope[targetIndent] = {}
     }
 
+    if (currentScope[targetIndent][key] === finalValue) {
+      return false
+    }
+
     currentScope[targetIndent][key] = finalValue
+    return true
   }
 
   function declareLocalVar(key: string, value: string, indent: number): void {
@@ -160,25 +165,33 @@ export function createTriggerVarEngine(opts: TriggerVarEngineOptions): TriggerVa
     return 'null'
   }
 
-  function setVar(key: string, value: string): void {
+  function setVar(key: string, value: string): boolean {
     if (displayMode) {
+      if (tempVars[key] === value) {
+        return false
+      }
       tempVars[key] = value
-      return
+      return true
     }
 
     const localVar = getLocalVar(key)
     if (localVar !== null) {
-      setLocalVar(key, value, currentIndent)
-      return
+      return setLocalVar(key, value, currentIndent)
+    }
+
+    chat.scriptstate ??= {}
+    const stateKey = '$' + key
+    if (chat.scriptstate[stateKey] === value) {
+      return false
     }
 
     varChanged = true
-    chat.scriptstate ??= {}
-    chat.scriptstate['$' + key] = value
+    chat.scriptstate[stateKey] = value
     const dbChat = database.characters?.[selectedCharID]?.chats?.[chatPage]
     if (dbChat) {
       dbChat.scriptstate = chat.scriptstate
     }
+    return true
   }
 
   return {

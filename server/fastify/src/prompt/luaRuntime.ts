@@ -509,6 +509,10 @@ function getFullChat(id)
     return json.decode(getFullChatMain(id))
 end
 
+function getRecentChats(id, count)
+    return json.decode(getRecentChatsMain(id, count))
+end
+
 function setFullChat(id, value)
     setFullChatMain(id, json.encode(value))
 end
@@ -583,6 +587,11 @@ end
 function setState(id, name, value)
     local escapedName = "__"..name
     setChatVar(id, escapedName, json.encode(value))
+end
+
+function setStateChanged(id, name, value)
+    local escapedName = "__"..name
+    return setChatVarChanged(id, escapedName, json.encode(value))
 end
 
 function async(callback)
@@ -1502,6 +1511,10 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
     if (!canWriteVar(id)) return
     state.ctx.varEngine.setVar(key, value)
   })
+  declare('setChatVarChanged', (id: string, key: string, value: string) => {
+    if (!canWriteVar(id)) return
+    if (state.ctx.varEngine.setVar(key, value) === true) return true
+  })
   declare('getGlobalVar', (_id: string, key: string) => {
     const value = (state.ctx.database.globalChatVariables ?? {})[key]
     return value === undefined || value === null ? 'null' : String(value)
@@ -1559,6 +1572,20 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
     const message = state.ctx.chat.message.at(index)
     if (!message) return JSON.stringify(null)
     return JSON.stringify({ role: message.role, data: message.data, time: message.time ?? 0 })
+  })
+  declare('getChatData', (_id: string, index: number) => state.ctx.chat.message.at(index)?.data ?? '')
+  declare('getChatRole', (_id: string, index: number) => state.ctx.chat.message.at(index)?.role ?? '')
+  declare('getRecentChatsMain', (_id: string, count: number) => {
+    const chats = state.ctx.chat.message
+    const safeCount = Math.max(0, Math.floor(count || 0))
+    const start = Math.max(0, chats.length - safeCount)
+    return JSON.stringify(
+      chats.slice(start).map((message) => ({
+        role: message.role,
+        data: message.data,
+        time: message.time ?? 0,
+      })),
+    )
   })
   declare('setChat', (id: string, index: number, value: string) => {
     if (!canWrite(id)) {

@@ -430,6 +430,63 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('client scripting lightweight chat and changed-setter APIs', () => {
+  it('exposes scalar chat reads and normalized recent chat JSON', async () => {
+    const chat = makeChat()
+    chat.message = [
+      { role: 'user', data: 'older', time: 12 },
+      { role: 'char', data: 'latest' },
+    ] as Chat['message']
+
+    await runScripted('-- lightweight chat hosts', {
+      char: makeCharacter(chat),
+      chat,
+      mode: 'start',
+    })
+
+    const hostFns = luaMock.engines[0].hostFns
+    expect(hostFns.get('getChatData')?.('id', 0)).toBe('older')
+    expect(hostFns.get('getChatData')?.('id', 99)).toBe('')
+    expect(hostFns.get('getChatRole')?.('id', -1)).toBe('char')
+    expect(hostFns.get('getChatRole')?.('id', 99)).toBe('')
+    expect(JSON.parse(hostFns.get('getRecentChatsMain')?.('id', 1.9) as string)).toEqual([
+      { role: 'char', data: 'latest', time: 0 },
+    ])
+    expect(luaMock.loadedCodes[0]).toContain('function getRecentChats(id, count)')
+    expect(luaMock.loadedCodes[0]).toContain('function setStateChanged(id, name, value)')
+  })
+
+  it('keeps legacy setters returnless and reports true only for changed writes', async () => {
+    const chat = makeChat()
+    const setVar = vi
+      .fn<() => boolean>()
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true)
+    let legacyResult: unknown
+    let unchangedResult: unknown
+    let changedResult: unknown
+    luaMock.setCallListenAction((engine, accessKey) => {
+      legacyResult = engine.hostFns.get('setChatVar')?.(accessKey, 'same', 'value')
+      unchangedResult = engine.hostFns.get('setChatVarChanged')?.(accessKey, 'same', 'value')
+      changedResult = engine.hostFns.get('setChatVarChanged')?.(accessKey, 'new', 'value')
+    })
+
+    const result = await runScripted('-- changed setter hosts', {
+      char: makeCharacter(chat),
+      chat,
+      data: 'body',
+      mode: 'editDisplay',
+      setVar,
+    })
+
+    expect(legacyResult).toBeUndefined()
+    expect(unchangedResult).toBeUndefined()
+    expect(changedResult).toBe(true)
+    expect(result.stopSending).toBe(false)
+  })
+})
+
 describe('client scripting media cleanup (L51)', () => {
   it('L51: getPersonaImageMain revokes its object URL when inlay writing fails', async () => {
     const chat = makeChat()
