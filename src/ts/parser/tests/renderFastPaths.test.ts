@@ -1,7 +1,7 @@
 import { writable } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { language } from '../../../lang'
-import { ParseMarkdown, parseThoughtsAndTools, risuChatParser } from '../parser.svelte'
+import { ParseMarkdown, parseThoughtsAndTools, risuChatParser, trimMarkdown } from '../parser.svelte'
 
 const mocks = vi.hoisted(() => ({
   db: {
@@ -63,6 +63,20 @@ describe('ParseMarkdown sentence paragraph mode gating', () => {
     )
     await expect(ParseMarkdown(input, null, 'pretranslate')).resolves.toBe(input)
     await expect(ParseMarkdown(input, null, 'back')).resolves.toBe(input)
+  })
+})
+
+describe('trimMarkdown decoded-style sanitization', () => {
+  it('re-sanitizes markup introduced by decodeStyle', () => {
+    const injectedCss = '</style><script data-security-marker>alert(1)</script>{color:red}'
+    const payload = `<risu-style>${Buffer.from(injectedCss).toString('hex')}</risu-style>`
+
+    const output = trimMarkdown(payload)
+    const root = document.createElement('div')
+    root.innerHTML = output
+
+    expect(root.querySelector('script')).toBeNull()
+    expect(output).not.toContain('<script')
   })
 })
 

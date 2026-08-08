@@ -239,7 +239,7 @@ describe('Phase 3C hub passthrough', () => {
     expect(echo.requests[0].headers['x-risuai-info']).toBe('2026.4.181;fastify')
   })
 
-  it('translates local realm query parameters to the upstream legacy realm path', async () => {
+  it('translates local realm query parameters to the cached upstream legacy realm path', async () => {
     echo.setResponder((req, res) => {
       res.writeHead(200, { 'content-type': 'text/plain' })
       res.end(`hello ${req.url}`)
@@ -256,7 +256,7 @@ describe('Phase 3C hub passthrough', () => {
     })
     expect(res.statusCode).toBe(200)
     expect(res.body).toBe(
-      'hello /realm/search%3D%3Dfoo%20bar%20__shared%26%26page%3D%3D2%26%26nsfw%3D%3Dtrue%26%26sort%3D%3Ddownloads%26%26web%3D%3Dother',
+      'hello /realm/search%3D%3Dfoo%20bar%20__shared%26%26page%3D%3D2%26%26nsfw%3D%3Dtrue%26%26sort%3D%3Ddownloads%26%26web%3D%3Dother?cache=30',
     )
     expect(echo.requests).toHaveLength(1)
     expect(echo.requests[0].headers['x-risuai-info']).toBe('2026.4.181;fastify')
