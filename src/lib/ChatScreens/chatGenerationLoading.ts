@@ -1,4 +1,6 @@
-export type ChatGenerationLoadingStage = 0 | 1 | 2 | 3 | 4
+export const CHAT_GENERATION_INPUT_HOOK_STAGE = 5
+
+export type ChatGenerationLoadingStage = 0 | 1 | 2 | 3 | 4 | typeof CHAT_GENERATION_INPUT_HOOK_STAGE
 
 export type ChatGenerationLoadingLanguageKey =
   | 'chatGenerationStageStarting'
@@ -6,6 +8,7 @@ export type ChatGenerationLoadingLanguageKey =
   | 'chatGenerationStageCheckingMemory'
   | 'chatGenerationStageWaitingForModel'
   | 'chatGenerationStageFinalizing'
+  | 'chatGenerationStageInputHook'
 
 const STAGE_LABEL_KEYS: Record<ChatGenerationLoadingStage, ChatGenerationLoadingLanguageKey> = {
   0: 'chatGenerationStageStarting',
@@ -13,6 +16,7 @@ const STAGE_LABEL_KEYS: Record<ChatGenerationLoadingStage, ChatGenerationLoading
   2: 'chatGenerationStageCheckingMemory',
   3: 'chatGenerationStageWaitingForModel',
   4: 'chatGenerationStageFinalizing',
+  [CHAT_GENERATION_INPUT_HOOK_STAGE]: 'chatGenerationStageInputHook',
 }
 
 const STAGE_PROGRESS: Record<ChatGenerationLoadingStage, number> = {
@@ -21,10 +25,13 @@ const STAGE_PROGRESS: Record<ChatGenerationLoadingStage, number> = {
   2: 48,
   3: 72,
   4: 92,
+  [CHAT_GENERATION_INPUT_HOOK_STAGE]: 20,
 }
 
 export function normalizeChatGenerationLoadingStage(stage: unknown): ChatGenerationLoadingStage {
-  return stage === 1 || stage === 2 || stage === 3 || stage === 4 ? stage : 0
+  return stage === 1 || stage === 2 || stage === 3 || stage === 4 || stage === CHAT_GENERATION_INPUT_HOOK_STAGE
+    ? stage
+    : 0
 }
 
 export function getChatGenerationLoadingLanguageKey(stage: unknown): ChatGenerationLoadingLanguageKey {

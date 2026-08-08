@@ -120,6 +120,7 @@
   import { preflightChatSendBeforeMutation } from 'src/ts/process/sendChatPreflight'
   import PostGenerationScriptProgress from './PostGenerationScriptProgress.svelte'
   import AgentPresetProgress from './AgentPresetProgress.svelte'
+  import { CHAT_GENERATION_INPUT_HOOK_STAGE } from './chatGenerationLoading'
   import {
     deleteDefaultChatComposerDraft,
     isDefaultChatComposerDraftGenerationCurrent,
@@ -1239,6 +1240,8 @@
     activeTarget: ActiveChatTarget
   }): Promise<void> {
     const abortController = createActiveGenerationAbortController()
+    const previousProcessStage = $chatProcessStage
+    chatProcessStage.set(CHAT_GENERATION_INPUT_HOOK_STAGE)
     doingDraftHook = true
     try {
       const historyContext = await prepareInputHookHistoryContext(input.hook, input.activeTarget)
@@ -1265,6 +1268,7 @@
         alertError(error)
       }
     } finally {
+      if ($chatProcessStage === CHAT_GENERATION_INPUT_HOOK_STAGE) chatProcessStage.set(previousProcessStage)
       doingDraftHook = false
       clearActiveGenerationAbortController(abortController)
     }
@@ -1289,6 +1293,8 @@
 
     preparingSend = true
     doingBtwHook = true
+    const previousProcessStage = $chatProcessStage
+    chatProcessStage.set(CHAT_GENERATION_INPUT_HOOK_STAGE)
     const abortController = createActiveGenerationAbortController()
     try {
       const historyContext = await prepareInputHookHistoryContext(hook, activeTarget)
@@ -1310,6 +1316,7 @@
     } catch (error) {
       if (!abortController.signal.aborted) alertError(error)
     } finally {
+      if ($chatProcessStage === CHAT_GENERATION_INPUT_HOOK_STAGE) chatProcessStage.set(previousProcessStage)
       doingBtwHook = false
       preparingSend = false
       composerOperationGuard.clear(composerOperation.token)
@@ -2775,6 +2782,11 @@
   .chat-process-stage-4 {
     border-top: 0.4rem solid #8b5cf6;
     border-left: 0.4rem solid #8b5cf6;
+  }
+
+  .chat-process-stage-5 {
+    border-top: 0.4rem solid #f59e0b;
+    border-left: 0.4rem solid #f59e0b;
   }
 
   .autoload {

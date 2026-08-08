@@ -300,6 +300,7 @@ import {
 } from 'src/ts/activeChatGenerationSettings'
 import { translate } from '../../ts/translator/translator'
 import { runInputHook } from 'src/ts/process/inputHooks'
+import { chatProcessStage } from 'src/ts/process/index.svelte'
 import { createBranchComment } from './branchComment'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -1697,6 +1698,31 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(loadPageMocks.preflightChatSendBeforeMutation).not.toHaveBeenCalled()
     expect(loadPageMocks.appendCurrentChatUserMessageForSend).not.toHaveBeenCalled()
     expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
+  })
+
+  it('uses the amber input-hook process stage only while a draft hook is running', async () => {
+    seedDatabase([1])
+    const hook = { id: 'draft-hook', name: 'Draft Hook', type: 'draft' as const, prompt: '{{slot::content}}' }
+    getResourceDatabase().inputHooks = [hook]
+    getResourceDatabase().characters[0].chats[0].selectedDraftHookId = hook.id
+    const pending = createDeferred<string>()
+    vi.mocked(runInputHook).mockReturnValueOnce(pending.promise)
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy())
+    const composer = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    composer.value = 'Composer source'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
+
+    await waitFor(() => {
+      expect(get(chatProcessStage)).toBe(5)
+      expect(target.querySelector('[data-testid="default-chat-cancel-button"] .chat-process-stage-5')).toBeTruthy()
+    })
+
+    pending.resolve('Refined draft')
+    await waitFor(() => expect(get(chatProcessStage)).toBe(0))
+    expect(target.querySelector('[data-testid="default-chat-cancel-button"]')).toBeNull()
   })
 
   it('discards a draft-hook result after the active chat target changes', async () => {

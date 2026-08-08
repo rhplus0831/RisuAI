@@ -3251,6 +3251,10 @@
     background: #8b5cf6;
   }
 
+  .chat-generation-loading-stage-5 {
+    background: #f59e0b;
+  }
+
   @keyframes chat-generation-loading-shine {
     0% {
       transform: translateX(-100%);

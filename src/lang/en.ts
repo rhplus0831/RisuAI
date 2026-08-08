@@ -2186,6 +2186,7 @@ export const languageEnglish = {
   chatGenerationStageCheckingMemory: 'Checking memory',
   chatGenerationStageWaitingForModel: 'Waiting for model',
   chatGenerationStageFinalizing: 'Finalizing response',
+  chatGenerationStageInputHook: 'Running input hook',
   chatPostGenerationProgressUnknownScript: 'Script',
   chatPostGenerationProgressCharacterScript: (name: string) => `Character script: ${name}`,
   chatPostGenerationProgressModuleScript: (name: string) => `Module script: ${name}`,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CHAT_GENERATION_INPUT_HOOK_STAGE,
   getChatGenerationLoadingLanguageKey,
   getChatGenerationLoadingProgress,
   getPostGenerationScriptProgress,
@@ -13,9 +14,11 @@ describe('chat generation loading stage mapping', () => {
     expect(getChatGenerationLoadingLanguageKey(2)).toBe('chatGenerationStageCheckingMemory')
     expect(getChatGenerationLoadingLanguageKey(3)).toBe('chatGenerationStageWaitingForModel')
     expect(getChatGenerationLoadingLanguageKey(4)).toBe('chatGenerationStageFinalizing')
+    expect(getChatGenerationLoadingLanguageKey(CHAT_GENERATION_INPUT_HOOK_STAGE)).toBe('chatGenerationStageInputHook')
 
     expect(getChatGenerationLoadingProgress(0)).toBe(12)
     expect(getChatGenerationLoadingProgress(4)).toBe(92)
+    expect(getChatGenerationLoadingProgress(CHAT_GENERATION_INPUT_HOOK_STAGE)).toBe(20)
   })
 
   it('falls back to the starting stage for unknown values', () => {
