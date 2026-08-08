@@ -59,6 +59,7 @@ import type { character, Chat, Message, MessageGenerationInfo } from '../storage
 import type { ServerChatMessagePatch, ServerChatRestoration } from './request/serverChatEvents'
 import { getRerollBuffer, getRerollId, resetRerollNavigation } from './rerollNavigation.svelte'
 import { acknowledgeHydratedGenerationPersistences, queuedGenerationPersistences } from './generationPersistenceState'
+import { addChatOutputListener, chatOutputListeners, type ChatOutputListenerArg } from '../plugins/chatOutputListeners'
 
 const testDatabaseState = {
   get db() {
@@ -237,12 +238,14 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     hydrationMock.hydrate.mockReset()
     hydrationMock.hydrate.mockResolvedValue(undefined)
     queuedGenerationPersistences.set([])
+    chatOutputListeners.clear()
     selectedCharID.set(0)
   })
 
   afterEach(() => {
     resetRerollNavigation()
     queuedGenerationPersistences.set([])
+    chatOutputListeners.clear()
     testDatabaseState.db = originalDb
     selectedCharID.set(-1)
   })
@@ -277,6 +280,48 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     })
     expect(target.message[0].data).toBe('stable final text')
     expect(staleIndexChat.message[0].data).toBe('stale original')
+  })
+
+  it('notifies output listeners after the finalized assistant message is applied', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    const calls: ChatOutputListenerArg[] = []
+    const order: string[] = []
+    addChatOutputListener('output', async (arg) => {
+      order.push('first:start')
+      await Promise.resolve()
+      calls.push(arg)
+      arg.chat.message[0].data = 'detached plugin mutation'
+      arg.char.name = 'Detached Plugin Character'
+      order.push('first:end')
+    })
+    addChatOutputListener('output', () => {
+      order.push('second')
+    })
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'done',
+        done: { postGeneration: { finalText: 'listener-visible final text' } },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+    })
+
+    expect(result.status).toBe('ok')
+    expect(order).toEqual(['first:start', 'first:end', 'second'])
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({
+      characterIndex: 0,
+      chatIndex: 1,
+      messageIndex: 0,
+    })
+    expect(target.message[0].data).toBe('listener-visible final text')
+    expect(char.name).toBe('Stable Character')
   })
 
   it('discards a late inlay completion after a newer message edit intent', async () => {

@@ -32,6 +32,7 @@ import { hydrateChatMessages } from '../server/chatMessageHydration.svelte'
 import type { StreamMessageProjection } from './postGeneration/streamResponse'
 import type { IgpMessageTarget } from './postGeneration/igp'
 import { clearGenerationPersistence, markGenerationPersistenceQueued } from './generationPersistenceState'
+import { runChatOutputListeners } from '../plugins/chatOutputListeners'
 
 export interface ServerBackedStageTimings {
   stage1Start: number
@@ -842,6 +843,30 @@ export async function applyServerBackedTerminal(args: {
     })
   }
 
+  const finalResolution = resolveServerBackedLiveChat({
+    selectedChar: args.selectedChar,
+    selectedChat: args.selectedChat,
+    characterId: terminalTarget.characterId,
+    chatId: terminalTarget.chatId,
+  })
+  const finalChat = finalResolution?.chat ?? args.currentChat
+  const finalAssistant =
+    findGeneratedAssistantMessage(finalChat, generationId) ??
+    (args.targetMessageId
+      ? finalChat.message.find((message) => message.chatId === args.targetMessageId && message.role === 'char')
+      : undefined)
+
+  if (finalResolution) {
+    const characters = getDatabase().characters
+    await runChatOutputListeners({
+      char: finalResolution.character,
+      chat: finalChat,
+      characterIndex: characters.indexOf(finalResolution.character),
+      chatIndex: finalResolution.character.chats.indexOf(finalChat),
+      messageIndex: finalAssistant ? finalChat.message.indexOf(finalAssistant) : -1,
+    })
+  }
+
   if (postGen?.agentPresetError) {
     return {
       status: 'failed',
@@ -857,18 +882,6 @@ export async function applyServerBackedTerminal(args: {
     }
   }
 
-  const finalResolution = resolveServerBackedLiveChat({
-    selectedChar: args.selectedChar,
-    selectedChat: args.selectedChat,
-    characterId: terminalTarget.characterId,
-    chatId: terminalTarget.chatId,
-  })
-  const finalChat = finalResolution?.chat ?? args.currentChat
-  const finalAssistant =
-    findGeneratedAssistantMessage(finalChat, generationId) ??
-    (args.targetMessageId
-      ? finalChat.message.find((message) => message.chatId === args.targetMessageId && message.role === 'char')
-      : undefined)
   const finalMessageId = finalAssistant?.chatId ?? args.targetMessageId
   const igpTarget =
     finalResolution &&

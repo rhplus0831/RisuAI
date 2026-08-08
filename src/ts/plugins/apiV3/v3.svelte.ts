@@ -82,6 +82,12 @@ import {
   normalizePluginNetworkDeadStyleAttribute,
   sanitizePluginNetworkDeadHtml,
 } from '../pluginIconSafety'
+import {
+  addChatOutputListener,
+  chatOutputListeners,
+  removeChatOutputListener,
+  type ChatOutputListener,
+} from '../chatOutputListeners'
 
 function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
@@ -1112,6 +1118,13 @@ const makeRisuaiAPIV3 = (
       oldApis.addRisuReplacer(name, func as any)
     },
     removeRisuReplacer: oldApis.removeRisuReplacer,
+    addRisuChatListener: async (mode: 'output', func: ChatOutputListener) => {
+      addChatOutputListener(mode, func)
+      addPluginUnloadCallback(plugin.name, () => removeChatOutputListener(mode, func), instance.generation)
+    },
+    removeRisuChatListener: (mode: 'output', func: ChatOutputListener) => {
+      removeChatOutputListener(mode, func)
+    },
     setDatabaseLite: oldApis.setDatabaseLite,
     setDatabase: oldApis.setDatabase,
     loadPlugins: oldApis.loadPlugins,
@@ -2025,6 +2038,7 @@ export const __v3PluginLifecycleTestHooks = {
     bodyIntercepterStore.splice(0, bodyIntercepterStore.length)
     pluginV2.providers.clear()
     pluginV2.providerOptions.clear()
+    chatOutputListeners.clear()
     clearInMemoryPluginPermissions()
     syncCustomProviderStoreFromMap()
   },

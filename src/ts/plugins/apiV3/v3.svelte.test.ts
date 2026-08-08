@@ -352,6 +352,7 @@ import {
   loadV3Plugins,
 } from './v3.svelte'
 import { SandboxHost } from './factory'
+import { chatOutputListeners } from '../chatOutputListeners'
 
 function seedV3Plugin(name: string) {
   return {
@@ -1863,5 +1864,21 @@ describe('V3 plugin lifecycle cleanup', () => {
     ;(pluginB.api as any).postPluginChannelMessage('plugin-a', 'updates', 'second')
 
     expect(listener).toHaveBeenCalledOnce()
+  })
+
+  it('registers, removes, and unloads owned chat output listeners', async () => {
+    const runtime = __v3PluginLifecycleTestHooks.createTrackedApi(seedV3Plugin('listener-plugin'))
+    const api = runtime.api as any
+    const listener = vi.fn()
+
+    await api.addRisuChatListener('output', listener)
+    expect(chatOutputListeners.has(listener)).toBe(true)
+
+    api.removeRisuChatListener('output', listener)
+    expect(chatOutputListeners.has(listener)).toBe(false)
+
+    await api.addRisuChatListener('output', listener)
+    await __v3PluginLifecycleTestHooks.unloadInstance(runtime.instance)
+    expect(chatOutputListeners.has(listener)).toBe(false)
   })
 })

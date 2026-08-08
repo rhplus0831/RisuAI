@@ -63,6 +63,12 @@ import {
   downloadPluginUpdate,
 } from './pluginUpdates'
 import { mirrorTopLevelPresetFieldWithOutcome } from '../presetFieldMirror'
+import {
+  addChatOutputListener,
+  chatOutputListeners,
+  removeChatOutputListener,
+  type ChatOutputListener,
+} from './chatOutputListeners'
 
 export const customProviderStore = writable([] as string[])
 
@@ -729,6 +735,7 @@ export const pluginV2 = {
   editinput: new Set<EditFunction>(),
   replacerbeforeRequest: new Set<ReplacerFunction>(),
   replacerafterRequest: new Set<(content: string, type: string) => string | Promise<string>>(),
+  chatOutput: chatOutputListeners,
   unload: new Set<() => void | Promise<void>>(),
 }
 
@@ -1286,6 +1293,14 @@ export const getV2PluginAPIs = (
       } else {
         throw `replacer handler named ${name} not found`
       }
+    },
+    addRisuChatListener: (mode: string, func: ChatOutputListener) => {
+      lifecycle.assertCurrent()
+      addChatOutputListener(mode, func)
+    },
+    removeRisuChatListener: (mode: string, func: ChatOutputListener) => {
+      lifecycle.assertCurrent()
+      removeChatOutputListener(mode, func)
     },
     onUnload: (func: () => void | Promise<void>) => {
       lifecycle.assertCurrent()
