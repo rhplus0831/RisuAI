@@ -10,7 +10,7 @@
     HardDrive,
     LanguagesIcon,
     MonitorIcon,
-    Sailboat,
+    BrainIcon,
     CircleXIcon,
     KeyboardIcon,
     SparkleIcon,
@@ -175,8 +175,8 @@
               onclick={() => {
                 navigate('/settings/other-bots')
               }}>
-              <Sailboat size={20} />
-              <span>{language.settingsNavMediaMemory}</span>
+              <BrainIcon size={20} />
+              <span>{language.settingsNavMemory}</span>
             </button>
             <button
               class={navButtonClass($SettingsMenuIndex === 14)}

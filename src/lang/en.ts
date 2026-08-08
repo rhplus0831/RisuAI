@@ -1229,7 +1229,7 @@ export const languageEnglish = {
   inputHookSendDraft: 'Send Draft',
   settingsNavLegacyBotPresets: 'Legacy Bot Presets',
   settingsNavUserPersona: 'User Persona',
-  settingsNavMediaMemory: 'Media, Voice & Memory',
+  settingsNavMemory: 'Memory',
   settingsNavDisplayAudio: 'Display & Audio',
   settingsNavLanguage: 'Language',
   settingsNavAccessibility: 'Accessibility',

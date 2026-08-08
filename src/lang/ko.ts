@@ -2089,7 +2089,7 @@ export const languageKorean = {
   settingsNavAgentPresets: '에이전트 프리셋',
   settingsNavLegacyBotPresets: '이전 방식의 봇 프리셋',
   settingsNavUserPersona: '사용자 페르소나',
-  settingsNavMediaMemory: '미디어, 음성 및 메모리',
+  settingsNavMemory: '메모리',
   settingsNavDisplayAudio: '화면 및 오디오',
   settingsNavLanguage: '언어',
   settingsNavAccessibility: '접근성',

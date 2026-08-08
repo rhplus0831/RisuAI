@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { BotIcon, PackageIcon, Sailboat } from '@lucide/svelte'
+  import { BotIcon, BrainIcon, PackageIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import { QuickSettings } from 'src/ts/stores.svelte'
   import BotSettings from '../Setting/Pages/BotSettings.svelte'
@@ -20,13 +20,13 @@
   </button>
   <button
     type="button"
-    aria-label={language.otherBots}
+    aria-label={language.settingsNavMemory}
     aria-pressed={QuickSettings.index === 1}
     class={QuickSettings.index === 1 ? 'text-textcolor ' : 'text-textcolor2'}
     onclick={() => {
       QuickSettings.index = 1
     }}>
-    <Sailboat />
+    <BrainIcon />
   </button>
   <button
     type="button"
