@@ -29,6 +29,8 @@ export type FinalizeRequestBudgetResult =
       formated: OpenAIChat[]
       inputTokens: number
       outputTokens: number
+      /** True when final-budget trimming omitted a durable chat message. */
+      historyTruncated?: true
     }
   | {
       ok: false
@@ -42,10 +44,12 @@ export interface FinalizeRequestBudgetInput {
   formated: OpenAIChat[]
   maxContextTokens: number
   maxResponse: number
+  /** Stable message ids belonging to the target chat transcript. */
+  historyMessageIds?: ReadonlySet<string>
 }
 
 export function finalizeRequestBudget(input: FinalizeRequestBudgetInput): FinalizeRequestBudgetResult {
-  const { db, formated, maxContextTokens, maxResponse } = input
+  const { db, formated, maxContextTokens, maxResponse, historyMessageIds } = input
   const { encoding, options } = tokenizerOptionsFromDb(db)
 
   let inputTokens = 0
@@ -54,15 +58,20 @@ export function finalizeRequestBudget(input: FinalizeRequestBudgetInput): Finali
   }
 
   let trimmed = formated
+  let historyTruncated = false
   if (inputTokens > maxContextTokens) {
     let pointer = 0
     while (inputTokens > maxContextTokens) {
       if (pointer >= trimmed.length) {
         return { ok: false, reason: 'overflow', inputTokens }
       }
-      if (trimmed[pointer].removable) {
-        inputTokens -= tokenizeChat(trimmed[pointer], encoding, options)
-        trimmed[pointer].content = ''
+      const candidate = trimmed[pointer]
+      if (candidate.removable) {
+        if (typeof candidate.memo === 'string' && historyMessageIds?.has(candidate.memo)) {
+          historyTruncated = true
+        }
+        inputTokens -= tokenizeChat(candidate, encoding, options)
+        candidate.content = ''
       }
       pointer++
     }
@@ -76,5 +85,11 @@ export function finalizeRequestBudget(input: FinalizeRequestBudgetInput): Finali
     outputTokens = maxContextTokens - inputTokens
   }
 
-  return { ok: true, formated: trimmed, inputTokens, outputTokens }
+  return {
+    ok: true,
+    formated: trimmed,
+    inputTokens,
+    outputTokens,
+    ...(historyTruncated ? { historyTruncated: true as const } : {}),
+  }
 }

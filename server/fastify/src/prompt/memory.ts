@@ -38,6 +38,8 @@ export type MemoryWindowResult =
       currentTokens: number
       currentChat: Chat
       memories: OpenAIChat[]
+      /** True when at least one durable chat message was omitted for budget. */
+      historyTruncated?: true
     }
 
 /**
@@ -107,5 +109,11 @@ export function buildMemoryWindow(input: MemoryWindowInput): MemoryWindowResult 
     })
     .filter((v) => v.content.trim() !== '' || (v.multimodals && v.multimodals.length > 0))
 
-  return { stopSending: false, currentTokens, currentChat, memories }
+  return {
+    stopSending: false,
+    currentTokens,
+    currentChat,
+    memories,
+    ...(trimmedStableMessage ? { historyTruncated: true as const } : {}),
+  }
 }

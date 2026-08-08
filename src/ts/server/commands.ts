@@ -663,6 +663,7 @@ export type ChatSnapshot = Record<string, unknown> & {
   generationSettings?: ChatGenerationSettings
   folderId?: string | null
   bindedPersona?: string
+  hypaContextTruncationAcknowledged?: boolean
   autoTranslate?: boolean | null
   autoTranslateBotOnly?: boolean | null
   bilingualDisplay?: boolean | null

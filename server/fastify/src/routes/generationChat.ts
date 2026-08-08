@@ -7,6 +7,7 @@ import type { Database, Message } from '../../../../src/ts/storage/database.svel
 import type { MultiModal, OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { trimUntilPunctuation } from '../../../../src/ts/util/punctuation.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'
+import { HYPA_CONTEXT_TRUNCATION_CONFIRMATION_REQUIRED } from '../../../../src/ts/process/request/hypaContextTruncation.js'
 import type { AuthState } from '../auth.js'
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
@@ -152,6 +153,7 @@ interface GenerationClientCapabilities {
   compactPromptEvent: boolean
   promptMetadataOnly: boolean
   omitDuplicateDoneResult: boolean
+  hypaContextTruncationConfirmation: boolean
 }
 
 type PromptAssemblyRun = Awaited<ReturnType<typeof assemblePromptWithMetrics>>
@@ -159,7 +161,7 @@ type MetricPrimitive = string | number | boolean | null | undefined
 type PromptAssemblyMetricContext = Record<string, MetricPrimitive>
 
 type AssemblyPreflightResult =
-  | { status: 'ready' }
+  | { status: 'ready'; hypaContextTruncationCheckRequired: boolean }
   | { status: 'handled' }
   | { status: 'defer'; failure: AssemblyDeferredFailure }
 
@@ -536,6 +538,8 @@ function readClientCapabilities(body: ChatRequestBody): GenerationClientCapabili
     compactPromptEvent: isRecord(clientCapabilities) && clientCapabilities.compactPromptEvent === true,
     promptMetadataOnly: isRecord(clientCapabilities) && clientCapabilities.promptMetadataOnly === true,
     omitDuplicateDoneResult: isRecord(clientCapabilities) && clientCapabilities.omitDuplicateDoneResult === true,
+    hypaContextTruncationConfirmation:
+      isRecord(clientCapabilities) && clientCapabilities.hypaContextTruncationConfirmation === true,
   }
 }
 
@@ -989,14 +993,20 @@ function preflightChatGenerationSettings(
       }
     }
 
-    buildEffectiveGenerationConfig({
+    const effective = buildEffectiveGenerationConfig({
       database,
       currentChar,
       currentChat: structuredClone(currentChat),
       selectedCharID,
       chatPage,
     })
-    return { status: 'ready' }
+    return {
+      status: 'ready',
+      hypaContextTruncationCheckRequired:
+        isPersistingMode(input.mode) &&
+        !(effective.database.hypaV3 === true && effective.currentChar.supaMemory === true) &&
+        effective.currentChat.hypaContextTruncationAcknowledged !== true,
+    }
   } catch (err) {
     if (isChatGenerationSettingsIncompleteAssemblyError(err)) {
       reply.code(err.statusCode).send(err.body)
@@ -1284,9 +1294,24 @@ function createPromptAssemblyMetricContext(args: {
     durable: args.durable,
     compactPromptEvent: args.clientCapabilities.compactPromptEvent,
     promptMetadataOnly: args.clientCapabilities.promptMetadataOnly,
+    hypaContextTruncationConfirmation: args.clientCapabilities.hypaContextTruncationConfirmation,
     generationId: args.generationId,
     durableJobId: args.durable ? args.generationId : undefined,
   }
+}
+
+function assemblyRequiresHypaContextTruncationConfirmation(
+  assembly: PromptAssemblyRun,
+  clientCapabilities: GenerationClientCapabilities,
+): boolean {
+  const state = assembly.result.state
+  return (
+    clientCapabilities.hypaContextTruncationConfirmation &&
+    assembly.result.stopSending === false &&
+    state?.historyTruncated === true &&
+    !(state.database.hypaV3 === true && state.currentChar.supaMemory === true) &&
+    state.currentChat.hypaContextTruncationAcknowledged !== true
+  )
 }
 
 function metricString(value: MetricPrimitive): string | undefined {
@@ -3953,6 +3978,40 @@ export function registerGenerationChatRoutes(
       requestAbort.cleanup()
       return
     }
+    let preparedAssembly: PromptAssemblyRun | undefined
+    let deferredFailure = preflight.status === 'defer' ? preflight.failure : undefined
+    if (
+      preflight.status === 'ready' &&
+      preflight.hypaContextTruncationCheckRequired &&
+      clientCapabilities.hypaContextTruncationConfirmation
+    ) {
+      try {
+        preparedAssembly = await assemblePromptWithMetrics(
+          input,
+          dataDir,
+          db,
+          requestAbort.signal,
+          metricContext,
+          undefined,
+          options,
+        )
+      } catch (err) {
+        if (sendAssemblyHttpError(reply, err)) {
+          requestAbort.cleanup()
+          return
+        }
+        deferredFailure = { error: err }
+      }
+
+      if (preparedAssembly && assemblyRequiresHypaContextTruncationConfirmation(preparedAssembly, clientCapabilities)) {
+        requestAbort.cleanup()
+        return reply.code(409).send({
+          error: HYPA_CONTEXT_TRUNCATION_CONFIRMATION_REQUIRED,
+          message: 'Confirmation is required before omitting older chat history without Hypa Memory.',
+          chatId: input.chatId,
+        })
+      }
+    }
 
     // Durable path for persisting generation modes. The active-writer submission
     // gate ran in the global preHandler; here we add the one-job-per-chat rule
@@ -3970,7 +4029,8 @@ export function registerGenerationChatRoutes(
         generationTrace,
         generationJobs,
         messageTranslationJobs,
-        deferredFailure: preflight.status === 'defer' ? preflight.failure : undefined,
+        preparedAssembly,
+        deferredFailure,
         metricContext,
       })
       requestAbort.cleanup()
@@ -3988,8 +4048,8 @@ export function registerGenerationChatRoutes(
       messageTranslationJobs,
       options,
       generationTrace,
-      undefined,
-      preflight.status === 'defer' ? preflight.failure : undefined,
+      preparedAssembly,
+      deferredFailure,
       metricContext,
       requestAbort,
     )

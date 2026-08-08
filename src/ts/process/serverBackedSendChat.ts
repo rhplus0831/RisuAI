@@ -33,6 +33,10 @@ import type { StreamMessageProjection } from './postGeneration/streamResponse'
 import type { IgpMessageTarget } from './postGeneration/igp'
 import { clearGenerationPersistence, markGenerationPersistenceQueued } from './generationPersistenceState'
 import { runChatOutputListeners } from '../plugins/chatOutputListeners'
+import { alertConfirm } from '../alert'
+import { language } from '../../lang'
+import { currentChatStateSnapshot, dispatchUpdateChatWithOutcome } from '../chatCommands'
+import { HYPA_CONTEXT_TRUNCATION_CONFIRMATION_REQUIRED } from './request/hypaContextTruncation'
 
 export interface ServerBackedStageTimings {
   stage1Start: number
@@ -122,6 +126,58 @@ export function findGeneratedAssistantMessage(chat: Chat, generationId: string):
 function activeChatId(): string | undefined {
   const character = getDatabase().characters?.[get(selectedCharID)]
   return character?.chats?.[character.chatPage]?.id
+}
+
+async function acknowledgeHypaContextTruncation(args: {
+  selectedChar: number
+  selectedChat: number
+  characterId: string
+  chatId: string
+  currentChat: Chat
+}): Promise<{ status: 'ok'; currentChat: Chat } | { status: 'failed'; currentChat: Chat }> {
+  const previous = currentChatStateSnapshot()
+  const previousAcknowledgement = args.currentChat.hypaContextTruncationAcknowledged
+  let updated = false
+  withTrustedResourceWrite(() => {
+    const resolution = resolveServerBackedLiveChat({
+      selectedChar: args.selectedChar,
+      selectedChat: args.selectedChat,
+      characterId: args.characterId,
+      chatId: args.chatId,
+    })
+    if (!resolution) return
+    resolution.chat.hypaContextTruncationAcknowledged = true
+    updated = true
+  })
+  if (!updated) return { status: 'failed', currentChat: args.currentChat }
+
+  const pending = dispatchUpdateChatWithOutcome(args.chatId, { hypaContextTruncationAcknowledged: true }, previous)
+  if (!pending) {
+    withTrustedResourceWrite(() => {
+      const resolution = resolveServerBackedLiveChat({
+        selectedChar: args.selectedChar,
+        selectedChat: args.selectedChat,
+        characterId: args.characterId,
+        chatId: args.chatId,
+      })
+      if (!resolution) return
+      if (previousAcknowledgement === undefined) delete resolution.chat.hypaContextTruncationAcknowledged
+      else resolution.chat.hypaContextTruncationAcknowledged = previousAcknowledgement
+    })
+    return { status: 'failed', currentChat: args.currentChat }
+  }
+
+  const outcome = await pending
+  const accepted =
+    outcome.status === 'accepted' || (outcome.status === 'queued' && (await outcome.settlement).status === 'accepted')
+  const currentChat = resolveServerBackedCurrentChat({
+    selectedChar: args.selectedChar,
+    selectedChat: args.selectedChat,
+    characterId: args.characterId,
+    chatId: args.chatId,
+    currentChat: args.currentChat,
+  })
+  return accepted ? { status: 'ok', currentChat } : { status: 'failed', currentChat }
 }
 
 /**
@@ -393,9 +449,35 @@ export async function assembleServerBackedSendChat(args: {
   }
 
   const wantsServerDispatch = !args.preview && !args.previewPrompt
-  const served = wantsServerDispatch
+  let served = wantsServerDispatch
     ? await requestServerChatGeneration(input, args.abortSignal)
     : await requestServerChat(input, args.abortSignal)
+
+  if (
+    wantsServerDispatch &&
+    served.status === 'error' &&
+    served.code === HYPA_CONTEXT_TRUNCATION_CONFIRMATION_REQUIRED
+  ) {
+    const confirmed = await alertConfirm(language.hypaContextTruncationConfirm)
+    if (!confirmed || args.abortSignal.aborted) return { status: 'aborted' }
+
+    const acknowledgement = await acknowledgeHypaContextTruncation({
+      selectedChar: args.selectedChar,
+      selectedChat: args.selectedChat,
+      characterId: args.currentChar.chaId,
+      chatId: args.currentChat.id ?? '',
+      currentChat: args.currentChat,
+    })
+    if (acknowledgement.status === 'failed') {
+      return {
+        status: 'failed',
+        error: language.errors.hypaContextTruncationAcknowledgementFailed,
+        currentChat: acknowledgement.currentChat,
+      }
+    }
+    if (args.abortSignal.aborted || activeChatId() !== input.chatId) return { status: 'aborted' }
+    served = await requestServerChatGeneration(input, args.abortSignal)
+  }
 
   if (served.status === 'aborted') return { status: 'aborted' }
   if (served.status === 'error') {

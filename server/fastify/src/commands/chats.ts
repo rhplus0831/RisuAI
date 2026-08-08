@@ -30,6 +30,7 @@ export interface ChatRecord extends JsonRecord {
   localLore: unknown[]
   scriptstate?: Record<string, string | number | boolean>
   folderId?: string | null
+  hypaContextTruncationAcknowledged?: boolean
   selectedDraftHookId?: string
   autoTranslate?: boolean
   autoTranslateBotOnly?: boolean
@@ -75,6 +76,7 @@ const ALLOWED_CHAT_PATCH_KEYS = new Set([
   'note',
   'sdData',
   'lastMemory',
+  'hypaContextTruncationAcknowledged',
   'suggestMessages',
   'bindedPersona',
   'fmIndex',
@@ -837,7 +839,12 @@ function validateChatRecord(record: JsonRecord, label: string, options: { partia
   ) {
     throw new ValidationError(`${label}.selectedDraftHookId must be a non-empty string, null, or undefined`)
   }
-  for (const field of ['autoTranslate', 'autoTranslateBotOnly', 'bilingualDisplay'] as const) {
+  for (const field of [
+    'hypaContextTruncationAcknowledged',
+    'autoTranslate',
+    'autoTranslateBotOnly',
+    'bilingualDisplay',
+  ] as const) {
     if (
       field in record &&
       record[field] !== undefined &&

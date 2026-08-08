@@ -214,6 +214,7 @@ describe('requestServerChat', () => {
       compactPromptEvent: true,
       promptMetadataOnly: true,
       omitDuplicateDoneResult: true,
+      hypaContextTruncationConfirmation: true,
     })
   })
 
@@ -355,6 +356,29 @@ describe('requestServerChat', () => {
 
     const res = await requestServerChat({ ...baseInput, chatId: '' }, null)
     expect(res).toEqual({ status: 'error', error: 'chatId is required' })
+  })
+
+  it('preserves the non-Hypa truncation confirmation code from pre-stream errors', async () => {
+    vi.stubGlobal(
+      'fetch',
+      async () =>
+        new Response(
+          JSON.stringify({
+            error: 'hypa_context_truncation_confirmation_required',
+            message: 'Confirmation is required before omitting older chat history without Hypa Memory.',
+          }),
+          {
+            status: 409,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+    )
+
+    await expect(requestServerChat(baseInput, null)).resolves.toEqual({
+      status: 'error',
+      error: 'Confirmation is required before omitting older chat history without Hypa Memory.',
+      code: 'hypa_context_truncation_confirmation_required',
+    })
   })
 
   it('uses the stable incomplete chat settings message for prompt-only 409s', async () => {

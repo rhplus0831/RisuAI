@@ -12,7 +12,11 @@ import { get } from 'svelte/store'
 // before reaching them.
 
 const localAssemblerState = vi.hoisted(() => ({ throwIfEntered: false }))
-const alertState = vi.hoisted(() => ({ errors: [] as string[] }))
+const alertState = vi.hoisted(() => ({
+  errors: [] as string[],
+  confirmations: [] as string[],
+  confirmationResult: true,
+}))
 
 vi.mock('../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../platform')>()
@@ -32,6 +36,10 @@ vi.mock('../../alert', async (importActual) => {
     ...actual,
     alertError: (message: string) => {
       alertState.errors.push(message)
+    },
+    alertConfirm: async (message: string) => {
+      alertState.confirmations.push(message)
+      return alertState.confirmationResult
     },
   }
 })
@@ -126,6 +134,8 @@ beforeEach(() => {
   chatProcessStage.set(0)
   localAssemblerState.throwIfEntered = false
   alertState.errors = []
+  alertState.confirmations = []
+  alertState.confirmationResult = true
   contextCommandRevision = 1
 })
 
@@ -669,6 +679,139 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       regenerateMessageId: 'msg-assistant-1',
       userMessage: '',
     })
+  })
+
+  it('confirms, persists, and retries once when the server predicts non-Hypa history truncation', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-hypa-confirmation',
+      writerEpoch: 1,
+      databaseLineage: 'lineage-hypa-confirmation',
+      requestedWriterWasActive: true,
+    })
+    await seedEcho()
+    const character = testDatabaseState.db.characters[0]
+    const chat = character.chats[0]
+    chat.id = 'chat-confirm-hypa-truncation'
+    setServerChatDispatchResult('confirmed reply', {
+      model: 'echo_model',
+      generationId: 'uuid-confirmed',
+      inputTokens: 7,
+      outputTokens: 50,
+      maxContext: 4000,
+      stageTiming: { stage1: 1, stage2: 0, stage3: 0, stage4: 0 },
+    })
+    let generationRequests = 0
+    const acknowledgementBodies: Record<string, unknown>[] = []
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      if (url.endsWith('/api/v1/bootstrap')) {
+        return jsonResponse({ revision: contextCommandRevision })
+      }
+      if (/\/api\/v1\/commands\/characters\/[^/]+$/.test(url)) {
+        return contextCommandSuccessResponse(init)
+      }
+      if (url.endsWith('/api/v1/commands/mutation-receipts/ack')) {
+        return jsonResponse({ acknowledged: true })
+      }
+      if (url.endsWith('/api/v1/commands/chats/chat-confirm-hypa-truncation')) {
+        const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : {}
+        acknowledgementBodies.push(body)
+        const baseRevision = typeof body.baseRevision === 'number' ? body.baseRevision : contextCommandRevision
+        contextCommandRevision = Math.max(contextCommandRevision, baseRevision) + 1
+        return jsonResponse({
+          revision: contextCommandRevision,
+          event: {
+            type: 'chat.updated',
+            revision: contextCommandRevision,
+            resource: 'chatRow',
+            id: chat.id,
+            parentId: character.chaId,
+          },
+          chatId: chat.id,
+          selectedChatId: chat.id,
+        })
+      }
+      if (url.endsWith('/api/v1/generate/chat')) {
+        generationRequests += 1
+        if (generationRequests === 1) {
+          return jsonResponse(
+            {
+              error: 'hypa_context_truncation_confirmation_required',
+              message: 'Confirmation is required before omitting older chat history without Hypa Memory.',
+              chatId: chat.id,
+            },
+            409,
+          )
+        }
+        return serverChatFetch(input, init)
+      }
+      return serverCompletionFetch(input, init)
+    })
+
+    try {
+      await expect(chatModule.sendChat(-1)).resolves.toBe(true)
+
+      expect(alertState.confirmations).toEqual([language.hypaContextTruncationConfirm])
+      expect(acknowledgementBodies).toEqual([
+        {
+          baseRevision: expect.any(Number),
+          patch: { hypaContextTruncationAcknowledged: true },
+          select: false,
+        },
+      ])
+      expect(chat.hypaContextTruncationAcknowledged).toBe(true)
+      expect(generationRequests).toBe(2)
+      expect(getServerChatCalls()).toHaveLength(1)
+      expect(getServerChatCalls()[0].clientCapabilities).toMatchObject({
+        hypaContextTruncationConfirmation: true,
+      })
+      expect(chat.message.at(-1)?.data).toBe('confirmed reply')
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('cancels cleanly without persisting when non-Hypa truncation is declined', async () => {
+    await seedEcho()
+    const character = testDatabaseState.db.characters[0]
+    const chat = character.chats[0]
+    chat.id = 'chat-decline-hypa-truncation'
+    alertState.confirmationResult = false
+    let generationRequests = 0
+    let acknowledgementRequests = 0
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      if (/\/api\/v1\/commands\/characters\/[^/]+$/.test(url)) {
+        return contextCommandSuccessResponse(init)
+      }
+      if (url.includes('/api/v1/commands/chats/')) {
+        acknowledgementRequests += 1
+        return jsonResponse({ error: 'unexpected acknowledgement' }, 500)
+      }
+      if (url.endsWith('/api/v1/generate/chat')) {
+        generationRequests += 1
+        return jsonResponse(
+          {
+            error: 'hypa_context_truncation_confirmation_required',
+            message: 'Confirmation is required before omitting older chat history without Hypa Memory.',
+            chatId: chat.id,
+          },
+          409,
+        )
+      }
+      return serverCompletionFetch(input, init)
+    })
+
+    await expect(chatModule.sendChat(-1)).resolves.toBe(false)
+
+    expect(alertState.confirmations).toEqual([language.hypaContextTruncationConfirm])
+    expect(generationRequests).toBe(1)
+    expect(acknowledgementRequests).toBe(0)
+    expect(chat.hypaContextTruncationAcknowledged).toBeUndefined()
+    expect(alertState.errors).toEqual([])
   })
 
   it('routes send through /chat assembly, applies patches, and dispatches locally', async () => {

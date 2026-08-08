@@ -1,0 +1,1 @@
+export const HYPA_CONTEXT_TRUNCATION_CONFIRMATION_REQUIRED = 'hypa_context_truncation_confirmation_required'

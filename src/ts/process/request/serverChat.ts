@@ -51,6 +51,7 @@ import type {
   ServerChatWarning,
 } from './serverChatEvents'
 import type { requestDataResponse, StreamResponseChunk } from './request'
+import { HYPA_CONTEXT_TRUNCATION_CONFIRMATION_REQUIRED } from './hypaContextTruncation'
 
 const CHAT_ENDPOINT = '/api/v1/generate/chat'
 const INCOMPLETE_CHAT_GENERATION_SETTINGS_ERROR = 'chat_generation_settings_incomplete'
@@ -63,6 +64,7 @@ const SERVER_CHAT_CLIENT_CAPABILITIES = {
   compactPromptEvent: true,
   promptMetadataOnly: true,
   omitDuplicateDoneResult: true,
+  hypaContextTruncationConfirmation: true,
 } as const
 
 function clearLiveGenerationProgress(
@@ -110,7 +112,7 @@ export type ServerChatResult =
       info?: ServerChatInfo
       messagePatches: ServerChatMessagePatch[]
     }
-  | { status: 'error'; error: string; messagePatches?: ServerChatMessagePatch[] }
+  | { status: 'error'; error: string; code?: string; messagePatches?: ServerChatMessagePatch[] }
   | { status: 'aborted' }
 
 export interface ServerChatTerminal {
@@ -138,6 +140,7 @@ export type ServerChatGenerationResult =
   | {
       status: 'error'
       error: string
+      code?: string
       messagePatches?: ServerChatMessagePatch[]
       restoration?: ServerChatRestoration
     }
@@ -153,6 +156,10 @@ function parseData(data: string): Record<string, unknown> | null {
 
 function nonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
+}
+
+function truncationConfirmationCode(value: unknown): string | undefined {
+  return value === HYPA_CONTEXT_TRUNCATION_CONFIRMATION_REQUIRED ? value : undefined
 }
 
 function httpErrorReason(body: { error?: unknown; message?: unknown; reason?: unknown }): string | null {
@@ -248,7 +255,14 @@ async function openChatResponse(
   reattachJobId?: string,
 ): Promise<
   | { status: 'ok'; response: Response; requestUid?: string }
-  | { status: 'error'; error: string; requestUid?: string; httpStatus?: number; retryable?: boolean }
+  | {
+      status: 'error'
+      error: string
+      code?: string
+      requestUid?: string
+      httpStatus?: number
+      retryable?: boolean
+    }
   | { status: 'aborted' }
 > {
   const auth = await getNodeServerProxyAuth()
@@ -297,12 +311,16 @@ async function openChatResponse(
   if (!response.ok) {
     const statusText = response.statusText.trim()
     let reason = `HTTP ${response.status}${statusText ? ` ${statusText}` : ''}`
+    let code: string | undefined
     let body: unknown = null
     try {
       body = (await response.json()) as {
         error?: unknown
         message?: unknown
         reason?: unknown
+      }
+      if (body && typeof body === 'object') {
+        code = truncationConfirmationCode((body as { error?: unknown }).error)
       }
       reason = httpErrorReason(body) ?? reason
     } catch {
@@ -313,6 +331,7 @@ async function openChatResponse(
     return {
       status: 'error',
       error: reason,
+      ...(code ? { code } : {}),
       requestUid,
       httpStatus: response.status,
       retryable: response.status === 408 || response.status === 429 || response.status >= 500,
@@ -356,7 +375,9 @@ async function waitForDurableReconnect(delayMs: number, signal: AbortSignal | nu
 export async function requestServerChat(input: ServerChatInput, signal: AbortSignal | null): Promise<ServerChatResult> {
   const opened = await openChatResponse(input, signal)
   if (opened.status !== 'ok') {
-    return opened.status === 'error' ? { status: 'error', error: opened.error } : opened
+    return opened.status === 'error'
+      ? { status: 'error', error: opened.error, ...(opened.code ? { code: opened.code } : {}) }
+      : opened
   }
   const response = opened.response
 
@@ -364,6 +385,7 @@ export async function requestServerChat(input: ServerChatInput, signal: AbortSig
   let info: ServerChatInfo | undefined
   const messagePatches: ServerChatMessagePatch[] = []
   let error: string | null = null
+  let errorCode: string | undefined
   let done = false
 
   // The SSE event *name* (`frame.event`) is the discriminator; the `data:`
@@ -387,6 +409,7 @@ export async function requestServerChat(input: ServerChatInput, signal: AbortSig
         break
       case 'error':
         error = errorMessageFromEvent(data, 'Server returned an error without details during prompt assembly.')
+        errorCode = truncationConfirmationCode(data.code) ?? truncationConfirmationCode(data.reason)
         done = true
         break
       case 'done':
@@ -404,6 +427,7 @@ export async function requestServerChat(input: ServerChatInput, signal: AbortSig
     return {
       status: 'error',
       error,
+      ...(errorCode ? { code: errorCode } : {}),
       ...(messagePatches.length > 0 ? { messagePatches } : {}),
     }
   }
@@ -471,7 +495,9 @@ export async function requestServerChatGeneration(
     clearAgentPresetProgress(agentPresetSession)
     clearPostGenerationProgress(postGenerationSession)
     clearHalfStreamingProgressForChat(input.characterId, input.chatId)
-    return opened.status === 'error' ? { status: 'error', error: opened.error } : opened
+    return opened.status === 'error'
+      ? { status: 'error', error: opened.error, ...(opened.code ? { code: opened.code } : {}) }
+      : opened
   }
 
   let prompt: ServerChatPrompt | null = null
@@ -775,6 +801,7 @@ export async function requestServerChatGeneration(
                     data.restoration && typeof data.restoration === 'object'
                       ? (data.restoration as unknown as ServerChatRestoration)
                       : undefined
+                  const code = truncationConfirmationCode(data.code) ?? truncationConfirmationCode(data.reason)
                   const persistenceDisposition =
                     data.persistenceDisposition === 'queued' || data.persistenceDisposition === 'rejected'
                       ? data.persistenceDisposition
@@ -787,6 +814,7 @@ export async function requestServerChatGeneration(
                   resolveReadyOnce({
                     status: 'error',
                     error,
+                    ...(code ? { code } : {}),
                     ...(messagePatches.length > 0 ? { messagePatches } : {}),
                     ...(restoration ? { restoration } : {}),
                   })

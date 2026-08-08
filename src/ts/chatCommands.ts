@@ -165,6 +165,7 @@ export const CHAT_PATCH_ALLOWED_KEYS = new Set([
   'note',
   'sdData',
   'lastMemory',
+  'hypaContextTruncationAcknowledged',
   'suggestMessages',
   'bindedPersona',
   'fmIndex',

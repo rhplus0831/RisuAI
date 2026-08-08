@@ -65,7 +65,7 @@ describe('Phase 7-8c finalizeRequestBudget — trimming', () => {
   it('zeroes removable entries front-to-back then filters empties', () => {
     const formated: OpenAIChat[] = [
       { role: 'system', content: 'system-prompt' },
-      { role: 'user', content: 'aaaaaaaaaa', removable: true },
+      { role: 'user', content: 'aaaaaaaaaa', removable: true, memo: 'message-1' },
       { role: 'assistant', content: 'bbbbbbbbbb', removable: true },
       { role: 'user', content: 'final-question' },
     ]
@@ -74,6 +74,7 @@ describe('Phase 7-8c finalizeRequestBudget — trimming', () => {
       formated,
       maxContextTokens: 20,
       maxResponse: 50,
+      historyMessageIds: new Set(['message-1']),
     })
     expect(result.ok).toBe(true)
     if (!result.ok) return
@@ -83,6 +84,7 @@ describe('Phase 7-8c finalizeRequestBudget — trimming', () => {
     expect(result.inputTokens).toBe(15)
     // 15 + 50 > 20 → 20 - 15 = 5.
     expect(result.outputTokens).toBe(5)
+    expect(result.historyTruncated).toBe(true)
   })
 
   it('keeps multimodal-only rows during the empty-content filter', () => {

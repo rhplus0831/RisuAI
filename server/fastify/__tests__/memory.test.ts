@@ -107,6 +107,7 @@ describe('Phase 7-11e buildMemoryWindow (non-Hypa)', () => {
       db,
     })
     expect(result).toMatchObject({ stopSending: false })
+    if (result.stopSending === false) expect(result.historyTruncated).toBe(true)
     // m1 dropped; m2 is now the oldest surviving row.
     expect(currentChat.lastMemory).toBe('m2')
   })

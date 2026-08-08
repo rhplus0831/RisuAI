@@ -3776,6 +3776,95 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(bootstrap.json().database.characters[0].chats[0].lastMemory).toBe(firstSurvivingMessageId)
   })
 
+  it('requires one per-chat confirmation before durable non-Hypa generation can trim history', async () => {
+    const dispatchProvider = vi.fn(() =>
+      (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'confirmed reply' }
+        yield { kind: 'done', finishReason: 'stop' }
+      })(),
+    )
+    await restartHarness({ dispatchProvider })
+    const { assertion } = await setupAuthedClient(harness.app)
+    const db = structuredClone(fixtureDatabase)
+    db.maxContext = 150
+    db.maxResponse = 10
+    ;(
+      db.characters[0].chats[0] as unknown as {
+        message: Array<{ role: 'user' | 'char'; data: string; chatId: string }>
+      }
+    ).message = [
+      { role: 'user', data: 'oldest '.repeat(80), chatId: 'message-1' },
+      { role: 'char', data: 'older '.repeat(80), chatId: 'message-2' },
+      { role: 'user', data: 'recent '.repeat(80), chatId: 'message-3' },
+      { role: 'char', data: 'newest '.repeat(20), chatId: 'message-4' },
+    ]
+    const revision = await seedDatabase(harness.app, assertion, db)
+    const payload = {
+      chatId: 'chat-1',
+      characterId: 'char-1',
+      mode: 'continue',
+      durable: true,
+      clientCapabilities: {
+        compactPromptEvent: true,
+        promptMetadataOnly: true,
+        hypaContextTruncationConfirmation: true,
+      },
+    }
+
+    const blocked = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload,
+    })
+    expect(blocked.statusCode).toBe(409)
+    expect(blocked.headers['content-type']).toMatch(/application\/json/)
+    expect(blocked.body).not.toContain('job_accepted')
+    expect(blocked.json()).toMatchObject({
+      error: 'hypa_context_truncation_confirmation_required',
+      chatId: 'chat-1',
+    })
+    expect(dispatchProvider).not.toHaveBeenCalled()
+
+    const beforeConfirmation = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(beforeConfirmation.json().activeGenerationJobs).toEqual([])
+    expect(beforeConfirmation.json().database.characters[0].chats[0]).not.toHaveProperty(
+      'hypaContextTruncationAcknowledged',
+    )
+
+    const confirmation = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/chats/chat-1',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { hypaContextTruncationAcknowledged: true },
+      },
+    })
+    expect(confirmation.statusCode).toBe(200)
+
+    const accepted = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload,
+    })
+    expect(accepted.statusCode).toBe(200)
+    expect(accepted.body).toContain('job_accepted')
+    expect(dispatchProvider).toHaveBeenCalledTimes(1)
+
+    const afterConfirmation = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(afterConfirmation.json().database.characters[0].chats[0].hypaContextTruncationAcknowledged).toBe(true)
+  })
+
   it('emits a final prompt overflow error when pinned rows exceed the context window', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const db = dbWithEditRequestLua(`

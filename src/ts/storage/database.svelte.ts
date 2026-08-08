@@ -4804,6 +4804,7 @@ export interface Chat {
   generationSettings?: ChatGenerationSettings
   sdData?: string
   lastMemory?: string
+  hypaContextTruncationAcknowledged?: boolean
   suggestMessages?: string[]
   isStreaming?: boolean
   scriptstate?: { [key: string]: string | number | boolean }

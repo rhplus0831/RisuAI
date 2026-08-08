@@ -462,6 +462,8 @@ export interface AssemblyState {
   database: Database
   currentChar: character
   currentChat: Chat
+  /** Older durable chat history was omitted by either context-budget pass. */
+  historyTruncated?: boolean
   /** Prompt preset name and active toggle snapshot for the generated assistant row. */
   promptInfo: MessagePresetInfo
   /** Index into `database.characters`. */
@@ -1895,6 +1897,7 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
   }
 
   state.currentChat = mem.currentChat
+  state.historyTruncated = state.historyTruncated === true || mem.historyTruncated === true
   syncWorkingTranscript(state)
   state.memories = mem.memories
   // The SPA root re-tokenizes the rendered prompt, but the post-trim estimate is
@@ -2290,6 +2293,11 @@ export async function renderAndBudget(state: AssemblyState): Promise<void> {
       formated: render.formated,
       maxContextTokens: db.maxContext ?? 0,
       maxResponse: db.maxResponse ?? 0,
+      historyMessageIds: new Set(
+        (state.currentChat.message ?? [])
+          .map((message) => message.chatId)
+          .filter((messageId): messageId is string => typeof messageId === 'string' && messageId.length > 0),
+      ),
     }),
   )
   if (!budget.ok) {
@@ -2300,6 +2308,7 @@ export async function renderAndBudget(state: AssemblyState): Promise<void> {
   }
 
   state.formated = budget.formated
+  state.historyTruncated = state.historyTruncated === true || budget.historyTruncated === true
   state.promptSummary = summarizePromptRows(budget.formated)
   state.inputTokens = budget.inputTokens
   state.outputTokens = budget.outputTokens

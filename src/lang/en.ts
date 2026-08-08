@@ -9,6 +9,8 @@ export const languageEnglish = {
   messageMutationStale: 'The message changed before this action could be saved. Review it and try again.',
   hypaMemoryMutationQueued: 'The Hypa Memory change is saved on this device and queued. It will retry automatically.',
   hypaMemoryMutationFailed: 'The Hypa Memory change could not be saved. The previous setting was restored.',
+  hypaContextTruncationConfirm:
+    'Older messages may be omitted from this request because Hypa Memory is not enabled for this chat. Continue without Hypa Memory? Your choice will be remembered for this chat.',
   characterRemovalPending: (name: string) => `Moving ${name} to the trash…`,
   characterRemovalQueued: (name: string) =>
     `${name} was moved to the trash on this device and the change is queued. It will retry automatically.`,
@@ -114,6 +116,8 @@ export const languageEnglish = {
     toomuchtoken: 'Error: The minimum required token is greater than the Max Context Size.',
     settingsSaveFailed: 'Settings could not be saved. Please try again.',
     sendContextPersistenceFailed: 'Chat setup could not be saved before generation. Please try again.',
+    hypaContextTruncationAcknowledgementFailed:
+      'Your choice to continue without Hypa Memory could not be saved for this chat. Please try again.',
     chatImportTooLarge: 'This chat contains metadata or a single message that is too large to import safely.',
     promptTemplateUnavailable: 'Prompt template is still loading. Please try again after server sync finishes.',
     unknownModel: 'Error: Unknown model selected',
