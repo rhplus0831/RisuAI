@@ -211,6 +211,13 @@ test('setdefaultvar installs a missing browser chat variable without replacing e
   expect(mocks.varStorage.$missingDefault).toBe('fallback')
 })
 
+test("setdefaultvar replaces the browser chat variable 'null' sentinel", () => {
+  mocks.varStorage.$nullDefault = 'null'
+
+  expect(risuChatParser('{{setdefaultvar::nullDefault::fallback}}', { runVar: true })).toBe('')
+  expect(mocks.varStorage.$nullDefault).toBe('fallback')
+})
+
 test('reverse', () => {
   const splitByPoints = (str: string) => [...str].reverse().join('')
 
