@@ -1,22 +1,26 @@
 # Frontend Map
 
-Last audited: 2026-08-02.
+Last audited: 2026-08-09.
 
-Moved: current frontend documentation lives under `src/docs/`.
+This file contains no current guidance and exists only so historical archive
+links resolve; current frontend documentation lives under `src/docs/`.
 
 Start with:
 
 - [`src/docs/README.md`](../../src/docs/README.md) for the current
   frontend/client documentation index.
-- [`src/docs/svelte-ui.md`](../../src/docs/svelte-ui.md) for Svelte app shell,
-  route/history rendering, component ownership, settings, shared controls,
-  chat/floating-composer, sidebar/Mood Light, mobile/playground UI,
-  accessibility, styling, localization, and visible-state testing.
+- [`src/docs/svelte-ui.md`](../../src/docs/svelte-ui.md) for the shared Svelte
+  shell, rendering boundaries, controls, styling, and localization.
+- [`src/docs/svelte-chat-ui.md`](../../src/docs/svelte-chat-ui.md) for chat,
+  transcript, message, and composer UI.
+- [`src/docs/svelte-navigation-ui.md`](../../src/docs/svelte-navigation-ui.md)
+  for navigation, sidebars, Mood Light, mobile, and playground UI.
+- [`src/docs/svelte-settings-ui.md`](../../src/docs/svelte-settings-ui.md) for
+  settings pages, editors, and settings-specific controls.
 - [`src/docs/client-runtime.md`](../../src/docs/client-runtime.md) for browser
   coordination: Fastify startup, root-resource ownership, async freshness,
   durable mutation and draft recovery, Mood Light visibility state,
   generation/reattach, fixed server-operation adapters, and links to canonical
   backend/assets/provider/plugin owners.
 
-This file remains only as a compatibility pointer for older archive links. Do
-not add current frontend guidance here.
+Do not add current frontend guidance here.

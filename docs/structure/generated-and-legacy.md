@@ -1,6 +1,6 @@
 # Generated Files And Legacy Caveats
 
-Last audited: 2026-08-02.
+Last audited: 2026-08-09.
 
 These notes help avoid spending time in files that look important but are
 generated, local-only, historical, vendored, or intentionally no-port.
@@ -9,7 +9,7 @@ generated, local-only, historical, vendored, or intentionally no-port.
 
 | Path                                            | Why                                                                                                                                                                                                                                                                                                         |
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dist/`                                         | Vite build output plus client-lib declarations under `dist/client-types`. Regenerate with `pnpm build` or the client-lib `tsc` step.                                                                                                                                                                        |
+| `dist/`                                         | Generated build output. Vite artifacts appear after `pnpm build`; the separate client-lib `tsc` step writes declarations and incremental state under `dist/client-types/`.                                                                                                                                |
 | `node_modules/`, `server/fastify/node_modules/` | Installed dependencies.                                                                                                                                                                                                                                                                                     |
 | `coverage/`                                     | Local reports from the frontend, backend, and UI coverage scripts.                                                                                                                                                                                                                                          |
 | `test-results/`                                 | Playwright/test output.                                                                                                                                                                                                                                                                                     |
@@ -164,10 +164,10 @@ Advanced Settings usage-statistics dialog is also absent, guarded by
 
 - `src/LiteMain.svelte` is unwired. Live lite mode is `VITE_RISU_LITE` driving
   `src/ts/lite.ts` plus consumers such as settings, color scheme, and legacy
-  mobile component branches; it does not re-enable `LiteMain.svelte`.
+  mobile component branches; it does not re-enable `src/LiteMain.svelte`.
 - `src/lib/Mobile/MobileCharacters.svelte` is active through `GridCatalog`.
-  `MobileHeader.svelte`, `MobileBody.svelte`, and `MobileFooter.svelte` are the
-  unmounted legacy mobile shell.
+  `src/lib/Mobile/MobileHeader.svelte`, `src/lib/Mobile/MobileBody.svelte`, and
+  `src/lib/Mobile/MobileFooter.svelte` are the unmounted legacy mobile shell.
 - `src/lib/UI/3DLoader.svelte` and `src/ts/3d/threeload.ts` are legacy and not
   imported by the current app shell.
 - Picture-in-picture session keepalive is retired. Current settings support
@@ -177,6 +177,12 @@ Advanced Settings usage-statistics dialog is also absent, guarded by
   surfaces without a new plan.
 - `src/lib/Others/WelcomeRisu.svelte` is retained and tested onboarding/setup
   UI, but the current shell no longer imports it.
+- The former application-wide Terms of Service component and gate are retired;
+  `src/lib/Others/Legal.svelte` is absent. Do not confuse that removed flow with
+  the live `realmTerms` workflow in `src/ts/alert.ts` and
+  `src/lib/Others/AlertComp.svelte`: it is a scoped confirmation before a
+  RisuRealm character download invoked by `downloadRisuHub()` in
+  `src/ts/characterCards.ts`, and its recorded acceptance remains active.
 
 Removed or intentionally no-port concepts: group chat, peer sync, Google Drive
 sync, Risu Account Sync, browser-local durable persistence as the primary

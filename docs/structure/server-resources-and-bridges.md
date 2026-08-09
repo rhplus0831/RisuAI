@@ -1,12 +1,11 @@
 # Server Resources And Bridges
 
-Last audited: 2026-08-02.
+Last audited: 2026-08-09.
 
-Fastify owns authoritative application state. The browser reads concrete REST resources into
-Svelte-owned settings, collections, and characters state plus a standalone
-inlay-catalog projection, fetches large bodies only when needed, and routes
-persistent edits through command helpers or explicit server-owned mutation
-routes.
+This guide owns the Fastify-to-browser resource boundary: root and targeted REST
+reads, hash-verified cache substitution, lazy body hydration, invalidation and
+recovery, durable command dispatch, and compatibility bridges. Start from the
+[architecture index](README.md) for adjacent ownership.
 
 ## Bootstrap And Initial Resources
 
@@ -21,10 +20,12 @@ routes.
   pre-takeover writer verdict, asset base URL, running generation jobs, and
   running plus bounded recent terminal message/greeting translations. It does
   not carry durable application data.
-- Only classifier-confirmed empty state triggers
-  `POST /api/v1/commands/state/initialize`. The winning client reuses the runtime
-  metadata and accepted revision it already has; a read-only bootstrap retry is
-  needed only when another client won the initialization race.
+- When bootstrap reports `initialized: false`, the browser attempts
+  `POST /api/v1/commands/state/initialize`. The server re-runs the classifier in
+  the command transaction and accepts only genuinely empty state; conflicting
+  prior-install evidence fails closed. The winning client reuses the runtime
+  metadata and accepted revision it already has, while a client that lost an
+  initialization race retries bootstrap read-only.
 - After bootstrap/initialization, startup establishes the shared draft-recovery
   scope, then prepares the mutation outbox against
   the writer session and database lineage, flushes its durable server-receipt
@@ -42,7 +43,7 @@ routes.
 - The consistent response set is applied through one trusted resource scope.
   The settings, collections, and characters state objects keep their own
   revision/status/error metadata. The character list contains message-free chat
-  rows; chat bodies remain lazy.
+  rows; chat messages, per-chat Hypa V3 data, and reroll alternates remain lazy.
 - The collection response carries prompt-preset and legacy bot-preset shells.
   Startup hydrates the selected modern prompt-template owner separately before
   enabling normal command/event reconciliation; legacy preset bodies remain
@@ -75,7 +76,7 @@ routes.
 | `src/ts/server/promptTemplateHydration.ts`                 | Fetches the template owned by a selected or explicitly requested prompt preset.                                                      |
 | `src/ts/server/messageTranslationJobs.ts`                  | Tracks detached manual or generated-message translation rows from bootstrap and refresh polling.                                     |
 | `src/ts/server/greetingTranslations.svelte.ts`             | Character-scoped greeting projection, source/settings fencing, manual translation, refresh, and job recovery.                        |
-| `src/ts/moodLightMode.ts`, `src/ts/moodLightMembership.ts` | Tab-local mode state plus normalized durable membership and shared character-visibility partitioning.                                |
+| `src/ts/server/settingsGroups.ts`                          | Browser settings-group ownership, including the `sidebar` membership projection.                                                     |
 | `src/ts/process/serverGeneratedMessageTranslation.ts`      | Applies translation results embedded in generation completion and seeds the shared translation-job state for running/failure UI.     |
 | `src/ts/process/generatedMessageTranslationEligibility.ts` | Prevents the older rendered-row auto trigger from duplicating server-owned generated-message translation.                            |
 | `src/ts/server/inlayCatalog.ts`                            | Standalone browser projection and revision-aware writes for inlay metadata.                                                          |
@@ -257,12 +258,15 @@ resources.
 All endpoints below require auth. Cache POSTs and bulk endpoints are read-only
 POSTs and are classified that way in `server/fastify/src/routeManifest.ts`.
 
+### Cache Protocol
+
 For cache-capable resources, protocol v2 sends
 `{cache:{version:2,hashes:{resource:[sha256,...]}}}`. Cache POST bodies have a
 1 MiB route limit. Hash arrays are content inventories rather than positional
 claims, so reordering does not resend an unchanged row. Fastify hashes the final
-JSON wire value after secret masking and shell/body projection and always
-returns the current resource revision. Every array position is unambiguous: a
+JSON wire value after any route-specific secret masking and shell/body
+projection, and always returns the current resource revision. Every array
+position is unambiguous: a
 hit is `{hash: sha256}` and a miss is `{value: json}`. Whole-value resources use
 the hash string for a hit and the complete JSON value for a miss. The browser
 accepts a hit only when that hash's IndexedDB bytes re-hash correctly.
@@ -277,6 +281,8 @@ The inlay catalog intentionally bypasses the hash cache. Its read joins
 `inlay_catalog` metadata to authoritative `assets` metadata; revisioned PUT and
 DELETE commands are documented in
 [Assets And Saves](assets-and-saves.md#inlay-catalog).
+
+### Endpoint Index
 
 | Data                                               | Endpoint                                                                                         | Browser owner                                       |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------- |
@@ -297,9 +303,35 @@ DELETE commands are documented in
 | One legacy bot-preset body                         | Cache `POST /api/v1/legacy-presets/:id`; full `GET` fallback                                     | `ensureBotPresetHydrated()`                         |
 | One prompt-preset template                         | Cache `POST /api/v1/prompt-presets/:id/template`; full `GET` fallback                            | `ensurePromptTemplateHydrated()`                    |
 
+### Hydration Workflows
+
 Both bulk hydration endpoints accept at most 32 ids and 64 KiB request bodies.
 The browser splits larger hydrate-all operations into 32-id batches while
 preserving revision fences.
+
+The active-chat fast path does not fetch the full transcript on every open.
+`src/ts/server/chatMessageHydration.svelte.ts` asks for a tail window sized by
+`chatLoadInitialPages` (30 messages by default), leaves placeholders for older
+rows, and fills only newly visible ranges as the UI expands by
+`chatLoadAdditionalPages` (15 by default). Export and other strict whole-chat
+workflows call full or batched hydration explicitly. Stale-response drops,
+hydration-generation resets, range stitching, reroll-alternate seeding, and
+queued-generation-persistence acknowledgement stay scoped to the chat body.
+
+Modern prompt-template hydration is owner-specific. The selected preset body is
+fetched before normal reconciliation begins; a background owner fetch updates
+only that preset and cannot replace the selected compatibility projection.
+`src/ts/server/promptTemplateHydration.ts` fences the hydration generation,
+owner projection epoch, minimum revision, owner identity, and owner snapshot
+before applying a response.
+
+Greeting translations use their own character-scoped projection. The read
+returns only rows valid for the current source text and translator-settings
+hash. `src/ts/server/greetingTranslations.svelte.ts` additionally fences the
+client settings signature and request epoch, then recovers running or recent
+terminal jobs through read-only bootstrap polling.
+
+### Collection And Cache Bounds
 
 The collection names are `modules`, `plugins`, `modelPresets`,
 `promptPresets`, `botPresets`, `promptTemplate`, `personas`, `loadouts`,
@@ -319,7 +351,7 @@ unreferenced values and limiting their UTF-8 serialized JSON to 64 MiB globally
 and 32 MiB per value. Those byte limits do not include IndexedDB metadata or
 engine overhead.
 
-### Settings Groups And Feature Projections
+## Settings Groups And Feature Projections
 
 Settings-group ownership is mirrored between the browser and Fastify; the
 dedicated read-only `agents` and `models` exceptions are parity-tested.
@@ -335,27 +367,24 @@ taint. One providers read subsumes a simultaneous models invalidation. The
 change it, so the memory group response excludes it and its cross-resource event
 reads the collection separately.
 
-#### Mood Light
+### Mood Light Resource Projection
 
-Mood Light's durable membership arrives with the settings root and belongs to
-the `sidebar` settings group. The UI persists it through
+Mood Light membership arrives with the settings root and belongs to the
+`sidebar` settings group. The UI persists it through
 `persistServerBackedSettingsPatchWithSettlement()`, so the ordinary optimistic
 settings bridge, encrypted outbox, `settings.updated` event, and targeted
 `/api/v1/settings/sidebar` invalidation all apply. Fastify normalizes the
 object in `server/fastify/src/routes/commands.ts`; there is no dedicated Mood
 Light command, resource projection, or per-character persistence field.
 
-The active bit is instead stored for the current tab under
-`risu:mood-light-mode` by `src/ts/moodLightMode.ts`. Fastify continues to return
-all character/order rows: `src/ts/moodLightMembership.ts` derives the visible
-partition from direct character ids, protected-folder snapshots/current
-children, and exclusions. Mood Light is therefore a browser privacy view, not
-an authorization boundary. The persistence split and normalization are guarded
-by `src/ts/server/settingsGroups.test.ts`,
-`server/fastify/__tests__/commands.test.ts`, and
-`src/ts/moodLightMembership.test.ts`.
+Fastify continues to return all character and order rows; no resource endpoint
+filters them by membership or active mode. Browser-only visibility coordination
+belongs in [Client Runtime](../../src/docs/client-runtime.md#mood-light-visibility-coordination).
+The resource projection and normalization are guarded by
+`src/ts/server/settingsGroups.test.ts` and
+`server/fastify/__tests__/commands.test.ts`.
 
-#### Prompt Preset And Legacy Bodies
+### Prompt Preset And Legacy Bodies
 
 Modern `promptPresets[].promptTemplate` is the normal prompt-template owner.
 Collection reads strip every modern preset template into a shell and, on the
@@ -368,11 +397,9 @@ Legacy `botPresets` likewise arrive as stable-id metadata shells and hydrate
 through `ensureBotPresetHydrated*()` only when a legacy workflow needs their
 settings body.
 
-Stale-response drops, hydration-generation resets, range stitching, and reroll
-alternate seeding live in `chatMessageHydration.svelte.ts`. Character lorebook
-hydration is lazy only when experimental `enableLorebookStubs` is enabled; the
-lorebook bridge tracks hydrated characters so an absent stub is never persisted
-as a deletion.
+Character lorebook hydration is lazy only when experimental
+`enableLorebookStubs` is enabled; the lorebook bridge tracks hydrated
+characters so an absent stub is never persisted as a deletion.
 
 ## Resource Write Guard
 

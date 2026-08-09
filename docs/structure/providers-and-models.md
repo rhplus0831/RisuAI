@@ -1,858 +1,407 @@
 # Providers And Models
 
-Last audited: 2026-08-02.
+Last audited: 2026-08-09.
 
-Provider/model behavior is split between browser model metadata, Fastify
-provider dispatch, the translator pipeline, and the shared capability table
-that decides whether a request shape can run on the server.
+This guide owns browser model metadata, durable model profiles and credentials,
+server-owned provider operations, provider dispatch, runtime options, capability
+routing, and LLM request history. Start from the
+[architecture index](README.md) when a change crosses domain boundaries.
+
+## Related Guides
+
+- [Prompt Assembly And Scripting](prompt-assembly-and-scripting.md) owns prompt
+  construction, generation surfaces, budgeting, memory injection, Lua, and V2
+  triggers.
+- [Translation And Input Hooks](translation-and-input-hooks.md) owns translator
+  pipelines, caches, detached translation jobs, and draft/BTW hooks.
+- [Agents And Presets](agents-and-presets.md) owns reusable Agents, Agent Preset
+  planning, model resolution, lorebook inputs, and output composition.
+- [Plugins And MCP](plugins-and-mcp.md) owns MCP discovery, execution, and OAuth
+  behavior. This guide covers only the provider transport boundary used by tool
+  requests.
 
 ## Browser Model Registry
 
-| Path                                                                                            | Role                                                                                                                                                  |
-| ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/ts/model/types.ts`                                                                         | `LLMProvider`, `LLMFormat`, `LLMTokenizer`, `LLMFlags`, `LLMModel`.                                                                                   |
-| `src/ts/model/modellist.ts`                                                                     | Static/dynamic/custom model registry and `getModelInfo()`.                                                                                            |
-| `src/ts/model/modelRoles.ts`                                                                    | Model role helpers for `chatMain`, `chatAux`, `memory`, `emotion`, `translate`, `otherAx`, `scriptMain`, and `scriptAux`; fallback refs are separate. |
-| `src/ts/model/modelProfileRecords.ts`, `modelProfileResolver.ts`, `modelProfileUiState.ts`      | Durable model profile records, role bindings, compatibility resolution, and settings UI summaries.                                                    |
-| `src/ts/model/providerCredentialRecords.ts`                                                     | Reusable API-key and Vertex-service-account credential records referenced by stable id.                                                               |
-| `src/ts/model/tokenizerOptions.ts`                                                              | Shared portable tokenizer choices used by profile/runtime settings, Custom API, and the playground.                                                   |
-| `src/ts/model/modelPresetSnapshots.ts`, `src/ts/promptPresetModelOverrides.svelte.ts`           | Snapshot/override helpers for model preset saves and prompt-preset model overrides.                                                                   |
-| `src/ts/model/modelGrid.ts`                                                                     | Model-grid normalization and filtering helpers for picker UI.                                                                                         |
-| `src/ts/model/keyedRequestCache.ts`                                                             | In-flight dedupe and bounded successful-result caching keyed by complete provider request context.                                                    |
-| `src/ts/model/providers/`                                                                       | Provider-specific static model lists.                                                                                                                 |
-| `src/ts/model/openrouter.ts`, `nanogpt.ts`, `llmgateway.ts`, `neuralwatt.ts`, `ollama.ts`, `ooba.ts`, `src/ts/horde/getModels.ts` | Browser provider catalog helpers, including keyed OpenRouter/NanoGPT/LLM Gateway/Neuralwatt/Ollama Cloud request reuse.                               |
-| `src/lib/UI/ModelList.svelte`, `ModelGrid.svelte`, `NanoGPT*`, `OpenrouterProviderList.svelte`  | Model-picker UI.                                                                                                                                      |
+| Path | Role |
+| --- | --- |
+| `src/ts/model/types.ts` | `LLMProvider`, `LLMFormat`, tokenizers, flags, parameter capability tiers, and `LLMModel`. |
+| `src/ts/model/modellist.ts` | Static, generated, dynamic, custom, and Plugin V3 registry merging plus `getModelInfo()`. |
+| `src/ts/model/providers/` | Provider-specific static model rows. |
+| `src/ts/model/modelRoles.ts` | The exact roles `chatMain`, `chatAux`, `memory`, `emotion`, `translate`, `otherAx`, `scriptMain`, and `scriptAux`; legacy fallback references are a separate map. |
+| `src/ts/model/modelProfileRecords.ts` | Durable profile, runtime-option, role-binding, fallback, and order schemas. |
+| `src/ts/model/modelProfileResolver.ts` | Compatibility resolution, provider capability, credential resolution, and readiness status. |
+| `src/ts/model/providerCredentialRecords.ts` | Reusable API-key and Vertex service-account records. |
+| `src/ts/model/tokenizerOptions.ts` | Portable tokenizer choices shared by settings, profiles, Custom API, and playground code. |
+| `src/ts/model/modelGrid.ts` | Model-grid normalization and filtering helpers. |
+| `src/ts/model/keyedRequestCache.ts` | Complete-context in-flight dedupe and bounded successful-result reuse. |
+| `src/ts/model/openrouter.ts`, `src/ts/model/nanogpt.ts`, `src/ts/model/llmgateway.ts`, `src/ts/model/neuralwatt.ts`, `src/ts/model/ollama.ts`, `src/ts/model/ooba.ts`, `src/ts/horde/getModels.ts` | Browser provider catalog/account helpers. |
 
-`Database.modelProfiles` stores durable reusable profile records,
-`Database.modelProfileOrder` stores their mixed profile/divider presentation order,
-and `Database.modelRoleProfiles` stores durable role bindings. Divider entries are
-UX-only and never enter profile resolution or request execution. A profile can own a
-selected model id, provider/request options, provider endpoints, a
-shared provider-credential reference, runtime options that directly affect a
-request, and fallback profile refs. Inline API keys and Vertex private keys are
-rejected in profile records. Role bindings can use profile mode, legacy mode, or
-inherit mode where a role supports inheritance. The resolver prefers durable
-profile records and bindings, then falls back to legacy flat fields for copied
-data, older presets, static model bypasses, and settings surfaces that still
-write compatibility fields.
+The static registry is capability metadata, not only a picker list. Dispatch
+materializes a sampler or reasoning control only when the selected row declares
+the corresponding parameter. Current high-tier examples are pinned in the
+provider files:
 
-Legacy `Database.aiModel` and related flat fields still select model strings for
-main, auxiliary, translator, memory, emotion, and script flows when no durable
-profile binding owns that role. Static/legacy fallback model ids still use flat
-settings and pass through the `staticModel` path. Dynamic registry additions are
-browser-side; `modellist.ts` merges custom model records, Plugin V3 provider
-metadata, dynamic Google/Anthropic model registration, and prefixed ids such as
-`xcustom:::`, `horde:::`, `hf:::`, and `pluginmodel:::`. Persisted
-`xcustom:::` custom models are server-routable when their stored URL/key/format
-pass the capability table. The server reconstructs narrow dispatch metadata from
-persisted settings, profile-owned options, string prefixes, and the OpenAI model
-allowlist; it does not import the full browser UI registry.
+- `src/ts/model/providers/openai.ts` registers `gpt-5.5` and its dated id with
+  `GPT5XHighParameters`. `src/ts/model/types.ts` defines the extra
+  `reasoning_effort_none` and `reasoning_effort_xhigh` capability tiers.
+- `src/ts/model/providers/anthropic.ts` marks `claude-opus-4-8` for adaptive
+  thinking and X-high effort.
+- `src/ts/model/providers/google.ts` marks Gemini 3.6 Flash, 3.5 Flash, and 3.5
+  Flash Lite as thinking-capable. Models carrying
+  `geminiThinkingNoMinimal` downgrade the disabled/minimal tier to `low`.
+
+`src/ts/model/modellist.ts` also synthesizes Responses variants for compatible
+OpenAI rows and Vertex variants for Google rows. Dynamic Google and Anthropic
+catalogs are credential-dependent and therefore are not a stable model
+inventory. Prefixes
+such as `xcustom:::`, `horde:::`, `hf:::`, and `pluginmodel:::` synthesize
+metadata for compatibility paths. The server does not import this whole UI
+registry; it reconstructs the narrow dispatch context from stored settings,
+the resolved profile, prefixes, and managed-provider allowlists.
+
+Static and legacy fallback ids still resolve from flat settings through the
+`staticModel` path; that selection bypasses role resolution and carries no
+recursive fallback refs. A persisted `xcustom:::` model is server-routable only
+when its stored URL, key, and format satisfy
+`src/ts/process/request/providerCapability.ts`; dynamic registry presence alone
+does not make it routable.
+
+## Model Profiles And Role Resolution
+
+`Database.modelProfiles` stores reusable profiles,
+`Database.modelProfileOrder` stores the mixed profile/divider presentation
+order, and `Database.modelRoleProfiles` binds runtime roles. Dividers are UX
+only: normalization removes invalid or duplicate entries, appends missing
+profiles, and never feeds a divider to resolution. Strict command validation
+requires every profile exactly once in the order.
+
+A durable profile owns a provider id, selected model id, request model,
+provider options, a credential reference, runtime overrides, and ordered
+fallback references. Bindings use `profile`, `legacy`, or supported `inherit`
+mode. The resolver prefers a valid durable binding and falls back to legacy
+flat fields for copied data, old presets, static-model bypasses, and remaining
+compatibility surfaces. Resolution reports `ready`, `incomplete`,
+`compatibility`, or `unsupported`; incomplete or unsupported active profiles
+are blocked before browser dispatch, server-intent completion, chat job
+acceptance, and final provider dispatch.
+
+Normalization/defaults run in `src/ts/storage/database.svelte.ts` and
+`server/fastify/src/databaseDefaults.ts`. Canonical row-oriented wrappers and
+handlers in `src/ts/server/commands.ts`,
+`server/fastify/src/routes/commands.ts`, and
+`server/fastify/src/commands/modelProfiles.ts` own profile and credential CRUD,
+ordering, role binding, create-and-bind, runtime-default, and legacy-conversion
+mutations. Whole-array settings patches remain compatibility paths for imports,
+presets, loadouts, and older callers. Preservation runs through
+`src/ts/model/modelPresetSnapshots.ts`,
+`src/ts/promptPresetModelOverrides.svelte.ts`, `src/ts/presetSplit.ts`, and
+`server/fastify/src/commands/splitPresets.ts` plus `src/ts/loadout.ts`.
+Model-profile UI ownership is in the
+[Svelte Settings UI guide](../../src/docs/svelte-settings-ui.md).
+
+First-class authored providers are `openai`, `llmgateway`, `neuralwatt`,
+`anthropic`, `google`, `vertex`, `ollama`, `custom-api`, and `debug-echo`.
+Compatibility records can still normalize other legacy shapes without gaining
+a first-class editor. Custom API profiles represent OpenAI-compatible Chat
+Completions and store a base URL; dispatch appends the chat-completions suffix.
+LLM Gateway uses public `https://api.llmgateway.io/v1/models` discovery and the
+fixed `https://api.llmgateway.io/v1/chat/completions` endpoint. Its optional
+request enums are `reasoning_effort`
+(`none` through `max`), `verbosity` (`low`, `medium`, or `high`),
+`service_tier` (`auto`, `default`, `flex`, or `priority`), and `routing`
+(`auto`, `price`, `throughput`, or `latency`). Neuralwatt likewise has public
+fixed catalog discovery and fixed
+`https://api.neuralwatt.com/v1/chat/completions` generation; catalog rows retain
+display/provider, context-limit, and per-million-token price metadata. Both use
+reusable credentials for generation and ignore profile-local endpoint
+substitution. Contracts are pinned by `src/ts/model/neuralwatt.test.ts`,
+`server/fastify/__tests__/providerOperations.test.ts`,
+`src/ts/model/modelProfileResolver.test.ts`, and
+`server/fastify/__tests__/chatDispatchProfileOptions.test.ts`.
+
+## Provider Credentials
+
+`Database.providerCredentials` stores `apiKey` or `vertexServiceAccount`
+records. Profiles refer to them by `providerOptions.credentialId`; inline API
+keys and Vertex private-key material are rejected in profile records. Resource
+projections mask secrets, resolution dereferences them only on the server, and
+`server/fastify/src/commands/providerCredentials.ts` rejects deletion while a
+profile still refers to the credential. Legacy-to-profile conversion mints and
+deduplicates credential rows.
+
+A one-shot draft credential is allowed only where a typed provider/media
+operation explicitly supports `credential.source: "provided"`. Whole-database
+exports can still contain raw credentials and must be handled as secrets.
+
+## Runtime Options And Precedence
+
+`Database.modelRuntimeDefaults` and profile `runtimeOptions` use the same
+schema. Effective precedence is hard defaults, global runtime defaults, then
+the resolved profile override. Legacy flat parameters remain conversion data;
+profile-bound generation does not silently borrow them.
+
+Important runtime contracts include:
+
+- `stripCoT` buffers one provider completion and removes recognized
+  `<Thoughts>`/`<think>` blocks before downstream consumers and request-history
+  capture. `server/fastify/__tests__/stripCoTFrames.test.ts` pins chunk-split
+  handling; the Strip CoT cases in
+  `server/fastify/__tests__/chatDispatchProfileOptions.test.ts` pin dispatch
+  inheritance and override behavior.
+- `halfStreaming` is a profile/runtime option alongside `useStreaming`.
+  `server/fastify/src/routes/generationChat.ts` advertises it in the initial
+  `info` frame. `server/fastify/src/prompt/sseEvents.ts` declares the
+  `TokenEvent` fields, while
+  `server/fastify/src/prompt/providerTransport.ts` performs cumulative token
+  counting and emits `generatedTokens`/`elapsedMs`. Browser
+  `src/ts/process/request/serverChat.ts` buffers visible text while
+  `src/ts/process/halfStreamingProgress.ts` computes throughput. Agent Preset
+  steps deliberately disable both streaming modes; see
+  [Agents And Presets](agents-and-presets.md#provider-dispatch-and-history).
+- `FASTIFY_TOKENIZER_OPTIONS` in `src/ts/model/tokenizerOptions.ts` is the
+  portable tokenizer catalog. Runtime override wins over runtime default, then
+  the Custom API provider choice. Fastify loads the matching implementation
+  through `server/fastify/src/prompt/webTokenizers.cjs`.
+  `server/fastify/__tests__/tokenizerGoldenCounts.test.ts` pins client-engine
+  golden counts, while `src/ts/tokenizer.test.ts` keeps the exposed browser and
+  server tokenizer families aligned.
+- The legacy `additionalParams` table applies to ordinary providers only when
+  `applyAdditionalParamsToAll` is literally true. Reverse proxy continues to
+  use its flat rows and `xcustom:::` continues to use its own rows regardless.
+  Global rows apply before profile-owned rows, so profile values and explicit
+  profile headers win. Browser/server parity lives in
+  `src/ts/process/request/shared.ts` and
+  `server/fastify/src/generation/additionalParams.ts`.
 
 ## Server-Owned Provider And Media Operations
 
-Dynamic NanoGPT account/model fetching lives in `src/ts/model/nanogpt.ts`.
-OpenRouter, NanoGPT, LLM Gateway, Neuralwatt, Ollama, and Horde helpers carry richer browser catalog
-metadata for picker/filter UI than the server needs for dispatch. NanoGPT,
-OpenRouter, LLM Gateway, Neuralwatt, Ollama Cloud, WaveSpeed, Google, Anthropic, ElevenLabs, and Fish
-Speech catalog/account calls use the fixed allowlist in
-`server/fastify/src/providerOperations.ts` through
-`src/ts/server/providerOperations.ts`. The same boundary owns Google token
-counting and DeepL/DeepLX translation; use
-`src/ts/server/providerOperationsProtocol.ts` as the operation source of truth.
+Provider catalogs, translation utilities, embeddings, TTS, images, and
+transcription use authenticated, no-store Fastify operations so stored secrets
+do not enter browser provider code. Dynamic NanoGPT account/model fetching
+lives in `src/ts/model/nanogpt.ts`. The catalog/account allowlist covers
+NanoGPT, OpenRouter, LLM Gateway, Neuralwatt, Ollama Cloud, WaveSpeed, Google,
+Anthropic, ElevenLabs, and Fish Speech; it also owns Google token counting and
+DeepL/DeepLX translation. Use
+`src/ts/server/providerOperationsProtocol.ts`, not a picker list, as the
+operation name/type source of truth;
+`server/fastify/src/providerOperations.ts` owns the executable upstream
+allowlist. These operations do not require the active writer; MCP OAuth refresh
+is the documented persistence exception.
 
-Credentialed provider and media features use authenticated, no-store Fastify
-operations rather than exposing raw stored keys to browser provider code. The
-provider/media work does not write returned results into durable application
-state and therefore does not require the active writer. MCP OAuth refresh is a
-documented exception when it persists a rotated refresh token. Each operation
-accepts a fixed provider discriminator and bounded typed
-input; contracts that permit custom endpoints validate them explicitly instead
-of accepting a generic URL/method/header proxy. Upstream response sizes,
-deadlines, error details, and disconnect cancellation are bounded.
+Each contract accepts a fixed discriminator and bounded typed input. Custom
+endpoints are validated by the operation that permits them; there is no generic
+URL/method/header proxy. Response size, timeout, error detail, and disconnect
+cancellation are bounded.
 
-| Route / browser adapter                                                             | Fixed boundary                                                                                                                                                              | Result / rate limit           |
-| ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| `POST /api/v1/provider-operations` / `src/ts/server/providerOperations.ts`          | NanoGPT account/catalog operations; OpenRouter, LLM Gateway, Neuralwatt, Ollama Cloud, WaveSpeed, Google, Anthropic, ElevenLabs, and Fish catalogs; Google token counting; DeepL/DeepLX translation. | JSON, `60/min`                |
-| `POST /api/v1/embedding-operations` / `src/ts/server/embeddingOperations.ts`        | Remote `ada`, OpenAI v3, Voyage Context 3/4, or custom embeddings. Stored secrets cannot be paired with a changed one-shot custom endpoint.                                 | JSON vectors, `60/min`        |
-| `POST /api/v1/tts/synthesize` / `src/ts/server/tts.ts`                              | ElevenLabs, Fish, Hugging Face, NovelAI, or OpenAI-compatible synthesis. Stored-character OpenAI credentials, endpoint, and options resolve together by character id.       | Audio bytes, `60/min`         |
-| `POST /api/v1/image-generation` / `src/ts/server/imageGeneration.ts`                | NovelAI, DALL-E, Stability, Fal, Imagen, OpenAI-compatible, WaveSpeed, or Kei generation with provider-specific request validation.                                         | JPEG/PNG/WebP bytes, `10/min` |
-| `POST /api/v1/media/openai/transcriptions` / `src/ts/server/openAITranscription.ts` | One bounded audio/video upload to OpenAI `whisper-1`, using the server-stored OpenAI key and a fixed VTT response format.                                                   | VTT text, `10/min`            |
-| `POST /api/v1/mcp/oauth/refresh` / `src/ts/server/mcpOAuthRefresh.ts`               | An exact MCP identifier selects its matching stored credential; rotated refresh tokens may be persisted server-side. See [Plugins And MCP](plugins-and-mcp.md).             | JSON access token, `30/min`   |
+| Route / browser adapter | Fixed boundary | Result / rate limit |
+| --- | --- | --- |
+| `POST /api/v1/provider-operations` / `src/ts/server/providerOperations.ts` | The fixed provider-operation allowlist above. | Typed JSON data, `60/min` |
+| `POST /api/v1/embedding-operations` / `src/ts/server/embeddingOperations.ts` | `ada`, OpenAI v3, Voyage Context 3/4, or custom embeddings. A stored secret cannot accompany a changed one-shot custom endpoint. | JSON vectors/groups, `60/min` |
+| `POST /api/v1/tts/synthesize` / `src/ts/server/tts.ts` | ElevenLabs, Fish, Hugging Face, NovelAI, or OpenAI-compatible synthesis. Stored-character OpenAI credential, endpoint, and options resolve atomically by character id. | Audio bytes, `60/min` |
+| `POST /api/v1/image-generation` / `src/ts/server/imageGeneration.ts` | NovelAI, DALL-E, Stability, Fal, Imagen, OpenAI-compatible, WaveSpeed, or Kei generation. | JPEG/PNG/WebP bytes, `10/min` |
+| `POST /api/v1/media/openai/transcriptions` / `src/ts/server/openAITranscription.ts` | One bounded OpenAI `whisper-1` upload with fixed VTT output. | VTT text, `10/min` |
+| `POST /api/v1/mcp/oauth/refresh` / `src/ts/server/mcpOAuthRefresh.ts` | Exact stored MCP identity selects its credential; a rotated refresh token may persist. See the MCP guide. | JSON access token, `30/min` |
 
-The server implementations are `providerOperations.ts`,
-`embeddingOperations.ts`, `tts.ts`, `imageGeneration.ts`,
-`openAITranscription.ts`, and `mcpOAuthRefresh.ts` under
-`server/fastify/src/`; their route registrars live under
-`server/fastify/src/routes/`. Request discriminators and browser/server shared
-types live in the corresponding `src/ts/server/*Protocol.ts` files, except that
-OpenAI transcription validates its fixed contract directly in its adapter and
-route. Raw stored/shared credentials resolve only inside Fastify; resource
-reads project a masked sentinel so the browser can refer to a stored secret
-without receiving it. A user-edited draft key is a one-shot override only for
-operations whose protocol permits `credential.source: "provided"`.
+Shared request/result types live in the matching protocol modules under
+`src/ts/server/`; implementations are the matching files under
+`server/fastify/src/`, with route registration under
+`server/fastify/src/routes/`. Catalog helpers use
+`src/ts/model/keyedRequestCache.ts`: OpenRouter, NanoGPT, and public LLM
+Gateway/Neuralwatt catalogs cache safe successes for 30 seconds;
+credential-keyed Ollama Cloud tags use 15 seconds; local Ollama discovery is
+uncached. NanoGPT balance/subscription calls dedupe concurrent work only.
+Stored-credential refs bypass completed reuse so key rotation is visible, and
+the legacy model settings surface debounces draft catalog credentials for
+400 ms in `src/lib/Setting/Pages/BotSettings.svelte`.
 
-OpenRouter model/provider and NanoGPT model/provider catalog requests are keyed
-by their full credential/model context and share an in-flight promise. Public
-and explicit-draft contexts briefly reuse successful results; failed requests
-are not retained. Opaque stored credential references bypass completed
-result reuse so a server-side key rotation cannot be hidden behind an unchanged
-masked placeholder. OpenRouter, NanoGPT, and the public LLM Gateway and
-Neuralwatt catalogs use a 30-second TTL where reuse is safe. Ollama Cloud tags
-use a 15-second cache keyed by credential under the same rule, while local
-Ollama discovery remains uncached.
-NanoGPT balance/subscription lookups dedupe only concurrent calls. The legacy
-model settings surface also debounces draft catalog credentials for 400 ms, so
-typing a key does not issue one catalog request per character.
+## Capability Table And Dispatch Boundary
 
-## Settings -> Model Profile Flow
+`src/ts/process/request/providerCapability.ts` is the shared pure routing
+decision table. Given resolved metadata and narrow configuration, it returns a
+server provider or a stable unsupported reason. Do not fork this logic for chat
+or completion: browser preflight and Fastify dispatch use the same decision.
 
-Settings -> Model is now profile-first. `BotSettings.svelte` routes model
-settings to `ModelSettingsShell.svelte`, which owns the visible workflow:
+The live provider core is `server/fastify/src/prompt/chatDispatch.ts`; adapters
+are under `server/fastify/src/generation/`.
 
-| Surface                             | Role                                                                                                                                                                                                                         |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ModelProfileRoleList.svelte`       | Roles tab. Auto-applies valid `modelRoleProfiles` changes across `profile`, supported `inherit`, and `legacy` modes and shows effective profile/status/fallback summaries.                                                    |
-| `ModelProfileList.svelte`           | Profiles tab. Lists profile name, non-generated IDs, provider, model, request model, fallback count, and status; supports create/edit/duplicate/delete plus durable profile/divider drag-and-drop ordering with delayed touch drag. Delete is blocked while any Model Preset role binding references the profile. Dividers render as `---` in profile selectors and selecting one restores the prior value. |
-| `ModelProfileEditorDrawer.svelte`   | Command-backed profile drawer for first-class provider fields, shared credential selection, profile runtime overrides, and fallbacks.                                                                                         |
-| `ProviderCredentialList.svelte`     | API Credentials tab. Creates, updates, and deletes shared API-key/Vertex credential records, preserving masked values and blocking deletion while referenced.                                                                |
-| `ModelRuntimeDefaultsEditor.svelte` | Edits `modelRuntimeDefaults` with explicit Save/Cancel and a compact count summary.                                                                                                                                          |
-| `ModelPresetList.svelte`            | Embedded model preset picker/list hosted by `src/lib/Setting/botpreset.svelte`; applies/saves `modelPresets` and `modelPresetsId`.                                                                                           |
-| `ModelRoleList.svelte`              | Legacy role editor shown only inside Advanced Legacy Settings for compatibility data.                                                                                                                                        |
+| Adapter family | Current transport contract |
+| --- | --- |
+| OpenAI | Chat Completions, Responses, OpenAI-compatible variants, and legacy instruct. OpenRouter and NanoGPT select compatible variants from stored format settings. |
+| Anthropic | Native Messages dispatch, including supported thinking, cache-point, and tool conversion. |
+| Gemini / Vertex | Native content conversion, thinking controls, media inputs/outputs, and optional tool translation. |
+| Managed/legacy | Mistral, Cohere, Ollama, Bedrock/SigV4, Kobold, Horde, Ooba legacy, and Echo. |
+| Shared | Provider-safe message conversion, additional parameters, JSON controls, response frames, reasoning envelopes, and API metadata. |
 
-The shell prompts clearly legacy-only databases to Convert to Profiles through
-the atomic conversion command. Declining hides the prompt for the session while
-leaving the Convert to Profiles action visible. Advanced Legacy Settings still
-shows the current legacy main/aux fields and the old role/provider controls so
-older data, copied settings, and compatibility provider globals remain
-reachable when at least one role still resolves through legacy settings. The
-legacy accordion is hidden once every role resolves from a durable profile,
-including supported inherit bindings whose effective source is durable-profile;
-legacy-inherit keeps it visible.
-
-First-class profile provider panels are intentionally limited to:
-
-- `openai`
-- `llmgateway`
-- `neuralwatt`
-- `anthropic`
-- `google`
-- `vertex`
-- `ollama`
-- `custom-api`
-- `debug-echo`
-
-The first-class panels write top-level `providerId`, selected `modelId`, and
-supported `providerOptions`, including `credentialId`, request model,
-endpoint/base URL, extra headers, additional parameters, and provider-specific
-metadata. Retained profile schemas can still normalize compatibility shapes
-for reverse proxy, OpenRouter, NanoGPT, Ollama, Vertex, and Custom API records;
-that does not make each shape a first-class authoring panel.
-`ModelProviderPanel.svelte`, `ModelRuntimeOptionsEditor.svelte`, and
-`ModelFallbackEditor.svelte` own most profile-option plumbing, while
-`ProviderCredentialList.svelte` owns secret creation and rotation. Ollama
-profiles select local or cloud routing, reference a shared cloud credential,
-and keep the request model separate from the source row.
-Custom API profiles represent OpenAI-compatible Chat Completions; the UI stores
-a base URL and warns when the user includes `/chat/completions` because dispatch
-appends that suffix.
-Debug Echo profiles use the existing Echo dispatcher and return a small JSON
-payload containing the profile-local Base URL and Request Model for provider
-debugging.
-LLM Gateway profiles use the fixed managed API base URL and a reusable API-key
-credential. Their model picker loads the public, bounded `GET /v1/models`
-catalog through the server-owned provider-operation boundary, while generation
-uses the OpenAI-compatible Chat Completions transport. Profile-local LLM Gateway
-options expose the documented `reasoning_effort` (`none` through `max`),
-`verbosity` (`low`, `medium`, or `high`), and `service_tier` (`auto`, `default`,
-`flex`, or `priority`) request enums. They also support `routing` (`auto`,
-`price`, `throughput`, or `latency`). Optional controls remain unset unless explicitly chosen
-so models that do not support a given option are not sent an incompatible
-default.
-Neuralwatt profiles likewise use a fixed managed API base URL and reusable
-API-key credential. Their picker loads Neuralwatt's public `/v1/models`
-catalog, including display names, provider attribution, context limits, and
-per-million-token prices, through the fixed provider-operation boundary;
-generation uses the fixed `https://api.neuralwatt.com/v1/chat/completions`
-OpenAI-compatible transport. `src/ts/model/neuralwatt.test.ts`,
-`server/fastify/__tests__/providerOperations.test.ts`,
-`src/ts/model/modelProfileResolver.test.ts`, and
-`server/fastify/__tests__/chatDispatchProfileOptions.test.ts` pin the catalog,
-public credential mode, fixed endpoints, shared generation credential, and
-ignored profile-local base-URL override.
-
-## Durable Profile Data Flow
-
-Defaults and normalization run in `src/ts/storage/database.svelte.ts` and
-`server/fastify/src/databaseDefaults.ts`. Settings command validators in
-`src/ts/server/commands.ts` and `server/fastify/src/routes/commands.ts` accept
-only supported profile, provider option, runtime option, role-binding, and
-fallback-ref shapes. Preset and loadout paths in `src/ts/presetSplit.ts`,
-`src/ts/model/modelPresetSnapshots.ts`, `src/ts/promptPresetModelOverrides.svelte.ts`,
-`server/fastify/src/commands/splitPresets.ts`, and `src/ts/loadout.ts` preserve
-durable profile fields while still accepting legacy flat data.
-
-Loadouts follow the same split-preset boundary for prompt templates: they apply
-prompt preset ids and let the selected modern prompt preset own
-`promptPresets[].promptTemplate`. They should not resurrect stale top-level
-`promptTemplate` data as the active template when a prompt preset id resolves.
-
-`Database.providerCredentials` stores reusable `apiKey` or
-`vertexServiceAccount` rows. Profiles reference them through
-`providerOptions.credentialId`; resolution happens server-side, reads mask
-secrets by stable credential id, and deletion is rejected while a profile still
-references the record. Legacy-to-profile conversion mints and deduplicates
-credential rows. Older flat provider/custom-model masking remains for
-compatibility.
-
-`Database.modelRuntimeDefaults` uses the same runtime option schema as profile
-`runtimeOptions`. Profile-bound runtime precedence is hard defaults,
-`modelRuntimeDefaults`, then profile `runtimeOptions`. Legacy flat parameters
-and separate parameters are preserved for compatibility/conversion, but
-profile-bound generation does not silently borrow them as active profile
-runtime overrides. The opt-in `stripCoT` runtime option removes known
-`<Thoughts>` and `<think>` reasoning blocks from provider output before it
-reaches downstream generation consumers; profile overrides may inherit,
-enable, or disable the runtime default. The frame wrapper buffers one provider
-completion so it can recognize blocks split across chunks, and request history
-therefore sees the already-stripped response when this option is enabled.
-`server/fastify/__tests__/stripCoTFrames.test.ts` and the Strip CoT cases in
-`server/fastify/__tests__/chatDispatchProfileOptions.test.ts` guard both
-behaviors.
-
-`FASTIFY_TOKENIZER_OPTIONS` in `src/ts/model/tokenizerOptions.ts` is the shared
-portable tokenizer catalog for settings and playground UI. Effective tokenizer
-precedence is runtime override, runtime default, then the Custom API provider
-choice. Server prompt budgeting loads the matching portable implementation
-through `server/fastify/src/prompt/webTokenizers.cjs`; golden-count tests keep
-browser and server families aligned.
-
-Durable profile and credential commands live in the browser command wrappers
-and Fastify command handlers. The profile-first UI uses row-oriented commands for profile
-create/update/duplicate/delete, role binding updates, create-and-bind,
-legacy-to-profile conversion, runtime defaults updates, and credential
-create/update/delete. Whole-array settings
-patches remain compatibility paths for imports, presets, loadouts, and older
-callers.
-
-## Translation Runtime
-
-| Path                                                                | Role                                                                                                                               |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `src/ts/translator/presets.ts`, `src/ts/translator/pipeline.ts`     | Translator preset normalization/import/export and ordered-step prompt/output execution.                                             |
-| `src/ts/translator/historySlots.ts`                                 | Shared source/translated history-slot parsing, filtering, greeting fallback, and token-bounded rendering.                           |
-| `src/ts/process/inputHooks.ts`                                      | Non-streaming draft/BTW hook dispatch, including shared history-slot substitution and optional per-hook profile overrides of the `otherAx` model role. |
-| `src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte`    | Multi-step translator preset editor and model-profile selection UI.                                                                |
-| `server/fastify/src/translation/rawMessageTranslation.ts`           | Google, DeepL, DeepLX, and LLM dispatch plus protected raw-line handling and server history-slot rendering.                         |
-| `server/fastify/src/translation/serverMessageTranslation.ts`        | Detached provider work followed by source/previous-translation/job-fenced targeted message persistence.                            |
-| `server/fastify/src/translation/serverGreetingTranslation.ts`       | Detached manual greeting translation with source/settings/previous-value fences before persistence.                                |
-| `server/fastify/src/translation/greetingTranslationStore.ts`        | Normalized character/greeting/settings-hash rows and portable greeting-translation projection.                                      |
-| `server/fastify/src/translation/generationCompletionTranslation.ts` | Eligibility, wait-cap, completion-frame, and push-notification coordination for generated-message automatic translation.           |
-| `server/fastify/src/greetingTranslationJobs.ts`                     | Separate process-local greeting job registry exposed through bootstrap recovery metadata.                                           |
-| `src/ts/server/greetingTranslations.svelte.ts`                      | Character-scoped greeting translation projection, manual command flow, refresh, and recovery state.                                 |
-| `src/ts/server/messageTranslationJobs.ts`                           | Browser recovery state for detached translations reported by bootstrap or a generation completion frame.                           |
-| `src/ts/process/serverGeneratedMessageTranslation.ts`               | Applies embedded success and maps running/failure outcomes into the shared translation-job UI state.                               |
-| `src/ts/process/generatedMessageTranslationEligibility.ts`          | Prevents the rendered-message compatibility trigger from duplicating translation already owned by the server generation lifecycle. |
-
-Translator presets contain at most five ordered steps. Runtime executes the
-enabled steps in order, falling back to the first step when all are disabled.
-Each step can inherit the `translate` model role or name a durable model
-profile, consume the source text, previous step output, or a named prior output,
-and publish an optional named output for later steps. The first step remains
-mirrored into the legacy `translatorPrompt` and `translatorMaxResponse` fields
-for compatibility.
-The pipeline removes provider reasoning wrappers such as `<Thoughts>` and
-`<think>` from each LLM step before its output is chained, cached, or persisted.
-With profile runtime `stripCoT` disabled, request history retains the provider
-response because this translation-specific cleanup runs after dispatch. With
-`stripCoT` enabled, the shared provider-frame wrapper removes it before both
-request-history recording and translator chaining.
-When **Send Text As-Is** and **Exclude Chain-of-Thought** are both enabled, those
-wrappers and their contents are also removed from the current translation source
-and translation-history slots before provider dispatch.
-The selected preset is collection-owned; its pointer and language settings are
-mirrored through `server/fastify/src/routes/commands.ts`,
-`server/fastify/src/databaseDefaults.ts`, and
-`src/ts/server/settingsGroups.ts`.
-
-`{{slot::history::N}}` and `{{slot::historytrans::N}}` form a separate template
-contract shared by server LLM **Send Text As-Is** translation and browser draft
-or BTW input hooks. `N` is 1-50. The renderer walks prior rows in chronological
-order, skips disabled/comment rows, stops at `disabled: "allBefore"`, includes
-the owned greeting only when the requested window exhausts stored history, and
-drops oldest entries until the combined source/translated rendering fits
-`translatorHistoryMaxTokens` (2,048 by default). Before an input hook runs,
-`src/lib/ChatScreens/DefaultChatScreen.svelte` hydrates enough transcript pages
-for that bounded window and rejects stale chat/composer ownership.
-Each input hook can select a durable model profile. Hooks without a selection,
-including legacy hook records without a `model` field, inherit the `otherAx`
-model role and its normal fallback behavior. Draft hooks can also opt into
-**Translation** behavior: the reviewed Draft output becomes the sent message's
-raw text, while the original composer text is stored as its source-bound
-translation. The source hash covers the exact sent text, including inlay
-markers, so later source edits invalidate the paired original text normally.
-`src/ts/process/inputHooks.test.ts`,
-`src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts`, and
-`server/fastify/__tests__/rawMessageTranslation.test.ts` are the durable
-contracts.
-
-Outside LLM **Send Text As-Is** mode, translation preserves blank separators,
-lines beginning `{{img`, `{{raw`, or `{{video`, and complete `{{audio...}}`
-lines, translating only the surrounding chunks.
-
-Manual message translation and generated-message automatic translation share
-the same detached job registry and source-safe persistence path. Automatic
-translation begins only after a generated row is durably persisted. The chat
-stream emits translation progress and delays its terminal post-generation
-frame until translation settles or `autoTranslateNotificationDeferCapSeconds`
-(180 by default) expires; a capped job continues and remains visible through
-bootstrap recovery. A successful terminal frame can embed the translation for
-immediate display, while running and failed results reuse the shared job UI.
-`autoTranslateCachedOnly` disables automatic LLM translation because the
-server path does not use the browser translation cache.
-
-Greeting translations are manual-only and use their own character-scoped
-registry and normalized store. Bootstrap exposes running plus bounded recent
-terminal jobs as `activeGreetingTranslations`; the browser refreshes the
-matching projection through
-`GET /api/v1/characters/:characterId/greeting-translations`.
-
-## Prompt Assembly Variables And Lorebook Injection
-
-`src/ts/cbs.ts` registers the shared browser/server CBS functions. Unnumbered
-`{{history}}` returns serialized full message objects and includes the greeting;
-numeric `{{history::N}}` (or its `{{messages::N}}` alias) instead returns the
-raw text of the newest `N` stored rows in chronological order without adding
-the greeting. `N` must be a positive safe integer, and `::role` adds role
-prefixes. This standard CBS history window is distinct from the filtered,
-1-50 `{{slot::history::N}}` translator/input-hook contract above.
-`src/ts/parser/tests/cbs/history.test.ts` and
-`server/fastify/__tests__/promptVariables.test.ts` keep the browser and
-Fastify parsers aligned.
-
-Character `additionalText` is a retained import/export compatibility field, not
-a server prompt source. Fastify does not port the browser's embedding-based
-additional-information retrieval: an imported non-empty value is preserved and
-shown as unsupported in the character editor, while an empty value has no UI
-surface. Server static-description assembly always omits the field.
-
-Normal lorebook activation excludes Agent-only entries. For ordinary active
-entries, `server/fastify/src/prompt/lorebook.ts` builds one position parser
-that applies `{{position::...}}` plus non-lore `@@inject_at` append, prepend,
-and replace operations during both token preflight and final template
-rendering. Global Note replacement composes `{{original}}` before the location
-injection is applied once, and stable-card cache reads reuse that same result.
-The `Fastify lorebook template injection` group in
-`server/fastify/__tests__/assemble.test.ts`, the `activateLorebook — inject_at`
-cases in `server/fastify/__tests__/lorebook.test.ts`, and the stable-cache cases
-in `server/fastify/__tests__/templates.test.ts` guard this ordering.
-
-## Agent Preset Model Flow
-
-### Records, Selection, And Module Overlay
-
-Standalone Agents are reusable auxiliary generation definitions. An
-`AgentRecord` owns behavior shared across uses: name, description, version,
-instruction, model/runtime defaults, prepared-input scopes, toggles, named
-lorebook inputs, output format, and whether the instruction is role-tagged
-ChatML. An `AgentPresetRecord` composes those definitions through ordered
-`AgentPresetUseRecord` rows. A use owns enabled state, phase, dependencies on
-other use ids, output key, destination, failure policy, and optional
-model/runtime overrides. Deleting an Agent is blocked while a preset uses it;
-duplicating a preset shares Agent references rather than copying their behavior.
-
-An own-property chat `generationSettings.agentPresetId` wins over
-`Database.agentPresetDefaultId`; an explicit blank chat value opts out. A
-missing, invalid, incomplete, or model-not-ready selection blocks generation,
-while a disabled preset resolves as a no-op. `src/ts/agentPresetResolver.ts`
-and `src/ts/chatGenerationSettings.ts` share this readiness/selection contract
-between settings UI, browser preflight, and server assembly.
-
-An Agent Preset may also own `moduleIntergration`, using the same
-comma-separated module-id or namespace contract as Prompt Presets. While an
-enabled Agent Preset is effective for a chat, active-module resolution unions
-its integration with the effective Prompt Preset integration, global
-`enabledModules`, and character/chat module ids. Namespace matches are allowed,
-and matching rows are deduplicated by module id. This is an effective generation
-overlay and does not mutate `enabledModules`.
-
-Planning resolves each use into the execution-step shape by applying its
-overrides on top of Agent defaults. Editing a shared Agent affects every preset
-that uses it; wiring edits and overrides affect only that use. Model selection
-is `inheritMain`, which reuses the resolved chat-main profile, or
-`modelProfile`, which names a durable profile id. Planner/status helpers in
-`src/ts/agentPresetResolver.ts` use chat-preflight readiness semantics, and
-`server/fastify/src/prompt/agentPresetExecution.ts` dispatches through the
-normal provider boundary with streaming disabled and provider tools omitted.
-New context-binding or port-mapping semantics are not part of this model.
-
-### Instruction Inputs And CBS
-
-Resolved uses have nine bounded prepared-input scopes: `recentChatTail`,
-`chatSearchSnippets`, `lorebookContext`, `memoryContext`, `characterSummary`,
-`personaSummary`, `currentUserMessage`, `previousAgentOutputs`, and
-`mainDraft`. `src/lib/Setting/Pages/AgentEditorDrawer.svelte` shows the exact
-`{{scopeName}}` token for every selected scope. A scope is collected and
-inserted only when its token appears in the instruction; `mainDraft` is
-available only after main output editing. These sources are opt-in inputs, not
-implicit prompt appendices.
-
-ChatML Agents parse the instruction into role-tagged messages and bypass the
-generated helper-step system prefill and `Author instruction:` wrapper. Each
-parsed message receives standard CBS expansion, including `{{history::N}}`,
-before prepared-input, Agent-toggle, Agent-lorebook-input, and named-output
-substitution. This fixes roles before expansion and does not recursively expand
-CBS-like text introduced by a prepared input. Non-ChatML Agents use the helper
-wrapper and only prepared-input, toggle, named lorebook input, and named-output
-substitutions—not the full standard CBS pass. The ChatML/history cases in
-`server/fastify/__tests__/agentPresetExecution.test.ts` pin these boundaries.
-
-An Agent may define chat-configurable boolean, select, text, and textarea
-controls. Active uses project them into the sidebar toggle flow, while values
-are stored under `agent:<agentId>:<localKey>` so two Agents can reuse a local
-key. Instructions read the value with `{{agentToggle::localKey}}`; the storage
-namespace is not exposed to the Agent author.
-
-Named lorebook inputs use `{{agentInput::localKey}}`. Resolution matches the
-entry display name, searches the active chat before the selected character,
-and does not fall back when a chat-level match exists but is invalid. A match
-must be a regular, nonempty entry marked `agentOnly`/`risu_agent_only`, with
-Always Active disabled and both activation-key fields blank. Agent-only entries
-are excluded from normal activation. Required inputs across both phases are
-preflighted before any enabled Agent step or main-prompt assembly begins.
-
-### Orchestration And Output Composition
-
-A use can consume an already-completed named output through
-`{{agent::outputKey}}`, independently of the aggregate
-`previousAgentOutputs` scope. Before-main consumers can use earlier before-main
-dependency levels. After-main consumers can use all completed before-main
-outputs plus earlier after-main levels. A missing/disabled producer,
-self-reference, same-level reference, or forward/future-phase reference makes
-the preset `incomplete`. Successful outputs remain eligible regardless of
-destination; before-main `promptOutput` values also expand in the main template.
-
-Dependencies form an acyclic graph within one phase; enabled output keys are
-unique per phase. Runtime executes dependency levels up to preset
-`maxConcurrency` (all same-level uses when omitted), applies resolved per-use
-timeout/input/output limits, validates JSON-object outputs when requested,
-follows optional/required/fallback/stop failure policies, and writes to
-`promptOutput`, `intermediate`, `userInput`, or `finalOutput`. At most one enabled before-main
-`userInput` modifier is allowed; it must be last in that phase and replaces and
-persists the latest user message before main assembly. At most one enabled
-after-main `finalOutput` modifier is allowed; it must be last in that phase and
-can modify final text before persistence. Resolver cases live in
-`src/ts/agentPresetResolver.test.ts`; execution-level concurrency, failure, and
-destination cases live in `server/fastify/__tests__/agentPresetExecution.test.ts`.
-
-An Agent Preset can alternatively own a `finalOutputTemplate`. After output
-edits and all enabled uses complete, the server evaluates it through CBS.
-`{{slot::mainOutput}}` is the edited main-model response, while
-`{{agent::outputKey}}` resolves a successful named output from either phase. A
-template takes precedence over the legacy direct `finalOutput` modifier, whose
-named result remains available through its output key. Missing references make
-the preset incomplete during planning; missing optional outputs expand empty at
-runtime. The final-output cases in `server/fastify/__tests__/assemble.test.ts`
-guard edited-main ordering and modifier precedence.
-
-Provider tool-calling is intentionally absent from this path. Agent-specific
-postprocessing removes `<Thoughts>`/`<think>` reasoning before output is
-bounded, parsed, chained, injected, or persisted. With profile runtime
-`stripCoT` disabled, request history retains the pre-postprocessing provider
-response; enabling `stripCoT` removes it at the earlier shared frame boundary.
-
-### Compatibility And Commands
-
-Legacy presets with embedded steps normalize into one standalone Agent and one
-preset use per step, preserving dependency ids without deduplicating similar
-steps. Canonical records retain an empty legacy `steps` field only for wire and
-storage compatibility; authoring/planning use `agents` and `agentUses`. New
-clients use `/agent-presets/:id/uses`; older `/steps` routes are compatibility
-adapters over the same records.
-
-## Compatibility Caveats
-
-Canonical compatibility surfaces:
-
-- Legacy flat fields remain: `aiModel`, `subModel`, `modelRoles`,
-  `seperateModels`, `fallbackModels`, separate parameters, and provider globals.
-  They are compatibility/conversion data, not the preferred Settings -> Model
-  workflow.
-- Compatibility profiles omit `providerId`. They can still generate when the
-  resolver and capability table can route the inferred provider/model, but they
-  are not first-class provider panels in the editor.
-- Unsupported `providerId` values are placeholders. The editor shows them as
-  unsupported, preserves compatible data, and active durable generation blocks
-  them until the user selects a supported profile/provider.
-- Memory summaries use memory-role profiles and profile-owned provider options,
-  but server-side summarization currently accepts only the memory/subModel API
-  path and OpenAI-compatible summary providers (`openai`, `openrouter`, or
-  `nanogpt`). Memory embeddings stay outside chat profiles on the separate
-  Hypa/Voyage/custom embedding config. Voyage contextual embeddings support
-  both Context 3 and Context 4 grouped query/document requests.
-- The Custom Models catalog (`customModels` / `xcustom:::`) remains separate
-  from first-class Custom API profiles.
-- Imported old `agentContext*` fields are inert compatibility data. They are no
-  longer model-selection inputs, command-patchable settings, or prompt runtime
-  triggers.
-
-Do not infer a live settings control from a retained compatibility field; the
-current retired-settings inventory is in
-[Generated Files And Legacy Caveats](generated-and-legacy.md#stale-or-no-port-surfaces).
-
-## Request History
-
-When `requestHistoryLimit` is nonzero, the shared Fastify dispatch boundary
-starts one SQLite row for each actual provider attempt, so chat retries and
-fallback profiles produce separate records. Chat, Agent Preset, translation,
-script, and server-intent completion calls all pass source/context metadata
-through `server/fastify/src/prompt/chatDispatch.ts`. Memory summarization
-records explicitly around its separate adapter, and the legacy client-directed
-completion path records at its buffered/SSE response boundary. History
-persistence is diagnostic and best-effort: `tryBeginRequestHistory()` and
-terminal writes cannot fail an otherwise valid provider request.
-
-A detail row contains a credential-free resolved-profile snapshot, finalized
-prompt, optional chat/toggle context, accumulated response, terminal metadata,
-and provider API metadata. Shared tool rounds are stored with the prompt;
-returned tool calls and alternates are terminal metadata. Provider option
-objects are never stored. Adapter-specific extraction in
-`server/fastify/src/generation/apiMetadata.ts` omits the top-level
-content/error fields named by each adapter from the separate API-metadata
-object. The legacy completion privacy case in
-`server/fastify/__tests__/generation.completion.test.ts` and the Agent history
-case in `server/fastify/__tests__/agentPresetExecution.test.ts` assert that
-supplied keys stay out while private prompt/context data remains available to
-authenticated detail reads.
-
-List reads return summaries with at most a 240-character response preview and
-never include the prompt; detail reads expose the private fields. Both reads are
-authenticated and `no-store`; the `request-history-delete` policy entry in
-`server/fastify/src/routeManifest.ts` additionally requires the active writer.
-Retention defaults to 20 rows, is clamped to 10,000, and setting it to zero
-disables recording and clears existing rows. Lowering the setting prunes in the
-same settings command. `server/fastify/__tests__/requestHistory.test.ts`,
-`server/fastify/__tests__/requestHistoryRoutes.test.ts`, and
-`src/lib/Setting/Pages/RequestHistorySettings.svelte.test.ts` guard repository,
-route-policy, and visible retention/detail/delete behavior.
-
-Request-history ownership is split across:
-
-| Path                                                               | Role                                                                                              |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| `server/fastify/src/requestHistory.ts`                             | SQLite schema, summaries/details, best-effort completion, and `requestHistoryLimit` pruning.      |
-| `server/fastify/src/routes/requestHistory.ts`                      | Authenticated no-store list/detail reads and record deletion.                                     |
-| `server/fastify/src/generation/apiMetadata.ts`                     | Provider-specific non-content metadata extraction with explicit omitted-field lists.              |
-| `src/ts/server/requestHistory.ts`, `src/lib/Setting/Pages/RequestHistorySettings.svelte` | Browser validation plus duration, metadata, detail, retention, and confirmed multi-delete UI.     |
-
-## Server Provider Dispatch
-
-Fastify dispatch is centered in `server/fastify/src/prompt/chatDispatch.ts`.
-
-Provider adapters live in `server/fastify/src/generation/`:
-
-- OpenAI, OpenAI Responses, OpenAI-compatible, and legacy instruct.
-- OpenRouter and NanoGPT as OpenAI-compatible variants where applicable.
-- Anthropic, Gemini, Vertex auth, Bedrock/SigV4, Cohere, Mistral, Ollama,
-  Kobold, Horde, Ooba legacy, and Echo.
-- Shared additional-parameter, frame, and SSE helpers.
-
-Legacy transports have a deliberately degraded instruction-template boundary.
 Kobold and Ooba legacy use the fixed `## Instruction` / `## User` /
-`## Assistant` / `## Response` flattening, while Horde renders ChatML for the
-`chatml` and `gpt2` selections and otherwise uses a generic `role: content`
-fallback. Fastify does not apply the SPA's non-ChatML instruct templates or
-custom Jinja template engine; the OpenRouter **Use Instruction Prompt** toggle
-is therefore unsupported server-side.
+`## Assistant` / `## Response` flattening. Horde uses ChatML for its `chatml`
+and `gpt2` choices and otherwise a generic `role: content` form. Fastify does
+not run the browser's other instruct templates or custom Jinja engine; the
+OpenRouter **Use Instruction Prompt** toggle remains unsupported server-side.
 
-Provider adapters build provider-safe wire rows instead of serializing internal
-prompt objects. `generation/providerMessages.ts` strips prompt-only metadata,
-translates OpenAI/Anthropic image parts, preserves supported reasoning
-continuation, and applies Anthropic cache points; Gemini and Responses perform
-their native media conversion in their adapters. Provider reasoning output is
-normalized into the shared `<Thoughts>` envelope. `generation/jsonControls.ts`
-parses the retained JSON schema/interface syntax and applies configured dot-path
-extraction to buffered results.
+Provider adapters remove prompt-only metadata and convert supported media.
+OpenAI/Anthropic conversion is centralized in
+`server/fastify/src/generation/providerMessages.ts`; Gemini and Responses use
+native converters. The shared converter also preserves supported reasoning
+continuation and applies Anthropic cache points. Provider reasoning is
+normalized into the shared `<Thoughts>` envelope.
+`server/fastify/src/generation/jsonControls.ts` parses retained JSON-schema or
+TypeScript-interface syntax and performs configured dot-path extraction on
+buffered results.
 
-The server resolves provider settings, endpoints, model ids, and secrets from
-durable profile context when present, then from flat compatibility settings when
-needed. Browser projections mask secrets through
-`server/fastify/src/providerSecrets.ts`; settings writes resolve masked
-sentinels back to current stored secrets.
-The legacy flat `additionalParams` table applies to every ordinary provider only
-when `applyAdditionalParamsToAll` is explicitly enabled; missing keys in older
-databases remain default-off. Reverse-proxy profiles continue to use the flat
-table and custom-model profiles continue to use their own `key=value` rows
-regardless of that toggle. For ordinary profiles, global rows apply after the
-provider body is built but before profile-owned rows, so profile values and
-explicit profile headers retain precedence.
-Provider adapters may be incremental or buffered. `/api/v1/generate/chat` maps
-both shapes to chat SSE frames and wraps buffered outputs as token/done frames,
-while direct `/api/v1/generate/completion` rejects streaming for buffered
-providers.
+Dispatch materializes only fields declared by selected model capabilities:
+top-p/top-k/min-p/top-a and penalty samplers, reasoning/thinking/verbosity,
+seed, JSON schema/extraction, prediction, cache/privacy headers, additional
+parameters, and provider-specific options. Incremental and buffered adapters
+both become chat SSE token/done frames.
 
-Dispatch materializes only sampler/runtime controls declared by the selected
-model's capability row, including separate-by-model overrides. The supported
-provider arms carry their relevant top-p/top-k/min-p/top-a and penalty fields,
-reasoning/thinking/verbosity controls, seed, JSON schema/extraction, prediction,
-cache/privacy headers, additional parameters, and provider-specific options.
-OpenAI Chat-family routes tokenize prompt bias rows into `logit_bias`; main
-send/regenerate can request up to 20 OpenAI/OpenRouter/NanoGPT choices and expose
-the extras as reroll alternates.
+Routing remains data-driven. Vanilla OpenAI ids use the server allowlist;
+unknown compatible ids require custom/provider configuration. `risu::` reverse
+proxy URLs derive their endpoint/key behavior from stored proxy settings and
+add the Risu identification header. OpenRouter requires routable persisted
+settings. NanoGPT message, legacy, and Responses formats select Anthropic,
+legacy-instruct, and Responses adapters respectively. Ollama Cloud remaps by
+`ollamaRequestFormat`; Bedrock resolves its wire-model prefix; Horde requires an
+instruct template and stays buffered. Direct `/api/v1/generate/completion`
+therefore rejects streaming for Cohere, legacy instruct, Responses, Kobold,
+Ooba legacy, Bedrock, and Horde rather than simulating it.
 
-Routing notes that matter when debugging provider drift:
+## Provider-Specific Runtime Contracts
 
-| Area                     | Notes                                                                                                                                                                                                                             |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| OpenAI-compatible ids    | Vanilla OpenAI ids use an allowlist; unknown OpenAI-compatible ids need custom/provider config.                                                                                                                                   |
-| Reverse proxy / `risu::` | Server dispatch derives endpoint/key behavior from persisted proxy/custom-model settings.                                                                                                                                         |
-| OpenRouter               | Routes through OpenAI-compatible dispatch when persisted OpenRouter settings make the model server-routable.                                                                                                                      |
-| NanoGPT                  | Message, legacy, and responses formats route to Anthropic-compatible, legacy instruct, or Responses-style adapters as selected by format.                                                                                         |
-| Ollama local             | Native Ollama routes when an Ollama URL is configured.                                                                                                                                                                            |
-| Ollama Cloud             | `ollama-cloud` remaps by `ollamaRequestFormat` to native Ollama, OpenAI-compatible, Responses, or Anthropic-compatible dispatch.                                                                                                  |
-| Ollama Cloud tools       | The browser owns the native Ollama MCP loop; `ollamaCloudToolProxy.ts` forwards only its credential-safe upstream chat request.                                                                                                   |
-| Bedrock                  | Uses Bedrock/SigV4 model metadata and wire-model prefix handling.                                                                                                                                                                 |
-| Horde                    | Requires an instruct chat template in the shared capability table; dispatch is buffered, not incremental.                                                                                                                         |
-| Logit bias               | OpenAI Chat-family dispatch tokenizes assembled prompt bias rows, including direct token ids and strong-ban variants.                                                                                                             |
-| Completion streaming     | Direct `/generate/completion` rejects streaming for buffered providers such as Cohere, legacy instruct, Responses, Kobold, Ooba legacy, Bedrock, and Horde; `/generate/chat` wraps buffered provider output as token/done frames. |
+### OpenAI Chat And Flex Processing
 
-## Capability Table
+The opt-in `openAIFlexProcessing` compatibility setting maps to
+`service_tier: "flex"` only when the resolved endpoint host is the official
+`api.openai.com`. An explicit supported service tier still takes precedence.
+The restriction and mapping live in `server/fastify/src/prompt/chatDispatch.ts`
+and `server/fastify/src/generation/openai.ts`.
 
-`src/ts/process/request/providerCapability.ts` is the shared pure provider
-routing decision table. Given resolved model metadata and the narrow config it
-needs, it returns either a server provider name (`routable: true`) or a stable
-unsupported reason category.
+OpenAI Chat-family dispatch also tokenizes assembled prompt-bias rows into
+`logit_bias`. Main send/regenerate can ask OpenAI/OpenRouter/NanoGPT for up to
+20 choices; extra results become reroll alternates.
 
-Do not fork this table for chat/completion routing. Browser chat preflight and
-Fastify dispatch share it; the chat preflight reaches the table through resolved
-model-profile selection and the profile's `providerCapability`. Active durable
-profiles with incomplete or unsupported status are blocked before browser
-request dispatch, server-intent completion, `/generate/chat` SSE/job
-acceptance, and final server chat dispatch.
-Server-intent completion sends shaped messages to Fastify; browser
-`requestChatDataMain()` resolves profiles only far enough to set mode/static
-model/fallback-profile intent, and `requestServerCompletion()` sends that
-intent without provider/model/options/secrets. Fastify rejects those fields in
-the envelope and re-resolves provider/model/secrets server-side before shared
-provider dispatch.
+### OpenAI Responses
 
-Chat generation has a two-stage effective-config path. Browser preflight uses
-`effectiveModelDatabaseForChat()` with model-runtime preset scope for routing
-and image gates. Server generation then uses
-`buildEffectiveGenerationConfig()` with full chat generation settings,
-persona selection, Agent Preset readiness, jailbreak state, additive Prompt and
-Agent Preset module integration, sidebar-toggle materialization, prompt-preset
-ownership, and profile-bound runtime fields before prompt assembly. Effective
-preset precedence is selected model preset first, prompt preset fields for full
-generation, prompt-preset model overrides after that, then server generation
-reapplies prompt-preset model overrides after profile-bound runtime fields.
-`chatDispatch.ts` forwards only the supported runtime subset to provider
-adapters.
+`server/fastify/src/generation/openaiResponses.ts` sends
+`input: ResponseItem[]`, not Chat Completions `messages`. User/system rows
+become input-content items; an enabled developer-role capability maps system
+rows to `developer`; image data becomes `input_image`; audio/video data becomes
+`input_file`. Assistant rows become output-message items, and a trailing
+assistant row is marked `incomplete` to continue that response.
 
-`modelTools` are copied into the effective DB. Fastify OpenAI Responses dispatch
-adds `web_search_preview` when the resolved profile runtime enables `search`.
-The lower-level server-intent completion protocol also accepts bounded
-`tools` definitions and completed `toolRounds`. Tool-bearing requests must be
-buffered; Fastify validates definitions, call names, arguments, prior results,
-round counts, and total payload sizes, then translates the definitions/history
-for OpenAI, OpenRouter, NanoGPT, Anthropic, or Gemini. A provider-requested call
-comes back as validated `toolCalls`.
+The adapter requests an automatic reasoning summary when reasoning is enabled,
+normalizes returned reasoning into the shared envelope, and translates only
+validated bounded tool definitions, function calls, and prior tool rounds.
+`server/fastify/src/generation/serverTools.ts` is the common validation and
+wire-translation owner.
 
-This transport support does not make Fastify an MCP executor. The browser maps
-the returned call to an available MCP/function tool, executes it, and sends the
-result in a later `toolRounds` request. `/generate/chat` and Agent Preset
-execution do not run arbitrary browser MCP tools; the legacy browser OpenAI
-loops retain their own orchestration. Ollama with tools likewise stays on its
-native browser loop so the browser can execute MCP calls. Ollama Cloud can use
-the authenticated `ollamaCloudToolProxy.ts` transport to keep its stored key on
-the server, but the tool loop and execution remain browser-owned.
-Memory summaries use memory-role profile resolution and profile-owned provider
-options. Memory embeddings intentionally remain outside
-chat profiles on the separate Hypa/Voyage/custom embedding contract in
-`memoryEmbeddingModel.ts`; deadlines are bounded through
-`memoryProviderDeadline.ts`.
+### Gemini Thinking And Generated Media
 
-## Generation Client Map
+`server/fastify/src/prompt/chatDispatch.ts` maps the effective reasoning tier to
+Gemini `thinkingLevel` (`minimal`, `low`, `medium`, or `high`). An explicit
+thinking-token budget wins; tools suppress thinking configuration; models with
+the no-minimal flag map `minimal` to `low`.
 
-| Path                                                     | Role                                                                                                       |
-| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `src/ts/process/index.svelte.ts`                         | `sendChat()` coordinator and visible generation state.                                                     |
-| `src/ts/process/request/serverPromptAssembly.ts`         | Browser preflight for server prompt assembly support and mode.                                             |
-| `src/ts/process/request/serverCompletion.ts`             | Server-intent completion route adapter.                                                                    |
-| `src/ts/process/request/serverToolProtocol.ts`           | Shared bounded tool definition, returned-call, result, and round validation.                               |
-| `src/ts/process/serverBackedSendChat.ts`                 | Chat send/preview bridge from UI inputs to Fastify routes.                                                 |
-| `src/ts/process/request/serverChat.ts`                   | Chat SSE parser and request adapter.                                                                       |
-| `src/ts/process/request/serverChatEvents.ts`             | Client-side chat SSE frame/message-patch contract types.                                                   |
-| `src/ts/process/request/durableGeneration.ts`            | Durable send/continue/regenerate request helpers.                                                          |
-| `src/ts/process/reattach.ts`                             | Bootstrap-driven reattach for active durable generation jobs.                                              |
-| `src/ts/process/serverGeneratedMessageTranslation.ts`    | Automatic-translation handling for terminal post-generation frame data.                                    |
-| `server/fastify/src/routes/generation.ts`                | Completion route boundary.                                                                                 |
-| `server/fastify/src/routes/generationChat.ts`            | Server-assembled chat generation, preview prompt, durable job lifecycle, and chat-settings/profile guards. |
-| `server/fastify/src/prompt/chatDispatch.ts`              | Shared server provider dispatch after profile/setting resolution.                                          |
-| `server/fastify/src/generation/serverTools.ts`           | OpenAI/Anthropic/Gemini tool wire translation and returned-call validation.                                |
-| `server/fastify/src/ollamaCloudToolProxy.ts`             | Credential-safe Ollama Cloud upstream transport for the browser-owned tool loop.                           |
-| `server/fastify/src/prompt/effectiveGenerationConfig.ts` | Chat-scoped model/prompt preset and runtime overlay application.                                           |
-| `server/fastify/src/prompt/sseEvents.ts`                 | Server-side chat SSE frame contract helpers.                                                               |
+Image or audio output selects `responseModalities` with text plus the requested
+media and forces buffered `generateContent` dispatch. The Gemini adapter
+validates returned inline data, persists it through
+`server/fastify/src/inlayAssetPersistence.ts`, and inserts
+`{{inlay::assetId}}` into the generated text. Invalid base64, unsupported MIME,
+or persistence failures produce bounded warning frames and skip only that media
+part. Text-only requests may continue to use native streaming.
 
-The live chat flow is `sendChat()` -> `resolveServerPromptAssembly()` ->
-`serverBackedSendChat.ts` -> `serverChat.ts` ->
-`routes/generationChat.ts` -> `prompt/chatDispatch.ts` -> `generation/*`.
-There is no generated API client; browser fetch adapters are handwritten.
-`src/ts/process/request/serverChatEvents.ts` manually mirrors
-`server/fastify/src/prompt/sseEvents.ts`, so frame additions should stay
-additive and be updated on both sides.
+## Chat Dispatch And Tool Transport
 
-## Generation Surfaces
+Browser preflight uses `effectiveModelDatabaseForChat()` for route and image
+gates. Fastify then builds the full chat-scoped config in
+`server/fastify/src/prompt/effectiveGenerationConfig.ts`, resolves the profile
+and secrets again, and calls `server/fastify/src/prompt/chatDispatch.ts`. Prompt
+and Agent Preset precedence is owned by the linked prompt and Agent guides.
 
-`/api/v1/generate/chat` is server-assembled. The browser sends raw chat inputs;
-the server assembles the prompt, dispatches the provider, streams chat SSE
-frames, runs post-generation derivation, and persists the result. Durable
-send/continue/regenerate is the normal app path: jobs are process-local in
-`generationJobs.ts`, emit `job_accepted`, buffer replayable frames, appear in
-bootstrap `activeGenerationJobs`, reattach with
-`GET /api/v1/generate/chat/:id/stream`, and cancel with
-`DELETE /api/v1/generate/chat/:id`. The browser also retains the live accepted
-job id, reconnects unrequested transport drops with bounded backoff, and
-refreshes bootstrap job metadata on foreground/page-show/online lifecycle
-events. Inline non-durable SSE remains for tools/tests and preview-style callers.
-Browser `serverChat.ts` sends
-`clientCapabilities.compactPromptEvent`, `promptMetadataOnly`, and
-`omitDuplicateDoneResult`; the server may strip heavy prompt fields, delta-trim
-`replace_all` message patches with `firstChangedIndex`, and omit an inline
-`done.result` when preceding token frames already delivered the same non-empty
-text. `done.result` is therefore optional for negotiated inline streams, while
-durable jobs retain it so replay and reattach remain self-contained. Agent
-Preset execution emits `agent_preset_progress` frames on the same stream.
-After generation persistence, eligible assistant rows also run server-owned
-automatic translation. The stream emits `post_generation_progress` while it
-waits, and `done.postGeneration` carries the persisted message id plus the
-succeeded, failed, or still-running translation outcome.
+Normal server-intent completion sends shaped messages plus role/static/fallback
+intent but no provider, endpoint, options, or secret. Fastify rejects those
+fields in the envelope and resolves them from persisted settings. The lower
+level protocol accepts bounded `tools` and completed `toolRounds`; tool-bearing
+requests are buffered. `src/ts/process/request/serverToolProtocol.ts` validates
+definition and call names, schemas/arguments, prior results, round counts, and
+total payload sizes, while `server/fastify/src/generation/serverTools.ts`
+translates supported OpenAI, OpenRouter, NanoGPT, Anthropic, or Gemini wires.
+Provider-returned `toolCalls` are validated before the browser receives them.
+`server/fastify/src/prompt/effectiveGenerationConfig.ts` copies profile
+`modelTools` into the effective database, and OpenAI Responses adds
+`web_search_preview` when `search` is enabled.
 
-`generationChat.ts` wraps the provider dispatcher with retained request
-policies. Each attempt can run the server request trigger; failures before the
-first streamed token use bounded retries and ordered profile/legacy-model
-fallbacks. Blank-response fallback, banned-script retries, and character Escape
-Output are applied before frames become authoritative. Buffered
-multi-generation choices each pass post-generation derivation before their
-alternate ids are persisted.
+Transport support is not MCP execution. The browser maps a returned call to an
+available tool and sends the result in a later round. Chat generation and Agent
+Preset execution do not run arbitrary browser MCP tools. Ollama's tool loop is
+also browser-owned; `server/fastify/src/ollamaCloudToolProxy.ts` only protects
+the stored cloud credential.
 
-The retry count is clamped to 20, matching the advanced-settings UI. Persisted
-`generationInfo.model` uses the legacy display-label format (including
-OpenRouter, reverse-proxy, NanoGPT, and Ollama prefixes), and
-`generationInfo.outputTokens` remains the assembler's context-headroom-clamped
-budget even when a fallback profile supplies a different `maxResponse`.
-Stage timing follows ownership: Fastify records prompt-memory work as stage 2.
-Browser finalization owns stage 4, but the server has no narrow message-metadata
-patch command and generation results are already authoritative before that
-browser pass. Persisted server metadata therefore deliberately keeps stage 4 at
-zero; no extra telemetry-only mutation is issued.
+## LLM Request History
 
-Generation finalization retries are SQLite-backed operational rows with
-target snapshots. Persistence is idempotent when the target already has the
-final output and rejects stale chat/message/scriptstate targets; retry rows move
-through pending/terminal states, and app startup runs an immediate sweep plus a
-default 5s interval that also prunes retained terminal rows.
+With nonzero `requestHistoryLimit`, the shared dispatch boundary starts one
+SQLite row per actual provider attempt. Retries and fallback profiles therefore
+produce separate rows. Chat, Agent Preset, translation, script, and
+server-intent calls pass source/context metadata through
+`server/fastify/src/prompt/chatDispatch.ts`;
+memory summarization and legacy completion wrap their separate adapters.
 
-Server chat assembly applies the effective profile-bound model and runtime
-overlay before prompt budgeting and provider dispatch. Chat-scoped generation
-settings can select model/prompt presets; the model-runtime projection resolves
-the active profile, request model, provider options, fallbacks, and runtime
-options before the server builds dispatch config. Prompt-preset model overrides
-are reapplied after profile-bound runtime fields so prompt preset authorship can
-intentionally override the selected model preset. Route preflight rejects stale
-legacy `presetId` usage in favor of chat `generationSettings`.
+`server/fastify/src/requestHistory.ts` stores the handle's provider-attempt
+`startedAt`, completes it on the terminal provider frame/error/cancellation,
+and computes `durationMs` as `completedAt - startedAt`. Completion is persisted
+before the terminal frame is yielded, so UI time reflects the finished attempt
+rather than a later history read. History writes are best-effort and cannot
+turn a valid provider response into a generation failure.
 
-Prompt-template generation precedence is owner-based. A chat-scoped
-`generationSettings.promptPresetId` wins when present; otherwise generation uses
-the selected/global modern prompt preset. The top-level `promptTemplate` is only
-a compatibility fallback when no modern prompt-preset owner resolves. A resolved
-modern prompt preset without a template disables template rendering instead of
-borrowing stale top-level data.
+A detail row contains a credential-free profile snapshot, finalized prompt,
+optional chat/toggle context, accumulated response, terminal metadata, and
+provider API metadata. Provider option objects and secrets are not stored.
+Tool rounds stay with the prompt; returned tool calls and alternates are
+terminal metadata. `server/fastify/src/generation/apiMetadata.ts` removes each
+adapter's main content/error fields from the separate API metadata object.
 
-Prompt duplication follows that ownership boundary. The prompt branch of
-`src/lib/Setting/botpreset.svelte` hydrates the source owner's template before
-creating a deep-cloned preset with a fresh top-level id and localized copy name.
-If the source still reads through the selected compatibility fallback, the copy
-materializes that template as its own data. The operation appends the copy
-without changing selection; prompt-template items themselves have no duplicate
-action. `src/lib/Setting/pickerGenerationSettings.test.ts` pins this behavior.
+List reads expose at most a 240-character response preview and no prompt;
+authenticated, no-store detail reads expose private prompt/context data.
+Deletion additionally requires the active writer through the
+`request-history-delete` entry in `server/fastify/src/routeManifest.ts`.
+Retention defaults to 20, clamps at 10,000, and zero disables recording and
+clears rows; lowering the value prunes immediately in the same settings command.
+Server ownership is `server/fastify/src/requestHistory.ts` and
+`server/fastify/src/routes/requestHistory.ts`; browser validation/detail and
+retention controls live in `src/ts/server/requestHistory.ts` and
+`src/lib/Setting/Pages/RequestHistorySettings.svelte`.
 
-`/api/v1/generate/preview-prompt` is a one-shot JSON assembly route. It applies
-the same server prompt assembly and generation-settings/profile guards but does
-not dispatch a provider. Unlike `/api/v1/generate/chat` SSE preview-style
-callers, it can return ordinary HTTP errors because it has not already written
-SSE headers; chat SSE assembly failures become terminal `error` frames.
+Repository/route contracts are covered by
+`server/fastify/__tests__/requestHistory.test.ts` and
+`server/fastify/__tests__/requestHistoryRoutes.test.ts`. Credential privacy and
+visible retention behavior are additionally pinned by
+`server/fastify/__tests__/generation.completion.test.ts`,
+`server/fastify/__tests__/agentPresetExecution.test.ts`, and
+`src/lib/Setting/Pages/RequestHistorySettings.svelte.test.ts`.
 
-`/api/v1/generate/completion` is lower-level. Normal browser traffic sends
-already-shaped messages and sampling intent as `kind: "server-intent"`; the
-server rejects provider/model/options/secrets in that envelope and resolves them
-from persisted settings before calling the same dispatch core. Optional
-`tools`/`toolRounds` carry the bounded buffered tool protocol described above;
-the response may carry validated `toolCalls` for browser execution. A legacy
-direct-provider envelope remains for compatibility tests/tools, routed through
-the current provider adapters and their direct completion streaming rules.
+## Compatibility Boundaries
 
-### Prompt-Scripting Safety And Message Indexes
-
-Server prompt scripting is bounded at each execution layer.
-`server/fastify/src/prompt/luaRuntime.ts` enforces per-run and aggregate Lua
-deadlines, uses isolated pre-warmed one-use VMs, and bounds sleep/network work.
-`server/fastify/src/prompt/triggers.ts` applies
-`DEFAULT_TRIGGER_WALL_CLOCK_BUDGET_MS` plus effect, loop, and recursion budgets.
-`server/fastify/src/prompt/boundedRegex.ts` screens regex size/complexity and
-owns the optional worker-thread compatibility path. Guards are
-`server/fastify/__tests__/luaRuntime.test.ts`,
-`server/fastify/__tests__/triggers.test.ts`, and
-`server/fastify/__tests__/boundedRegex.test.ts`.
-
-Unsupported trigger effects are a visible compatibility boundary rather than a
-silent partial implementation. Persistent character/persona/author-note and
-lorebook effects, command effects, privileged LLM/image/similarity effects,
-alerts, GUI/update/wait arms, and legacy browser JavaScript remain preserved
-no-ops. The V2 editor labels these options as unsupported on the server. During
-generation, execution emits one `warning` SSE event per distinct unsupported
-effect type, even if a loop or recursive trigger invokes that type repeatedly.
-
-Per-message CBS expansion preserves the row being processed. History formatting
-passes each stored row index into `expandVariables()`; `editinput` uses the
-index of Fastify's newly appended user row for Lua metadata, standard CBS, and
-regex scripts; and `editoutput` uses the target assistant-row index. CBS-enabled
-regex patterns and replacement output receive the same `chatID`, so
-`{{chat_index}}` no longer falls back to the stale `-1` sentinel while
-`{{lastmessageid}}` continues to describe the current transcript tail. The
-regression cases are `runs editinput CBS
-with the appended user row as the current message` in
-`server/fastify/__tests__/assemble.test.ts`, `expands per-message data with its
-current chat index` in `server/fastify/__tests__/history.test.ts`, and `expands
-replacement CBS with the supplied current-message index` in
-`server/fastify/__tests__/scripts.test.ts`.
-
-## Server Assembly Gates
-
-Fastify hard-fails shapes it cannot represent safely:
-
-| Gate                                               | Reason                                                                                                                                                                                                                   |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Send whose latest row is not a text user message   | Server prompt assembly only owns send when the latest row is text from the user.                                                                                                                                         |
-| Non-text send tail for unsupported content classes | Server will not silently drop browser-only content.                                                                                                                                                                      |
-| Group chat                                         | Removed/no-port.                                                                                                                                                                                                         |
-| Plugin/WebLLM/non-server-routable providers        | No Fastify provider adapter.                                                                                                                                                                                             |
-| Non-vision image-caption fallback                  | Browser captioning pipeline has no server equivalent.                                                                                                                                                                    |
-| Interactive Lua dialogs                            | Strict script preflight blocks known dialog sources; otherwise the server Lua runtime fails if a dialog API is invoked because it cannot drive browser dialogs mid-request. Non-interactive Lua remains server-routable. |
-| Deprecated plugin edit/replacer hooks exposed to V3 | Browser plugin execution is no-port.                                                                                                                                                                                   |
-
-Supported multimodal/image/asset/inlay inputs route through server asset ids
-where possible and only when the selected server-routed model accepts image
-input. Prompt assembly resolves bytes from the server asset store when a provider
-needs inline media.
+- Legacy `aiModel`, `subModel`, `modelRoles`, `seperateModels`, fallback rows,
+  separate parameters, and provider globals remain conversion/compatibility
+  data, not the preferred profile workflow.
+- Compatibility profiles without `providerId` can run when inference plus the
+  capability table is sufficient. Unsupported explicit provider ids remain
+  preserved placeholders and block active generation.
+- Memory summaries resolve the memory-role profile, but embeddings remain on
+  the separate Hypa/Voyage/custom contract; provider deadlines are bounded by
+  `server/fastify/src/memoryProviderDeadline.ts`. Prompt-facing behavior is in
+  [Prompt Assembly And Scripting](prompt-assembly-and-scripting.md#hypa-v3-memory-phase).
+- `customModels` / `xcustom:::` remains separate from first-class Custom API
+  profiles.
+- Retained retired settings must not be mistaken for live controls. See
+  [Generated Files And Legacy Caveats](generated-and-legacy.md#stale-or-no-port-surfaces).
 
 ## Adding Provider Behavior
 
-Update browser model/settings metadata,
-`src/ts/process/request/providerCapability.ts`,
-`server/fastify/src/prompt/chatDispatch.ts`, provider secrets/settings groups,
-generation adapters, and server chat/completion tests for server-routable
-providers. A new first-class managed provider also needs resolver/provider-id
-support, its profile editor panel and credential requirements, and—when it has
-a public or credentialed catalog—a fixed discriminator in
-`src/ts/server/providerOperationsProtocol.ts` plus its allowlisted
-`server/fastify/src/providerOperations.ts` implementation and catalog tests.
+Update the browser model/settings metadata, the shared capability table,
+profile/provider-id resolution, `server/fastify/src/prompt/chatDispatch.ts`, the
+selected adapter, credential groups, and chat/completion tests. A managed
+provider with a catalog also needs a fixed discriminator in
+`src/ts/server/providerOperationsProtocol.ts`, an allowlisted
+`server/fastify/src/providerOperations.ts` implementation, and operation tests.
+Keep prompt assembly, translation, and Agent-specific behavior in their related
+guides rather than duplicating it here.

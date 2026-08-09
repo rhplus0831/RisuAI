@@ -1,23 +1,30 @@
 # Source Docs
 
-Last audited: 2026-08-02.
+Last audited: 2026-08-09.
 
-These notes are the current frontend/client documentation for agents working in
-`src/`. They replace the old compact frontend map under `docs/structure/`.
+These five guides are the current frontend and browser-runtime documentation
+for work under `src/`. Start with the narrowest owner instead of duplicating a
+contract in a neighboring guide.
 
-| File                                     | Use                                                                                                                                                                                                                                  |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`svelte-ui.md`](svelte-ui.md)           | First stop for Svelte UI/UX work: app shell, routes/history, settings and authoring surfaces, input hooks, shared modal/control behavior, chat and floating composer, sidebar/Mood Light, viewport layout, mobile/lite, playground, and visible-state tests. |
-| [`client-runtime.md`](client-runtime.md) | Browser coordination that shapes visible UI: startup, active-writer loss, root resources, durable mutations, reload-durable draft recovery, Mood Light visibility state, async freshness, generation/reattach, fixed server-operation adapters, and canonical-owner links. |
+| File | Owns |
+| ---- | ---- |
+| [`svelte-ui.md`](svelte-ui.md) | Svelte application shell, render priority, routes/stores, localization, styling, responsive/Lite behavior, and Playground. |
+| [`svelte-chat-ui.md`](svelte-chat-ui.md) | Chat frame, transcript and message rendering, composer variants, generation/loading feedback, and in-chat confirmations. |
+| [`svelte-navigation-ui.md`](svelte-navigation-ui.md) | Sidebar, Mood Light controls, character/chat selection and configuration, and list reordering. |
+| [`svelte-settings-ui.md`](svelte-settings-ui.md) | Settings routing, data-driven rows, shared controls, authoring editors, model-profile UI, and visible persistence states. |
+| [`client-runtime.md`](client-runtime.md) | Browser startup, resources, hydration, durable mutations and recovery, generation reattach, and server-operation adapters. |
 
-Continue with the canonical focused notes instead of copying their contracts
-into frontend guides:
+Continue with the canonical focused architecture guide for cross-layer
+contracts:
 
-| Topic                                                            | Canonical guide                                                                           |
-| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Resource protocol, hydration, and command reconciliation         | [`server-resources-and-bridges.md`](../../docs/structure/server-resources-and-bridges.md) |
-| Assets, inlay catalog, saves, backups, Realm, and legacy storage | [`assets-and-saves.md`](../../docs/structure/assets-and-saves.md)                         |
-| Prompt assembly, model profiles, providers, and Agent Presets    | [`providers-and-models.md`](../../docs/structure/providers-and-models.md)                 |
-| Plugin storage/execution and MCP boundaries                      | [`plugins-and-mcp.md`](../../docs/structure/plugins-and-mcp.md)                           |
-| Retired, compatibility-only, generated, and absent surfaces      | [`generated-and-legacy.md`](../../docs/structure/generated-and-legacy.md)                 |
-| Scripts, Vite, test lanes, dev server, and operations            | [`testing-and-operations.md`](../../docs/structure/testing-and-operations.md)             |
+| Topic | Canonical guide |
+| ----- | --------------- |
+| Resource reads, hydration, commands, and reconciliation | [`server-resources-and-bridges.md`](../../docs/structure/server-resources-and-bridges.md) |
+| Assets, saves, backups, Realm, and content exchange | [`assets-and-saves.md`](../../docs/structure/assets-and-saves.md) |
+| Providers, model resolution, credentials, and request options | [`providers-and-models.md`](../../docs/structure/providers-and-models.md) |
+| Prompt assembly, CBS, and script execution | [`prompt-assembly-and-scripting.md`](../../docs/structure/prompt-assembly-and-scripting.md) |
+| Translation and input-hook execution | [`translation-and-input-hooks.md`](../../docs/structure/translation-and-input-hooks.md) |
+| Agent/Agent Preset planning and execution | [`agents-and-presets.md`](../../docs/structure/agents-and-presets.md) |
+| Plugin surfaces, storage/execution, and MCP | [`plugins-and-mcp.md`](../../docs/structure/plugins-and-mcp.md) |
+| Retired, compatibility-only, generated, and absent paths | [`generated-and-legacy.md`](../../docs/structure/generated-and-legacy.md) |
+| Test policy, scripts, CI, and local operations | [`testing-and-operations.md`](../../docs/structure/testing-and-operations.md) |

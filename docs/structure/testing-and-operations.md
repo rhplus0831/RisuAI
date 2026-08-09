@@ -1,6 +1,6 @@
 # Testing And Operations
 
-Last audited: 2026-08-02.
+Last audited: 2026-08-09.
 
 Use `pnpm` for package scripts. Node.js is declared as `>=24.0.0`. The package
 is root-only; there is no `server/fastify/package.json`. `package.json` does not
@@ -215,11 +215,14 @@ mutation-shape checks in `serverLoadCostHarness.test.ts`,
 ## Visible State Test Contract
 
 This is policy guidance for choosing current Fastify tests, not a new gate. When
-a change affects state the user can see, validation must assert the rendered
-result after the same transition that changes state. Helper/state assertions,
-command payload assertions, and fetch mocks can support the test, but they are
-not enough for stale-visible-UI bugs. If behavior includes optimistic updates or
-rollback, assert both the visible optimistic change and the visible rollback.
+a change affects state the user can see, the rendered DOM is the primary oracle:
+assert it after the same transition that changes state, or after the initial
+render when state is seeded before mount. Prefer user-observable roles, names,
+text, selection, and enabled/pressed state over component internals or source
+text. Helper/state assertions, command payload assertions, store reads, and fetch
+mocks can support classification, but they are not enough for stale-visible-UI
+bugs. If behavior includes optimistic updates or rollback, assert both the
+visible optimistic change and the visible rollback after settlement.
 
 Use helper Vitest for pure helpers and resource-invalidation calculations,
 Svelte DOM Vitest for state-to-DOM contracts, and sparse Fastify browser smoke
@@ -229,13 +232,23 @@ resource applies, bootstrap/refresh/SSE, optimistic command helpers, bridge
 watchers, router selection, array create/delete/reorder flows, `$derived`,
 `$effect`, keyed lists, memo signatures, or render dependency keys.
 
+The two mounted audit probes
+`src/lib/_audit/phase0Journey2TogglePaint.dom.test.ts` and
+`src/lib/_audit/phase0Journey4Grouping.dom.test.ts` make DOM assertions before
+using stores as classification aids. They run in `pnpm test:gates` and
+`pnpm test:all`, not the default `pnpm test:frontend` lane. Use the same
+DOM-first pattern in feature-owned component tests; reserve a new audit probe
+for a cross-cutting invariant that needs an explicit gate.
+
 Two named browser-smoke contracts protect reload/reconciliation behavior:
 `server/fastify/browser-smoke/phase0VisibleState.spec.ts` covers chat-switch
 repainting of the active generation preset, sidebar-toggle survival through
-command/resource reconciliation, and same-character sidebar/history recovery
-after a lineage change.
+command/resource reconciliation, and route/sidebar continuity after an
+old-lineage recovery reload.
 `server/fastify/browser-smoke/rerollSwipePersistence.spec.ts` proves persisted
-reroll alternates reconstruct after reload and remain swipe-recoverable.
+reroll alternates reconstruct after reload and remain swipe-recoverable. It uses
+a direct generation request and the production swipe helper, so it proves
+persistence/reconstruction rather than visible gesture controls.
 
 ## TypeScript And Formatting
 
@@ -305,7 +318,7 @@ Server:
 | `RISU_API_TRACE_MODE`                              | unset                      | Enables API request tracing when `agent` or `human`; `0`/`false`/`off`/`none` disable it.                                                                 |
 | `RISU_GENERATION_TRACE_FULL_PROMPT`                | unset                      | Set to `1` with protocol metrics enabled to write redacted prompt-emission and OpenAI/Gemini request sidecars.                                             |
 | `RISU_GENERATION_TRACE_FULL_PROMPT_MAX_GZIP_BYTES` | `10485760`                 | Maximum compressed size for prompt/provider and post-generation Lua trace sidecars.                                                                        |
-| `RISU_WEB_PUSH_VAPID_PUBLIC_KEY`                   | unset                      | Optional Web Push VAPID public key. If public/private keys are omitted, the server can generate and persist keys under `data/__web_push_vapid_keys.json`. |
+| `RISU_WEB_PUSH_VAPID_PUBLIC_KEY`                   | unset                      | Optional Web Push VAPID public key. If both keys are omitted, the server can generate and persist keys under `<data-dir>/__web_push_vapid_keys.json`; supplying only one key disables Web Push. |
 | `RISU_WEB_PUSH_VAPID_PRIVATE_KEY`                  | unset                      | Optional Web Push VAPID private key. Must be supplied with the public key when using env-provided keys.                                                   |
 | `RISU_WEB_PUSH_CONTACT`                            | `mailto:risuai@example.invalid` | Web Push contact subject used for VAPID details.                                                                                                      |
 | `TRUST_PROXY`                                      | `false`                    | Fastify trust proxy setting; accepts boolean, integer, or string.                                                                                         |
@@ -329,13 +342,14 @@ Local/dev:
 | `RISU_TS_AGENT_TSSERVER_LOG`     | unset                                           | Set to `1` or a path to capture verbose `pnpm ts:agent` tsserver logs.                                                            |
 | `RISU_TS_AGENT_TIMEOUT_MS`       | `30000`                                         | Default tsserver request timeout for `pnpm ts:agent`; `--timeout-ms` overrides it.                                                |
 | `RISU_TS_AGENT_DEBUG`            | unset                                           | Echo tsserver stderr while debugging `pnpm ts:agent`.                                                                             |
+| `TSS_LOG`                        | `-level off`                                    | Low-level tsserver log arguments forwarded by `pnpm ts:agent`; prefer `RISU_TS_AGENT_TSSERVER_LOG` for the supported file-logging workflow. |
 | `VITE_RISU_AGENT_DEV_IGNORE_REALM_TERMS` | `TRUE` in full-stack runners                    | Set by `pnpm dev:agent` / `pnpm dev:human`; ordinary Vite/build leaves it unset. `alertRealmTerms()` returns accepted when set. |
 
 Client/build:
 
 | Variable                                                                         | Notes                                                                                                                   |
 | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `RISU_API_PROXY_TARGET`                                                          | Vite dev proxy target for `/api`.                                                                                       |
+| `RISU_API_PROXY_TARGET`                                                          | Vite dev proxy target for `/api`; defaults to `http://localhost:6002`.                                                   |
 | `VITE_FASTIFY_BROWSER_SMOKE`                                                     | Enables browser smoke hook and fixed smoke password setup/login.                                                        |
 | `VITE_RISU_LITE`                                                                 | Enables lite-mode consumers in settings/theme/legacy mobile code; does not mount `LiteMain` or the legacy mobile shell. |
 | `VITE_AD_CLIENT`, `VITE_AD_CLIENT_MOBILE`, `VITE_AD_SLOT`, `VITE_AD_SLOT_MOBILE` | Ad UI configuration.                                                                                                    |

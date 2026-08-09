@@ -1,6 +1,6 @@
 # Data And Events
 
-Last audited: 2026-08-02.
+Last audited: 2026-08-09.
 
 Fastify owns authoritative application state. The browser reads authenticated
 REST resources and sends revision-checked commands or explicit server-owned
@@ -22,15 +22,16 @@ mutation requests; its durable outbox and recovery drafts are non-authoritative.
 | Mutation outbox  | Browser IndexedDB `risu-pending-mutations-v1`                                                      | Crash-recovery journal with AES-GCM-encrypted intent payloads plus plaintext scope/order metadata and receipt-ACK rows; never server truth. |
 | Recovery drafts  | Browser `sessionStorage` and IndexedDB `risu-recovery-drafts-v1`                                  | Lineage/writer-scoped composer and module-editor drafts; editing recovery only, not mutation intent or proof of acceptance.                 |
 
-Primary boundaries: `db.ts` owns schema/migrations/revision, `repository.ts`
-owns domain load/write/resource-read/import/applyImport/assets/backups,
-`messageStore.ts` owns message tables, and `commands/mutations.ts` owns command
-transactions. Messages live in `messages` with `(chat_id, seq)` ordering and
-`uid` as the message id. Active chat reads filter `alternate = 0`; reroll
-alternates use `alternate = 1` plus negative sequence positions. Regenerate
-preserves displaced/new candidates as alternates, while send/continue clears the
-reroll buffer for the appended path. Per-chat `hypaV3Data` lives in
-`chat_hypa_v3`.
+Primary boundaries: `server/fastify/src/db.ts` owns
+schema/migrations/revision, `server/fastify/src/repository.ts` owns domain
+load/write/resource-read/import/applyImport/assets/backups,
+`server/fastify/src/messageStore.ts` owns message tables, and
+`server/fastify/src/commands/mutations.ts` owns command transactions. Messages
+live in `messages` with `(chat_id, seq)` ordering and `uid` as the message id.
+Active chat reads filter `alternate = 0`; reroll alternates use `alternate = 1`
+plus negative sequence positions. Regenerate preserves displaced/new candidates
+as alternates, while send/continue clears the reroll buffer for the appended
+path. Per-chat `hypaV3Data` lives in `chat_hypa_v3`.
 
 `CURRENT_SCHEMA_VERSION` is 28. SQLite includes settings; character, chat,
 message, and per-chat memory rows; split collections; assets; command events and
@@ -149,6 +150,9 @@ Agent/Agent Preset rows, and script/trigger definition mutations. Server
 responses prefer acknowledged keys, canonical differences/deletions, and
 value-free digest certificates; a contract-specific fallback may return full
 canonical state when the certificate is unavailable.
+Imported Agent-only lore entries can retain their author activation fields as a
+compatibility exception; [Character Cards](assets-and-saves.md#character-cards)
+owns that import and persistence contract.
 This compact local-effect acknowledgement is a third artifact, separate from
 both the browser outbox intent and the server mutation receipt: it only certifies
 that already-visible optimistic state can advance without a GET.
@@ -170,6 +174,8 @@ The response deliberately has no compact local-effect certificate, so normal
 reconciliation rereads `/api/v1/characters/:characterId`. The server contract
 is guarded by `server/fastify/__tests__/commands.test.ts`; browser command
 decoding is guarded by `src/ts/server/commands.test.ts`.
+The user-facing export, confirmation, and exact-export fence are owned by
+[Assets And Saves](assets-and-saves.md#chats-and-datasets).
 
 Command-event resources should be as narrow as practical. Default drafts live
 in `COMMAND_EVENT_CATALOG`; composite constants and route-local overrides select
@@ -231,26 +237,32 @@ not ordinary browser `/commands/*` resource endpoints:
 - `.risu` import, bundle import, Realm import, and backup restore use
   repository/server-owned paths.
 - Server generation can persist assembly-time transcript/metadata rewrites and
-  scriptstate/input-trigger changes before provider dispatch. Final generation writes through targeted command
-  mutation and emits `generation.persisted`. Assembly and finalization
-  scriptstate changes write only the target `chats` row alongside any affected
-  `messages`, rather than rewriting unrelated database tables. Durable
-  finalization attempts are queued in SQLite for retry with target snapshots,
-  pending/terminal status, and retained terminal errors that the app prunes on
-  later sweeps. Active durable jobs themselves are process-local reattach state.
-  Cancel can persist streamed-so-far text through the raw cancel path.
+  scriptstate/input-trigger changes before provider dispatch. Input-trigger lore
+  upserts are copied back to the working chat and written durably; legacy
+  id-less local-lore entries and duplicate IDs receive fresh UUIDs before
+  persistence.
+  Final generation writes through a targeted command mutation and emits
+  `generation.persisted`. Assembly and finalization scriptstate changes write
+  only the target `chats` row alongside any affected `messages`, rather than
+  rewriting unrelated database tables. Durable finalization attempts are queued
+  in SQLite for retry with target snapshots, pending/terminal status, and
+  retained terminal errors that the app prunes on later sweeps. Active durable
+  jobs themselves are process-local reattach state. Cancel can persist
+  streamed-so-far text through the raw cancel path. Prompt and hook execution is
+  owned by
+  [Prompt Assembly And Scripting](prompt-assembly-and-scripting.md).
 - Raw message translation uses
   `POST /api/v1/commands/messages/:messageId/translate`: the server detaches the
   provider work from the browser request and persists through a targeted message
   command event only when both the source message and its previous translation
   still match. Bootstrap `activeMessageTranslations` includes running and
   bounded recent terminal recovery rows; retention is owned by
-  [Backend Map](backend.md#generation-translation-and-memory).
+  [Backend Map](backend.md#generation-and-background-work).
 - Generated-message automatic translation starts after the generation result is
   persisted and uses the same targeted translation mutation/job registry. The
   generation stream waits for settlement or the configured defer cap; a capped
   translation remains detached and appears in `activeMessageTranslations`.
-  [Providers And Models](providers-and-models.md#translation-runtime) owns the
+  [Translation And Input Hooks](translation-and-input-hooks.md) owns the
   preset/pipeline and generated-message flow.
 - Manual greeting translation uses a separate process-local job registry and
   normalized character-scoped rows. Source/settings/previous-value fences guard
@@ -266,7 +278,10 @@ not ordinary browser `/commands/*` resource endpoints:
   retention pruning and active-writer deletion neither bump the domain revision
   nor emit command events. The persisted data-group setting
   `requestHistoryLimit` bounds the table from 0 to 10,000 rows; `0` disables new
-  records and prunes existing history.
+  records and prunes existing history. Captures are byte-bounded to 2 MiB for
+  the prompt, 4 MiB for the response, 256 KiB for metadata, and 4 KiB for the
+  source. Pruning keeps the newest prefix that satisfies both the row limit and
+  the 64 MiB total byte budget.
 - MCP OAuth refresh can persist a rotated refresh token through a targeted
   settings mutation while returning only the access token to the browser.
 - The startup push service loads or generates VAPID keys; push notification
@@ -274,24 +289,21 @@ not ordinary browser `/commands/*` resource endpoints:
   domain revision. They are authenticated runtime state, not application
   resource state.
 - Backup create/delete mutate backup files without a domain revision; restore
-  replaces repository state and emits `state.restored`. Backup creation uses
-  the online `node:sqlite` backup API after a checked WAL checkpoint, but restore
-  swaps only the SQLite table allowlist in `repository.ts` via `ATTACH`.
-  Operational tables may therefore exist in the physical copy without being
-  restored. Destructive import and restore rotate the current database lineage
-  and clear server mutation receipts, so receipt and browser-outbox scopes from
-  the old lineage do not cross that boundary.
-  [Assets And Saves](assets-and-saves.md#backups) owns the exact restored-table
-  and file contract.
+  replaces allowlisted repository state, clears live request history, rotates
+  the database lineage, clears mutation receipts, and emits `state.restored`.
+  [Assets And Saves](assets-and-saves.md#backups) owns the online snapshot, file
+  swap, explicit included/excluded table policies, and allowlist-completeness
+  contract.
 
 ## Auth And Active Writer
 
 Auth is single-user and route-local. `server/fastify/src/auth.ts` stores
 password/public-key/session-token state, `server/fastify/src/http.ts` exposes
-`requireAuth()`, and route handlers call it manually unless intentionally public.
-Browser auth assertions are sent in `risu-auth`; setup/login also issue a
-24-hour `session.*` fallback token when `sessionAuth` is requested. Public-key hashes and fallback session-token hashes
-are both LRU-capped on disk. `routes/auth.ts` owns status/setup/login, while
+`requireAuth()`, and route handlers call it manually unless intentionally
+public. Browser auth assertions are sent in `risu-auth`; setup/login also issue a
+24-hour `session.*` fallback token when `sessionAuth` is requested. Public-key
+hashes and fallback session-token hashes are both LRU-capped on disk.
+`server/fastify/src/routes/auth.ts` owns status/setup/login, while
 `/api/v1/auth/crypto` is registered with legacy storage routes as a public
 compatibility hashing helper. `GET /api/v1/push/vapid-public-key` is also public
 so the browser can decide whether Web Push registration is available;
@@ -317,40 +329,25 @@ need writer ownership.
 `server/fastify/src/routeManifest.ts` is the source of truth for auth,
 active-writer, streaming, public exceptions, and read-only POST decisions.
 
-## REST Resource Boundary
+## Resource Persistence And Event Ordering
 
-`GET /api/v1/bootstrap` returns initialization state, revision, schema version,
-`databaseLineage`, `writerEpoch`, asset base URL, `activeGenerationJobs`, and
-separate `activeMessageTranslations` and `activeGreetingTranslations` lists.
-Writer-intent requests also receive
-`requestedWriterWasActive`, computed before the request takes ownership;
-read-only requests omit it. Bootstrap does not return durable application data.
-Only a genuinely empty initialization assessment makes the browser call
-`commands/state/initialize`; the winning client reuses the accepted runtime
-metadata/revision, while a client that lost the initialization race retries
-bootstrap read-only. A missing or malformed settings row with
-character/chat/message rows or revision/event history is a fail-closed
-conflict, not permission to reseed.
-Before it loads the four root resources, the browser
-prepares the lineage-scoped mutation outbox, flushes durable receipt
-acknowledgements, and replays encrypted pending intents. Retained transient or
-unreadable intents block resource hydration; only a drained outbox proceeds to
-the common-revision root read.
+| Concern | Canonical source |
+| ------- | ---------------- |
+| Transaction, revision bump, receipt, commit, and live-emission order | `server/fastify/src/commands/mutations.ts` |
+| Event drafts, persisted replay rows, and retention window | `server/fastify/src/commands/events.ts` |
+| Browser interpretation of event resource keys | `src/ts/server/resourceInvalidation.ts` |
 
-The common-revision full read owns settings, split collections, the
-message-free character list, and the standalone inlay catalog. The first three
-compose the compatibility database view; the catalog is a separate browser
-projection. Chat messages, per-chat memory data, reroll alternates, character
-lorebooks, legacy preset bodies, and modern prompt templates hydrate through
-owner-specific endpoints. Greeting translations are a targeted character
-projection rather than part of the character root row. Cache-capable reads always have a full authenticated
-GET fallback, and provider secrets are masked before any resource value is
-hashed or returned.
+A normal resource-changing command writes its SQLite rows, increments the global
+revision once, and inserts one command event in the same transaction. The live
+event is emitted only after commit. The event's resource key is an invalidation
+scope, not an authoritative data payload; the browser must reconcile it against
+the corresponding committed resource at that revision. Persisted command events
+retain their revision order for reconnect replay, while revision-free
+server-owned exceptions remain outside that ordering as listed above.
 
-The canonical endpoint, cache-cap, shell/body, browser-owner, and stale-response
-map is [Server Resources And Bridges](server-resources-and-bridges.md#read-and-hydration-endpoints).
-Keep those mechanics there; this document owns their persistence, revision,
-lineage, writer, and event implications.
+The canonical REST endpoint, bootstrap, common-revision read, hydration,
+cache-cap, shell/body, and stale-response workflow belongs to
+[Server Resources And Bridges](server-resources-and-bridges.md#read-and-hydration-endpoints).
 
 ## SSE And Streaming
 

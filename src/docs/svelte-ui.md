@@ -1,862 +1,297 @@
 # Svelte UI Guide
 
-Last audited: 2026-08-02.
+Last audited: 2026-08-09.
 
-The frontend is a Svelte 5 SPA. There is no SvelteKit `src/routes/` tree:
-navigation is URL parsing plus Svelte stores, and `src/App.svelte` chooses the
-visible screen. Fastify owns durable state and most side effects. The browser
-owns rendering, local input state, visible optimistic state, hydration display,
-media previews, alerts/modals, TTS playback, hotkeys, custom HTML/CSS, and
-plugin execution.
+This guide owns the Svelte application shell, routing, shared frontend
+platform behavior, localization, styling, responsive behavior, and Playground.
+Start at the [source documentation index](README.md) for browser-runtime and
+surface-specific ownership.
 
-Use this file first for Svelte UI/UX bugs. Use `src/docs/client-runtime.md` when
-the visible issue is caused by startup resource reads, invalidation, hydration,
-commands, generation, assets, storage, Realm import, plugins, or MCP.
+## Related Guides
+
+| Guide | Owns |
+| ----- | ---- |
+| [Chat UI](svelte-chat-ui.md) | Transcript and message rendering, composer variants, generation states, and in-chat confirmations. |
+| [Navigation UI](svelte-navigation-ui.md) | Sidebar, Mood Light controls, chat and character selection, and internal reordering. |
+| [Settings UI](svelte-settings-ui.md) | Settings routes, data-driven rows, controls, authoring surfaces, model profiles, and settings persistence. |
+| [Client Runtime](client-runtime.md) | Startup resources, hydration, commands, durable recovery, generation reattach, and server-operation adapters. |
+
+The frontend is a Svelte 5 SPA with no SvelteKit routes tree:
+`src/ts/router.ts` parses URLs and synchronizes Svelte stores, while
+`src/App.svelte` chooses the visible screen. Fastify owns durable state and most
+side effects. The browser owns rendering, local input state, visible optimistic
+state, media previews, alerts and modals, TTS playback, hotkeys, custom HTML and
+CSS, and plugin execution.
 
 ## Fast Triage
 
-| Symptom                                                                              | Inspect first                                                                                                                                                                         | Then inspect                                                                                                                                                                |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App is stuck on loading, settings, grid, or chat                                     | `src/App.svelte`, `src/main.ts`, `src/ts/bootstrap.ts`                                                                                                                                | `src/ts/stores.svelte.ts`, `src/ts/router.ts`, `src/styles.css`                                                                                                             |
-| App reports writer takeover or becomes a frozen offline view                         | `src/ts/server/activeWriterSession.ts`, `src/ts/server/events.ts`                                                                                                                     | `src/styles.css`, `src/ts/bootstrap.ts`, `src/ts/server/commands.ts`                                                                                                        |
-| URL, back/forward, settings section, playground tool, or character route is wrong    | `src/ts/router.ts`, `src/App.svelte` route effects                                                                                                                                    | `src/ts/router.test.ts`, `src/App.routeEffect.dom.test.ts`                                                                                                                  |
-| Theme, motion, spacing, clipping, colors, font, UI scale, or custom CSS is wrong     | `src/styles.css`, `src/ts/gui/colorscheme.ts`, `src/ts/gui/animation.ts`, `src/ts/gui/guisize.ts`                                                                                     | `src/lib/Setting/Pages/DisplaySettings.svelte`, `src/ts/setting/accessibilitySettingsData.ts`                                                                               |
-| The whole document moved or window scrolling appeared                                | `src/ts/gui/viewportScrollGuard.ts`, `src/main.ts`, `src/styles.css`                                                                                                                  | Find code that scrolls `window`, `document.scrollingElement`, or an app-root ancestor                                                                                       |
-| A settings page or left-nav item is wrong                                            | `src/lib/Setting/Settings.svelte`, `src/ts/router.ts` setting slug maps                                                                                                               | The concrete `src/lib/Setting/Pages/*.svelte` page                                                                                                                          |
-| Agent or Agent Preset authoring, status, or chat selection is wrong                  | `src/lib/Setting/Pages/AgentPresetSettings.svelte`, `AgentSettingsSection.svelte`, `AgentEditorDrawer.svelte`, `AgentPresetEditorDrawer.svelte`, `src/lib/SideBars/ChatGenerationSettingsControls.svelte` | `src/ts/agentPresetRecords.ts`, `src/ts/agents.ts`, `src/ts/agentPresetResolver.ts`, `src/ts/agentPresets.ts`, `server/fastify/src/commands/agentPresets.ts` |
-| A model role/profile summary, inherited role, or provider panel visibility is wrong  | `src/lib/Setting/Pages/Model/ModelSettingsShell.svelte`, `ModelProfileRoleList.svelte`, `ModelProfileList.svelte`, `ModelProviderPanel.svelte`, `src/ts/model/modelProfileUiState.ts` | `src/ts/model/modelProfileResolver.ts`, legacy `ModelRoleList.svelte` inside Advanced Legacy Settings, `docs/structure/providers-and-models.md`                             |
-| A data-driven setting row is missing, hidden, stale, or not saving                   | `src/lib/Setting/SettingRenderer.svelte`, `src/ts/setting/*SettingsData*`, `src/ts/setting/utils.ts`                                                                                  | `src/lib/Setting/Wrappers/*`, `src/ts/server/settingsBridge.svelte.ts`                                                                                                      |
-| A shared input/control is visually or behaviorally wrong                             | The primitive in `src/lib/UI/GUI/`                                                                                                                                                    | The wrapper in `src/lib/Setting/Wrappers/` if it only breaks in settings                                                                                                    |
-| Chat transcript, composer/floating input, send buttons, scroll, or hydration state is wrong | `src/lib/ChatScreens/DefaultChatScreen.svelte`, `src/lib/ChatScreens/Chats.svelte`                                                                                              | `src/ts/server/chatMessageHydration.svelte.ts`, `src/ts/chatCommands.ts`, `DefaultChatScreen.loadPages.test.ts`                                                            |
-| Message HTML, translation, parser, inlays, or partial edit is wrong                  | `src/lib/ChatScreens/Chat.svelte`, `src/lib/ChatScreens/ChatBody.svelte`, `src/lib/ChatScreens/ChatBodyParseMemo.ts`                                                                  | `src/ts/parser/`, `src/ts/process/files/`, `src/ts/globalApi.svelte.ts`                                                                                                     |
-| Sidebar, Mood Light visibility, character/chat lists, folders, reorder, or character config is wrong | `src/lib/SideBars/Sidebar.svelte`, `src/lib/SideBars/MoodLightManageModal.svelte`, `src/lib/SideBars/SideChatList.svelte`, `src/lib/SideBars/CharConfig.svelte` | `src/ts/moodLightMode.ts`, `src/ts/moodLightMembership.ts`, sidebar organization helpers, and the character/chat command helpers                                           |
-| Alert, popup, bookmark, Hypa V3, loadout, or Iris modal hides or blocks UI            | `src/App.svelte`, `src/lib/Others/AlertComp.svelte`, `src/ts/alert.ts`                                                                                                                | The specific modal plus `src/ts/gui/modalFocusTrap.ts`                                                                                                                      |
-| Grid/mobile character picker or Mood Light partition is wrong                        | `src/lib/Others/GridCatalog.svelte`, `src/lib/Mobile/MobileCharacters.svelte`                                                                                                         | `src/ts/moodLightMembership.ts`, `src/ts/moodLightMode.ts`, and the mobile stores in `src/ts/stores.svelte.ts`                                                             |
-| Playground menu/tool routing is wrong                                                | `src/lib/Playground/PlaygroundMenu.svelte`, `src/ts/router.ts`, `src/ts/playground.ts`                                                                                                | The specific `src/lib/Playground/*.svelte` tool                                                                                                                             |
+| Symptom | Inspect first | Continue with |
+| ------- | ------------- | ------------- |
+| Loading, settings, grid, chat, or global overlay is wrong | `src/App.svelte`, `src/main.ts`, `src/ts/router.ts` | This guide and [Client Runtime](client-runtime.md) |
+| Transcript, message HTML, composer, generation progress, or chat confirmation is wrong | `src/lib/ChatScreens/DefaultChatScreen.svelte`, `src/lib/ChatScreens/Chat.svelte` | [Chat UI](svelte-chat-ui.md) |
+| Sidebar, Mood Light, character/chat list, or reorder is wrong | `src/lib/SideBars/Sidebar.svelte`, `src/lib/SideBars/SideChatList.svelte` | [Navigation UI](svelte-navigation-ui.md) |
+| Settings nav, row, authoring editor, model profile, or shared control is wrong | `src/lib/Setting/Settings.svelte`, `src/lib/Setting/SettingRenderer.svelte` | [Settings UI](svelte-settings-ui.md) |
+| Theme, motion, clipping, font, scale, or custom CSS is wrong | `src/styles.css`, `src/ts/gui/colorscheme.ts`, `src/ts/gui/animation.ts`, `src/ts/gui/guisize.ts` | [Styling, Theme, And Layout](#styling-theme-and-layout) |
+| URL, back/forward, settings section, Playground tool, or character route is wrong | `src/ts/router.ts`, route effects in `src/App.svelte` | `src/ts/router.test.ts`, `src/App.routeEffect.dom.test.ts` |
+| The document moved or window scrolling appeared | `src/ts/gui/viewportScrollGuard.ts`, `src/main.ts`, `src/styles.css` | Code that scrolls `window` or `document.scrollingElement` |
 
 ## Entrypoints And Shell
 
-| Path                  | Role                                                                                                                                                                                                                               |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `index.html`          | Mounts `#app` and loads `/src/main.ts`.                                                                                                                                                                                            |
-| `src/main.ts`         | Imports polyfills/storage state, installs the router, push-navigation listener, and viewport guard, mounts `App.svelte`, then installs smoke/startup/hotkey behavior and removes `#preloading`.                  |
-| `src/App.svelte`      | Main render switch and overlay host. It owns loading/settings/grid/sidebar/chat priority and global modal mounting.                                                                                                                |
-| `src/styles.css`      | Tailwind v4 import, theme variable defaults, full-height app CSS, global chat text CSS, and Tailwind compatibility base rules.                                                                                                     |
-| `src/ts/bootstrap.ts` | Browser startup coordinator. It loads Fastify resources, starts hydration/events/bridges, then updates UI-derived CSS state.                                                                                                       |
-| `src/ts/platform.ts`  | Fastify-only platform flag. `isFastifyServer` is hard-coded true.                                                                                                                                                                  |
+| Path | Role |
+| ---- | ---- |
+| `index.html` | Mounts `#app` and loads `/src/main.ts`. |
+| `src/main.ts` | Installs the preload-error alert, router, push listeners, and viewport guard; mounts `App.svelte`; starts bootstrap and hotkeys; then removes `#preloading`. |
+| `src/App.svelte` | Main render switch, responsive sidebar dialog, app-level file drop, route effects, and global overlay host. |
+| `src/styles.css` | Tailwind v4 import, theme defaults, full-height shell, global chat text CSS, and compatibility base rules. |
+| `src/ts/bootstrap.ts` | Loads Fastify resources and starts hydration, events, bridges, and UI-derived CSS state. |
+| `src/ts/platform.ts` | Fastify-only platform flag; `isFastifyServer` is always true. |
 
-`src/LiteMain.svelte` exists but is not the live entrypoint. Live lite behavior
-comes from `VITE_RISU_LITE`, `src/ts/lite.ts`, and consumers in settings/theme
-and legacy mobile code.
+`src/main.ts` listens for `vite:preloadError` before mounting the app. A failed
+lazy chunk logs the event and displays the localized `language.preloadError`
+alert so the user can refresh. `src/ts/globalApi.svelte.ts` statically imports
+`streamsaver`; `LocalWriter.init()` uses that import to create its writable
+download stream.
 
-`src/App.svelte` also owns app-level drag/drop import. Dropped `.risup` files
-import presets, `.risum` files import modules through the Fastify-backed browser
-module path, and other supported files fall through to character/card import.
-Dataset, chat, character-card, persona, preset, lorebook, regex, module, and
-translator-preset exchange entrypoints are mapped in
+`src/LiteMain.svelte` is not the live entrypoint. Live Lite behavior comes from
+`VITE_RISU_LITE`, `src/ts/lite.ts`, and consumers in settings, themes, and
+retained mobile code.
+
+The app shell accepts external file drops. `.risup` imports a preset, `.risum`
+imports a module through the Fastify-backed browser path, and other supported
+files use character/card import. `src/ts/dragTypes.ts` defines app-internal MIME
+markers. `src/App.svelte` marks drags that originate inside the app and ignores
+those markers, including the sidebar-specific marker, before inspecting files;
+external `Files` drags still advertise a copy operation. See
+[Navigation UI](svelte-navigation-ui.md#drag-drop-and-reordering) for the
+feature-owned reorder rules. The content-exchange entrypoints are:
+
+- dataset and chat: `src/ts/storage/exportAsDataset.ts` and
+  `src/ts/characters.ts`;
+- character card, persona, and preset: `src/ts/characterCards.ts`,
+  `src/ts/persona.ts`, and `src/ts/storage/database.svelte.ts`;
+- lorebook, regex, module, and translator preset:
+  `src/ts/process/lorebook.svelte.ts`, `src/ts/process/scripts.ts`,
+  `src/ts/process/modules.ts`, and `src/ts/translator/presets.ts`.
+
+Their formats and durable ownership are canonical in
 [Assets And Saves](../../docs/structure/assets-and-saves.md#client-content-exchange).
+
+Application startup has no Terms of Service gate, and the former
+application-wide legal component is gone. The remaining `realmTerms` alert is
+scoped to downloading a character from RisuRealm; it is not an application
+startup requirement. The agent dev runner bypasses that download confirmation
+for its disposable browser session.
 
 ## App Render Priority
 
-`src/App.svelte` renders in this order:
+`src/App.svelte` renders these mutually exclusive branches in order:
 
 1. April 1 joke screen.
 2. Loading screen while `$loadedStore` is false.
-3. `CustomGUISettingMenu` when `$CustomGUISettingMenuStore` is true.
-4. `Settings` when `$settingsOpen` is true.
-5. `GridCatalog` when `$currentRoute.kind === 'grid'`.
-6. Normal shell: `Sidebar` plus `ChatScreen`.
+3. `CustomGUISettingMenu` while `$CustomGUISettingMenuStore` is true.
+4. `Settings` while `$settingsOpen` is true.
+5. `GridCatalog` for the grid route.
+6. The normal `Sidebar` plus `ChatScreen` shell.
 
-App-hosted overlays mount after the main branch. The common blockers are
-`AlertComp`, Realm popup/frame, preset/persona lists, bookmarks, Hypa V3 modal
-and progress, save popup icon, popup list, EasyPanel,
-popup editor, loadout modal, Iris modal, and custom sidebar config.
-The saved-toggle management dialog is also app-hosted through
-`src/lib/SideBars/ChatGenerationTogglePresetDialog.svelte`.
-Feature-owned overlays can instead mount below their surface: for example,
-`src/lib/SideBars/Sidebar.svelte` owns
-`src/lib/SideBars/MoodLightManageModal.svelte`, and chat/settings components own
-their local pickers and drawers. Inspect the feature owner as well as
-`App.svelte` when an overlay is missing or stacked incorrectly.
+On responsive layouts the sidebar becomes an app-hosted, focus-trapped dialog
+over the chat. Global overlays mount after the main branch: alerts, Realm,
+preset/persona lists, saved-toggle management, bookmarks, Hypa V3, the saving
+icon, popup list and editor, EasyPanel, loadouts, Iris, and custom sidebar
+configuration. Feature-owned overlays can mount below their surface instead;
+for example, `Sidebar.svelte` owns `MoodLightManageModal.svelte`.
 
-Two app-level states do not come from the Svelte render switch. Writer takeover
-temporarily blocks interaction while the refresh/offline choice is open; the
-offline choice then freezes editable controls and mounts a reload banner from
-`src/ts/server/activeWriterSession.ts`. `SavePopupIcon.svelte` separately
-reflects aggregate persistence activity when `showSavingIcon` is enabled.
+Two interaction states sit outside the render switch. Writer takeover blocks
+interaction while the refresh/offline choice is open; choosing offline freezes
+editable controls and mounts a reload banner from
+`src/ts/server/activeWriterSession.ts`. `SavePopupIcon.svelte` separately shows
+aggregate persistence activity when `showSavingIcon` permits it.
 
-If the expected screen is missing, first confirm no higher-priority branch or
-overlay is mounted.
-
-Blocking dialogs share `src/ts/gui/modalFocusTrap.ts`. The action maintains a
-stack for nested modals, makes background branches inert, traps Tab and
-programmatic focus, locks body scrolling, and restores focus/background state
-on close. Most backdrop-closing dialogs use the shared
-`src/ts/gui/modalBackdropDismiss.ts` action: migrated surfaces dismiss only when
-the same primary pointer gesture starts and ends directly on the backdrop, so a
-drag from a dialog control cannot accidentally close them. For focus escape or
-a clickable background, inspect the modal's `data-modal-root` and both action
-wirings rather than assuming every overlay has migrated. Guards are
+Blocking dialogs share `src/ts/gui/modalFocusTrap.ts`, which stacks nested
+modals, makes background branches inert, traps focus, locks body scrolling, and
+restores focus and background state. Migrated backdrop-closing dialogs use
+`src/ts/gui/modalBackdropDismiss.ts`; dismissal requires the same primary
+pointer gesture to start and end on the backdrop. Guards are
 `src/ts/gui/modalFocusTrap.test.ts` and
-`src/ts/gui/modalBackdropDismiss.test.ts`.
+`src/ts/gui/modalBackdropDismiss.test.ts`. Not every overlay has migrated to
+both actions. For a focus escape or clickable background, inspect the local
+`data-modal-root`, `use:modalFocusTrap`, and `use:modalBackdropDismiss` wiring
+instead of assuming the shared backdrop behavior is present.
 
 ## Routes And Stores
 
-Routing is implemented in `src/ts/router.ts`. It parses `window.location`, keeps
-`currentRoute`, applies URL changes to stores, and syncs store changes back to
-the URL. Route changes are not file-system based.
+`src/ts/router.ts` parses `window.location`, maintains `currentRoute`, applies
+URLs to stores, and synchronizes user-owned store changes back to history.
+Routes are not file-system based.
 
-| Route                               | Store effect                                                                              |
-| ----------------------------------- | ----------------------------------------------------------------------------------------- |
-| `/`                                 | Home, `selectedCharID = -1`, settings/playground closed.                                  |
-| `/settings`                         | Opens settings; split layout auto-selects model settings, mobile shows the settings list. |
-| `/settings/:section`                | Opens settings and maps section slugs to `SettingsMenuIndex`.                             |
-| `/settings/persona/:personaId`      | Opens persona settings and selects the uniquely matching persona.                         |
-| `/grid` and `/characters`           | Opens the character grid.                                                                 |
-| `/character/:chaId/:chatId?`        | Selects the character and optionally selects a chat.                                      |
-| `/characters/:chaId/chats/:chatId?` | Legacy character/chat route shape.                                                        |
-| `/playground/:tool`                 | Maps tool slugs to `PlaygroundStore`.                                                     |
-| `/inlay` or `/inlays`               | Opens the inlay explorer through `PlaygroundStore = 14`.                                  |
-| Other unknown roots                 | Parse as `not-found` and close route-owned surfaces.                                      |
+| Route | Store effect |
+| ----- | ------------ |
+| `/` | Home; clears selection and closes settings and Playground. |
+| `/settings` | Opens settings; split layout selects model settings, while the narrow layout shows the category list. |
+| `/settings/:section` | Opens settings and maps the slug to `SettingsMenuIndex`. |
+| `/settings/persona/:personaId` | Opens persona settings and selects the unique matching persona. |
+| `/grid` and `/characters` | Opens the character grid. |
+| `/character/:chaId/:chatId?` | Selects the character and optionally a chat. |
+| `/characters/:chaId/chats/:chatId?` | Retained character/chat route shape. |
+| `/playground/:tool` | Maps tool slugs to `PlaygroundStore`. |
+| `/inlay` or `/inlays` | Opens the inlay explorer as Playground value `14`. |
+| Unknown root | Becomes `not-found` and closes route-owned surfaces. |
 
-Unknown `/settings/:section` and `/playground/:tool` slugs fall back to their
-default menus; they are not general not-found routes.
+Unknown settings and Playground slugs fall back to their default menu; they are
+not general not-found routes.
 
-`src/App.svelte` has two load-bearing route effects:
+`src/App.svelte` has two load-bearing effects. After `$loadedStore`, the
+URL-to-store effect consumes state-driven updates and calls
+`applyRouteToStores(route)` inside `untrack`. The store-to-URL effect skips
+while route application is active or pending, then calls `syncRouteFromState`.
+The `untrack` matters because route application closes state such as
+`CustomGUISettingMenuStore`, `botMakerMode`, and `CharEmotion`; unrelated
+resource reactivity must not reapply a route and reset the sidebar.
 
-- URL-to-store: after `$loadedStore`, it consumes state-driven route updates and
-  calls `applyRouteToStores(route)` inside `untrack`.
-- Store-to-URL: after `$loadedStore`, it skips while the router is applying a
-  route or has a pending application, then calls `syncRouteFromState`.
+Important route and store facts:
 
-The `untrack` is intentional. Applying a route closes route-blocking state such
-as `CustomGUISettingMenuStore`, `botMakerMode`, and `CharEmotion`. If a full
-resource refresh or unrelated reactive resource read retriggers route
-application, the sidebar or chat tabs can visibly reset.
-
-Important route/store facts:
-
-- `loadedStore` gates route application and the loading shell.
+- `loadedStore` gates route application and the loading branch.
 - `src/ts/server/resourceState.svelte.ts` owns the settings, collections, and
-  character resources used by data-driven UI. Compatibility helpers expose a
-  composed database-shaped view without owning a second state tree.
-- `selectedCharID` drives the active character, sidebar, and chat screen.
-- `settingsOpen` plus `SettingsMenuIndex` controls the settings shell.
-- `PlaygroundStore` controls playground tools. Value `2` is playground chat and
-  value `14` is inlay.
-- `/character/:id` and `/character/:id/:chatId` are visibly different. A
-  character route without a chat id can intentionally show a select-chat state.
-- Character routes are visibility-gated by the session's Mood Light mode.
-  Direct links to the hidden partition replace the URL with `/`; `App.svelte`
-  applies the same guard if a membership or resource refresh makes the current
-  selection invisible.
-- `/playground/chat` creates/selects a synthetic playground character through
-  `src/ts/playground.ts`.
-- In-app settings and grid openings mark their history origin. Closing them uses
-  `history.back()`; a direct entry without an owned origin is replaced with
-  home instead of manufacturing a stale back-stack entry.
-- `navigateToCharacterChatMessage` queues a bookmark/message jump until the
-  target route has applied, then delivers it once; `DefaultChatScreen.svelte`
-  expands and hydrates the required transcript window.
-- The current character-sidebar tab is stored in the active history entry, so
-  back/forward restores it without leaking it into a new route.
-- While a durable generation owns a chat, character/chat navigation is
-  canonicalized to that owner. Missing chat ids canonicalize to the bare
-  selected-character route, and delayed route work is fenced against newer
-  navigation.
+  character resources that UI reads. Its compatibility proxy and snapshot
+  helpers compose a database-shaped view over those slices; they do not own a
+  second database state tree. `src/ts/server/resourceState.svelte.test.ts`
+  guards that composition.
+- `selectedCharID` drives the character, sidebar, and chat surfaces.
+- `settingsOpen` and `SettingsMenuIndex` drive the settings shell.
+- `PlaygroundStore` drives Playground; value `2` is chat and `14` is inlays.
+- A character route without a chat ID intentionally shows select-chat state.
+- Mood Light visibility gates direct character routes and reactive selection.
+  Hidden targets replace the URL with `/`.
+- In-app settings and grid openings record their history origin. Close actions
+  go back only for an owned origin; direct entry replaces the route with home.
+- `navigateToCharacterChatMessage` queues a single bookmark jump until route
+  application, then the chat surface expands and hydrates the required window.
+- Character-sidebar view mode is stored in the active history entry.
+- An active durable generation canonicalizes character/chat navigation to its
+  owner, and delayed route work is fenced against newer navigation. A missing
+  chat ID canonicalizes to the bare selected-character route; the focused guard
+  is `src/ts/router.test.ts`.
 
 ## Component Ownership
 
-| Path                        | Visible ownership                                                                                                                                                                                                                 |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/lib/ChatScreens/`      | Main chat workflow: themed chat frame, transcript, composer, message rows, parser/translation HTML, suggestions, assets, partial edit, resize/emotion displays.                                                                   |
-| `src/lib/SideBars/`         | Desktop navigation and side-panel workflows: Mood Light visibility/management, characters, folders, chat list, chat folders, character config, lorebook, scripts, quick settings, dev tools, custom sidebar.                         |
-| `src/lib/Setting/`          | Settings shell, renderer, row wrappers, concrete pages, bot presets, persona lists, lore presets.                                                                                                                                 |
-| `src/lib/Setting/Wrappers/` | Data-driven setting row renderers for check/text/number/textarea/slider/select/segmented/color/header/button/accordion/custom rows.                                                                                               |
-| `src/lib/Setting/Pages/`    | Concrete settings pages. Some are thin `SettingRenderer` hosts; others are large stateful pages.                                                                                                                                  |
-| `src/lib/UI/`               | Shared higher-level UI: accordions, menus, model pickers, provider pickers, prompt rows, Realm UI.                                                                                                                                |
-| `src/lib/UI/GUI/`           | Shared primitive controls: buttons/icon buttons, text/optional/number/textarea/resizable textarea/syntax-highlighted textarea/select/option/slider/color inputs, segmented control, portals, multilingual fields, sidebar arrows. |
-| `src/lib/Others/`           | App-level and miscellaneous UI: alerts, Mood Light-filtered grid/trash catalog, bookmark/chat-list modals, Hypa V3, popup editor, loadout, and Iris.                                                                            |
-| `src/lib/Playground/`       | Playground menu and tools for parser/tokenizer/MCP/image/translation/subtitles/inlays/tool conversion.                                                                                                                            |
-| `src/lib/Mobile/`           | Mobile components. `MobileCharacters` is active through `GridCatalog` and applies the Mood Light partition; the full mobile shell files are currently not mounted by `App.svelte`.                                                |
-| `src/lib/LiteUI/`           | Lite/hub card support. `LiteMain.svelte` is not the live app entrypoint.                                                                                                                                                          |
-| `src/lang/`                 | UI string contract. Add frontend strings here rather than hard-coding labels.                                                                                                                                                     |
-| `src/etc/`                  | Bundled docs/media/tokenizer seed data imported by client code.                                                                                                                                                                   |
+| Path | Visible ownership |
+| ---- | ----------------- |
+| `src/lib/ChatScreens/` | Chat frame, transcript, message rows, composer variants, suggestions, partial edit, resize/emotion displays, and progress; see [Chat UI](svelte-chat-ui.md). |
+| `src/lib/SideBars/` | Desktop navigation, Mood Light, lists, character config, lorebook, scripts, quick settings, and the custom-sidebar renderer; see [Navigation UI](svelte-navigation-ui.md). |
+| `src/lib/Setting/` | Settings shell, renderer, wrappers, pages, authoring surfaces, bot presets, persona lists, and lore presets; see [Settings UI](svelte-settings-ui.md). |
+| `src/lib/UI/` | Shared higher-level UI such as accordions, menus, model/provider pickers, prompt rows, and Realm UI. |
+| `src/lib/UI/GUI/` | Shared primitive inputs, buttons, selects, sliders, portals, and multilingual controls. |
+| `src/lib/Others/` | App-level and miscellaneous modals, grid/trash, bookmark/chat-list surfaces, Hypa V3, popup editor, loadouts, and Iris. |
+| `src/lib/Playground/` | Playground menu and parser, tokenizer, MCP, image, translation, subtitle, inlay, and conversion tools. |
+| `src/lib/Mobile/` | Active mobile character grid pieces plus an unmounted full mobile shell. |
+| `src/lib/LiteUI/` | Lite/hub card support; not the live app entrypoint. |
+| `src/lang/` | UI string contract. |
+| `src/etc/` | Bundled documentation, media, and tokenizer seed data imported by client code. |
 
 Plugin V3 can inject settings, floating-action, hamburger, and chat-menu
-surfaces into these owners. Registration/replacement/unload semantics are
-canonical in [Plugins And MCP](../../docs/structure/plugins-and-mcp.md#ui-surfaces).
-
-## Chat UI
-
-`src/lib/ChatScreens/ChatScreen.svelte` frames the chat surface. It switches
-between standard, waifu, and mobile-waifu display modes, applies background and
-text-screen styles, renders `BackgroundDom`, and opens chat/module modals.
-
-`src/lib/ChatScreens/DefaultChatScreen.svelte` is the dense chat coordinator. It
-owns:
-
-- active character/chat derivation;
-- lazy message hydration indicators;
-- transcript window size and scroll-to-message expansion;
-- composer input, file input, suggestion/sticker state, send/continue/reroll;
-- generation stage/abort UI plus Agent Preset and post-generation script
-  progress;
-- quick menus for chat list, modules, Hypa V3, translation, image/file tools,
-  extra plugin menus, and EasyPanel.
-
-Transcript rendering then fans out through `Chats.svelte`, `Chat.svelte`,
-`Message.svelte`, and `ChatBody.svelte`.
-
-When the Accessibility setting `floatingChatInput` is enabled (the default)
-and `fixedChatTextarea` is off, scrolling far enough from the bottom promotes
-the existing composer into a floating overlay by default. The reveal threshold
-is the larger of 24 pixels or half the normal composer height. Explicitly
-hiding the overlay collapses it into the floating icon until the user reopens
-it or changes chats. Opening or hiding it preserves transcript scroll and draft
-state; the floating overflow menu can return to the bottom or hide the
-composer, and chat changes or disabling the setting clear the floating state.
-When the active chat has a selected Draft hook and a non-blank reviewed Draft,
-the floating composer initially shows that Draft read-only and replaces Send
-with a Convert toggle. The toggle exposes the editable original composer text;
-edits remain authoritative across toggles and after the floating overlay closes.
-`src/lib/ChatScreens/DefaultChatScreen.svelte` measures the
-rendered content column with `ResizeObserver` so the trigger, composer, and
-overflow menus stay aligned across `chatScreenWidth`, custom containing blocks,
-viewport resize, and safe-area insets; progress rows use the same constrained
-content-width class. The DOM contract is covered by
-`src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts`.
-
-High-risk chat areas:
-
-- Character REST resources carry message-less chat rows. Check
-  `src/ts/server/chatMessageHydration.svelte.ts` before treating missing
-  messages as a render bug.
-- `ScrollToMessageStore`, transcript window identity, image-load waits, and
-  folded-message state all affect scroll behavior.
-- Message HTML crosses parser, translation, custom HTML templates, inlays,
-  additional assets, module assets, and optional partial edit.
-- Durable message translation is server-raw for persisted transcript rows.
-  The server owns automatic translation for newly generated messages and sends
-  the final translation outcome with the generation terminal frame;
-  `serverGeneratedMessageTranslation.ts` mirrors an embedded success or joins
-  the existing translation-job UI for running/failure states. `Chats.svelte`
-  still grants one-shot client eligibility to other appended rows, subject to
-  the active chat's `autoTranslate`/bot-only policy. `Chat.svelte` renders
-  `bilingualDisplay` through `x-risu-bilingual-translation` blocks. The legacy
-  `ChatBody.svelte` HTML translation path remains only for non-persisted
-  previews/greetings and reads the same active-chat automatic policy.
-- The synthetic greeting row (`idx === -1`) has a separate manual translation
-  path. `Chat.svelte` and `DefaultChatScreen.svelte` use
-  `src/ts/server/greetingTranslations.svelte.ts` to persist and render the
-  character-scoped projection. Greetings remain manual-only even when chat
-  auto-translation is enabled.
-- `ChatBodyParseMemo.ts` owns parser/LLM-detection memoization and dependency
-  signatures for the active chat, character, modules, settings, CBS state, and
-  reload epochs; stale HTML or expensive rerenders can originate there.
-- `src/ts/parser/parser.svelte.ts` emits `x-hl-lang` and
-  `risu-ctrl="bgm___…"` markers. `src/ts/observer.svelte.ts` turns highlighted
-  code into copy/download context-menu targets, starts BGM, retries blocked
-  autoplay on the next user activation, and stops playback on chat change.
-  `src/ts/observer.svelte.test.ts` guards the DOM contract; see the
-  [client runtime map](client-runtime.md#client-typescript-areas) for runtime
-  ownership.
-- UI mutations should route through `src/ts/chatCommands.ts` and command/bridge
-  helpers in Fastify mode.
-- Generation-visible state starts in `DefaultChatScreen.svelte` but durable send
-  and reattach behavior lives under `src/ts/process/`.
-- `DefaultChatScreen.composerDrafts.ts` preserves all five composer fields per
-  transcript across navigation and reload in bounded, lineage/writer-scoped
-  `sessionStorage`. Exact-generation accepted saves clear recovery; newer,
-  queued, or failed drafts remain. The complete recovery-store boundary is in
-  [Client Runtime](client-runtime.md#draft-recovery-stores).
-  `src/ts/process/rerollNavigation.svelte.ts` owns reroll navigation fencing and
-  rollback.
-- Input hooks are durable definitions edited at `/settings/input-hooks`.
-  `ChatDraftHookSelector.svelte` chooses a chat-scoped draft hook; sending runs
-  that hook before generation. The composer can also open
-  `InputHookPickerDialog.svelte` for an ad hoc BTW hook and retain/dismiss its
-  result independently of the message draft. Execution lives in
-  `src/ts/process/inputHooks.ts`. Each hook can select a durable model profile;
-  legacy hooks and hooks configured to inherit use the `otherAx` model role. Hook prompts
-  support `{{slot::content}}`, `{{slot::draft}}`, and the bounded
-  `{{slot::history::N}}` / `{{slot::historytrans::N}}` windows (`N` is 1–50).
-  A Draft hook's optional **Translation** setting keeps the existing review
-  step, then sends the reviewed hook output as the user message and stores the
-  original composer text in the message's source-bound translation field.
-  History access expands the resident tail only as far as needed and shares the
-  translator history renderer's disabled/comment boundary, greeting, persisted
-  translation, and token-budget semantics.
-- `AgentPresetProgress.svelte` and `PostGenerationScriptProgress.svelte` render
-  chat-scoped SSE state above the transcript. Their stores/parsing live in
-  `src/ts/process/agentPresetProgress.ts`, `postGenerationProgress.ts`, and
-  `src/ts/process/request/serverChat.ts`.
-
-Relevant tests include `src/lib/ChatScreens/ChatBody.svelte.test.ts`,
-`src/lib/ChatScreens/ChatBody.parseMemo.test.ts`,
-`src/lib/ChatScreens/newMessageTranslationEligibility.test.ts`,
-`src/ts/process/serverGeneratedMessageTranslation.test.ts`,
-`src/ts/translator/bilingualInterleave{,.dom}.test.ts`,
-`src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts`,
-`src/lib/ChatScreens/Suggestion.svelte.test.ts`, and
-`src/lib/ChatScreens/PartialEditController.sharedHover.test.ts`. Parser,
-loading, and freshness regressions also have focused tests such as
-`Chat.parserDependencies.test.ts`, `BackgroundDom.parserDependencies.test.ts`,
-`chatGenerationLoading.test.ts`, `chatButtonTriggerFreshness.test.ts`, and
-`partialEditFreshness.test.ts`; input-hook slot execution is guarded by
-`src/ts/process/inputHooks.test.ts`.
-
-## Sidebar And Navigation UI
-
-`src/lib/SideBars/Sidebar.svelte` owns desktop navigation: home/settings/
-playground buttons, character avatars, folders, drag/drop reordering, grid open,
-quick settings, dev tool, and character config switching. It uses
-`selectedCharID`, `settingsOpen`, `sideBarStore`, `DynamicGUI`,
-`PlaygroundStore`, `botMakerMode`, `CharEmotion`, and server command helpers.
-
-Mood Light is a client-side character-visibility partition, not a Fastify
-authorization boundary. `src/ts/moodLightMode.ts` keeps the active flag for the
-tab in `sessionStorage`; normal mode shows unprotected characters, while Mood
-Light mode shows protected characters. `src/lib/SideBars/Sidebar.svelte` owns
-the enable/disable control, asks before entering, clears selection on every mode
-switch, derives a filtered character order, and exposes
-`src/lib/SideBars/MoodLightManageModal.svelte` only while the mode is active.
-The searchable, focus-trapped dialog toggles characters or folders and persists
-`moodLightMembership` through the server-backed settings bridge.
-
-`src/ts/moodLightMembership.ts` is the shared partition helper. Durable
-membership contains direct character IDs plus folder snapshots and per-folder
-exclusions; current children of a protected folder inherit protection, while
-an explicitly toggled child can differ. Filtering never rewrites durable
-`characterOrder`: a visible child whose folder is in the other partition is
-promoted to the visible root so the hidden folder name does not leak. The
-manager omits `§playground` and trashed characters, although existing trash
-rows are still partitioned in `src/lib/Others/GridCatalog.svelte`.
-`src/lib/Others/GridCatalog.svelte`, `src/lib/Mobile/MobileCharacters.svelte`,
-character-selection alerts in `src/lib/Others/AlertComp.svelte`,
-adjacent-character hotkeys, and route/selection guards reuse the same
-predicate. Core guards are
-`src/ts/moodLightMembership.test.ts`, `src/ts/moodLightMode.test.ts`,
-`src/lib/SideBars/MoodLightManageModal.svelte.test.ts`,
-`src/lib/SideBars/Sidebar.keyboard.dom.test.ts`, and
-`src/lib/Others/GridCatalog.svelte.test.ts`; the startup/refresh boundary is in
-[Client Runtime](client-runtime.md#mood-light-visibility-coordination).
-
-`src/lib/SideBars/SideChatList.svelte` owns chat list workflows: selecting
-chats, creating/deleting/forking chats, chat folders, reordering, exports, and
-server-backed metadata watchers.
-
-Export All first strictly hydrates every chat and completes the download. Only
-after a successful download does `src/lib/SideBars/SideChatList.svelte` offer
-two confirmations to replace every chat with a new empty `Chat 1`. The
-optimistic, durable reset keeps chat-folder records, routes the still-current
-view to the replacement chat, and rolls the prior chats back on failure;
-canceling either confirmation or a failed/stale export makes no structural
-change. Guards are
-`src/lib/SideBars/SideChatList.svelte.test.ts`,
-`src/ts/characters.exportChat.test.ts`, and `src/ts/chatCommands.test.ts`.
-
-Its branch-graph action strictly hydrates every chat, abandons the result if the
-character owner changes during hydration, then passes a view-only graph of
-hashed greetings/message prefixes from `src/ts/gui/branches.ts` to the alert
-modal. `src/lib/Others/AlertComp.svelte` exposes branch details on pointer hover
-and keyboard focus. Guards are `src/lib/SideBars/SideChatList.svelte.test.ts`
-and `src/lib/Others/AlertComp.branches.test.ts`.
-
-When a concrete chat route is open, `SideChatList` enters a chat-open mode with
-back/author-note/toggle controls and tears down Sortable until it returns to the
-list. Chat-scoped generation controls live in
-`ChatGenerationSettingsControls.svelte`, `Toggles.svelte`, and
-`src/ts/activeChatGenerationSettings.ts`; server send/preview/continue/
-regenerate reads the effective overlay in `server/fastify/src/prompt/`.
-Queued generation-settings saves are optimistic and serialized per chat.
-The chat generation-settings freshness guard prevents a differing character-row
-response from rolling that visible value back before the save settles.
-
-Saved Toggles is a captioned state button in
-`src/lib/SideBars/ChatGenerationTogglePresets.svelte`. Its label distinguishes
-unused, unlinked, preset-shape mismatch, edited, and matched states. It opens
-`src/lib/SideBars/ChatGenerationTogglePresetDialog.svelte`; row selection changes
-only the comparison target until the user explicitly applies or selects. The
-dialog can save/overwrite, rename, delete, unselect, apply, or pick a complete
-compatible value set from one active prompt-preset, module, or Agent source. Display order
-is frozen when the dialog opens and sorts by toggle-key-set similarity,
-active-count distance, `updatedAt`, then name. The selected id persists as
-`generationSettings.togglePresetId`; loadouts preserve it. Preset records and
-comparison/pick/sort logic live in
-`src/ts/chatGenerationTogglePresetRecords.ts` and
-`src/ts/chatGenerationTogglePresets.ts`; behavior is guarded by
-`src/ts/chatGenerationTogglePresets.test.ts` and
-`src/lib/SideBars/chatGenerationSettingsControls.test.ts`.
-
-`src/lib/Others/LoadoutModal.svelte` exposes selective loadout apply and its
-pending/queued/failure states. Apply does not navigate to a recorded character;
-the fenced durable sequence is owned by
-[Client Runtime](client-runtime.md#loadout-apply-sequencing).
-
-The sidebar add-character flow selects a successfully imported character only
-while its captured navigation scope remains current. Import normalization in
-`src/ts/characterCards.ts` also supplies a missing chat `fmIndex` from the
-character's `firstMsgIndex` (falling back to `-1`), so the selected first chat
-renders its greeting. `src/ts/characterCards.pngImport.test.ts` and
-`src/ts/characters.changeChar.test.ts` guard that handoff.
-
-Risk areas:
-
-- Sidebar route application can reset `botMakerMode`; see the route-effect
-  notes above.
-- Character and chat reorders are optimistic command flows. Confirm rollback
-  and resource reconciliation paths when the visible order changes.
-- `ChatTranslationSettings.svelte` owns the three sparse active-chat
-  translation toggles in the sidebar and exposes pending/queued/failed status
-  from the chat-scoped durable update flow.
-- Sortable setup/teardown and folder grouping live outside the main Svelte
-  markup in `dropList.ts`, `sidebarCharList.ts`, and `chatFolderGrouping.ts`.
-  `sidebarDrag.ts` validates pointer-drag ownership against the captured order.
-  Use the pure position/movement resolvers in `sidebarOrganizer.ts` when wiring
-  accessible keyboard/menu organizer actions.
-- Hotkeys in `src/ts/hotkey.ts` use DOM selectors and visible state; UI class or
-  structure changes can affect keyboard actions.
-
-Anchor coverage includes `SideChatList.svelte.test.ts`,
-`Sidebar.keyboard.dom.test.ts`, `sidebarOrganizer.test.ts`,
-`sidebarDrag.test.ts`, and `chatGenerationSettingsControls.test.ts`. Use
-`rg --files src/lib/SideBars | rg '\.test\.ts$'` to find narrower colocated
-coverage.
-
-## Settings And Shared Controls
-
-### Shell And Routed Pages
-
-Settings have two layers:
-
-- `src/lib/Setting/Settings.svelte` is the manual settings shell. It owns the
-  left nav, mobile/desktop split, close button, `SettingsMenuIndex` page switch,
-  and routes such as `/settings/display` or `/settings/plugins`.
-- `src/lib/Setting/SettingRenderer.svelte` renders data-driven rows from
-  `src/ts/setting/*SettingsData*` through `src/ts/setting/settingRegistry.ts`
-  and wrapper components.
-
-Current settings indexes:
-
-| Index | Primary slug      | Page/component behavior                                                                       |
-| ----- | ----------------- | --------------------------------------------------------------------------------------------- |
-| `0`   | `backup`          | `UserSettings`.                                                                               |
-| `1`   | `bot-preset`      | Legacy `BotSettings` when legacy bot presets exist; otherwise model settings.                 |
-| `2`   | `other-bots`      | `OtherBotSettings`.                                                                           |
-| `3`   | `display`         | `DisplaySettings`.                                                                            |
-| `4`   | `plugins`         | `PluginSettings`.                                                                             |
-| `6`   | `advanced`        | `AdvancedSettings`.                                                                           |
-| `7`   | `communities`     | `Communities`.                                                                                |
-| `8`   | `global-lorebook` | Legacy `GlobalLoreBookSettings`; nav hidden unless the advanced visibility toggle is enabled. |
-| `9`   | `global-regex`    | Legacy `GlobalRegex`; nav hidden unless the advanced visibility toggle is enabled.            |
-| `10`  | `language`        | `LanguageSettings`.                                                                           |
-| `11`  | `accessibility`   | `AccessibilitySettings`.                                                                      |
-| `12`  | `persona`         | `PersonaSettings`.                                                                            |
-| `13`  | `prompt`          | Prompt-template editing through `PromptSettings`.                                             |
-| `14`  | `modules`         | `ModuleSettings`.                                                                             |
-| `15`  | `hotkeys`         | `HotkeySettings`.                                                                             |
-| `17`  | `model`           | Profile-first model settings.                                                                 |
-| `18`  | `prompt-settings` | Prompt preset/settings shell.                                                                 |
-| `19`  | `agent-presets`   | `AgentPresetSettings`.                                                                        |
-| `20`  | `input-hooks`     | Draft and BTW input-hook definitions through `InputHookSettings`.                             |
-| `21`  | `request-history` | Durable LLM request records and retention controls through `RequestHistorySettings`.          |
-| `77`  | `supporter`       | `ThanksPage`.                                                                                 |
-
-When `enableRisuaiProTools` is on, Settings also shows an Easy Panel nav button.
-It opens the global `easyPanelStore` overlay instead of a routed
-`/settings/:section` page.
-
-The Data navigation group contains Backup & Restore plus Request History.
-Request History reads private summaries/details through
-`src/ts/server/requestHistory.ts`; retention uses the server-backed
-`requestHistoryLimit` setting, and individual deletion uses the authenticated
-operational route. Its detail view separates RisuAI request metadata from
-additional non-content metadata returned by the provider API.
-
-`ModuleSettings.svelte` restores reload-durable module-editor drafts from
-`src/ts/server/moduleEditorDraftStore.ts`, rebases them over the latest canonical
-module, and exposes copy/export/discard recovery if the target disappeared.
-These encrypted drafts are not mutation-outbox entries; see
-[Client Runtime](client-runtime.md#draft-recovery-stores).
-
-### Data-Driven Rows
-
-Data-driven setting definitions use `SettingItem` from `src/ts/setting/types.ts`.
-Important fields are `id`, `type`, `labelKey`, `helpKey`, `bindKey`,
-`fallbackLabel`, `helpUnrecommended`, `showExperimental`, `bindPath`,
-`condition`, `getValue`, `setValue`, `onChange`, `options`, `keywords`,
-`classes`, `containerClasses`, `componentId`, and `componentProps`.
-`SettingContext` also carries `presetMirrorTarget` for prompt/model preset
-mirror rows.
-
-### Agent And Prompt Authoring
-
-Agents and Agent Presets are not data-driven settings rows. The live UI is
-`AgentPresetSettings.svelte`, with `AgentSettingsSection.svelte` and
-`AgentEditorDrawer.svelte` for reusable Agent behavior, plus
-`AgentPresetEditorDrawer.svelte` for composition. Helpers in `src/ts/agents.ts`
-own Agent and preset-use mutations; `src/ts/agentPresets.ts` owns preset-row
-mutations. The page creates, edits, duplicates, deletes, and reorders Agents and
-presets, selects the global default preset, and attaches existing Agents to a
-preset. An Agent editor owns its instruction, prepared inputs, output format,
-boolean/select/text/textarea toggle definitions, named Agent-only lorebook
-inputs, and model/runtime defaults. It shows the CBS name for every selected
-prepared-input scope and can validate the instruction as role-tagged ChatML
-before saving. `LoreBookData.svelte` owns the Agent-only entry controls and
-disables normal activation controls for those entries.
-`src/ts/agentLorebookInputs.ts` validates runtime resolution. A preset-use
-editor owns phase, dependency/output wiring, destination, failure policy, and
-optional model/runtime overrides. Preset metadata also owns the comma-separated
-`moduleIntergration` selection and a final-output CBS template; the editor
-surfaces `{{slot::mainOutput}}` plus each enabled `{{agent::outputKey}}`.
-There is no generic port-mapping editor; bounded prepared inputs, Agent toggles,
-Agent-only lorebook inputs, those module references, and the final-output
-template are the supported authoring surface. The sidebar chat
-generation controls save the chat-scoped `agentPresetId`. Keep
-validation/planning in the shared record/reference/resolver helpers rather than
-duplicating it in the component. [Providers And Models](../../docs/structure/providers-and-models.md#agent-preset-model-flow)
-owns the execution and completeness contract. During chat generation,
-`AgentPresetProgress.svelte` consumes
-chat-scoped `agent_preset_progress` snapshots and shows the current phase,
-active helper steps, and completed/total count above the transcript. The preset
-editor's Diagnostics panel lazily hydrates chat transcripts only when opened,
-filters `Message.generationInfo.agentPreset` by the preset's stable ID, and
-renders a bounded newest-first run history with hidden output previews,
-failures, timing/model details, and prepared-input notes. Imported metadata is
-normalized at the frontend boundary before it reaches the panel. The removed
-Context Agent page and `/settings/context-agent` route are not compatibility aliases.
-
-The settings shell currently separates model and prompt work: settings index
-`17` is model settings, `18` is prompt settings, `13` is prompt templates, and
-the legacy Chat Bot/bot-preset page appears only when legacy bot presets still
-exist. Keep router slug maps, `SettingsMenuIndex`, and page visibility
-conditions aligned when changing these sections.
-
-`PromptSettings.svelte` edits prompt-template rows in the selected modern prompt
-preset context, while `BotSettings.svelte` owns that preset's template
-enable/disable control. The prompt branch of `botpreset.svelte` owns preset-row
-actions. Its Duplicate action hydrates the source prompt template, clones the
-whole prompt preset, gives the copy a fresh top-level ID and `Copy` name, and
-appends it without changing the current selection or closing the picker. It
-does not duplicate one prompt-template item in place. The regression contract
-is `src/lib/Setting/pickerGenerationSettings.test.ts`. Legacy bot-preset prompt
-templates remain compatibility UI for old saves and explicit extraction paths.
-
-The prompt-preset branch of `botpreset.svelte` treats `promptPresets[].archived`
-as organization metadata. Its default view excludes archived rows, its archive
-view includes only archived rows, and both views retain stable-id selection and
-mutation behavior; archiving does not clear existing global, chat, or loadout
-references.
-
-Legacy global lorebook and regex nav buttons are hidden by default through
-`showGlobalLorebookAndRegex`, defined in
-`src/ts/setting/advancedSettingsData.ts`. They also remain hidden in lite mode.
-This visibility flag controls navigation, not execution of imported legacy
-global data. New global functionality should be implemented as modules, not
-added to those legacy global pages. Visibility/default behavior is guarded by
-`src/lib/Setting/Settings.svelte.test.ts`,
-`src/ts/setting/advancedSettingsData.test.ts`, and
-`server/fastify/__tests__/databaseDefaults.test.ts`.
-
-### Model Profiles And Provider Panels
-
-Model settings are profile-first:
-
-- `BotSettings.svelte` routes `settingsKind === 'model'` to
-  `Model/ModelSettingsShell.svelte`.
-- `ModelSettingsShell.svelte` owns the conversion prompt, Roles, Profiles, and
-  API Credentials tabs plus Advanced Legacy Settings.
-- The Roles tab uses `ModelProfileRoleList.svelte` to edit
-  `Database.modelRoleProfiles`; valid binding changes apply automatically. It
-  shows binding mode, inherited source, effective profile,
-  provider/model/request-model summary, status, and fallback count for each
-  canonical role.
-- The Profiles tab uses `ModelProfileList.svelte` to show
-  `Database.modelProfiles`, status, create/edit/duplicate/delete actions, and
-  the runtime defaults panel. `Database.modelProfileOrder` adds durable UX-only
-  dividers to the same mouse/touch-sortable presentation order. Selectors show
-  dividers as `---` and restore their prior value if one is chosen. Generated
-  `mp_` IDs and role-usage summaries stay hidden; deletion checks every Model
-  Preset role-binding snapshot before dispatch and Fastify enforces the same
-  guard authoritatively.
-- `ModelProfileEditorDrawer.svelte` is the command-backed durable profile
-  editor. It covers first-class OpenAI, LLM Gateway, Neuralwatt, Anthropic,
-  Google, Vertex, Ollama, Custom API, and Debug Echo panels, shared credential
-  selection, profile runtime overrides, and fallbacks. Neuralwatt uses the
-  catalog-backed model grid in `ModelProviderPanel.svelte`.
-- `ProviderCredentialList.svelte` and
-  `src/ts/model/providerCredentialRecords.ts` own shared API-key/Vertex
-  credential CRUD, masked secret rotation, and deletion guards for credentials
-  referenced by profiles.
-- `ModelRuntimeDefaultsEditor.svelte` edits `Database.modelRuntimeDefaults`
-  with explicit Save/Cancel and a count summary. `ModelRuntimeOptionsEditor.svelte`
-  exposes Strip CoT as a default checkbox and as an inherit/enable/disable
-  profile override.
-- `ModelPresetList.svelte`, hosted by `src/lib/Setting/botpreset.svelte`, is the
-  embedded model preset picker/list for `modelPresets` and `modelPresetsId`.
-  It can save current role settings, create empty presets, duplicate, reorder,
-  delete, and show the prompt-preset model override notice.
-- NanoGPT compatibility/account surfaces still live in `BotSettings.svelte` and
-  shared UI helpers. `NanoGPTDashboard.svelte` fetches balance/subscription
-  state and persists subscription state for request routing;
-  `NanoGPTProviderPicker.svelte` fetches provider metadata for picker/filter UI.
-- Advanced Legacy Settings embeds the old `ModelRoleList.svelte` plus legacy
-  main/aux summaries. The legacy flat fields remain compatibility/conversion
-  data for imports, presets, loadouts, and provider families without
-  first-class panels. The accordion is hidden once every role's resolved source
-  is `durable-profile`, including supported inherit bindings that resolve to a
-  durable profile; legacy-inherit keeps it visible.
-
-Model profile runtime state lives under `src/ts/model/`:
-
-- `modelProfileRecords.ts` normalizes durable profile records, role bindings,
-  runtime defaults, credential references, provider options, and fallback refs.
-- `modelProfileResolver.ts` prefers durable profiles/bindings, supports
-  inherited role bindings where allowed, reports ready/incomplete/
-  compatibility/unsupported status, and falls back to legacy flat fields only
-  for compatibility paths.
-- `modelProfileUiState.ts` feeds role/profile summaries and provider
-  visibility into the shell and legacy panel.
-
-### Persistence And Shared Controls
-
-Value binding and persistence are centralized in `src/ts/setting/utils.ts`:
-
-- `getSettingValue` reads from the composed resource database, `bindPath`, or
-  custom getters.
-- For a server-owned target, `setSettingValue` writes an optimistic local
-  projection, runs `onChange`, and stages an encrypted durable settings intent
-  before dispatch. Continuous controls are delayed briefly and coalesced by
-  settings owner.
-- `pendingBridgeFlushRegistry.ts` lets navigation, structural actions, and page
-  exit flush queued owner patches before they can be overtaken.
-- Retryable failures retain both the durable intent and its visible projection
-  for replay. Terminal/non-durable failures roll back only attempted fields
-  whose optimistic value is still current; successful responses can adopt the
-  server's canonical value.
-
-Workflow components must surface `accepted`, `queued`, and `failed` outcomes;
-`queued` is retained intent, not server success. The canonical caller contract
-is in
-[Server Resources And Bridges](../../docs/structure/server-resources-and-bridges.md#durable-mutation-recovery-command-queue-and-local-acknowledgements).
-
-The global saving icon is driven by `src/ts/server/persistenceActivity.svelte.ts`
-and remains active for in-flight mutations or this writer's queued outbox
-intents. Controls still expose busy/disabled state and local failures;
-short-lived Saving/Queued text rows were removed in favor of this stable
-indicator plus the existing queued notifications.
-
-Manual settings editors call
-`src/ts/setting/confirmSettingsItemRemoval.ts` before deleting embedded rows.
-The shared browser confirmation now covers prompt-template rows, input hooks,
-custom models, Agent toggles/lorebook inputs, translator pipeline steps, module
-rows, model fallbacks/key-value rows, and legacy stop/bias/parameter lists.
-Cancel leaves the draft untouched. The explicit cancel/accept regression guard
-is `src/lib/Setting/Pages/Advanced/CustomModelsSettings.svelte.test.ts`.
-
-`src/lib/Setting/Pages/Display/NotificationToggle.svelte` also renders the
-serialized push coordinator's setup compensation, pending cleanup/local
-inspection, retry-storage, and retry-operation states. Device/server ordering
-and the reload-persistent retry ledger are owned by
-[Client Runtime](client-runtime.md#push-notification-coordinator).
-
-Custom data-driven rows escape through `src/ts/setting/customComponents.ts`.
-Use this for complex controls such as display editors, translator presets,
-separate parameters, custom models, custom sidebar config, and export buttons.
-Current registry entries include `SeparateParametersSection`,
-`TranslatorPresetSettings`, `BanCharacterSetSettings`, `CustomModelsSettings`,
-`SettingsExportButtons`, `CustomSidebarConfig`, `ColorSchemeSelect`,
-`CustomColorSchemeEditor`, `CustomTextThemeEditor`, `CustomBackgroundToggle`,
-`NullableTextColorToggle`, and `NotificationToggle`.
-
-Settings risk areas:
-
-- A setting not appearing is usually a `condition`, slug/index, registry, or
-  data-file issue rather than a page-shell issue.
-- A setting not saving is usually `src/ts/setting/utils.ts`,
-  `src/ts/server/settingsBridge.svelte.ts`, or a missing settings command group.
-- `SettingSelect` and `SettingSegmented` can reset to a visible option when the
-  current value is hidden by conditions.
-- Wrapper-local `$state` mirrors must stay in sync with the underlying resource
-  value; stale controls often come from missing read dependencies or over-eager
-  writeback.
-- `TextAreaInput.svelte` is complex: highlighting, autocomplete, popup editor,
-  context menu, contenteditable mode, and cleanup share one primitive.
-- `src/lib/Others/PopupEditor.svelte` snapshots the device-specific
-  `useMonacoEditorOnDesktop` or `useMonacoEditorOnMobile` setting when a popup
-  session opens. Plain text is the default. The popup toolbar and accessibility
-  settings both update the device preference; Monaco is lazy-loaded only when
-  enabled, while disabled mode renders a full-size textarea. See
-  `src/lib/Others/PopupEditor.svelte.test.ts`.
-- Fullscreen is browser-session state rendered by
-  `src/lib/Setting/Pages/Display/FullscreenToggle.svelte`, not a persisted
-  settings field.
-- `SliderInput.svelte` uses disabled sentinels and sane `min`/`max`, supports
-  touch-safe horizontal dragging while preserving vertical page pan, and offers
-  an inline typed numeric editor.
-- Display/theme tabs have repeated compact class patterns in
-  `DisplaySettings.svelte`, `BotSettings.svelte`, and `OtherBotSettings.svelte`;
-  check those page files before changing shared primitives for tab-only spacing
-  problems.
-
-Relevant tests include `src/lib/Setting/Settings.svelte.test.ts`,
-`src/lib/Setting/SettingRenderer.svelte.test.ts`,
-`src/lib/Setting/Wrappers/SettingAccordion.svelte.test.ts`,
-`src/lib/Setting/Pages/PluginSettings.svelte.test.ts`,
-`src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts`,
-`src/lib/Setting/Pages/Model/ModelProfileRoleList.svelte.test.ts`,
-`src/lib/Setting/Pages/Model/ModelProfileList.svelte.test.ts`,
-`src/lib/Setting/Pages/Model/ProviderCredentialList.svelte.test.ts`,
-`src/lib/Setting/Pages/Model/ModelProfileEditorDrawer.svelte.test.ts`,
-`src/lib/Setting/Pages/Model/ModelProviderPanel.svelte.test.ts`,
-`src/lib/Setting/Pages/Model/ModelRuntimeDefaultsEditor.svelte.test.ts`,
-`src/lib/Setting/Pages/RequestHistorySettings.svelte.test.ts`,
-`src/lib/Setting/pickerGenerationSettings.test.ts`,
-`src/lib/Setting/Pages/AgentPresetSettings.svelte.test.ts`,
-`src/ts/agentLorebookInputs.test.ts`,
-`src/ts/setting/displaySettingsData.svelte.test.ts`, and
-`src/ts/setting/utils.test.ts`. Shared control coverage includes
-`src/lib/UI/GUI/TextAreaInput.svelte.test.ts` and
-`src/lib/UI/GUI/TextAreaResizable.svelte.test.ts`.
+surfaces. Registration and unload contracts belong to
+[Plugins And MCP](../../docs/structure/plugins-and-mcp.md#ui-surfaces).
 
 ## Localization
 
-`src/lang/en.ts` is the full UI string contract. Other language files are deep
-partials merged over English in `src/lang/index.ts`. Data-driven settings prefer
-`labelKey`, `helpKey`, and option `labelKey`; `fallbackLabel` is an escape
-hatch.
+`src/lang/en.ts` is the complete UI string contract. Other language files are
+deep partials merged over English by `src/lang/index.ts`. Data-driven settings
+prefer `labelKey`, `helpKey`, and option `labelKey`; `fallbackLabel` is an escape
+hatch. Add every new visible frontend string to English first.
 
-When adding strings that appear in frontend UI, add an English key under
-`src/lang/en.ts`. Other locale omissions fall back to English.
+`src/lib/UI/MainMenu.svelte` uses `language.openRisuRealm` for the Open Risu
+Realm action. `src/lib/Others/Help.svelte` renders Markdown from `language.help`.
 
-Language settings retain translation-cache import/export and the global
-cached-only/input-translation controls. For an LLM translator with Send Text
-As-Is enabled, `translatorExcludeThoughts` removes `<Thoughts>` and `<think>`
-blocks from the source plus source/translated history and greeting text before
-dispatch; the setting is included in translation cache identity. Automatic message
-translation is chat-scoped in the sidebar rather than a language setting. The old
-UI-translation template download is intentionally absent; its regression guard is
-`src/ts/setting/languageSettingsData.test.ts`. The broader retired-settings
-inventory is in
-[Generated Files And Legacy Caveats](../../docs/structure/generated-and-legacy.md#stale-or-no-port-surfaces).
-
-`src/lib/Others/Help.svelte` renders Markdown from `language.help`.
+Language settings own translation-cache import/export and global cached-only
+and input-translation controls. For an LLM translator with Send Text As-Is,
+`translatorExcludeThoughts` removes `<Thoughts>` and `<think>` blocks from the
+source, source/translated history, and greeting text before dispatch. The
+effective setting participates in translation-cache identity. Automatic message
+translation is chat-scoped in the sidebar. The removed UI-translation-template
+download must not return; `src/ts/setting/languageSettingsData.test.ts` guards
+the setting visibility and absence of that action. Translation and input-hook
+runtime behavior belongs to
+[Translation And Input Hooks](../../docs/structure/translation-and-input-hooks.md).
 
 ## Styling, Theme, And Layout
 
-Global styles live in `src/styles.css`. Tailwind v4 uses theme variables backed
+Global styles live in `src/styles.css`. Tailwind v4 theme variables are backed
 by CSS variables such as `--risu-theme-bgcolor`, `--risu-theme-textcolor`, and
 `--risu-height-size`.
 
-Display settings update CSS through:
+Display controls update CSS through `src/ts/gui/colorscheme.ts` for color and
+text themes, `src/ts/gui/guisize.ts` for dimensions,
+`src/ts/gui/animation.ts` for animation and the `risu-reduced-motion` class,
+and `CustomCSSStore` for injected custom CSS. The visual palette selector and
+durable custom scheme are documented in
+[Settings UI](svelte-settings-ui.md#display-and-theme-controls).
 
-- `src/ts/gui/colorscheme.ts` for color scheme and text theme variables;
-- `src/ts/gui/guisize.ts` for sidebar/text area sizing variables;
-- `src/ts/gui/animation.ts` for animation speed and the app-owned
-  `risu-reduced-motion` root class;
-- `CustomCSSStore` in `src/ts/stores.svelte.ts` for user custom CSS injection.
+`chatScreenWidth` becomes `--chat-screen-width` and constrains transcript and
+composer content without changing the outer shell. `DefaultChatScreen.svelte`
+also publishes `--chat-content-rendered-width`, `--chat-content-inline-end`, and
+`--chat-content-fixed-inline-end` for floating/fixed composer elements. Ordinary
+content-width rows use `chat-screen-content-width`. Preserve those contracts;
+hard-coded viewport offsets drift with narrow content or a custom fixed
+containing block. Chat geometry belongs to
+[Chat UI](svelte-chat-ui.md#composer-and-floating-composer).
 
-`chatScreenWidth` is a durable display setting applied by
-`DefaultChatScreen.svelte` through `--chat-screen-width`; it constrains both the
-transcript and composer/draft card without changing the outer app shell. The
-component also publishes measured `--chat-content-rendered-width`,
-`--chat-content-inline-end`, and `--chat-content-fixed-inline-end` values for
-the floating/fixed composer, overflow menus, and the floating-input trigger;
-ordinary progress/status rows use the shared `chat-screen-content-width` class.
-Preserve that shared geometry when adding a chat overlay; hard-coded
-viewport offsets drift when the content column is narrow or custom CSS creates
-a fixed containing block.
-
-The Reduced Motion toggle is a durable Accessibility setting defined in
-`src/ts/setting/accessibilitySettingsData.ts`. Bootstrap and settings local
-effects call `updateReducedMotion()`; `src/styles.css` and progress components
-key reduced transitions/shimmers from the root class. It is not inferred from
-the operating-system media preference.
+Reduced Motion is a durable Accessibility setting, not an operating-system
+media-query preference. Bootstrap and settings effects call
+`updateReducedMotion()`, while global styles and progress components consume
+the root class.
 
 The body is overflow-hidden and full-height, and `#app` uses `overflow: clip`.
-`src/ts/gui/viewportScrollGuard.ts` pins the document root at scroll origin;
-installing it before mount prevents browser focus, `scrollIntoView`, custom CSS,
-or automation from shifting the fixed app shell. Scroll inner containers only.
-Never add code that scrolls the window or document root. Layout clipping,
-double scrollbars, or invisible content often starts with `src/styles.css`,
-route branch height classes, or a child container missing
-`min-w-0`/overflow constraints. Root pinning is guarded by
-`src/ts/gui/viewportScrollGuard.test.ts`.
+`src/ts/gui/viewportScrollGuard.ts` pins the document root at the origin before
+mount, preventing focus, `scrollIntoView`, custom CSS, or automation from moving
+the fixed shell. Scroll inner containers only; never scroll `window` or the
+document root. For clipping, double scrollbars, or invisible content, inspect
+`src/styles.css`, route-branch height classes, and child `min-w-0`/overflow
+constraints. The guard is covered by `src/ts/gui/viewportScrollGuard.test.ts`.
 
 ## Mobile And Lite
 
-`DynamicGUI` is set from `window.innerWidth <= 1024` in
+`DynamicGUI` derives from `window.innerWidth <= 1024` in
 `src/ts/stores.svelte.ts`. `sideBarStore`, `sideBarClosing`, `SizeStore`,
-`MobileGUI`, `MobileGUIStack`, `MobileSideBar`, and `MobileSearch` control
-responsive behavior.
+`MobileGUI`, `MobileGUIStack`, `MobileSideBar`, and `MobileSearch` coordinate
+responsive state.
 
-Current live app caveat: the full `MobileHeader`, `MobileBody`, and
-`MobileFooter` shell is not mounted from `src/App.svelte`. Do not debug those
-files for a live mobile issue unless you are deliberately re-enabling that
-shell. `GridCatalog.svelte` and `MobileCharacters.svelte` are active.
-The live composer clamps its normal and translated textareas to a 44-pixel
-minimum and remeasures after the floating composer opens; this prevents an
-empty textarea's transient zero `scrollHeight` from clipping the mobile input.
-Relevant grid/modal tests include `src/lib/Others/GridCatalog.svelte.test.ts`,
-`src/lib/Others/ChatList.svelte.test.ts`,
-`src/lib/Others/WelcomeRisu.svelte.test.ts`,
-and `src/lib/Others/IrisModal.svelte.test.ts`.
+The full `MobileHeader`, `MobileBody`, and `MobileFooter` shell is not mounted
+from `src/App.svelte`. Do not start there for a live mobile bug unless the work
+intentionally restores that shell. `GridCatalog.svelte` and
+`MobileCharacters.svelte` are live. Lite mode is controlled by
+`VITE_RISU_LITE` and `src/ts/lite.ts`, not `LiteMain.svelte`.
 
-Lite mode is controlled by `VITE_RISU_LITE` and `src/ts/lite.ts`, not by
-`LiteMain.svelte` as a live entrypoint.
+Focused live-surface guards include `src/lib/Others/ChatList.svelte.test.ts`,
+`src/lib/Others/WelcomeRisu.svelte.test.ts`, and
+`src/lib/Others/IrisModal.svelte.test.ts`.
 
 ## Playground
 
-`src/lib/Playground/PlaygroundMenu.svelte` maps `PlaygroundStore` values to
-tool components. Keep its buttons aligned with route slug maps in
-`src/ts/router.ts`.
+`src/lib/Playground/PlaygroundMenu.svelte` maps most `PlaygroundStore` values to
+tool components. Value `2` is the exception: routing creates the synthetic
+playground character and the normal chat shell renders it. Keep menu buttons
+aligned with the slug maps in `src/ts/router.ts`.
 
-Important values:
+| Value | Tool |
+| ----- | ---- |
+| `1` | Menu |
+| `2` | Playground chat through `src/ts/playground.ts` |
+| `3`–`8` | Embedding, tokenizer, syntax, Jinja, image generation, parser |
+| `9`–`14` | Subtitles, image translation, translation, MCP, CBS docs, inlays |
+| `101` | Tool conversion |
 
-- `1`: menu
-- `2`: playground chat, using `src/ts/playground.ts`
-- `3`: embedding
-- `4`: tokenizer
-- `5`: syntax
-- `6`: Jinja
-- `7`: image generation
-- `8`: parser
-- `9`: subtitles
-- `10`: image translation
-- `11`: translation
-- `12`: MCP
-- `13`: CBS docs
-- `14`: inlay explorer
-- `101`: tool conversion
-
-Tool-specific issues usually belong in the corresponding
-`src/lib/Playground/*.svelte` file after confirming the route/store mapping.
-Focused playground tests include `ToolConversion.svelte.test.ts`,
-`PlaygroundSubtitle.svelte.test.ts`, `PlaygroundSubtitle.test.ts`, and
-`PlaygroundImageTrans.svelte.test.ts`.
+Tool-specific problems normally belong in the matching component under
+`src/lib/Playground/` after the route/store mapping is confirmed.
+Focused guards include `src/lib/Playground/ToolConversion.svelte.test.ts`,
+`src/lib/Playground/PlaygroundSubtitle.svelte.test.ts`,
+`src/lib/Playground/PlaygroundSubtitle.test.ts`, and
+`src/lib/Playground/PlaygroundImageTrans.svelte.test.ts`.
 
 ## Visible-State Testing
 
-Follow the visible-state contract in
+The canonical policy is
 [Testing And Operations](../../docs/structure/testing-and-operations.md#visible-state-test-contract).
-For UI/UX changes, assert the rendered result after the transition that changes
-state. Helper assertions and command payload checks can support the test, but
-they do not replace DOM-visible coverage for stale UI bugs.
-
-Common commands:
-
-```sh
-pnpm check
-pnpm test -- src/ts/router.test.ts # history, queued jumps, route ownership, and stale navigation
-pnpm test -- src/App.routeEffect.dom.test.ts
-pnpm test -- src/lib/Setting/Settings.svelte.test.ts src/lib/Setting/SettingRenderer.svelte.test.ts src/ts/setting/utils.test.ts
-pnpm test -- src/lib/SideBars/SideChatList.svelte.test.ts
-pnpm test -- src/lib/ChatScreens/ChatBody.svelte.test.ts
-pnpm test -- src/lib/Others/GridCatalog.svelte.test.ts src/lib/Playground/ToolConversion.svelte.test.ts
-pnpm smoke:fastify-browser
-```
-
-Use `pnpm dev:agent` when an agent needs the full-stack app in a browser. It
-serves the frontend at `http://localhost:6418`, proxies Fastify on port `6419`,
-and bypasses auth/RisuRealm terms for agent sessions. Stop it when finished.
+For a Svelte UI regression, choose the focused colocated DOM test for the
+surface and assert the rendered state after its transition. The repository
+command inventory and `pnpm dev:agent` runner are in
+[Testing And Operations](../../docs/structure/testing-and-operations.md#scripts);
+this guide does not duplicate them.

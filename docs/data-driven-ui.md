@@ -1,6 +1,6 @@
 # Data-dependent UI variation inventory
 
-Last audited: 2026-08-02.
+Last audited: 2026-08-09.
 
 This is the identification pass for UI whose content, structure, available
 actions, or semantic state changes with data. It is a map for later runtime
@@ -31,7 +31,9 @@ Excluded:
 
 - ordinary interpolation of a value into an otherwise unchanged input or text
   node;
-- decorative-only color, spacing, animation, and theme changes;
+- decorative-only color, spacing, animation, and theme changes. A persisted
+  palette selector is included because choosing a scheme changes durable
+  semantic state and controls whether the custom palette editor is available;
 - test harnesses and currently unmounted surfaces: `LiteMain.svelte`,
   `WelcomeRisu.svelte`, `PromptDiffModal.svelte`, `EmotionBox.svelte`,
   `PlaygroundRegex.svelte`, and the standalone `MobileBody`/`MobileHeader`/
@@ -49,6 +51,12 @@ Driver tags used below:
 | `L` | Route state, local component state, input, selection, scroll, or viewport.    |
 | `B` | Build flag, browser capability/permission, locale, or date/time.              |
 | `X` | Plugin, module, custom HTML/CSS/CBS, parser, or remote-authored content.      |
+
+For implementation ownership, use the focused
+[chat UI](../src/docs/svelte-chat-ui.md),
+[navigation UI](../src/docs/svelte-navigation-ui.md), and
+[settings UI](../src/docs/svelte-settings-ui.md) guides. This document only
+indexes data-driven variants.
 
 ## App shell, routing, and home
 
@@ -92,7 +100,9 @@ Driver tags used below:
   - Variants: Hidden image versus remote image; multilingual Markdown; tag truncation; emotion/asset/lore badges; author and fork link; recognized license; popularity; creator-only delete; delete-busy state.
   - Owners: `src/lib/UI/Realm/RealmHubIcon.svelte`; `src/lib/UI/Realm/RealmPopUp.svelte`; `src/lib/UI/Realm/RealmLicense.svelte`
 
-## Chat surface
+## Chat surfaces
+
+### Layout, selection, and transcript
 
 - **`CHAT-01` — Chat layout and character presentation (`R`, `L`, `A`, `X`)**
   - Variants: Classic, Waifu desktop, or Waifu-mobile layout; no art, resizable art, emotion art, or generated art; custom background image; parsed character/module background DOM. `viewScreen`, `inlayViewScreen`, transient `CharEmotion`, and module embedding all participate.
@@ -104,11 +114,14 @@ Driver tags used below:
   - Variants: Fullscreen message-jump loading, inline hydration loading, failure with retry, shell row with no body, or resident transcript. Bookmarks and jumps can request messages outside the current window.
   - Owners: `src/lib/ChatScreens/DefaultChatScreen.svelte`; `src/ts/server/chatMessageHydration.svelte.ts`; `src/ts/server/characterShellHydration.svelte.ts`
 - **`CHAT-04` — Transcript window, folding, scroll, and unread (`R`, `L`, `A`)**
-  - Variants: Tail-only rows and Load More, compatibility cold-storage loader, folded-window boundary, auto-scroll, scroll-to-message overlay, and an unread/new-message affordance in six configured placements. Same-chat message growth and last role, not just arrival, determine unread state.
-  - Owners: `src/lib/ChatScreens/DefaultChatScreen.svelte`; `Chats.svelte`; `DefaultChatScreen.loadPages.ts`
+  - Variants: Tail-only rows and Load More use separately persisted initial and additional row counts; compatibility cold-storage loader, folded-window boundary, auto-scroll, scroll-to-message overlay, and an unread/new-message affordance in six configured placements. Same-chat message growth and last role, not just arrival, determine unread state.
+  - Owners: `src/lib/ChatScreens/DefaultChatScreen.svelte`; `Chats.svelte`; `DefaultChatScreen.loadPages.ts`; `src/ts/chatLoadPages.ts`; `src/ts/setting/advancedSettingsData.ts`
 - **`CHAT-05` — Greeting, legal disclosure, and creator note (`R`, `B`)**
   - Variants: Synthetic first greeting; alternate-greeting navigation/page count; AI disclosure; dismissible creator note. These only appear when the loaded window covers the beginning, and the greeting is `idx=-1`, not a normal persisted message. Character-card import initializes the starter chat with `fmIndex: -1`, so the primary greeting is visible immediately instead of selecting a nonexistent alternate.
   - Owners: `src/lib/ChatScreens/DefaultChatScreen.svelte`; `CreatorQuote.svelte`; `src/ts/globalApi.svelte.ts`
+
+### Messages, composer, and generation
+
 - **`CHAT-06` — Message semantic state (`R`, `A`, `L`)**
   - Variants: Translation editor, raw editor, comment, special branch-reference comment, generation loader, blank row, or parsed body. Malformed special comments can render effectively empty.
   - Owners: `src/lib/ChatScreens/Chat.svelte`; `ChatBody.svelte`; `Message.svelte`
@@ -128,14 +141,14 @@ Driver tags used below:
   - Variants: Previous/next greeting, first-message page count, swipe/regenerate button, reroll candidate list, undo/new reroll, and branch graph. Each has distinct empty/current/disabled states and may require full hydration.
   - Owners: `src/lib/ChatScreens/Chat.svelte`; `RerollList.svelte`; `src/lib/Others/AlertComp.svelte`; `src/ts/process/rerollNavigation.svelte.ts`
 - **`CHAT-12` — Composer and generation ownership (`R`, `A`, `L`)**
-  - Variants: Send versus abort/progress; character menu versus playground action; normal plus translated textarea; translation rollback; selected draft-hook output; BTW hook picker/pending/result/dismissed state; continue/regenerate disabled state. Message, translation, files, draft output, and BTW output are keyed by transcript identity. When persisted `floatingChatInput` is enabled and `fixedChatTextarea` is off, scrolling far enough above the bottom reveals an open button; the same composer can then float, hide without moving the transcript, or return to the bottom while preserving its draft. Only a generation owned by the visible chat gets visible progress, although another active generation can still disable sending.
+  - Variants: Send versus abort/progress; character menu versus playground action; normal plus translated textarea; translation rollback; selected draft-hook output; BTW hook picker/pending/result/dismissed state; continue/regenerate disabled state. Message, translation, files, draft output, and BTW output are keyed by transcript identity. When persisted `floatingChatInput` is enabled and `fixedChatTextarea` is off, scrolling far enough above the bottom reveals an open button; the same composer can then float, hide without moving the transcript, or return to the bottom while preserving its draft. While a converted draft is available, its toggle switches the floating textarea between the original composer text and the draft-hook result without discarding either. Only a generation owned by the visible chat gets visible progress, although another active generation can still disable sending.
   - Owners: `src/lib/ChatScreens/DefaultChatScreen.svelte`; `InputHookPickerDialog.svelte`; `DefaultChatScreen.composerDrafts.ts`; `src/ts/process/inputHooks.ts`; `src/ts/process/index.svelte.ts`
 - **`CHAT-13` — Attachments, stickers, and suggestions (`R`, `A`, `L`)**
   - Variants: Attachment strip with missing/generic/image/video/audio previews; sticker/asset picker; suggestion loading, empty/hidden, generated list, translated/original controls, and reroll. Stale-owner guards suppress results for a newly selected chat.
   - Owners: `src/lib/ChatScreens/DefaultChatScreen.svelte`; `AssetInput.svelte`; `Suggestion.svelte`; `src/ts/process/files/inlays.ts`
 - **`CHAT-14` — Generation and post-generation progress (`A`, `R`)**
-  - Variants: Stage labels (starting, prompt, memory, model, finalizing), Agent Preset before/after-main step progress, and post-generation script owner/phase/LLM-call progress. Progress is chat-scoped; Agent Preset progress suppresses the generic row loader.
-  - Owners: `src/lib/ChatScreens/Chat.svelte`; `AgentPresetProgress.svelte`; `PostGenerationScriptProgress.svelte`; `src/lib/ChatScreens/chatGenerationLoading.ts`; `agentPresetProgress.ts`; `postGenerationProgress.ts`
+  - Variants: Stage labels (starting, prompt, memory, model, finalizing), Agent Preset before/after-main step progress, and post-generation script owner/phase/LLM-call progress. Half-streaming keeps incremental response text out of the transcript until completion while replacing the normal stage text with live tokens-per-second progress. Progress is chat-scoped; Agent Preset progress suppresses the generic row loader.
+  - Owners: `src/lib/ChatScreens/Chat.svelte`; `Chats.svelte`; `AgentPresetProgress.svelte`; `PostGenerationScriptProgress.svelte`; `src/lib/ChatScreens/chatGenerationLoading.ts`; `src/ts/process/halfStreamingProgress.ts`; `src/ts/process/postGeneration/streamResponse.ts`; `agentPresetProgress.ts`; `postGenerationProgress.ts`
 - **`CHAT-15` — Chat menu and extension actions (`R`, `A`, `X`)**
   - Variants: TTS stop, continuation, module/chat-list modal, screenshot, EasyPanel, Hypa, translation active state, reroll, plus runtime plugin/module menu entries and floating buttons. The final labels/icons/actions cannot be enumerated from the component alone.
   - Owners: `src/lib/ChatScreens/DefaultChatScreen.svelte`; `ChatScreen.svelte`; `src/ts/stores.svelte.ts`; `src/ts/plugins/apiV3/v3.svelte.ts`
@@ -181,6 +194,8 @@ Driver tags used below:
 
 ## Settings
 
+### Shell, schema, display, language, and advanced
+
 - **`SET-01` — Settings shell/navigation (`R`, `L`, `B`, `X`)**
   - Variants: Desktop split versus narrow list/detail; Lite-reduced menu; legacy bot-preset entry only when rows exist; page selected by `SettingsMenuIndex`; input-hook authoring; plugin menu rows; EasyPanel only with Pro Tools; lorebook picker overlay. Menu index `1` renders legacy Bot Settings when legacy presets exist and modern Model Settings otherwise.
   - Owners: `src/lib/Setting/Settings.svelte`; `src/ts/router.ts`
@@ -191,14 +206,17 @@ Driver tags used below:
   - Variants: Options are filtered by their own conditions. A persisted unavailable value is retained on first render; after a later option-set change it can be coerced to the explicit fallback or last available option, making visibility itself capable of causing a setting mutation.
   - Owners: `src/lib/Setting/Wrappers/SettingSelect.svelte`; `SettingSegmented.svelte`; `src/ts/setting/types.ts`
 - **`SET-04` — Display and accessibility dependencies (`R`, `A`, `B`)**
-  - Variants: Custom HTML and Waifu controls by theme; custom color/text/font editors by selection; memory-thickness and quote children by enabling parent; nullable color picker by value; pending/existing background asset; notification permission can turn a just-enabled toggle off; auto-scroll reveals always-scroll and placement children. The persisted floating-composer toggle controls `CHAT-12`, but a fixed-bottom textarea suppresses the floating form even when that toggle remains enabled.
-  - Owners: `src/ts/setting/displaySettingsData.svelte.ts`; `accessibilitySettingsData.ts`; `src/lib/Setting/Pages/Display/*`; `src/ts/server/pushNotificationSetting.ts`
+  - Variants: The palette grid is built from the available schemes plus the persisted custom palette and visibly marks the durable selection; choosing Custom reveals its editor. Custom HTML and Waifu controls vary by theme; custom text/font editors by selection; memory-thickness and quote children by enabling parent; nullable color picker by value; pending/existing background asset; notification permission can turn a just-enabled toggle off; auto-scroll reveals always-scroll and placement children. The persisted floating-composer toggle controls `CHAT-12`, but a fixed-bottom textarea suppresses the floating form even when that toggle remains enabled. `applyAdditionalParamsToAll` is an explicit opt-in for applying the legacy flat additional-parameter rows to ordinary models instead of only the reverse proxy.
+  - Owners: `src/ts/setting/displaySettingsData.svelte.ts`; `accessibilitySettingsData.ts`; `src/lib/Setting/Pages/Display/ColorSchemeSelect.svelte`; `src/lib/Setting/Pages/Display/CustomColorSchemeEditor.svelte`; `src/ts/gui/colorscheme.ts`; `src/ts/server/pushNotificationSetting.ts`
 - **`SET-05` — Language and translator configuration (`R`, `L`, `A`)**
   - Variants: Local restart warning after language change; translator disabled/enabled; provider-specific DeepL/DeepLX/Google/LLM fields; Google-specific language choices; LLM preset list/editor; single- or multi-step LLM pipelines; send-text-as-is Ax.Model steps with bounded history slots; optional removal of `<Thoughts>`/`<think>` blocks from current source and source/translated history; auto/combine/legacy controls; and LLM cache/import/export actions. Missing selected translator preset yields no editor fields.
   - Owners: `src/ts/setting/languageSettingsData.svelte.ts`; `src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte`; `src/lang/index.ts`
 - **`SET-06` — Advanced and chat-format dependencies (`R`, `B`)**
-  - Variants: Local-network timeout, experimental fields, unrecommended/deprecated fields, prompt-info text, regex-worker timeouts, dynamic-asset editor, Jinja instruction template, custom model list/expanded editor/flags. The request-location row is hard-hidden and is not a live surface.
+  - Variants: Local-network timeout, independently configurable initial/additional chat load counts, experimental fields including the OpenAI Flex processing opt-in, unrecommended/deprecated fields, prompt-info text, regex-worker timeouts, dynamic-asset editor, Jinja instruction template, custom model list/expanded editor/flags. The request-location row is hard-hidden and is not a live surface.
   - Owners: `src/ts/setting/advancedSettingsData.ts`; `chatFormatSettingsData.ts`; `src/lib/Setting/Pages/Advanced/CustomModelsSettings.svelte`
+
+### Models, prompts, and Agents
+
 - **`SET-07` — Model-capability parameter schema (`R`)**
   - Variants: Seed and sampling/penalty/thinking/effort controls appear from resolved `modelInfo.parameters` and flags; Claude budget/adaptive, DeepSeek, and related nested controls also depend on the selected thinking mode.
   - Owners: `src/ts/setting/botSettingsParamsData.ts`; `src/ts/model/modellist.ts`
@@ -209,7 +227,7 @@ Driver tags used below:
   - Variants: Eight roles show binding mode, inherited source, effective/missing profile, provider/model/request model, ready/incomplete/compatibility/unsupported status and reason, fallback count, and dirty Apply/Cancel state. Only optional roles offer inherit/profile modes; missing referenced profiles remain visibly selectable as missing.
   - Owners: `src/lib/Setting/Pages/Model/ModelProfileRoleList.svelte`; `src/ts/model/modelProfileResolver.ts`
 - **`SET-10` — Model profile list/editor (`R`, `A`, `L`)**
-  - Variants: Empty/list; provider/model/status/reason/fallback/usage badges; command pending/error; create/edit drawer. Compatibility/unsupported profiles lock provider fields; provider switches can warn that credentials will clear; runtime/fallback accordions exist only for editable first-class providers.
+  - Variants: Empty/list; profile rows versus distinct sortable divider rows; divider add/delete; provider/model/status/reason/fallback/usage badges; command pending/error; create/edit drawer. Compatibility/unsupported profiles lock provider fields; provider switches can warn that credentials will clear; runtime/fallback accordions exist only for editable first-class providers.
   - Owners: `src/lib/Setting/Pages/Model/ModelProfileList.svelte`; `ModelProfileEditorDrawer.svelte`
 - **`SET-11` — Provider-specific model form (`R`, `A`, `B`)**
   - Variants: Entire form switches among OpenAI, LLM Gateway, Neuralwatt, Anthropic, Google, Vertex, Ollama, Custom API, Debug Echo, or compatibility notice. Nested variants include managed catalog loading/empty/results for LLM Gateway and Neuralwatt, Gateway reasoning/verbosity/service-tier/routing choices, local/cloud Ollama, known/manual model, Custom API URL warning/headers/params/flags, Vertex identity/private key, request format, and thinking support.
@@ -221,7 +239,7 @@ Driver tags used below:
   - Variants: Empty/list; selected row; prompt-preset role-override notice; modern profile/runtime/legacy badges; missing-profile and fallback summaries; reorder/delete availability. Prompt-preset rows also expose duplicate state: the source template is hydrated first, the clone receives a fresh ID/name while selection stays put, and the source row becomes busy or reports failure while the operation settles.
   - Owners: `src/lib/Setting/Pages/Model/ModelPresetList.svelte`; `src/lib/Setting/botpreset.svelte`
 - **`SET-14` — Legacy Bot Settings/provider panels (`R`, `A`, `X`, `B`)**
-  - Variants: Model/parameters/prompt/other tabs or legacy stacked layout; prompt presets may omit parameters; provider panels for Google/Vertex/Anthropic/Mistral/NovelAI/Reverse Proxy/Cohere/Ollama/NanoGPT/OpenRouter/plugins/Kobold/Echo/Horde/textgen/Ooba; loading catalog versus manual/result; subscription state; format-specific parameters; streaming/thinking nesting; prompt-template hydration; custom flags/assets/tools.
+  - Variants: Model/parameters/prompt/other tabs or legacy stacked layout; prompt presets may omit parameters; provider panels for Google/Vertex/Anthropic/Mistral/NovelAI/Reverse Proxy/Cohere/Ollama/NanoGPT/OpenRouter/plugins/Kobold/Echo/Horde/textgen/Ooba; loading catalog versus manual/result; subscription state; format-specific parameters; ordinary streaming versus half-streaming; thinking nesting; prompt-template hydration; custom flags/assets/tools.
   - Owners: `src/lib/Setting/Pages/BotSettings.svelte`; `ModelGrid.svelte`; `NanoGPTDashboard.svelte`; `NanoGPTProviderPicker.svelte`; `ModelList.svelte`
 - **`SET-15` — Prompt preset/template authoring (`R`, `A`, `L`)**
   - Variants: Standalone versus inline chrome; template/settings tab; hydration loading/error/retry; empty/list; validation warnings; token counts; optional COT/JSON schema/model override/fallback sections; fallback arrays. Prompt rows expand to type-specific forms for plain/jailbreak/COT, ChatML, cache, chat range, author note, persona, description, or memory.
@@ -229,6 +247,9 @@ Driver tags used below:
 - **`SET-16` — Agent library and Agent Preset composition/diagnostics (`R`, `A`, `L`)**
   - Variants: Empty/list; Agent usage and reusable behavior editor, including configurable toggle definitions, required Agent-only lorebook input aliases, prepared-input-specific CBS hints, and optional ChatML request mode whose instruction must start with a ChatML row. Preset composition adds optional module ID/namespace integration and a final-output CBS template over `mainOutput` plus enabled named Agent outputs; missing output references make the preset incomplete. Status still varies among default/enabled/disabled/invalid/incomplete/model-not-ready/ready, with phase/invocation/concurrency summaries, reorder/pending/error/drawer, and diagnostics from unavailable/loading/error/limited/empty through run selection/details.
   - Owners: `src/lib/Setting/Pages/AgentPresetSettings.svelte`; `AgentSettingsSection.svelte`; `AgentEditorDrawer.svelte`; `AgentPresetEditorDrawer.svelte`; `AgentPresetDiagnosticsPanel.svelte`; `src/ts/agents.ts`; `src/ts/agentPresetResolver.ts`
+
+### Extensions, records, memory, and input hooks
+
 - **`SET-17` — Plugin management (`R`, `A`, `X`)**
   - Variants: Empty/list; name/version/hot-reload badge; safe custom links; enabled state; update status cycle; mutation pending/error. Expanded plugin metadata dynamically chooses divider, select, textarea, radio, checkbox, number, or text for every non-hidden argument.
   - Owners: `src/lib/Setting/Pages/PluginSettings.svelte`; `src/ts/plugins/plugins.svelte.ts`; `pluginPermissions.ts`
@@ -238,8 +259,8 @@ Driver tags used below:
 - **`SET-19` — Persona, lorebook, and regex record lists (`R`, `A`, `L`)**
   - Variants: Persona icon empty/loading/resolved and selected state; selected persona editor; display/rename picker modes; selected/global lorebook name; lore empty/list/folders and data-shaped editor, including Agent-input-only entries that force normal activation off; regex empty/list/expanded. Final-row deletion is guarded in logic for several lists but not always visibly disabled.
   - Owners: `src/lib/Setting/Pages/PersonaSettings.svelte`; `src/lib/Setting/listedPersona.svelte`; `lorepreset.svelte`; `src/lib/SideBars/LoreBook/*`; `src/lib/SideBars/Scripts/RegexList.svelte`; `RegexData.svelte`
-- **`SET-20` — Media, TTS, emotion, and memory settings (`R`, `A`, `L`, `B`)**
-  - Variants: Modern four-tab navigation versus legacy stacked accordions. The image form switches among WebUI, NovelAI, DALL-E, Stability, ComfyUI, Fal, Imagen, OpenAI-compatible, and WaveSpeed panels, then exposes model-only controls such as high-res, sampler, style, LoRA, vibe/image/character references, media previews, and async catalog/error fallbacks. Hypa V3 enablement adds preset and settings editors; WebGPU adds local models; max-memory calculation has result/error states; experimental mode swaps request controls; embedding provider adds its credential fields.
+- **`SET-20` — Memory category and its media subpanels (`R`, `A`, `L`, `B`)**
+  - Variants: The live settings category is titled Memory and uses modern four-tab navigation for long-term memory, TTS, emotion images, and image generation versus legacy stacked accordions. The image form switches among WebUI, NovelAI, DALL-E, Stability, ComfyUI, Fal, Imagen, OpenAI-compatible, and WaveSpeed panels, then exposes model-only controls such as high-res, sampler, style, LoRA, vibe/image/character references, media previews, and async catalog/error fallbacks. Hypa V3 enablement adds preset and settings editors; WebGPU adds local models; max-memory calculation has result/error states; experimental mode swaps request controls; embedding provider adds its credential fields.
   - Owners: `src/lib/Setting/Pages/OtherBotSettings.svelte`; `src/ts/server/providerOperations.ts`; `src/ts/process/memory/hypav3.ts`
 - **`SET-21` — Backup/support/external workflows (`R`, `A`, `L`)**
   - Variants: Backup controls all disable during a shared operation and report progress/errors via AlertComp. Supporter/Realm external navigation may add confirmation. Community/support content can therefore be preceded or replaced by a shared alert state.
@@ -248,7 +269,7 @@ Driver tags used below:
   - Variants: Persisted `guiHTML` becomes a data-shaped visual tree. Node type/structure controls the canvas; selection and local menu state switch component/container/help editors and highlights.
   - Owners: `src/lib/Setting/Pages/CustomGUISettingMenu.svelte`; `src/ts/server/settingsBridge.svelte.ts`
 - **`SET-23` — Input-hook authoring (`R`, `L`)**
-  - Variants: Empty/list and add/delete states; each row selects draft or BTW behavior and edits a name and prompt. Runtime prompts can request aligned source and persisted-translation history windows, including greeting fallback and shared token-budget trimming; content/draft replacements are not recursively reinterpreted as slots. The server-backed settings draft saves the ordered hook collection, while chat-level selection remains separate.
+  - Variants: Empty/list and add/delete states; each row selects draft or BTW behavior, an inherited or per-hook model profile from a list that preserves profile dividers, and a name and prompt. Draft hooks alone expose the translation-mode toggle. Runtime prompts can request aligned source and persisted-translation history windows, including greeting fallback and shared token-budget trimming; content/draft replacements are not recursively reinterpreted as slots. The server-backed settings draft saves the ordered hook collection, while chat-level selection remains separate.
   - Owners: `src/lib/Setting/Pages/InputHookSettings.svelte`; `src/ts/process/inputHooks.ts`; `src/ts/chatCommands.ts`
 
 ## Global overlays and workflow modals
@@ -351,7 +372,7 @@ UI.
   - Variants: File list with detected type or red unsupported state; Run disabled until at least one supported input; converted downloads after processing.
   - Owners: `src/lib/Playground/ToolConversion.svelte`
 
-## Cross-cutting variation sources
+## Cross-cutting trace guides
 
 These sources make several inventory rows effectively open-ended and must be
 captured in any detailed follow-up trace.

@@ -1,9 +1,10 @@
 # Client Runtime Guide
 
-Last audited: 2026-08-02.
+Last audited: 2026-08-09.
 
-This file covers browser TypeScript areas that influence visible Svelte UI. For
-component ownership and UI triage, start with `src/docs/svelte-ui.md`.
+This file covers browser TypeScript coordinators that influence visible Svelte
+UI. For component ownership and UI triage, start with the
+[Svelte UI index](README.md).
 
 The runtime is Fastify-backed. The browser loads durable settings, collections,
 character rows, and the standalone inlay catalog through REST resources,
@@ -54,9 +55,11 @@ initializes hotkeys, and removes the preloading element.
    `/api/v1/bootstrap` for initialization, revision, database-lineage/writer
    metadata, active generation jobs, and message/greeting translation recovery
    entries.
-2. If SQLite is uninitialized, issue the initialization command. The winning
-   client reuses the returned revision; only a client that lost the
-   initialization race refetches read-only bootstrap metadata.
+2. If bootstrap reports `initialized: false`, issue the initialization command.
+   The server's transactional classifier accepts only genuinely empty state and
+   rejects conflict state. The winning client reuses the returned revision;
+   only a client that lost the initialization race refetches read-only bootstrap
+   metadata.
 3. Initialize the shared lineage/writer-scoped draft-recovery scope, then
    prepare the encrypted pending-mutation outbox for the authenticated writer
    epoch and database lineage, flush saved receipt acknowledgements, and replay
@@ -93,17 +96,15 @@ CSS variable updates.
 
 ## Server Resources And Durable Mutations
 
-Fastify is durable truth. The browser composes its compatibility database from
-settings, collections, and characters in
-`src/ts/server/resourceState.svelte.ts`; the inlay catalog in
+The browser composes its compatibility projection from settings, collections,
+and characters in `src/ts/server/resourceState.svelte.ts`; the inlay catalog in
 `src/ts/server/inlayCatalog.ts` is a fourth, standalone root projection. Large
 chat, lorebook, legacy-preset, and prompt-template bodies hydrate only when a
-workflow needs them.
-
-Greeting translations are another targeted projection rather than character
-root data. `src/ts/server/greetingTranslations.svelte.ts` reads
-`/api/v1/characters/:characterId/greeting-translations`, fences source/settings
-changes, and reconciles detached greeting jobs reported by bootstrap.
+workflow needs them. The authoritative-state invariant is canonical in
+[Project Structure](../../STRUCTURE.md#repository-wide-invariants), while
+[Server Resources And Bridges](../../docs/structure/server-resources-and-bridges.md)
+owns the endpoint, cache, hydration, invalidation, and durable-mutation
+contracts.
 
 The main client boundaries are:
 
@@ -116,11 +117,6 @@ The main client boundaries are:
 | `src/ts/server/greetingTranslations.svelte.ts`                                                                                         | Character-scoped greeting projection, refresh, manual translation, and job recovery. |
 | `src/ts/server/resourceWriteGuard.svelte.ts`                                                                                           | Guards direct writes to the compatibility view.                             |
 | `src/ts/server/*Bridge.svelte.ts`                                                                                                      | Converts compatibility/UI mutations into command-backed writes.             |
-
-[Server Resources And Bridges](../../docs/structure/server-resources-and-bridges.md)
-owns the cache protocol, resource endpoints, command queue, durable
-intent/receipt distinction, local-effect acknowledgements, event invalidation,
-hydration, and bridge contracts.
 
 If a component shows stale or missing data, confirm whether the data is:
 
@@ -155,16 +151,26 @@ Individual controls keep their disabled/busy state and failure feedback, while
 queued outcomes use the shared indicator and notification flow instead of
 mounting transient status rows throughout the UI.
 
+### All-Chats Export Fence
+
+The destructive reset coordinator is fenced to the exact transcript state that
+was exported. `exportAllChats()` strictly hydrates every chat, serializes the
+download, and returns a fence containing the chat set, each message count, and
+the final message id and serialized-message hash. After both confirmations,
+`src/lib/SideBars/SideChatList.svelte` calls
+`matchesAllChatsExportFence()` against live state; any mismatch aborts before
+`dispatchResetChatsWithOutcome()` applies its optimistic replacement.
+User-facing export/reset semantics belong in
+[Assets And Saves](../../docs/structure/assets-and-saves.md#chats-and-datasets),
+and the controls belong in [Svelte Navigation UI](svelte-navigation-ui.md).
+
 ### Mood Light Visibility Coordination
 
-Mood Light splits the browser's character UI into protected and unprotected
-partitions; it does not change Fastify authorization or remove the hidden rows
-from hydrated resources. `src/ts/moodLightMode.ts` keeps the active-mode bit in
-the tab's `sessionStorage` under `risu:mood-light-mode`, so it survives reload
-in that tab but is not a durable database setting. `moodLightMembership` is the
-durable half: it arrives in the settings root, belongs to the `sidebar` group in
-`src/ts/server/settingsGroups.ts`, and is changed through the normal
-settings-bridge/outbox contract.
+The browser combines the durable membership projection documented in
+[Server Resources And Bridges](../../docs/structure/server-resources-and-bridges.md#mood-light-resource-projection)
+with a tab-local active-mode bit. `src/ts/moodLightMode.ts` keeps that bit in
+`sessionStorage` under `risu:mood-light-mode`, so reload in the same tab keeps
+the current partition.
 
 `src/ts/moodLightMembership.ts` normalizes the durable shape into direct
 `characterIds` plus folder records containing snapshotted `characterIds` and
@@ -197,7 +203,7 @@ Use `src/ts/moodLightMode.test.ts`, `src/ts/moodLightMembership.test.ts`,
 `src/lib/SideBars/MoodLightManageModal.svelte.test.ts`, and
 `src/lib/Others/GridCatalog.svelte.test.ts` when changing this boundary. Visible
 controls and dialog behavior are documented in
-[Svelte UI](svelte-ui.md#sidebar-and-navigation-ui).
+[Svelte Navigation UI](svelte-navigation-ui.md).
 
 ### Loadout Apply Sequencing
 
@@ -280,9 +286,9 @@ The guard set is `src/ts/server/pushNotificationSetting.test.ts`,
 `src/ts/server/pushNotifications.test.ts`,
 `src/ts/server/serviceWorker.test.ts`, and
 `src/lib/Setting/Pages/Display/NotificationToggle.svelte.test.ts`. The visible
-states belong in [Svelte UI](svelte-ui.md#settings-and-shared-controls); server
+states belong in [Svelte Settings UI](svelte-settings-ui.md); server
 subscription persistence remains in
-[Backend Map](../../docs/structure/backend.md#route-families).
+[Backend Map](../../docs/structure/backend.md#route-family-index).
 
 ## Active Writer Loss
 
@@ -322,6 +328,8 @@ Important files:
   `agent_preset_progress`, `post_generation_progress`, warning, error, and
   done. It updates the scoped progress stores consumed by
   `AgentPresetProgress.svelte` and `PostGenerationScriptProgress.svelte`.
+- `src/ts/process/halfStreamingProgress.ts` owns half-streaming token counts and
+  throughput for the active character/chat/generation target.
 - `src/ts/process/reattach.ts` uses bootstrap `activeGenerationJobs`, including
   job mode and regenerate target when present, to reattach the current chat to
   durable server jobs.
@@ -347,12 +355,43 @@ error as a failed terminal result. Generation results are persisted server-side,
 so the browser suppresses the old generation-result command in server-backed
 paths.
 
-Provider/profile resolution, prompt-owner precedence, Agent Preset execution,
-and memory provider behavior are canonical in
-[Providers And Models](../../docs/structure/providers-and-models.md).
+When an `info` frame carries `halfStreaming: true`,
+`src/ts/process/request/serverChat.ts` marks the stream as half-streaming and
+buffers provider text in `tokenResult` instead of enqueueing it into the visible
+stream. Progress remains live through `src/ts/process/halfStreamingProgress.ts`:
+token frames use cumulative server-tokenized `generatedTokens` and
+provider-dispatch `elapsedMs` when present, preserving throughput across
+gateway-batched chunks, with frame counting as the older server fallback. The
+buffered text is enqueued once on `done`.
+
+Generation persistence failures also carry a browser reconciliation contract.
+A terminal `persistenceDisposition: rejected` clears the provisional
+persistence marker, removes or restores only the still-owned streamed
+projection, and force-hydrates the chat. A retryable `queued` disposition keeps
+the provisional generation marked until an authoritative chat hydration
+contains it. Conflicting post-generation script mutations arrive as warning
+frames but do not erase successfully persisted generated message text.
+
+Provider/profile resolution is canonical in
+[Providers And Models](../../docs/structure/providers-and-models.md), prompt
+construction in
+[Prompt Assembly And Scripting](../../docs/structure/prompt-assembly-and-scripting.md),
+and Agent execution in
+[Agents And Presets](../../docs/structure/agents-and-presets.md).
 
 When generation UI is wrong, inspect both the Svelte surface
-`src/lib/ChatScreens/DefaultChatScreen.svelte` and the runtime files above.
+`src/lib/ChatScreens/DefaultChatScreen.svelte` and the runtime files above. Its
+visible ownership is documented in [Svelte Chat UI](svelte-chat-ui.md).
+
+## Rendered Markup Sanitization
+
+The normal `ParseMarkdown()` path in `src/ts/parser/parser.svelte.ts` encodes
+style blocks before Markdown rendering, then `trimMarkdown()` sanitizes the
+rendered markup. Because `decodeStyle()` can reintroduce decoded CSS/markup, a
+changed decoded result is passed through `DOMPurify.sanitize()` again with
+`FORCE_BODY: true` before the string is returned for rendering. Keep this
+second pass when changing the parser; the first sanitation pass alone does not
+cover decoded output.
 
 ## Adjacent Runtime Owners
 
@@ -360,17 +399,16 @@ When generation UI is wrong, inspect both the Svelte surface
 | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | Assets, inlay catalog, saves, backups, Realm, legacy storage | `src/ts/server/assets.ts`, `inlayCatalog.ts`, `backups.ts`, `realmImport.ts`; `src/ts/storage/backup.ts`, `fastifyStorage.ts` | [Assets And Saves](../../docs/structure/assets-and-saves.md)                       |
 | Plugins, modules, MCP                                        | `src/ts/plugins/`, `src/ts/moduleIntegration.ts`, `src/ts/process/modules.ts`, `src/ts/process/mcp/`                          | [Plugins And MCP](../../docs/structure/plugins-and-mcp.md)                         |
-| Providers and model profiles                                 | `src/ts/model/`, `src/ts/process/request/`                                                                                    | [Providers And Models](../../docs/structure/providers-and-models.md)               |
+| Providers, prompt assembly, and Agents                       | `src/ts/model/`, `src/ts/process/request/`, `src/ts/process/promptAssembly/`                                                  | [Providers And Models](../../docs/structure/providers-and-models.md), [Prompt Assembly And Scripting](../../docs/structure/prompt-assembly-and-scripting.md), [Agents And Presets](../../docs/structure/agents-and-presets.md) |
 | Retired/browser-local surfaces                               | `src/ts/platform.ts`                                                                                                          | [Generated Files And Legacy Caveats](../../docs/structure/generated-and-legacy.md) |
 
 `src/ts/moduleIntegration.ts` parses and deduplicates the
 comma-separated module references shared by prompt and Agent Presets.
-`src/ts/process/modules.ts` combines the effective prompt-preset and
-Agent Preset references with global, chat, and character module selections;
-the reactive signature in `src/ts/stores.svelte.ts` reruns `moduleUpdate()`
-when either preset selection or integration field changes. Prompt/Agent
-precedence and server execution remain canonical in
-[Providers And Models](../../docs/structure/providers-and-models.md).
+`src/ts/process/modules.ts` combines the effective prompt-preset and Agent
+Preset references with global, chat, and character module selections; the
+reactive signature in `src/ts/stores.svelte.ts` reruns `moduleUpdate()` when
+either preset selection or integration field changes. Prompt and Agent
+precedence stays in the focused guides linked above.
 
 ## Runtime Risks For UI Work
 

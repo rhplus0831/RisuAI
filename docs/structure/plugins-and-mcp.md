@@ -1,6 +1,6 @@
 # Plugins And MCP
 
-Last audited: 2026-08-02.
+Last audited: 2026-08-09.
 
 Plugins and MCP tooling are browser runtime features with server-backed records.
 Fastify stores plugin records, plugin storage, settings, and module state, but it
@@ -31,7 +31,10 @@ active. Plugin providers remain browser compatibility surfaces; Fastify
 chat/completion does not execute plugin provider code. Plugin V3 provider
 registration also updates browser compatibility maps such as
 `pluginV2.providers` / `providerOptions` and provider stores; unload cleanup is
-guarded by provider ownership and active generation state.
+guarded by provider ownership and active generation state. V3 selections use
+the `pluginmodel:::<name>` model id. Success, failure, and streaming responses
+preserve that full id, and an exhausted V3 plugin attempt returns its failure
+instead of advancing to another fallback.
 
 `getCurrentLorebookEntries` returns detached raw entries from the current
 character, chat, and active client modules without exposing the server's
@@ -110,6 +113,8 @@ collection before loading enabled V3 instances, so an unsupported record fails
 the load instead of being skipped. There is no V2-record import, migration, or
 execution path. V3 still exposes deprecated V2-named compatibility shims and
 maps. Server Lua scripting is separate from browser plugins.
+[Prompt Assembly And Scripting](prompt-assembly-and-scripting.md) owns the
+supported server Lua surface and its durable scripting effects.
 
 Plugin update checks start only from an explicit user action. They require an
 HTTPS, public-only URL and a `pluginUpdate` grant bound to the exact installed
@@ -216,7 +221,7 @@ MCP/tool orchestration is browser-side and separate from model-hosted
 function/tool dispatch. Fastify stores plugin/MCP-adjacent records and supports
 command-backed Risu access writes, but normal Fastify chat/completion provider
 dispatch does not execute MCP tools; see the server provider boundary in
-[Providers And Models](providers-and-models.md#capability-table).
+[Providers And Models](providers-and-models.md#capability-table-and-dispatch-boundary).
 
 | Path                                                                                                       | Purpose                                                                                               |
 | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
@@ -267,6 +272,13 @@ Risu access is read-only today through `risu-get-chat-history`; character
 additional asset reference edits still return an unsupported Fastify-mode
 response.
 
+These MCP tools write the durable character or module definitions; they do not
+define how those records execute during server prompt assembly. Runtime
+semantics for V2 conditions/effects, non-interactive Lua APIs, durable Lua and
+script lore mutations, preserved script message indexes, and module CBS
+visibility belong to
+[Prompt Assembly And Scripting](prompt-assembly-and-scripting.md).
+
 ## Fastify-Mode Limits
 
 Fastify-backed mode supports MCP module creation through both the direct MCP
@@ -300,21 +312,27 @@ normalized by sniffing PNG/JPEG/WebP/GIF/AVIF signatures, with PNG as fallback,
 while the original module asset tuple filename remains unchanged. Blank
 filenames pass through and default to PNG in the asset saver.
 
-OAuth refresh token persistence for remote MCP servers writes
-`Database.authRefreshes` through optimistic patches to the `providers` settings
-group via `/api/v1/commands/settings/providers`, upserting by exact MCP
-identifier (a raw HTTP(S) URL or URL-wrapped `stdio` identifier).
+OAuth refresh credentials for remote MCP servers persist in
+`Database.authRefreshes` as `url`, `tokenUrl`, `refreshToken`, `clientId`, and
+`clientSecret`. Optimistic patches write the `providers` settings group through
+`/api/v1/commands/settings/providers`, upserting by exact MCP identifier (a raw
+HTTP(S) URL or URL-wrapped `stdio` identifier).
 Retryable failures retain the durable intent; terminal rejection rolls back the
 attempted row only when it still owns that URL. Server projections mask the
 refresh token and client secret. A masked row is refreshed through authenticated
 `POST /api/v1/mcp/oauth/refresh` using only that stable MCP identity; Fastify
 loads the matching raw row and never returns refresh credentials to the
-browser. Refresh egress is DNS-pinned, redirect-free, and bounded; public
-endpoints require HTTPS, while local HTTP is allowed only for a local MCP
-identity. If the upstream rotates the refresh token, Fastify persists it through
-a targeted settings mutation and returns only the access token. Newly
+browser. The `mcp-oauth-refresh` entry in `routeManifest.ts` requires
+authentication without an active-writer lease; rotated-token persistence is a
+server-owned targeted mutation. Refresh egress is bounded, DNS-pinned, and
+redirect-free. Public endpoints require HTTPS, while local HTTP is allowed only
+for a local MCP identity. If the upstream rotates the refresh token, Fastify
+persists it through a targeted settings mutation and returns only the access
+token. Newly
 authorized, not-yet-projected raw rows retain a bounded direct refresh path, and
 those credential-bearing requests are omitted from browser fetch diagnostics.
+That direct path uses browser `fetchNative`; Fastify's DNS pinning and
+redirect-free policy do not govern it.
 Google Search MCP credentials are currently unsupported in server-backed web
 mode. Remote MCP tool results may contain text, image/audio base64, or resource
 payloads, but they are not server-persisted unless a later command stores them.
@@ -330,8 +348,10 @@ entry from the same plugin owner and removes owned entries on unload/reset;
 `src/lib/Setting/Settings.svelte`, `src/lib/SideBars/Sidebar.svelte`, and
 `src/lib/ChatScreens/DefaultChatScreen.svelte` consume the stores.
 `src/ts/plugins/apiV3/v3.svelte.test.ts` guards registration, replacement, and
-cleanup. UI placement is mapped in
-[Svelte UI](../../src/docs/svelte-ui.md#component-ownership).
+cleanup. UI placement is mapped in the
+[Svelte Settings UI](../../src/docs/svelte-settings-ui.md),
+[Svelte Navigation UI](../../src/docs/svelte-navigation-ui.md), and
+[Svelte Chat UI](../../src/docs/svelte-chat-ui.md) guides.
 
 V3 unload also releases owner-scoped document listeners, mutation observers,
 plugin-channel listeners, pending sandbox work, and active stream ports. RPC

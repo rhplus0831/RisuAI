@@ -1,6 +1,6 @@
 # Test Suite Guide
 
-Last audited: 2026-08-02.
+Last audited: 2026-08-09.
 
 This documentation groups the current suite by protected product behavior. Treat `package.json` and the runner configuration files as the source of truth for commands and discovery; this guide intentionally avoids snapshot case counts and pass totals, which become stale whenever tests are added or parameterized matrices change.
 
@@ -17,7 +17,7 @@ The main weakness is integration depth rather than raw case count. Most frontend
 ### Product flows and UI
 
 - [App Navigation and Chat](app-navigation-and-chat.md) — routing, Mood Light route/selection guards, floating composition, chat lists/reset, rerolls, responsive navigation, and browser smoke.
-- [Settings, Profiles, and Extensions](settings-profiles-and-extensions.md) — settings pages, model/profile editors, modules/plugins, translators, personas, and Agent Preset UI.
+- [Settings, Profiles, and Extensions](settings-profiles-and-extensions.md) — settings pages, model/profile editors, profile/preset reordering, modules/plugins, translators, personas, and Agent Preset UI.
 - [Character Content, Memory, and Catalogs](character-content-memory-and-catalogs.md) — character editors, Mood Light membership, lore/scripts, Hypa controls, Realm/catalog and mobile character behavior.
 - [Shared UI, Feedback, and Accessibility](shared-ui-feedback-and-accessibility.md) — alerts, drag-safe backdrop dismissal, dialogs, generic controls, focus, onboarding, feedback, and platform surface gates.
 - [Playground and Specialized Tools](playground-and-specialized-tools.md) — Playground execution, conversion, media, parser, translation, MCP, and developer tools.
@@ -26,14 +26,16 @@ The main weakness is integration depth rather than raw case count. Most frontend
 
 - [Browser State Sync and Recovery](browser-state-sync-and-recovery.md) — bootstrap, writer identity, encrypted outbox, replay, hydration, invalidation, refresh, and stale-state fences.
 - [Domain Mutations and Editing Bridges](domain-mutations-and-editing-bridges.md) — optimistic character/chat/settings/preset/persona/loadout/module/lorebook/script edits and rollback.
-- [Persistence, Revisioned Commands, and Events](persistence-commands-and-events.md) — SQLite repositories, migrations, revisions, receipts, command transactions, events, projections, and resource reads.
+- [Persistence, Revisioned Commands, and Events](persistence-commands-and-events.md) — SQLite repositories, migrations, identity repair, revisions, receipts, command transactions, secret-preserving state changes, events, projections, and resource reads.
 - [API Security, Runtime, and Network Boundaries](api-security-and-runtime.md) — auth, body limits, SSRF/egress policy, tracing/redaction, Web Push, startup/shutdown, and operational routes.
 - [Assets, Import/Export, and Backups](assets-import-export-and-backups.md) — assets, garbage collection, save codecs, backup/restore, bundles, bounded high-cardinality Realm/CharX imports, browser uploads, and compatibility adapters.
 
 ### AI behavior and extensibility
 
 - [Prompting, Generation, and Streaming](prompting-generation-and-streaming.md) — prompt construction, CBS history/index semantics, preflight, generation, SSE, durability, reroll, Agent Presets, and cost gates.
-- [Providers, Models, and Media](providers-models-and-media.md) — model profiles, Strip CoT, Neuralwatt and other provider adapters, credentials, translation, image/audio/transcription, and codecs.
+- [Providers, Models, and Media](providers-models-and-media.md) — model profiles, Strip CoT, translation, image/audio/transcription, and codecs.
+- [Provider Adapter Conformance](providers-models-and-media.md#test-groups) — dispatch options, request/response shaping, catalogs, streams, aborts, and errors across first-class, local, legacy, free-model, and compatibility transports.
+- [Credential and Secret Integrity](providers-models-and-media.md#test-groups) — stored and draft credentials, masking, stable identity, stale inline-secret migration, endpoint binding, sanitized projections, and provider-operation boundaries; command-side preservation is covered by [Persistence, Revisioned Commands, and Events](persistence-commands-and-events.md#command-api-behavior-inventory).
 - [Memory and Embeddings](memory-and-embeddings.md) — Hypa planning, summaries, embeddings, ranking, job execution, worker/API/browser reconciliation, and memory UI.
 - [Scripting, Parsing, and Automation](scripting-parsing-and-automation.md) — CBS, regex scripts, triggers, Lua, HTML/chat parsing, templates, and bounded execution.
 - [Plugins, Modules, and MCP](plugins-modules-and-mcp.md) — plugin permissions/sandboxing, module lifecycle, MCP transports/OAuth/tools, and RisuAccess resources.
@@ -57,6 +59,11 @@ The main weakness is integration depth rather than raw case count. Most frontend
 
 Both Vitest configurations reject focused tests. Playwright is serial, retains traces on failure, and sets `forbidOnly` in CI. The normally skipped 7,000-display-asset Realm stress case is enabled by running `realmImport.test.ts` directly. Broad frontend and backend coverage are report-only; only the focused UI map has thresholds.
 
+`server/fastify/vitest.config.ts` roots discovery at `server/fastify/` and
+includes `__tests__/**/*.test.ts`. The package aliases keep `pnpm test` on
+`test:frontend`, `pnpm api:test` on `test:server`, and `pnpm test:smoke` on
+`smoke:fastify-browser`.
+
 ## Major coverage strengths
 
 - **Durable state and data integrity.** The revision/receipt transaction suites, encrypted pending-mutation outbox, replay/dependency lanes, hydration fences, targeted invalidation, and field-scoped rollback tests are the suite's deepest protection. They exercise response loss, stale writers, concurrent edits, partial success, restart recovery, and real SQLite constraints.
@@ -79,8 +86,8 @@ Both Vitest configurations reject focused tests. Playwright is serial, retains t
 
 1. **Outbox, dispatch, replay, bootstrap, and invalidation:** `pendingMutationOutbox`, `durableMutationDispatch`, `durableMutationTerminalRejection`, `pendingMutationReplay`, browser `commands`, `bootstrap`, `resourceState`, and `resourceInvalidation`. These are the core protection against lost, duplicated, or stale user edits.
 2. **Generation goldens and durable lifecycle:** `sendChat.fixtures*`, server `assemble`, `generation.chat`, `durableGeneration`, provider transport/terminal assertions, and the reroll Playwright journey. They protect model-visible context and durable transcripts.
-3. **Persistence transactions and recovery:** command/revision/idempotency/concurrency suites, migrations, backups, save/bundle codecs, asset GC, and Realm atomic staging. These defend user data at rest and through destructive operations.
-4. **Credentials and egress:** model-profile secret tests, provider operation allowlists, OAuth refresh, SSRF, redaction, and request/body/decompression limits. Regressions here have security impact beyond functional breakage.
+3. **Persistence transactions, identity repair, and recovery:** command/revision/idempotency/concurrency suites, migrations, lorebook and record identity normalization, backups, save/bundle codecs, asset GC, and Realm atomic staging. These defend user data at rest and through destructive operations.
+4. **Provider conformance, credentials, and egress:** provider request/stream/catalog contracts, dispatch-option parity, stale inline-secret migration, model-profile secret tests, provider operation allowlists, OAuth refresh, SSRF, redaction, and request/body/decompression limits. Regressions here have security impact beyond functional breakage.
 5. **Memory jobs:** repository transitions, embed/summarize handlers, worker fairness/cancellation/shutdown, selection/ranking, browser terminal fences, and prompt-memory fixtures. Partial failures otherwise risk corrupt indexes or permanently active jobs.
 6. **Performance gates:** render/clone probes and server load-cost assertions. They are the only direct defense against accidentally restoring whole-corpus work to common actions.
 
