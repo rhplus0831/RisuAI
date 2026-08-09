@@ -87,6 +87,11 @@
     return hasDragType(types, 'Files') ? 'copy' : 'none'
   }
 
+  function isAppInternalDrag(event: DragEvent): boolean {
+    const types = event.dataTransfer?.types
+    return hasDragType(types, RISU_APP_INTERNAL_DRAG_TYPE) || hasDragType(types, RISU_SIDEBAR_DRAG_TYPE)
+  }
+
   function markAppInternalDrag(event: DragEvent): void {
     event.dataTransfer?.setData(RISU_APP_INTERNAL_DRAG_TYPE, 'true')
   }
@@ -163,13 +168,13 @@
 <main
   class="flex bg-bg w-full h-full max-w-100vw text-textcolor"
   ondragover={(e) => {
+    if (isAppInternalDrag(e)) return
     e.preventDefault()
     e.dataTransfer.dropEffect = getMainDropEffect(e)
   }}
   ondragstart={markAppInternalDrag}
   ondrop={async (e) => {
-    const types = e.dataTransfer.types
-    if (hasDragType(types, RISU_APP_INTERNAL_DRAG_TYPE) || hasDragType(types, RISU_SIDEBAR_DRAG_TYPE)) {
+    if (isAppInternalDrag(e)) {
       e.preventDefault()
       return
     }

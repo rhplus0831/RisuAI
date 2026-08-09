@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { devices, expect, test, type Locator, type Page } from '@playwright/test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -27,11 +27,16 @@ declare global {
 }
 
 let harness: Harness
+let browserSmokeAssertion: string
 
 test.beforeAll(async () => {
   harness = await startHarness()
-  const assertion = await setupBrowserSmokeAuth(harness.app)
-  await importDatabase(harness.app, assertion, {
+  browserSmokeAssertion = await setupBrowserSmokeAuth(harness.app)
+  await importDatabase(harness.app, browserSmokeAssertion, browserSmokeDatabase())
+})
+
+function browserSmokeDatabase(includeDragFixtures = false): Record<string, unknown> {
+  return {
     version: 1,
     didFirstSetup: true,
     formatversion: 5,
@@ -60,6 +65,36 @@ test.beforeAll(async () => {
       },
     ],
     botPresets: [],
+    ...(includeDragFixtures
+      ? {
+          promptPresets: [
+            { id: 'prompt-smoke-a', name: 'Prompt Smoke A', promptTemplate: [] },
+            { id: 'prompt-smoke-b', name: 'Prompt Smoke B', promptTemplate: [] },
+          ],
+          promptPresetsId: 0,
+          modelProfiles: [
+            {
+              id: 'profile-smoke-a',
+              name: 'Profile Smoke A',
+              providerId: 'debug-echo',
+              modelId: 'debug-echo',
+            },
+            {
+              id: 'profile-smoke-b',
+              name: 'Profile Smoke B',
+              providerId: 'debug-echo',
+              modelId: 'debug-echo',
+            },
+          ],
+          modelProfileOrder: [
+            { kind: 'profile', profileId: 'profile-smoke-a' },
+            { kind: 'profile', profileId: 'profile-smoke-b' },
+          ],
+          modelRoleProfiles: {},
+          modelRuntimeDefaults: {},
+          providerCredentials: [],
+        }
+      : {}),
     loadouts: [],
     modules: [],
     personas: [],
@@ -69,8 +104,8 @@ test.beforeAll(async () => {
     loreBookToken: 8000,
     mainPrompt: '',
     streamGeminiThoughts: false,
-  })
-})
+  }
+}
 
 test.afterAll(async () => {
   await harness.app.close()
@@ -342,6 +377,90 @@ test('core chat controls and blocking alerts remain accessible across responsive
     })
   }
 })
+
+test('prompt presets and model profiles reorder from an immediate mobile touch drag', async ({ browser }) => {
+  test.setTimeout(60_000)
+  await importDatabase(harness.app, browserSmokeAssertion, browserSmokeDatabase(true))
+  const context = await browser.newContext({ ...devices['Pixel 7'] })
+  const page = await context.newPage()
+
+  try {
+    await page.goto(`${harness.baseUrl}/settings/prompt-settings`)
+    await waitForBrowserSmokeLoaded(page)
+
+    await page.getByRole('button', { name: 'Prompt Smoke A', exact: true }).click()
+    const promptRows = page.locator('[data-risu-generation-picker-row][data-risu-picker-kind="prompt"]')
+    await expect(promptRows).toHaveCount(2)
+    const promptReorder = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        new URL(response.url()).pathname === '/api/v1/commands/prompt-presets/reorder',
+    )
+    await dragByTouch(page, promptRows.nth(0).locator('[data-risu-preset-drag-handle]'), promptRows.nth(1))
+    expect((await promptReorder).ok()).toBe(true)
+    await expect
+      .poll(() => promptRows.evaluateAll((rows) => rows.map((row) => (row as HTMLElement).dataset.risuRowId)))
+      .toEqual(['prompt-smoke-b', 'prompt-smoke-a'])
+
+    await page.goto(`${harness.baseUrl}/settings/model`)
+    await waitForBrowserSmokeLoaded(page)
+    await page.getByRole('button', { name: 'Profiles', exact: true }).click()
+    const profileRows = page.locator('[data-model-profile-row]')
+    await expect(profileRows).toHaveCount(2)
+    const profileReorder = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        new URL(response.url()).pathname === '/api/v1/commands/model-profiles/reorder',
+    )
+    await dragByTouch(page, profileRows.nth(0).locator('[data-model-profile-drag-handle]'), profileRows.nth(1))
+    expect((await profileReorder).ok()).toBe(true)
+    await expect
+      .poll(() => profileRows.evaluateAll((rows) => rows.map((row) => (row as HTMLElement).dataset.profileId)))
+      .toEqual(['profile-smoke-b', 'profile-smoke-a'])
+  } finally {
+    await context.close()
+  }
+})
+
+async function waitForBrowserSmokeLoaded(page: Page): Promise<void> {
+  await expect.poll(() => page.evaluate(() => Boolean(window.__RISU_FASTIFY_BROWSER_SMOKE__))).toBe(true)
+  await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForLoaded())
+}
+
+async function dragByTouch(page: Page, source: Locator, target: Locator): Promise<void> {
+  await source.scrollIntoViewIfNeeded()
+  await target.scrollIntoViewIfNeeded()
+  const sourceBox = await source.boundingBox()
+  const targetBox = await target.boundingBox()
+  if (!sourceBox || !targetBox) throw new Error('Touch drag target is not visible')
+
+  const start = { x: sourceBox.x + sourceBox.width / 2, y: sourceBox.y + sourceBox.height / 2 }
+  const end = { x: targetBox.x + targetBox.width / 2, y: targetBox.y + targetBox.height * 0.8 }
+  const session = await page.context().newCDPSession(page)
+  try {
+    await session.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ ...start, id: 1 }],
+    })
+    for (let step = 1; step <= 8; step += 1) {
+      const progress = step / 8
+      await session.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [
+          {
+            x: start.x + (end.x - start.x) * progress,
+            y: start.y + (end.y - start.y) * progress,
+            id: 1,
+          },
+        ],
+      })
+      await page.waitForTimeout(16)
+    }
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  } finally {
+    await session.detach()
+  }
+}
 
 async function startHarness(): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'

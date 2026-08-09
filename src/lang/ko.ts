@@ -2059,6 +2059,8 @@ export const languageKorean = {
     `이 백업에는 지원되지 않는 그룹 캐릭터가 ${count}개${groups.length > 0 ? ` (${groups.join(', ')})` : ''} 포함되어 있습니다. 아무 항목도 가져오지 않았습니다.`,
   modelPresets: '모델 프리셋',
   promptPresets: '프롬프트 프리셋',
+  dragModelPreset: '드래그하여 모델 프리셋 순서 변경',
+  dragPromptPreset: '드래그하여 프롬프트 프리셋 순서 변경',
   activePromptPresets: '활성',
   archivedPromptPresets: '보관됨',
   showActivePromptPresets: '활성 프롬프트 프리셋 표시',

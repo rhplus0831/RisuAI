@@ -40,6 +40,16 @@ const alertSpies = vi.hoisted(() => ({
   alertNormal: vi.fn(),
 }))
 
+const sortableSpies = vi.hoisted(() => ({
+  create: vi.fn(),
+  destroy: vi.fn(),
+  option: vi.fn(),
+}))
+
+vi.mock('sortablejs', () => ({
+  default: { create: sortableSpies.create },
+}))
+
 vi.mock('../../ts/storage/database.svelte', async (importActual) => {
   const actual = await importActual<typeof import('../../ts/storage/database.svelte')>()
   return {
@@ -82,7 +92,6 @@ vi.mock('../../ts/alert', async (importActual) => {
 })
 
 import Botpreset from './botpreset.svelte'
-import { RISU_PRESET_DRAG_TYPE } from 'src/ts/dragTypes'
 import ListedPersona from './listedPersona.svelte'
 import { clearCachedServerCommandRevision, type ServerCommandResult } from 'src/ts/server/commands'
 import { setResourceWriteGuardEnabled } from 'src/ts/server/resourceWriteGuard.svelte'
@@ -413,32 +422,22 @@ function pickerSelectionControl(kind: 'model' | 'prompt' | 'persona', id: string
   return row.querySelector<HTMLElement>('[data-risu-picker-select]') ?? row
 }
 
-function createPresetDataTransfer(initialTypes: string[] = []): DataTransfer {
-  const values = new Map<string, string>()
-  const types = [...initialTypes]
-  return {
-    get types() {
-      return types
-    },
-    getData: vi.fn((type: string) => values.get(type) ?? ''),
-    setData: vi.fn((type: string, value: string) => {
-      values.set(type, value)
-      if (!types.includes(type)) types.push(type)
-    }),
-  } as unknown as DataTransfer
+function promptPresetSortableOptions(): Record<string, any> {
+  const options = sortableSpies.create.mock.calls.at(-1)?.[1]
+  if (!options) throw new Error('Prompt preset Sortable options not found')
+  return options
 }
 
-function dispatchPresetDragEvent(
-  element: Element,
-  type: 'dragstart' | 'dragover' | 'drop',
-  dataTransfer: DataTransfer,
-  clientY = 0,
-): Event {
-  const event = new Event(type, { bubbles: true, cancelable: true })
-  Object.defineProperty(event, 'dataTransfer', { value: dataTransfer })
-  Object.defineProperty(event, 'clientY', { value: clientY })
-  element.dispatchEvent(event)
-  return event
+function finishPromptPresetSort(presetId: string, oldIndex: number, newIndex: number): void {
+  const list = elementBySelector<HTMLElement>('[data-risu-preset-sortable-list]', 'prompt preset sortable list')
+  const item = pickerRow('prompt', presetId)
+  list.append(item)
+  promptPresetSortableOptions().onEnd({
+    from: list,
+    item,
+    oldDraggableIndex: oldIndex,
+    newDraggableIndex: newIndex,
+  })
 }
 
 function expectPickerRowSelection(kind: 'model' | 'prompt' | 'persona', id: string, selected: boolean): void {
@@ -508,6 +507,10 @@ beforeEach(() => {
   alertSpies.alertConfirm.mockReset()
   presetSpies.reorderModelPresets.mockResolvedValue({ status: 'accepted' })
   presetSpies.reorderPromptPresets.mockResolvedValue({ status: 'accepted' })
+  sortableSpies.create.mockReturnValue({
+    destroy: sortableSpies.destroy,
+    option: sortableSpies.option,
+  })
   clearCachedServerCommandRevision()
   setResourceWriteGuardEnabled(false)
   seedDb()
@@ -1025,7 +1028,7 @@ describe('generation settings picker mode', () => {
     expect(target.querySelector('[data-risu-preset-archive-action]')).toBeNull()
   })
 
-  it('moves the dragged preset by stable id after the live list reorders', async () => {
+  it('uses immediate fallback sorting on every pointer type and moves by stable id', async () => {
     const presetC = {
       ...getDatabase().promptPresets[0],
       id: 'preset-c',
@@ -1033,37 +1036,46 @@ describe('generation settings picker mode', () => {
     }
     getDatabase().promptPresets.push(presetC)
     mountPresetPicker('global')
+    await tick()
 
-    const dataTransfer = createPresetDataTransfer()
-    dispatchPresetDragEvent(pickerRow('prompt', 'preset-b'), 'dragstart', dataTransfer)
-    expect(dataTransfer.setData).toHaveBeenCalledWith('presetId', 'preset-b')
-    expect(dataTransfer.setData).toHaveBeenCalledWith(RISU_PRESET_DRAG_TYPE, 'true')
+    const options = promptPresetSortableOptions()
+    expect(options).toMatchObject({
+      delay: 0,
+      delayOnTouchOnly: false,
+      forceFallback: true,
+      draggable: '[data-risu-preset-sortable-item]',
+      handle: '[data-risu-preset-drag-handle]',
+    })
+    expect(pickerRow('prompt', 'preset-b').hasAttribute('draggable')).toBe(false)
+    expect(pickerRow('prompt', 'preset-b').querySelector('[data-risu-preset-drag-handle]')).toBeTruthy()
 
     const [presetA, presetB] = getDatabase().promptPresets
     getDatabase().promptPresets = [presetB, presetC, presetA]
     await tick()
 
-    const dropTargets = pickerRoot('prompt', 'global').querySelectorAll<HTMLElement>('[role="listitem"]')
-    dispatchPresetDragEvent(dropTargets.item(dropTargets.length - 1), 'drop', dataTransfer)
+    finishPromptPresetSort('preset-b', 0, 2)
 
     expect(presetSpies.reorderPromptPresets).toHaveBeenCalledOnce()
     expect(presetSpies.reorderPromptPresets).toHaveBeenCalledWith(0, 3)
+    expect(pickerRow('prompt', 'preset-b').previousElementSibling?.getAttribute('data-risu-preset-sort-anchor')).toBe(
+      'preset-b',
+    )
   })
 
   it('leaves external file drops for the app-level importer', () => {
     mountPresetPicker('global')
     const targetRow = pickerRow('prompt', 'preset-a')
-    const dataTransfer = createPresetDataTransfer(['Files'])
-
-    const dragOver = dispatchPresetDragEvent(targetRow, 'dragover', dataTransfer)
-    const drop = dispatchPresetDragEvent(targetRow, 'drop', dataTransfer)
+    const dragOver = new Event('dragover', { bubbles: true, cancelable: true })
+    const drop = new Event('drop', { bubbles: true, cancelable: true })
+    targetRow.dispatchEvent(dragOver)
+    targetRow.dispatchEvent(drop)
 
     expect(dragOver.defaultPrevented).toBe(false)
     expect(drop.defaultPrevented).toBe(false)
     expect(presetSpies.reorderPromptPresets).not.toHaveBeenCalled()
   })
 
-  it('drops on the top half of a preset row before that row', () => {
+  it('sorts a preset to the start of the list', async () => {
     const presetC = {
       ...getDatabase().promptPresets[0],
       id: 'preset-c',
@@ -1071,32 +1083,15 @@ describe('generation settings picker mode', () => {
     }
     getDatabase().promptPresets.push(presetC)
     mountPresetPicker('global')
+    await tick()
 
-    const dataTransfer = createPresetDataTransfer()
-    dispatchPresetDragEvent(pickerRow('prompt', 'preset-c'), 'dragstart', dataTransfer)
+    finishPromptPresetSort('preset-c', 2, 0)
 
-    const targetRow = pickerRow('prompt', 'preset-a')
-    vi.spyOn(targetRow, 'getBoundingClientRect').mockReturnValue({
-      top: 100,
-      bottom: 140,
-      height: 40,
-      left: 0,
-      right: 100,
-      width: 100,
-      x: 0,
-      y: 100,
-      toJSON: () => ({}),
-    })
-    const dragOver = dispatchPresetDragEvent(targetRow, 'dragover', dataTransfer, 110)
-    const drop = dispatchPresetDragEvent(targetRow, 'drop', dataTransfer, 110)
-
-    expect(dragOver.defaultPrevented).toBe(true)
-    expect(drop.defaultPrevented).toBe(true)
     expect(presetSpies.reorderPromptPresets).toHaveBeenCalledOnce()
     expect(presetSpies.reorderPromptPresets).toHaveBeenCalledWith(2, 0)
   })
 
-  it('drops on the bottom half of the last preset row at the end of the list', () => {
+  it('sorts a preset to the end of the list', async () => {
     const presetC = {
       ...getDatabase().promptPresets[0],
       id: 'preset-c',
@@ -1104,27 +1099,10 @@ describe('generation settings picker mode', () => {
     }
     getDatabase().promptPresets.push(presetC)
     mountPresetPicker('global')
+    await tick()
 
-    const dataTransfer = createPresetDataTransfer()
-    dispatchPresetDragEvent(pickerRow('prompt', 'preset-a'), 'dragstart', dataTransfer)
+    finishPromptPresetSort('preset-a', 0, 2)
 
-    const targetRow = pickerRow('prompt', 'preset-c')
-    vi.spyOn(targetRow, 'getBoundingClientRect').mockReturnValue({
-      top: 100,
-      bottom: 140,
-      height: 40,
-      left: 0,
-      right: 100,
-      width: 100,
-      x: 0,
-      y: 100,
-      toJSON: () => ({}),
-    })
-    const dragOver = dispatchPresetDragEvent(targetRow, 'dragover', dataTransfer, 130)
-    const drop = dispatchPresetDragEvent(targetRow, 'drop', dataTransfer, 130)
-
-    expect(dragOver.defaultPrevented).toBe(true)
-    expect(drop.defaultPrevented).toBe(true)
     expect(presetSpies.reorderPromptPresets).toHaveBeenCalledOnce()
     expect(presetSpies.reorderPromptPresets).toHaveBeenCalledWith(0, 3)
   })
@@ -1138,14 +1116,18 @@ describe('generation settings picker mode', () => {
     getDatabase().promptPresets.push(presetC)
     mountPresetPicker('global')
 
-    const dataTransfer = createPresetDataTransfer()
-    dispatchPresetDragEvent(pickerRow('prompt', 'preset-b'), 'dragstart', dataTransfer)
+    const vanishedRow = pickerRow('prompt', 'preset-b')
+    const list = elementBySelector<HTMLElement>('[data-risu-preset-sortable-list]', 'prompt preset sortable list')
 
     getDatabase().promptPresets = getDatabase().promptPresets.filter((preset) => preset.id !== 'preset-b')
     await tick()
 
-    const dropTargets = pickerRoot('prompt', 'global').querySelectorAll<HTMLElement>('[role="listitem"]')
-    dispatchPresetDragEvent(dropTargets.item(dropTargets.length - 1), 'drop', dataTransfer)
+    promptPresetSortableOptions().onEnd({
+      from: list,
+      item: vanishedRow,
+      oldDraggableIndex: 1,
+      newDraggableIndex: 2,
+    })
 
     expect(presetSpies.reorderPromptPresets).not.toHaveBeenCalled()
   })
@@ -1159,11 +1141,9 @@ describe('generation settings picker mode', () => {
     getDatabase().promptPresets.push(presetC)
     presetSpies.reorderPromptPresets.mockResolvedValueOnce({ status: 'failed' })
     mountPresetPicker('global')
+    await tick()
 
-    const dataTransfer = createPresetDataTransfer()
-    dispatchPresetDragEvent(pickerRow('prompt', 'preset-a'), 'dragstart', dataTransfer)
-    const dropTargets = pickerRoot('prompt', 'global').querySelectorAll<HTMLElement>('[role="listitem"]')
-    dispatchPresetDragEvent(dropTargets.item(dropTargets.length - 1), 'drop', dataTransfer)
+    finishPromptPresetSort('preset-a', 0, 2)
     await settleModalFocus()
 
     expect(target.querySelector('[data-risu-preset-mutation-status]')?.textContent).toContain(

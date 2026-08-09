@@ -10,6 +10,16 @@ const commandSpies = vi.hoisted(() => ({
   updateModelRuntimeDefaultsDurably: vi.fn(),
 }))
 
+const sortableSpies = vi.hoisted(() => ({
+  create: vi.fn(),
+  destroy: vi.fn(),
+  option: vi.fn(),
+}))
+
+vi.mock('sortablejs', () => ({
+  default: { create: sortableSpies.create },
+}))
+
 vi.mock('src/ts/server/commands', () => ({
   subscribeServerCommandLocalEffectApplied: vi.fn(() => () => {}),
 }))
@@ -37,7 +47,6 @@ vi.mock('src/ts/process/modules', () => ({
 
 import ModelProfileList from './ModelProfileList.svelte'
 import { language } from 'src/lang'
-import { RISU_MODEL_PROFILE_DRAG_TYPE } from 'src/ts/dragTypes'
 import { resolveModelProfile } from 'src/ts/model/modelProfileResolver'
 import { finishPendingModelMutation, getPendingModelMutations } from 'src/ts/model/modelProfileMutations'
 import { MASKED_PROVIDER_SECRET } from 'src/ts/providerSecretMask'
@@ -83,33 +92,10 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   return { promise, resolve }
 }
 
-function createProfileDataTransfer(initialTypes: string[] = []): DataTransfer {
-  const values = new Map<string, string>()
-  const types = [...initialTypes]
-  return {
-    effectAllowed: 'uninitialized',
-    get types() {
-      return types
-    },
-    getData: vi.fn((type: string) => values.get(type) ?? ''),
-    setData: vi.fn((type: string, value: string) => {
-      values.set(type, value)
-      if (!types.includes(type)) types.push(type)
-    }),
-  } as unknown as DataTransfer
-}
-
-function dispatchProfileDragEvent(
-  element: Element,
-  type: 'dragstart' | 'dragover' | 'drop',
-  dataTransfer: DataTransfer,
-  clientY = 0,
-): Event {
-  const event = new Event(type, { bubbles: true, cancelable: true })
-  Object.defineProperty(event, 'dataTransfer', { value: dataTransfer })
-  Object.defineProperty(event, 'clientY', { value: clientY })
-  element.dispatchEvent(event)
-  return event
+function modelProfileSortableOptions(): Record<string, any> {
+  const options = sortableSpies.create.mock.calls.at(-1)?.[1]
+  if (!options) throw new Error('Model profile Sortable options not found')
+  return options
 }
 
 function clearPendingModelMutations(): void {
@@ -139,6 +125,13 @@ beforeEach(() => {
     spy.mockReset()
     spy.mockResolvedValue({ status: 'accepted', result: { status: 'ok' } })
   }
+  sortableSpies.create.mockReset()
+  sortableSpies.destroy.mockReset()
+  sortableSpies.option.mockReset()
+  sortableSpies.create.mockReturnValue({
+    destroy: sortableSpies.destroy,
+    option: sortableSpies.option,
+  })
 })
 
 afterEach(() => {
@@ -199,7 +192,7 @@ describe('ModelProfileList', () => {
     expect(target.querySelector('[role="dialog"]')?.textContent).not.toContain(language.modelProfiles.usedByColumn)
   })
 
-  it('reorders profiles by stable ID after drag and drop', async () => {
+  it('uses immediate fallback sorting on every pointer type and reorders profiles by stable ID', async () => {
     getDatabase().modelProfiles = [
       { id: 'profile-a', name: 'A', providerId: 'debug-echo', modelId: 'debug-echo' },
       { id: 'profile-b', name: 'B', providerId: 'debug-echo', modelId: 'debug-echo' },
@@ -210,35 +203,35 @@ describe('ModelProfileList', () => {
 
     const rows = target.querySelectorAll<HTMLElement>('[data-model-profile-row]')
     const list = target.querySelector<HTMLElement>('[role="list"]')
-    const endDropZone = list?.lastElementChild
-    if (!rows[0] || !endDropZone) throw new Error('Profile drag targets not found')
-    const dataTransfer = createProfileDataTransfer()
-    dispatchProfileDragEvent(rows[0], 'dragstart', dataTransfer)
-    dispatchProfileDragEvent(endDropZone, 'drop', dataTransfer)
-    await flushAsync()
+    if (!rows[0] || !rows[1] || !list) throw new Error('Profile sort targets not found')
+    const options = modelProfileSortableOptions()
+    expect(options).toMatchObject({
+      delay: 0,
+      delayOnTouchOnly: false,
+      forceFallback: true,
+      draggable: '[data-model-profile-sortable-item]',
+      handle: '[data-model-profile-drag-handle]',
+    })
+    expect(rows[0].hasAttribute('draggable')).toBe(false)
+    expect(rows[0].querySelector('[data-model-profile-drag-handle]')).toBeTruthy()
 
-    expect(dataTransfer.setData).toHaveBeenCalledWith(RISU_MODEL_PROFILE_DRAG_TYPE, 'true')
-    expect(commandSpies.reorderModelProfilesDurably).toHaveBeenCalledWith([
+    const draggedRow = rows[1]
+    getDatabase().modelProfileOrder = [
       { kind: 'profile', profileId: 'profile-b' },
       { kind: 'profile', profileId: 'profile-c' },
       { kind: 'profile', profileId: 'profile-a' },
-    ])
-  })
-
-  it('leaves external file drops for the app-level importer', async () => {
-    component = mount(ModelProfileList, { target })
+    ]
     await tick()
+    list.append(draggedRow)
+    options.onEnd({ from: list, item: draggedRow, oldDraggableIndex: 1, newDraggableIndex: 2 })
+    await flushAsync()
 
-    const row = target.querySelector<HTMLElement>('[data-model-profile-row]')
-    if (!row) throw new Error('Profile drop target not found')
-    const dataTransfer = createProfileDataTransfer(['Files'])
-
-    const dragOver = dispatchProfileDragEvent(row, 'dragover', dataTransfer)
-    const drop = dispatchProfileDragEvent(row, 'drop', dataTransfer)
-
-    expect(dragOver.defaultPrevented).toBe(false)
-    expect(drop.defaultPrevented).toBe(false)
-    expect(commandSpies.reorderModelProfilesDurably).not.toHaveBeenCalled()
+    expect(commandSpies.reorderModelProfilesDurably).toHaveBeenCalledWith([
+      { kind: 'profile', profileId: 'profile-c' },
+      { kind: 'profile', profileId: 'profile-a' },
+      { kind: 'profile', profileId: 'profile-b' },
+    ])
+    expect(draggedRow.previousElementSibling?.getAttribute('data-model-profile-drop-key')).toBe('profile:profile-b')
   })
 
   it('renders, reorders, and confirms deletion of a divider', async () => {
@@ -257,13 +250,19 @@ describe('ModelProfileList', () => {
     await tick()
 
     const divider = target.querySelector<HTMLElement>('[data-model-profile-divider-row]')
-    const endDropZone = target.querySelector<HTMLElement>('[role="list"]')?.lastElementChild
-    if (!divider || !endDropZone) throw new Error('Divider drag targets not found')
+    const list = target.querySelector<HTMLElement>('[role="list"]')
+    if (!divider || !list) throw new Error('Divider sort targets not found')
     expect(divider.textContent).toContain('---')
+    expect(divider.querySelector('button')?.hasAttribute('data-model-profile-drag-handle')).toBe(false)
+    expect(divider.querySelector('[data-model-profile-drag-handle]')).toBeTruthy()
 
-    const dataTransfer = createProfileDataTransfer()
-    dispatchProfileDragEvent(divider, 'dragstart', dataTransfer)
-    dispatchProfileDragEvent(endDropZone, 'drop', dataTransfer)
+    list.append(divider)
+    modelProfileSortableOptions().onEnd({
+      from: list,
+      item: divider,
+      oldDraggableIndex: 1,
+      newDraggableIndex: 2,
+    })
     await flushAsync()
     expect(commandSpies.reorderModelProfilesDurably).toHaveBeenCalledWith([
       { kind: 'profile', profileId: 'profile-a' },

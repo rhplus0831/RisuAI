@@ -533,7 +533,7 @@ describe('App route/refreeze mounted DOM behavior', () => {
     expect(appRouteDomMocks.closeGridRoute).toHaveBeenCalledOnce()
   })
 
-  it('marks in-app drags and keeps them out of the file-import path', () => {
+  it('marks in-app drags without overriding a child reorder target', () => {
     const main = target.querySelector('main')
     expect(main).not.toBeNull()
 
@@ -547,12 +547,18 @@ describe('App route/refreeze mounted DOM behavior', () => {
       dropEffect: 'move',
       types: [RISU_SIDEBAR_DRAG_TYPE],
     }
+    const childDropTarget = document.createElement('div')
+    childDropTarget.addEventListener('dragover', (event) => {
+      event.preventDefault()
+      dataTransfer.dropEffect = 'move'
+    })
+    main?.append(childDropTarget)
     const dragOverEvent = new Event('dragover', { bubbles: true, cancelable: true })
     Object.defineProperty(dragOverEvent, 'dataTransfer', { value: dataTransfer })
 
-    main?.dispatchEvent(dragOverEvent)
+    childDropTarget.dispatchEvent(dragOverEvent)
 
-    expect(dataTransfer.dropEffect).toBe('none')
+    expect(dataTransfer.dropEffect).toBe('move')
     expect(dragOverEvent.defaultPrevented).toBe(true)
 
     const dropEvent = new Event('drop', { bubbles: true, cancelable: true })
@@ -563,6 +569,19 @@ describe('App route/refreeze mounted DOM behavior', () => {
 
     expect(dropEvent.defaultPrevented).toBe(true)
     expect(appRouteDomMocks.importCharacterProcess).not.toHaveBeenCalled()
+  })
+
+  it('advertises copy for external file drags', () => {
+    const main = target.querySelector('main')
+    expect(main).not.toBeNull()
+
+    const dataTransfer = { dropEffect: 'none', types: ['Files'] }
+    const dragOverEvent = new Event('dragover', { bubbles: true, cancelable: true })
+    Object.defineProperty(dragOverEvent, 'dataTransfer', { value: dataTransfer })
+    main?.dispatchEvent(dragOverEvent)
+
+    expect(dragOverEvent.defaultPrevented).toBe(true)
+    expect(dataTransfer.dropEffect).toBe('copy')
   })
 
   it('contains and restores focus while the responsive sidebar is open and closes it with Escape', async () => {

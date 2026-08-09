@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import { alertConfirm, alertError, alertNormal } from '../../ts/alert'
   import { language } from '../../lang'
   import {
@@ -26,6 +27,7 @@
     ArchiveIcon,
     ArchiveRestoreIcon,
     CopyIcon,
+    GripVerticalIcon,
     HardDriveUploadIcon,
     PlusIcon,
     PencilIcon,
@@ -49,16 +51,16 @@
     ensurePromptTemplateHydrated,
     promptTemplateOwnerUsesSelectedFallback,
   } from 'src/ts/server/promptTemplateHydration'
-  import { hasDragType, RISU_PRESET_DRAG_TYPE } from 'src/ts/dragTypes'
+  import { internalReorderSortableOptions } from 'src/ts/gui/internalReorderSortable'
+  import Sortable, { type SortableEvent } from 'sortablejs'
 
   type ModernPreset = ModelPreset | PromptPreset
   type ModernPresetKind = 'model' | 'prompt'
 
   let editMode = $state(false)
   let showArchivedPromptPresets = $state(false)
-  let isDragging = $state(false)
-  let dragOverIndex = $state(-1)
-  let draggedPreset = $state<{ kind: ModernPresetKind; id: string } | null>(null)
+  let presetListElement: HTMLDivElement | undefined = $state()
+  let presetSortable: Sortable | null = null
   let renameOperation = 0
   let renameStates = $state<Record<string, { operation: number; status: 'saving' | 'queued' }>>({})
   let renameErrors = $state<Record<string, string>>({})
@@ -69,6 +71,7 @@
   let rowMutationStates = $state<Record<string, { operation: number; status: 'saving' | 'queued' }>>({})
   let rowMutationErrors = $state<Record<string, string>>({})
   let latestRowMutationError = $derived(Object.values(rowMutationErrors).at(-1) ?? '')
+  let presetSortingDisabled = $derived(editMode || !!selectionPendingKey || Object.keys(rowMutationStates).length > 0)
 
   interface Props {
     close?: () => void
@@ -104,6 +107,28 @@
     return kind === 'prompt'
       ? (activeChatSettings.settings?.promptPresetId ?? null)
       : (activeChatSettings.settings?.modelPresetId ?? null)
+  })
+
+  $effect(() => {
+    presetSortable?.option('disabled', presetSortingDisabled)
+  })
+
+  $effect(() => {
+    if (!presetListElement) return
+    const sortable = Sortable.create(presetListElement, {
+      ...internalReorderSortableOptions,
+      disabled: untrack(() => presetSortingDisabled),
+      draggable: '[data-risu-preset-sortable-item]',
+      handle: '[data-risu-preset-drag-handle]',
+      onEnd: handlePresetSortEnd,
+    })
+    presetSortable = sortable
+    return () => {
+      try {
+        sortable.destroy()
+      } catch {}
+      if (presetSortable === sortable) presetSortable = null
+    }
   })
 
   function nonEmptyId(id: unknown): string | null {
@@ -144,9 +169,6 @@
 
   function togglePromptPresetArchiveView() {
     if (kind !== 'prompt') return
-    isDragging = false
-    dragOverIndex = -1
-    draggedPreset = null
     showArchivedPromptPresets = !showArchivedPromptPresets
   }
 
@@ -361,28 +383,49 @@
     )
   }
 
-  function handlePresetDrop(targetPresetId: string | null | undefined, e: DragEvent) {
-    if (!hasDragType(e.dataTransfer?.types, RISU_PRESET_DRAG_TYPE)) return
-    e.preventDefault()
-    e.stopPropagation()
-    const data = e.dataTransfer?.getData('text')
-    const drag = draggedPreset
-    if (data !== 'preset' || !drag || drag.kind !== kind || targetPresetId === null) return
+  function handlePresetSortEnd(event: SortableEvent): void {
+    const oldIndex = event.oldDraggableIndex
+    const newIndex = event.newDraggableIndex
+    const presetId = nonEmptyId((event.item as HTMLElement).dataset.risuPresetSortableKey)
+    restorePresetSortableDom(event, presetId)
+    if (
+      presetSortingDisabled ||
+      oldIndex === undefined ||
+      newIndex === undefined ||
+      oldIndex === newIndex ||
+      !presetId
+    ) {
+      return
+    }
 
-    const transferredPresetId = nonEmptyId(e.dataTransfer?.getData('presetId'))
-    if (transferredPresetId && transferredPresetId !== drag.id) return
+    const presetKind: ModernPresetKind = kind === 'prompt' ? 'prompt' : 'model'
+    const visiblePresetIds = visibleModernPresetEntries.flatMap((entry) => {
+      const id = nonEmptyId(entry.preset.id)
+      return id ? [id] : []
+    })
+    const visibleSourceIndex = visiblePresetIds.indexOf(presetId)
+    if (visibleSourceIndex < 0 || newIndex < 0 || newIndex >= visiblePresetIds.length) return
 
-    const presets = presetsForKind(drag.kind)
-    const sourceIndex = presets.findIndex((preset) => nonEmptyId(preset?.id) === drag.id)
-    if (sourceIndex < 0) return
+    const reorderedVisibleIds = [...visiblePresetIds]
+    reorderedVisibleIds.splice(visibleSourceIndex, 1)
+    reorderedVisibleIds.splice(newIndex, 0, presetId)
 
-    const targetIndex =
-      targetPresetId === undefined
-        ? presets.length
-        : presets.findIndex((preset) => nonEmptyId(preset?.id) === targetPresetId)
-    if (targetIndex < 0) return
+    const presets = presetsForKind(presetKind)
+    const sourceIndex = presets.findIndex((preset) => nonEmptyId(preset.id) === presetId)
+    const followingPresetId = reorderedVisibleIds[newIndex + 1]
+    const targetIndex = followingPresetId
+      ? presets.findIndex((preset) => nonEmptyId(preset.id) === followingPresetId)
+      : presets.length
+    if (sourceIndex < 0 || targetIndex < 0) return
+    movePreset(presetKind, sourceIndex, targetIndex)
+  }
 
-    movePreset(drag.kind, sourceIndex, targetIndex)
+  function restorePresetSortableDom(event: SortableEvent, presetId: string | null): void {
+    if (!presetId) return
+    const originalAnchor = Array.from(event.from.querySelectorAll<HTMLElement>('[data-risu-preset-sort-anchor]')).find(
+      (candidate) => candidate.dataset.risuPresetSortAnchor === presetId,
+    )
+    originalAnchor?.after(event.item)
   }
 
   function createNewPreset() {
@@ -525,201 +568,137 @@
           {showArchivedPromptPresets ? language.noArchivedPromptPresets : language.noActivePromptPresets}
         </span>
       {/if}
-      {#each visibleModernPresetEntries as entry, visibleIndex}
-        {@const preset = entry.preset}
-        {@const i = entry.index}
-        <div
-          class="w-full transition-all duration-200"
-          class:h-0.5={!isDragging || dragOverIndex !== visibleIndex}
-          class:h-1={isDragging && dragOverIndex === visibleIndex}
-          class:bg-blue-500={isDragging && dragOverIndex === visibleIndex}
-          class:shadow-lg={isDragging && dragOverIndex === visibleIndex}
-          class:hover:bg-gray-600={!isDragging}
-          role="listitem"
-          ondragover={(e) => {
-            if (!hasDragType(e.dataTransfer.types, RISU_PRESET_DRAG_TYPE)) return
-            e.preventDefault()
-            dragOverIndex = visibleIndex
-          }}
-          ondragleave={() => {
-            dragOverIndex = -1
-          }}
-          ondrop={(e) => {
-            handlePresetDrop(nonEmptyId(preset?.id), e)
-            dragOverIndex = -1
-          }}>
-        </div>
+      <div class="flex flex-col" role="list" data-risu-preset-sortable-list bind:this={presetListElement}>
+        {#each visibleModernPresetEntries as entry, visibleIndex (nonEmptyId(entry.preset.id) ?? entry.index)}
+          {@const preset = entry.preset}
+          {@const i = entry.index}
+          {@const presetId = nonEmptyId(preset.id)}
+          <div role="presentation" class="contents" data-risu-preset-sort-anchor={presetId ?? ''}></div>
 
-        <!-- The native select button owns keyboard activation; this handler keeps the full row as the pointer target. -->
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div
-          class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
-          class:bg-selected={isPresetSelected(preset, i)}
-          class:draggable-preset={!editMode}
-          data-risu-generation-picker-row
-          data-risu-picker-kind={kind}
-          data-risu-picker-mode={mode}
-          data-risu-row-id={nonEmptyId(preset?.id) ?? ''}
-          data-risu-row-index={i}
-          data-risu-selected={isPresetSelected(preset, i) ? 'true' : 'false'}
-          draggable={!editMode ? 'true' : 'false'}
-          onclick={() => {
-            if (!editMode) selectPreset(preset, i)
-          }}
-          ondragstart={(e) => {
-            if (editMode) {
-              e.preventDefault()
-              return
-            }
-            const presetId = nonEmptyId(preset?.id)
-            if (!presetId) {
-              e.preventDefault()
-              return
-            }
-            const presetKind: ModernPresetKind = kind === 'prompt' ? 'prompt' : 'model'
-            isDragging = true
-            draggedPreset = { kind: presetKind, id: presetId }
-            e.dataTransfer?.setData('text', 'preset')
-            e.dataTransfer?.setData('presetId', presetId)
-            e.dataTransfer?.setData(RISU_PRESET_DRAG_TYPE, 'true')
-          }}
-          ondragend={() => {
-            isDragging = false
-            dragOverIndex = -1
-            draggedPreset = null
-          }}
-          ondragover={(e) => {
-            if (!hasDragType(e.dataTransfer.types, RISU_PRESET_DRAG_TYPE)) return
-            e.preventDefault()
-            const rect = e.currentTarget.getBoundingClientRect()
-            dragOverIndex = e.clientY < rect.top + rect.height / 2 ? visibleIndex : visibleIndex + 1
-          }}
-          ondrop={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect()
-            const dropIndex = e.clientY < rect.top + rect.height / 2 ? visibleIndex : visibleIndex + 1
-            const targetPresetId =
-              dropIndex >= visibleModernPresetEntries.length
-                ? undefined
-                : nonEmptyId(visibleModernPresetEntries[dropIndex]?.preset.id)
-            handlePresetDrop(targetPresetId, e)
-            dragOverIndex = -1
-          }}>
-          {#if editMode}
-            <div class="min-w-0 grow">
-              <TextInput
-                bind:value={() => presetName(preset), (value) => updatePresetName(preset, i, value)}
-                ariaLabel={`${language.edit}: ${preset.name ?? `#${i + 1}`}`}
-                placeholder="string"
-                padding={false} />
-              {#if renameErrors[presetDraftKey(preset, i)]}
-                <span data-risu-preset-rename-status role="alert" class="block text-xs text-draculared">
-                  {renameErrors[presetDraftKey(preset, i)]}
-                </span>
-              {/if}
-            </div>
-          {:else}
-            <button
-              type="button"
-              data-risu-picker-select
-              class="flex min-w-0 grow items-center text-left"
-              disabled={!!selectionPendingKey}
-              aria-pressed={isPresetSelected(preset, i)}
-              aria-current={isPresetSelected(preset, i) ? 'true' : undefined}
-              onclick={(event) => {
-                event.stopPropagation()
-                selectPreset(preset, i)
-              }}>
-              {#if visibleIndex < 9}
-                <span class="w-2 text-center mr-2 text-textcolor2">{visibleIndex + 1}</span>
-              {/if}
-              <span>{preset.name}</span>
-            </button>
-          {/if}
-          <div class="ml-auto flex shrink-0 justify-end">
-            {#if kind === 'prompt'}
-              <button
-                type="button"
-                data-risu-preset-duplicate-action
-                disabled={!!rowMutationStates[presetDraftKey(preset, i)]}
-                class="text-textcolor2 hover:text-green-500 cursor-pointer mr-2"
-                aria-label={`${language.duplicate}: ${preset.name ?? `#${visibleIndex + 1}`}`}
-                title={language.duplicate}
-                onclick={(e) => {
-                  e.stopPropagation()
-                  duplicatePromptPreset(preset as PromptPreset)
-                }}>
-                <CopyIcon size={18} />
-              </button>
-              <button
-                type="button"
-                data-risu-preset-archive-action
-                class="text-textcolor2 hover:text-green-500 cursor-pointer mr-2"
-                aria-label={`${
-                  (preset as PromptPreset).archived === true
-                    ? language.restorePromptPreset
-                    : language.archivePromptPreset
-                }: ${preset.name ?? `#${visibleIndex + 1}`}`}
-                title={(preset as PromptPreset).archived === true
-                  ? language.restorePromptPreset
-                  : language.archivePromptPreset}
-                onclick={(e) => {
-                  e.stopPropagation()
-                  setPromptPresetArchived(preset as PromptPreset, i, (preset as PromptPreset).archived !== true)
-                }}>
-                {#if (preset as PromptPreset).archived === true}
-                  <ArchiveRestoreIcon size={18} />
-                {:else}
-                  <ArchiveIcon size={18} />
+          <!-- The native select button owns keyboard activation; this handler keeps the full row as the pointer target. -->
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
+            class:bg-selected={isPresetSelected(preset, i)}
+            data-risu-generation-picker-row
+            data-risu-preset-sortable-item
+            data-risu-preset-sortable-key={presetId ?? ''}
+            data-risu-picker-kind={kind}
+            data-risu-picker-mode={mode}
+            data-risu-row-id={presetId ?? ''}
+            data-risu-row-index={i}
+            data-risu-selected={isPresetSelected(preset, i) ? 'true' : 'false'}
+            onclick={() => {
+              if (!editMode) selectPreset(preset, i)
+            }}>
+            {#if !editMode}
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <span
+                class="flex h-11 w-11 shrink-0 touch-none cursor-grab items-center justify-center text-textcolor2 active:cursor-grabbing"
+                title={kind === 'prompt' ? language.dragPromptPreset : language.dragModelPreset}
+                data-risu-preset-drag-handle
+                aria-hidden="true"
+                onclick={(event) => event.stopPropagation()}>
+                <GripVerticalIcon size={18} />
+              </span>
+            {/if}
+            {#if editMode}
+              <div class="min-w-0 grow">
+                <TextInput
+                  bind:value={() => presetName(preset), (value) => updatePresetName(preset, i, value)}
+                  ariaLabel={`${language.edit}: ${preset.name ?? `#${i + 1}`}`}
+                  placeholder="string"
+                  padding={false} />
+                {#if renameErrors[presetDraftKey(preset, i)]}
+                  <span data-risu-preset-rename-status role="alert" class="block text-xs text-draculared">
+                    {renameErrors[presetDraftKey(preset, i)]}
+                  </span>
                 {/if}
-              </button>
+              </div>
+            {:else}
               <button
-                class="text-textcolor2 hover:text-green-500 cursor-pointer mr-2"
-                aria-label={`${language.export}: ${preset.name ?? `#${i + 1}`}`}
-                onclick={async (e) => {
-                  e.stopPropagation()
-                  await downloadPreset(i, 'risupreset')
+                type="button"
+                data-risu-picker-select
+                class="flex min-w-0 grow items-center text-left"
+                disabled={!!selectionPendingKey}
+                aria-pressed={isPresetSelected(preset, i)}
+                aria-current={isPresetSelected(preset, i) ? 'true' : undefined}
+                onclick={(event) => {
+                  event.stopPropagation()
+                  selectPreset(preset, i)
                 }}>
-                <Share2Icon size={18} />
+                {#if visibleIndex < 9}
+                  <span class="w-2 text-center mr-2 text-textcolor2">{visibleIndex + 1}</span>
+                {/if}
+                <span>{preset.name}</span>
               </button>
             {/if}
-            <button
-              class="text-textcolor2 hover:text-green-500 cursor-pointer"
-              aria-label={`${language.remove}: ${preset.name ?? `#${i + 1}`}`}
-              onclick={(e) => {
-                e.stopPropagation()
-                removeModernPreset(i, preset)
-              }}>
-              <TrashIcon size={18} />
-            </button>
+            <div class="ml-auto flex shrink-0 justify-end">
+              {#if kind === 'prompt'}
+                <button
+                  type="button"
+                  data-risu-preset-duplicate-action
+                  disabled={!!rowMutationStates[presetDraftKey(preset, i)]}
+                  class="text-textcolor2 hover:text-green-500 cursor-pointer mr-2"
+                  aria-label={`${language.duplicate}: ${preset.name ?? `#${visibleIndex + 1}`}`}
+                  title={language.duplicate}
+                  onclick={(e) => {
+                    e.stopPropagation()
+                    duplicatePromptPreset(preset as PromptPreset)
+                  }}>
+                  <CopyIcon size={18} />
+                </button>
+                <button
+                  type="button"
+                  data-risu-preset-archive-action
+                  class="text-textcolor2 hover:text-green-500 cursor-pointer mr-2"
+                  aria-label={`${
+                    (preset as PromptPreset).archived === true
+                      ? language.restorePromptPreset
+                      : language.archivePromptPreset
+                  }: ${preset.name ?? `#${visibleIndex + 1}`}`}
+                  title={(preset as PromptPreset).archived === true
+                    ? language.restorePromptPreset
+                    : language.archivePromptPreset}
+                  onclick={(e) => {
+                    e.stopPropagation()
+                    setPromptPresetArchived(preset as PromptPreset, i, (preset as PromptPreset).archived !== true)
+                  }}>
+                  {#if (preset as PromptPreset).archived === true}
+                    <ArchiveRestoreIcon size={18} />
+                  {:else}
+                    <ArchiveIcon size={18} />
+                  {/if}
+                </button>
+                <button
+                  class="text-textcolor2 hover:text-green-500 cursor-pointer mr-2"
+                  aria-label={`${language.export}: ${preset.name ?? `#${i + 1}`}`}
+                  onclick={async (e) => {
+                    e.stopPropagation()
+                    await downloadPreset(i, 'risupreset')
+                  }}>
+                  <Share2Icon size={18} />
+                </button>
+              {/if}
+              <button
+                class="text-textcolor2 hover:text-green-500 cursor-pointer"
+                aria-label={`${language.remove}: ${preset.name ?? `#${i + 1}`}`}
+                onclick={(e) => {
+                  e.stopPropagation()
+                  removeModernPreset(i, preset)
+                }}>
+                <TrashIcon size={18} />
+              </button>
+            </div>
           </div>
-        </div>
-        {#if rowMutationErrors[presetDraftKey(preset, i)]}
-          <span data-risu-preset-row-mutation-status role="alert" class="block px-2 text-xs text-draculared">
-            {rowMutationErrors[presetDraftKey(preset, i)]}
-          </span>
-        {/if}
-      {/each}
-
-      <div
-        class="w-full transition-all duration-200"
-        class:h-0.5={!isDragging || dragOverIndex !== visibleModernPresetEntries.length}
-        class:h-1={isDragging && dragOverIndex === visibleModernPresetEntries.length}
-        class:bg-blue-500={isDragging && dragOverIndex === visibleModernPresetEntries.length}
-        class:shadow-lg={isDragging && dragOverIndex === visibleModernPresetEntries.length}
-        role="listitem"
-        ondragover={(e) => {
-          if (!hasDragType(e.dataTransfer.types, RISU_PRESET_DRAG_TYPE)) return
-          e.preventDefault()
-          dragOverIndex = visibleModernPresetEntries.length
-        }}
-        ondragleave={() => {
-          dragOverIndex = -1
-        }}
-        ondrop={(e) => {
-          handlePresetDrop(undefined, e)
-          dragOverIndex = -1
-        }}>
+          {#if rowMutationErrors[presetDraftKey(preset, i)]}
+            <span data-risu-preset-row-mutation-status role="alert" class="block px-2 text-xs text-draculared">
+              {rowMutationErrors[presetDraftKey(preset, i)]}
+            </span>
+          {/if}
+        {/each}
       </div>
 
       <div class="flex mt-2 items-center">
@@ -778,23 +757,5 @@
   .preset-modal.modelPresetManager {
     width: min(72rem, calc(100vw - 2rem));
     max-width: 72rem;
-  }
-
-  .draggable-preset:hover {
-    cursor: grab;
-  }
-
-  .draggable-preset:active {
-    cursor: grabbing;
-  }
-
-  .h-0\.5 {
-    min-height: 2px;
-    height: 2px;
-  }
-
-  .h-1 {
-    min-height: 4px;
-    height: 4px;
   }
 </style>

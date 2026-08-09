@@ -1137,6 +1137,8 @@ export const languageEnglish = {
   presets: 'Presets',
   modelPresets: 'Model presets',
   promptPresets: 'Prompt presets',
+  dragModelPreset: 'Drag to reorder model preset',
+  dragPromptPreset: 'Drag to reorder prompt preset',
   activePromptPresets: 'Active',
   archivedPromptPresets: 'Archived',
   showActivePromptPresets: 'Show active prompt presets',

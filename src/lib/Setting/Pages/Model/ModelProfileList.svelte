@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import { CopyIcon, GripVerticalIcon, MinusIcon, PencilIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import Button from 'src/lib/UI/GUI/Button.svelte'
@@ -37,8 +38,7 @@
   import type { ProviderCredentialType } from 'src/ts/model/providerCredentialRecords'
   import { getDatabase } from 'src/ts/storage/database.svelte'
   import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
-  import { sortableOptions } from 'src/ts/util'
-  import { hasDragType, RISU_MODEL_PROFILE_DRAG_TYPE } from 'src/ts/dragTypes'
+  import { internalReorderSortableOptions } from 'src/ts/gui/internalReorderSortable'
   import Sortable, { type SortableEvent } from 'sortablejs'
   import ModelProfileEditorDrawer from './ModelProfileEditorDrawer.svelte'
   import ModelRuntimeDefaultsEditor from './ModelRuntimeDefaultsEditor.svelte'
@@ -62,11 +62,8 @@
   let busy = $state(false)
   let pendingMutations = $state(getPendingModelMutations('model-profiles'))
   let commandError = $state('')
-  let draggedOrderKey = $state<string | null>(null)
-  let dragOverIndex = $state(-1)
   let profileListElement: HTMLDivElement | undefined = $state()
-  let touchSortable: Sortable | null = null
-  let suppressDividerClickId: string | null = null
+  let profileSortable: Sortable | null = null
 
   let profiles = $derived(getDatabase().modelProfiles ?? [])
   let profileOrder = $derived(normalizeModelProfileOrder(getDatabase().modelProfileOrder, profiles))
@@ -84,27 +81,24 @@
   })
 
   $effect(() => {
-    touchSortable?.option('disabled', busy || mutationQueued)
+    profileSortable?.option('disabled', busy || mutationQueued)
   })
 
   $effect(() => {
-    const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false
-    if (!profileListElement || (!coarsePointer && navigator.maxTouchPoints <= 0)) return
+    if (!profileListElement) return
     const sortable = Sortable.create(profileListElement, {
-      ...sortableOptions,
-      animation: 150,
+      ...internalReorderSortableOptions,
+      disabled: untrack(() => busy || mutationQueued),
       draggable: '[data-model-profile-sortable-item]',
       handle: '[data-model-profile-drag-handle]',
-      chosenClass: 'risu-chosen-item',
-      ghostClass: 'risu-ghost-item',
-      onEnd: handleTouchSortEnd,
+      onEnd: handleProfileSortEnd,
     })
-    touchSortable = sortable
+    profileSortable = sortable
     return () => {
       try {
         sortable.destroy()
       } catch {}
-      if (touchSortable === sortable) touchSortable = null
+      if (profileSortable === sortable) profileSortable = null
     }
   })
 
@@ -367,33 +361,11 @@
     }
   }
 
-  function startProfileDrag(orderKey: string, event: DragEvent, allowButton = false): void {
-    if (busy || mutationQueued) {
-      event.preventDefault()
-      return
-    }
-    const target = event.target
-    if (!allowButton && target instanceof Element && target.closest('button')) {
-      event.preventDefault()
-      return
-    }
-    draggedOrderKey = orderKey
-    event.dataTransfer?.setData('text', 'model-profile-order')
-    event.dataTransfer?.setData('orderKey', orderKey)
-    event.dataTransfer?.setData(RISU_MODEL_PROFILE_DRAG_TYPE, 'true')
-    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
-  }
-
-  function finishProfileDrag(): void {
-    draggedOrderKey = null
-    dragOverIndex = -1
-  }
-
-  function handleTouchSortEnd(event: SortableEvent): void {
+  function handleProfileSortEnd(event: SortableEvent): void {
     const oldIndex = event.oldDraggableIndex
     const newIndex = event.newDraggableIndex
     const orderKey = (event.item as HTMLElement).dataset.modelProfileOrderKey
-    restoreTouchSortableDom(event, orderKey)
+    restoreProfileSortableDom(event, orderKey)
     if (
       busy ||
       mutationQueued ||
@@ -404,60 +376,21 @@
     ) {
       return
     }
+    const sourceIndex = profileOrder.findIndex((entry) => modelProfileOrderEntryKey(entry) === orderKey)
+    if (sourceIndex < 0 || newIndex < 0 || newIndex >= profileOrder.length) return
     const reordered = [...profileOrder]
-    const [moved] = reordered.splice(oldIndex, 1)
+    const [moved] = reordered.splice(sourceIndex, 1)
     if (!moved) return
     reordered.splice(newIndex, 0, moved)
-    if (moved.kind === 'divider') {
-      suppressDividerClickId = moved.id
-      window.setTimeout(() => {
-        if (suppressDividerClickId === moved.id) suppressDividerClickId = null
-      }, 0)
-    }
     void reorderProfiles(reordered)
   }
 
-  function restoreTouchSortableDom(event: SortableEvent, orderKey: string | undefined): void {
+  function restoreProfileSortableDom(event: SortableEvent, orderKey: string | undefined): void {
     if (!orderKey) return
     const originalDropZone = Array.from(event.from.querySelectorAll<HTMLElement>('[data-model-profile-drop-key]')).find(
       (candidate) => candidate.dataset.modelProfileDropKey === orderKey,
     )
     originalDropZone?.after(event.item)
-  }
-
-  function handleProfileDrop(targetOrderKey: string | undefined, event: DragEvent): void {
-    if (!hasDragType(event.dataTransfer?.types, RISU_MODEL_PROFILE_DRAG_TYPE)) return
-    event.preventDefault()
-    const draggedKey = draggedOrderKey
-    const transferredKey = event.dataTransfer?.getData('orderKey')
-    if (
-      event.dataTransfer?.getData('text') !== 'model-profile-order' ||
-      !draggedKey ||
-      (transferredKey && transferredKey !== draggedKey)
-    ) {
-      finishProfileDrag()
-      return
-    }
-
-    const sourceIndex = profileOrder.findIndex((entry) => modelProfileOrderEntryKey(entry) === draggedKey)
-    const targetIndex = targetOrderKey
-      ? profileOrder.findIndex((entry) => modelProfileOrderEntryKey(entry) === targetOrderKey)
-      : profileOrder.length
-    if (sourceIndex < 0 || targetIndex < 0) {
-      finishProfileDrag()
-      return
-    }
-
-    const reordered = [...profileOrder]
-    const [moved] = reordered.splice(sourceIndex, 1)
-    const adjustedTargetIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex
-    if (!moved || adjustedTargetIndex === sourceIndex) {
-      finishProfileDrag()
-      return
-    }
-    reordered.splice(adjustedTargetIndex, 0, moved)
-    finishProfileDrag()
-    void reorderProfiles(reordered)
   }
 
   function addDivider(): void {
@@ -467,10 +400,6 @@
   }
 
   function deleteDivider(dividerId: string): void {
-    if (suppressDividerClickId === dividerId) {
-      suppressDividerClickId = null
-      return
-    }
     if (busy || mutationQueued || !window.confirm(language.modelProfiles.deleteDividerConfirm)) return
     void reorderProfiles(profileOrder.filter((entry) => entry.kind !== 'divider' || entry.id !== dividerId))
   }
@@ -555,50 +484,21 @@
     </div>
   {:else}
     <div class="flex flex-col" role="list" bind:this={profileListElement}>
-      {#each profileItems as item, index (modelProfileListItemKey(item))}
+      {#each profileItems as item (modelProfileListItemKey(item))}
         {@const orderKey = modelProfileListItemKey(item)}
-        <div
-          role="presentation"
-          data-model-profile-drop-key={orderKey}
-          class="h-1 transition-all"
-          class:h-2={draggedOrderKey && dragOverIndex === index}
-          class:bg-blue-500={draggedOrderKey && dragOverIndex === index}
-          ondragover={(event) => {
-            if (!hasDragType(event.dataTransfer.types, RISU_MODEL_PROFILE_DRAG_TYPE)) return
-            event.preventDefault()
-            dragOverIndex = index
-          }}
-          ondrop={(event) => handleProfileDrop(orderKey, event)}>
-        </div>
+        <div role="presentation" data-model-profile-drop-key={orderKey} class="contents"></div>
         {#if item.kind === 'profile'}
           {@const profile = item.profile}
           <article
-            class="risu-card flex cursor-move flex-col gap-2 text-sm"
+            class="risu-card flex flex-col gap-2 text-sm"
             role="listitem"
             data-model-profile-row
             data-model-profile-sortable-item
             data-model-profile-order-key={orderKey}
-            data-profile-id={profile.id}
-            draggable={!busy && !mutationQueued}
-            ondragstart={(event) => startProfileDrag(orderKey, event)}
-            ondragend={finishProfileDrag}
-            ondragover={(event) => {
-              if (!hasDragType(event.dataTransfer.types, RISU_MODEL_PROFILE_DRAG_TYPE)) return
-              event.preventDefault()
-              const rect = event.currentTarget.getBoundingClientRect()
-              dragOverIndex = event.clientY < rect.top + rect.height / 2 ? index : index + 1
-            }}
-            ondrop={(event) => {
-              const rect = event.currentTarget.getBoundingClientRect()
-              const dropIndex = event.clientY < rect.top + rect.height / 2 ? index : index + 1
-              handleProfileDrop(
-                profileItems[dropIndex] ? modelProfileListItemKey(profileItems[dropIndex]) : undefined,
-                event,
-              )
-            }}>
+            data-profile-id={profile.id}>
             <div class="flex flex-wrap items-center gap-2">
               <span
-                class="text-textcolor2"
+                class="flex h-11 w-11 shrink-0 touch-none cursor-grab items-center justify-center text-textcolor2 active:cursor-grabbing"
                 title={language.modelProfiles.dragProfile}
                 data-model-profile-drag-handle
                 aria-hidden="true">
@@ -645,36 +545,25 @@
           </article>
         {:else}
           <div
+            class="flex items-center rounded-md transition-colors hover:bg-white/5"
             role="listitem"
             data-model-profile-divider-row
             data-model-profile-sortable-item
             data-model-profile-order-key={orderKey}
-            data-divider-id={item.id}
-            draggable={!busy && !mutationQueued}
-            ondragstart={(event) => startProfileDrag(orderKey, event, true)}
-            ondragend={finishProfileDrag}
-            ondragover={(event) => {
-              if (!hasDragType(event.dataTransfer.types, RISU_MODEL_PROFILE_DRAG_TYPE)) return
-              event.preventDefault()
-              const rect = event.currentTarget.getBoundingClientRect()
-              dragOverIndex = event.clientY < rect.top + rect.height / 2 ? index : index + 1
-            }}
-            ondrop={(event) => {
-              const rect = event.currentTarget.getBoundingClientRect()
-              const dropIndex = event.clientY < rect.top + rect.height / 2 ? index : index + 1
-              handleProfileDrop(
-                profileItems[dropIndex] ? modelProfileListItemKey(profileItems[dropIndex]) : undefined,
-                event,
-              )
-            }}>
+            data-divider-id={item.id}>
+            <span
+              class="flex h-11 w-11 shrink-0 touch-none cursor-grab items-center justify-center text-textcolor2 active:cursor-grabbing"
+              title={language.modelProfiles.dragDivider}
+              data-model-profile-drag-handle
+              aria-hidden="true">
+              <GripVerticalIcon size={16} />
+            </span>
             <button
               type="button"
-              class="flex w-full cursor-move items-center gap-3 rounded-md px-2 py-3 text-textcolor2 transition-colors hover:bg-white/5"
+              class="flex min-h-11 flex-1 cursor-pointer items-center gap-3 px-2 py-3 text-textcolor2"
               aria-label={language.modelProfiles.deleteDividerConfirm}
-              data-model-profile-drag-handle
               disabled={busy || mutationQueued}
               onclick={() => deleteDivider(item.id)}>
-              <span title={language.modelProfiles.dragDivider} aria-hidden="true"><GripVerticalIcon size={16} /></span>
               <span class="h-px flex-1 bg-darkborderc"></span>
               <span aria-hidden="true">---</span>
               <span class="h-px flex-1 bg-darkborderc"></span>
@@ -682,18 +571,6 @@
           </div>
         {/if}
       {/each}
-      <div
-        role="presentation"
-        class="h-1 transition-all"
-        class:h-2={draggedOrderKey && dragOverIndex === profileItems.length}
-        class:bg-blue-500={draggedOrderKey && dragOverIndex === profileItems.length}
-        ondragover={(event) => {
-          if (!hasDragType(event.dataTransfer.types, RISU_MODEL_PROFILE_DRAG_TYPE)) return
-          event.preventDefault()
-          dragOverIndex = profileItems.length
-        }}
-        ondrop={(event) => handleProfileDrop(undefined, event)}>
-      </div>
     </div>
   {/if}
 
