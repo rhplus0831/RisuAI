@@ -228,9 +228,6 @@ vi.mock('./lib/Others/LoadoutModal.svelte', async () => ({
 vi.mock('./lib/Others/IrisModal.svelte', async () => ({
   default: (await import('./App.routeEffect.dom.AppMarker.svelte')).default,
 }))
-vi.mock('./lib/Others/Legal.svelte', async () => ({
-  default: (await import('./App.routeEffect.dom.AppMarker.svelte')).default,
-}))
 vi.mock('./lib/Others/CustomSidebarConfig.svelte', async () => ({
   default: (await import('./App.routeEffect.dom.AppMarker.svelte')).default,
 }))
