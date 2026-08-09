@@ -9153,6 +9153,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
           configured: true,
           personaId: 'persona-a',
           modelPresetId: 'model-a',
+          modelPresetSelectionSource: 'manual',
           promptPresetId: 'prompt-a',
           agentPresetId: 'agent-preset-a',
           togglePresetId: 'deleted-toggle-preset',
@@ -9191,6 +9192,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       configured: true,
       personaId: 'persona-a',
       modelPresetId: 'model-a',
+      modelPresetSelectionSource: 'manual',
       promptPresetId: 'prompt-a',
       agentPresetId: 'agent-preset-a',
       togglePresetId: 'deleted-toggle-preset',
@@ -9450,6 +9452,10 @@ describe('Phase 9-3b chat record and folder commands', () => {
       {
         generationSettings: { ...validBase, modelPresetId: 'missing-model-preset' },
         error: 'Unknown model preset id in generationSettings.modelPresetId: missing-model-preset',
+      },
+      {
+        generationSettings: { ...validBase, modelPresetSelectionSource: 'automatic' },
+        error: 'generationSettings.modelPresetSelectionSource must be manual or prompt-recommendation',
       },
       {
         generationSettings: { ...validBase, promptPresetId: 'missing-prompt-preset' },

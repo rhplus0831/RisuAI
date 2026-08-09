@@ -4,6 +4,7 @@
   import { language } from 'src/lang'
   import { alertError, alertNormal } from 'src/ts/alert'
   import {
+    activeChatModelPresetRecommendationState,
     resolveActiveChatGenerationSettings,
     saveActiveChatGenerationSettingsSelectionWithOutcome,
   } from 'src/ts/activeChatGenerationSettings'
@@ -29,6 +30,17 @@
       (activeGenerationSettings.modelPreset as NamedGenerationReference | undefined)?.name ||
       language.chatGenerationModelPresetUnconfigured,
   )
+
+  let modelPresetRecommendationState = $derived(activeChatModelPresetRecommendationState(activeGenerationSettings))
+  let modelPresetRecommendationMismatch = $derived(modelPresetRecommendationState === 'mismatch')
+  let recommendedModelPresetName = $derived.by(() => {
+    const recommendedModelPresetId = activeGenerationSettings.promptPreset?.recommendedModelPresetId
+    if (typeof recommendedModelPresetId !== 'string' || recommendedModelPresetId.trim().length === 0) return ''
+    const preset = activeGenerationSettings.db.modelPresets?.find(
+      (candidate) => candidate.id === recommendedModelPresetId,
+    )
+    return preset?.name?.trim() || recommendedModelPresetId
+  })
 
   let promptPresetName = $derived.by(
     () =>
@@ -109,9 +121,15 @@
     data-risu-generation-picker-control
     data-risu-picker-kind="model"
     data-risu-picker-mode="active-chat-generation-settings"
-    data-risu-picker-selected-id={activeGenerationSettings.settings?.modelPresetId ?? ''}>
+    data-risu-picker-selected-id={activeGenerationSettings.settings?.modelPresetId ?? ''}
+    data-risu-model-preset-recommendation-state={modelPresetRecommendationState}
+    class:bg-red-900={modelPresetRecommendationMismatch}
+    class:rounded-sm={modelPresetRecommendationMismatch}>
     <Button
       className="flex w-full min-w-0 justify-start text-left"
+      ariaLabel={modelPresetRecommendationMismatch
+        ? language.chatGenerationModelPresetRecommendationMismatch(recommendedModelPresetName)
+        : modelPresetName}
       onclick={() => {
         openPresetListModal('active-chat-generation-settings', 'model', captureActiveChatTarget())
       }}>

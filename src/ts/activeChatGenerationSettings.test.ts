@@ -18,9 +18,12 @@ import { getResourceDatabase, replaceResourceDatabase } from './server/resourceS
 import type { Database } from './storage/database.svelte'
 import { selectedCharID } from './stores.svelte'
 import {
+  activeChatModelPresetRecommendationState,
   createActiveChatGenerationSettingsPatch,
   createActiveChatGenerationSettingsDefaultValuesPatch,
   createActiveChatGenerationSettingsSelectionPatch,
+  createManualModelPresetSelection,
+  createPromptPresetSelection,
   fillMissingActiveChatSidebarToggleDefaults,
   guardActiveChatGenerationSettingsForSend,
   resolveActiveChatGenerationSettings,
@@ -198,6 +201,46 @@ afterEach(() => {
 })
 
 describe('active chat generation settings helper', () => {
+  it('auto-applies a prompt recommendation until the chat has a manual model selection', () => {
+    testDatabaseState.db.modelPresets.push({ id: 'model-preset-b', name: 'Model Preset B' } as never)
+    testDatabaseState.db.promptPresets[0].recommendedModelPresetId = 'model-preset-b'
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-b',
+    }
+
+    let state = resolveActiveChatGenerationSettings()
+    expect(createPromptPresetSelection('preset-a', testDatabaseState.db.promptPresets[0], state)).toEqual({
+      promptPresetId: 'preset-a',
+      modelPresetId: 'model-preset-b',
+      modelPresetSelectionSource: 'prompt-recommendation',
+    })
+
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
+      ...testDatabaseState.db.characters[0].chats[0].generationSettings,
+      ...createManualModelPresetSelection('model-preset-a'),
+    }
+    state = resolveActiveChatGenerationSettings()
+    expect(createPromptPresetSelection('preset-a', testDatabaseState.db.promptPresets[0], state)).toEqual({
+      promptPresetId: 'preset-a',
+    })
+  })
+
+  it('reports matched and mismatched prompt recommendations but ignores stale references', () => {
+    testDatabaseState.db.modelPresets.push({ id: 'model-preset-b', name: 'Model Preset B' } as never)
+    testDatabaseState.db.promptPresets[0].recommendedModelPresetId = 'model-preset-b'
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
+    }
+
+    expect(activeChatModelPresetRecommendationState()).toBe('mismatch')
+    testDatabaseState.db.characters[0].chats[0].generationSettings.modelPresetId = 'model-preset-b'
+    expect(activeChatModelPresetRecommendationState()).toBe('matched')
+    testDatabaseState.db.promptPresets[0].recommendedModelPresetId = 'missing-model'
+    expect(activeChatModelPresetRecommendationState()).toBe('none')
+  })
+
   it('resolves unconfigured active-chat state, required toggles, and missing labels', () => {
     testDatabaseState.db.characters[0].chats[0].generationSettings = {
       personaId: 'persona-a',

@@ -530,7 +530,12 @@ describe('split preset command routes', () => {
     revision = reorderedModels.revision as number
 
     const createdPrompt = await runCommand('/api/v1/commands/prompt-presets', revision, {
-      preset: { id: 'prompt-created', name: 'Prompt Created', mainPrompt: 'created prompt' },
+      preset: {
+        id: 'prompt-created',
+        name: 'Prompt Created',
+        mainPrompt: 'created prompt',
+        recommendedModelPresetId: 'model-created',
+      },
     })
     expect(createdPrompt).toMatchObject({
       promptPresetId: 'prompt-created',
@@ -539,7 +544,12 @@ describe('split preset command routes', () => {
     revision = createdPrompt.revision as number
 
     const importedPrompt = await runCommand('/api/v1/commands/prompt-presets/import', revision, {
-      preset: { id: 'prompt-imported', name: 'Prompt Imported', mainPrompt: 'imported prompt' },
+      preset: {
+        id: 'prompt-imported',
+        name: 'Prompt Imported',
+        mainPrompt: 'imported prompt',
+        recommendedModelPresetId: 'model-imported',
+      },
     })
     expect(importedPrompt).toMatchObject({
       promptPresetId: 'prompt-imported',
@@ -572,6 +582,9 @@ describe('split preset command routes', () => {
       'prompt-base',
       'prompt-created',
     ])
+    expect(persisted.promptPresets[0].recommendedModelPresetId).toBe('model-imported')
+    expect(persisted.promptPresets[2].recommendedModelPresetId).toBe('model-created')
+    expect(persisted.settings).not.toHaveProperty('recommendedModelPresetId')
     expect(persisted.settings).toMatchObject({
       modelPresetsId: 1,
       promptPresetsId: 0,
@@ -580,6 +593,47 @@ describe('split preset command routes', () => {
     })
     expect(persisted.modelPresets[persisted.settings.modelPresetsId as number].id).toBe('model-imported')
     expect(persisted.promptPresets[persisted.settings.promptPresetsId as number].id).toBe('prompt-imported')
+  })
+
+  it('validates and persists prompt recommendation patches as metadata', async () => {
+    let revision = await importPresets({
+      modelPresetsId: 0,
+      promptPresetsId: 0,
+      modelPresets: [
+        { id: 'model-a', name: 'Model A' },
+        { id: 'model-b', name: 'Model B' },
+      ],
+      promptPresets: [{ id: 'prompt-a', name: 'Prompt A', mainPrompt: 'prompt' }],
+      mainPrompt: 'prompt',
+    })
+
+    const patched = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/prompt-presets/prompt-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { recommendedModelPresetId: 'model-b' } },
+    })
+    expect(patched.statusCode, patched.payload).toBe(200)
+    expect(patched.json()).toMatchObject({
+      promptPresetId: 'prompt-a',
+      acknowledgedKeys: ['recommendedModelPresetId'],
+      selectedProjectionApplied: false,
+      ownerProjectionApplied: false,
+    })
+    revision = patched.json().revision
+
+    const persisted = await readPersistedPresetState()
+    expect(persisted.promptPresets[0].recommendedModelPresetId).toBe('model-b')
+    expect(persisted.settings).not.toHaveProperty('recommendedModelPresetId')
+
+    const invalid = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/prompt-presets/prompt-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { recommendedModelPresetId: 'missing-model' } },
+    })
+    expect(invalid.statusCode).toBe(400)
+    expect(invalid.json().error).toContain('Unknown model preset id')
   })
 
   it('commits onboarding settings and both selected preset owners atomically', async () => {

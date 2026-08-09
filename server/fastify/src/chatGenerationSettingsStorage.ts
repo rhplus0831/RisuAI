@@ -25,6 +25,12 @@ export function normalizeStoredChatGenerationSettings(value: unknown): ChatGener
   if (typeof value.modelPresetId === 'string') {
     normalized.modelPresetId = value.modelPresetId
   }
+  if (
+    normalized.modelPresetId?.trim() &&
+    (value.modelPresetSelectionSource === 'manual' || value.modelPresetSelectionSource === 'prompt-recommendation')
+  ) {
+    normalized.modelPresetSelectionSource = value.modelPresetSelectionSource
+  }
   if (typeof value.promptPresetId === 'string') {
     normalized.promptPresetId = value.promptPresetId
   }

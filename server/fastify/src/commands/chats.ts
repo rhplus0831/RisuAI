@@ -500,6 +500,7 @@ export function readChatGenerationSettingsSave(
       key !== 'configured' &&
       key !== 'personaId' &&
       key !== 'modelPresetId' &&
+      key !== 'modelPresetSelectionSource' &&
       key !== 'promptPresetId' &&
       key !== 'agentPresetId' &&
       key !== 'togglePresetId' &&
@@ -535,6 +536,16 @@ export function readChatGenerationSettingsSave(
     if (raw.modelPresetId.trim() !== '' && !context.modelPresets.some((preset) => preset.id === raw.modelPresetId)) {
       throw new ValidationError(`Unknown model preset id in ${label}.modelPresetId: ${raw.modelPresetId}`)
     }
+  }
+
+  if (hasOwn(raw, 'modelPresetSelectionSource')) {
+    if (raw.modelPresetSelectionSource !== 'manual' && raw.modelPresetSelectionSource !== 'prompt-recommendation') {
+      throw new ValidationError(`${label}.modelPresetSelectionSource must be manual or prompt-recommendation`)
+    }
+    if (typeof normalized.modelPresetId !== 'string' || normalized.modelPresetId.trim() === '') {
+      throw new ValidationError(`${label}.modelPresetSelectionSource requires modelPresetId`)
+    }
+    normalized.modelPresetSelectionSource = raw.modelPresetSelectionSource
   }
 
   if (hasOwn(raw, 'promptPresetId')) {

@@ -302,13 +302,14 @@ describe('hotkey handling under the resource guard', () => {
 
     expect(changeToPreset(1)).toBe(true)
     expect(testDatabaseState.db.characters[0].chats[0].generationSettings.modelPresetId).toBe('model-second')
+    expect(testDatabaseState.db.characters[0].chats[0].generationSettings.modelPresetSelectionSource).toBe('manual')
     expect(testDatabaseState.db.modelPresetsId).toBe(0)
 
     const command = await waitForCommand(calls, (call) => call.url.endsWith('/chat-a/generation-settings'))
     expect(command.body).toEqual({
       baseRevision: 10,
       baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
-      patch: { modelPresetId: 'model-second' },
+      patch: { modelPresetId: 'model-second', modelPresetSelectionSource: 'manual' },
     })
     await vi.waitFor(() => expect(alertSpies.alertToast).toHaveBeenCalledWith(`${language.modelPresets}: Second Model`))
   })

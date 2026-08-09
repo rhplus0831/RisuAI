@@ -240,11 +240,56 @@ export function createActiveChatGenerationSettingsPatch(
 export function createActiveChatGenerationSettingsSelectionPatch(
   selection: Pick<
     ActiveChatGenerationSettingsPatch,
-    'personaId' | 'modelPresetId' | 'promptPresetId' | 'agentPresetId' | 'togglePresetId'
+    'personaId' | 'modelPresetId' | 'modelPresetSelectionSource' | 'promptPresetId' | 'agentPresetId' | 'togglePresetId'
   >,
   state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),
 ): ChatGenerationSettings {
   return createActiveChatGenerationSettingsPatch(selection, state)
+}
+
+export function createManualModelPresetSelection(modelPresetId: string): ActiveChatGenerationSettingsPatch {
+  return {
+    modelPresetId,
+    modelPresetSelectionSource: 'manual',
+  }
+}
+
+export function createPromptPresetSelection(
+  promptPresetId: string,
+  promptPreset: ChatGenerationPromptPresetReference,
+  state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),
+): ActiveChatGenerationSettingsPatch {
+  const selection: ActiveChatGenerationSettingsPatch = { promptPresetId }
+  if (state.settings?.modelPresetSelectionSource === 'manual') return selection
+
+  const recommendedModelPresetId = nonEmptyString(promptPreset.recommendedModelPresetId)
+    ? promptPreset.recommendedModelPresetId
+    : null
+  if (
+    recommendedModelPresetId &&
+    safeArray<ChatGenerationModelPresetReference>(
+      state.db.modelPresets as unknown as ChatGenerationModelPresetReference[] | undefined,
+    ).some((preset) => preset.id === recommendedModelPresetId)
+  ) {
+    selection.modelPresetId = recommendedModelPresetId
+    selection.modelPresetSelectionSource = 'prompt-recommendation'
+  }
+  return selection
+}
+
+export type ActiveChatModelPresetRecommendationState = 'none' | 'matched' | 'mismatch'
+
+export function activeChatModelPresetRecommendationState(
+  state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),
+): ActiveChatModelPresetRecommendationState {
+  const recommendedModelPresetId = state.promptPreset?.recommendedModelPresetId
+  const selectedModelPresetId = state.settings?.modelPresetId
+  if (!nonEmptyString(recommendedModelPresetId) || !nonEmptyString(selectedModelPresetId)) return 'none'
+  const recommendationExists = safeArray<ChatGenerationModelPresetReference>(
+    state.db.modelPresets as unknown as ChatGenerationModelPresetReference[] | undefined,
+  ).some((preset) => preset.id === recommendedModelPresetId)
+  if (!recommendationExists) return 'none'
+  return selectedModelPresetId === recommendedModelPresetId ? 'matched' : 'mismatch'
 }
 
 export function createActiveChatGenerationSettingsDefaultValuesPatch(
@@ -345,7 +390,7 @@ export function saveActiveChatGenerationSettingsWithOutcome(
 export function saveActiveChatGenerationSettingsSelection(
   selection: Pick<
     ActiveChatGenerationSettingsPatch,
-    'personaId' | 'modelPresetId' | 'promptPresetId' | 'agentPresetId' | 'togglePresetId'
+    'personaId' | 'modelPresetId' | 'modelPresetSelectionSource' | 'promptPresetId' | 'agentPresetId' | 'togglePresetId'
   >,
   options: ActiveChatGenerationSettingsSaveOptions = {},
 ): boolean {
@@ -355,7 +400,7 @@ export function saveActiveChatGenerationSettingsSelection(
 export function saveActiveChatGenerationSettingsSelectionWithOutcome(
   selection: Pick<
     ActiveChatGenerationSettingsPatch,
-    'personaId' | 'modelPresetId' | 'promptPresetId' | 'agentPresetId' | 'togglePresetId'
+    'personaId' | 'modelPresetId' | 'modelPresetSelectionSource' | 'promptPresetId' | 'agentPresetId' | 'togglePresetId'
   >,
   options: ActiveChatGenerationSettingsSaveOptions = {},
 ): ChatGenerationSettingsSaveOperation | null {
@@ -580,6 +625,9 @@ function cloneGenerationSettings(settings: ChatGenerationSettings | undefined): 
   if (hasOwn(settings, 'configured')) clone.configured = settings.configured
   if (hasOwn(settings, 'personaId')) clone.personaId = settings.personaId
   if (hasOwn(settings, 'modelPresetId')) clone.modelPresetId = settings.modelPresetId
+  if (hasOwn(settings, 'modelPresetSelectionSource')) {
+    clone.modelPresetSelectionSource = settings.modelPresetSelectionSource
+  }
   if (hasOwn(settings, 'promptPresetId')) clone.promptPresetId = settings.promptPresetId
   if (hasOwn(settings, 'agentPresetId')) clone.agentPresetId = settings.agentPresetId
   if (hasOwn(settings, 'togglePresetId')) clone.togglePresetId = settings.togglePresetId

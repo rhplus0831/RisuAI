@@ -39,6 +39,8 @@
   import TextInput from '../UI/GUI/TextInput.svelte'
   import { prebuiltPresets } from 'src/ts/process/templates/templates'
   import {
+    createManualModelPresetSelection,
+    createPromptPresetSelection,
     resolveActiveChatGenerationSettings,
     saveActiveChatGenerationSettingsSelectionWithOutcome,
   } from 'src/ts/activeChatGenerationSettings'
@@ -212,7 +214,10 @@
       const operation = ++selectionOperation
       selectionPendingKey = presetDraftKey(preset, index)
       selectionError = ''
-      const patch = kind === 'prompt' ? { promptPresetId: presetId } : { modelPresetId: presetId }
+      const patch =
+        kind === 'prompt'
+          ? createPromptPresetSelection(presetId, preset, activeChatSettings)
+          : createManualModelPresetSelection(presetId)
       try {
         const persistence = saveActiveChatGenerationSettingsSelectionWithOutcome(patch, { expectedTarget: target })
         if (!persistence) {

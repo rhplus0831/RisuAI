@@ -1188,6 +1188,55 @@ describe('generation settings picker mode', () => {
     })
   })
 
+  it('auto-applies a prompt recommended model preset when the chat has no manual model selection', async () => {
+    getDatabase().promptPresets[0].recommendedModelPresetId = 'model-preset-b'
+    const calls = stubCommandFetch()
+    const close = mountPresetPicker('active-chat-generation-settings')
+
+    pickerSelectionControl('prompt', 'preset-a').click()
+    await tick()
+    await waitForCommandFetches(calls)
+
+    expect(close).toHaveBeenCalledOnce()
+    expect(getDatabase().characters[0].chats[0].generationSettings).toMatchObject({
+      promptPresetId: 'preset-a',
+      modelPresetId: 'model-preset-b',
+      modelPresetSelectionSource: 'prompt-recommendation',
+    })
+    expect(calls[1].body).toEqual({
+      baseRevision: 200,
+      baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      patch: {
+        modelPresetId: 'model-preset-b',
+        modelPresetSelectionSource: 'prompt-recommendation',
+        promptPresetId: 'preset-a',
+      },
+    })
+  })
+
+  it('marks a model preset chosen from the active-chat picker as manual', async () => {
+    const calls = stubCommandFetch()
+    const close = mountPresetPicker('active-chat-generation-settings', vi.fn(), 'model')
+
+    pickerSelectionControl('model', 'model-preset-b').click()
+    await tick()
+    await waitForCommandFetches(calls)
+
+    expect(close).toHaveBeenCalledOnce()
+    expect(getDatabase().characters[0].chats[0].generationSettings).toMatchObject({
+      modelPresetId: 'model-preset-b',
+      modelPresetSelectionSource: 'manual',
+    })
+    expect(calls[1].body).toEqual({
+      baseRevision: 200,
+      baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      patch: {
+        modelPresetId: 'model-preset-b',
+        modelPresetSelectionSource: 'manual',
+      },
+    })
+  })
+
   it('keeps the preset picker open and reports a rejected active-chat save', async () => {
     stubCommandFetch({
       generationSettingsResponse: Promise.resolve(jsonResponse({ error: 'preset selection rejected' }, 400)),

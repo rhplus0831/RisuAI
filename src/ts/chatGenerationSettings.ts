@@ -9,10 +9,13 @@ export const CHAT_GENERATION_SETTINGS_INCOMPLETE_MESSAGE = 'Chat generation sett
 
 const JAILBREAK_TOGGLE_TOKEN = '{{jbtoggled}}'
 
+export type ModelPresetSelectionSource = 'manual' | 'prompt-recommendation'
+
 export interface ChatGenerationSettings {
   configured?: boolean
   personaId?: string
   modelPresetId?: string
+  modelPresetSelectionSource?: ModelPresetSelectionSource
   promptPresetId?: string
   agentPresetId?: string
   togglePresetId?: string
@@ -24,6 +27,7 @@ export const CHAT_GENERATION_SETTINGS_KEYS = [
   'configured',
   'personaId',
   'modelPresetId',
+  'modelPresetSelectionSource',
   'promptPresetId',
   'agentPresetId',
   'togglePresetId',
@@ -167,6 +171,7 @@ export interface ChatGenerationModelPresetReference {
 
 export interface ChatGenerationPromptPresetReference {
   id?: string | null
+  recommendedModelPresetId?: string | null
   jailbreak?: string | null
   promptTemplate?: readonly ChatGenerationPromptTemplateItemReference[] | null
   customPromptTemplateToggle?: string | null
@@ -294,6 +299,7 @@ export type ChatGenerationSettingsFieldPath =
   | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.configured`
   | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.personaId`
   | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.modelPresetId`
+  | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.modelPresetSelectionSource`
   | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.promptPresetId`
   | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.agentPresetId`
   | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.togglePresetId`

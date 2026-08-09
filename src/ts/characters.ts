@@ -982,6 +982,9 @@ function normalizeImportedGenerationSettingsValue(value: unknown): ChatGeneratio
   const modelPresetId = normalizeImportedModelPresetId(value.modelPresetId)
   if (modelPresetId) {
     normalized.modelPresetId = modelPresetId
+    if (value.modelPresetSelectionSource === 'manual' || value.modelPresetSelectionSource === 'prompt-recommendation') {
+      normalized.modelPresetSelectionSource = value.modelPresetSelectionSource
+    }
     hasPrefill = true
   }
 

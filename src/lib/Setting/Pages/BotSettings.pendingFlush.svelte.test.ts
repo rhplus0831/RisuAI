@@ -23,6 +23,7 @@ const botSettingsMocks = vi.hoisted(() => {
     failNextEnableTransient: false,
     failNextPromptItemUpdateTransient: false,
     promptItemUpdateInputs: [] as Array<Record<string, unknown>>,
+    promptPresetUpdateInputs: [] as Array<Record<string, unknown>>,
     replayInlineResults: [] as Array<Record<string, unknown>>,
     replayResults: [] as Array<Record<string, unknown>>,
     replayInlineInputs: [] as Array<{
@@ -127,10 +128,13 @@ vi.mock('src/ts/server/commands', () => ({
     status: 'ok',
     revision: Number(input.baseRevision) + 1,
   })),
-  updatePromptPresetCommand: vi.fn(async (input: Record<string, unknown>) => ({
-    status: 'ok',
-    revision: Number(input.baseRevision) + 1,
-  })),
+  updatePromptPresetCommand: vi.fn(async (input: Record<string, unknown>) => {
+    botSettingsMocks.promptPresetUpdateInputs.push(input)
+    return {
+      status: 'ok',
+      revision: Number(input.baseRevision) + 1,
+    }
+  }),
   updatePromptItemCommand: vi.fn(async (input: Record<string, unknown>) => {
     botSettingsMocks.promptItemUpdateInputs.push(input)
     botSettingsMocks.networkOrder.push('row-live')
@@ -290,6 +294,7 @@ beforeEach(() => {
   botSettingsMocks.failNextEnableTransient = false
   botSettingsMocks.failNextPromptItemUpdateTransient = false
   botSettingsMocks.promptItemUpdateInputs.length = 0
+  botSettingsMocks.promptPresetUpdateInputs.length = 0
   botSettingsMocks.replayInlineResults.length = 0
   botSettingsMocks.replayResults.length = 0
   botSettingsMocks.replayInlineInputs.length = 0
@@ -351,6 +356,45 @@ describe('BotSettings legacy layout synchronization', () => {
     setDatabaseLite({ ...getDatabase({ snapshot: true }), useLegacyGUI: false } as any)
     await tick()
     expect(target.querySelector('[data-risu-bot-settings-tabs]')).toBeTruthy()
+  })
+})
+
+describe('BotSettings recommended model preset', () => {
+  it('renders model presets for the selected prompt and persists a recommendation by id', async () => {
+    if (component) unmount(component)
+    setDatabaseLite({
+      ...getDatabase({ snapshot: true }),
+      modelPresets: [
+        { id: 'model-a', name: 'Model A' },
+        { id: 'model-b', name: 'Model B' },
+      ],
+      modelPresetsId: 0,
+      promptPresets: [{ id: 'prompt-a', name: 'Prompt A', mainPrompt: 'prompt' }],
+      promptPresetsId: 0,
+    } as any)
+    component = mount(BotSettings, { target, props: { settingsKind: 'prompt' } })
+    await tick()
+
+    const select = target.querySelector<HTMLSelectElement>('[data-risu-recommended-model-preset] select')
+    expect(select).toBeTruthy()
+    expect(Array.from(select!.options).map((option) => [option.value, option.textContent])).toEqual([
+      ['', language.none],
+      ['model-a', 'Model A'],
+      ['model-b', 'Model B'],
+    ])
+
+    select!.value = 'model-b'
+    select!.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+    expect(getDatabase().promptPresets[0].recommendedModelPresetId).toBe('model-b')
+
+    await vi.advanceTimersByTimeAsync(250)
+    await botSettingsMocks.runTail
+    expect(botSettingsMocks.promptPresetUpdateInputs).toHaveLength(1)
+    expect(botSettingsMocks.promptPresetUpdateInputs[0]).toMatchObject({
+      promptPresetId: 'prompt-a',
+      patch: { recommendedModelPresetId: 'model-b' },
+    })
   })
 })
 

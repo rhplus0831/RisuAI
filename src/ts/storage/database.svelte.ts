@@ -162,6 +162,7 @@ import {
   PROMPT_PRESET_MODEL_PARAMETERS_OVERRIDE_KEY,
   promptPresetExportPayload,
   promptPresetOverridesModelParameters,
+  repairPromptPresetRecommendedModelPresetReferences,
   resolvePromptPresetRegexField,
 } from '../presetSplit'
 
@@ -308,6 +309,7 @@ function normalizeSplitPresetIds(
     data.promptPresets = next as PromptPreset[]
   })
   for (const preset of data.promptPresets) normalizePromptTemplateRecord(preset)
+  repairPromptPresetRecommendedModelPresetReferences(data.modelPresets, data.promptPresets)
   data.promptPresetsId = normalizedBotPresetsId(data.promptPresets.length, data.promptPresetsId)
 }
 
@@ -4671,6 +4673,7 @@ export type PromptPreset = Partial<botPreset> & {
   name?: string
   archived?: boolean
   overrideModelParameters?: boolean
+  recommendedModelPresetId?: string | null
 }
 
 interface hordeConfig {

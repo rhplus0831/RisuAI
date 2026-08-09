@@ -659,10 +659,11 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
           return
         case 'modelPreset.deleted':
           if (!hasEntityId) break
-          // Deletion can move the selected pointer and atomically rehome chat
-          // and loadout generation references.
+          // Deletion can move the selected pointer and atomically rehome chat,
+          // loadout, and prompt-recommendation references.
           addFullSettings()
           plan.collections.add('modelPresets')
+          plan.collections.add('promptPresets')
           plan.collections.add('loadouts')
           addAllCharacters()
           return

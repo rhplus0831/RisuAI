@@ -966,6 +966,8 @@ export const languageEnglish = {
   jailbreakToggle: 'Toggle Jailbreak',
   chatGenerationPresetUnconfigured: 'Select chat preset',
   chatGenerationModelPresetUnconfigured: 'Select model preset',
+  chatGenerationModelPresetRecommendationMismatch: (recommendedModelPresetName: string) =>
+    `The selected model preset differs from the prompt's recommended preset: ${recommendedModelPresetName}`,
   chatGenerationPromptPresetUnconfigured: 'Select prompt preset',
   chatGenerationPersonaUnconfigured: 'Select chat persona',
   chatGenerationResetDefaults: 'Reset toggle defaults',
@@ -1158,6 +1160,8 @@ export const languageEnglish = {
   presetMutationQueued: 'This preset change is saved on this device and queued. It will retry automatically.',
   presetMutationFailed: 'The preset change could not be saved. The persisted presets were restored; try again.',
   overrideModelParameters: 'Override model parameters',
+  recommendedModelPreset: 'Recommended model preset',
+  missingRecommendedModelPreset: (id: string) => `Missing model preset: ${id}`,
   legacyBotPresets: 'Legacy bot presets',
   legacyBotPresetMigration: 'Legacy bot preset migration',
   noLegacyBotPresets: 'No legacy bot presets',

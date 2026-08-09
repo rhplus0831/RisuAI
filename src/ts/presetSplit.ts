@@ -147,13 +147,27 @@ export const PROMPT_PRESET_FIELDS = [
   'presetRegex',
 ] as const
 
+// Prompt-preset metadata is persisted and exported with the preset, but it is
+// not projected onto the top-level generation settings when the preset is
+// selected.
+export const PROMPT_PRESET_METADATA_FIELDS = ['recommendedModelPresetId'] as const
+
+export const PROMPT_PRESET_PERSISTED_FIELDS = [...PROMPT_PRESET_FIELDS, ...PROMPT_PRESET_METADATA_FIELDS] as const
+
 export type ModelPresetField = (typeof MODEL_PRESET_FIELDS)[number]
 export type PromptPresetField = (typeof PROMPT_PRESET_FIELDS)[number]
+export type PromptPresetMetadataField = (typeof PROMPT_PRESET_METADATA_FIELDS)[number]
+export type PromptPresetPersistedField = (typeof PROMPT_PRESET_PERSISTED_FIELDS)[number]
 export type PromptPresetModelParameterOverrideField = (typeof PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS)[number]
 export type PromptPresetModelOthersOverrideField = (typeof PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS)[number]
 export type PromptPresetModelOverrideField = (typeof PROMPT_PRESET_MODEL_OVERRIDE_FIELDS)[number]
 export type ModelPresetRecord = JsonRecord & { id: string; name?: string }
-export type PromptPresetRecord = JsonRecord & { id: string; name?: string; archived?: boolean }
+export type PromptPresetRecord = JsonRecord & {
+  id: string
+  name?: string
+  archived?: boolean
+  recommendedModelPresetId?: string | null
+}
 export type EffectivePresetCompositionScope = 'full-generation' | 'model-runtime'
 
 export interface EffectivePresetCompositionOptions {
@@ -191,6 +205,54 @@ export function extractPromptPresetFields(source: unknown): JsonRecord {
   return normalizePromptTemplateField(pickPresetFields(source, PROMPT_PRESET_FIELDS))
 }
 
+export function extractPromptPresetPersistedFields(source: unknown): JsonRecord {
+  return normalizePromptTemplateField(pickPresetFields(source, PROMPT_PRESET_PERSISTED_FIELDS))
+}
+
+export function promptPresetRecommendedModelPresetId(source: unknown): string | null {
+  if (!isRecord(source)) return null
+  const value = source.recommendedModelPresetId
+  return typeof value === 'string' && value.trim() ? value : null
+}
+
+export function repairPromptPresetRecommendedModelPresetReferences(
+  modelPresets: readonly unknown[],
+  promptPresets: readonly unknown[],
+): number {
+  const modelPresetIds = new Set(
+    modelPresets.flatMap((preset) => {
+      if (!isRecord(preset) || typeof preset.id !== 'string' || !preset.id.trim()) return []
+      return [preset.id]
+    }),
+  )
+  let repaired = 0
+  for (const promptPreset of promptPresets) {
+    if (!isRecord(promptPreset) || !Object.prototype.hasOwnProperty.call(promptPreset, 'recommendedModelPresetId')) {
+      continue
+    }
+    const recommendedModelPresetId = promptPresetRecommendedModelPresetId(promptPreset)
+    if (recommendedModelPresetId && modelPresetIds.has(recommendedModelPresetId)) continue
+    if (promptPreset.recommendedModelPresetId !== null) {
+      promptPreset.recommendedModelPresetId = null
+      repaired += 1
+    }
+  }
+  return repaired
+}
+
+export function clearPromptPresetRecommendedModelPresetReferences(
+  promptPresets: readonly unknown[],
+  modelPresetId: string,
+): number {
+  let cleared = 0
+  for (const promptPreset of promptPresets) {
+    if (!isRecord(promptPreset) || promptPreset.recommendedModelPresetId !== modelPresetId) continue
+    promptPreset.recommendedModelPresetId = null
+    cleared += 1
+  }
+  return cleared
+}
+
 export function extractPromptPresetModelOverrideFields(source: unknown): JsonRecord {
   const picked = pickPresetFields(source, PROMPT_PRESET_MODEL_OVERRIDE_FIELDS)
   if (!isRecord(source)) return picked
@@ -218,7 +280,7 @@ export function createExtractedPromptPreset(
   return {
     id: identity.id,
     name: identity.name,
-    ...extractPromptPresetFields(legacyPreset),
+    ...extractPromptPresetPersistedFields(legacyPreset),
     ...extractPromptPresetModelOverrideFields(legacyPreset),
   }
 }
@@ -237,7 +299,7 @@ export function findEquivalentModelPreset<T extends { id?: string | null }>(
 
 export function promptPresetExportPayload(promptPreset: unknown): JsonRecord {
   const payload = {
-    ...extractPromptPresetFields(promptPreset),
+    ...extractPromptPresetPersistedFields(promptPreset),
     ...extractPromptPresetModelOverrideFields(promptPreset),
   }
   if (isRecord(promptPreset)) {

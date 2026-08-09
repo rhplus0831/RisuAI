@@ -2029,6 +2029,8 @@ export const languageKorean = {
   notificationImage: '알림 이미지',
   chatGenerationPresetUnconfigured: '채팅 프리셋 선택',
   chatGenerationModelPresetUnconfigured: '모델 프리셋 선택',
+  chatGenerationModelPresetRecommendationMismatch: (recommendedModelPresetName: string) =>
+    `선택한 모델 프리셋이 프롬프트의 권장 프리셋과 다릅니다: ${recommendedModelPresetName}`,
   chatGenerationPromptPresetUnconfigured: '프롬프트 프리셋 선택',
   chatGenerationPersonaUnconfigured: '채팅 페르소나 선택',
   chatGenerationResetDefaults: '토글 기본값 초기화',
@@ -2080,6 +2082,8 @@ export const languageKorean = {
   presetMutationQueued: '프리셋 변경 사항이 이 기기에 저장되어 대기열에 추가되었습니다. 자동으로 다시 시도합니다.',
   presetMutationFailed: '프리셋 변경 사항을 저장할 수 없어 저장된 프리셋으로 복원했습니다. 다시 시도하세요.',
   overrideModelParameters: '모델 매개변수 재정의',
+  recommendedModelPreset: '권장 모델 프리셋',
+  missingRecommendedModelPreset: (id: string) => `찾을 수 없는 모델 프리셋: ${id}`,
   legacyBotPresets: '이전 방식의 봇 프리셋',
   legacyBotPresetMigration: '이전 방식의 봇 프리셋 마이그레이션',
   noLegacyBotPresets: '이전 방식의 봇 프리셋이 없습니다',

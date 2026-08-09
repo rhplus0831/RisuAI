@@ -35,6 +35,7 @@ import { updateTextThemeAndCSS } from './gui/colorscheme'
 import { defaultHotkeys } from './defaulthotkeys'
 import { doingChat, previewBody, sendChat } from './process/index.svelte'
 import {
+  createManualModelPresetSelection,
   resolveActiveChatGenerationSettings,
   saveActiveChatGenerationSettingsSelectionWithOutcome,
 } from './activeChatGenerationSettings'
@@ -550,7 +551,7 @@ export function changeToPreset(num: number): boolean {
       if (activeChat.identity.chatId) {
         const target = captureActiveChatTarget()
         const persistence = saveActiveChatGenerationSettingsSelectionWithOutcome(
-          { modelPresetId: preset.id },
+          createManualModelPresetSelection(preset.id),
           { expectedTarget: target },
         )
         if (!persistence) {

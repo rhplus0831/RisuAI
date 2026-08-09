@@ -8,7 +8,11 @@ import {
   DEFAULT_CHAT_LOAD_INITIAL_PAGES,
   normalizeChatLoadPages,
 } from '../../../src/ts/chatLoadPages.js'
-import { createExtractedModelPreset, createExtractedPromptPreset } from '../../../src/ts/presetSplit.js'
+import {
+  createExtractedModelPreset,
+  createExtractedPromptPreset,
+  repairPromptPresetRecommendedModelPresetReferences,
+} from '../../../src/ts/presetSplit.js'
 import {
   createDefaultLegacyFallbackModels,
   createDefaultModelRoleOverrides,
@@ -611,6 +615,10 @@ function normalizeSplitPresets(database: JsonRecord): void {
     database.promptPresetsId = 0
   }
   normalizePresetCollection(database, 'promptPresets', 'promptPresetsId', 'prompt-preset')
+  repairPromptPresetRecommendedModelPresetReferences(
+    database.modelPresets as unknown[],
+    database.promptPresets as unknown[],
+  )
 }
 
 function normalizePresetCollection(

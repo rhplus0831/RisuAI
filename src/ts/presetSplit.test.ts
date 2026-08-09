@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import {
   applyEffectivePresetComposition,
+  clearPromptPresetRecommendedModelPresetReferences,
   composeEffectivePresetSettings,
   createExtractedModelPreset,
   createExtractedPromptPreset,
+  extractPromptPresetFields,
   findEquivalentModelPreset,
   modelPresetFingerprint,
   PROMPT_PRESET_FIELDS,
+  PROMPT_PRESET_METADATA_FIELDS,
   promptPresetExportPayload,
+  repairPromptPresetRecommendedModelPresetReferences,
   resolvePromptPresetRegexField,
 } from './presetSplit'
 
@@ -205,6 +209,41 @@ describe('preset split helpers', () => {
     expect(promptPresetExportPayload({ name: 'Active', archived: false })).toMatchObject({ archived: false })
     expect(promptPresetExportPayload({ name: 'Legacy active' })).toMatchObject({ archived: false })
     expect(promptPresetExportPayload({ name: 'Invalid', archived: 'true' })).toMatchObject({ archived: false })
+  })
+
+  it('persists recommendation metadata without applying it as generation settings', () => {
+    const promptPreset = {
+      id: 'prompt-a',
+      name: 'Prompt A',
+      mainPrompt: 'Prompt text',
+      recommendedModelPresetId: 'model-a',
+    }
+
+    expect(PROMPT_PRESET_FIELDS).not.toContain('recommendedModelPresetId')
+    expect(PROMPT_PRESET_METADATA_FIELDS).toContain('recommendedModelPresetId')
+    expect(promptPresetExportPayload(promptPreset)).toMatchObject({
+      id: 'prompt-a',
+      recommendedModelPresetId: 'model-a',
+    })
+    expect(extractPromptPresetFields(promptPreset)).not.toHaveProperty('recommendedModelPresetId')
+    expect(composeEffectivePresetSettings({ base: {}, promptPreset })).not.toHaveProperty('recommendedModelPresetId')
+  })
+
+  it('repairs and clears prompt recommendation references by stable model-preset id', () => {
+    const promptPresets = [
+      { id: 'prompt-valid', recommendedModelPresetId: 'model-a' },
+      { id: 'prompt-missing', recommendedModelPresetId: 'model-missing' },
+      { id: 'prompt-blank', recommendedModelPresetId: '' },
+    ]
+
+    expect(repairPromptPresetRecommendedModelPresetReferences([{ id: 'model-a' }], promptPresets)).toBe(2)
+    expect(promptPresets).toEqual([
+      { id: 'prompt-valid', recommendedModelPresetId: 'model-a' },
+      { id: 'prompt-missing', recommendedModelPresetId: null },
+      { id: 'prompt-blank', recommendedModelPresetId: null },
+    ])
+    expect(clearPromptPresetRecommendedModelPresetReferences(promptPresets, 'model-a')).toBe(1)
+    expect(promptPresets[0].recommendedModelPresetId).toBeNull()
   })
 
   it('resolves prompt preset regex aliases as one logical field', () => {

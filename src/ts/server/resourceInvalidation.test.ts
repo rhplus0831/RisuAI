@@ -2301,8 +2301,11 @@ describe('API-backed resource invalidation', () => {
       ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
 
       expect(api.settings).toHaveBeenCalledOnce()
-      expect(api.collection).toHaveBeenCalledTimes(2)
+      expect(api.collection).toHaveBeenCalledTimes(resource === 'modelPreset' ? 3 : 2)
       expect(api.collection).toHaveBeenCalledWith(ownerCollection, undefined)
+      if (resource === 'modelPreset') {
+        expect(api.collection).toHaveBeenCalledWith('promptPresets', undefined)
+      }
       expect(api.collection).toHaveBeenCalledWith('loadouts', undefined)
       expect(api.characters).toHaveBeenCalledOnce()
       expect(promptHydration.ensure).toHaveBeenCalledTimes(promptTemplate ? 1 : 0)

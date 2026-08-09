@@ -10,6 +10,7 @@ import {
   type ModelPresetRecord,
   type PromptPresetRecord,
   databaseKeyForModelPresetField,
+  promptPresetRecommendedModelPresetId,
   promptPresetOverridesModelParameters,
   resolvePromptPresetRegexField,
 } from '../../../../src/ts/presetSplit.js'
@@ -97,8 +98,23 @@ export function readModelPresetPatch(input: JsonRecord): JsonRecord {
 export function readPromptPresetPatch(input: JsonRecord): JsonRecord {
   const patch = readSplitPresetPatch(input, 'promptPreset')
   validatePromptPresetArchived(patch)
+  validatePromptPresetRecommendedModelPresetField(patch)
   normalizePromptPresetPatchAliases(patch)
   return patch
+}
+
+export function validatePromptPresetRecommendedModelPreset(
+  preset: JsonRecord,
+  modelPresets: readonly ModelPresetRecord[],
+  label = 'promptPreset',
+): void {
+  validatePromptPresetRecommendedModelPresetField(preset, label)
+  const recommendedModelPresetId = promptPresetRecommendedModelPresetId(preset)
+  if (recommendedModelPresetId && !modelPresets.some((modelPreset) => modelPreset.id === recommendedModelPresetId)) {
+    throw new ValidationError(
+      `Unknown model preset id in ${label}.recommendedModelPresetId: ${recommendedModelPresetId}`,
+    )
+  }
 }
 
 export function readModelPresetId(value: unknown, label = 'modelPresetId'): string {
@@ -306,7 +322,10 @@ function createSplitPresetRecord(
   preset.name ??= fallbackName
   normalizeSplitPresetRoleAdjacentFields(preset)
   normalizePromptPresetPromptTemplate(label, preset)
-  if (label === 'promptPreset') validatePromptPresetArchived(preset)
+  if (label === 'promptPreset') {
+    validatePromptPresetArchived(preset)
+    validatePromptPresetRecommendedModelPresetField(preset)
+  }
   validateJsonValue(label, preset)
   return preset
 }
@@ -337,6 +356,19 @@ function normalizePromptPresetPatchAliases(patch: JsonRecord): void {
 function validatePromptPresetArchived(record: JsonRecord): void {
   if (record.archived !== undefined && typeof record.archived !== 'boolean') {
     throw new ValidationError('promptPreset.archived must be a boolean')
+  }
+}
+
+function validatePromptPresetRecommendedModelPresetField(record: JsonRecord, label = 'promptPreset'): void {
+  if (
+    Object.prototype.hasOwnProperty.call(record, 'recommendedModelPresetId') &&
+    record.recommendedModelPresetId !== null &&
+    typeof record.recommendedModelPresetId !== 'string'
+  ) {
+    throw new ValidationError(`${label}.recommendedModelPresetId must be a string or null`)
+  }
+  if (typeof record.recommendedModelPresetId === 'string' && record.recommendedModelPresetId.trim() === '') {
+    throw new ValidationError(`${label}.recommendedModelPresetId must be non-empty or null`)
   }
 }
 

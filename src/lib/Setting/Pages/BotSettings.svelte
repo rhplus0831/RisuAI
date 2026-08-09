@@ -37,8 +37,13 @@
   import PromptSettings from './PromptSettings.svelte'
   import { openPresetListModal } from 'src/ts/stores.svelte'
   import { selectSingleFile } from 'src/ts/filePicker'
-  import { getDatabase, updatePromptPreset, type PromptPreset } from 'src/ts/storage/database.svelte'
-  import { alertError } from 'src/ts/alert'
+  import {
+    getDatabase,
+    updatePromptPreset,
+    type PresetMutationOutcome,
+    type PromptPreset,
+  } from 'src/ts/storage/database.svelte'
+  import { alertError, alertNormal } from 'src/ts/alert'
   import { getModelInfo, LLMFlags, LLMFormat } from 'src/ts/model/modellist'
   import { resolveModelProfileUiState } from 'src/ts/model/modelProfileUiState'
   import RegexList from 'src/lib/SideBars/Scripts/RegexList.svelte'
@@ -286,6 +291,25 @@
   let promptTemplateHydrated = $derived($promptTemplateHydratedStore && isPromptTemplateHydrated())
   let selectedPromptPreset = $derived(getDatabase().promptPresets?.[getDatabase().promptPresetsId])
   let selectedPromptPresetOwnsPromptTemplate = $derived(selectedPromptPresetHasOwnPromptTemplate())
+  let recommendedModelPresetMutation = $state<{
+    operation: number
+    promptPresetId: string
+    status: 'saving' | 'queued' | 'failed'
+  } | null>(null)
+  let recommendedModelPresetOperation = 0
+  let recommendedModelPresetId = $derived(
+    typeof selectedPromptPreset?.recommendedModelPresetId === 'string'
+      ? selectedPromptPreset.recommendedModelPresetId
+      : '',
+  )
+  let recommendedModelPresetMissing = $derived(
+    !!recommendedModelPresetId && !getDatabase().modelPresets.some((preset) => preset.id === recommendedModelPresetId),
+  )
+  let recommendedModelPresetMutationStatus = $derived(
+    selectedPromptPreset?.id && recommendedModelPresetMutation?.promptPresetId === selectedPromptPreset.id
+      ? recommendedModelPresetMutation.status
+      : 'idle',
+  )
   let selectedPromptTemplateEnabledControl = $state(selectedPromptPresetHasOwnPromptTemplate())
   let promptTemplateToggleMutationState = $state<'idle' | 'saving' | 'queued' | 'failed'>('idle')
   let promptTemplateToggleMutationError = $state('')
@@ -462,6 +486,59 @@
 
   function openPromptPresetList(): void {
     openPresetListModal('global', 'prompt')
+  }
+
+  async function updateRecommendedModelPreset(recommendedModelPresetId: string): Promise<void> {
+    const promptPresetId = selectedPromptPreset?.id
+    if (!promptPresetId || recommendedModelPresetMutationStatus === 'saving') return
+    const promptPresetIndex = getDatabase().promptPresets.findIndex((preset) => preset.id === promptPresetId)
+    if (promptPresetIndex < 0) return
+
+    const operation = ++recommendedModelPresetOperation
+    recommendedModelPresetMutation = { operation, promptPresetId, status: 'saving' }
+    const outcome = await updatePromptPreset(promptPresetIndex, {
+      recommendedModelPresetId: recommendedModelPresetId || null,
+    })
+    settleRecommendedModelPresetMutation(operation, promptPresetId, outcome)
+  }
+
+  function settleRecommendedModelPresetMutation(
+    operation: number,
+    promptPresetId: string,
+    outcome: PresetMutationOutcome,
+  ): void {
+    if (
+      recommendedModelPresetMutation?.operation !== operation ||
+      recommendedModelPresetMutation.promptPresetId !== promptPresetId
+    ) {
+      return
+    }
+    if (outcome.status === 'accepted') {
+      recommendedModelPresetMutation = null
+      return
+    }
+    if (outcome.status === 'failed') {
+      recommendedModelPresetMutation = { operation, promptPresetId, status: 'failed' }
+      alertError(language.presetMutationFailed)
+      return
+    }
+
+    recommendedModelPresetMutation = { operation, promptPresetId, status: 'queued' }
+    alertNormal(language.presetMutationQueued)
+    void outcome.settlement.then((status) => {
+      if (
+        recommendedModelPresetMutation?.operation !== operation ||
+        recommendedModelPresetMutation.promptPresetId !== promptPresetId
+      ) {
+        return
+      }
+      if (status === 'accepted') {
+        recommendedModelPresetMutation = null
+      } else {
+        recommendedModelPresetMutation = { operation, promptPresetId, status: 'failed' }
+        alertError(language.presetMutationFailed)
+      }
+    })
   }
 
   function sectionVisible(id: number): boolean {
@@ -1277,6 +1354,34 @@
       <Button onclick={openPromptPresetList} className="w-full text-left">
         <span class="block w-full truncate">{selectedPromptPresetName}</span>
       </Button>
+      <label
+        class="flex flex-col gap-1 text-sm text-textcolor"
+        data-risu-recommended-model-preset
+        data-risu-persistence-status={recommendedModelPresetMutationStatus}>
+        <span>{language.recommendedModelPreset}</span>
+        <SelectInput
+          value={recommendedModelPresetId}
+          ariaLabel={language.recommendedModelPreset}
+          disabled={!selectedPromptPreset?.id || recommendedModelPresetMutationStatus === 'saving'}
+          onchange={(event) => {
+            void updateRecommendedModelPreset(event.currentTarget.value)
+          }}>
+          <OptionInput value="">{language.none}</OptionInput>
+          {#if recommendedModelPresetMissing}
+            <OptionInput value={recommendedModelPresetId}
+              >{language.missingRecommendedModelPreset(recommendedModelPresetId)}</OptionInput>
+          {/if}
+          {#each getDatabase().modelPresets as preset, index (preset.id ?? index)}
+            {#if preset.id}
+              <OptionInput value={preset.id}
+                >{preset.name?.trim() || language.modelProfiles.defaultPresetName(index + 1)}</OptionInput>
+            {/if}
+          {/each}
+        </SelectInput>
+        {#if recommendedModelPresetMutationStatus === 'failed'}
+          <span class="text-xs text-draculared" role="alert">{language.presetMutationFailed}</span>
+        {/if}
+      </label>
     </div>
   {/if}
 

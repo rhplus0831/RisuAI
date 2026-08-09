@@ -19,6 +19,7 @@ export interface GenerationReferenceReplacement {
 export interface OptimisticGenerationReferenceCascade {
   chatCount: number
   loadoutCount: number
+  promptRecommendationCount: number
   rollback: () => void
 }
 
@@ -51,6 +52,7 @@ export function optimisticallyRehomeGenerationReferences(input: {
   const rollbacks: FieldRollback[] = []
   let chatCount = 0
   let loadoutCount = 0
+  let promptRecommendationCount = 0
 
   withTrustedResourceWrite(() => {
     for (const character of database.characters ?? []) {
@@ -100,11 +102,41 @@ export function optimisticallyRehomeGenerationReferences(input: {
       )
       loadoutCount += 1
     }
+
+    if (input.kind === 'modelPreset') {
+      const promptPresetProjectionEpoch = captureCollectionProjectionEpoch('promptPresets')
+      for (const promptPreset of database.promptPresets ?? []) {
+        const promptPresetId = nonBlankId(promptPreset?.id)
+        const target = asJsonRecord(promptPreset)
+        if (
+          !promptPresetId ||
+          !target ||
+          target.recommendedModelPresetId !== input.deletedId ||
+          resolveUniquePromptPreset(input.getDatabase(), promptPresetId) !== target
+        ) {
+          continue
+        }
+        rollbacks.push(
+          captureFieldRollback({
+            target,
+            keys: ['recommendedModelPresetId'],
+            resolveTarget: () => resolveUniquePromptPreset(input.getDatabase(), promptPresetId),
+            hasProjectionChanged: () =>
+              hasCollectionProjectionEpochChanged('promptPresets', promptPresetProjectionEpoch),
+            mutate: () => {
+              target.recommendedModelPresetId = null
+            },
+          }),
+        )
+        promptRecommendationCount += 1
+      }
+    }
   })
 
   return {
     chatCount,
     loadoutCount,
+    promptRecommendationCount,
     rollback: () => {
       withTrustedResourceWrite(() => {
         for (const rollback of rollbacks) restoreFields(rollback)
@@ -219,6 +251,11 @@ function resolveUniqueChatGenerationSettings(
 function resolveUniqueLoadout(database: Database, loadoutId: string): JsonRecord | undefined {
   const loadouts = (database.loadouts ?? []).filter((loadout) => loadout?.id === loadoutId)
   return loadouts.length === 1 ? (asJsonRecord(loadouts[0]) ?? undefined) : undefined
+}
+
+function resolveUniquePromptPreset(database: Database, promptPresetId: string): JsonRecord | undefined {
+  const promptPresets = (database.promptPresets ?? []).filter((promptPreset) => promptPreset?.id === promptPresetId)
+  return promptPresets.length === 1 ? (asJsonRecord(promptPresets[0]) ?? undefined) : undefined
 }
 
 function asJsonRecord(value: unknown): JsonRecord | null {

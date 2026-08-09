@@ -131,6 +131,7 @@ import {
   selectedPromptPresetId,
   validateFullModelPresetIdList,
   validateFullPromptPresetIdList,
+  validatePromptPresetRecommendedModelPreset,
   type LegacyBotPresetExtractionMode,
 } from '../commands/splitPresets.js'
 import {
@@ -328,6 +329,7 @@ import {
   PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS,
   PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS,
   PROMPT_PRESET_MODEL_PARAMETERS_OVERRIDE_KEY,
+  clearPromptPresetRecommendedModelPresetReferences,
   databaseKeyForModelPresetField,
 } from '../../../../src/ts/presetSplit.js'
 import {
@@ -866,6 +868,9 @@ const COLLECTION_SCOPED_READS = {
   // resident in the targeted mutation snapshot.
   modelPresets: ['modelPresets', 'promptPresets'],
   promptPresets: ['promptPresets'],
+  // Recommendation writes validate their foreign key without broadening
+  // unrelated prompt-preset mutations.
+  promptPresetsWithModels: ['modelPresets', 'promptPresets'],
   promptTemplate: ['promptTemplate'],
   legacyBotPresetExtraction: ['botPresets', 'modelPresets', 'promptPresets'],
   onboarding: ['modelPresets', 'promptPresets'],
@@ -2153,6 +2158,11 @@ export function registerCommandRoutes(
             ...promptPatch,
             id: promptPresetId,
           }
+          validatePromptPresetRecommendedModelPreset(
+            promptPresets[promptIndex],
+            modelPresets,
+            `promptPresets.${promptPresetId}`,
+          )
 
           applyModelPreset(target, modelPresets[modelIndex])
           applyPromptPreset(target, promptPresets[promptIndex])
@@ -3681,6 +3691,7 @@ export function registerCommandRoutes(
         selectedModelPresetId: string | null
         cascadedChatCount: number
         cascadedLoadoutCount: number
+        clearedPromptRecommendationCount: number
       }>({
         db,
         dataDir,
@@ -3690,6 +3701,7 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
           const presets = ensureModelPresetCollection(target)
+          const promptPresets = ensurePromptPresetCollection(target)
           const deletedIndex = findModelPresetIndex(presets, modelPresetId)
           if (deletedIndex === -1) {
             const selectedId = selectedModelPresetId(target, presets)
@@ -3698,7 +3710,14 @@ export function registerCommandRoutes(
               ? (presets.find((preset) => preset.id === replacementId) ?? null)
               : null
             const cascade = rehomeGenerationReferences(target, 'modelPreset', modelPresetId, replacementPreset)
+            const clearedPromptRecommendationCount = clearPromptPresetRecommendedModelPresetReferences(
+              promptPresets,
+              modelPresetId,
+            )
             writeGenerationReferenceCascade(innerDb, target, cascade)
+            if (clearedPromptRecommendationCount > 0) {
+              writeSingleCollectionTable(innerDb, 'promptPresets', promptPresets)
+            }
             return {
               event: { ...COMMAND_EVENT_CATALOG.modelPresetDeleted, id: modelPresetId },
               extra: {
@@ -3706,6 +3725,7 @@ export function registerCommandRoutes(
                 selectedModelPresetId: selectedId,
                 cascadedChatCount: cascade.changedChatCount,
                 cascadedLoadoutCount: cascade.changedLoadoutCount,
+                clearedPromptRecommendationCount,
               },
             }
           }
@@ -3730,7 +3750,14 @@ export function registerCommandRoutes(
             modelPresetId,
             nextSelectedIndex >= 0 ? presets[nextSelectedIndex] : null,
           )
+          const clearedPromptRecommendationCount = clearPromptPresetRecommendedModelPresetReferences(
+            promptPresets,
+            modelPresetId,
+          )
           writeSingleCollectionTable(innerDb, 'modelPresets', presets)
+          if (clearedPromptRecommendationCount > 0) {
+            writeSingleCollectionTable(innerDb, 'promptPresets', promptPresets)
+          }
           if (target.modelPresetsId !== beforeSelected || deletedWasSelected) {
             writeSettingsOnly(innerDb, extractSettings(target))
           }
@@ -3742,6 +3769,7 @@ export function registerCommandRoutes(
               selectedModelPresetId: selectedModelPresetId(target, presets),
               cascadedChatCount: cascade.changedChatCount,
               cascadedLoadoutCount: cascade.changedLoadoutCount,
+              clearedPromptRecommendationCount,
             },
           }
         },
@@ -3916,12 +3944,17 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
-        collectionScopedRead: COLLECTION_SCOPED_READS.promptPresets,
+        collectionScopedRead: Object.prototype.hasOwnProperty.call(preset, 'recommendedModelPresetId')
+          ? COLLECTION_SCOPED_READS.promptPresetsWithModels
+          : COLLECTION_SCOPED_READS.promptPresets,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
           const presets = ensurePromptPresetCollection(target)
           if (findPromptPresetIndex(presets, preset.id) !== -1) {
             throw new ValidationError(`Duplicate prompt preset id: ${preset.id}`)
+          }
+          if (Object.prototype.hasOwnProperty.call(preset, 'recommendedModelPresetId')) {
+            validatePromptPresetRecommendedModelPreset(preset, ensureModelPresetCollection(target))
           }
           presets.push(preset)
           writeSingleCollectionTable(innerDb, 'promptPresets', presets)
@@ -3960,7 +3993,9 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
-        collectionScopedRead: COLLECTION_SCOPED_READS.promptPresets,
+        collectionScopedRead: Object.prototype.hasOwnProperty.call(patch, 'recommendedModelPresetId')
+          ? COLLECTION_SCOPED_READS.promptPresetsWithModels
+          : COLLECTION_SCOPED_READS.promptPresets,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
           const presets = ensurePromptPresetCollection(target)
@@ -3978,11 +4013,15 @@ export function registerCommandRoutes(
           if (selected && (selectedProjectionCandidate || touchesPromptTemplate)) {
             applyPromptPreset(optimisticTarget, optimisticPreset)
           }
-          presets[index] = {
+          const nextPreset = {
             ...presets[index],
             ...patch,
             id: promptPresetId,
           }
+          if (Object.prototype.hasOwnProperty.call(patch, 'recommendedModelPresetId')) {
+            validatePromptPresetRecommendedModelPreset(nextPreset, ensureModelPresetCollection(target))
+          }
+          presets[index] = nextPreset
           const canonicalTarget = { ...target }
           if (selected && (selectedProjectionCandidate || touchesPromptTemplate)) {
             applyPromptPreset(canonicalTarget, presets[index])
@@ -4177,12 +4216,17 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
-        collectionScopedRead: COLLECTION_SCOPED_READS.promptPresets,
+        collectionScopedRead: Object.prototype.hasOwnProperty.call(preset, 'recommendedModelPresetId')
+          ? COLLECTION_SCOPED_READS.promptPresetsWithModels
+          : COLLECTION_SCOPED_READS.promptPresets,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
           const presets = ensurePromptPresetCollection(target)
           if (findPromptPresetIndex(presets, preset.id) !== -1) {
             throw new ValidationError(`Duplicate prompt preset id: ${preset.id}`)
+          }
+          if (Object.prototype.hasOwnProperty.call(preset, 'recommendedModelPresetId')) {
+            validatePromptPresetRecommendedModelPreset(preset, ensureModelPresetCollection(target))
           }
           presets.push(preset)
           writeSingleCollectionTable(innerDb, 'promptPresets', presets)

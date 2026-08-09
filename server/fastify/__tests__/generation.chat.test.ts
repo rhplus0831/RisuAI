@@ -7976,6 +7976,7 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
           id: 'prompt-survivor',
           name: 'Survivor Prompt Preset',
           mainPrompt: 'SURVIVOR MAIN',
+          recommendedModelPresetId: 'model-deleted',
         },
         {
           id: 'prompt-deleted',
@@ -8064,6 +8065,7 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
       selectedModelPresetId: 'model-survivor',
       cascadedChatCount: 1,
       cascadedLoadoutCount: 1,
+      clearedPromptRecommendationCount: 1,
     })
     revision = deleteModel.json().revision as number
     expect((await preview('chat-deleted-model')).statusCode).toBe(200)
@@ -8117,6 +8119,10 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
         promptPresetId: 'prompt-survivor',
       })
     }
+
+    expect(
+      bootstrap.json().database.promptPresets.find((preset: { id: string }) => preset.id === 'prompt-survivor'),
+    ).toMatchObject({ recommendedModelPresetId: null })
 
     const loadouts = bootstrap.json().database.loadouts as Array<Record<string, unknown>>
     expect(loadouts.find((loadout) => loadout.id === 'loadout-deleted-references')).toMatchObject({

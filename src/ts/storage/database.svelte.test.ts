@@ -3244,6 +3244,13 @@ describe('preset command rollback (L21)', () => {
         makePreset('model-b', 'Model B') as unknown as ModelPreset,
       ],
       modelPresetsId: 0,
+      promptPresets: [
+        {
+          ...(makePreset('prompt-a', 'Prompt A') as unknown as PromptPreset),
+          recommendedModelPresetId: 'model-a',
+        },
+      ],
+      promptPresetsId: 0,
       characters: [
         {
           chaId: 'char-a',
@@ -3286,12 +3293,14 @@ describe('preset command rollback (L21)', () => {
 
     expect(getDatabase().characters[0].chats[0].generationSettings?.modelPresetId).toBe('model-b')
     expect(getDatabase().loadouts[0]).toMatchObject({ modelPresetId: 'model-b', modelPresetName: 'Model B' })
+    expect(getDatabase().promptPresets[0].recommendedModelPresetId).toBeNull()
 
     await waitForPresetCommand(calls, '/model-presets/model-a')
     await waitForState(() => {
       expect(getDatabase().modelPresets.map((preset) => preset.id)).toEqual(['model-a', 'model-b'])
       expect(getDatabase().characters[0].chats[0].generationSettings?.modelPresetId).toBe('model-a')
       expect(getDatabase().loadouts[0]).toMatchObject({ modelPresetId: 'model-a', modelPresetName: 'Model A' })
+      expect(getDatabase().promptPresets[0].recommendedModelPresetId).toBe('model-a')
     })
   })
 

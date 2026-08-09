@@ -631,6 +631,32 @@ describe('sidebar chat generation settings controls', () => {
     expect(pickerControl('agent-preset').textContent).toContain(language.agentPresets.noSelected)
   })
 
+  it('highlights a model preset that differs from the active prompt recommendation', async () => {
+    testDatabaseState().modelPresets.push({ id: 'model-preset-b', name: 'Recommended Model' } as never)
+    testDatabaseState().promptPresets[0].recommendedModelPresetId = 'model-preset-b'
+
+    mountGenerationSettingsPickerHost()
+    await tick()
+
+    const modelControl = pickerControl('model')
+    expect(modelControl.dataset.risuModelPresetRecommendationState).toBe('mismatch')
+    expect(modelControl.classList.contains('bg-red-900')).toBe(true)
+    expect(pickerButton('model').getAttribute('aria-label')).toBe(
+      language.chatGenerationModelPresetRecommendationMismatch('Recommended Model'),
+    )
+  })
+
+  it('does not highlight a model preset that matches the active prompt recommendation', async () => {
+    testDatabaseState().promptPresets[0].recommendedModelPresetId = 'model-preset-a'
+
+    mountGenerationSettingsPickerHost()
+    await tick()
+
+    const modelControl = pickerControl('model')
+    expect(modelControl.dataset.risuModelPresetRecommendationState).toBe('matched')
+    expect(modelControl.classList.contains('bg-red-900')).toBe(false)
+  })
+
   it('opens the selected chat persona directly in persona settings', async () => {
     navigate('/character/char-a/chat-a', { replace: true })
     mountGenerationSettingsPickerHost()
