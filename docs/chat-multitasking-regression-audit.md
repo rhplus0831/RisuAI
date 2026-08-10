@@ -73,8 +73,8 @@ overlap note explicitly says otherwise.
 | MTC-06 | P2 | Resolved | Scope Draft/BTW hook activity and cancellation by chat | Input hooks/composer | None |
 | MTC-07 | P2 | Resolved | Make reroll candidates chat-scoped | Reroll navigation | None |
 | MTC-08 | P2 | Resolved | Make live generation progress chat-scoped | Progress UI | None |
-| MTC-09 | P2 | In progress | Generate suggestions after background completion | Suggestions | MTC-08 optional |
-| MTC-10 | P2 | Ready | Remove aggregate `doingChat` locks from cross-chat-safe features | Translation/preview/autopilot | None |
+| MTC-09 | P2 | Resolved | Generate suggestions after background completion | Suggestions | MTC-08 optional |
+| MTC-10 | P2 | In progress | Remove aggregate `doingChat` locks from cross-chat-safe features | Translation/preview/autopilot | None |
 | MTC-11 | P2 | Ready | Use stable IDs for asynchronous finalization and error writes | Post-generation/error handling | None |
 | MTC-12 | P2 | Ready | Keep preview results owned by their original chat | Prompt preview | Coordinate with MTC-10 |
 | MTC-13 | P3 | Ready | Prevent generation indicators from intercepting avatar clicks | Sidebar indicators | None |
@@ -616,9 +616,14 @@ chats.
 ## MTC-09 — Generate suggestions after background completion
 
 **Priority:** P2
-**Status:** In progress
+**Status:** Resolved
 **Owner:** Codex (delegated 2026-08-10)
-**Resolution:** —
+**Resolution:** `191409c0e` — bounded chat-keyed consume-once markers emitted
+on message-activity settlement (`chatSuggestionCompletion.svelte.ts`);
+`Suggestion.svelte` consumes the active chat's marker with persisted- and
+in-flight dedup; shells retain the marker until hydration. Tests:
+`Suggestion.svelte.test.ts` (background return, hydrate-on-return, dedup,
+stale persistence), `generationActivity.test.ts` (marker emission).
 
 ### Problem
 
@@ -668,8 +673,8 @@ persisted suggestions and in-flight requests.
 ## MTC-10 — Remove aggregate `doingChat` locks from cross-chat-safe features
 
 **Priority:** P2
-**Status:** Ready
-**Owner:** Unassigned
+**Status:** In progress
+**Owner:** Codex (delegated 2026-08-10)
 **Resolution:** —
 
 ### Problem
@@ -1023,3 +1028,4 @@ Record completed items here as they land.
 | MTC-06 | `424db300d` | `inputHookActivity.test.ts`; `DefaultChatScreen.loadPages.test.ts` | Concurrent cross-chat hooks allowed per the recorded decision; per-chat single-flight retained. |
 | MTC-07 | `94867c65b` | `rerollNavigation.test.ts`; `RerollList.svelte.test.ts`; `chatMessageHydration.test.ts`; `resourceReads.test.ts`; `serverLoadCostHarness.test.ts` | Bulk route now ships alternates (uncapped per chat — revisit if payloads grow). Pre-existing masked-preset test failure verified on HEAD and spun off separately. |
 | MTC-08 | `6c8fc4f77` | `agentPresetProgress.test.ts`; `postGenerationProgress.test.ts`; `halfStreamingProgress.test.ts`; `serverChat.test.ts`; `DefaultChatScreen.loadPages.test.ts` | Recording requires an active registration; eviction invalidates the session. |
+| MTC-09 | `191409c0e` | `Suggestion.svelte.test.ts`; `generationActivity.test.ts` | Consume-once markers; in-flight ownership now rejects duplicates outright. |
