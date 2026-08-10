@@ -34,8 +34,9 @@ import { forgetActiveGenerationJob, rememberActiveGenerationJob } from '../reatt
 import { handleServerGeneratedMessageTranslation } from '../serverGeneratedMessageTranslation'
 import {
   beginHalfStreamingProgress,
-  clearHalfStreamingProgressForChat,
+  clearHalfStreamingProgress,
   recordHalfStreamingToken,
+  type HalfStreamingProgressTarget,
 } from '../halfStreamingProgress'
 import { iterateSseEvents } from './sseParse'
 import type {
@@ -539,7 +540,6 @@ export async function requestServerChatGeneration(
     if (opened.status === 'aborted' && reattachJobId) forgetActiveGenerationJob(reattachJobId)
     clearAgentPresetProgress(agentPresetSession)
     clearPostGenerationProgress(postGenerationSession)
-    clearHalfStreamingProgressForChat(input.characterId, input.chatId)
     return opened.status === 'error'
       ? {
           status: 'error',
@@ -567,6 +567,20 @@ export async function requestServerChatGeneration(
   let tokenResult = ''
   let streamKey = 'server-chat'
   let halfStreaming = false
+  let halfStreamingTarget: HalfStreamingProgressTarget | null = null
+  const beginHalfStreaming = (generationId: string): void => {
+    halfStreamingTarget = {
+      characterId: input.characterId,
+      chatId: input.chatId,
+      generationId,
+    }
+    beginHalfStreamingProgress(halfStreamingTarget)
+  }
+  const clearHalfStreaming = (): void => {
+    if (!halfStreamingTarget) return
+    clearHalfStreamingProgress(halfStreamingTarget)
+    halfStreamingTarget = null
+  }
   // The server also returns the durable job id in the response headers. Unlike
   // the first `job_accepted` body frame, headers are available as soon as fetch
   // accepts the response, so Stop can cancel a job even while its first body
@@ -638,11 +652,7 @@ export async function requestServerChatGeneration(
         streamKey = generation.generationId
         halfStreaming = info.halfStreaming === true
         if (halfStreaming) {
-          beginHalfStreamingProgress({
-            characterId: input.characterId,
-            chatId: input.chatId,
-            generationId: generation.generationId,
-          })
+          beginHalfStreaming(generation.generationId)
         }
         resolveReadyOnce({
           status: 'ok',
@@ -666,7 +676,7 @@ export async function requestServerChatGeneration(
         resolveReadyOnce({ status: 'aborted' })
         resolveTerminalOnce({ status: 'error', error: 'Aborted', ...reattachOutcomeFields('aborted'), warnings })
         clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
-        clearHalfStreamingProgressForChat(input.characterId, input.chatId)
+        clearHalfStreaming()
         closeTokenStream()
         stopWatchingAbort()
       }
@@ -678,7 +688,7 @@ export async function requestServerChatGeneration(
         resolveReadyOnce({ status: 'error', error, ...reattachOutcomeFields(reattachOutcome) })
         resolveTerminalOnce({ status: 'error', error, ...reattachOutcomeFields(reattachOutcome), warnings })
         clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
-        clearHalfStreamingProgressForChat(input.characterId, input.chatId)
+        clearHalfStreaming()
         closeTokenStream()
         stopWatchingAbort()
       }
@@ -710,11 +720,7 @@ export async function requestServerChatGeneration(
             // the partial text rendered before mobile suspension.
             tokenResult = ''
             if (halfStreaming) {
-              beginHalfStreamingProgress({
-                characterId: input.characterId,
-                chatId: input.chatId,
-                generationId: streamKey,
-              })
+              beginHalfStreaming(streamKey)
             }
             debugServerChat('server-chat-stream-reattached', {
               requestUid: next.requestUid,
@@ -821,19 +827,11 @@ export async function requestServerChatGeneration(
                   const content = typeof data.content === 'string' ? data.content : ''
                   tokenResult += content
                   if (halfStreaming) {
-                    if (content.length > 0) {
-                      recordHalfStreamingToken(
-                        {
-                          characterId: input.characterId,
-                          chatId: input.chatId,
-                          generationId: streamKey,
-                        },
-                        Date.now(),
-                        {
-                          generatedTokens: typeof data.generatedTokens === 'number' ? data.generatedTokens : undefined,
-                          elapsedMs: typeof data.elapsedMs === 'number' ? data.elapsedMs : undefined,
-                        },
-                      )
+                    if (content.length > 0 && halfStreamingTarget) {
+                      recordHalfStreamingToken(halfStreamingTarget, Date.now(), {
+                        generatedTokens: typeof data.generatedTokens === 'number' ? data.generatedTokens : undefined,
+                        elapsedMs: typeof data.elapsedMs === 'number' ? data.elapsedMs : undefined,
+                      })
                     }
                   } else {
                     enqueueToken({ [streamKey]: tokenResult })
@@ -878,7 +876,7 @@ export async function requestServerChatGeneration(
                     warnings,
                   })
                   clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
-                  clearHalfStreamingProgressForChat(input.characterId, input.chatId)
+                  clearHalfStreaming()
                   closeTokenStream()
                   stopWatchingAbort()
                   return
@@ -951,7 +949,7 @@ export async function requestServerChatGeneration(
       tokenStreamInactive = true
       resolveTerminalOnce({ status: 'error', error: 'Aborted', warnings })
       clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
-      clearHalfStreamingProgressForChat(input.characterId, input.chatId)
+      clearHalfStreaming()
     },
   })
 

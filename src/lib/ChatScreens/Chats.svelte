@@ -65,8 +65,11 @@
 
   let chatBody: HTMLDivElement
   let activeHalfStreamingTokensPerSecond = $derived.by(() => {
-    const progress = $halfStreamingProgress
-    return progress?.chatId === getCurrentChatRoomId() ? progress.tokensPerSecond : undefined
+    const currentChatId = getCurrentChatRoomId()
+    const progress = $halfStreamingProgress.find(
+      (entry) => entry.characterId === currentCharacter.chaId && entry.chatId === currentChatId,
+    )
+    return progress?.tokensPerSecond
   })
 
   const chatRows = $derived.by(() => {

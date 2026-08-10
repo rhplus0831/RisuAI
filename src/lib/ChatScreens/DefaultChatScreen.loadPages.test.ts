@@ -87,7 +87,23 @@ vi.mock('../../lang', () => ({
                   retry: 'acceptedSendRetry',
                   retrying: 'acceptedSendRetrying',
                 }
-              : String(property),
+              : property === 'agentPresets'
+                ? {
+                    progressBeforeMain: 'beforeMain',
+                    progressAfterMain: 'afterMain',
+                    progressLabel: (name: string) => name,
+                    progressActiveSteps: (names: string) => names,
+                    progressWaiting: 'waiting',
+                  }
+                : property === 'chatPostGenerationProgressModuleScript'
+                  ? (name: string) => name
+                  : property === 'chatPostGenerationProgressCharacterScript'
+                    ? (name: string) => name
+                    : property === 'chatPostGenerationProgressWithComment'
+                      ? (owner: string) => owner
+                      : property === 'chatPostGenerationProgressLabel'
+                        ? (owner: string) => owner
+                        : String(property),
     },
   ),
 }))
@@ -325,6 +341,21 @@ import {
   activeInputHookActivities,
   resetInputHookActivitiesForTests,
 } from 'src/ts/process/inputHookActivity.svelte'
+import {
+  beginAgentPresetProgress,
+  clearAgentPresetProgress,
+  updateAgentPresetProgress,
+} from 'src/ts/process/agentPresetProgress'
+import {
+  beginPostGenerationProgress,
+  clearPostGenerationProgress,
+  updatePostGenerationProgress,
+} from 'src/ts/process/postGenerationProgress'
+import {
+  beginHalfStreamingProgress,
+  recordHalfStreamingToken,
+  resetHalfStreamingProgressForTests,
+} from 'src/ts/process/halfStreamingProgress'
 import { createBranchComment } from './branchComment'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -588,6 +619,9 @@ function findButtonByText(text: string): HTMLButtonElement | undefined {
 beforeEach(() => {
   resetAcceptedSendCoordinatorForTests()
   resetInputHookActivitiesForTests()
+  clearAgentPresetProgress()
+  clearPostGenerationProgress()
+  resetHalfStreamingProgressForTests()
   resetDraftRecoveryScopeForTests()
   clearDefaultChatComposerDrafts()
   initializeDraftRecoveryScope({ databaseLineage: 'database-a', writerSessionId: 'writer-a' })
@@ -647,6 +681,9 @@ afterEach(() => {
   resetDraftRecoveryScopeForTests()
   resetAcceptedSendCoordinatorForTests()
   resetInputHookActivitiesForTests()
+  clearAgentPresetProgress()
+  clearPostGenerationProgress()
+  resetHalfStreamingProgressForTests()
   activeGenerationJobs.set([])
 })
 
@@ -1182,6 +1219,81 @@ describe('DefaultChatScreen content width', () => {
     expect(screen.style.getPropertyValue('--chat-content-inline-end')).toBe('0px')
     expect(screen.style.getPropertyValue('--chat-content-fixed-inline-end')).toBe(`${window.innerWidth - 900}px`)
     expect(floatingInputButton?.style.getPropertyValue('--chat-content-inline-end')).toBe('16px')
+  })
+})
+
+describe('DefaultChatScreen live generation progress ownership', () => {
+  it('switches Agent, post-generation, and half-streaming projections with the active chat', async () => {
+    seedDatabase([2, 2])
+    const agentFirst = beginAgentPresetProgress('chat-0')
+    const agentSecond = beginAgentPresetProgress('chat-1')
+    updateAgentPresetProgress(agentFirst, {
+      type: 'agent_preset_progress',
+      chatId: 'chat-0',
+      presetId: 'preset-0',
+      presetName: 'Agent progress A',
+      phase: 'beforeMain',
+      status: 'running',
+      totalSteps: 2,
+      completedSteps: 1,
+      activeSteps: [],
+    })
+    updateAgentPresetProgress(agentSecond, {
+      type: 'agent_preset_progress',
+      chatId: 'chat-1',
+      presetId: 'preset-1',
+      presetName: 'Agent progress B',
+      phase: 'afterMain',
+      status: 'running',
+      totalSteps: 3,
+      completedSteps: 1,
+      activeSteps: [],
+    })
+
+    const postFirst = beginPostGenerationProgress({ characterId: 'character-0', chatId: 'chat-0' })
+    const postSecond = beginPostGenerationProgress({ characterId: 'character-1', chatId: 'chat-1' })
+    for (const [session, ownerName] of [
+      [postFirst, 'Post progress A'],
+      [postSecond, 'Post progress B'],
+    ] as const) {
+      updatePostGenerationProgress(session, {
+        type: 'post_generation_progress',
+        phase: 'onOutput',
+        status: 'running',
+        runSeq: 1,
+        ownerType: 'module',
+        ownerName,
+        llmCallCount: 1,
+        pendingLlmCount: 1,
+        llmCallCounts: { LLM: 0, axLLM: 1 },
+        pendingLlmCounts: { LLM: 0, axLLM: 1 },
+      })
+    }
+
+    const halfFirst = { characterId: 'character-0', chatId: 'chat-0', generationId: 'generation-0' }
+    const halfSecond = { characterId: 'character-1', chatId: 'chat-1', generationId: 'generation-1' }
+    beginHalfStreamingProgress(halfFirst)
+    beginHalfStreamingProgress(halfSecond)
+    recordHalfStreamingToken(halfFirst, 2_000, { generatedTokens: 4, elapsedMs: 1_000 })
+    recordHalfStreamingToken(halfSecond, 3_000, { generatedTokens: 12, elapsedMs: 2_000 })
+
+    mountScreen()
+    await waitFor(() => {
+      expect(target.textContent).toContain('Agent progress A')
+      expect(target.textContent).toContain('Post progress A')
+      expect(target.querySelector('[data-testid="half-streaming-throughput"]')?.textContent).toBe('4')
+    })
+    expect(target.textContent).not.toContain('Agent progress B')
+    expect(target.textContent).not.toContain('Post progress B')
+
+    switchToCharacterChat(1)
+    await waitFor(() => {
+      expect(target.textContent).toContain('Agent progress B')
+      expect(target.textContent).toContain('Post progress B')
+      expect(target.querySelector('[data-testid="half-streaming-throughput"]')?.textContent).toBe('6')
+    })
+    expect(target.textContent).not.toContain('Agent progress A')
+    expect(target.textContent).not.toContain('Post progress A')
   })
 })
 

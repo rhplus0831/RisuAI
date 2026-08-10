@@ -50,13 +50,27 @@ import {
   clearActiveMessageTranslation,
   setActiveMessageTranslations,
 } from '../../../server/messageTranslationJobs'
-import { clearHalfStreamingProgressForChat, halfStreamingProgress } from '../../halfStreamingProgress'
+import { halfStreamingProgress, resetHalfStreamingProgressForTests } from '../../halfStreamingProgress'
 
 const baseInput: ServerChatInput = {
   chatId: 'chat-1',
   characterId: 'char-1',
   mode: 'send',
   userMessage: 'hi',
+}
+
+function findPostGenerationProgress(characterId: string, chatId: string): ActivePostGenerationProgress | undefined {
+  return get(postGenerationProgress).find(
+    (progress) => progress.target.characterId === characterId && progress.target.chatId === chatId,
+  )
+}
+
+function findAgentPresetProgress(chatId: string): ActiveAgentPresetProgress | undefined {
+  return get(agentPresetProgress).find((progress) => progress.chatId === chatId)
+}
+
+function findHalfStreamingProgress(generationId: string) {
+  return get(halfStreamingProgress).find((progress) => progress.generationId === generationId)
 }
 
 function controlledGenerationStream() {
@@ -129,7 +143,7 @@ afterEach(() => {
   resetAutomaticTranslationEligibilityForTests()
   clearActiveMessageTranslation('message-1')
   setActiveMessageTranslations([])
-  clearHalfStreamingProgressForChat(baseInput.characterId, baseInput.chatId)
+  resetHalfStreamingProgressForTests()
   vi.unstubAllGlobals()
 })
 
@@ -565,11 +579,11 @@ describe('requestServerChat', () => {
     controlled.send('token', { content: 'Hel' })
     controlled.send('token', { content: 'lo' })
     await vi.waitFor(() => {
-      expect(get(halfStreamingProgress)?.generatedTokens).toBe(2)
+      expect(findHalfStreamingProgress('half-generation')?.generatedTokens).toBe(2)
     })
 
     expect(partialReadResolved).toBe(false)
-    expect(get(halfStreamingProgress)).toMatchObject({
+    expect(findHalfStreamingProgress('half-generation')).toMatchObject({
       chatId: baseInput.chatId,
       generationId: 'half-generation',
       generatedTokens: 2,
@@ -615,7 +629,10 @@ describe('requestServerChat', () => {
       elapsedMs: 3_000,
     })
     await vi.waitFor(() => {
-      expect(get(halfStreamingProgress)).toMatchObject({ generatedTokens: 9, tokensPerSecond: 3 })
+      expect(findHalfStreamingProgress('gateway-generation')).toMatchObject({
+        generatedTokens: 9,
+        tokensPerSecond: 3,
+      })
     })
     expect(partialReadResolved).toBe(false)
 
@@ -902,7 +919,7 @@ describe('requestServerChat', () => {
   })
 
   it('updates and clears post-generation Lua progress from generation streams', async () => {
-    const snapshots: Array<ActivePostGenerationProgress | null> = []
+    const snapshots: ActivePostGenerationProgress[][] = []
     const unsubscribe = postGenerationProgress.subscribe((value) => {
       snapshots.push(value)
     })
@@ -946,7 +963,7 @@ describe('requestServerChat', () => {
       expect(res.status).toBe('ok')
       if (res.status !== 'ok') return
       await expect(res.terminal).resolves.toMatchObject({ status: 'done' })
-      expect(snapshots).toEqual(
+      expect(snapshots.flat()).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             target: { characterId: 'char-1', chatId: 'chat-1' },
@@ -958,13 +975,13 @@ describe('requestServerChat', () => {
           }),
         ]),
       )
-      expect(get(postGenerationProgress)).toBeNull()
+      expect(get(postGenerationProgress)).toEqual([])
     } finally {
       unsubscribe()
     }
   })
 
-  it('keeps a superseded chat stream from replacing or clearing the current post-generation progress', async () => {
+  it("keeps concurrent chat streams from replacing or clearing each other's post-generation progress", async () => {
     const sendProgress = (
       stream: ReturnType<typeof controlledGenerationStream>,
       ownerName: string,
@@ -998,7 +1015,7 @@ describe('requestServerChat', () => {
     expect(firstResult.status).toBe('ok')
     if (firstResult.status !== 'ok') return
     await vi.waitFor(() => {
-      expect(get(postGenerationProgress)).toMatchObject({
+      expect(findPostGenerationProgress('char-1', 'chat-1')).toMatchObject({
         target: { characterId: 'char-1', chatId: 'chat-1' },
         ownerName: 'First Chat Script',
       })
@@ -1012,17 +1029,26 @@ describe('requestServerChat', () => {
     expect(secondResult.status).toBe('ok')
     if (secondResult.status !== 'ok') return
     await vi.waitFor(() => {
-      expect(get(postGenerationProgress)).toMatchObject({
+      expect(findPostGenerationProgress('char-2', 'chat-2')).toMatchObject({
         target: { characterId: 'char-2', chatId: 'chat-2' },
         ownerName: 'Second Chat Script',
       })
     })
 
     sendProgress(first, 'Late First Chat Script', 'running')
+    await vi.waitFor(() => {
+      expect(findPostGenerationProgress('char-1', 'chat-1')).toMatchObject({
+        ownerName: 'Late First Chat Script',
+      })
+      expect(findPostGenerationProgress('char-2', 'chat-2')).toMatchObject({
+        ownerName: 'Second Chat Script',
+      })
+    })
     first.send('done', { generationId: 'gen-first', generationInfo: { generationId: 'gen-first' } })
     first.close()
     await expect(firstResult.terminal).resolves.toMatchObject({ status: 'done' })
-    expect(get(postGenerationProgress)).toMatchObject({
+    expect(findPostGenerationProgress('char-1', 'chat-1')).toBeUndefined()
+    expect(findPostGenerationProgress('char-2', 'chat-2')).toMatchObject({
       target: { characterId: 'char-2', chatId: 'chat-2' },
       ownerName: 'Second Chat Script',
     })
@@ -1030,11 +1056,11 @@ describe('requestServerChat', () => {
     second.send('done', { generationId: 'gen-second', generationInfo: { generationId: 'gen-second' } })
     second.close()
     await expect(secondResult.terminal).resolves.toMatchObject({ status: 'done' })
-    expect(get(postGenerationProgress)).toBeNull()
+    expect(get(postGenerationProgress)).toEqual([])
   })
 
   it('updates and clears Agent Preset progress from generation streams', async () => {
-    const snapshots: Array<ActiveAgentPresetProgress | null> = []
+    const snapshots: ActiveAgentPresetProgress[][] = []
     const unsubscribe = agentPresetProgress.subscribe((value) => snapshots.push(value))
     try {
       vi.stubGlobal('fetch', async () => {
@@ -1076,7 +1102,7 @@ describe('requestServerChat', () => {
       expect(res.status).toBe('ok')
       if (res.status !== 'ok') return
       await expect(res.terminal).resolves.toMatchObject({ status: 'done' })
-      expect(snapshots).toEqual(
+      expect(snapshots.flat()).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             chatId: 'chat-1',
@@ -1087,13 +1113,13 @@ describe('requestServerChat', () => {
           }),
         ]),
       )
-      expect(get(agentPresetProgress)).toBeNull()
+      expect(get(agentPresetProgress)).toEqual([])
     } finally {
       unsubscribe()
     }
   })
 
-  it('keeps a superseded chat stream from replacing or clearing the current Agent Preset progress', async () => {
+  it("keeps concurrent chat streams from replacing or clearing each other's Agent Preset progress", async () => {
     const sendProgress = (
       stream: ReturnType<typeof controlledGenerationStream>,
       chatId: string,
@@ -1127,7 +1153,7 @@ describe('requestServerChat', () => {
     expect(firstResult.status).toBe('ok')
     if (firstResult.status !== 'ok') return
     await vi.waitFor(() => {
-      expect(get(agentPresetProgress)).toMatchObject({ chatId: 'chat-1', presetName: 'First Chat Preset' })
+      expect(findAgentPresetProgress('chat-1')).toMatchObject({ presetName: 'First Chat Preset' })
     })
 
     const secondPending = requestServerChatGeneration({ ...baseInput, characterId: 'char-2', chatId: 'chat-2' }, null)
@@ -1137,17 +1163,22 @@ describe('requestServerChat', () => {
     expect(secondResult.status).toBe('ok')
     if (secondResult.status !== 'ok') return
     await vi.waitFor(() => {
-      expect(get(agentPresetProgress)).toMatchObject({ chatId: 'chat-2', presetName: 'Second Chat Preset' })
+      expect(findAgentPresetProgress('chat-2')).toMatchObject({ presetName: 'Second Chat Preset' })
     })
 
     sendProgress(first, 'chat-1', 'Late First Chat Preset', 'running')
+    await vi.waitFor(() => {
+      expect(findAgentPresetProgress('chat-1')).toMatchObject({ presetName: 'Late First Chat Preset' })
+      expect(findAgentPresetProgress('chat-2')).toMatchObject({ presetName: 'Second Chat Preset' })
+    })
     first.send('done', {
       generationId: 'gen-agent-first',
       generationInfo: { generationId: 'gen-agent-first' },
     })
     first.close()
     await expect(firstResult.terminal).resolves.toMatchObject({ status: 'done' })
-    expect(get(agentPresetProgress)).toMatchObject({ chatId: 'chat-2', presetName: 'Second Chat Preset' })
+    expect(findAgentPresetProgress('chat-1')).toBeUndefined()
+    expect(findAgentPresetProgress('chat-2')).toMatchObject({ presetName: 'Second Chat Preset' })
 
     second.send('done', {
       generationId: 'gen-agent-second',
@@ -1155,7 +1186,7 @@ describe('requestServerChat', () => {
     })
     second.close()
     await expect(secondResult.terminal).resolves.toMatchObject({ status: 'done' })
-    expect(get(agentPresetProgress)).toBeNull()
+    expect(get(agentPresetProgress)).toEqual([])
   })
 
   it('ignores unknown events and captures warning events during generation streams', async () => {

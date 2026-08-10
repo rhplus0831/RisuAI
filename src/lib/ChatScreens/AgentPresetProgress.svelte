@@ -14,8 +14,7 @@
     return character?.chats?.[character.chatPage]?.id ?? ''
   })
   let progress = $derived.by(() => {
-    const current = $agentPresetProgress
-    return current?.chatId === activeChatId ? current : null
+    return $agentPresetProgress.find((entry) => entry.chatId === activeChatId) ?? null
   })
   let progressPercent = $derived(progress ? getAgentPresetProgressPercent(progress) : 0)
   let progressLabel = $derived(progress ? labelForProgress(progress) : '')

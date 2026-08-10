@@ -7,9 +7,11 @@
   let { characterId, chatId }: { characterId: string; chatId: string } = $props()
   let now = $state(Date.now())
   let progress = $derived.by(() => {
-    const current = $postGenerationProgress
-    if (!current) return null
-    return current.target.characterId === characterId && current.target.chatId === chatId ? current : null
+    return (
+      $postGenerationProgress.find(
+        (entry) => entry.target.characterId === characterId && entry.target.chatId === chatId,
+      ) ?? null
+    )
   })
 
   function ownerLabel(progress: ActivePostGenerationProgress): string {

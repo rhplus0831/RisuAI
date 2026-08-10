@@ -1433,7 +1433,9 @@
     }
     return character.chats?.[chatPage]?.id ?? ''
   })
-  let hasActiveAgentPresetProgress = $derived($agentPresetProgress?.chatId === currentChatId)
+  let hasActiveAgentPresetProgress = $derived(
+    $agentPresetProgress.some((progress) => progress.chatId === currentChatId),
+  )
   let serverTranslationJob = $derived.by(() => {
     const target = captureRawTranslationTarget()
     if (!target) return undefined

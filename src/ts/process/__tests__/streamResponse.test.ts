@@ -38,7 +38,7 @@ import type { StreamResponseChunk, requestDataResponse } from '../request/reques
 import { consumeStreamResponse } from '../postGeneration/streamResponse'
 import { markChatMessageMutationIntent } from '../../server/chatMessageMutationIntent'
 import { markChatBodyProjectionApplied } from '../../server/resourceState.svelte'
-import { halfStreamingProgress } from '../halfStreamingProgress'
+import { halfStreamingProgress, resetHalfStreamingProgressForTests } from '../halfStreamingProgress'
 
 const testDatabaseState = {
   get db() {
@@ -162,7 +162,7 @@ describe('consumeStreamResponse', () => {
       data,
       emoChanged: false,
     }))
-    halfStreamingProgress.set(null)
+    resetHalfStreamingProgressForTests()
   })
 
   it('half-streaming keeps partial text hidden, reports throughput, and applies the final response once', async () => {
@@ -177,7 +177,9 @@ describe('consumeStreamResponse', () => {
     await Promise.resolve()
     await Promise.resolve()
     expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('')
-    expect(get(halfStreamingProgress)).toMatchObject({ generatedTokens: 1, tokensPerSecond: 0 })
+    expect(get(halfStreamingProgress)).toContainEqual(
+      expect.objectContaining({ generatedTokens: 1, tokensPerSecond: 0 }),
+    )
     expect(processScriptFullSpy).not.toHaveBeenCalled()
 
     vi.setSystemTime(new Date(1100))
@@ -185,7 +187,9 @@ describe('consumeStreamResponse', () => {
     await Promise.resolve()
     await Promise.resolve()
     expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('')
-    expect(get(halfStreamingProgress)).toMatchObject({ generatedTokens: 2, tokensPerSecond: 10 })
+    expect(get(halfStreamingProgress)).toContainEqual(
+      expect.objectContaining({ generatedTokens: 2, tokensPerSecond: 10 }),
+    )
 
     close()
     const out = await promise
@@ -193,7 +197,7 @@ describe('consumeStreamResponse', () => {
     expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('ab')
     expect(processScriptFullSpy).toHaveBeenCalledOnce()
     expect(processScriptFullSpy).toHaveBeenCalledWith(currentChar, 'ab', 'editoutput', 1)
-    expect(get(halfStreamingProgress)).toBeNull()
+    expect(get(halfStreamingProgress)).toEqual([])
   })
 
   it('half-streaming continue mode preserves the existing response until the continuation completes', async () => {
