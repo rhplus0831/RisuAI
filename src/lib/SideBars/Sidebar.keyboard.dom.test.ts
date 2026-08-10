@@ -99,7 +99,7 @@ function seedSidebarDatabase(options: { enableDevTools?: boolean } = {}) {
   } as never)
 }
 
-function seedGeneratingSidebarDatabase() {
+function seedPinnedSidebarDatabase() {
   setDatabaseLite({
     characterOrder: ['char-a'],
     characters: [
@@ -115,6 +115,10 @@ function seedGeneratingSidebarDatabase() {
     menuSideBar: false,
     roundIcons: false,
   } as never)
+}
+
+function seedGeneratingSidebarDatabase() {
+  seedPinnedSidebarDatabase()
   beginChatGenerationActivity({
     target: {
       selectedCharID: 0,
@@ -301,6 +305,50 @@ describe('Sidebar character keyboard activation', () => {
 
     expect(menuButton!.getAttribute('aria-expanded')).toBe('false')
     expect(characterControls!.hasAttribute('inert')).toBe(false)
+  })
+
+  it('makes pinned chats inert with the narrow menu and restores focus and activation afterward', async () => {
+    seedPinnedSidebarDatabase()
+    component = mount(Sidebar, { target })
+    await tick()
+
+    const menuButton = target.querySelector<HTMLButtonElement>('button[aria-label="Menu"]')
+    const pinnedRail = target.querySelector<HTMLElement>('[data-risu-pinned-chats]')
+    const pinnedChat = target.querySelector<HTMLElement>('[data-risu-pinned-chat="chat-a"]')
+    const pinnedAvatar = pinnedChat?.querySelector<HTMLElement>('[role="button"]')
+    expect(menuButton).toBeTruthy()
+    expect(pinnedRail).toBeTruthy()
+    expect(pinnedAvatar).toBeTruthy()
+
+    pinnedAvatar!.focus()
+    expect(document.activeElement).toBe(pinnedAvatar)
+    pinnedAvatar!.click()
+    expect(sidebarKeyboardMocks.navigate).toHaveBeenCalledTimes(1)
+    expect(sidebarKeyboardMocks.navigate).toHaveBeenLastCalledWith('/character/char-a/chat-a')
+
+    sidebarKeyboardMocks.navigate.mockClear()
+    menuButton!.focus()
+    menuButton!.click()
+    await tick()
+
+    expect(menuButton!.getAttribute('aria-expanded')).toBe('true')
+    expect(pinnedRail!.hasAttribute('inert')).toBe(true)
+    expect(pinnedAvatar!.closest('[inert]')).toBe(pinnedRail)
+    expect(document.activeElement).toBe(menuButton)
+    pinnedAvatar!.click()
+    expect(sidebarKeyboardMocks.navigate).not.toHaveBeenCalled()
+
+    menuButton!.click()
+    await tick()
+
+    expect(menuButton!.getAttribute('aria-expanded')).toBe('false')
+    expect(pinnedRail!.hasAttribute('inert')).toBe(false)
+    expect(pinnedAvatar!.closest('[inert]')).toBeNull()
+    pinnedAvatar!.focus()
+    expect(document.activeElement).toBe(pinnedAvatar)
+    pinnedAvatar!.click()
+    expect(sidebarKeyboardMocks.navigate).toHaveBeenCalledTimes(1)
+    expect(sidebarKeyboardMocks.navigate).toHaveBeenLastCalledWith('/character/char-a/chat-a')
   })
 })
 

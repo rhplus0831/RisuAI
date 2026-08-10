@@ -10,15 +10,17 @@
     generatingChatIds: ReadonlySet<string>
     rounded: boolean
     onOpen: (item: PinnedChatItem) => void
+    isInert?: boolean
   }
 
-  let { items, generatingChatIds, rounded, onOpen }: Props = $props()
+  let { items, generatingChatIds, rounded, onOpen, isInert = false }: Props = $props()
 </script>
 
 {#if items.length > 0}
   <nav
     class="flex max-h-[35%] w-full shrink-0 flex-col items-center gap-2 overflow-x-hidden overflow-y-auto border-b border-b-selected px-1 py-2"
     aria-label={language.pinnedChats}
+    inert={isInert}
     data-risu-pinned-chats>
     {#each items as item (`${item.characterId}:${item.chatId}`)}
       <div class="relative flex w-full flex-col items-center" data-risu-pinned-chat={item.chatId}>

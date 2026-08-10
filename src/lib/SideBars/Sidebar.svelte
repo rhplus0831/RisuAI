@@ -396,6 +396,11 @@
     navigate(characterRoutePath(item.characterId, item.chatId))
   }
 
+  function openNarrowPinnedChat(item: PinnedChatItem): void {
+    if (menuMode === 1) return
+    openPinnedChat(item)
+  }
+
   function characterIsGenerating(index: number): boolean {
     return characterHasGeneratingChat(getDatabase().characters?.[index], generatingChatIds)
   }
@@ -656,7 +661,12 @@
         {/if}
       </div>
     {/if}
-    <PinnedChatsRail items={pinnedChats} {generatingChatIds} rounded={IconRounded} onOpen={openPinnedChat} />
+    <PinnedChatsRail
+      items={pinnedChats}
+      {generatingChatIds}
+      rounded={IconRounded}
+      onOpen={openNarrowPinnedChat}
+      isInert={menuMode === 1} />
     <div
       class="flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0"
       data-risu-sidebar-character-controls
