@@ -70,8 +70,8 @@ overlap note explicitly says otherwise.
 | MTC-03 | P1 | Resolved | Preserve the plugin send target across awaits | Plugin API | Prefer MTC-01 target contract |
 | MTC-04 | P1 | Resolved | Stop retrying terminal reattach failures | Reattach lifecycle | None |
 | MTC-05 | P1 | Resolved | Cancel a reattached durable job before its response opens | Reattach cancellation | Coordinate with MTC-04 |
-| MTC-06 | P2 | In progress | Scope Draft/BTW hook activity and cancellation by chat | Input hooks/composer | None |
-| MTC-07 | P2 | Ready | Make reroll candidates chat-scoped | Reroll navigation | None |
+| MTC-06 | P2 | Resolved | Scope Draft/BTW hook activity and cancellation by chat | Input hooks/composer | None |
+| MTC-07 | P2 | In progress | Make reroll candidates chat-scoped | Reroll navigation | None |
 | MTC-08 | P2 | Ready | Make live generation progress chat-scoped | Progress UI | None |
 | MTC-09 | P2 | Ready | Generate suggestions after background completion | Suggestions | MTC-08 optional |
 | MTC-10 | P2 | Ready | Remove aggregate `doingChat` locks from cross-chat-safe features | Translation/preview/autopilot | None |
@@ -426,9 +426,15 @@ the request layer takes ownership. Cancellation must be idempotent.
 ## MTC-06 — Scope Draft/BTW hook activity and cancellation by chat
 
 **Priority:** P2
-**Status:** In progress
+**Status:** Resolved
 **Owner:** Codex (delegated 2026-08-10)
-**Resolution:** —
+**Resolution:** `424db300d` — chat-keyed `inputHookActivity.svelte.ts` registry
+(stage, kind, controller, composer-operation ownership); per-chat
+single-flight with cross-chat concurrency; abort targets the open chat's hook
+only; unbound-controller fallback removed. Tests:
+`inputHookActivity.test.ts`, `DefaultChatScreen.loadPages.test.ts`
+(cross-chat controls, cancellation ownership, reverse-order cleanup,
+keyboard send during a foreign hook).
 **Decision (2026-08-10):** Concurrent hooks across chats are allowed, keyed
 the same way as the chat-keyed generation registry (one shared mental model:
 each chat owns its own activity). Per-chat mutual exclusion is retained — one
@@ -488,8 +494,8 @@ cancellation must remain target-safe under concurrency.
 ## MTC-07 — Make reroll candidates chat-scoped
 
 **Priority:** P2
-**Status:** Ready
-**Owner:** Unassigned
+**Status:** In progress
+**Owner:** Codex (delegated 2026-08-10)
 **Resolution:** —
 
 ### Problem
@@ -1001,3 +1007,4 @@ Record completed items here as they land.
 | MTC-03 | `1f6e6b670` | `v3.svelte.test.ts`; `acceptedSendCoordinator.test.ts` | Queued plugin sends now generate after settlement instead of returning early success. |
 | MTC-04 | `340d80238` | `reattach.test.ts`; `serverChat.test.ts`; `sendChat.serverPreview.test.ts` | Unclassified exceptions consume the job; bootstrap is the sole retry-budget reset authority. |
 | MTC-05 | `87dfae2ad` | `serverChat.test.ts`; `reattach.test.ts` | Fresh-send cancellation before any job ID exists is unchanged (out of item scope). |
+| MTC-06 | `424db300d` | `inputHookActivity.test.ts`; `DefaultChatScreen.loadPages.test.ts` | Concurrent cross-chat hooks allowed per the recorded decision; per-chat single-flight retained. |
