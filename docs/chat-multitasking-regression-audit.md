@@ -71,8 +71,8 @@ overlap note explicitly says otherwise.
 | MTC-04 | P1 | Resolved | Stop retrying terminal reattach failures | Reattach lifecycle | None |
 | MTC-05 | P1 | Resolved | Cancel a reattached durable job before its response opens | Reattach cancellation | Coordinate with MTC-04 |
 | MTC-06 | P2 | Resolved | Scope Draft/BTW hook activity and cancellation by chat | Input hooks/composer | None |
-| MTC-07 | P2 | In progress | Make reroll candidates chat-scoped | Reroll navigation | None |
-| MTC-08 | P2 | Ready | Make live generation progress chat-scoped | Progress UI | None |
+| MTC-07 | P2 | Resolved | Make reroll candidates chat-scoped | Reroll navigation | None |
+| MTC-08 | P2 | In progress | Make live generation progress chat-scoped | Progress UI | None |
 | MTC-09 | P2 | Ready | Generate suggestions after background completion | Suggestions | MTC-08 optional |
 | MTC-10 | P2 | Ready | Remove aggregate `doingChat` locks from cross-chat-safe features | Translation/preview/autopilot | None |
 | MTC-11 | P2 | Ready | Use stable IDs for asynchronous finalization and error writes | Post-generation/error handling | None |
@@ -494,9 +494,16 @@ cancellation must remain target-safe under concurrency.
 ## MTC-07 — Make reroll candidates chat-scoped
 
 **Priority:** P2
-**Status:** In progress
+**Status:** Resolved
 **Owner:** Codex (delegated 2026-08-10)
-**Resolution:** —
+**Resolution:** `94867c65b` — reroll state lives in a `SvelteMap` keyed by
+stable character/chat identity; terminal completions seed their own chat;
+the server bulk chat-messages route now includes per-chat alternates so
+bulk-hydrated chats regain candidates after reload (no alternate-count cap —
+revisit if bulk payloads grow). Tests: `rerollNavigation.test.ts`,
+`RerollList.svelte.test.ts`, `chatMessageHydration.test.ts`,
+`hydrationReads.test.ts`, `resourceReads.test.ts` (bulk alternates),
+`serverLoadCostHarness.test.ts`.
 
 ### Problem
 
@@ -547,8 +554,8 @@ completion in one chat to mutate another chat's active candidate index.
 ## MTC-08 — Make live generation progress chat-scoped
 
 **Priority:** P2
-**Status:** Ready
-**Owner:** Unassigned
+**Status:** In progress
+**Owner:** Codex (delegated 2026-08-10)
 **Resolution:** —
 
 ### Problem
@@ -1008,3 +1015,4 @@ Record completed items here as they land.
 | MTC-04 | `340d80238` | `reattach.test.ts`; `serverChat.test.ts`; `sendChat.serverPreview.test.ts` | Unclassified exceptions consume the job; bootstrap is the sole retry-budget reset authority. |
 | MTC-05 | `87dfae2ad` | `serverChat.test.ts`; `reattach.test.ts` | Fresh-send cancellation before any job ID exists is unchanged (out of item scope). |
 | MTC-06 | `424db300d` | `inputHookActivity.test.ts`; `DefaultChatScreen.loadPages.test.ts` | Concurrent cross-chat hooks allowed per the recorded decision; per-chat single-flight retained. |
+| MTC-07 | `94867c65b` | `rerollNavigation.test.ts`; `RerollList.svelte.test.ts`; `chatMessageHydration.test.ts`; `resourceReads.test.ts`; `serverLoadCostHarness.test.ts` | Bulk route now ships alternates (uncapped per chat — revisit if payloads grow). Pre-existing masked-preset test failure verified on HEAD and spun off separately. |
