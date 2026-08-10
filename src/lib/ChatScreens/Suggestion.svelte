@@ -22,7 +22,8 @@
   let nextSuggestionRequestOwnershipToken = 0
   const suggestionRequestOwners = new Map<string, number>()
 
-  function claimSuggestionRequestOwnership(key: string): SharedSuggestionRequestOwnership {
+  function claimSuggestionRequestOwnership(key: string): SharedSuggestionRequestOwnership | undefined {
+    if (suggestionRequestOwners.has(key)) return undefined
     const ownership = { key, token: ++nextSuggestionRequestOwnershipToken }
     suggestionRequestOwners.set(key, ownership.token)
     return ownership
@@ -103,13 +104,18 @@
   import { onDestroy, untrack } from 'svelte'
   import { ParseMarkdown } from 'src/ts/parser/parser.svelte'
   import { defaultAutoSuggestPrompt } from '../../ts/storage/defaultPrompts.js'
-  import { dispatchUpdateChatRow, type ChatRowMetadataSnapshot } from 'src/ts/chatCommands'
+  import { dispatchUpdateChatRow, type ActiveChatTarget, type ChatRowMetadataSnapshot } from 'src/ts/chatCommands'
   import {
     rollbackServerBackedChatRowMetadata,
     syncServerBackedChatMetadataBaselines,
   } from 'src/ts/server/chatBridge.svelte'
   import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { resolveModelForRole } from 'src/ts/model/modelRoles'
+  import {
+    consumeChatSuggestionCompletion,
+    findPendingChatSuggestionCompletion,
+    pendingChatSuggestionCompletions,
+  } from 'src/ts/process/chatSuggestionCompletion.svelte'
 
   interface Props {
     send: () => any
@@ -193,6 +199,20 @@
       characterId: currentChar.chaId,
       chatId: currentChat.id,
       suggestMessages: copySuggestionMessages(messages),
+    }
+  }
+
+  function activeCompletionTarget(): ActiveChatTarget | undefined {
+    const selectedChar = $selectedCharID
+    const currentChar = getDatabase().characters?.[selectedChar]
+    const currentChatPage = currentChar?.chatPage
+    const currentChat = currentChar?.chats?.[currentChatPage]
+    if (selectedChar < 0 || !currentChar || !currentChat) return undefined
+    return {
+      selectedCharID: selectedChar,
+      chatPage: currentChatPage,
+      characterId: currentChar.chaId,
+      chatId: currentChat.id,
     }
   }
 
@@ -396,12 +416,14 @@
         ]
       }
 
+      const sharedOwnership = claimSuggestionRequestOwnership(suggestionRequestOwnershipKey(requestSuggestionTarget))
+      if (!sharedOwnership) return
+
+      const controller = new AbortController()
       progress = true
       progressChatId = requestChatId
-      const controller = new AbortController()
       abortController = controller
       const requestId = ++suggestionRequestId
-      const sharedOwnership = claimSuggestionRequestOwnership(suggestionRequestOwnershipKey(requestSuggestionTarget))
       const ownership: SuggestionRequestOwnership = {
         ...sharedOwnership,
         requestId,
@@ -468,6 +490,30 @@
     if (active === observedGenerationActive) return
     observedGenerationActive = active
     untrack(() => handleDoingChatChange(active))
+  })
+
+  $effect(() => {
+    const completion = findPendingChatSuggestionCompletion($pendingChatSuggestionCompletions, activeCompletionTarget())
+    if (!completion || effectiveGenerationActive) return
+
+    const character = completion.target.characterId
+      ? getDatabase().characters?.find((candidate) => candidate.chaId === completion.target.characterId)
+      : getDatabase().characters?.[completion.target.selectedCharID]
+    const chat = completion.target.chatId
+      ? character?.chats?.find((candidate) => candidate.id === completion.target.chatId)
+      : character?.chats?.[completion.target.chatPage]
+    if (!chat) return
+    if ((chat.suggestMessages?.length ?? 0) > 0) {
+      untrack(() => {
+        consumeChatSuggestionCompletion(completion.id)
+      })
+      return
+    }
+    if ((chat.message?.length ?? 0) === 0) return
+
+    untrack(() => {
+      if (consumeChatSuggestionCompletion(completion.id)) requestSuggestions()
+    })
   })
 
   const translateSuggest = async (toggle: boolean, messages: string[] | undefined) => {

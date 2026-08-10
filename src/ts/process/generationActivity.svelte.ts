@@ -1,5 +1,6 @@
 import { get, writable } from 'svelte/store'
 import type { ActiveChatTarget } from '../chatCommands'
+import { markChatSuggestionCompletion, resetChatSuggestionCompletionsForTests } from './chatSuggestionCompletion.svelte'
 
 export type ChatGenerationActivityKind = 'message' | 'preview'
 
@@ -69,10 +70,14 @@ export function updateChatGenerationActivityStage(activityId: number, stage: num
 }
 
 export function finishChatGenerationActivity(activityId: number): void {
+  const activity = get(activeChatGenerations).find((candidate) => candidate.id === activityId)
+  if (!activity) return
+  if (activity.kind === 'message') markChatSuggestionCompletion(activity.target)
   activeChatGenerations.update((activities) => activities.filter((activity) => activity.id !== activityId))
 }
 
 export function resetChatGenerationActivitiesForTests(): void {
   activeChatGenerations.set([])
   nextActivityId = 0
+  resetChatSuggestionCompletionsForTests()
 }

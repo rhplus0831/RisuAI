@@ -169,6 +169,13 @@ reattach live under `src/ts/process/`.
 failed-regenerate rollback, including restoring a displaced assistant tail only
 when newer transcript work has not superseded it.
 
+Settling a chat-keyed message generation records a bounded, consume-once marker
+in `src/ts/process/chatSuggestionCompletion.svelte.ts`. `Suggestion.svelte`
+consumes only the open chat's marker: persisted suggestions satisfy it without
+a request, resident empty chats request once, and empty shells retain it until
+their transcript hydrates. Request ownership is also chat-keyed, so duplicate
+mounted consumers cannot start the same automatic suggestion request.
+
 ## Input-Hook Chat Controls
 
 `src/lib/SideBars/ChatDraftHookSelector.svelte` selects a chat-scoped Draft

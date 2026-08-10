@@ -9,6 +9,11 @@ import {
   resetChatGenerationActivitiesForTests,
   updateChatGenerationActivityStage,
 } from './generationActivity.svelte'
+import {
+  consumeChatSuggestionCompletion,
+  findPendingChatSuggestionCompletion,
+  pendingChatSuggestionCompletions,
+} from './chatSuggestionCompletion.svelte'
 
 function target(characterId: string, chatId: string, selectedCharID: number) {
   return {
@@ -55,5 +60,22 @@ describe('chat generation activity registry', () => {
     expect(chatGenerationTargetKey({ selectedCharID: 3, chatPage: 2, characterId: 'char-a', chatId: undefined })).toBe(
       'character:char-a:page:2',
     )
+  })
+
+  it('records one consume-once suggestion marker when a message activity settles', () => {
+    const chatA = target('char-a', 'chat-a', 0)
+    const messageActivity = beginChatGenerationActivity({ target: chatA, kind: 'message' })!
+    const previewActivity = beginChatGenerationActivity({ target: target('char-b', 'chat-b', 1), kind: 'preview' })!
+
+    finishChatGenerationActivity(messageActivity.id)
+    finishChatGenerationActivity(messageActivity.id)
+    finishChatGenerationActivity(previewActivity.id)
+
+    const completion = findPendingChatSuggestionCompletion(get(pendingChatSuggestionCompletions), chatA)
+    expect(completion).toMatchObject({ target: chatA, targetKey: 'chat:chat-a' })
+    expect(get(pendingChatSuggestionCompletions)).toHaveLength(1)
+    expect(consumeChatSuggestionCompletion(completion!.id)).toBe(true)
+    expect(consumeChatSuggestionCompletion(completion!.id)).toBe(false)
+    expect(get(pendingChatSuggestionCompletions)).toEqual([])
   })
 })

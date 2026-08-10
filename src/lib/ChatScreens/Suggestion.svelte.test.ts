@@ -84,6 +84,11 @@ import { getResourceDatabase, replaceResourceDatabase } from 'src/ts/server/reso
 import type { Database } from 'src/ts/storage/database.svelte'
 import { defaultAutoSuggestPrompt } from 'src/ts/storage/defaultPrompts'
 import { replacePlaceholders } from 'src/ts/utilState'
+import {
+  beginChatGenerationActivity,
+  finishChatGenerationActivity,
+  resetChatGenerationActivitiesForTests,
+} from 'src/ts/process/generationActivity.svelte'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -174,7 +179,30 @@ function seedSuggestionDatabaseWithTwoChats() {
   } as unknown as Database)
 }
 
+function seedBackgroundSuggestionDatabase(options: { shell?: boolean } = {}) {
+  seedSuggestionDatabaseWithTwoChats()
+  const character = getResourceDatabase().characters[0]
+  character.chats[0].message = options.shell
+    ? []
+    : [{ role: 'char', data: 'Resident reply from A', chatId: 'message-a' }]
+  character.chats[0].suggestMessages = []
+  character.chats[1].suggestMessages = ['Keep B suggestion']
+}
+
+function beginChatAGeneration() {
+  return beginChatGenerationActivity({
+    target: {
+      selectedCharID: 0,
+      chatPage: 0,
+      characterId: 'character-a',
+      chatId: 'chat-a',
+    },
+    kind: 'message',
+  })!
+}
+
 afterEach(() => {
+  resetChatGenerationActivitiesForTests()
   suggestionMocks.doingChat.set(false)
   selectedCharID.set(-1)
   replaceResourceDatabase({} as Database)
@@ -449,6 +477,210 @@ describe('Suggestion component persistence', () => {
     } finally {
       if (component) unmount(component)
       target.remove()
+    }
+  })
+
+  it('requests suggestions once after a resident chat completes in the background and is reopened', async () => {
+    seedBackgroundSuggestionDatabase()
+    const generation = beginChatAGeneration()
+    suggestionMocks.doingChat.set(true)
+    const request = deferred<{ type: 'success'; result: string }>()
+    suggestionMocks.requestChatData.mockReturnValue(request.promise)
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | undefined
+
+    try {
+      component = mount(Suggestion, {
+        target,
+        props: { send: vi.fn(), messageInput: vi.fn() },
+      })
+      await settle()
+
+      getResourceDatabase().characters[0].chatPage = 1
+      suggestionMocks.doingChat.set(false)
+      await settle()
+      finishChatGenerationActivity(generation.id)
+      await settle()
+
+      expect(suggestionMocks.requestChatData).not.toHaveBeenCalled()
+      expect(target.textContent).toContain('Keep B suggestion')
+
+      getResourceDatabase().characters[0].chatPage = 0
+      await waitFor(() => expect(suggestionMocks.requestChatData).toHaveBeenCalledOnce())
+      const [requestArg] = suggestionMocks.requestChatData.mock.calls[0]
+      expect(requestArg.currentChar.chaId).toBe('character-a')
+
+      request.resolve({ type: 'success', result: '- Return to A' })
+      await waitFor(() => {
+        expect(target.textContent).toContain('Return to A')
+        expect(getResourceDatabase().characters[0].chats[0].suggestMessages).toEqual(['Return to A'])
+      })
+      expect(getResourceDatabase().characters[0].chats[1].suggestMessages).toEqual(['Keep B suggestion'])
+      expect(suggestionMocks.dispatchUpdateChatRow).toHaveBeenCalledOnce()
+      expect(suggestionMocks.dispatchUpdateChatRow).toHaveBeenCalledWith(
+        'chat-a',
+        { suggestMessages: ['Return to A'] },
+        expect.objectContaining({ characterId: 'character-a', chatId: 'chat-a' }),
+        {},
+        suggestionMocks.rollbackServerBackedChatRowMetadata,
+      )
+    } finally {
+      if (component) unmount(component)
+      target.remove()
+    }
+  })
+
+  it('waits for a background-completed chat shell to hydrate before requesting suggestions once', async () => {
+    seedBackgroundSuggestionDatabase({ shell: true })
+    const generation = beginChatAGeneration()
+    suggestionMocks.doingChat.set(true)
+    const request = deferred<{ type: 'success'; result: string }>()
+    suggestionMocks.requestChatData.mockReturnValue(request.promise)
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | undefined
+
+    try {
+      component = mount(Suggestion, {
+        target,
+        props: { send: vi.fn(), messageInput: vi.fn() },
+      })
+      await settle()
+
+      getResourceDatabase().characters[0].chatPage = 1
+      suggestionMocks.doingChat.set(false)
+      await settle()
+      finishChatGenerationActivity(generation.id)
+      await settle()
+
+      getResourceDatabase().characters[0].chatPage = 0
+      await settle()
+      expect(suggestionMocks.requestChatData).not.toHaveBeenCalled()
+
+      getResourceDatabase().characters[0].chats[0].message = [
+        { role: 'char', data: 'Hydrated background reply', chatId: 'hydrated-message-a' },
+      ]
+      await waitFor(() => expect(suggestionMocks.requestChatData).toHaveBeenCalledOnce())
+
+      request.resolve({ type: 'success', result: '- Hydrated return to A' })
+      await waitFor(() => {
+        expect(target.textContent).toContain('Hydrated return to A')
+        expect(getResourceDatabase().characters[0].chats[0].suggestMessages).toEqual(['Hydrated return to A'])
+      })
+      expect(getResourceDatabase().characters[0].chats[1].suggestMessages).toEqual(['Keep B suggestion'])
+      expect(suggestionMocks.dispatchUpdateChatRow).toHaveBeenCalledOnce()
+    } finally {
+      if (component) unmount(component)
+      target.remove()
+    }
+  })
+
+  it('uses persisted suggestions for a background completion without issuing a duplicate request', async () => {
+    seedBackgroundSuggestionDatabase()
+    const generation = beginChatAGeneration()
+    suggestionMocks.doingChat.set(true)
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | undefined
+
+    try {
+      component = mount(Suggestion, {
+        target,
+        props: { send: vi.fn(), messageInput: vi.fn() },
+      })
+      await settle()
+
+      getResourceDatabase().characters[0].chatPage = 1
+      suggestionMocks.doingChat.set(false)
+      await settle()
+      finishChatGenerationActivity(generation.id)
+      getResourceDatabase().characters[0].chats[0].suggestMessages = ['Persisted background suggestion']
+      await settle()
+
+      getResourceDatabase().characters[0].chatPage = 0
+      await waitFor(() => {
+        expect(target.textContent).toContain('Persisted background suggestion')
+      })
+
+      expect(suggestionMocks.requestChatData).not.toHaveBeenCalled()
+      expect(getResourceDatabase().characters[0].chats[1].suggestMessages).toEqual(['Keep B suggestion'])
+      expect(suggestionMocks.dispatchUpdateChatRow).not.toHaveBeenCalled()
+    } finally {
+      if (component) unmount(component)
+      target.remove()
+    }
+  })
+
+  it('does not persist a background suggestion response after its chat becomes stale', async () => {
+    seedBackgroundSuggestionDatabase()
+    const generation = beginChatAGeneration()
+    suggestionMocks.doingChat.set(true)
+    const request = deferred<{ type: 'success'; result: string }>()
+    suggestionMocks.requestChatData.mockReturnValue(request.promise)
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | undefined
+
+    try {
+      component = mount(Suggestion, {
+        target,
+        props: { send: vi.fn(), messageInput: vi.fn() },
+      })
+      await settle()
+
+      getResourceDatabase().characters[0].chatPage = 1
+      suggestionMocks.doingChat.set(false)
+      await settle()
+      finishChatGenerationActivity(generation.id)
+      getResourceDatabase().characters[0].chatPage = 0
+      await waitFor(() => expect(suggestionMocks.requestChatData).toHaveBeenCalledOnce())
+
+      const requestSignal = suggestionMocks.requestChatData.mock.calls[0][2] as AbortSignal
+      getResourceDatabase().characters[0].chatPage = 1
+      await waitFor(() => expect(requestSignal.aborted).toBe(true))
+
+      request.resolve({ type: 'success', result: '- Stale response for A' })
+      await settle()
+
+      expect(getResourceDatabase().characters[0].chats[0].suggestMessages).toEqual([])
+      expect(getResourceDatabase().characters[0].chats[1].suggestMessages).toEqual(['Keep B suggestion'])
+      expect(target.textContent).not.toContain('Stale response for A')
+      expect(suggestionMocks.dispatchUpdateChatRow).not.toHaveBeenCalled()
+    } finally {
+      if (component) unmount(component)
+      target.remove()
+    }
+  })
+
+  it('deduplicates automatic suggestion requests already in flight for the same chat', async () => {
+    seedSuggestionDatabase([])
+    const request = deferred<{ type: 'success'; result: string }>()
+    suggestionMocks.requestChatData.mockReturnValue(request.promise)
+    const firstTarget = document.createElement('div')
+    const secondTarget = document.createElement('div')
+    document.body.append(firstTarget, secondTarget)
+    let firstComponent: MountedComponent | undefined
+    let secondComponent: MountedComponent | undefined
+
+    try {
+      firstComponent = mount(Suggestion, {
+        target: firstTarget,
+        props: { send: vi.fn(), messageInput: vi.fn() },
+      })
+      secondComponent = mount(Suggestion, {
+        target: secondTarget,
+        props: { send: vi.fn(), messageInput: vi.fn() },
+      })
+
+      await waitFor(() => expect(suggestionMocks.requestChatData).toHaveBeenCalledOnce())
+      await settle()
+      expect(suggestionMocks.requestChatData).toHaveBeenCalledOnce()
+    } finally {
+      if (firstComponent) unmount(firstComponent)
+      if (secondComponent) unmount(secondComponent)
+      firstTarget.remove()
+      secondTarget.remove()
     }
   })
 
