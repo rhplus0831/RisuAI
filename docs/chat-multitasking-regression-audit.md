@@ -78,8 +78,8 @@ overlap note explicitly says otherwise.
 | MTC-11 | P2 | Resolved | Use stable IDs for asynchronous finalization and error writes | Post-generation/error handling | None |
 | MTC-12 | P2 | Resolved | Keep preview results owned by their original chat | Prompt preview | Coordinate with MTC-10 |
 | MTC-13 | P3 | Resolved | Prevent generation indicators from intercepting avatar clicks | Sidebar indicators | None |
-| MTC-14 | P3 | In progress | Make the pinned rail inert with the narrow menu | Sidebar accessibility | None |
-| MTC-15 | P3 | Ready | Expose active pinned-chat state | Sidebar accessibility | None |
+| MTC-14 | P3 | Resolved | Make the pinned rail inert with the narrow menu | Sidebar accessibility | None |
+| MTC-15 | P3 | In progress | Expose active pinned-chat state | Sidebar accessibility | None |
 | MTC-16 | P3 | Ready | Localize the unnamed pinned-chat fallback | Sidebar localization | None |
 | MTC-17 | P3 | Ready | Canonicalize missing-character routes after multitasking navigation | Router | None |
 
@@ -889,9 +889,11 @@ handler, so clicks on the badge area do not activate the avatar underneath.
 ## MTC-14 — Make the pinned rail inert with the narrow menu
 
 **Priority:** P3
-**Status:** In progress
+**Status:** Resolved
 **Owner:** Codex (delegated 2026-08-10)
-**Resolution:** —
+**Resolution:** `7d1201ae2` — `isInert` prop on the rail nav driven by
+`menuMode === 1`, plus a synthetic-click activation guard. Tests:
+`Sidebar.keyboard.dom.test.ts` (before/during/after menu mode).
 
 ### Problem
 
@@ -921,8 +923,8 @@ tabbable and clickable behind the menu overlay.
 ## MTC-15 — Expose active pinned-chat state
 
 **Priority:** P3
-**Status:** Ready
-**Owner:** Unassigned
+**Status:** In progress
+**Owner:** Codex (delegated 2026-08-10)
 **Resolution:** —
 
 ### Problem
@@ -1054,3 +1056,4 @@ Record completed items here as they land.
 | MTC-11 | `d05c062e6` | `stage4Finalize.test.ts`; `runStage4.test.ts`; `orchestrateResponse.test.ts`; `nonStreamResponse.test.ts`; `outputTrigger.test.ts`; `igp.test.ts`; `imggenStableDiff.test.ts`; `sendChatErrors.test.ts` | Resolution happens inside the trusted-write boundary; IGP's indexed fallback removed. |
 | MTC-12 | `5f6fdbe01` | `sendChat.serverPreview.test.ts`; `hotkey.preview.test.ts`; `DevTool.svelte.test.ts` | Producer-side discard per the recorded policy; consumer freshness checks retained for the return-to-presentation window. |
 | MTC-13 | `5d69361e6` | `Sidebar.keyboard.dom.test.ts` | Click forwarding chosen over pointer-events-none to keep the tooltip. |
+| MTC-14 | `7d1201ae2` | `Sidebar.keyboard.dom.test.ts` | Inert prop plus a guard for synthetic clicks that bypass inertness. |
