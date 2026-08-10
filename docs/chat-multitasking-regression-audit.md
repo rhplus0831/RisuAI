@@ -69,8 +69,8 @@ overlap note explicitly says otherwise.
 | MTC-02 | P1 | Resolved | Recover an append when the server rejects a duplicate same-chat generation | Composer/server lock | Coordinate with MTC-01 |
 | MTC-03 | P1 | Resolved | Preserve the plugin send target across awaits | Plugin API | Prefer MTC-01 target contract |
 | MTC-04 | P1 | Resolved | Stop retrying terminal reattach failures | Reattach lifecycle | None |
-| MTC-05 | P1 | In progress | Cancel a reattached durable job before its response opens | Reattach cancellation | Coordinate with MTC-04 |
-| MTC-06 | P2 | Ready | Scope Draft/BTW hook activity and cancellation by chat | Input hooks/composer | None |
+| MTC-05 | P1 | Resolved | Cancel a reattached durable job before its response opens | Reattach cancellation | Coordinate with MTC-04 |
+| MTC-06 | P2 | In progress | Scope Draft/BTW hook activity and cancellation by chat | Input hooks/composer | None |
 | MTC-07 | P2 | Ready | Make reroll candidates chat-scoped | Reroll navigation | None |
 | MTC-08 | P2 | Ready | Make live generation progress chat-scoped | Progress UI | None |
 | MTC-09 | P2 | Ready | Generate suggestions after background completion | Suggestions | MTC-08 optional |
@@ -367,9 +367,14 @@ activity-change spin.
 ## MTC-05 — Cancel a reattached durable job before its response opens
 
 **Priority:** P1
-**Status:** In progress
+**Status:** Resolved
 **Owner:** Codex (delegated 2026-08-10)
-**Resolution:** —
+**Resolution:** `87dfae2ad` — the explicit-abort watcher installs before the
+reattach GET awaits, seeded with the known job ID; the cancelled-job guard
+keeps DELETE idempotent; abort during the open window consumes the job.
+Fresh-send cancellation before any job ID exists is unchanged (out of item
+scope). Tests: `serverChat.test.ts` (pre-response abort, two-chat isolation,
+disconnect-vs-abort), `reattach.test.ts` (no restore after abort).
 
 ### Problem
 
@@ -421,8 +426,8 @@ the request layer takes ownership. Cancellation must be idempotent.
 ## MTC-06 — Scope Draft/BTW hook activity and cancellation by chat
 
 **Priority:** P2
-**Status:** Ready
-**Owner:** Unassigned
+**Status:** In progress
+**Owner:** Codex (delegated 2026-08-10)
 **Resolution:** —
 **Decision (2026-08-10):** Concurrent hooks across chats are allowed, keyed
 the same way as the chat-keyed generation registry (one shared mental model:
@@ -995,3 +1000,4 @@ Record completed items here as they land.
 | MTC-02 | `56b138332` | `acceptedSendCoordinator.test.ts`; `DefaultChatScreen.loadPages.test.ts`; `sendChat.serverPreview.test.ts`; `serverChat.test.ts`; `durableGeneration.test.ts` | Bootstrap refresh uses a non-reattach-triggering variant; reattach lifecycle changes stay in MTC-04/05. |
 | MTC-03 | `1f6e6b670` | `v3.svelte.test.ts`; `acceptedSendCoordinator.test.ts` | Queued plugin sends now generate after settlement instead of returning early success. |
 | MTC-04 | `340d80238` | `reattach.test.ts`; `serverChat.test.ts`; `sendChat.serverPreview.test.ts` | Unclassified exceptions consume the job; bootstrap is the sole retry-budget reset authority. |
+| MTC-05 | `87dfae2ad` | `serverChat.test.ts`; `reattach.test.ts` | Fresh-send cancellation before any job ID exists is unchanged (out of item scope). |
