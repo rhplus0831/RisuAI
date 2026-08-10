@@ -14,6 +14,7 @@ import { parseToggleSyntax } from '../util'
 import {
   dispatchCharacterOwnedDurableBatch,
   toMessageSnapshot,
+  type ActiveChatTarget,
   type CharacterOwnedDurableBatchResult,
 } from '../chatCommands'
 import { resolveActiveChatGenerationSettings } from '../activeChatGenerationSettings'
@@ -147,8 +148,9 @@ export function setupSendChatContext(args: {
   chatProcessIndex: number
   chatAdditonalTokens?: number
   writeMaintenance?: boolean
+  target?: ActiveChatTarget | null
 }): SendChatContextResult {
-  const { chatProcessIndex, chatAdditonalTokens: argChatAdditonalTokens, writeMaintenance = true } = args
+  const { chatProcessIndex, chatAdditonalTokens: argChatAdditonalTokens, writeMaintenance = true, target } = args
   const serverBacked = canUseServerCommands()
 
   if (writeMaintenance && !serverBacked && chatProcessIndex === -1 && getDatabase().presetChain) {
@@ -172,7 +174,7 @@ export function setupSendChatContext(args: {
   if (writeMaintenance && !serverBacked) {
     getDatabase().statics.messages += 1
   }
-  const selectedChar = get(selectedCharID)
+  const selectedChar = resolveSendCharacterIndex(target)
   const lastInteraction = Date.now()
   let persistence: Promise<CharacterOwnedDurableBatchResult> = Promise.resolve({
     status: 'ok',
@@ -187,7 +189,7 @@ export function setupSendChatContext(args: {
     withTrustedResourceWrite(() => {
       const nowChatroom = getDatabase().characters[selectedChar]
       characterId = nowChatroom.chaId
-      const selectedChat = nowChatroom.chatPage
+      const selectedChat = resolveSendChatIndex(nowChatroom, target)
       const selectedChatRecord = nowChatroom.chats[selectedChat]
       const hasUnloadedMessages = selectedChatRecord.message.some(isServerChatMessagePlaceholder)
       const needsMessageIdBackfill = !hasUnloadedMessages && selectedChatRecord.message.some((v) => v.chatId == null)
@@ -277,7 +279,7 @@ export function setupSendChatContext(args: {
   } else if (writeMaintenance && !serverBacked) {
     const nowChatroom = getDatabase().characters[selectedChar]
     nowChatroom.lastInteraction = lastInteraction
-    const selectedChatRecord = nowChatroom.chats[nowChatroom.chatPage]
+    const selectedChatRecord = nowChatroom.chats[resolveSendChatIndex(nowChatroom, target)]
     if (selectedChatRecord.message.some((v) => v.chatId == null)) {
       selectedChatRecord.message = selectedChatRecord.message.map((v) => {
         v.chatId = v.chatId ?? v4()
@@ -286,9 +288,9 @@ export function setupSendChatContext(args: {
     }
   }
   const nowChatroom = getDatabase().characters[selectedChar]
-  const selectedChat = nowChatroom.chatPage
+  const selectedChat = resolveSendChatIndex(nowChatroom, target)
 
-  const promptInfo = createInitialPromptInfo(serverBacked)
+  const promptInfo = createInitialPromptInfo(serverBacked, target)
 
   let caculatedChatTokens = 0
   if (getDatabase().aiModel.startsWith('gpt')) {
@@ -312,19 +314,38 @@ export function setupSendChatContext(args: {
   }
 }
 
-function createInitialPromptInfo(serverBacked: boolean): MessagePresetInfo {
+function createInitialPromptInfo(
+  serverBacked: boolean,
+  target: ActiveChatTarget | null | undefined,
+): MessagePresetInfo {
   if (!getDatabase().promptInfoInsideChat) return {}
-  return serverBacked ? createServerBackedPromptInfo() : createLegacyPromptInfo()
+  return serverBacked ? createServerBackedPromptInfo(target) : createLegacyPromptInfo()
 }
 
-function createServerBackedPromptInfo(): MessagePresetInfo {
-  const activeSettings = resolveActiveChatGenerationSettings()
+function createServerBackedPromptInfo(target: ActiveChatTarget | null | undefined): MessagePresetInfo {
+  const activeSettings = resolveActiveChatGenerationSettings({ target })
   return createPromptInfoSnapshot({
     enabled: true,
     promptPreset: activeSettings.promptPreset,
     requiredSidebarToggles: activeSettings.requiredSidebarToggles,
     sidebarToggles: activeSettings.settings?.sidebarToggles,
   })
+}
+
+function resolveSendCharacterIndex(target: ActiveChatTarget | null | undefined): number {
+  if (!target) return get(selectedCharID)
+  if (target.characterId !== undefined) {
+    return getDatabase().characters.findIndex((character) => character.chaId === target.characterId)
+  }
+  return target.selectedCharID
+}
+
+function resolveSendChatIndex(character: character, target: ActiveChatTarget | null | undefined): number {
+  if (!target) return character.chatPage
+  if (target.chatId !== undefined) {
+    return character.chats.findIndex((chat) => chat.id === target.chatId)
+  }
+  return target.chatPage
 }
 
 function createLegacyPromptInfo(): MessagePresetInfo {

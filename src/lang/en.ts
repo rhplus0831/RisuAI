@@ -60,6 +60,12 @@ export const languageEnglish = {
       'This composer draft could not be stored for reload recovery. Keep this tab open or copy the text before leaving.',
     queuedSaveFailed: 'The queued message was not accepted. Your composer draft was kept so you can retry.',
   },
+  acceptedSendRecovery: {
+    generationFailed:
+      'Your message was saved, but its reply could not be started. Retry without sending the message again.',
+    retry: 'Retry reply',
+    retrying: 'Retrying…',
+  },
   fileSelectionStale: 'Settings changed while you were choosing the file. Please choose it again to retry.',
   alternateGreetingMutationQueued:
     'The alternate greeting change is saved on this device and queued. It will retry automatically.',

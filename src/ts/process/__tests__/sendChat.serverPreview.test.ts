@@ -505,6 +505,36 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     expect(get(activeGenerationTarget)).toBeNull()
   })
 
+  it('starts generation for an explicit captured target when another chat is already active', async () => {
+    await seedEcho()
+    setServerChatDispatchResult('server reply', { model: 'echo_model', outputTokens: 2, maxContext: 4000 })
+    const character = testDatabaseState.db.characters[0]
+    const firstChat = character.chats[0]
+    firstChat.id = 'chat-1'
+    character.chats.push({
+      ...safeStructuredClone(firstChat),
+      id: 'chat-2',
+      name: 'active other chat',
+      message: [{ role: 'user', data: 'other chat message', chatId: 'other-message' }],
+    })
+    character.chatPage = 1
+    vi.stubGlobal('fetch', serverChatWithContextFetch)
+
+    const ok = await chatModule.sendChat(-1, {
+      expectedTarget: {
+        selectedCharID: 0,
+        chatPage: 0,
+        characterId: character.chaId,
+        chatId: 'chat-1',
+      },
+    })
+
+    expect(ok).toBe(true)
+    expect(getServerChatCalls()).toHaveLength(1)
+    expect(getServerChatCalls()[0]).toMatchObject({ chatId: 'chat-1' })
+    expect(character.chatPage).toBe(1)
+  })
+
   it('blocks generation and shows a localized error when context persistence fails', async () => {
     await seedEcho()
     const previousLastInteraction = testDatabaseState.db.characters[0].lastInteraction

@@ -21,11 +21,13 @@ import {
   createSendChatCharacterCache,
   runSendChatMessageVariables,
 } from './sendChatPromptAssembly'
-import { guardActiveChatGenerationSettingsForSend } from '../activeChatGenerationSettings'
+import {
+  guardActiveChatGenerationSettingsForSend,
+  resolveActiveChatGenerationSettings,
+} from '../activeChatGenerationSettings'
 import { alertError } from '../alert'
 import {
   captureActiveChatTarget,
-  isActiveChatTargetFresh,
   waitForPendingChatGenerationSettingsSave,
   type ActiveChatTarget,
 } from '../chatCommands'
@@ -115,10 +117,6 @@ function selectedPersonaSaveError(
   if (result.status === 'error') return result.error
   if (result.status === 'conflict') return SELECTED_PERSONA_SAVE_ERROR
   return SELECTED_PERSONA_SAVE_ERROR
-}
-
-function isExpectedTargetFresh(target: ActiveChatTarget | null | undefined): boolean {
-  return target === undefined || isActiveChatTargetFresh(target)
 }
 
 export function createActiveGenerationAbortController(): AbortController {
@@ -218,10 +216,9 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
   }
 
   const generationTarget = arg.expectedTarget === undefined ? captureActiveChatTarget() : arg.expectedTarget
-
-  if (!isExpectedTargetFresh(generationTarget)) {
-    return false
-  }
+  if (!generationTarget) return false
+  const generationSettingsState = resolveActiveChatGenerationSettings({ target: generationTarget })
+  if (!generationSettingsState.character || !generationSettingsState.chat) return false
 
   const existingActivity = findChatGenerationActivity(generationTarget)
   // Tests and compatibility callers can still drive the legacy store directly.
@@ -237,7 +234,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
   }
 
   if (!arg.reattachJobId) {
-    const generationSettingsGuard = guardActiveChatGenerationSettingsForSend()
+    const generationSettingsGuard = guardActiveChatGenerationSettingsForSend(generationSettingsState)
     if (generationSettingsGuard.status === 'error') {
       alertError(generationSettingsGuard.error)
       return false
@@ -274,6 +271,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       chatProcessIndex,
       chatAdditonalTokens: arg.chatAdditonalTokens,
       writeMaintenance: !arg.reattachJobId,
+      target: generationTarget,
     })
     selectedChar = ctx.selectedChar
     selectedChat = ctx.selectedChat

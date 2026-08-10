@@ -731,6 +731,40 @@ describe('setupSendChatContext - selectedChar / selectedChat', () => {
     expect(ctx.selectedChat).toBe(0)
     expect(ctx.nowChatroom.name).toBe('B')
   })
+
+  it('resolves an explicit target by stable ids after another chat becomes active', () => {
+    seedDb({
+      characters: [
+        makeChar({
+          name: 'A',
+          chaId: 'character-a',
+          chats: [makeChat({ id: 'chat-a', name: 'A chat' })],
+        }),
+        makeChar({
+          name: 'B',
+          chaId: 'character-b',
+          chats: [makeChat({ id: 'chat-b', name: 'B chat' })],
+        }),
+      ],
+    })
+    selectedCharID.set(1)
+
+    const ctx = setupSendChatContext({
+      chatProcessIndex: -1,
+      writeMaintenance: false,
+      target: {
+        selectedCharID: 0,
+        chatPage: 0,
+        characterId: 'character-a',
+        chatId: 'chat-a',
+      },
+    })
+
+    expect(ctx.selectedChar).toBe(0)
+    expect(ctx.selectedChat).toBe(0)
+    expect(ctx.nowChatroom.name).toBe('A')
+    expect(ctx.nowChatroom.chats[ctx.selectedChat].name).toBe('A chat')
+  })
 })
 
 describe('setupSendChatContext - M5 field-scoped send rollback', () => {

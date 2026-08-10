@@ -122,6 +122,12 @@
   import AgentPresetProgress from './AgentPresetProgress.svelte'
   import { CHAT_GENERATION_INPUT_HOOK_STAGE } from './chatGenerationLoading'
   import { activeChatGenerations, chatGenerationTargetKey } from 'src/ts/process/generationActivity.svelte'
+  import {
+    acceptedSendRecoveries,
+    coordinateAcceptedChatSend,
+    findAcceptedSendRecovery,
+    retryAcceptedChatSend,
+  } from 'src/ts/process/acceptedSendCoordinator.svelte'
   import { activeGenerationJobs } from 'src/ts/process/reattach'
   import {
     deleteDefaultChatComposerDraft,
@@ -245,6 +251,10 @@
   })
 
   let currentCharacter = $derived(getDatabase().characters[$selectedCharID])
+  let currentAcceptedSendRecovery = $derived.by(() => {
+    void $selectedCharID
+    return findAcceptedSendRecovery($acceptedSendRecoveries, captureActiveChatTarget())
+  })
   let currentDisplayCharacter = $derived.by(() => {
     void $RegexDisplayReloadPointer
     if (!currentCharacter) return null
@@ -837,17 +847,55 @@
     updateInputSizeAll()
   }
 
-  function retainQueuedComposerSettlement(
-    operation: ComposerOperation,
-    clearDraftFields: boolean,
-    settlement: Promise<import('src/ts/chatCommands').ChatMutationFinalOutcome>,
-  ): void {
-    void settlement.then((outcome) => {
-      if (outcome.status === 'accepted') {
-        settleQueuedComposerOperation(operation, clearDraftFields)
-        return
-      }
-      reportComposerDraftPersistenceError(language.composerDraftRecovery.queuedSaveFailed)
+  function chatForTarget(target: ActiveChatTarget) {
+    const characters = getDatabase().characters
+    const character =
+      target.characterId !== undefined
+        ? characters.find((candidate) => candidate.chaId === target.characterId)
+        : characters[target.selectedCharID]
+    if (!character) return undefined
+    return target.chatId !== undefined
+      ? character.chats.find((candidate) => candidate.id === target.chatId)
+      : character.chats[target.chatPage]
+  }
+
+  function handoffAcceptedSend(input: {
+    target: ActiveChatTarget
+    append: Exclude<Awaited<ReturnType<typeof appendCurrentChatUserMessageForSend>>, { status: 'error' }>
+    composerOperation: ComposerOperation
+    clearDraftFields: boolean
+    confirmBoundary: boolean
+    syntheticSayNothing?: boolean
+  }): void {
+    const previousLength = chatForTarget(input.target)?.message.length ?? 0
+    const generation = coordinateAcceptedChatSend({
+      target: input.target,
+      append: input.append,
+      syntheticSayNothing: input.syntheticSayNothing,
+      onAppendAccepted: () => {
+        if (input.append.status === 'queued') {
+          settleQueuedComposerOperation(input.composerOperation, input.clearDraftFields)
+        } else if (input.clearDraftFields) {
+          clearComposerAndDraftForCurrentOperation(input.composerOperation)
+        } else {
+          clearComposerForCurrentOperation(input.composerOperation)
+        }
+      },
+      onAppendFailed: () => {
+        reportComposerDraftPersistenceError(language.composerDraftRecovery.queuedSaveFailed)
+      },
+    })
+
+    void generation.then((result) => {
+      if (result.status !== 'generated' || !isActiveChatTargetFresh(input.target)) return
+      applySuccessfulSendChatEffects(
+        { sendSucceeded: true, previousLength, confirmBoundary: input.confirmBoundary },
+        {
+          clearRerollBuffer,
+          recordGeneratedReroll: (length) => recordGeneratedReroll(length, input.target),
+          markRerollChar: () => markRerollChar(input.target),
+        },
+      )
     })
   }
 
@@ -1503,16 +1551,8 @@
 
       if (userMessage) {
         const appended = await appendCurrentChatUserMessageForSend(userMessage, { expectedTarget: activeTarget })
-        if (appended.status === 'queued') {
-          retainQueuedComposerSettlement(composerOperation, false, appended.settlement)
-          await sleep(10)
-          return
-        }
-        if (composerComponentDestroyed || !isActiveChatTargetFresh(activeTarget)) {
-          if (appended.status === 'ok') consumeAcceptedComposerDraftGeneration(composerOperation)
-          return
-        }
-        if (appended.status !== 'ok') {
+        if (appended.status === 'error') {
+          if (composerComponentDestroyed || !isActiveChatTargetFresh(activeTarget)) return
           restoreComposerForCurrentOperation({
             ...composerOperation,
             messageInput: composerBeforeSend,
@@ -1523,6 +1563,15 @@
           await sleep(10)
           return
         }
+        handoffAcceptedSend({
+          target: activeTarget,
+          append: appended,
+          composerOperation,
+          clearDraftFields: false,
+          confirmBoundary: true,
+          syntheticSayNothing,
+        })
+        return
       }
       if (!isActiveChatTargetFresh(activeTarget)) {
         return
@@ -1601,27 +1650,19 @@
       }
 
       const appended = await appendCurrentChatUserMessageForSend(userMessage, { expectedTarget: activeTarget })
-      if (appended.status === 'queued') {
-        retainQueuedComposerSettlement(composerOperation, true, appended.settlement)
-        return
-      }
-      if (!isActiveChatTargetFresh(activeTarget) || !isCurrentComposerOperation(composerOperation)) {
-        if (appended.status === 'ok') consumeAcceptedComposerDraftGeneration(composerOperation)
-        return
-      }
-      if (appended.status !== 'ok') {
+      if (appended.status === 'error') {
+        if (!isActiveChatTargetFresh(activeTarget) || !isCurrentComposerOperation(composerOperation)) return
         alertError(appended.error)
         return
       }
 
-      // The user message is durably appended at this point; clear before generation
-      // (like the composer send path) so a failed generation cannot re-send the draft.
-      clearComposerAndDraftForCurrentOperation(composerOperation)
-      await sleep(10)
-      // Clearing invalidates the composer operation snapshot, so only target
-      // freshness gates generation from here (same as the composer send path).
-      if (!isActiveChatTargetFresh(activeTarget)) return
-      await sendChatMain(false, undefined, true, composerOperation, activeTarget)
+      handoffAcceptedSend({
+        target: activeTarget,
+        append: appended,
+        composerOperation,
+        clearDraftFields: true,
+        confirmBoundary: true,
+      })
     } finally {
       composerOperationGuard.clear(composerOperation.token)
       releasePreparingSendTarget(preparingTargetKey)
@@ -2161,6 +2202,24 @@
           role="alert"
           data-testid="composer-draft-persistence-error">
           {composerDraftPersistenceError}
+        </div>
+      {/if}
+      {#if currentAcceptedSendRecovery}
+        <div
+          class="chat-screen-content-width mb-2 flex items-center gap-3 rounded-md border border-draculared p-3 text-sm text-draculared"
+          role="alert"
+          data-testid="accepted-send-recovery">
+          <span>{language.acceptedSendRecovery.generationFailed}</span>
+          <button
+            type="button"
+            class="ml-auto shrink-0 rounded-md border border-draculared px-3 py-1.5 text-sm transition-colors hover:bg-draculared hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={currentAcceptedSendRecovery.retrying}
+            data-testid="accepted-send-retry"
+            onclick={() => void retryAcceptedChatSend(currentAcceptedSendRecovery!.id)}>
+            {currentAcceptedSendRecovery.retrying
+              ? language.acceptedSendRecovery.retrying
+              : language.acceptedSendRecovery.retry}
+          </button>
         </div>
       {/if}
       <div

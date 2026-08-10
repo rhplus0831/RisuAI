@@ -78,7 +78,13 @@ vi.mock('../../lang', () => ({
                 storageFailed: 'composerDraftStorageFailed',
                 queuedSaveFailed: 'composerQueuedSaveFailed',
               }
-            : String(property),
+            : property === 'acceptedSendRecovery'
+              ? {
+                  generationFailed: 'acceptedSendGenerationFailed',
+                  retry: 'acceptedSendRetry',
+                  retrying: 'acceptedSendRetrying',
+                }
+              : String(property),
     },
   ),
 }))
@@ -302,6 +308,7 @@ import {
 import { translate } from '../../ts/translator/translator'
 import { runInputHook } from 'src/ts/process/inputHooks'
 import { chatProcessStage } from 'src/ts/process/index.svelte'
+import { resetAcceptedSendCoordinatorForTests } from 'src/ts/process/acceptedSendCoordinator.svelte'
 import { createBranchComment } from './branchComment'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -551,6 +558,7 @@ function findButtonByText(text: string): HTMLButtonElement | undefined {
 }
 
 beforeEach(() => {
+  resetAcceptedSendCoordinatorForTests()
   resetDraftRecoveryScopeForTests()
   clearDefaultChatComposerDrafts()
   initializeDraftRecoveryScope({ databaseLineage: 'database-a', writerSessionId: 'writer-a' })
@@ -602,6 +610,7 @@ afterEach(() => {
   document.body.innerHTML = ''
   clearDefaultChatComposerDrafts()
   resetDraftRecoveryScopeForTests()
+  resetAcceptedSendCoordinatorForTests()
 })
 
 describe('DefaultChatScreen overflow menu accessibility', () => {
@@ -1698,13 +1707,17 @@ describe('DefaultChatScreen transcript window state', () => {
 
   it('retains a plain-send draft while queued and clears only after final acceptance', async () => {
     seedDatabase([1])
+    const chat = getResourceDatabase().characters[0].chats[0]
     const settlement = createDeferred<
       { status: 'accepted' } | { status: 'failed'; result: { status: 'unavailable' } }
     >()
-    loadPageMocks.appendCurrentChatUserMessageForSend.mockResolvedValueOnce({
-      status: 'queued',
-      messageId: 'queued-message',
-      settlement: settlement.promise,
+    loadPageMocks.appendCurrentChatUserMessageForSend.mockImplementationOnce(async (input) => {
+      chat.message.push({ ...(input as Message), chatId: 'queued-message' })
+      return {
+        status: 'queued',
+        messageId: 'queued-message',
+        settlement: settlement.promise,
+      }
     })
     mountScreen()
 
@@ -1724,9 +1737,21 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(loadPageMocks.alertError).not.toHaveBeenCalled()
     expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
     expect(loadPageMocks.applySuccessfulSendChatEffects).not.toHaveBeenCalled()
+    expect(chat.message.filter((message) => message.chatId === 'queued-message')).toHaveLength(1)
 
     settlement.resolve({ status: 'accepted' })
-    await waitFor(() => expect(textarea.value).toBe(''))
+    await waitFor(() => {
+      expect(textarea.value).toBe('')
+      expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(1)
+    })
+    await settle()
+    expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledTimes(1)
+    expect(chat.message.filter((message) => message.chatId === 'queued-message')).toHaveLength(1)
+    expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(1)
+    expect(loadPageMocks.sendChat).toHaveBeenCalledWith(
+      -1,
+      expect.objectContaining({ expectedTarget: expectedActiveTarget(0) }),
+    )
   })
 
   it('retains a newer composer generation when an older queued send is accepted', async () => {
@@ -2217,7 +2242,7 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(textarea.value).toBe('Newer draft typed while append waits')
   })
 
-  it('silently aborts a delayed append result after the active chat changes', async () => {
+  it('continues a delayed accepted send for its captured target after the active chat changes', async () => {
     seedDatabase([1, 1])
     const append = createDeferred<AppendCurrentChatUserMessageResult>()
     loadPageMocks.appendCurrentChatUserMessageForSend.mockReturnValueOnce(append.promise)
@@ -2254,13 +2279,98 @@ describe('DefaultChatScreen transcript window state', () => {
     await tick()
 
     append.resolve({ status: 'ok', messageId: 'delayed-message' })
-    await settle()
+    await waitFor(() => expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(1))
 
-    expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
+    expect(loadPageMocks.sendChat).toHaveBeenCalledWith(
+      -1,
+      expect.objectContaining({ expectedTarget: expectedActiveTarget(0) }),
+    )
     expect(loadPageMocks.alertError).not.toHaveBeenCalled()
     expect(secondTextarea.value).toBe('Second chat draft')
     expect(readDefaultChatComposerDraft('0:character-0:chat-0')).toBeUndefined()
     expect(readDefaultChatComposerDraft('1:character-1:chat-1')?.messageInput).toBe('Second chat draft')
+  })
+
+  it('continues an accepted send after navigation during the post-append delay', async () => {
+    seedDatabase([1, 1])
+    const postAppendDelay = createDeferred<void>()
+    loadPageMocks.sleep.mockReturnValueOnce(postAppendDelay.promise)
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy())
+    const firstTextarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    firstTextarea.value = 'Accepted before navigation'
+    firstTextarea.dispatchEvent(new Event('input', { bubbles: true }))
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
+
+    await waitFor(() => expect(loadPageMocks.sleep).toHaveBeenCalledWith(10))
+    expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledTimes(1)
+    expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
+
+    switchToCharacterChat(1)
+    await settle()
+    const secondTextarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    secondTextarea.value = 'New Chat B draft during handoff'
+    secondTextarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    postAppendDelay.resolve()
+    await waitFor(() => expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(1))
+
+    expect(loadPageMocks.sendChat).toHaveBeenCalledWith(
+      -1,
+      expect.objectContaining({ expectedTarget: expectedActiveTarget(0) }),
+    )
+    expect(secondTextarea.value).toBe('New Chat B draft during handoff')
+    expect(readDefaultChatComposerDraft('0:character-0:chat-0')).toBeUndefined()
+    expect(readDefaultChatComposerDraft('1:character-1:chat-1')?.messageInput).toBe('New Chat B draft during handoff')
+  })
+
+  it('shows a retryable generation failure only in the accepted send target chat', async () => {
+    seedDatabase([1, 1])
+    loadPageMocks.sendChat.mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy())
+    const firstTextarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    firstTextarea.value = 'Persist once, retry generation only'
+    firstTextarea.dispatchEvent(new Event('input', { bubbles: true }))
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="accepted-send-recovery"]')?.textContent).toContain(
+        'acceptedSendGenerationFailed',
+      )
+    })
+    expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledTimes(1)
+    expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(1)
+
+    switchToCharacterChat(1)
+    await settle()
+    expect(target.querySelector('[data-testid="accepted-send-recovery"]')).toBeNull()
+    const secondTextarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    secondTextarea.value = 'Chat B stays untouched'
+    secondTextarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    switchToCharacterChat(0)
+    await waitFor(() => expect(target.querySelector('[data-testid="accepted-send-retry"]')).toBeTruthy())
+    target.querySelector<HTMLButtonElement>('[data-testid="accepted-send-retry"]')!.click()
+    await waitFor(() => {
+      expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(2)
+      expect(target.querySelector('[data-testid="accepted-send-recovery"]')).toBeNull()
+    })
+
+    expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledTimes(1)
+    expect(loadPageMocks.sendChat).toHaveBeenLastCalledWith(
+      -1,
+      expect.objectContaining({ expectedTarget: expectedActiveTarget(0) }),
+    )
+    switchToCharacterChat(1)
+    await settle()
+    expect(target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')?.value).toBe(
+      'Chat B stays untouched',
+    )
   })
 
   it('does not restore old text or files over a newer draft when a delayed append fails', async () => {

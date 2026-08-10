@@ -62,6 +62,8 @@ export interface ActiveChatGenerationSettingsState {
 export interface ResolveActiveChatGenerationSettingsOptions {
   db?: Database
   selectedCharIndex?: number
+  chatIndex?: number
+  target?: ActiveChatTarget | null
 }
 
 export type ActiveChatGenerationSettingsGuardResult =
@@ -82,10 +84,18 @@ export function resolveActiveChatGenerationSettings(
   options: ResolveActiveChatGenerationSettingsOptions = {},
 ): ActiveChatGenerationSettingsState {
   const db = options.db ?? getResourceDatabase()
-  const selectedCharIndex = options.selectedCharIndex ?? get(selectedCharID)
   const characters = safeArray<character>(db.characters)
+  const selectedCharIndex =
+    options.selectedCharIndex ??
+    (options.target ? resolveTargetCharacterIndex(characters, options.target) : get(selectedCharID))
   const character = characters[selectedCharIndex]
-  const chatIndex = Number.isInteger(character?.chatPage) ? character.chatPage : -1
+  const chatIndex =
+    options.chatIndex ??
+    (options.target && character
+      ? resolveTargetChatIndex(character, options.target)
+      : Number.isInteger(character?.chatPage)
+        ? character.chatPage
+        : -1)
   const chat = chatIndex >= 0 ? character?.chats?.[chatIndex] : undefined
   const settings = chat?.generationSettings
   const personas = safeArray<ChatGenerationPersonaReference>(
@@ -154,7 +164,11 @@ export function guardActiveChatGenerationSettingsForSend(
   state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),
 ): ActiveChatGenerationSettingsGuardResult {
   if (ensureActiveChatSidebarToggleDefaults(state)) {
-    state = resolveActiveChatGenerationSettings()
+    state = resolveActiveChatGenerationSettings({
+      db: state.db,
+      selectedCharIndex: state.identity.characterIndex,
+      chatIndex: state.identity.chatIndex,
+    })
   }
 
   if (state.readiness.ready) {
@@ -666,6 +680,20 @@ function missingReasonLabel(
     case 'sidebar_toggle_invalid':
       return requiredSidebarToggles.find((toggle) => toggle.key === reason.toggleKey)?.label ?? reason.toggleKey
   }
+}
+
+function resolveTargetCharacterIndex(characters: readonly character[], target: ActiveChatTarget): number {
+  if (target.characterId !== undefined) {
+    return characters.findIndex((character) => character.chaId === target.characterId)
+  }
+  return target.selectedCharID >= 0 && target.selectedCharID < characters.length ? target.selectedCharID : -1
+}
+
+function resolveTargetChatIndex(character: character, target: ActiveChatTarget): number {
+  if (target.chatId !== undefined) {
+    return character.chats?.findIndex((chat) => chat.id === target.chatId) ?? -1
+  }
+  return target.chatPage >= 0 && target.chatPage < (character.chats?.length ?? 0) ? target.chatPage : -1
 }
 
 function findById<T extends { id?: string | null }>(values: readonly T[], id: string | undefined): T | undefined {
