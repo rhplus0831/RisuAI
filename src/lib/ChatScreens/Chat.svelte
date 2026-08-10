@@ -108,6 +108,7 @@
     dispatchUpdateChatScopedWithOutcome,
     dispatchUpdateMessageScoped,
     ensureMessageId,
+    type ActiveChatTarget,
   } from 'src/ts/chatCommands'
   import { reportWriterAccessLostMutation } from 'src/ts/server/activeWriterSession'
   import {
@@ -181,6 +182,7 @@
     unReroll?: () => void
     onNewReroll?: () => void
     onSelectRerollCandidate?: (index: number) => void
+    rerollTarget?: ActiveChatTarget | null
     character?: simpleCharacterArgument | string | null
     firstMessage?: boolean
     altGreeting?: boolean
@@ -246,6 +248,7 @@
     unReroll = () => {},
     onNewReroll = onReroll,
     onSelectRerollCandidate = () => {},
+    rerollTarget = null,
     character = null,
     firstMessage = false,
     altGreeting = false,
@@ -2740,7 +2743,12 @@
 {/snippet}
 
 {#snippet rerollMenu()}
-  <RerollList currentMessage={message} disabled={translationInProgress} {onNewReroll} {onSelectRerollCandidate} />
+  <RerollList
+    currentMessage={message}
+    target={rerollTarget}
+    disabled={translationInProgress}
+    {onNewReroll}
+    {onSelectRerollCandidate} />
 {/snippet}
 
 {#snippet minorIconButtonsBody(showNames: boolean)}

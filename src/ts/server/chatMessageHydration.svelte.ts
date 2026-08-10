@@ -1,6 +1,7 @@
 import { get } from 'svelte/store'
 import { SvelteSet } from 'svelte/reactivity'
 import { selectedCharID } from '../stores.svelte'
+import type { ActiveChatTarget } from '../chatCommands'
 import {
   getDatabase,
   hydrateServerCharacterLorebook,
@@ -131,6 +132,22 @@ function activeChatMessageArray(): Message[] | undefined {
   return chat?.message
 }
 
+function rerollTargetForChatId(chatId: string): ActiveChatTarget | null {
+  const characters = getDatabase().characters ?? []
+  for (let selectedCharID = 0; selectedCharID < characters.length; selectedCharID += 1) {
+    const character = characters[selectedCharID]
+    const chatPage = character.chats?.findIndex((chat) => chat.id === chatId) ?? -1
+    if (chatPage < 0) continue
+    return {
+      selectedCharID,
+      chatPage,
+      characterId: character.chaId,
+      chatId,
+    }
+  }
+  return null
+}
+
 function snapshotJson(value: unknown): string | null {
   try {
     return JSON.stringify(value) ?? 'undefined'
@@ -155,19 +172,20 @@ function chatStateSnapshot(chatId: string): string | null {
   return 'missing-chat'
 }
 
-function rerollStateSnapshot(): string | null {
-  return snapshotJson({ buffer: getRerollBuffer(), id: getRerollId() })
+function rerollStateSnapshot(chatId: string): string | null {
+  const target = rerollTargetForChatId(chatId)
+  return snapshotJson({ buffer: getRerollBuffer(target), id: getRerollId(target) })
 }
 
 function beginChatHydrationFreshness(
   chatId: string,
   options: { trackRerollState: boolean },
 ): ChatHydrationFreshnessToken {
-  const trackRerollState = options.trackRerollState && activeChatId() === chatId
+  const trackRerollState = options.trackRerollState
   const token: ChatHydrationFreshnessToken = {
     projectionEpoch: chatProjectionEpochs.get(chatId) ?? 0,
     expectedChatState: chatStateSnapshot(chatId),
-    expectedRerollState: trackRerollState ? rerollStateSnapshot() : null,
+    expectedRerollState: trackRerollState ? rerollStateSnapshot(chatId) : null,
     trackRerollState,
   }
   const pending = pendingChatHydrationFreshness.get(chatId) ?? new Set<ChatHydrationFreshnessToken>()
@@ -191,10 +209,10 @@ function chatHydrationStaleReason(chatId: string, token: ChatHydrationFreshnessT
   if (token.expectedChatState === null || currentChatState === null || currentChatState !== token.expectedChatState) {
     return 'chat-state-changed'
   }
-  // Reroll candidates are process-local rather than part of database resources. Protect
-  // them separately only while this response would actually seed the open chat.
-  if (token.trackRerollState && activeChatId() === chatId) {
-    const currentRerollState = rerollStateSnapshot()
+  // Reroll candidates are process-local rather than part of database resources.
+  // Protect the target chat's entry separately whenever this response can seed it.
+  if (token.trackRerollState) {
+    const currentRerollState = rerollStateSnapshot(chatId)
     if (
       token.expectedRerollState === null ||
       currentRerollState === null ||
@@ -210,12 +228,11 @@ function refreshPendingFreshnessAfterHydration(chatId: string, completedToken: C
   const pending = pendingChatHydrationFreshness.get(chatId)
   if (!pending || [...pending].every((token) => token === completedToken)) return
   const expectedChatState = chatStateSnapshot(chatId)
-  const isActive = activeChatId() === chatId
-  const expectedRerollState = isActive ? rerollStateSnapshot() : null
+  const expectedRerollState = rerollStateSnapshot(chatId)
   for (const token of pending) {
     if (token === completedToken) continue
     token.expectedChatState = expectedChatState
-    if (token.trackRerollState && isActive) {
+    if (token.trackRerollState) {
       token.expectedRerollState = expectedRerollState
     }
   }
@@ -380,10 +397,10 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
       if (wantsFullHydration || !range || isFullRange(range.start, range.total, result.message.length)) {
         hydratedChatIds.add(chatId)
       }
-      // Only the open chat's tail drives the swipe buffer; seed it from this
-      // chat's persisted reroll candidates so rerolls survive a reload.
-      if (request.seedReroll !== false && activeChatId() === chatId) {
-        seedRerollBufferFromAlternates(result.message, result.alternates)
+      // Tail/full hydration owns this chat's durable reroll candidates even if
+      // the user navigates before the response settles.
+      if (request.seedReroll !== false) {
+        seedRerollBufferFromAlternates(result.message, result.alternates, rerollTargetForChatId(chatId))
       }
       refreshPendingFreshnessAfterHydration(chatId, freshness)
     } catch (error) {
@@ -414,7 +431,7 @@ async function hydrateChatsBulk(chatIds: readonly string[], options: BulkHydrati
 
   const generation = chatHydrationGeneration
   const freshnessByChat = new Map(
-    chatIds.map((chatId) => [chatId, beginChatHydrationFreshness(chatId, { trackRerollState: false })]),
+    chatIds.map((chatId) => [chatId, beginChatHydrationFreshness(chatId, { trackRerollState: true })]),
   )
   try {
     for (const batch of bulkHydrationBatches(chatIds)) {
@@ -467,6 +484,7 @@ async function hydrateChatsBulk(chatIds: readonly string[], options: BulkHydrati
         reapplyRetainedChatBodyProjections(chatId)
         acknowledgeHydratedGenerationPersistences(chatId, hydration.message as Message[])
         hydratedChatIds.add(chatId)
+        seedRerollBufferFromAlternates(hydration.message, hydration.alternates, rerollTargetForChatId(chatId))
         refreshPendingFreshnessAfterHydration(chatId, freshness)
       }
       if (options.strict && missingIds.length > 0) {
@@ -584,9 +602,7 @@ export function applyServerChatMessagesResource(
   }
   attemptedChatIds.add(chatId)
   failedChatIds.delete(chatId)
-  if (activeChatId() === chatId) {
-    seedRerollBufferFromAlternates(message, alternates)
-  }
+  seedRerollBufferFromAlternates(message, alternates, rerollTargetForChatId(chatId))
   return true
 }
 

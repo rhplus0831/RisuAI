@@ -399,7 +399,12 @@ describe('server hydration read clients', () => {
     const resourceFetch = makeResourceFetch(() => ({
       revision: 12,
       chats: [
-        { chatId: 'chat-a', message: [{ data: 'A' }], hypaV3Data: { a: true } },
+        {
+          chatId: 'chat-a',
+          message: [{ data: 'A' }],
+          hypaV3Data: { a: true },
+          alternates: [{ data: 'alternate A' }],
+        },
         { chatId: 'chat-b', message: [] },
       ],
       missing: ['chat-c', 42, null],
@@ -410,8 +415,13 @@ describe('server hydration read clients', () => {
       status: 'ok',
       revision: 12,
       chats: [
-        { chatId: 'chat-a', message: [{ data: 'A' }], hypaV3Data: { a: true } },
-        { chatId: 'chat-b', message: [], hypaV3Data: undefined },
+        {
+          chatId: 'chat-a',
+          message: [{ data: 'A' }],
+          hypaV3Data: { a: true },
+          alternates: [{ data: 'alternate A' }],
+        },
+        { chatId: 'chat-b', message: [], hypaV3Data: undefined, alternates: [] },
       ],
       missing: ['chat-c'],
     })

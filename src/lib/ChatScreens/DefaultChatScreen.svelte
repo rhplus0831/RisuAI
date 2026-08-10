@@ -281,6 +281,16 @@
   let currentChat = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.message ?? [])
   let currentChatId = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.id)
   let currentChatRecord = $derived(currentCharacter?.chats[currentCharacter.chatPage])
+  let currentRerollTarget = $derived(
+    currentCharacter && currentChatRecord
+      ? {
+          selectedCharID: $selectedCharID,
+          chatPage: currentCharacter.chatPage,
+          characterId: currentCharacter.chaId,
+          chatId: currentChatRecord.id,
+        }
+      : null,
+  )
   let greetingTranslatorSettingsSignature = $derived(currentGreetingTranslatorSettingsSignature())
   let greetingTranslationTarget = $derived.by(() => {
     if (!currentCharacter || isServerCharacterShell(currentCharacter) || !currentChatRecord) return null
@@ -896,11 +906,11 @@
     })
 
     void generation.then((result) => {
-      if (result.status !== 'generated' || !isActiveChatTargetFresh(input.target)) return
+      if (result.status !== 'generated') return
       applySuccessfulSendChatEffects(
         { sendSucceeded: true, previousLength, confirmBoundary: input.confirmBoundary },
         {
-          clearRerollBuffer,
+          clearRerollBuffer: () => clearRerollBuffer(input.target),
           recordGeneratedReroll: (length) => recordGeneratedReroll(length, input.target),
           markRerollChar: () => markRerollChar(input.target),
         },
@@ -1490,7 +1500,7 @@
         return
       }
 
-      resetRerollOnCharChange()
+      resetRerollOnCharChange(activeTarget)
       await hydrateActiveChatFully()
       if (
         composerOperation.targetIdentity !== getActiveTranscriptWindowIdentity() ||
@@ -1631,7 +1641,7 @@
         return
       }
 
-      resetRerollOnCharChange()
+      resetRerollOnCharChange(activeTarget)
       await hydrateActiveChatFully()
       if (!isActiveChatTargetFresh(activeTarget) || !isCurrentComposerOperation(composerOperation)) return
 
@@ -1772,15 +1782,11 @@
         syntheticSayNothing,
       })
       if (!ok) return false
-      // Durable generation may finish after navigation. Its target chat has
-      // already persisted successfully, but live-selection side effects must
-      // not adopt the newly opened chat as their owner.
-      if (!isActiveChatTargetFresh(generationTarget)) return true
       if (
         !applySuccessfulSendChatEffects(
           { sendSucceeded: true, previousLength, confirmBoundary },
           {
-            clearRerollBuffer,
+            clearRerollBuffer: () => clearRerollBuffer(generationTarget),
             recordGeneratedReroll: (length) => recordGeneratedReroll(length, generationTarget),
             markRerollChar: () => markRerollChar(generationTarget),
           },
@@ -2616,6 +2622,7 @@
             {unReroll}
             onNewReroll={newReroll}
             onSelectRerollCandidate={selectRerollCandidate}
+            rerollTarget={currentRerollTarget}
             {currentCharacter}
             {currentUsername}
             {userIcon}

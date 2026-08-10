@@ -518,7 +518,7 @@ export function registerResourceReadRoutes(
       }
       const chatIds = result.ids
       const { revision } = getSchemaState(db)
-      const hydration = loadChatHydrations(db, dataDir, chatIds, { includeAlternates: false })
+      const hydration = loadChatHydrations(db, dataDir, chatIds, { includeAlternates: true })
       return metricResourceResponse(
         req.log,
         'chatMessages',

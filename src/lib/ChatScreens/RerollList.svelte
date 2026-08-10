@@ -2,21 +2,24 @@
   import { CheckIcon, RefreshCcwIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import { getRerollCandidates } from 'src/ts/process/rerollNavigation.svelte'
+  import type { ActiveChatTarget } from 'src/ts/chatCommands'
   import type { Message } from 'src/ts/storage/database.svelte'
 
   let {
     currentMessage = '',
+    target = null,
     disabled = false,
     onSelectRerollCandidate = async () => {},
     onNewReroll = async () => {},
   }: {
     currentMessage?: string
+    target?: ActiveChatTarget | null
     disabled?: boolean
     onSelectRerollCandidate?: (index: number) => void | Promise<void>
     onNewReroll?: () => void | Promise<void>
   } = $props()
 
-  const candidates = $derived(getRerollCandidates())
+  const candidates = $derived(getRerollCandidates(target))
 
   function messageText(message: Message): string {
     return typeof message.data === 'string' ? message.data : ''

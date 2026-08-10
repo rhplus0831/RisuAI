@@ -2,6 +2,7 @@ import { mount, tick, unmount } from 'svelte'
 import { get } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ActiveChatTarget, AppendCurrentChatUserMessageResult } from 'src/ts/chatCommands'
+import type { SuccessfulSendChatEffects } from 'src/ts/process/sendChatCompletion'
 import { sha256Hex } from 'src/ts/sha256Fallback'
 
 const loadPageMocks = vi.hoisted(() => ({
@@ -2726,7 +2727,7 @@ describe('DefaultChatScreen transcript window state', () => {
     await settle()
   })
 
-  it('skips successful send effects when send resolves after the active chat changes', async () => {
+  it('applies successful send effects to the captured chat after the active chat changes', async () => {
     seedDatabase([1, 1])
     const send = createDeferred<boolean>()
     loadPageMocks.sendChat.mockReturnValueOnce(send.promise)
@@ -2771,12 +2772,29 @@ describe('DefaultChatScreen transcript window state', () => {
     send.resolve(true)
     await settle()
 
-    expect(loadPageMocks.applySuccessfulSendChatEffects).not.toHaveBeenCalled()
+    expect(loadPageMocks.applySuccessfulSendChatEffects).toHaveBeenCalledWith(
+      { sendSucceeded: true, previousLength: 1, confirmBoundary: true },
+      expect.objectContaining({
+        clearRerollBuffer: expect.any(Function),
+        recordGeneratedReroll: expect.any(Function),
+        markRerollChar: expect.any(Function),
+      }),
+    )
+    const completionCalls = loadPageMocks.applySuccessfulSendChatEffects.mock.calls as unknown as Array<
+      [unknown, SuccessfulSendChatEffects]
+    >
+    const effects = completionCalls[0][1]
+    effects.clearRerollBuffer()
+    effects.recordGeneratedReroll(1)
+    effects.markRerollChar()
+    expect(rerollNavigation.clearRerollBuffer).toHaveBeenCalledWith(expectedActiveTarget(0))
+    expect(rerollNavigation.recordGeneratedReroll).toHaveBeenCalledWith(1, expectedActiveTarget(0))
+    expect(rerollNavigation.markRerollChar).toHaveBeenCalledWith(expectedActiveTarget(0))
     expect(loadPageMocks.alertError).not.toHaveBeenCalled()
     expect(secondTextarea.value).toBe('Visible second chat draft')
   })
 
-  it('does not apply reroll completion effects to a newly opened chat', async () => {
+  it('keeps reroll completion effects owned by the originating chat after navigation', async () => {
     seedDatabase([2, 2])
     getResourceDatabase().sideMenuRerollButton = true
     const send = createDeferred<boolean>()
@@ -2799,7 +2817,23 @@ describe('DefaultChatScreen transcript window state', () => {
     send.resolve(true)
     await settle()
 
-    expect(loadPageMocks.applySuccessfulSendChatEffects).not.toHaveBeenCalled()
+    expect(loadPageMocks.applySuccessfulSendChatEffects).toHaveBeenCalledWith(
+      { sendSucceeded: true, previousLength: 2, confirmBoundary: false },
+      expect.objectContaining({
+        clearRerollBuffer: expect.any(Function),
+        recordGeneratedReroll: expect.any(Function),
+        markRerollChar: expect.any(Function),
+      }),
+    )
+    const completionCalls = loadPageMocks.applySuccessfulSendChatEffects.mock.calls as unknown as Array<
+      [unknown, SuccessfulSendChatEffects]
+    >
+    const effects = completionCalls[0][1]
+    effects.recordGeneratedReroll(2)
+    effects.markRerollChar()
+    expect(rerollNavigation.clearRerollBuffer).not.toHaveBeenCalled()
+    expect(rerollNavigation.recordGeneratedReroll).toHaveBeenCalledWith(2, expectedActiveTarget(0))
+    expect(rerollNavigation.markRerollChar).toHaveBeenCalledWith(expectedActiveTarget(0))
   })
 
   it('does not clear newer typed text when continue waits for hydration', async () => {

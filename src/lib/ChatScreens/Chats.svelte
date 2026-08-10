@@ -21,6 +21,7 @@
     serverOwnedGeneratedMessageIds,
   } from 'src/ts/process/generatedMessageTranslationEligibility'
   import { newlyAppendedMessageIds } from './newMessageTranslationEligibility'
+  import type { ActiveChatTarget } from 'src/ts/chatCommands'
 
   const getCurrentChatRoomId = () => {
     const charId = get(selectedCharID)
@@ -37,6 +38,7 @@
     unReroll,
     onNewReroll,
     onSelectRerollCandidate,
+    rerollTarget,
     currentUsername,
     userIcon,
     loadPages,
@@ -51,6 +53,7 @@
     unReroll: () => void
     onNewReroll: () => void
     onSelectRerollCandidate: (index: number) => void
+    rerollTarget: ActiveChatTarget | null
     currentUsername: string
     userIcon: string
     loadPages: number
@@ -223,6 +226,7 @@
         {unReroll}
         {onNewReroll}
         {onSelectRerollCandidate}
+        {rerollTarget}
         rerollIcon="dynamic"
         character={row.character}
         largePortrait={row.largePortrait}

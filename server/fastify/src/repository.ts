@@ -1164,7 +1164,7 @@ export interface ChatHydrationPayload {
   chatId: string
   message: unknown[]
   hypaV3Data: unknown
-  /** Present on single-chat hydration; omitted from bulk hydration. */
+  /** Persisted reroll candidates for this chat's current turn. */
   alternates?: unknown[]
 }
 

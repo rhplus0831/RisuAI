@@ -11,6 +11,7 @@ import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import { PROMPT_SETTINGS_KEYS } from '../../../src/ts/promptSettings.js'
 import { BULK_RESOURCE_MAX_BODY_BYTES, BULK_RESOURCE_MAX_IDS } from '../src/routes/resourceReads.js'
+import { addAlternateMessage, replaceChatMessages } from '../src/messageStore.js'
 
 interface Harness {
   app: FastifyInstance
@@ -1004,7 +1005,7 @@ describe('authenticated resource read routes', () => {
     expect(missing.json().error).toBe('character_not_found')
   })
 
-  it('serves full, ranged, and bulk chat message reads', async () => {
+  it('serves full, ranged, and bulk chat message reads with per-chat alternates', async () => {
     const full = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/chats/chat-a/messages',
@@ -1048,16 +1049,59 @@ describe('authenticated resource read routes', () => {
       alternates: [],
     })
 
+    const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      sqlite
+        .prepare('INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, ?, ?)')
+        .run('chat-bulk-b', 'char-a', 1, JSON.stringify({ id: 'chat-bulk-b', name: 'Chat Bulk B', message: [] }))
+      replaceChatMessages(sqlite, 'chat-bulk-b', [{ chatId: 'bulk-b-primary', role: 'char', data: 'bulk B primary' }])
+      addAlternateMessage(sqlite, 'chat-a', {
+        chatId: 'chat-a-alternate-old',
+        role: 'char',
+        data: 'chat A older candidate',
+      })
+      addAlternateMessage(sqlite, 'chat-a', {
+        chatId: 'chat-a-alternate-new',
+        role: 'char',
+        data: 'chat A newer candidate',
+      })
+      addAlternateMessage(sqlite, 'chat-bulk-b', {
+        chatId: 'chat-b-alternate',
+        role: 'char',
+        data: 'chat B candidate',
+      })
+    } finally {
+      sqlite.close()
+    }
+
     const bulk = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/chats/messages/bulk',
       headers: authHeaders(),
-      payload: { ids: ['chat-a', 'missing', 'chat-a'] },
+      payload: { ids: ['chat-a', 'chat-bulk-b', 'missing', 'chat-a'] },
     })
     expect(bulk.statusCode).toBe(200)
-    expect(bulk.json()).toMatchObject({
+    expect(bulk.json()).toEqual({
       revision,
-      chats: [{ chatId: 'chat-a', message: [{ uid: 'message-a' }, { uid: 'message-b' }] }],
+      chats: [
+        {
+          chatId: 'chat-a',
+          message: [
+            expect.objectContaining({ uid: 'message-a', data: 'one' }),
+            expect.objectContaining({ uid: 'message-b', data: 'two' }),
+          ],
+          hypaV3Data: { mainChunks: [{ text: 'summary' }] },
+          alternates: [
+            { chatId: 'chat-a-alternate-new', role: 'char', data: 'chat A newer candidate' },
+            { chatId: 'chat-a-alternate-old', role: 'char', data: 'chat A older candidate' },
+          ],
+        },
+        {
+          chatId: 'chat-bulk-b',
+          message: [{ chatId: 'bulk-b-primary', role: 'char', data: 'bulk B primary' }],
+          alternates: [{ chatId: 'chat-b-alternate', role: 'char', data: 'chat B candidate' }],
+        },
+      ],
       missing: ['missing'],
     })
 

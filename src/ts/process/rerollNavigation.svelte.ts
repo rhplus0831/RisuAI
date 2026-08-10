@@ -1,4 +1,5 @@
 import { get } from 'svelte/store'
+import { SvelteMap } from 'svelte/reactivity'
 import { selectedCharID } from '../stores.svelte'
 import {
   currentChatScopedSnapshot,
@@ -26,10 +27,12 @@ import { clearPrererolls, PreUnreroll, Prereroll } from './prereroll'
 // repositions it — it never has to write the buffer (the buffer rows are owned by
 // the server, written at generation time and matched back here by `uid`).
 
-let rerolls: Message[][] = []
-let rerollid = -1
-let lastCharId = -1
-let lastChatKey: string | undefined
+interface RerollState {
+  rerolls: Message[][]
+  rerollid: number
+}
+
+const rerollStates = new SvelteMap<string, RerollState>()
 const rerollOperationGuard = createLatestOperationGuard<string>()
 
 export interface RerollDeps {
@@ -47,6 +50,7 @@ export interface RerollCandidate {
 
 type RerollOperation = {
   token: ReturnType<typeof rerollOperationGuard.issue>
+  target: ActiveChatTarget
 }
 
 type RerollRecovery = {
@@ -64,26 +68,39 @@ function activeChatRecord(): Chat {
   return character.chats[character.chatPage]
 }
 
-function currentRerollScope(): { charId: number; chatKey: string | undefined } {
+function currentRerollTarget(): ActiveChatTarget | null {
   const charId = get(selectedCharID)
   const character = getDatabase().characters?.[charId]
-  if (!character) return { charId, chatKey: undefined }
-  const chatPage = character?.chatPage ?? -1
-  const chat = character?.chats?.[chatPage]
+  if (!character) return null
+  const chatPage = character.chatPage ?? -1
+  const chat = character.chats?.[chatPage]
+  if (!chat) return null
   return {
-    charId,
-    chatKey: typeof chat?.id === 'string' && chat.id ? chat.id : `index:${chatPage}`,
+    selectedCharID: charId,
+    chatPage,
+    characterId: character.chaId,
+    chatId: chat.id,
   }
 }
 
-function currentRerollScopeTarget(): string {
-  const scope = currentRerollScope()
-  return `char:${scope.charId}|chat:${scope.chatKey ?? 'missing'}`
+function rerollTargetKey(target: ActiveChatTarget | null | undefined): string | null {
+  if (!target) return null
+  const characterKey = target.characterId ? `id:${target.characterId}` : `index:${target.selectedCharID}`
+  const chatKey = target.chatId ? `id:${target.chatId}` : `page:${target.chatPage}`
+  return `character:${characterKey}|chat:${chatKey}`
 }
 
-function beginRerollOperation(): RerollOperation {
+function currentRerollScopeTarget(): string | null {
+  return rerollTargetKey(currentRerollTarget())
+}
+
+function beginRerollOperation(): RerollOperation | null {
+  const target = currentRerollTarget()
+  const targetKey = rerollTargetKey(target)
+  if (!target || !targetKey) return null
   return {
-    token: rerollOperationGuard.issue(currentRerollScopeTarget()),
+    token: rerollOperationGuard.issue(targetKey),
+    target,
   }
 }
 
@@ -91,9 +108,26 @@ function isCurrentRerollOperation(operation: RerollOperation): boolean {
   return rerollOperationGuard.isLatest(operation.token) && currentRerollScopeTarget() === operation.token.target
 }
 
-function locateRerollTarget(
-  target: ActiveChatTarget,
-): { chat: Chat; scope: { charId: number; chatKey: string } } | null {
+function rerollState(target: ActiveChatTarget | null | undefined): RerollState {
+  const targetKey = rerollTargetKey(target)
+  return (targetKey ? rerollStates.get(targetKey) : undefined) ?? { rerolls: [], rerollid: -1 }
+}
+
+function setRerollState(target: ActiveChatTarget, state: RerollState): void {
+  const targetKey = rerollTargetKey(target)
+  if (!targetKey) return
+  rerollStates.set(targetKey, state)
+}
+
+function operationRerollState(operation: RerollOperation): RerollState {
+  return rerollStates.get(operation.token.target) ?? { rerolls: [], rerollid: -1 }
+}
+
+function setOperationRerollState(operation: RerollOperation, state: RerollState): void {
+  rerollStates.set(operation.token.target, state)
+}
+
+function locateRerollTarget(target: ActiveChatTarget): { chat: Chat } | null {
   const characters = getDatabase().characters ?? []
   const charId = target.characterId
     ? characters.findIndex((character) => character.chaId === target.characterId)
@@ -103,39 +137,28 @@ function locateRerollTarget(
   const chatPage = target.chatId ? character.chats?.findIndex((chat) => chat.id === target.chatId) : target.chatPage
   const chat = character.chats?.[chatPage]
   if (!chat) return null
-  return {
-    chat,
-    scope: {
-      charId,
-      chatKey: typeof chat.id === 'string' && chat.id ? chat.id : `index:${chatPage}`,
-    },
-  }
-}
-
-function markRerollScope(target?: ActiveChatTarget): void {
-  const scope = target ? locateRerollTarget(target)?.scope : currentRerollScope()
-  if (!scope) return
-  lastCharId = scope.charId
-  lastChatKey = scope.chatKey
+  return { chat }
 }
 
 function currentTailGenerationId(): string | undefined {
   return activeChatRecord()?.message.at(-1)?.generationInfo?.generationId
 }
 
-/** Reset the swipe history when the selected character/chat changed since last use. */
-export function resetRerollOnCharChange(): void {
-  const scope = currentRerollScope()
-  if (lastCharId !== scope.charId || lastChatKey !== scope.chatKey) {
-    rerolls = []
-    rerollid = -1
-    clearPrererolls()
-  }
+/**
+ * Retained as the send/navigation compatibility boundary. Selecting another
+ * chat now selects that chat's own state instead of clearing a module-global
+ * buffer, so there is no destructive work to perform here.
+ */
+export function resetRerollOnCharChange(target: ActiveChatTarget | null = currentRerollTarget()): void {
+  const targetKey = rerollTargetKey(target)
+  if (!target || !targetKey || rerollStates.has(targetKey)) return
+  rerollStates.set(targetKey, { rerolls: [], rerollid: -1 })
 }
 
 /** Drop the swipe history — the send/continue confirm boundary. */
-export function clearRerollBuffer(): void {
-  rerolls = []
+export function clearRerollBuffer(target: ActiveChatTarget | null = currentRerollTarget()): void {
+  if (!target) return
+  setRerollState(target, { rerolls: [], rerollid: -1 })
 }
 
 /** Record the just-generated tail as the newest swipe candidate (post-send). */
@@ -147,14 +170,26 @@ export function recordGeneratedReroll(previousLength: number, target: ActiveChat
     // cheap shallow array of the 1-2 new rows; deep-cloning that is O(tail) and
     // byte-identical to the former `safeStructuredClone(message).slice(...)`, which
     // deep-cloned the entire transcript just to keep its last rows.
-    rerolls.push(safeStructuredClone(message.slice(previousLength)))
-    rerollid = rerolls.length - 1
+    const generatedTail = safeStructuredClone(message.slice(previousLength))
+    const state = rerollState(target)
+    const generatedUid = candidateUid(generatedTail.at(-1))
+    const existingIndex = generatedUid
+      ? state.rerolls.findIndex((candidate) => candidateUid(candidate.at(-1)) === generatedUid)
+      : -1
+    if (existingIndex >= 0) {
+      const rerolls = state.rerolls.slice()
+      rerolls[existingIndex] = generatedTail
+      setRerollState(target, { rerolls, rerollid: existingIndex })
+    } else {
+      const rerolls = [...state.rerolls, generatedTail]
+      setRerollState(target, { rerolls, rerollid: rerolls.length - 1 })
+    }
   }
 }
 
-/** Mark the character a generation finished on (gates the char-change reset). */
+/** Ensure a generation target owns an initialized reroll state entry. */
 export function markRerollChar(target: ActiveChatTarget): void {
-  markRerollScope(target)
+  resetRerollOnCharChange(target)
 }
 
 // ── guard-safe optimistic mutations ─────────────────────────────────────────────
@@ -301,9 +336,11 @@ async function regenerateFromCurrentTail(deps: RerollDeps, operation: RerollOper
   if (!isCurrentRerollOperation(operation)) {
     return
   }
-  if (rerolls.length === 0) {
-    rerolls.push(safeStructuredClone([activeChatRecord().message.at(-1)]) as Message[])
-    rerollid = rerolls.length - 1
+  let state = operationRerollState(operation)
+  if (state.rerolls.length === 0) {
+    const rerolls = [safeStructuredClone([activeChatRecord().message.at(-1)]) as Message[]]
+    state = { rerolls, rerollid: rerolls.length - 1 }
+    setOperationRerollState(operation, state)
   }
   // `cha` is a shallow copy (shared row refs) used only to locate the truncation
   // point and the regenerate target — never installed — so the whole transcript is
@@ -366,15 +403,18 @@ function applyNextPrefetchedReroll(operation: RerollOperation): boolean {
 // The server lock and client activity entry keep same-chat work mutually exclusive.
 export async function reroll(deps: RerollDeps): Promise<void> {
   const operation = beginRerollOperation()
+  if (!operation) return
   try {
-    resetRerollOnCharChange()
+    resetRerollOnCharChange(operation.target)
     if (!isCurrentRerollOperation(operation)) return
     if (applyNextPrefetchedReroll(operation)) return
-    if (rerollid < rerolls.length - 1) {
-      if (Array.isArray(rerolls[rerollid + 1])) {
+    const state = operationRerollState(operation)
+    if (state.rerollid < state.rerolls.length - 1) {
+      if (Array.isArray(state.rerolls[state.rerollid + 1])) {
         if (!isCurrentRerollOperation(operation)) return
-        rerollid += 1
-        applyTailSlice(safeStructuredClone(rerolls[rerollid]), operation)
+        const rerollid = state.rerollid + 1
+        setOperationRerollState(operation, { ...state, rerollid })
+        applyTailSlice(safeStructuredClone(state.rerolls[rerollid]), operation)
       }
       return
     }
@@ -387,8 +427,9 @@ export async function reroll(deps: RerollDeps): Promise<void> {
 /** Generate a fresh reroll candidate from the currently selected tail. */
 export async function newReroll(deps: RerollDeps): Promise<void> {
   const operation = beginRerollOperation()
+  if (!operation) return
   try {
-    resetRerollOnCharChange()
+    resetRerollOnCharChange(operation.target)
     if (!isCurrentRerollOperation(operation)) return
     if (applyNextPrefetchedReroll(operation)) return
     await regenerateFromCurrentTail(deps, operation)
@@ -399,8 +440,9 @@ export async function newReroll(deps: RerollDeps): Promise<void> {
 
 export async function unReroll(): Promise<void> {
   const operation = beginRerollOperation()
+  if (!operation) return
   try {
-    resetRerollOnCharChange()
+    resetRerollOnCharChange(operation.target)
     if (!isCurrentRerollOperation(operation)) return
     const genId = currentTailGenerationId()
     if (genId) {
@@ -410,13 +452,15 @@ export async function unReroll(): Promise<void> {
         return
       }
     }
-    if (rerollid <= 0) {
+    const state = operationRerollState(operation)
+    if (state.rerollid <= 0) {
       return
     }
-    if (Array.isArray(rerolls[rerollid - 1])) {
+    if (Array.isArray(state.rerolls[state.rerollid - 1])) {
       if (!isCurrentRerollOperation(operation)) return
-      rerollid -= 1
-      applyTailSlice(safeStructuredClone(rerolls[rerollid]), operation)
+      const rerollid = state.rerollid - 1
+      setOperationRerollState(operation, { ...state, rerollid })
+      applyTailSlice(safeStructuredClone(state.rerolls[rerollid]), operation)
     }
   } finally {
     rerollOperationGuard.clear(operation.token)
@@ -426,13 +470,15 @@ export async function unReroll(): Promise<void> {
 /** Select an existing candidate from the reroll list by absolute buffer index. */
 export async function selectRerollCandidate(index: number): Promise<void> {
   const operation = beginRerollOperation()
+  if (!operation) return
   try {
-    resetRerollOnCharChange()
-    if (!Number.isInteger(index) || index < 0 || index >= rerolls.length) return
-    if (index === rerollid) return
+    resetRerollOnCharChange(operation.target)
+    const state = operationRerollState(operation)
+    if (!Number.isInteger(index) || index < 0 || index >= state.rerolls.length) return
+    if (index === state.rerollid) return
     if (!isCurrentRerollOperation(operation)) return
-    rerollid = index
-    applyTailSlice(safeStructuredClone(rerolls[rerollid]), operation)
+    setOperationRerollState(operation, { ...state, rerollid: index })
+    applyTailSlice(safeStructuredClone(state.rerolls[index]), operation)
   } finally {
     rerollOperationGuard.clear(operation.token)
   }
@@ -462,7 +508,12 @@ function candidateUid(message: Message | undefined): string | undefined {
  * the confirm boundary, so an empty `alternates` can never resurrect a buffer the
  * client just cleared).
  */
-export function seedRerollBufferFromAlternates(activeMessages: unknown[], alternates: unknown[]): void {
+export function seedRerollBufferFromAlternates(
+  activeMessages: unknown[],
+  alternates: unknown[],
+  target: ActiveChatTarget | null = currentRerollTarget(),
+): void {
+  if (!target) return
   if (!Array.isArray(alternates) || alternates.length === 0) return
   const activeTail = (activeMessages as Message[]).at(-1)
   if (!activeTail || activeTail.role === 'user') return
@@ -491,31 +542,28 @@ export function seedRerollBufferFromAlternates(activeMessages: unknown[], altern
     candidates[activeIdx] = activeTail
   }
 
-  rerolls = candidates.map((candidate) => [safeStructuredClone(candidate)])
-  rerollid = activeIdx
-  // The buffer now belongs to the selected character — keep the char-change guard
-  // from wiping the freshly-seeded buffer on the next reroll/unReroll.
-  markRerollScope()
+  setRerollState(target, {
+    rerolls: candidates.map((candidate) => [safeStructuredClone(candidate)]),
+    rerollid: activeIdx,
+  })
 }
 
 // ── test/observability accessors ────────────────────────────────────────────────
-export function getRerollBuffer(): Message[][] {
-  return rerolls
+export function getRerollBuffer(target: ActiveChatTarget | null = currentRerollTarget()): Message[][] {
+  return rerollState(target).rerolls
 }
-export function getRerollId(): number {
-  return rerollid
+export function getRerollId(target: ActiveChatTarget | null = currentRerollTarget()): number {
+  return rerollState(target).rerollid
 }
-export function getRerollCandidates(): RerollCandidate[] {
-  return rerolls.map((messages, index) => ({
+export function getRerollCandidates(target: ActiveChatTarget | null = currentRerollTarget()): RerollCandidate[] {
+  const state = rerollState(target)
+  return state.rerolls.map((messages, index) => ({
     index,
-    active: index === rerollid,
+    active: index === state.rerollid,
     messages,
   }))
 }
 export function resetRerollNavigation(): void {
-  rerolls = []
-  rerollid = -1
-  lastCharId = -1
-  lastChatKey = undefined
+  rerollStates.clear()
   clearPrererolls()
 }

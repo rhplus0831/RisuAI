@@ -489,7 +489,7 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     expect(getRerollId()).toBe(0)
   })
 
-  it('does not seed terminal alternates after another chat becomes active', async () => {
+  it('keeps background terminal alternates for an already-resident chat until it is reopened', async () => {
     const { char, target } = seedReorderedTerminalChats()
     target.message[0].data = 'primary reply'
 
@@ -514,6 +514,11 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     expect(char.chats[char.chatPage].id).toBe('chat-stale-index')
     expect(getRerollBuffer()).toEqual([])
     expect(getRerollId()).toBe(-1)
+
+    char.chatPage = 1
+    expect(getRerollBuffer().map((candidate) => candidate[0]?.data)).toEqual(['primary reply', 'other reply'])
+    expect(getRerollId()).toBe(0)
+    expect(hydrationMock.hydrate).not.toHaveBeenCalled()
   })
 
   it('applies terminal post-generation patches to the stable chat id after chat reorder', async () => {

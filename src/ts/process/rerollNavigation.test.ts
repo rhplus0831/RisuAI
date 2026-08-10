@@ -80,8 +80,8 @@ function tailUids(): string[] {
   return character.chats[0].message.map((m) => m.chatId)
 }
 
-function bufferUids(): string[][] {
-  return getRerollBuffer().map((entry) => entry.map((m) => (m as unknown as Msg).chatId))
+function bufferUids(target?: ActiveChatTarget): string[][] {
+  return getRerollBuffer(target).map((entry) => entry.map((m) => (m as unknown as Msg).chatId))
 }
 
 beforeEach(() => {
@@ -453,11 +453,17 @@ describe('reroll buffer lifecycle (generation + confirm boundary)', () => {
 
     await reroll({ sendChatMain, closeMenu: vi.fn() })
 
-    expect(bufferUids()).toEqual([['g-old'], ['g-new']])
+    expect(bufferUids(originTarget)).toEqual([['g-old'], ['g-new']])
+    expect(getRerollBuffer()).toEqual([])
     await unReroll()
     expect(getRerollBuffer()).toEqual([])
+    expect(bufferUids(originTarget)).toEqual([['g-old'], ['g-new']])
     expect(testDatabaseState.db.characters[1].chats[0].message).toEqual([])
     expect(commandSpies.dispatchReplaceTailMessagesScoped).not.toHaveBeenCalled()
+
+    selectedCharID.set(0)
+    expect(bufferUids()).toEqual([['g-old'], ['g-new']])
+    expect(getRerollId()).toBe(1)
   })
 
   it('clearRerollBuffer drops the swipe history (send/continue confirm boundary)', () => {
@@ -475,7 +481,7 @@ describe('reroll buffer lifecycle (generation + confirm boundary)', () => {
     expect(prerollSpies.clearPrererolls).not.toHaveBeenCalled()
   })
 
-  it('resetRerollOnCharChange wipes the buffer and preroll candidates when the character changed', () => {
+  it('preserves each character buffer when the selected character changes', () => {
     const active: Msg[] = [
       { role: 'user', data: 'hi', chatId: 'u1' },
       { role: 'char', data: 'c2', chatId: 'g2' },
@@ -486,15 +492,21 @@ describe('reroll buffer lifecycle (generation + confirm boundary)', () => {
       { role: 'char', data: 'c1', chatId: 'g1' },
     ])
     expect(getRerollBuffer().length).toBe(2)
-    // Switch character → the next swipe op resets.
+    const firstTarget = targetFor(0)
+    // Switch character → the current view has its own empty state.
     selectedCharID.set(1)
     resetRerollOnCharChange()
     expect(getRerollBuffer()).toEqual([])
     expect(getRerollId()).toBe(-1)
-    expect(prerollSpies.clearPrererolls).toHaveBeenCalledTimes(1)
+    expect(bufferUids(firstTarget)).toEqual([['g1'], ['g2']])
+    expect(prerollSpies.clearPrererolls).not.toHaveBeenCalled()
+
+    selectedCharID.set(0)
+    expect(bufferUids()).toEqual([['g1'], ['g2']])
+    expect(getRerollId()).toBe(1)
   })
 
-  it('resetRerollOnCharChange wipes the buffer and preroll candidates when the chat changed', () => {
+  it('preserves each chat buffer and active index when the selected chat changes', async () => {
     const active: Msg[] = [
       { role: 'user', data: 'hi', chatId: 'u1' },
       { role: 'char', data: 'c2', chatId: 'g2' },
@@ -509,13 +521,49 @@ describe('reroll buffer lifecycle (generation + confirm boundary)', () => {
       { role: 'char', data: 'c1', chatId: 'g1' },
     ])
     expect(getRerollBuffer().length).toBe(2)
+    await unReroll()
+    expect(getRerollId()).toBe(0)
+    const firstTarget = targetFor(0)
 
     testDatabaseState.db.characters[0].chatPage = 1
     resetRerollOnCharChange()
 
     expect(getRerollBuffer()).toEqual([])
     expect(getRerollId()).toBe(-1)
-    expect(prerollSpies.clearPrererolls).toHaveBeenCalledTimes(1)
+    expect(bufferUids(firstTarget)).toEqual([['g1'], ['g2']])
+    expect(getRerollId(firstTarget)).toBe(0)
+    expect(prerollSpies.clearPrererolls).not.toHaveBeenCalled()
+
+    testDatabaseState.db.characters[0].chatPage = 0
+    expect(bufferUids()).toEqual([['g1'], ['g2']])
+    expect(getRerollId()).toBe(0)
+  })
+
+  it('clears only the confirming chat and leaves another chat candidate index unchanged', async () => {
+    const firstMessages: Msg[] = [
+      { role: 'user', data: 'first user', chatId: 'a-u1' },
+      { role: 'char', data: 'first active', chatId: 'a-g2' },
+    ]
+    setupChat(firstMessages)
+    seedRerollBufferFromAlternates(firstMessages, [
+      { role: 'char', data: 'first active', chatId: 'a-g2' },
+      { role: 'char', data: 'first older', chatId: 'a-g1' },
+    ])
+    await unReroll()
+    const firstTarget = targetFor(0)
+
+    selectedCharID.set(1)
+    const secondTarget = targetFor(1)
+    testDatabaseState.db.characters[1].chats[0].message.push(
+      { role: 'user', data: 'second user', chatId: 'b-u1' } as never,
+      { role: 'char', data: 'second reply', chatId: 'b-g1' } as never,
+    )
+    recordGeneratedReroll(1, secondTarget)
+    clearRerollBuffer(secondTarget)
+
+    expect(getRerollBuffer(secondTarget)).toEqual([])
+    expect(bufferUids(firstTarget)).toEqual([['a-g1'], ['a-g2']])
+    expect(getRerollId(firstTarget)).toBe(0)
   })
 })
 

@@ -52,6 +52,7 @@ import {
 import { getProtocolDiagnosticsSnapshot } from './protocolDiagnostics'
 import {
   getRerollBuffer,
+  getRerollId,
   resetRerollNavigation,
   seedRerollBufferFromAlternates,
 } from '../process/rerollNavigation.svelte'
@@ -192,7 +193,11 @@ afterEach(() => {
 })
 
 const db = () =>
-  (testDatabaseState as { db: { characters: Array<{ chats: Array<{ id: string; message: unknown[] }> }> } }).db
+  (
+    testDatabaseState as {
+      db: { characters: Array<{ chatPage: number; chats: Array<{ id: string; message: unknown[] }> }> }
+    }
+  ).db
 
 describe('chat message hydration bridge', () => {
   it('reapplies a retained transcript projection after authoritative hydration', async () => {
@@ -397,6 +402,42 @@ describe('chat message hydration bridge', () => {
     expect(projectionState.fetchChat).not.toHaveBeenCalled()
     expect(db().characters[0].chats[0].message).toEqual([{ role: 'user', data: 'chat-1', chatId: 'm-chat-1' }])
     expect(db().characters[0].chats[1].message).toEqual([{ role: 'user', data: 'chat-2', chatId: 'm-chat-2' }])
+  })
+
+  it('keeps background reroll candidates available when an already-hydrated chat is opened', async () => {
+    projectionState.fetchBulkChat.mockResolvedValueOnce({
+      status: 'ok',
+      revision: 1,
+      chats: [
+        {
+          chatId: 'chat-1',
+          message: [{ role: 'user', data: 'active chat', chatId: 'chat-1-user' }],
+          alternates: [],
+        },
+        {
+          chatId: 'chat-2',
+          message: [{ role: 'char', data: 'background primary', chatId: 'chat-2-primary' }],
+          alternates: [
+            { role: 'char', data: 'background alternate', chatId: 'chat-2-alternate' },
+            { role: 'char', data: 'background primary', chatId: 'chat-2-primary' },
+          ],
+        },
+      ],
+      missing: [],
+    })
+
+    await ensureAllChatsHydrated()
+    expect(getRerollBuffer()).toEqual([])
+
+    db().characters[0].chatPage = 1
+    await hydrateActiveChat()
+
+    expect(projectionState.fetchChat).not.toHaveBeenCalled()
+    expect(getRerollBuffer().map((candidate) => candidate[0]?.data)).toEqual([
+      'background primary',
+      'background alternate',
+    ])
+    expect(getRerollId()).toBe(0)
   })
 
   it('ensureAllChatsHydrated includes chats that only have a partial active window', async () => {

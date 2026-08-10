@@ -925,7 +925,7 @@ export async function applyServerBackedTerminal(args: {
   }
 
   const providerAlternates = args.terminal.done?.alternates
-  if (Array.isArray(providerAlternates) && providerAlternates.length > 0 && activeChatId() === terminalTarget.chatId) {
+  if (Array.isArray(providerAlternates) && providerAlternates.length > 0) {
     withTrustedResourceWrite(() => {
       const resolution = resolveServerBackedLiveChat({
         selectedChar: args.selectedChar,
@@ -948,6 +948,12 @@ export async function applyServerBackedTerminal(args: {
           // Match persisted alternate-row ordering (newest-added first), including
           // the active primary candidate so it remains swipe index zero.
           [...alternates.reverse(), assistant],
+          {
+            selectedCharID: getDatabase().characters.indexOf(resolution.character),
+            chatPage: resolution.character.chats.indexOf(liveChat),
+            characterId: resolution.character.chaId,
+            chatId: liveChat.id,
+          },
         )
       }
     })
