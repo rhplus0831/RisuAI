@@ -17,6 +17,7 @@ import { captureSettingsPatchProjectionEpochs } from 'src/ts/server/resourceStat
 import { currentCharacterRowSnapshot, prepareCompatibleCharacterUpdateScoped } from 'src/ts/characterCommands'
 import {
   appendCurrentChatUserMessageForSend,
+  captureActiveChatTarget,
   prepareCompatibleChatUpdateScoped,
   type CharacterOwnedDurableBatchResult,
 } from 'src/ts/chatCommands'
@@ -50,6 +51,7 @@ import { getInlayAsset } from 'src/ts/process/files/inlays'
 import { getLLMCache, searchLLMCache } from 'src/ts/translator/translator'
 import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer, type LLMModel } from 'src/ts/model/types'
 import { sendChat as processSendChat } from 'src/ts/process/index.svelte'
+import { coordinateAcceptedChatSend } from 'src/ts/process/acceptedSendCoordinator.svelte'
 import { isChatGenerationKnown } from 'src/ts/process/reattach'
 import { getModelInfo } from 'src/ts/model/modellist'
 import type { ModelModeExtended } from 'src/ts/process/request/shared'
@@ -1860,6 +1862,10 @@ const makeRisuaiAPIV3 = (
       )
     },
     sendChat: async (message: string) => {
+      const selectedCharacterIndex = get(selectedCharID)
+      const selectedCharacter = getDatabase().characters[selectedCharacterIndex]
+      const selectedChat = selectedCharacter?.chats[selectedCharacter.chatPage]
+      const target = captureActiveChatTarget()
       const conf = await getPluginPermission(plugin.name, 'sendChat', false, plugin.script, () =>
         assertV3InstanceCurrent(instance),
       )
@@ -1878,36 +1884,28 @@ const makeRisuaiAPIV3 = (
         throw new Error('Sending chat with plugin-based model is currently blocked')
       }
 
-      const charId = get(selectedCharID)
-      const char = getDatabase().characters[charId]
-      if (!char) {
+      if (!selectedCharacter) {
         throw new Error('No character selected')
       }
 
-      const chat = char.chats[char.chatPage]
-      if (!chat) {
+      if (!selectedChat || !target) {
         throw new Error('No active chat found')
       }
-      if (isChatGenerationKnown(chat.id)) {
+      if (isChatGenerationKnown(target.chatId)) {
         throw new Error('A generation is already in progress for this chat')
       }
 
       if (message) {
-        const appendResult = await appendCurrentChatUserMessageForSend(message)
-        if (appendResult.status === 'queued') {
-          // The exact append is already accepted and durable. Resolve the API
-          // call so plugin retry loops do not append a duplicate, but do not
-          // start generation before the server accepts the message.
-          return true
-        }
-        if (appendResult.status !== 'ok') {
+        const appendResult = await appendCurrentChatUserMessageForSend(message, { expectedTarget: target })
+        if (appendResult.status === 'error') {
           throw new Error(appendResult.error)
         }
+
+        const result = await coordinateAcceptedChatSend({ target, append: appendResult })
+        return result.status === 'generated'
       }
 
-      await processSendChat(-1, {})
-
-      return true
+      return processSendChat(-1, { expectedTarget: target })
     },
     addPluginChannelListener: (channelName: string, callback: Function) => {
       pluginChannel.set(plugin.name + channelName, callback)

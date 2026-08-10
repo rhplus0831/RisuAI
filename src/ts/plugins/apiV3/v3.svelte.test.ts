@@ -1,49 +1,54 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 
-const { makeStore, mockDbState, mockPluginV2, mockCustomProviderStore, mockServerCommands } = vi.hoisted(() => {
-  const makeStore = <T>(initial: T) => {
-    let value = initial
-    return {
-      subscribe(run: (value: T) => void) {
-        run(value)
-        return () => {}
-      },
-      set(next: T) {
-        value = next
-      },
-      update(updater: (value: T) => T) {
-        value = updater(value)
+const { makeStore, mockDbState, mockPluginV2, mockCustomProviderStore, mockSelectedCharID, mockServerCommands } =
+  vi.hoisted(() => {
+    const makeStore = <T>(initial: T) => {
+      let value = initial
+      return {
+        get value() {
+          return value
+        },
+        subscribe(run: (value: T) => void) {
+          run(value)
+          return () => {}
+        },
+        set(next: T) {
+          value = next
+        },
+        update(updater: (value: T) => T) {
+          value = updater(value)
+        },
+      }
+    }
+    const mockCustomProviderStore = makeStore([] as string[])
+    const mockSelectedCharID = makeStore('char-a')
+    const mockPluginV2 = {
+      providers: new Map(),
+      providerOptions: new Map(),
+      editdisplay: new Set(),
+      editoutput: new Set(),
+      editprocess: new Set(),
+      editinput: new Set(),
+      replacerbeforeRequest: new Set(),
+      replacerafterRequest: new Set(),
+      unload: new Set(),
+      loaded: false,
+    }
+    const mockDbState = {
+      db: {
+        plugins: [],
+        characters: {},
+        aiModel: 'test-model',
+        pluginCustomStorage: {},
+        currentPluginProvider: '',
       },
     }
-  }
-  const mockCustomProviderStore = makeStore([] as string[])
-  const mockPluginV2 = {
-    providers: new Map(),
-    providerOptions: new Map(),
-    editdisplay: new Set(),
-    editoutput: new Set(),
-    editprocess: new Set(),
-    editinput: new Set(),
-    replacerbeforeRequest: new Set(),
-    replacerafterRequest: new Set(),
-    unload: new Set(),
-    loaded: false,
-  }
-  const mockDbState = {
-    db: {
-      plugins: [],
-      characters: {},
-      aiModel: 'test-model',
-      pluginCustomStorage: {},
-      currentPluginProvider: '',
-    },
-  }
-  const mockServerCommands = {
-    canUse: false,
-  }
-  return { makeStore, mockDbState, mockPluginV2, mockCustomProviderStore, mockServerCommands }
-})
+    const mockServerCommands = {
+      canUse: false,
+    }
+    return { makeStore, mockDbState, mockPluginV2, mockCustomProviderStore, mockSelectedCharID, mockServerCommands }
+  })
 
 const mockPluginMCP = vi.hoisted(() => ({
   registerMCPModule: vi.fn(),
@@ -128,7 +133,7 @@ vi.mock('src/ts/stores.svelte', () => ({
   bodyIntercepterStore: [],
   chatPanelStore: [],
   hotReloading: makeStore(false),
-  selectedCharID: makeStore('char-a'),
+  selectedCharID: mockSelectedCharID,
 }))
 
 vi.mock('../../stores.svelte', () => ({
@@ -139,7 +144,7 @@ vi.mock('../../stores.svelte', () => ({
   bodyIntercepterStore: [],
   chatPanelStore: [],
   hotReloading: makeStore(false),
-  selectedCharID: makeStore('char-a'),
+  selectedCharID: mockSelectedCharID,
 }))
 
 vi.mock('src/ts/storage/database.svelte', () => ({
@@ -192,6 +197,21 @@ vi.mock('src/ts/characterCommands', () => ({
 
 vi.mock('src/ts/chatCommands', () => ({
   appendCurrentChatUserMessageForSend: vi.fn(),
+  captureActiveChatTarget: vi.fn(() => {
+    const selectedCharacterKey = mockSelectedCharID.value
+    const characters = mockDbState.db.characters as Record<string, any>
+    const character = characters[selectedCharacterKey]
+    const chatPage = character?.chatPage ?? 0
+    const chat = character?.chats?.[chatPage]
+    if (!character || !chat) return null
+    const selectedCharID = Math.max(0, Object.keys(characters).indexOf(selectedCharacterKey))
+    return {
+      selectedCharID,
+      chatPage,
+      characterId: character.chaId,
+      chatId: chat.id,
+    }
+  }),
   CHAT_PATCH_ALLOWED_KEYS: new Set([
     'name',
     'note',
@@ -294,6 +314,8 @@ vi.mock('localforage', () => ({
 
 vi.mock('src/ts/process/index.svelte', () => ({
   doingChat: makeStore(false),
+  clearActiveGenerationAbortController: vi.fn(),
+  createActiveGenerationAbortController: vi.fn(() => new AbortController()),
   sendChat: vi.fn(),
 }))
 
@@ -345,6 +367,10 @@ import { appendCurrentChatUserMessageForSend, prepareCompatibleChatUpdateScoped 
 import { getInlayAsset } from 'src/ts/process/files/inlays'
 import { sendChat as processSendChat } from 'src/ts/process/index.svelte'
 import {
+  acceptedSendRecoveries,
+  resetAcceptedSendCoordinatorForTests,
+} from 'src/ts/process/acceptedSendCoordinator.svelte'
+import {
   __v3PluginLifecycleTestHooks,
   customV3ProviderMetaStore,
   executePluginV3,
@@ -365,6 +391,31 @@ function seedV3Plugin(name: string) {
     argMeta: {},
     enabled: true,
   } as any
+}
+
+function seedV3ChatBridge(plugin: ReturnType<typeof seedV3Plugin>): void {
+  mockDbState.db.plugins = [plugin]
+  mockDbState.db.characters = {
+    'char-a': {
+      chaId: 'char-a',
+      chatPage: 0,
+      chats: [{ id: 'chat-a', message: [] }],
+    },
+    'char-b': {
+      chaId: 'char-b',
+      chatPage: 0,
+      chats: [{ id: 'chat-b', message: [] }],
+    },
+  }
+}
+
+function capturedPluginChatTarget() {
+  return {
+    selectedCharID: 0,
+    chatPage: 0,
+    characterId: 'char-a',
+    chatId: 'chat-a',
+  }
 }
 
 function deferred<T>() {
@@ -388,6 +439,8 @@ function capturedSettingsRollback(): () => void {
 beforeEach(async () => {
   document.body.innerHTML = ''
   mockServerCommands.canUse = false
+  mockSelectedCharID.set('char-a')
+  resetAcceptedSendCoordinatorForTests()
   mockDbState.db = {
     plugins: [],
     characters: {},
@@ -718,75 +771,137 @@ describe('V3 character command bridge', () => {
 })
 
 describe('V3 chat command bridge', () => {
-  it('sendChat appends plugin user input through the server-backed send helper', async () => {
+  it('sendChat rejects a stale target before append without starting generation', async () => {
     const plugin = seedV3Plugin('plugin-a')
-    mockDbState.db.plugins = [plugin]
-    mockDbState.db.characters = {
-      'char-a': {
-        chaId: 'char-a',
-        chatPage: 0,
-        chats: [{ id: 'chat-a', message: [] }],
-      },
-    }
+    seedV3ChatBridge(plugin)
     vi.mocked(appendCurrentChatUserMessageForSend).mockResolvedValueOnce({
-      status: 'ok',
-      messageId: 'msg-plugin',
+      status: 'error',
+      error: 'The active chat changed before the message could be appended.',
+    })
+    const api = __v3PluginLifecycleTestHooks.createApi(plugin) as any
+
+    const send = api.sendChat('stale before append')
+    mockSelectedCharID.set('char-b')
+
+    await expect(send).rejects.toThrow('The active chat changed before the message could be appended.')
+    expect(appendCurrentChatUserMessageForSend).toHaveBeenCalledWith('stale before append', {
+      expectedTarget: capturedPluginChatTarget(),
+    })
+    expect(processSendChat).not.toHaveBeenCalled()
+  })
+
+  it('sendChat keeps a deferred accepted append and generation on the captured target after navigation', async () => {
+    const plugin = seedV3Plugin('plugin-a')
+    seedV3ChatBridge(plugin)
+    const append = deferred<any>()
+    vi.mocked(appendCurrentChatUserMessageForSend).mockReturnValueOnce(append.promise)
+    vi.mocked(processSendChat).mockResolvedValueOnce(true)
+    const api = __v3PluginLifecycleTestHooks.createApi(plugin) as any
+
+    const send = api.sendChat('accepted in Chat A')
+    await vi.waitFor(() => expect(appendCurrentChatUserMessageForSend).toHaveBeenCalledOnce())
+    expect(appendCurrentChatUserMessageForSend).toHaveBeenCalledWith('accepted in Chat A', {
+      expectedTarget: capturedPluginChatTarget(),
+    })
+
+    mockSelectedCharID.set('char-b')
+    append.resolve({ status: 'ok', messageId: 'msg-plugin' })
+
+    await expect(send).resolves.toBe(true)
+    expect(processSendChat).toHaveBeenCalledOnce()
+    expect(processSendChat).toHaveBeenCalledWith(
+      -1,
+      expect.objectContaining({ expectedTarget: capturedPluginChatTarget() }),
+    )
+  })
+
+  it('sendChat waits for one queued append and generates once for its captured target', async () => {
+    const plugin = seedV3Plugin('plugin-a')
+    seedV3ChatBridge(plugin)
+    const settlement = deferred<any>()
+    vi.mocked(appendCurrentChatUserMessageForSend).mockResolvedValueOnce({
+      status: 'queued',
+      messageId: 'msg-plugin-queued',
+      settlement: settlement.promise,
     })
     vi.mocked(processSendChat).mockResolvedValueOnce(true)
     const api = __v3PluginLifecycleTestHooks.createApi(plugin) as any
 
-    await expect(api.sendChat('hello from plugin')).resolves.toBe(true)
-
-    expect(appendCurrentChatUserMessageForSend).toHaveBeenCalledWith('hello from plugin')
-    expect(processSendChat).toHaveBeenCalledWith(-1, {})
-    expect(mockDbState.db.characters['char-a'].chats[0].message).toEqual([])
-  })
-
-  it('sendChat stops before generation when the append helper rejects the user input', async () => {
-    const plugin = seedV3Plugin('plugin-a')
-    mockDbState.db.plugins = [plugin]
-    mockDbState.db.characters = {
-      'char-a': {
-        chaId: 'char-a',
-        chatPage: 0,
-        chats: [{ id: 'chat-a', message: [] }],
-      },
-    }
-    vi.mocked(appendCurrentChatUserMessageForSend).mockResolvedValueOnce({
-      status: 'error',
-      error: 'append failed',
+    let resolved = false
+    const send = api.sendChat('queued from plugin').then((result: boolean) => {
+      resolved = true
+      return result
     })
-    const api = __v3PluginLifecycleTestHooks.createApi(plugin) as any
-
-    await expect(api.sendChat('hello from plugin')).rejects.toThrow('append failed')
-
-    expect(processSendChat).not.toHaveBeenCalled()
-    expect(mockDbState.db.characters['char-a'].chats[0].message).toEqual([])
-  })
-
-  it('sendChat accepts a durably queued append without starting generation or inviting a retry', async () => {
-    const plugin = seedV3Plugin('plugin-a')
-    mockDbState.db.plugins = [plugin]
-    mockDbState.db.characters = {
-      'char-a': {
-        chaId: 'char-a',
-        chatPage: 0,
-        chats: [{ id: 'chat-a', message: [] }],
-      },
-    }
-    vi.mocked(appendCurrentChatUserMessageForSend).mockResolvedValueOnce({
-      status: 'queued',
-      messageId: 'msg-plugin-queued',
-      settlement: Promise.resolve({ status: 'accepted' }),
-    })
-    const api = __v3PluginLifecycleTestHooks.createApi(plugin) as any
-
-    await expect(api.sendChat('queued from plugin')).resolves.toBe(true)
+    await vi.waitFor(() => expect(appendCurrentChatUserMessageForSend).toHaveBeenCalledOnce())
+    mockSelectedCharID.set('char-b')
 
     expect(appendCurrentChatUserMessageForSend).toHaveBeenCalledTimes(1)
-    expect(appendCurrentChatUserMessageForSend).toHaveBeenCalledWith('queued from plugin')
+    expect(appendCurrentChatUserMessageForSend).toHaveBeenCalledWith('queued from plugin', {
+      expectedTarget: capturedPluginChatTarget(),
+    })
     expect(processSendChat).not.toHaveBeenCalled()
-    expect(mockDbState.db.characters['char-a'].chats[0].message).toEqual([])
+    expect(resolved).toBe(false)
+
+    settlement.resolve({ status: 'accepted' })
+    await expect(send).resolves.toBe(true)
+
+    expect(appendCurrentChatUserMessageForSend).toHaveBeenCalledTimes(1)
+    expect(processSendChat).toHaveBeenCalledTimes(1)
+    expect(processSendChat).toHaveBeenCalledWith(
+      -1,
+      expect.objectContaining({ expectedTarget: capturedPluginChatTarget() }),
+    )
+  })
+
+  it('sendChat reports false when a queued append settlement fails without retrying the append', async () => {
+    const plugin = seedV3Plugin('plugin-a')
+    seedV3ChatBridge(plugin)
+    vi.mocked(appendCurrentChatUserMessageForSend).mockResolvedValueOnce({
+      status: 'queued',
+      messageId: 'msg-plugin-queued-failure',
+      settlement: Promise.resolve({
+        status: 'failed',
+        result: { status: 'unavailable' },
+      }),
+    })
+    const api = __v3PluginLifecycleTestHooks.createApi(plugin) as any
+
+    await expect(api.sendChat('queued failure from plugin')).resolves.toBe(false)
+
+    expect(appendCurrentChatUserMessageForSend).toHaveBeenCalledTimes(1)
+    expect(appendCurrentChatUserMessageForSend).toHaveBeenCalledWith('queued failure from plugin', {
+      expectedTarget: capturedPluginChatTarget(),
+    })
+    expect(processSendChat).not.toHaveBeenCalled()
+    expect(get(acceptedSendRecoveries)).toEqual([])
+  })
+
+  it('sendChat reports false and retains coordinator recovery when generation fails', async () => {
+    const plugin = seedV3Plugin('plugin-a')
+    seedV3ChatBridge(plugin)
+    vi.mocked(appendCurrentChatUserMessageForSend).mockResolvedValueOnce({
+      status: 'ok',
+      messageId: 'msg-plugin-failed-generation',
+    })
+    vi.mocked(processSendChat).mockResolvedValueOnce(false)
+    const api = __v3PluginLifecycleTestHooks.createApi(plugin) as any
+
+    await expect(api.sendChat('generation fails')).resolves.toBe(false)
+
+    expect(appendCurrentChatUserMessageForSend).toHaveBeenCalledWith('generation fails', {
+      expectedTarget: capturedPluginChatTarget(),
+    })
+    expect(processSendChat).toHaveBeenCalledWith(
+      -1,
+      expect.objectContaining({ expectedTarget: capturedPluginChatTarget() }),
+    )
+    expect(get(acceptedSendRecoveries)).toEqual([
+      expect.objectContaining({
+        target: capturedPluginChatTarget(),
+        messageId: 'msg-plugin-failed-generation',
+        cause: 'generation_failed',
+      }),
+    ])
   })
 
   it('getChatFromIndex waits for strict hydration and never returns the bootstrap shell', async () => {
