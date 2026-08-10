@@ -513,8 +513,30 @@ export async function requestServerChatGeneration(
     characterId: input.characterId,
     chatId: input.chatId,
   })
+  // Reattach already knows the durable job before the viewer GET opens. Watch
+  // explicit Stop immediately so cancellation owns the whole visible activity,
+  // including the pre-response window. Fresh durable sends fill this from the
+  // response header (or job_accepted) below.
+  let durableJobId = reattachJobId ?? ''
+  const watchesDurableJob = input.durable === true || reattachJobId !== undefined
+  let cancelledDurableJobId = ''
+  const cancelDurableOnAbort = (): void => {
+    // A durable send or a reattached generation: an explicit abort (the stop
+    // button) cancels the server job; a bare disconnect only detaches.
+    if (!watchesDurableJob || durableJobId.length === 0 || cancelledDurableJobId === durableJobId) return
+    cancelledDurableJobId = durableJobId
+    void cancelServerChatGeneration(durableJobId)
+  }
+  const stopWatchingAbort = (): void => signal?.removeEventListener('abort', cancelDurableOnAbort)
+  if (watchesDurableJob) {
+    if (signal?.aborted) cancelDurableOnAbort()
+    else signal?.addEventListener('abort', cancelDurableOnAbort, { once: true })
+  }
+
   const opened = await openChatResponse(input, signal, reattachJobId)
   if (opened.status !== 'ok') {
+    stopWatchingAbort()
+    if (opened.status === 'aborted' && reattachJobId) forgetActiveGenerationJob(reattachJobId)
     clearAgentPresetProgress(agentPresetSession)
     clearPostGenerationProgress(postGenerationSession)
     clearHalfStreamingProgressForChat(input.characterId, input.chatId)
@@ -549,13 +571,11 @@ export async function requestServerChatGeneration(
   // the first `job_accepted` body frame, headers are available as soon as fetch
   // accepts the response, so Stop can cancel a job even while its first body
   // bytes are still delayed by the network.
-  let durableJobId = reattachJobId ?? opened.response.headers.get(DURABLE_JOB_ID_HEADER)?.trim() ?? ''
-  const watchesDurableJob = input.durable === true || reattachJobId !== undefined
+  durableJobId ||= opened.response.headers.get(DURABLE_JOB_ID_HEADER)?.trim() ?? ''
   const reattachOutcomeFields = (
     status: GenerationReattachOutcomeStatus,
   ): { reattachOutcome: GenerationReattachOutcomeStatus } | Record<string, never> =>
     reattachJobId ? { reattachOutcome: status } : {}
-  let cancelledDurableJobId = ''
   const rememberDurableJob = (): void => {
     if (!watchesDurableJob || durableJobId.length === 0) return
     rememberActiveGenerationJob({
@@ -567,17 +587,8 @@ export async function requestServerChatGeneration(
         : {}),
     })
   }
-  const cancelDurableOnAbort = (): void => {
-    // A durable send or a reattached generation: an explicit abort (the stop
-    // button) cancels the server job; a bare disconnect only detaches.
-    if (!watchesDurableJob || durableJobId.length === 0 || cancelledDurableJobId === durableJobId) return
-    cancelledDurableJobId = durableJobId
-    void cancelServerChatGeneration(durableJobId)
-  }
-  const stopWatchingAbort = (): void => signal?.removeEventListener('abort', cancelDurableOnAbort)
   rememberDurableJob()
   if (signal?.aborted) cancelDurableOnAbort()
-  else signal?.addEventListener('abort', cancelDurableOnAbort, { once: true })
 
   let resolveReady: (value: ServerChatGenerationResult) => void = () => {}
   const ready = new Promise<ServerChatGenerationResult>((resolve) => {

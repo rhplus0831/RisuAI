@@ -29,6 +29,8 @@ const h = vi.hoisted(() => {
       async (
         _chatProcessIndex: number,
         _args: {
+          signal?: AbortSignal
+          reattachJobId?: string
           onReattachOutcome?: (outcome: {
             status: 'retryable_transport_failure' | 'terminal_failure' | 'missing_job' | 'aborted' | 'completed'
             error?: string
@@ -288,16 +290,27 @@ describe('reattach open-chat generation (Phase 4)', () => {
     }
   })
 
-  it('does not restore a consumed job after an explicit abort', async () => {
+  it('does not restore or retry a consumed job after abort while reattach is pending', async () => {
     openChat('chat-1')
     setActiveGenerationJobs([{ chatId: 'chat-1', jobId: 'job-1' }])
-    h.sendChat.mockImplementationOnce(async () => {
-      h.createActiveGenerationAbortController.mock.results.at(-1)?.value.abort()
-      return false
-    })
+    let settleReattach!: (attached: boolean) => void
+    h.sendChat.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          settleReattach = resolve
+        }),
+    )
 
-    await maybeReattachOpenChatGeneration()
+    const pending = maybeReattachOpenChatGeneration()
+    await vi.waitFor(() => expect(h.sendChat).toHaveBeenCalledTimes(1))
 
+    h.createActiveGenerationAbortController.mock.results.at(-1)?.value.abort()
+    settleReattach(false)
+    await pending
+    triggerOpenChatGenerationReattach()
+    await flushMicrotasks()
+
+    expect(h.sendChat).toHaveBeenCalledTimes(1)
     expect(get(activeGenerationJobs)).toEqual([])
     expect(h.clearActiveGenerationAbortController).toHaveBeenCalledTimes(1)
   })
@@ -352,40 +365,52 @@ describe('reattach open-chat generation (Phase 4)', () => {
     expect(get(activeGenerationJobs)).toEqual([{ chatId: 'chat-1', jobId: 'job-1' }])
   })
 
-  it('reattaches a second live-job chat while the first remains in flight', async () => {
-    let releaseFirst!: () => void
-    const firstGate = new Promise<void>((resolve) => {
-      releaseFirst = resolve
-    })
-    h.sendChat.mockImplementationOnce(async () => {
-      await firstGate
-      return true
-    })
-
+  it('keeps concurrent reattach controllers isolated when Chat A is aborted', async () => {
+    const pendingCalls = new Map<
+      string,
+      {
+        signal: AbortSignal
+        settle: (attached: boolean) => void
+      }
+    >()
+    h.sendChat.mockImplementation(
+      (_chatProcessIndex, args) =>
+        new Promise<boolean>((resolve) => {
+          pendingCalls.set(args.reattachJobId ?? '', {
+            signal: args.signal!,
+            settle: resolve,
+          })
+        }),
+    )
     h.database = {
       characters: [
-        { chaId: 'char-a', chatPage: 0, chats: [{ id: 'chat-1', message: [] }] },
-        { chaId: 'char-b', chatPage: 0, chats: [{ id: 'chat-2', message: [] }] },
+        { chaId: 'char-a', chatPage: 0, chats: [{ id: 'chat-a', message: [] }] },
+        { chaId: 'char-b', chatPage: 0, chats: [{ id: 'chat-b', message: [] }] },
       ],
     }
     h.selectedCharID.set(0)
     setActiveGenerationJobs([
-      { chatId: 'chat-1', jobId: 'job-1' },
-      { chatId: 'chat-2', jobId: 'job-2' },
+      { chatId: 'chat-a', jobId: 'job-a' },
+      { chatId: 'chat-b', jobId: 'job-b' },
     ])
 
-    const first = maybeReattachOpenChatGeneration()
-    await vi.waitFor(() => expect(h.sendChat).toHaveBeenCalledTimes(1))
-
-    // A different job id owns an independent reattach lease.
+    const pendingA = maybeReattachOpenChatGeneration()
+    await vi.waitFor(() => expect(pendingCalls.has('job-a')).toBe(true))
     h.selectedCharID.set(1)
-    await maybeReattachOpenChatGeneration()
-    expect(h.sendChat).toHaveBeenCalledWith(-1, expect.objectContaining({ reattachJobId: 'job-2' }))
-    expect(h.sendChat).toHaveBeenCalledTimes(2)
+    const pendingB = maybeReattachOpenChatGeneration()
+    await vi.waitFor(() => expect(pendingCalls.has('job-b')).toBe(true))
 
-    releaseFirst()
-    await first
+    h.createActiveGenerationAbortController.mock.results[0]?.value.abort()
+
+    expect(pendingCalls.get('job-a')?.signal.aborted).toBe(true)
+    expect(pendingCalls.get('job-b')?.signal.aborted).toBe(false)
+    pendingCalls.get('job-a')?.settle(false)
+    pendingCalls.get('job-b')?.settle(true)
+    await Promise.all([pendingA, pendingB])
+
+    expect(h.sendChat).toHaveBeenCalledTimes(2)
     expect(get(activeGenerationJobs)).toEqual([])
+    expect(h.clearActiveGenerationAbortController).toHaveBeenCalledTimes(2)
   })
 
   it('reattaches after a queued trigger observes a same-character chat switch', async () => {

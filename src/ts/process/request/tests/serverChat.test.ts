@@ -1540,6 +1540,32 @@ describe('requestServerChatGeneration durable cancel-on-abort', () => {
 
 describe('requestServerChatGeneration reattach mode (Phase 7)', () => {
   const enc = new TextEncoder()
+  function completedReattachResponse(jobId: string): Response {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(enc.encode(`event: job_accepted\ndata: ${JSON.stringify({ jobId })}\n\n`))
+        controller.enqueue(
+          enc.encode(`event: prompt\ndata: ${JSON.stringify({ formated: [{ role: 'user', content: 'hi' }] })}\n\n`),
+        )
+        controller.enqueue(
+          enc.encode(
+            `event: info\ndata: ${JSON.stringify({ generationId: jobId, generationInfo: { model: 'm', generationId: jobId } })}\n\n`,
+          ),
+        )
+        controller.enqueue(
+          enc.encode(
+            `event: done\ndata: ${JSON.stringify({ result: 'reply', generationId: jobId, generationInfo: { generationId: jobId } })}\n\n`,
+          ),
+        )
+        controller.close()
+      },
+    })
+    return new Response(stream, {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    })
+  }
+
   function stubReattachFetch(
     jobId: string,
     opts: { hang?: boolean } = {},
@@ -1622,8 +1648,92 @@ describe('requestServerChatGeneration reattach mode (Phase 7)', () => {
     if (served.status === 'ok') {
       await expect(served.terminal).resolves.toMatchObject({ status: 'error', reattachOutcome: 'aborted' })
     }
-    await new Promise((r) => setTimeout(r, 5))
-    expect(deletes).toContain('/api/v1/generate/chat/job-reattach')
+    await vi.waitFor(() => {
+      expect(deletes).toEqual(['/api/v1/generate/chat/job-reattach'])
+    })
+  })
+
+  it('cancels exactly once when abort wins before the reattach response opens', async () => {
+    const deletes: string[] = []
+    let markGetStarted!: () => void
+    const getStarted = new Promise<void>((resolve) => {
+      markGetStarted = resolve
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit): Promise<Response> => {
+        if (init?.method === 'DELETE') {
+          deletes.push(url)
+          return Promise.resolve(new Response(JSON.stringify({ success: true }), { status: 200 }))
+        }
+        markGetStarted()
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), {
+            once: true,
+          })
+        })
+      }),
+    )
+    const controller = new AbortController()
+    const pending = requestServerChatGeneration(baseInput, controller.signal, 'job-before-open')
+    await getStarted
+
+    controller.abort()
+
+    await expect(pending).resolves.toMatchObject({ status: 'aborted' })
+    await vi.waitFor(() => {
+      expect(deletes).toEqual(['/api/v1/generate/chat/job-before-open'])
+    })
+  })
+
+  it('cancels only Chat A while two chat reattach responses are pending', async () => {
+    const deletes: string[] = []
+    const openResolvers = new Map<string, (response: Response) => void>()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit): Promise<Response> => {
+        if (init?.method === 'DELETE') {
+          deletes.push(url)
+          return Promise.resolve(new Response(JSON.stringify({ success: true }), { status: 200 }))
+        }
+        const jobId = url.split('/').at(-2) ?? ''
+        return new Promise((resolve, reject) => {
+          openResolvers.set(jobId, resolve)
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), {
+            once: true,
+          })
+        })
+      }),
+    )
+    const controllerA = new AbortController()
+    const controllerB = new AbortController()
+    const pendingA = requestServerChatGeneration(
+      { ...baseInput, chatId: 'chat-a', characterId: 'char-a' },
+      controllerA.signal,
+      'job-a',
+    )
+    const pendingB = requestServerChatGeneration(
+      { ...baseInput, chatId: 'chat-b', characterId: 'char-b' },
+      controllerB.signal,
+      'job-b',
+    )
+    await vi.waitFor(() => expect([...openResolvers.keys()].sort()).toEqual(['job-a', 'job-b']))
+
+    controllerA.abort()
+
+    await expect(pendingA).resolves.toMatchObject({ status: 'aborted' })
+    await vi.waitFor(() => {
+      expect(deletes).toEqual(['/api/v1/generate/chat/job-a'])
+    })
+    expect(controllerB.signal.aborted).toBe(false)
+
+    openResolvers.get('job-b')?.(completedReattachResponse('job-b'))
+    const servedB = await pendingB
+    expect(servedB.status).toBe('ok')
+    if (servedB.status === 'ok') {
+      await expect(servedB.terminal).resolves.toMatchObject({ status: 'done', reattachOutcome: 'completed' })
+    }
+    expect(deletes).toEqual(['/api/v1/generate/chat/job-a'])
   })
 
   it('classifies a terminal SSE error as a terminal reattach failure', async () => {
@@ -1672,10 +1782,12 @@ describe('requestServerChatGeneration reattach mode (Phase 7)', () => {
     })
   })
 
-  it('classifies a failed reattach fetch as a retryable transport failure', async () => {
+  it('classifies a network disconnect as retryable without cancelling durable work', async () => {
+    const calls: Array<{ url: string; method: string }> = []
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => {
+      vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push({ url, method: init?.method ?? 'GET' })
         throw new Error('network unavailable')
       }),
     )
@@ -1685,5 +1797,6 @@ describe('requestServerChatGeneration reattach mode (Phase 7)', () => {
       error: 'Network error: network unavailable',
       reattachOutcome: 'retryable_transport_failure',
     })
+    expect(calls).toEqual([{ url: '/api/v1/generate/chat/job-offline/stream', method: 'GET' }])
   })
 })
