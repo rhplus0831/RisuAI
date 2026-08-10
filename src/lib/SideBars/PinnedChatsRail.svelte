@@ -32,7 +32,9 @@
           {item.chatName}
         </span>
         {#if generatingChatIds.has(item.chatId)}
-          <GenerationIndicator label={`${language.generatingMessage}: ${item.chatName}`} />
+          <GenerationIndicator
+            label={`${language.generatingMessage}: ${item.chatName}`}
+            onActivate={() => onOpen(item)} />
         {/if}
       </div>
     {/each}

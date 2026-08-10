@@ -3,9 +3,27 @@
 
   interface Props {
     label: string
+    onActivate: () => void
   }
 
-  let { label }: Props = $props()
+  let { label, onActivate }: Props = $props()
+
+  function forwardActivation(node: HTMLSpanElement, activate: () => void) {
+    let currentActivate = activate
+    const handleClick = (event: MouseEvent) => {
+      event.stopPropagation()
+      currentActivate()
+    }
+    node.addEventListener('click', handleClick)
+    return {
+      update(nextActivate: () => void) {
+        currentActivate = nextActivate
+      },
+      destroy() {
+        node.removeEventListener('click', handleClick)
+      },
+    }
+  }
 </script>
 
 <span
@@ -13,6 +31,7 @@
   role="status"
   aria-label={label}
   title={label}
+  use:forwardActivation={onActivate}
   data-risu-generation-indicator>
   <LoaderCircleIcon size={12} class="risu-ongoing-pulse animate-spin" aria-hidden="true" />
 </span>

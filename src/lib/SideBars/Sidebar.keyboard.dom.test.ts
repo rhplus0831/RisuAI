@@ -70,6 +70,10 @@ import Sidebar from './Sidebar.svelte'
 import { language } from 'src/lang'
 import { setDatabaseLite } from 'src/ts/storage/database.svelte'
 import { botMakerMode, DynamicGUI, PlaygroundStore, selectedCharID, settingsOpen } from 'src/ts/stores.svelte'
+import {
+  beginChatGenerationActivity,
+  resetChatGenerationActivitiesForTests,
+} from 'src/ts/process/generationActivity.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -93,6 +97,33 @@ function seedSidebarDatabase(options: { enableDevTools?: boolean } = {}) {
     roundIcons: false,
     enableDevTools: options.enableDevTools ?? false,
   } as never)
+}
+
+function seedGeneratingSidebarDatabase() {
+  setDatabaseLite({
+    characterOrder: ['char-a'],
+    characters: [
+      {
+        chaId: 'char-a',
+        name: 'Alpha',
+        image: '',
+        chatPage: 0,
+        chats: [{ id: 'chat-a', name: 'Pinned Alpha', pinned: true, message: [] }],
+      },
+    ],
+    hamburgerButtonBottom: false,
+    menuSideBar: false,
+    roundIcons: false,
+  } as never)
+  beginChatGenerationActivity({
+    target: {
+      selectedCharID: 0,
+      chatPage: 0,
+      characterId: 'char-a',
+      chatId: 'chat-a',
+    },
+    kind: 'message',
+  })
 }
 
 function seedFolderSidebarDatabase(
@@ -163,6 +194,7 @@ beforeEach(() => {
   PlaygroundStore.set(0)
   DynamicGUI.set(false)
   botMakerMode.set(false)
+  resetChatGenerationActivitiesForTests()
   seedSidebarDatabase()
 })
 
@@ -175,6 +207,7 @@ afterEach(() => {
   document.body.innerHTML = ''
   selectedCharID.set(-1)
   setDatabaseLite({} as never)
+  resetChatGenerationActivitiesForTests()
 })
 
 describe('Sidebar character keyboard activation', () => {
@@ -268,6 +301,45 @@ describe('Sidebar character keyboard activation', () => {
 
     expect(menuButton!.getAttribute('aria-expanded')).toBe('false')
     expect(characterControls!.hasAttribute('inert')).toBe(false)
+  })
+})
+
+describe('Sidebar generation indicator pointer activation', () => {
+  it('activates the character exactly once when its generation indicator is clicked', async () => {
+    seedGeneratingSidebarDatabase()
+    component = mount(Sidebar, { target })
+    await tick()
+
+    const avatar = target.querySelector<HTMLElement>('[data-char-id="char-a"]')
+    const row = avatar?.closest<HTMLElement>('[draggable="true"]')
+    const indicator = row?.querySelector<HTMLElement>('[data-risu-generation-indicator]')
+    expect(indicator).toBeTruthy()
+    expect(indicator!.getAttribute('role')).toBe('status')
+    expect(indicator!.getAttribute('title')).toBe(`${language.generatingMessage}: Alpha`)
+
+    indicator!.click()
+    await tick()
+
+    expect(sidebarKeyboardMocks.navigate).toHaveBeenCalledTimes(1)
+    expect(sidebarKeyboardMocks.navigate).toHaveBeenCalledWith('/character/char-a')
+  })
+
+  it('activates the pinned chat exactly once when its generation indicator is clicked', async () => {
+    seedGeneratingSidebarDatabase()
+    component = mount(Sidebar, { target })
+    await tick()
+
+    const pinnedChat = target.querySelector<HTMLElement>('[data-risu-pinned-chat="chat-a"]')
+    const indicator = pinnedChat?.querySelector<HTMLElement>('[data-risu-generation-indicator]')
+    expect(indicator).toBeTruthy()
+    expect(indicator!.getAttribute('role')).toBe('status')
+    expect(indicator!.getAttribute('title')).toBe(`${language.generatingMessage}: Pinned Alpha`)
+
+    indicator!.click()
+    await tick()
+
+    expect(sidebarKeyboardMocks.navigate).toHaveBeenCalledTimes(1)
+    expect(sidebarKeyboardMocks.navigate).toHaveBeenCalledWith('/character/char-a/chat-a')
   })
 })
 

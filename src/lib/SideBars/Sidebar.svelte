@@ -756,9 +756,15 @@
             {/if}
           </div>
           {#if char.type === 'normal' && characterIsGenerating(char.index)}
-            <GenerationIndicator label={`${language.generatingMessage}: ${char.name}`} />
+            <GenerationIndicator
+              label={`${language.generatingMessage}: ${char.name}`}
+              onActivate={() => openCharacterRoute(char.index)} />
           {:else if char.type === 'folder' && !openFolders.includes(char.id) && characterFolderIsGenerating(char.folder.map((item) => item.index))}
-            <GenerationIndicator label={`${language.generatingMessage}: ${char.name}`} />
+            <GenerationIndicator
+              label={`${language.generatingMessage}: ${char.name}`}
+              onActivate={() => {
+                if (char.type === 'folder') void toggleCharacterFolder(char)
+              }} />
           {/if}
         </div>
         {#if char.type === 'folder' && openFolders.includes(char.id)}
@@ -825,7 +831,9 @@
                       onClick={() => openCharacterRoute(char2.index)} />
                   </div>
                   {#if characterIsGenerating(char2.index)}
-                    <GenerationIndicator label={`${language.generatingMessage}: ${char2.name}`} />
+                    <GenerationIndicator
+                      label={`${language.generatingMessage}: ${char2.name}`}
+                      onActivate={() => openCharacterRoute(char2.index)} />
                   {/if}
                 </div>
                 <div
