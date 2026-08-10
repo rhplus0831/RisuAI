@@ -636,6 +636,8 @@ async function openCharacterRoute(
     selectedCharID.set(-1)
     settingsOpen.set(false)
     PlaygroundStore.set(0)
+    OpenRealmStore.set(false)
+    commitPath('/', { replace: true, stateDriven: true })
     return
   }
 

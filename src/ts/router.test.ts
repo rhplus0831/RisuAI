@@ -809,6 +809,89 @@ describe('router character route freshness', () => {
     expect(router.hasPendingRouteApplication()).toBe(false)
   })
 
+  it('canonicalizes a missing character to home during generation and preserves back-forward history', async () => {
+    const router = await importRouterAt('/character/char-a/chat-owner')
+    const stores = await import('./stores.svelte')
+    const { activeGenerationTarget, doingChat } = await import('./process/index.svelte')
+    const { getResourceDatabase, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    replaceResourceDatabase({
+      characters: [
+        {
+          chaId: 'char-a',
+          chatPage: 0,
+          chats: [{ id: 'chat-owner', name: 'Generating chat', message: [] }],
+        },
+      ],
+    } as any)
+    routerMocks.findCharacterIndexbyId.mockImplementation(
+      (characterId: string) =>
+        getResourceDatabase().characters?.findIndex((character: any) => character?.chaId === characterId) ?? -1,
+    )
+    routerMocks.changeChar.mockImplementation(async (index: number) => {
+      stores.selectedCharID.set(index)
+    })
+    stores.selectedCharID.set(0)
+    router.installRouter()
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
+
+    const generationTarget = {
+      selectedCharID: 0,
+      chatPage: 0,
+      characterId: 'char-a',
+      chatId: 'chat-owner',
+    }
+    activeGenerationTarget.set(generationTarget)
+    doingChat.set(true)
+    stores.settingsOpen.set(true)
+    stores.PlaygroundStore.set(14)
+    stores.OpenRealmStore.set(true)
+    const replaceState = vi.spyOn(window.history, 'replaceState')
+
+    router.navigate('/character/deleted-id/deleted-chat')
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
+
+    expect(window.location.pathname).toBe('/')
+    expect(get(router.currentRoute)).toEqual({ kind: 'home', path: '/' })
+    expect(replaceState).toHaveBeenCalledWith(null, '', '/')
+    expect(get(stores.selectedCharID)).toBe(-1)
+    expect(get(stores.settingsOpen)).toBe(false)
+    expect(get(stores.PlaygroundStore)).toBe(0)
+    expect(get(stores.OpenRealmStore)).toBe(false)
+    expect(get(activeGenerationTarget)).toEqual(generationTarget)
+    expect(get(doingChat)).toBe(true)
+    expect(routerMocks.changeChar).not.toHaveBeenCalled()
+    expect(routerMocks.changeChatTo).not.toHaveBeenCalled()
+    expect(router.consumeStateDrivenRouteUpdate()).toBe(true)
+
+    window.history.back()
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
+
+    expect(window.location.pathname).toBe('/character/char-a/chat-owner')
+    expect(get(router.currentRoute)).toMatchObject({
+      kind: 'character',
+      chaId: 'char-a',
+      chatId: 'chat-owner',
+    })
+    expect(get(stores.selectedCharID)).toBe(0)
+    expect(get(activeGenerationTarget)).toEqual(generationTarget)
+    expect(get(doingChat)).toBe(true)
+
+    window.history.forward()
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
+
+    expect(window.location.pathname).toBe('/')
+    expect(get(router.currentRoute)).toEqual({ kind: 'home', path: '/' })
+    expect(get(stores.selectedCharID)).toBe(-1)
+    expect(get(activeGenerationTarget)).toEqual(generationTarget)
+    expect(get(doingChat)).toBe(true)
+    expect(routerMocks.changeChatTo).not.toHaveBeenCalled()
+    replaceState.mockRestore()
+  })
+
   it('does not let a stale character route clear a newer pending character route', async () => {
     const router = await importRouterAt('/character/char-a/chat-a')
     const stores = await import('./stores.svelte')
