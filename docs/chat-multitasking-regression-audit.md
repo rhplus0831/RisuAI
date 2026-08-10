@@ -68,8 +68,8 @@ overlap note explicitly says otherwise.
 | MTC-01 | P1 | Resolved | Continue an accepted send after navigation | Composer/generation handoff | None |
 | MTC-02 | P1 | Resolved | Recover an append when the server rejects a duplicate same-chat generation | Composer/server lock | Coordinate with MTC-01 |
 | MTC-03 | P1 | Resolved | Preserve the plugin send target across awaits | Plugin API | Prefer MTC-01 target contract |
-| MTC-04 | P1 | Ready | Stop retrying terminal reattach failures | Reattach lifecycle | None |
-| MTC-05 | P1 | Ready | Cancel a reattached durable job before its response opens | Reattach cancellation | Coordinate with MTC-04 |
+| MTC-04 | P1 | Resolved | Stop retrying terminal reattach failures | Reattach lifecycle | None |
+| MTC-05 | P1 | In progress | Cancel a reattached durable job before its response opens | Reattach cancellation | Coordinate with MTC-04 |
 | MTC-06 | P2 | Ready | Scope Draft/BTW hook activity and cancellation by chat | Input hooks/composer | None |
 | MTC-07 | P2 | Ready | Make reroll candidates chat-scoped | Reroll navigation | None |
 | MTC-08 | P2 | Ready | Make live generation progress chat-scoped | Progress UI | None |
@@ -307,9 +307,15 @@ failure. Preserve the existing queued-append no-duplicate contract.
 ## MTC-04 — Stop retrying terminal reattach failures
 
 **Priority:** P1
-**Status:** Ready
-**Owner:** Unassigned
-**Resolution:** —
+**Status:** Resolved
+**Owner:** Codex (delegated 2026-08-10)
+**Resolution:** `340d80238` — typed `GenerationReattachOutcome` flows via a
+`sendChat` `onReattachOutcome` callback; only transport failures restore the
+job (250ms/1s/4s bounded backoff, four attempts); bootstrap projections alone
+reset a job's retry budget. Tests: `reattach.test.ts` (terminal, 404,
+transport restore, bounded backoff, activity settlement, unclassified
+exception), `serverChat.test.ts` + `sendChat.serverPreview.test.ts` (typed
+outcome bridges).
 
 ### Problem
 
@@ -361,8 +367,8 @@ activity-change spin.
 ## MTC-05 — Cancel a reattached durable job before its response opens
 
 **Priority:** P1
-**Status:** Ready
-**Owner:** Unassigned
+**Status:** In progress
+**Owner:** Codex (delegated 2026-08-10)
 **Resolution:** —
 
 ### Problem
@@ -988,3 +994,4 @@ Record completed items here as they land.
 | MTC-01 | `b5e0be10d` | `acceptedSendCoordinator.test.ts`; `DefaultChatScreen.loadPages.test.ts`; `sendChatContext.test.ts`; `sendChat.serverPreview.test.ts` | Coordinator exposes seams for MTC-02 (409 recovery metadata) and MTC-03 (plugin-passed target). |
 | MTC-02 | `56b138332` | `acceptedSendCoordinator.test.ts`; `DefaultChatScreen.loadPages.test.ts`; `sendChat.serverPreview.test.ts`; `serverChat.test.ts`; `durableGeneration.test.ts` | Bootstrap refresh uses a non-reattach-triggering variant; reattach lifecycle changes stay in MTC-04/05. |
 | MTC-03 | `1f6e6b670` | `v3.svelte.test.ts`; `acceptedSendCoordinator.test.ts` | Queued plugin sends now generate after settlement instead of returning early success. |
+| MTC-04 | `340d80238` | `reattach.test.ts`; `serverChat.test.ts`; `sendChat.serverPreview.test.ts` | Unclassified exceptions consume the job; bootstrap is the sole retry-budget reset authority. |
