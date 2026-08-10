@@ -711,6 +711,37 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
+describe('empty synthetic greeting identity', () => {
+  it('keeps the character icon and name beside the empty-chat prompt', async () => {
+    seedDatabase(0, null as unknown as string)
+    components.push(
+      mount(Chat, {
+        target,
+        props: {
+          message: '',
+          name: 'Template Bot',
+          isLastMemory: false,
+          idx: -1,
+          role: 'char',
+          totalLength: 0,
+          firstMessage: true,
+          img: 'background-image:url("character-icon.png");',
+          rerollIcon: false,
+          disabled: false,
+        },
+      }) as MountedComponent,
+    )
+    await settle()
+
+    const greeting = target.querySelector<HTMLElement>('.risu-chat[data-chat-index="-1"]')
+    expect(greeting?.textContent).toContain('noMessage')
+    expect(greeting?.textContent).toContain('Template Bot')
+    expect(greeting?.querySelector<HTMLElement>('.shadow-lg.bg-textcolor2')?.style.backgroundImage).toContain(
+      'character-icon.png',
+    )
+  })
+})
+
 describe('customHTML template memo', () => {
   it('L31: repeated customHTML rows share one parsed template per template version', async () => {
     seedDatabase(4)

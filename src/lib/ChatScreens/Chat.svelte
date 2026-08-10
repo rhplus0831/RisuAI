@@ -1413,6 +1413,7 @@
   let blankMessage = $derived(
     ((message === '{{none}}' || message === '{{blank}}' || message === '') && idx === -1) || isComment,
   )
+  let showSenderIdentity = $derived(!isComment)
   let messageRowId = $derived.by(() => {
     const character = getDatabase().characters?.[selIdState.selId]
     const chatPage = character?.chatPage
@@ -2852,7 +2853,7 @@
 {/snippet}
 
 {#snippet senderIcon(options: { rounded?: boolean; styleFix?: string } = {})}
-  {#if !blankMessage && !$HideIconStore}
+  {#if showSenderIdentity && !$HideIconStore}
     {#if getDatabase().characters[selIdState.selId]?.chaId === '§playground'}
       <div
         class="shadow-lg border-textcolor2 border flex justify-center items-center text-textcolor2"
@@ -3167,7 +3168,7 @@
                   })
                 }}><ArrowLeftRightIcon size="18" /></button>
             </span>
-          {:else if !blankMessage && !$HideIconStore}
+          {:else if showSenderIdentity && !$HideIconStore}
             <div class="chat-width text-xl unmargin text-textcolor flex items-center">
               <span>{name}</span>
             </div>
