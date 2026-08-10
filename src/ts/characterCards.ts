@@ -78,6 +78,7 @@ import {
   ensureClientScriptDefinitionIds,
   ensureClientTriggerDefinitionIds,
 } from './server/scriptDefinitionBridge.svelte'
+import { serverAssetIdFromReference } from './server/assets'
 
 export const hubURL = '/api/v1/hub'
 export const CHARACTER_CARD_INCOMPLETE_IMPORT_ERROR = 'character_card_incomplete_import'
@@ -100,6 +101,42 @@ function oversizedDataUriImportError(index: number, maxBase64Length: number): Er
     `${CHARACTER_CARD_INCOMPLETE_IMPORT_ERROR}: data.assets[${index}] exceeds the ` +
       `${formatCharXEntrySizeLimit(maxBase64Length)} inline data-URI limit`,
   )
+}
+
+function rewritePrebuiltAssetExcludeReference(risuai: unknown, sourceReference: string, targetReference: string): void {
+  if (!risuai || typeof risuai !== 'object') return
+  const extension = risuai as { prebuiltAssetExclude?: unknown }
+  if (!Array.isArray(extension.prebuiltAssetExclude)) return
+  extension.prebuiltAssetExclude = extension.prebuiltAssetExclude.map((reference) =>
+    reference === sourceReference ? targetReference : reference,
+  )
+}
+
+function normalizeImportedPrebuiltAssetExcludes(
+  value: unknown,
+  additionalAssets: readonly [string, string, string][],
+  importedAssetReferences: ReadonlyMap<string, string>,
+): string[] {
+  if (!Array.isArray(value)) return []
+
+  const availableAssetIds = new Set(additionalAssets.map((asset) => asset[1]))
+  const normalized: string[] = []
+  const seen = new Set<string>()
+  for (const reference of value) {
+    if (typeof reference !== 'string') continue
+    const canonicalReference = serverAssetIdFromReference(reference)
+    const assetId =
+      importedAssetReferences.get(reference) ??
+      (availableAssetIds.has(reference)
+        ? reference
+        : canonicalReference && availableAssetIds.has(canonicalReference)
+          ? canonicalReference
+          : undefined)
+    if (!assetId || seen.has(assetId)) continue
+    seen.add(assetId)
+    normalized.push(assetId)
+  }
+  return normalized
 }
 
 export async function authenticatedHubFetch(input: RequestInfo | URL, init: RequestInit = {}) {
@@ -736,6 +773,7 @@ async function importCharacterCardSpec(
   let sdData = defaultSdDataFunc()
   let extAssets: [string, string, string][] = []
   let notificationImage = ''
+  const importedAssetReferences = new Map<string, string>()
   let ccAssets: {
     type: string
     uri: string
@@ -785,6 +823,7 @@ async function importCharacterCardSpec(
       const importedAdditionalAssets: ([string, string, string] | undefined)[] = []
       const additionalAssetUploads: {
         targetIndex: number
+        sourceReference: string
         data: Uint8Array
         fileName: string
       }[] = []
@@ -801,16 +840,19 @@ async function importCharacterCardSpec(
         let fileName = ''
         if (risuext.additionalAssets[i].length >= 3) fileName = risuext.additionalAssets[i][2]
         if (risuext.additionalAssets[i][1].startsWith('__asset:')) {
-          const key = risuext.additionalAssets[i][1].replace('__asset:', '')
+          const sourceReference = risuext.additionalAssets[i][1]
+          const key = sourceReference.replace('__asset:', '')
           const imgp = assetDict[key]
           if (!imgp) {
             throw new Error('Error while importing, asset ' + key + ' not found')
           }
           importedAdditionalAssets[i] = [risuext.additionalAssets[i][0], imgp, fileName]
+          importedAssetReferences.set(sourceReference, imgp)
           continue
         }
         additionalAssetUploads.push({
           targetIndex: i,
+          sourceReference: risuext.additionalAssets[i][1],
           data:
             mode === 'hub'
               ? await getHubResources(risuext.additionalAssets[i][1])
@@ -826,11 +868,13 @@ async function importCharacterCardSpec(
       )
       for (let i = 0; i < additionalAssetUploads.length; i++) {
         const targetIndex = additionalAssetUploads[i].targetIndex
+        const assetId = savedAdditionalAssets[i]
         importedAdditionalAssets[targetIndex] = [
           risuext.additionalAssets[targetIndex][0],
-          savedAdditionalAssets[i],
+          assetId,
           additionalAssetUploads[i].fileName,
         ]
+        importedAssetReferences.set(additionalAssetUploads[i].sourceReference, assetId)
       }
       extAssets.push(...importedAdditionalAssets.filter((entry): entry is [string, string, string] => !!entry))
     }
@@ -951,6 +995,11 @@ async function importCharacterCardSpec(
       const savedDataUriAssets = await saveAssets(dataUriUploads.map((asset) => ({ data: asset.data })))
       for (let i = 0; i < dataUriUploads.length; i++) {
         resolvedAssetUris[dataUriUploads[i].targetIndex] = savedDataUriAssets[i]
+      }
+
+      for (let i = 0; i < data.assets.length; i++) {
+        const resolvedAssetUri = resolvedAssetUris[i]
+        if (resolvedAssetUri) importedAssetReferences.set(data.assets[i].uri, resolvedAssetUri)
       }
 
       for (let i = 0; i < data.assets.length; i++) {
@@ -1093,7 +1142,11 @@ async function importCharacterCardSpec(
     defaultVariables: data?.extensions?.risuai?.defaultVariables ?? '',
     chatFolders: [],
     prebuiltAssetCommand: data?.extensions?.risuai?.prebuiltAssetCommand ?? '',
-    prebuiltAssetExclude: data?.extensions?.risuai?.prebuiltAssetExclude ?? [],
+    prebuiltAssetExclude: normalizeImportedPrebuiltAssetExcludes(
+      risuext?.prebuiltAssetExclude,
+      extAssets,
+      importedAssetReferences,
+    ),
     prebuiltAssetStyle: data?.extensions?.risuai?.prebuiltAssetStyle ?? '',
   }
 
@@ -1463,7 +1516,8 @@ export async function exportCharacterCard(
             msg: 'Loading... (Adding Assets)',
             submsg: ((i / card.data.assets.length) * 100).toFixed(2),
           })
-          let key = card.data.assets[i].uri
+          const sourceReference = card.data.assets[i].uri
+          let key = sourceReference
           let rData: Uint8Array
           if (key === 'ccdefault:' && type !== 'png') {
             key = char.image
@@ -1599,6 +1653,7 @@ export async function exportCharacterCard(
             }
             await writer.write(path, Buffer.from(await compressImage(rData)))
           }
+          rewritePrebuiltAssetExcludeReference(card.data.extensions.risuai, sourceReference, card.data.assets[i].uri)
         }
       }
       if (type === 'json') {

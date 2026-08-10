@@ -203,7 +203,7 @@ vi.mock('./process/files/inlays', () => ({
 }))
 
 vi.mock('./process/modules', () => ({
-  exportModule: vi.fn(),
+  exportModule: vi.fn(async () => new Uint8Array([1])),
   readModule: vi.fn(async () => charxState.module),
 }))
 
@@ -642,6 +642,33 @@ describe('PNG character card import', () => {
     expect(alertState.alertNormal).toHaveBeenCalledWith('Imported character')
   })
 
+  it('maps packaged prebuilt exclusions to imported asset ids and drops stale legacy paths', async () => {
+    const packagedReference = 'embeded://assets/other/image/bonus.webp'
+    const staleLegacyReference = `assets/${'b'.repeat(64)}.webp`
+    const card = characterCardFixture('Prebuilt Exclusion CharX', {
+      prebuiltAssetExclude: [packagedReference, staleLegacyReference, packagedReference],
+    })
+    card.data.assets = [
+      {
+        type: 'x-risu-asset',
+        uri: packagedReference,
+        name: 'bonus',
+        ext: 'webp',
+      },
+    ]
+    const archive = createCharXArchive({
+      'card.json': Buffer.from(JSON.stringify(card)),
+      'assets/other/image/bonus.webp': new Uint8Array([1, 2, 3]),
+    })
+
+    await importCharacterProcess({ name: 'prebuilt-exclusion.charx', data: archive })
+
+    const imported = dbState.db.characters[0]
+    expect(imported.additionalAssets).toEqual([['bonus', 'asset-0-010203', 'webp']])
+    expect(imported.prebuiltAssetExclude).toEqual(['asset-0-010203'])
+    expect(characterCommandState.dispatchCreateCharacter).toHaveBeenCalledWith(imported, expect.any(Object))
+  })
+
   it('surfaces excluded CharX entries through the importCharacter alert boundary', async () => {
     const cardBytes = Buffer.from(JSON.stringify(characterCardFixture('Alert Boundary')))
     const archive = concatBytes([
@@ -664,7 +691,7 @@ describe('PNG character card import', () => {
   })
 })
 
-describe('v2 character card export assets', () => {
+describe('character card export assets', () => {
   it('writes cloned emotion and additional assets as PNG chunks without mutating source arrays', async () => {
     const char = createExportCharacter()
     const originalEmotions = structuredClone(char.emotionImages)
@@ -687,6 +714,23 @@ describe('v2 character card export assets', () => {
     const card = JSON.parse(Buffer.from(chunks.chara, 'base64').toString('utf-8'))
     expect(card.data.extensions.risuai.emotions).toEqual([['happy', '__asset:1']])
     expect(card.data.extensions.risuai.additionalAssets).toEqual([['theme', '__asset:2', 'css']])
+  })
+
+  it('rewrites v3 CharX prebuilt exclusions to the packaged asset URI', async () => {
+    const char = createExportCharacter()
+    char.prebuiltAssetExclude = ['theme-asset']
+    const writer = new CaptureWriter()
+    globalApiState.readImage.mockImplementation(async (key: string) => readExportFixtureAsset(key))
+
+    await exportCharacterCard(char, 'charx', { spec: 'v3', writer: writer as any })
+
+    expect(alertState.alertError).not.toHaveBeenCalled()
+    const archive = new Uint8Array(Buffer.concat(writer.chunks.map((chunk) => Buffer.from(chunk))))
+    const entries = fflate.unzipSync(archive)
+    const card = JSON.parse(Buffer.from(entries['card.json']).toString('utf-8'))
+    const additionalAsset = card.data.assets.find((asset: { name?: string }) => asset.name === 'theme')
+    expect(additionalAsset.uri).toMatch(/^embeded:\/\/assets\/other\/other\/theme\.css$/)
+    expect(card.data.extensions.risuai.prebuiltAssetExclude).toEqual([additionalAsset.uri])
   })
 
   it('inlines v2 JSON export assets instead of leaving dangling chunk references', async () => {

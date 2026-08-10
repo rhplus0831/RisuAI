@@ -213,6 +213,12 @@ is available immediately after selection. This is guarded for spec and off-spec
 imports by `src/ts/characterCards.pngImport.test.ts` and
 `src/ts/characters.changeChar.test.ts`.
 
+Packaged-card export rewrites prebuilt-asset exclusion references together with
+their asset references. Import keeps only exclusions that resolve to imported
+additional assets and converts them to server asset ids; stale legacy paths are
+dropped because they cannot match a character asset or satisfy Fastify's asset
+reference validation.
+
 Character-card import preserves author-supplied activation configuration on
 Agent-only lore entries: Always Active, primary and secondary keys, selective
 activation, and regex mode survive instead of being normalized away. Persisted
