@@ -66,7 +66,7 @@ overlap note explicitly says otherwise.
 | ID | Priority | Status | Work item | Primary area | Dependencies |
 | --- | --- | --- | --- | --- | --- |
 | MTC-01 | P1 | Resolved | Continue an accepted send after navigation | Composer/generation handoff | None |
-| MTC-02 | P1 | Ready | Recover an append when the server rejects a duplicate same-chat generation | Composer/server lock | Coordinate with MTC-01 |
+| MTC-02 | P1 | Resolved | Recover an append when the server rejects a duplicate same-chat generation | Composer/server lock | Coordinate with MTC-01 |
 | MTC-03 | P1 | Ready | Preserve the plugin send target across awaits | Plugin API | Prefer MTC-01 target contract |
 | MTC-04 | P1 | Ready | Stop retrying terminal reattach failures | Reattach lifecycle | None |
 | MTC-05 | P1 | Ready | Cancel a reattached durable job before its response opens | Reattach cancellation | Coordinate with MTC-04 |
@@ -180,9 +180,16 @@ append, or restore Chat A's draft over newer text typed after the send.
 ## MTC-02 — Recover an append rejected by the same-chat generation lock
 
 **Priority:** P1
-**Status:** Ready
-**Owner:** Unassigned
-**Resolution:** —
+**Status:** Resolved
+**Owner:** Codex (delegated 2026-08-10)
+**Resolution:** `56b138332` — 409 flows as a typed `SendChatFailure`
+(`sendChatFailure.ts`) from the request layer through assembly to the
+coordinator, which records a cause-specific recovery and refreshes the
+`activeGenerationJobs` bootstrap projection. Tests:
+`acceptedSendCoordinator.test.ts` (rejected retry, bootstrap catch-up),
+`DefaultChatScreen.loadPages.test.ts` (lock-cause banner),
+`sendChat.serverPreview.test.ts` (typed failure), `serverChat.test.ts`
+(stable error code), `durableGeneration.test.ts` (append kept after 409).
 **Decision (2026-08-10):** Explicit retryable state, no automatic recovery.
 Rollback is unsafe (the row may have been observed elsewhere) and
 auto-retry-when-free launches unwatched generations and can duel with other
@@ -974,3 +981,4 @@ Record completed items here as they land.
 | ID | Commit | Regression tests | Notes |
 | --- | --- | --- | --- |
 | MTC-01 | `b5e0be10d` | `acceptedSendCoordinator.test.ts`; `DefaultChatScreen.loadPages.test.ts`; `sendChatContext.test.ts`; `sendChat.serverPreview.test.ts` | Coordinator exposes seams for MTC-02 (409 recovery metadata) and MTC-03 (plugin-passed target). |
+| MTC-02 | `56b138332` | `acceptedSendCoordinator.test.ts`; `DefaultChatScreen.loadPages.test.ts`; `sendChat.serverPreview.test.ts`; `serverChat.test.ts`; `durableGeneration.test.ts` | Bootstrap refresh uses a non-reattach-triggering variant; reattach lifecycle changes stay in MTC-04/05. |
