@@ -67,7 +67,7 @@ overlap note explicitly says otherwise.
 | --- | --- | --- | --- | --- | --- |
 | MTC-01 | P1 | Resolved | Continue an accepted send after navigation | Composer/generation handoff | None |
 | MTC-02 | P1 | Resolved | Recover an append when the server rejects a duplicate same-chat generation | Composer/server lock | Coordinate with MTC-01 |
-| MTC-03 | P1 | Ready | Preserve the plugin send target across awaits | Plugin API | Prefer MTC-01 target contract |
+| MTC-03 | P1 | Resolved | Preserve the plugin send target across awaits | Plugin API | Prefer MTC-01 target contract |
 | MTC-04 | P1 | Ready | Stop retrying terminal reattach failures | Reattach lifecycle | None |
 | MTC-05 | P1 | Ready | Cancel a reattached durable job before its response opens | Reattach cancellation | Coordinate with MTC-04 |
 | MTC-06 | P2 | Ready | Scope Draft/BTW hook activity and cancellation by chat | Input hooks/composer | None |
@@ -251,9 +251,14 @@ frees.
 ## MTC-03 — Preserve the plugin send target across awaits
 
 **Priority:** P1
-**Status:** Ready
-**Owner:** Unassigned
-**Resolution:** —
+**Status:** Resolved
+**Owner:** Codex (delegated 2026-08-10)
+**Resolution:** `1f6e6b670` — plugin `sendChat` captures the target before the
+permission await, appends with `expectedTarget`, and routes accepted/queued
+appends through `coordinateAcceptedChatSend`; the API boolean reflects the
+real generation outcome. Tests: `v3.svelte.test.ts` (stale-before-append,
+deferred-append navigation, queued single-generation, settlement failure,
+generation-false).
 
 ### Problem
 
@@ -982,3 +987,4 @@ Record completed items here as they land.
 | --- | --- | --- | --- |
 | MTC-01 | `b5e0be10d` | `acceptedSendCoordinator.test.ts`; `DefaultChatScreen.loadPages.test.ts`; `sendChatContext.test.ts`; `sendChat.serverPreview.test.ts` | Coordinator exposes seams for MTC-02 (409 recovery metadata) and MTC-03 (plugin-passed target). |
 | MTC-02 | `56b138332` | `acceptedSendCoordinator.test.ts`; `DefaultChatScreen.loadPages.test.ts`; `sendChat.serverPreview.test.ts`; `serverChat.test.ts`; `durableGeneration.test.ts` | Bootstrap refresh uses a non-reattach-triggering variant; reattach lifecycle changes stay in MTC-04/05. |
+| MTC-03 | `1f6e6b670` | `v3.svelte.test.ts`; `acceptedSendCoordinator.test.ts` | Queued plugin sends now generate after settlement instead of returning early success. |
