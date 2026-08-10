@@ -79,8 +79,8 @@ overlap note explicitly says otherwise.
 | MTC-12 | P2 | Resolved | Keep preview results owned by their original chat | Prompt preview | Coordinate with MTC-10 |
 | MTC-13 | P3 | Resolved | Prevent generation indicators from intercepting avatar clicks | Sidebar indicators | None |
 | MTC-14 | P3 | Resolved | Make the pinned rail inert with the narrow menu | Sidebar accessibility | None |
-| MTC-15 | P3 | In progress | Expose active pinned-chat state | Sidebar accessibility | None |
-| MTC-16 | P3 | Ready | Localize the unnamed pinned-chat fallback | Sidebar localization | None |
+| MTC-15 | P3 | Resolved | Expose active pinned-chat state | Sidebar accessibility | None |
+| MTC-16 | P3 | In progress | Localize the unnamed pinned-chat fallback | Sidebar localization | None |
 | MTC-17 | P3 | Ready | Canonicalize missing-character routes after multitasking navigation | Router | None |
 
 ## Recommended execution order
@@ -923,9 +923,12 @@ tabbable and clickable behind the menu overlay.
 ## MTC-15 — Expose active pinned-chat state
 
 **Priority:** P3
-**Status:** In progress
+**Status:** Resolved
 **Owner:** Codex (delegated 2026-08-10)
-**Resolution:** —
+**Resolution:** `7d8d18b31` — stable-ID route comparison; single match gets
+`bg-selected` + `aria-current="page"`; non-chat routes match nothing.
+Tests: `PinnedChatsRail.svelte.test.ts` (route changes across two pins,
+character-only, home).
 
 ### Problem
 
@@ -957,8 +960,8 @@ shortcut represents the open chat visually or semantically.
 ## MTC-16 — Localize the unnamed pinned-chat fallback
 
 **Priority:** P3
-**Status:** Ready
-**Owner:** Unassigned
+**Status:** In progress
+**Owner:** Codex (delegated 2026-08-10)
 **Resolution:** —
 
 ### Problem
@@ -1057,3 +1060,4 @@ Record completed items here as they land.
 | MTC-12 | `5f6fdbe01` | `sendChat.serverPreview.test.ts`; `hotkey.preview.test.ts`; `DevTool.svelte.test.ts` | Producer-side discard per the recorded policy; consumer freshness checks retained for the return-to-presentation window. |
 | MTC-13 | `5d69361e6` | `Sidebar.keyboard.dom.test.ts` | Click forwarding chosen over pointer-events-none to keep the tooltip. |
 | MTC-14 | `7d1201ae2` | `Sidebar.keyboard.dom.test.ts` | Inert prop plus a guard for synthetic clicks that bypass inertness. |
+| MTC-15 | `7d8d18b31` | `PinnedChatsRail.svelte.test.ts` | aria-current="page" on the avatar action; bg-selected visual. |
