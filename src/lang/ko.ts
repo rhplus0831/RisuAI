@@ -1879,6 +1879,14 @@ export const languageKorean = {
       '새로고침 복구용 메시지 초안을 저장할 수 없습니다. 이 탭을 닫지 않거나 나가기 전에 텍스트를 복사하세요.',
     queuedSaveFailed: '대기 중인 메시지가 적용되지 않았습니다. 다시 시도할 수 있도록 입력창 초안을 유지했습니다.',
   },
+  acceptedSendRecovery: {
+    generationFailed:
+      '메시지는 저장되었지만 답장을 시작하지 못했습니다. 메시지를 다시 보내지 않고 답장만 다시 시도하세요.',
+    generationInProgress:
+      '메시지는 저장되었지만 다른 기기 또는 세션이 이미 이 채팅에서 생성 중입니다. 해당 생성이 끝난 후 답장을 다시 시도하세요.',
+    retry: '답장 다시 시도',
+    retrying: '다시 시도 중…',
+  },
   fileSelectionStale: '파일을 선택하는 동안 설정이 변경되었습니다. 다시 시도하려면 파일을 다시 선택하세요.',
   alternateGreetingMutationQueued:
     '대체 인사말 변경 사항이 이 기기에 저장되어 대기열에 추가되었습니다. 자동으로 다시 시도합니다.',
