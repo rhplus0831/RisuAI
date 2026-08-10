@@ -83,6 +83,7 @@ describe('sidebar character list signature memo', () => {
         id: 'folder-1',
         name: 'Folder One',
         color: 'blue',
+        askBeforeOpening: false,
         img: 'folder.webp',
       },
     ])
@@ -177,7 +178,7 @@ describe('sidebar character list signature memo', () => {
     }
   })
 
-  it('L44: folder name color image and data changes rebuild the sidebar list', () => {
+  it('L44: folder name, color, opening preference, image, and data changes rebuild the sidebar list', () => {
     const cases: Array<{
       name: string
       folder: SidebarCharacterOrderFolder
@@ -202,6 +203,13 @@ describe('sidebar character list signature memo', () => {
         folder: { ...baseFolder(), imgFile: 'folder-new.webp' },
         assert: (items) => {
           expect(folderItem(items)?.img).toBe('folder-new.webp')
+        },
+      },
+      {
+        name: 'folder opening preference',
+        folder: { ...baseFolder(), askBeforeOpening: true },
+        assert: (items) => {
+          expect(folderItem(items)?.askBeforeOpening).toBe(true)
         },
       },
       {

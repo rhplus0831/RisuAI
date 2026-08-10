@@ -24,7 +24,7 @@ messages on demand.
 | `src/ts/plugins/`                                                                                                                                                              | Browser plugin loading/runtime and Plugin V3 API host. Fastify stores plugin records but does not execute plugins.                                                                                                                                                                                                                    |
 | `src/ts/process/mcp/`                                                                                                                                                          | Browser MCP clients, internal tools, Risu access tools, and plugin MCP clients.                                                                                                                                                                                                                                                       |
 | `src/ts/media/`, `src/ts/parser/`, `src/ts/gui/`, `src/ts/setting/`, `src/ts/translator/`, `src/ts/network/`, `src/ts/kei/`, `src/ts/util/`                                    | Focused helper domains that feed visible UI and tests.                                                                                                                                                                                                                                                                                |
-| `src/ts/stores.svelte.ts`, `src/ts/globalApi.svelte.ts`, `src/ts/characters.ts`, `src/ts/characterCards.ts`, `src/ts/moodLightMode.ts`, `src/ts/moodLightMembership.ts`, `src/ts/hotkey.ts`, `src/ts/lite.ts`, `src/ts/observer.svelte.ts` | Cross-cutting browser stores, compatibility helpers, character/card and Mood Light visibility utilities, hotkeys, lite mode, and observers.                                                                                                                                                                   |
+| `src/ts/stores.svelte.ts`, `src/ts/globalApi.svelte.ts`, `src/ts/characters.ts`, `src/ts/characterCards.ts`, `src/ts/characterFolderOpening.ts`, `src/ts/hotkey.ts`, `src/ts/lite.ts`, `src/ts/observer.svelte.ts` | Cross-cutting browser stores, compatibility helpers, character/card and folder-opening utilities, hotkeys, lite mode, and observers.                                                                                                                                                                   |
 
 Retained compatibility and parity helpers still exist under `src/ts/process/`,
 but they are not a selectable browser-local runtime. `src/ts/platform.ts`
@@ -71,7 +71,7 @@ initializes hotkeys, and removes the preloading element.
    IndexedDB/Web Crypto are available and otherwise fall back to full GETs.
    Retry all four when revisions do not match, then apply the consistent set.
 5. Seed selected-character state only when the persisted character is visible
-   in the tab's Mood Light partition, reset body hydration, record
+   as the selected character, reset body hydration, record
    already-resident lorebook coverage, and hydrate the selected prompt-template
    owner before caching the common resource revision.
 6. Enable guarded resource writes and command-event reconciliation.
@@ -163,47 +163,6 @@ the final message id and serialized-message hash. After both confirmations,
 User-facing export/reset semantics belong in
 [Assets And Saves](../../docs/structure/assets-and-saves.md#chats-and-datasets),
 and the controls belong in [Svelte Navigation UI](svelte-navigation-ui.md).
-
-### Mood Light Visibility Coordination
-
-The browser combines the durable membership projection documented in
-[Server Resources And Bridges](../../docs/structure/server-resources-and-bridges.md#mood-light-resource-projection)
-with a tab-local active-mode bit. `src/ts/moodLightMode.ts` keeps that bit in
-`sessionStorage` under `risu:mood-light-mode`, so reload in the same tab keeps
-the current partition.
-
-`src/ts/moodLightMembership.ts` normalizes the durable shape into direct
-`characterIds` plus folder records containing snapshotted `characterIds` and
-`excludedCharacterIds`. Protection includes the snapshot and a protected
-folder's current children, minus exclusions. The shared filter partitions a
-copy of `characterOrder`; it never reorganizes the durable list, and it promotes
-a visible child to the root when its folder is hidden in the other partition.
-The manager excludes trashed characters and `§playground` from selectable
-targets, while any existing membership still participates in the grid/trash
-partition.
-
-Visibility enforcement is deliberately repeated at async boundaries:
-
-- `src/ts/bootstrap.ts` rejects a persisted `currentChar` that is invisible in
-  the session's current mode.
-- `src/ts/server/selectedCharacterRefresh.ts` preserves selection across root
-  refresh by stable character ID, then accepts the preserved/current index only
-  if it is still visible.
-- `src/ts/router.ts` rejects direct character routes in the hidden partition;
-  `src/ts/characters.ts` checks before and after lazy character-shell hydration,
-  and `src/App.svelte` clears a selection made invisible by a reactive update.
-- `src/ts/hotkey.ts`, `src/lib/SideBars/Sidebar.svelte`,
-  `src/lib/Others/GridCatalog.svelte`,
-  `src/lib/Mobile/MobileCharacters.svelte`, and character-selection alerts in
-  `src/lib/Others/AlertComp.svelte` use the same membership predicate rather
-  than maintaining local copies.
-
-Use `src/ts/moodLightMode.test.ts`, `src/ts/moodLightMembership.test.ts`,
-`src/ts/router.test.ts`, `src/lib/SideBars/Sidebar.keyboard.dom.test.ts`,
-`src/lib/SideBars/MoodLightManageModal.svelte.test.ts`, and
-`src/lib/Others/GridCatalog.svelte.test.ts` when changing this boundary. Visible
-controls and dialog behavior are documented in
-[Svelte Navigation UI](svelte-navigation-ui.md).
 
 ### Loadout Apply Sequencing
 

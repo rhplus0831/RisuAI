@@ -14,12 +14,12 @@ Start with:
 - [`src/docs/svelte-chat-ui.md`](../../src/docs/svelte-chat-ui.md) for chat,
   transcript, message, and composer UI.
 - [`src/docs/svelte-navigation-ui.md`](../../src/docs/svelte-navigation-ui.md)
-  for navigation, sidebars, Mood Light, mobile, and playground UI.
+  for navigation, sidebars, character folders, mobile, and playground UI.
 - [`src/docs/svelte-settings-ui.md`](../../src/docs/svelte-settings-ui.md) for
   settings pages, editors, and settings-specific controls.
 - [`src/docs/client-runtime.md`](../../src/docs/client-runtime.md) for browser
   coordination: Fastify startup, root-resource ownership, async freshness,
-  durable mutation and draft recovery, Mood Light visibility state,
+  durable mutation and draft recovery, character-folder confirmation state,
   generation/reattach, fixed server-operation adapters, and links to canonical
   backend/assets/provider/plugin owners.
 

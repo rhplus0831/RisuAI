@@ -1,7 +1,6 @@
 <script lang="ts" module>
   import { getCharacterDisplayInfo } from 'src/ts/characterDisplayName'
   import { type Database } from '../../ts/storage/database.svelte'
-  import { moodLightProtectedCharacterIds } from 'src/ts/moodLightMembership'
 
   export interface GridCatalogCharacter {
     chaId?: string
@@ -20,18 +19,12 @@
     return search.replace(/ /g, '').toLocaleLowerCase()
   }
 
-  export function formatGridCatalogCharacterLists(
-    db: Database,
-    normalizedSearch: string,
-    moodLightActive = false,
-  ): GridCatalogCharacterLists {
+  export function formatGridCatalogCharacterLists(db: Database, normalizedSearch: string): GridCatalogCharacterLists {
     const active: GridCatalogCharacter[] = []
     const trash: GridCatalogCharacter[] = []
-    const protectedCharacterIds = moodLightProtectedCharacterIds(db)
 
     for (let i = 0; i < db.characters.length; i++) {
       const c = db.characters[i]
-      if (protectedCharacterIds.has(c.chaId ?? '') !== moodLightActive) continue
       const displayInfo = getCharacterDisplayInfo(c)
       if (!normalizeGridCatalogSearch(displayInfo.searchText).includes(normalizedSearch)) {
         continue
@@ -79,7 +72,6 @@
   import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { characterRoutePath, navigate } from 'src/ts/router'
   import { alertError, alertNormal } from 'src/ts/alert'
-  import { moodLightMode } from 'src/ts/moodLightMode'
   interface Props {
     endGrid?: any
   }
@@ -88,7 +80,7 @@
   let search = $state('')
   let selected = $state(3)
   let normalizedSearch = $derived(normalizeGridCatalogSearch(search))
-  let catalogCharacters = $derived(formatGridCatalogCharacterLists(getDatabase(), normalizedSearch, $moodLightMode))
+  let catalogCharacters = $derived(formatGridCatalogCharacterLists(getDatabase(), normalizedSearch))
   let selectedListKind = $derived(
     selected === 0 ? 'grid' : selected === 1 ? 'list' : selected === 2 ? 'trash' : 'simple',
   )

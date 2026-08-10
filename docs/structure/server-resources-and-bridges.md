@@ -367,23 +367,6 @@ taint. One providers read subsumes a simultaneous models invalidation. The
 change it, so the memory group response excludes it and its cross-resource event
 reads the collection separately.
 
-### Mood Light Resource Projection
-
-Mood Light membership arrives with the settings root and belongs to the
-`sidebar` settings group. The UI persists it through
-`persistServerBackedSettingsPatchWithSettlement()`, so the ordinary optimistic
-settings bridge, encrypted outbox, `settings.updated` event, and targeted
-`/api/v1/settings/sidebar` invalidation all apply. Fastify normalizes the
-object in `server/fastify/src/routes/commands.ts`; there is no dedicated Mood
-Light command, resource projection, or per-character persistence field.
-
-Fastify continues to return all character and order rows; no resource endpoint
-filters them by membership or active mode. Browser-only visibility coordination
-belongs in [Client Runtime](../../src/docs/client-runtime.md#mood-light-visibility-coordination).
-The resource projection and normalization are guarded by
-`src/ts/server/settingsGroups.test.ts` and
-`server/fastify/__tests__/commands.test.ts`.
-
 ### Prompt Preset And Legacy Bodies
 
 Modern `promptPresets[].promptTemplate` is the normal prompt-template owner.

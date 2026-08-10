@@ -80,7 +80,7 @@ describe('database defaults', () => {
     expect(database.customColorScheme).not.toBe(database.colorScheme)
     expect(database.autoTranslate).toBeUndefined()
     expect(database.showGlobalLorebookAndRegex).toBe(false)
-    expect(database.moodLightMembership).toEqual({ characterIds: [], folders: [] })
+    expect(database).not.toHaveProperty('moodLightMembership')
     expect(database.loreBook).toEqual([
       expect.objectContaining({ id: 'default-global-lorebook', name: 'My First LoreBook', data: [] }),
     ])
@@ -111,6 +111,21 @@ describe('database defaults', () => {
       scriptAux: {},
       overrides: {},
     })
+  })
+
+  it('retires Mood Light classification without removing its characters', () => {
+    const database = normalizeDatabaseDefaults(
+      {
+        characters: [{ chaId: 'char-formerly-protected', name: 'Visible' }],
+        characterOrder: ['char-formerly-protected'],
+        moodLightMembership: { characterIds: ['char-formerly-protected'], folders: [] },
+      },
+      { providerDefaults: false },
+    )
+
+    expect(database).not.toHaveProperty('moodLightMembership')
+    expect(database.characters).toEqual([expect.objectContaining({ chaId: 'char-formerly-protected' })])
+    expect(database.characterOrder).toEqual(['char-formerly-protected'])
   })
 
   it('normalizes configurable chat load counts', () => {

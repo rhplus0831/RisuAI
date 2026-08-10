@@ -1852,6 +1852,19 @@ describe('character order command helpers', () => {
       { id: 'folder-b', name: 'Folder B', color: 'purple', data: ['char-b'], imgFile: 'asset-old', img: 'old-src' },
     ],
     [
+      'opening confirmation',
+      { askBeforeOpening: true },
+      {
+        id: 'folder-b',
+        name: 'Folder B',
+        color: 'blue',
+        data: ['char-b'],
+        askBeforeOpening: true,
+        imgFile: 'asset-old',
+        img: 'old-src',
+      },
+    ],
+    [
       'image reset',
       { imgFile: null, img: '' },
       { id: 'folder-b', name: 'Folder B', color: 'blue', data: ['char-b'], imgFile: null, img: '' },

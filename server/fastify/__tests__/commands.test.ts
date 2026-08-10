@@ -1551,16 +1551,6 @@ describe('Phase 9-2a scalar settings groups', () => {
               label: 'Loadouts',
             },
           ],
-          moodLightMembership: {
-            characterIds: ['char-private'],
-            folders: [
-              {
-                id: 'folder-private',
-                characterIds: ['char-folder-private'],
-                excludedCharacterIds: [],
-              },
-            ],
-          },
           hotkeys: [{ key: 'a', ctrl: true, action: 'home' }],
         },
       },
@@ -1605,16 +1595,6 @@ describe('Phase 9-2a scalar settings groups', () => {
           label: 'Loadouts',
         },
       ],
-      moodLightMembership: {
-        characterIds: ['char-private'],
-        folders: [
-          {
-            id: 'folder-private',
-            characterIds: ['char-folder-private'],
-            excludedCharacterIds: [],
-          },
-        ],
-      },
       hotkeys: [{ key: 'a', ctrl: true, action: 'home' }],
     })
   })
@@ -7852,6 +7832,7 @@ describe('Phase 9-3a character commands', () => {
             name: 'Folder A',
             color: 'blue',
             data: ['char-b'],
+            askBeforeOpening: true,
           },
           'char-a',
         ],
@@ -7908,6 +7889,7 @@ describe('Phase 9-3a character commands', () => {
         name: 'Folder A',
         color: 'blue',
         data: ['char-b'],
+        askBeforeOpening: true,
       },
     ])
   })
@@ -8117,6 +8099,27 @@ describe('Phase 9-3a character commands', () => {
     })
     expect(reorder.statusCode).toBe(400)
     expect(reorder.json().error).toBe('Duplicate character id in characterOrder: char-a')
+
+    const invalidFolderOpeningPreference = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        characterOrder: [
+          {
+            id: 'folder-a',
+            name: 'Folder A',
+            color: 'blue',
+            data: ['char-a'],
+            askBeforeOpening: 'yes',
+          },
+          'char-b',
+        ],
+      },
+    })
+    expect(invalidFolderOpeningPreference.statusCode).toBe(400)
+    expect(invalidFolderOpeningPreference.json().error).toBe('characterOrder[0].askBeforeOpening must be a boolean')
 
     const embeddedChatCreate = await harness.app.inject({
       method: 'POST',

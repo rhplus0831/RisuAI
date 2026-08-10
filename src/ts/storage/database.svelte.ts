@@ -123,7 +123,6 @@ import {
 } from '../chatLoadPages'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
 import { optimisticallyRehomeGenerationReferences } from '../generationReferenceCascade'
-import { normalizeMoodLightMembership } from '../moodLightMembership'
 import {
   normalizeChatGenerationTogglePresets,
   type ChatGenerationTogglePreset,
@@ -3399,7 +3398,6 @@ export function setDatabase(data: Database) {
   data.useMonacoEditorOnDesktop ??= false
   data.useMonacoEditorOnMobile ??= false
   data.customSidebarItems = normalizeCustomSidebarItems(data.customSidebarItems)
-  data.moodLightMembership = normalizeMoodLightMembership(data.moodLightMembership)
   changeLanguage(data.language)
   setDatabaseLite(data)
 }
@@ -3410,7 +3408,6 @@ export function applyServerResourceDatabase(data: Database, revision?: number) {
     data.autoTranslateNotificationDeferCapSeconds ??= 180
     data.customSidebarItems = normalizeCustomSidebarItems(data.customSidebarItems)
     data.chatGenerationTogglePresets = normalizeChatGenerationTogglePresets(data.chatGenerationTogglePresets)
-    data.moodLightMembership = normalizeMoodLightMembership(data.moodLightMembership)
     normalizeNestedPromptTemplates(data)
     normalizeAgentPresetSettings(data)
     changeLanguage(data.language)
@@ -3443,9 +3440,7 @@ export function mergeServerResourceFields(fields: Partial<Database>) {
             ? normalizeCustomSidebarItems(value)
             : key === 'chatGenerationTogglePresets'
               ? normalizeChatGenerationTogglePresets(value)
-              : key === 'moodLightMembership'
-                ? normalizeMoodLightMembership(value)
-                : value
+              : value
     }
     if (typeof fields.language === 'string') {
       changeLanguage(fields.language)
@@ -3919,7 +3914,6 @@ export interface Database {
   textScreenRounded?: boolean
   textScreenBorder?: string
   characterOrder: (string | folder)[]
-  moodLightMembership?: import('../moodLightMembership').MoodLightMembership
   hordeConfig: hordeConfig
   novelai: {
     token: string
@@ -4687,6 +4681,7 @@ export interface folder {
   data: string[]
   color: string
   id: string
+  askBeforeOpening?: boolean
   imgFile?: string
   img?: string
 }

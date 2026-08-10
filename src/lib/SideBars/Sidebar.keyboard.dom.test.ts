@@ -7,7 +7,6 @@ const sidebarKeyboardMocks = vi.hoisted(() => ({
   alertSelect: vi.fn(),
   navigate: vi.fn(),
   selectSingleFile: vi.fn(),
-  persistServerBackedSettingsPatchWithSettlement: vi.fn(async (): Promise<any> => ({ status: 'accepted' })),
   updateCharacterOrderFolderWithOutcome: vi.fn((): any => ({
     applied: true,
     settlement: Promise.resolve({ status: 'accepted', result: { status: 'ok' } }),
@@ -67,19 +66,10 @@ vi.mock('src/ts/filePicker', () => ({
   selectSingleFile: sidebarKeyboardMocks.selectSingleFile,
 }))
 
-vi.mock('src/ts/server/settingsBridge.svelte', async (importActual) => {
-  const actual = await importActual<typeof import('src/ts/server/settingsBridge.svelte')>()
-  return {
-    ...actual,
-    persistServerBackedSettingsPatchWithSettlement: sidebarKeyboardMocks.persistServerBackedSettingsPatchWithSettlement,
-  }
-})
-
 import Sidebar from './Sidebar.svelte'
 import { language } from 'src/lang'
 import { setDatabaseLite } from 'src/ts/storage/database.svelte'
 import { botMakerMode, DynamicGUI, PlaygroundStore, selectedCharID, settingsOpen } from 'src/ts/stores.svelte'
-import { setMoodLightModeActive } from 'src/ts/moodLightMode'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -105,13 +95,17 @@ function seedSidebarDatabase(options: { enableDevTools?: boolean } = {}) {
   } as never)
 }
 
-function seedFolderSidebarDatabase(order: readonly ('folder-a' | 'folder-b')[] = ['folder-a', 'folder-b']) {
+function seedFolderSidebarDatabase(
+  order: readonly ('folder-a' | 'folder-b')[] = ['folder-a', 'folder-b'],
+  askBeforeOpening = false,
+) {
   const folders = {
     'folder-a': {
       id: 'folder-a',
       name: 'Folder A',
       color: 'blue',
       data: ['char-a'],
+      askBeforeOpening,
     },
     'folder-b': {
       id: 'folder-b',
@@ -169,7 +163,6 @@ beforeEach(() => {
   PlaygroundStore.set(0)
   DynamicGUI.set(false)
   botMakerMode.set(false)
-  setMoodLightModeActive(false)
   seedSidebarDatabase()
 })
 
@@ -181,12 +174,11 @@ afterEach(() => {
   target.remove()
   document.body.innerHTML = ''
   selectedCharID.set(-1)
-  setMoodLightModeActive(false)
   setDatabaseLite({} as never)
 })
 
 describe('Sidebar character keyboard activation', () => {
-  it('confirms entry, exits immediately, and swaps the privacy partition', async () => {
+  it('shows every character even when retired Mood Light metadata is still present', async () => {
     setDatabaseLite({
       characterOrder: ['char-private', 'char-normal'],
       characters: [
@@ -201,60 +193,8 @@ describe('Sidebar character keyboard activation', () => {
     component = mount(Sidebar, { target })
     await tick()
 
-    const addButton = target.querySelector<HTMLButtonElement>(`button[aria-label="${language.addCharacter}"]`)
-    const moodLightButton = target.querySelector<HTMLButtonElement>(`button[aria-label="${language.moodLightEnable}"]`)
-    expect(addButton).toBeTruthy()
-    expect(moodLightButton).toBeTruthy()
-    expect(addButton!.compareDocumentPosition(moodLightButton!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(target.querySelector('[data-char-id="char-private"]')).toBeNull()
+    expect(target.querySelector('[data-char-id="char-private"]')).toBeTruthy()
     expect(target.querySelector('[data-char-id="char-normal"]')).toBeTruthy()
-
-    sidebarKeyboardMocks.alertConfirm.mockResolvedValueOnce(false)
-    target.querySelector<HTMLButtonElement>(`button[aria-label="${language.moodLightEnable}"]`)!.click()
-    await vi.waitFor(() => expect(sidebarKeyboardMocks.alertConfirm).toHaveBeenCalledTimes(1))
-    await vi.waitFor(() =>
-      expect(target.querySelector<HTMLButtonElement>(`button[aria-label="${language.moodLightEnable}"]`)).toBeTruthy(),
-    )
-    expect(target.querySelector('[data-char-id="char-private"]')).toBeNull()
-
-    sidebarKeyboardMocks.alertConfirm.mockResolvedValueOnce(true)
-    target.querySelector<HTMLButtonElement>(`button[aria-label="${language.moodLightEnable}"]`)!.click()
-    await vi.waitFor(() =>
-      expect(target.querySelector<HTMLButtonElement>(`button[aria-label="${language.moodLightDisable}"]`)).toBeTruthy(),
-    )
-    await vi.waitFor(() => expect(target.querySelector('[data-char-id="char-private"]')).toBeTruthy())
-    expect(target.querySelector('[data-char-id="char-normal"]')).toBeNull()
-
-    target.querySelector<HTMLButtonElement>(`button[aria-label="${language.moodLightDisable}"]`)!.click()
-    await vi.waitFor(() => expect(target.querySelector('[data-char-id="char-normal"]')).toBeTruthy())
-    expect(target.querySelector('[data-char-id="char-private"]')).toBeNull()
-    expect(sidebarKeyboardMocks.alertConfirm).toHaveBeenCalledTimes(2)
-  })
-
-  it('opens the visual membership manager and persists a tile toggle without closing it', async () => {
-    setMoodLightModeActive(true)
-    component = mount(Sidebar, { target })
-    await tick()
-
-    target.querySelector<HTMLButtonElement>(`button[aria-label="${language.moodLightManage}"]`)!.click()
-    await tick()
-
-    const dialog = target.querySelector<HTMLElement>('[data-risu-mood-light-dialog-root] [role="dialog"]')
-    const characterToggle = target.querySelector<HTMLButtonElement>(
-      'button[data-risu-mood-light-target="character"][data-risu-target-id="char-a"]',
-    )
-    expect(dialog).toBeTruthy()
-    expect(characterToggle).toBeTruthy()
-
-    characterToggle!.click()
-    await vi.waitFor(() =>
-      expect(sidebarKeyboardMocks.persistServerBackedSettingsPatchWithSettlement).toHaveBeenCalledWith({
-        moodLightMembership: { characterIds: ['char-a'], folders: [] },
-      }),
-    )
-
-    expect(target.querySelector('[data-risu-mood-light-dialog-root] [role="dialog"]')).toBeTruthy()
-    expect(sidebarKeyboardMocks.alertSelect).not.toHaveBeenCalled()
   })
 
   it('names and exposes the state of the developer tools tab', async () => {
@@ -348,6 +288,51 @@ describe('Sidebar character folder context menu', () => {
 
     expect(sidebarKeyboardMocks.alertSelect.mock.calls[1][0]).toHaveLength(8)
     expect(sidebarKeyboardMocks.updateCharacterOrderFolderWithOutcome).not.toHaveBeenCalled()
+  })
+
+  it('persists the Ask before opening option for the selected folder', async () => {
+    sidebarKeyboardMocks.alertSelect.mockResolvedValueOnce('3')
+
+    openFolderContextMenu('Folder A')
+
+    await vi.waitFor(() =>
+      expect(sidebarKeyboardMocks.updateCharacterOrderFolderWithOutcome).toHaveBeenCalledWith('folder-a', {
+        askBeforeOpening: true,
+      }),
+    )
+    expect(sidebarKeyboardMocks.alertSelect).toHaveBeenCalledWith(
+      expect.arrayContaining([language.askBeforeOpening(false)]),
+      language.folderActionsFor('Folder A'),
+    )
+  })
+
+  it('asks once after confirmation and asks again after cancellation', async () => {
+    unmount(component!)
+    component = undefined
+    seedFolderSidebarDatabase(['folder-a', 'folder-b'], true)
+    component = mount(Sidebar, { target })
+    await tick()
+
+    const folder = target.querySelector<HTMLElement>('[role="button"][aria-label="Folder A"]')
+    expect(folder).toBeTruthy()
+    expect(target.querySelector('[data-char-id="char-a"]')).toBeNull()
+
+    sidebarKeyboardMocks.alertConfirm.mockResolvedValueOnce(false)
+    folder!.click()
+    await vi.waitFor(() => expect(sidebarKeyboardMocks.alertConfirm).toHaveBeenCalledTimes(1))
+    expect(target.querySelector('[data-char-id="char-a"]')).toBeNull()
+
+    sidebarKeyboardMocks.alertConfirm.mockResolvedValueOnce(true)
+    folder!.click()
+    await vi.waitFor(() => expect(target.querySelector('[data-char-id="char-a"]')).toBeTruthy())
+    expect(sidebarKeyboardMocks.alertConfirm).toHaveBeenCalledTimes(2)
+    expect(sidebarKeyboardMocks.alertConfirm).toHaveBeenLastCalledWith(language.confirmFolderOpening('Folder A'))
+
+    folder!.click()
+    await vi.waitFor(() => expect(target.querySelector('[data-char-id="char-a"]')).toBeNull())
+    folder!.click()
+    await vi.waitFor(() => expect(target.querySelector('[data-char-id="char-a"]')).toBeTruthy())
+    expect(sidebarKeyboardMocks.alertConfirm).toHaveBeenCalledTimes(2)
   })
 
   it('ignores an invalid nested color selection', async () => {

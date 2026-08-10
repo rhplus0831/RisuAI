@@ -12,7 +12,7 @@ surface-specific ownership.
 | Guide | Owns |
 | ----- | ---- |
 | [Chat UI](svelte-chat-ui.md) | Transcript and message rendering, composer variants, generation states, and in-chat confirmations. |
-| [Navigation UI](svelte-navigation-ui.md) | Sidebar, Mood Light controls, chat and character selection, and internal reordering. |
+| [Navigation UI](svelte-navigation-ui.md) | Sidebar, character folders, chat and character selection, and internal reordering. |
 | [Settings UI](svelte-settings-ui.md) | Settings routes, data-driven rows, controls, authoring surfaces, model profiles, and settings persistence. |
 | [Client Runtime](client-runtime.md) | Startup resources, hydration, commands, durable recovery, generation reattach, and server-operation adapters. |
 
@@ -29,7 +29,7 @@ CSS, and plugin execution.
 | ------- | ------------- | ------------- |
 | Loading, settings, grid, chat, or global overlay is wrong | `src/App.svelte`, `src/main.ts`, `src/ts/router.ts` | This guide and [Client Runtime](client-runtime.md) |
 | Transcript, message HTML, composer, generation progress, or chat confirmation is wrong | `src/lib/ChatScreens/DefaultChatScreen.svelte`, `src/lib/ChatScreens/Chat.svelte` | [Chat UI](svelte-chat-ui.md) |
-| Sidebar, Mood Light, character/chat list, or reorder is wrong | `src/lib/SideBars/Sidebar.svelte`, `src/lib/SideBars/SideChatList.svelte` | [Navigation UI](svelte-navigation-ui.md) |
+| Sidebar, character folder, character/chat list, or reorder is wrong | `src/lib/SideBars/Sidebar.svelte`, `src/lib/SideBars/SideChatList.svelte` | [Navigation UI](svelte-navigation-ui.md) |
 | Settings nav, row, authoring editor, model profile, or shared control is wrong | `src/lib/Setting/Settings.svelte`, `src/lib/Setting/SettingRenderer.svelte` | [Settings UI](svelte-settings-ui.md) |
 | Theme, motion, clipping, font, scale, or custom CSS is wrong | `src/styles.css`, `src/ts/gui/colorscheme.ts`, `src/ts/gui/animation.ts`, `src/ts/gui/guisize.ts` | [Styling, Theme, And Layout](#styling-theme-and-layout) |
 | URL, back/forward, settings section, Playground tool, or character route is wrong | `src/ts/router.ts`, route effects in `src/App.svelte` | `src/ts/router.test.ts`, `src/App.routeEffect.dom.test.ts` |
@@ -98,7 +98,7 @@ over the chat. Global overlays mount after the main branch: alerts, Realm,
 preset/persona lists, saved-toggle management, bookmarks, Hypa V3, the saving
 icon, popup list and editor, EasyPanel, loadouts, Iris, and custom sidebar
 configuration. Feature-owned overlays can mount below their surface instead;
-for example, `Sidebar.svelte` owns `MoodLightManageModal.svelte`.
+for example, `Sidebar.svelte` owns character-folder expansion and editing.
 
 Two interaction states sit outside the render switch. Writer takeover blocks
 interaction while the refresh/offline choice is open; choosing offline freezes
@@ -159,7 +159,6 @@ Important route and store facts:
 - `settingsOpen` and `SettingsMenuIndex` drive the settings shell.
 - `PlaygroundStore` drives Playground; value `2` is chat and `14` is inlays.
 - A character route without a chat ID intentionally shows select-chat state.
-- Mood Light visibility gates direct character routes and reactive selection.
   Hidden targets replace the URL with `/`.
 - In-app settings and grid openings record their history origin. Close actions
   go back only for an owned origin; direct entry replaces the route with home.
@@ -176,7 +175,7 @@ Important route and store facts:
 | Path | Visible ownership |
 | ---- | ----------------- |
 | `src/lib/ChatScreens/` | Chat frame, transcript, message rows, composer variants, suggestions, partial edit, resize/emotion displays, and progress; see [Chat UI](svelte-chat-ui.md). |
-| `src/lib/SideBars/` | Desktop navigation, Mood Light, lists, character config, lorebook, scripts, quick settings, and the custom-sidebar renderer; see [Navigation UI](svelte-navigation-ui.md). |
+| `src/lib/SideBars/` | Desktop navigation, character folders, lists, character config, lorebook, scripts, quick settings, and the custom-sidebar renderer; see [Navigation UI](svelte-navigation-ui.md). |
 | `src/lib/Setting/` | Settings shell, renderer, wrappers, pages, authoring surfaces, bot presets, persona lists, and lore presets; see [Settings UI](svelte-settings-ui.md). |
 | `src/lib/UI/` | Shared higher-level UI such as accordions, menus, model/provider pickers, prompt rows, and Realm UI. |
 | `src/lib/UI/GUI/` | Shared primitive inputs, buttons, selects, sliders, portals, and multilingual controls. |

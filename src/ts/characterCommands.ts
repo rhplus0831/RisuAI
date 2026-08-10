@@ -77,6 +77,7 @@ export type CharacterOrderFolderTarget =
 export interface CharacterOrderFolderMetadataPatch {
   name?: string
   color?: string
+  askBeforeOpening?: boolean
   imgFile?: string | null
   img?: string
 }
@@ -127,7 +128,13 @@ export interface CharacterOrderNormalizationResult {
   changed: boolean
 }
 
-const CHARACTER_ORDER_FOLDER_METADATA_KEYS: CharacterOrderFolderMetadataKey[] = ['name', 'color', 'imgFile', 'img']
+const CHARACTER_ORDER_FOLDER_METADATA_KEYS: CharacterOrderFolderMetadataKey[] = [
+  'name',
+  'color',
+  'askBeforeOpening',
+  'imgFile',
+  'img',
+]
 const MAX_CHARACTER_ORDER_DEPENDENCY_KEYS = 32
 let characterOrderProjectionGeneration = 0
 const currentCharacterFieldMutationAttempts = new Map<string, CharacterFieldMutationFieldAttempt>()
@@ -2088,6 +2095,10 @@ function prepareUpdateCharacterOrderFolder(
           mutableFolder.color = value as string
           break
 
+        case 'askBeforeOpening':
+          mutableFolder.askBeforeOpening = value as boolean
+          break
+
         case 'imgFile':
           mutableFolder.imgFile = value as string | null
           break
@@ -2156,6 +2167,9 @@ function applyCharacterOrderFolderMetadata(
         break
       case 'color':
         target.color = value as string
+        break
+      case 'askBeforeOpening':
+        target.askBeforeOpening = value as boolean
         break
       case 'imgFile':
         target.imgFile = value as string | null

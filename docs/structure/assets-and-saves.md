@@ -347,7 +347,6 @@ policy is explicit:
 | Greeting translations | Source-valid rows are embedded per character; import validates, deduplicates, and drops stale-source rows. | `greeting_translations` is restore-allowlisted and replaced with the snapshot. |
 | LLM request history | Excluded: device-local diagnostic telemetry. | The physical SQLite copy contains it, but restore does not import it and clears the live table during lineage rotation; this telemetry does not survive the replacement boundary. |
 | Inlay catalog and asset store | Catalog metadata/catalog-only assets are excluded. Bundle/local formats can add portable database references and present asset files without replacing the target catalog/store. | `inlay_catalog` is restored and the asset directory is replaced. |
-| Mood Light state | Durable `moodLightMembership` is included as whole-database root settings, but individual character/chat/dataset exports do not carry it. The session-only active `moodLightMode` flag is excluded. | Membership is restored with `settings`; the active flag remains browser-session state and is not backed up. |
 | Provider credentials | Included unmasked in whole-database settings; portable save files must be handled as secrets. | Restored with settings. |
 | Push subscriptions | Excluded: endpoint and auth material is origin/device state. | Deliberately remains live across restore. The VAPID key file is outside every backup, so losing the live subscription table or moving origins requires users to re-enable notifications. |
 

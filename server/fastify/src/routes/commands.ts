@@ -58,7 +58,6 @@ import {
   readProviderCredentials,
 } from '../../../../src/ts/model/providerCredentialRecords.js'
 import { normalizeChatGenerationTogglePresets } from '../../../../src/ts/chatGenerationTogglePresetRecords.js'
-import { normalizeMoodLightMembership } from '../../../../src/ts/moodLightMembership.js'
 import {
   normalizeAgentPresetDefaultId,
   normalizeAgentPresets,
@@ -1670,7 +1669,6 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'jailbreakToggle',
     'chatGenerationTogglePresets',
     'customSidebarItems',
-    'moodLightMembership',
   ],
   data: ['requestHistoryLimit'],
   account: ['account', 'didFirstSetup', 'username'],
@@ -2006,7 +2004,6 @@ const OBJECT_SETTING_KEYS = new Set([
   'modelRuntimeDefaults',
   'modelRoleProfiles',
   'modelRoles',
-  'moodLightMembership',
   'NAIImgConfig',
   'NAIsettings',
   'novelai',
@@ -9510,9 +9507,6 @@ function sanitizeSettingValue(key: string, value: unknown): unknown {
   }
   if (key === 'chatGenerationTogglePresets') {
     return normalizeChatGenerationTogglePresets(value)
-  }
-  if (key === 'moodLightMembership') {
-    return normalizeMoodLightMembership(value)
   }
   if (key === 'keepSessionAlive') {
     return readKeepSessionAlive(value)

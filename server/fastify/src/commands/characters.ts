@@ -26,6 +26,7 @@ export interface CharacterFolderRecord extends JsonRecord {
   name: string
   color: string
   data: string[]
+  askBeforeOpening?: boolean
   imgFile?: string | null
   img?: string
 }
@@ -407,6 +408,9 @@ function readCharacterOrderEntry(entry: unknown, index: number): CharacterOrderE
   if (!Array.isArray(folder.data) || folder.data.some((id) => typeof id !== 'string' || !id)) {
     throw new ValidationError(`characterOrder[${index}].data must be an array of character ids`)
   }
+  if (folder.askBeforeOpening !== undefined && typeof folder.askBeforeOpening !== 'boolean') {
+    throw new ValidationError(`characterOrder[${index}].askBeforeOpening must be a boolean`)
+  }
   if (folder.imgFile !== undefined && folder.imgFile !== null && typeof folder.imgFile !== 'string') {
     throw new ValidationError(`characterOrder[${index}].imgFile must be a string or null`)
   }
@@ -420,6 +424,7 @@ function readCharacterOrderEntry(entry: unknown, index: number): CharacterOrderE
     name: typeof folder.name === 'string' ? folder.name : 'New Folder',
     color: typeof folder.color === 'string' ? folder.color : '',
     data: [...(folder.data as string[])],
+    askBeforeOpening: folder.askBeforeOpening === true,
   } as CharacterFolderRecord
 }
 

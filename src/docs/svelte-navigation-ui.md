@@ -2,8 +2,8 @@
 
 Last audited: 2026-08-09.
 
-This guide owns the sidebar, navigation controls, Mood Light presentation,
-character and chat selection, character configuration, and list organization.
+This guide owns the sidebar, navigation controls, character and chat selection,
+character configuration, and list organization.
 Return to the [architecture index](../../docs/structure/README.md) for
 cross-layer ownership or the [Svelte UI guide](svelte-ui.md) for application
 routes and shell priority.
@@ -13,7 +13,6 @@ routes and shell priority.
 | Symptom | Inspect first | Then inspect |
 | ------- | ------------- | ------------ |
 | Sidebar route, tab, character, folder, or grid button is wrong | `src/lib/SideBars/Sidebar.svelte` | `src/ts/router.ts`, `src/ts/stores.svelte.ts` |
-| Mood Light toggle, manager, or visible partition is wrong | `src/lib/SideBars/MoodLightManageModal.svelte`, `Sidebar.svelte` | `src/ts/moodLightMode.ts`, `src/ts/moodLightMembership.ts` |
 | Chat list, chat folder, branch graph, or export/reset flow is wrong | `src/lib/SideBars/SideChatList.svelte` | `src/ts/chatCommands.ts`, `src/ts/server/chatMessageHydration.svelte.ts` |
 | Character profile, media, lorebook, scripts, or TTS editor is wrong | `src/lib/SideBars/CharConfig.svelte` | The focused bridge/upload helper under `src/ts/server/` |
 | Character/chat reorder is stale, duplicated, or treated as file import | `src/lib/SideBars/sidebarDrag.ts`, `SideChatList.svelte`, `src/ts/dragTypes.ts` | [Drag, Drop, And Reordering](#drag-drop-and-reordering) |
@@ -38,37 +37,23 @@ author-note, and generation-toggle controls and tears down list Sortable
 instances until the route returns to the chat list. The selected character tab
 is stored on the exact history entry through `src/ts/router.ts`.
 
-## Mood Light Surfaces
+## Character Folder Opening
 
-Mood Light is a client-side character visibility partition, not a Fastify
-authorization boundary. `src/ts/moodLightMode.ts` keeps the active flag in this
-tab's `sessionStorage`. Normal mode shows the unprotected partition; Mood Light
-mode shows the protected partition.
+Character folders carry an optional durable `askBeforeOpening` flag in
+`characterOrder`. `Sidebar.svelte` exposes the flag through the folder context
+menu and gates both direct expansion and automatic expansion used to scroll to
+the selected character.
 
-`Sidebar.svelte` owns the enable/disable control. Entering asks for
-confirmation, every mode switch clears character selection, and management is
-available only while Mood Light is active. The modal is searchable and
-focus-trapped; it toggles characters and folders and persists
-`moodLightMembership` through the settings bridge.
+`src/ts/characterFolderOpening.ts` remembers successful confirmations by stable
+folder ID in module memory. Cancellation leaves the folder closed and does not
+record approval. Closing and reopening an approved folder is immediate until a
+full page refresh creates a new module lifetime. Concurrent attempts for one
+folder share the same confirmation.
 
-`src/ts/moodLightMembership.ts` is the shared partition helper. Membership
-contains direct character IDs, folder snapshots, and per-folder exclusions.
-Current children of a protected folder inherit protection unless excluded.
-Filtering never rewrites `characterOrder`: if a visible child belongs to a
-folder hidden in the other partition, the child is promoted to the visible root
-so the folder name does not leak.
-
-The manager excludes trashed characters and `§playground` from selection.
-`GridCatalog.svelte`, `MobileCharacters.svelte`, selection dialogs in
-`AlertComp.svelte`, adjacent-character hotkeys, router guards, bootstrap, and
-refresh all reuse the shared visibility predicate. Runtime coordination belongs
-to [Client Runtime](client-runtime.md#mood-light-visibility-coordination).
-
-Tests include `src/ts/moodLightMode.test.ts`,
-`src/ts/moodLightMembership.test.ts`,
-`src/lib/SideBars/MoodLightManageModal.svelte.test.ts`,
-`src/lib/SideBars/Sidebar.keyboard.dom.test.ts`, and
-`src/lib/Others/GridCatalog.svelte.test.ts`.
+Tests include `src/ts/characterFolderOpening.test.ts`,
+`src/lib/SideBars/Sidebar.keyboard.dom.test.ts`,
+`src/lib/SideBars/Sidebar.charList.test.ts`, and
+`src/ts/characterCommands.test.ts`.
 
 ## Chat Lists And Folders
 

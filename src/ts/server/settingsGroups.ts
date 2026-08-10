@@ -204,7 +204,6 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   modelRoles: 'providers',
   modelTools: 'providers',
   moduleIntergration: 'advanced',
-  moodLightMembership: 'sidebar',
   NAIadventure: 'providers',
   NAIApiKey: 'media',
   NAIappendName: 'providers',

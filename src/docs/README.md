@@ -10,7 +10,7 @@ contract in a neighboring guide.
 | ---- | ---- |
 | [`svelte-ui.md`](svelte-ui.md) | Svelte application shell, render priority, routes/stores, localization, styling, responsive/Lite behavior, and Playground. |
 | [`svelte-chat-ui.md`](svelte-chat-ui.md) | Chat frame, transcript and message rendering, composer variants, generation/loading feedback, and in-chat confirmations. |
-| [`svelte-navigation-ui.md`](svelte-navigation-ui.md) | Sidebar, Mood Light controls, character/chat selection and configuration, and list reordering. |
+| [`svelte-navigation-ui.md`](svelte-navigation-ui.md) | Sidebar, character folders, character/chat selection and configuration, and list reordering. |
 | [`svelte-settings-ui.md`](svelte-settings-ui.md) | Settings routing, data-driven rows, shared controls, authoring editors, model-profile UI, and visible persistence states. |
 | [`client-runtime.md`](client-runtime.md) | Browser startup, resources, hydration, durable mutations and recovery, generation reattach, and server-operation adapters. |
 

@@ -87,9 +87,6 @@ indexes data-driven variants.
 - **`APP-10` — Active-writer takeover (`R`, `A`, `L`)**
   - Variants: A writer SSE event or validated stale-writer response blocks interaction and asks for Refresh or Stay Offline. Refresh reloads; offline mode stops server coordination, freezes editable controls, preserves selectable text, and adds a reload banner.
   - Owners: `src/ts/server/activeWriterSession.ts`; `src/ts/server/events.ts`; `src/styles.css`
-- **`APP-11` — Mood Light privacy partition (`R`, `L`, `B`)**
-  - Variants: Normal mode exposes only unprotected characters; confirmed Mood Light mode exposes only characters protected directly or through protected-folder membership. Mixed folder children are promoted into the visible root rather than leaking the hidden folder, while exclusions can keep one child on the opposite side. The active flag is browser-session state in `sessionStorage`; durable `moodLightMembership` is a normalized `sidebar` settings-group value. Changing mode clears the selected character and returns home; membership settlement, resource refresh, and direct-route application also reject a selection outside the active partition. The partition gates the grid/trash catalog, mobile character list, and select-character alert.
-  - Owners: `src/ts/moodLightMode.ts`; `src/ts/moodLightMembership.ts`; `src/App.svelte`; `src/ts/router.ts`; `src/lib/SideBars/Sidebar.svelte`; `src/lib/Others/GridCatalog.svelte`; `src/lib/Mobile/MobileCharacters.svelte`; `src/lib/Others/AlertComp.svelte`
 - **`HOME-01` — Landing versus Realm (`L`, `R`)**
   - Variants: Home title/version/GitHub card or the Realm catalog. Opening Realm can first yield an external-server confirmation unless `doNotWarnExternalServers` is set.
   - Owners: `src/lib/UI/MainMenu.svelte`
@@ -156,11 +153,11 @@ indexes data-driven variants.
 ## Sidebar and character-owned editors
 
 - **`SIDE-01` — Sidebar navigation form (`R`, `L`, `X`)**
-  - Variants: Labeled menu sidebar versus compact avatar rail; hamburger at top/bottom; menu open/closed; runtime plugin entries; confirmed Mood Light enable/disable and active-only manage controls. The live local `sideBarMode` remains `0`, so nonzero modes are not separate current surfaces. Mood Light's partition and manager states are detailed in `APP-11` and `SIDE-12`.
+  - Variants: Labeled menu sidebar versus compact avatar rail; hamburger at top/bottom; menu open/closed; and runtime plugin entries. The live local `sideBarMode` remains `0`, so nonzero modes are not separate current surfaces.
   - Owners: `src/lib/SideBars/Sidebar.svelte`; `SidebarAvatar.svelte`
 - **`SIDE-02` — Character order/folders (`R`, `A`, `L`)**
-  - Variants: Character rows, folder rows, expanded children, folder name/image/open/closed fallback, selected marker, and optimistic drag/reorder. Stale order references are omitted.
-  - Owners: `src/lib/SideBars/Sidebar.svelte`; `sidebarCharList.ts`; `sidebarOrganizer.ts`; `sidebarDrag.ts`
+  - Variants: Character rows, folder rows, expanded children, folder name/image/open/closed fallback, selected marker, and optimistic drag/reorder. A folder can durably ask before opening; cancellation leaves it closed, confirmation suppresses later prompts for that folder until refresh, and closing never prompts. Stale order references are omitted.
+  - Owners: `src/lib/SideBars/Sidebar.svelte`; `sidebarCharList.ts`; `sidebarOrganizer.ts`; `sidebarDrag.ts`; `src/ts/characterFolderOpening.ts`
 - **`SIDE-03` — Contextual sidebar panel (`R`, `L`)**
   - Variants: Welcome/select-bot, playground chat list, Chat/Character tabs, optional Dev Tool, Quick Settings, Dev Tool body, character editor, or chat list. Priority is Quick Settings -> Dev Tool -> character editor -> chat list.
   - Owners: `src/lib/SideBars/Sidebar.svelte`; `QuickSettingsGUI.svelte`
@@ -188,10 +185,6 @@ indexes data-driven variants.
 - **`SIDE-11` — Developer panel (`R`, `A`, `L`)**
   - Variants: Typed script-state inputs or empty state; async character/chat/prompt token results; autopilot rows; chat versus instruct preview; Jinja-only editor.
   - Owners: `src/lib/SideBars/DevTool.svelte`
-- **`SIDE-12` — Mood Light membership manager (`R`, `A`, `L`)**
-  - Variants: The manager exists only while Mood Light mode is active. It groups root characters and folder children, marks live folder/character protection with `aria-pressed`, filters by space-insensitive case-folded search while retaining matched folder context, and shows a no-results state. Membership toggles disable during persistence but search and the dialog remain usable; accepted, queued, and failed settings settlements can repaint the partition or reconcile an invalid selection. Trashed characters stay protected by stored membership but are omitted from management targets.
-  - Owners: `src/lib/SideBars/MoodLightManageModal.svelte`; `src/lib/SideBars/Sidebar.svelte`; `src/ts/moodLightMembership.ts`; `src/ts/server/settingsBridge.svelte.ts`
-
 ## Settings
 
 ### Shell, schema, display, language, and advanced

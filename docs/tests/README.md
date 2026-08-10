@@ -16,9 +16,9 @@ The main weakness is integration depth rather than raw case count. Most frontend
 
 ### Product flows and UI
 
-- [App Navigation and Chat](app-navigation-and-chat.md) — routing, Mood Light route/selection guards, floating composition, chat lists/reset, rerolls, responsive navigation, and browser smoke.
+- [App Navigation and Chat](app-navigation-and-chat.md) — routing, character-folder opening, floating composition, chat lists/reset, rerolls, responsive navigation, and browser smoke.
 - [Settings, Profiles, and Extensions](settings-profiles-and-extensions.md) — settings pages, model/profile editors, profile/preset reordering, modules/plugins, translators, personas, and Agent Preset UI.
-- [Character Content, Memory, and Catalogs](character-content-memory-and-catalogs.md) — character editors, Mood Light membership, lore/scripts, Hypa controls, Realm/catalog and mobile character behavior.
+- [Character Content, Memory, and Catalogs](character-content-memory-and-catalogs.md) — character editors, lore/scripts, Hypa controls, Realm/catalog and mobile character behavior.
 - [Shared UI, Feedback, and Accessibility](shared-ui-feedback-and-accessibility.md) — alerts, drag-safe backdrop dismissal, dialogs, generic controls, focus, onboarding, feedback, and platform surface gates.
 - [Playground and Specialized Tools](playground-and-specialized-tools.md) — Playground execution, conversion, media, parser, translation, MCP, and developer tools.
 

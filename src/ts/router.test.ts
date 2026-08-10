@@ -73,7 +73,6 @@ async function importRouterAt(path: string) {
 }
 
 beforeEach(() => {
-  sessionStorage.removeItem('risu:mood-light-mode')
   routerMocks.changeChar.mockReset()
   routerMocks.changeChatTo.mockReset()
   routerMocks.changeUserPersonaWithOutcome.mockReset()
@@ -89,7 +88,7 @@ afterEach(async () => {
 })
 
 describe('router initial application', () => {
-  it('replaces a direct route to a Mood Light bot while normal mode is active', async () => {
+  it('opens a direct route for a bot left in retired Mood Light metadata', async () => {
     const router = await importRouterAt('/character/char-private/chat-a')
     const stores = await import('./stores.svelte')
     const { getResourceDatabase, replaceResourceDatabase } = await import('./server/resourceState.svelte')
@@ -108,13 +107,16 @@ describe('router initial application', () => {
       (characterId: string) =>
         getResourceDatabase().characters?.findIndex((character: any) => character?.chaId === characterId) ?? -1,
     )
+    routerMocks.changeChar.mockImplementation(async (index: number) => {
+      stores.selectedCharID.set(index)
+    })
 
     await router.applyRouteToStores(get(router.currentRoute))
     await flushMicrotasks()
 
-    expect(window.location.pathname).toBe('/')
-    expect(get(stores.selectedCharID)).toBe(-1)
-    expect(routerMocks.changeChar).not.toHaveBeenCalled()
+    expect(window.location.pathname).toBe('/character/char-private/chat-a')
+    expect(get(stores.selectedCharID)).toBe(0)
+    expect(routerMocks.changeChar).toHaveBeenCalledWith(0, expect.objectContaining({ isFresh: expect.any(Function) }))
   }, 15_000)
 
   it('does not treat initial root load as a pending home navigation', async () => {

@@ -46,18 +46,6 @@ writer ownership/epochs, and acknowledged-receipt tombstones; v26 adds the
 `request_history`. Current browser state is rebuilt from concrete REST
 resources rather than a cached database projection.
 
-Mood Light's durable state is the singleton settings field
-`moodLightMembership`, defaulted by `server/fastify/src/databaseDefaults.ts`
-and normalized by `src/ts/moodLightMembership.ts` at both the Fastify command
-boundary and browser database application boundary. It belongs to the
-`sidebar` group in both `SETTINGS_GROUP_KEYS` in
-`server/fastify/src/routes/commands.ts` and
-`src/ts/server/settingsGroups.ts`, so updates use the normal revisioned settings
-transaction and a grouped `settings.updated` event. The active-mode bit is
-separate tab-local `sessionStorage`, not SQLite state. Ownership parity is
-guarded by `src/ts/server/settingsGroups.test.ts` and defaults by
-`server/fastify/__tests__/databaseDefaults.test.ts`.
-
 Prompt-template ownership follows the split-preset contract. Modern template
 bodies are persisted as `promptPresets[].promptTemplate` inside
 `prompt_presets.data_json` rows. The selected owner is projected through the

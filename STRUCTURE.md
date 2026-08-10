@@ -18,7 +18,6 @@ records past decisions and is not authoritative.
 | Change reload-durable composer or module-editor draft recovery | [Client Runtime](src/docs/client-runtime.md#draft-recovery-stores), then [Svelte Chat UI](src/docs/svelte-chat-ui.md#composer-and-floating-composer) |
 | Change chat, transcript, message, composer, or generation UI | [Svelte Chat UI](src/docs/svelte-chat-ui.md#chat-surface-ownership) |
 | Change sidebars, routes, chat lists, character selection, or reordering UI | [Svelte Navigation UI](src/docs/svelte-navigation-ui.md#sidebar-and-route-ownership) |
-| Change Mood Light membership, session mode, visibility, or route guards | [Svelte Navigation UI](src/docs/svelte-navigation-ui.md#mood-light-surfaces), [Client Runtime](src/docs/client-runtime.md#mood-light-visibility-coordination), and [Server Resources And Bridges](docs/structure/server-resources-and-bridges.md#mood-light-resource-projection) |
 | Change settings routing, data-driven rows, authoring pages, or provider panels | [Svelte Settings UI](src/docs/svelte-settings-ui.md#shell-and-routed-pages) |
 | Change shared controls, accessibility, modal focus, or focus restoration | [Svelte Settings UI](src/docs/svelte-settings-ui.md#shared-controls-and-focus) |
 | Change the app shell, styling/themes, responsive/Lite behavior, or Playground | [Svelte UI](src/docs/svelte-ui.md) |
@@ -91,11 +90,6 @@ to find companion files and tests.
   hash-verified; the encrypted mutation outbox retains pending intent, while
   scoped recovery drafts retain editing state. None is an independent browser
   database or offline truth. See the [Cache Protocol](docs/structure/server-resources-and-bridges.md#cache-protocol).
-- Mood Light is a browser privacy/visibility partition, not an authorization
-  boundary. Membership is durable server-backed settings state, the active flag
-  is tab-local `sessionStorage`, and Fastify still returns all character rows.
-  See [browser visibility coordination](src/docs/client-runtime.md#mood-light-visibility-coordination)
-  and the [durable resource projection](docs/structure/server-resources-and-bridges.md#mood-light-resource-projection).
 - Normal revision-tracked domain writes use command mutations and global
   revision ordering. Server-owned exceptions are listed in
   [Data And Events](docs/structure/data-and-events.md#server-owned-exceptions).

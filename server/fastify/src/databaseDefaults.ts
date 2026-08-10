@@ -536,7 +536,9 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'useMonacoEditorOnDesktop', false)
   setDefault(database, 'useMonacoEditorOnMobile', false)
   setDefault(database, 'customSidebarItems', [])
-  setDefault(database, 'moodLightMembership', { characterIds: [], folders: [] })
+  // Mood Light was retired before release. Discard only its classification
+  // metadata; character rows and their normal ordering remain untouched.
+  delete database.moodLightMembership
   normalizeFormatVersion(database)
 
   return database

@@ -1,7 +1,5 @@
 import { selectedCharID } from '../stores.svelte'
 import { getResourceDatabase as getDatabase } from './resourceState.svelte'
-import { isMoodLightModeActive } from '../moodLightMode'
-import { isMoodLightCharacterVisible } from '../moodLightMembership'
 
 export interface SelectedCharacterRefreshTarget {
   selectedIndex: number
@@ -53,12 +51,7 @@ export function resolveSelectedCharacterIndexAfterRefresh(target: SelectedCharac
   const preservedIndex = target.characterId
     ? database.characters.findIndex((character) => character?.chaId === target.characterId)
     : -1
-  if (
-    preservedIndex >= 0 &&
-    isMoodLightCharacterVisible(database, database.characters[preservedIndex]?.chaId, isMoodLightModeActive())
-  ) {
-    return preservedIndex
-  }
+  if (preservedIndex >= 0) return preservedIndex
 
   const currentChar = (database as { currentChar?: unknown }).currentChar
   const currentIndex =
@@ -67,8 +60,5 @@ export function resolveSelectedCharacterIndexAfterRefresh(target: SelectedCharac
     (currentChar as number) < database.characters.length
       ? (currentChar as number)
       : -1
-  return currentIndex >= 0 &&
-    isMoodLightCharacterVisible(database, database.characters[currentIndex]?.chaId, isMoodLightModeActive())
-    ? currentIndex
-    : -1
+  return currentIndex
 }

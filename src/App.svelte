@@ -71,8 +71,6 @@
   } from './ts/router'
   import { modalFocusTrap } from './ts/gui/modalFocusTrap'
   import { alertError } from './ts/alert'
-  import { moodLightMode } from './ts/moodLightMode'
-  import { isMoodLightCharacterVisible } from './ts/moodLightMembership'
   import { hasDragType, RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes'
 
   let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
@@ -116,19 +114,6 @@
     if (consumeStateDrivenRouteUpdate()) return
     untrack(() => {
       void applyRouteToStores(route)
-    })
-  })
-
-  $effect(() => {
-    if (!$loadedStore) return
-    const database = getDatabase()
-    const selectedIndex = $selectedCharID
-    const selectedCharacterId = database.characters?.[selectedIndex]?.chaId
-    if (selectedIndex < 0 || isMoodLightCharacterVisible(database, selectedCharacterId, $moodLightMode)) return
-
-    untrack(() => {
-      selectedCharID.set(-1)
-      navigate('/')
     })
   })
 

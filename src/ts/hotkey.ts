@@ -431,11 +431,9 @@ export function adjacentCharacterIndex(
   characters: readonly Pick<Database['characters'][number], 'name'>[],
   selectedIndex: number,
   direction: 'previous' | 'next',
-  isVisible: (index: number) => boolean = () => true,
 ): number | null {
   const sorted = characters
     .map((character, index) => ({ name: character.name ?? '', index }))
-    .filter((character) => isVisible(character.index))
     .sort((left, right) => left.name.localeCompare(right.name))
   const currentSortedIndex = sorted.findIndex((character) => character.index === selectedIndex)
   if (currentSortedIndex < 0) return null
@@ -445,17 +443,8 @@ export function adjacentCharacterIndex(
 }
 
 export async function changeToAdjacentCharacter(direction: 'previous' | 'next'): Promise<boolean> {
-  const { isMoodLightModeActive } = await import('./moodLightMode')
-  const { moodLightProtectedCharacterIds } = await import('./moodLightMembership')
   const database = getDatabase()
-  const moodLightActive = isMoodLightModeActive()
-  const protectedCharacterIds = moodLightProtectedCharacterIds(database)
-  const targetIndex = adjacentCharacterIndex(
-    database.characters,
-    get(selectedCharID),
-    direction,
-    (index) => protectedCharacterIds.has(database.characters[index]?.chaId ?? '') === moodLightActive,
-  )
+  const targetIndex = adjacentCharacterIndex(database.characters, get(selectedCharID), direction)
   if (targetIndex === null) return false
 
   PlaygroundStore.set(0)

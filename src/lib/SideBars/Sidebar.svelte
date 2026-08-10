@@ -22,8 +22,6 @@
     FolderIcon,
     FolderOpenIcon,
     HomeIcon,
-    Lightbulb,
-    SlidersHorizontal,
     WrenchIcon,
     User2Icon,
   } from '@lucide/svelte'
@@ -38,7 +36,6 @@
   import SideChatList from './SideChatList.svelte'
   import { sideBarSize } from 'src/ts/gui/guisize'
   import DevTool from './DevTool.svelte'
-  import MoodLightManageModal from './MoodLightManageModal.svelte'
   import QuickSettingsGui from '../Others/QuickSettingsGUI.svelte'
   import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte'
   import {
@@ -66,14 +63,7 @@
     openSettingsRoute as openSettingsPath,
     setCharacterSidebarViewMode,
   } from 'src/ts/router'
-  import { moodLightMode, setMoodLightModeActive } from 'src/ts/moodLightMode'
-  import {
-    filterCharacterOrderForMoodLight,
-    isMoodLightCharacterVisible,
-    type MoodLightManagementTarget,
-    toggleMoodLightManagementTarget,
-  } from 'src/ts/moodLightMembership'
-  import { persistServerBackedSettingsPatchWithSettlement } from 'src/ts/server/settingsBridge.svelte'
+  import { canOpenCharacterFolder } from 'src/ts/characterFolderOpening'
   let sideBarMode = $state(0)
   let editMode = $state(false)
   let menuMode = $state(0)
@@ -86,8 +76,6 @@
     status: 'pending' | 'queued' | 'failed'
   }
   let characterOrganizationActions = $state<Record<string, CharacterOrganizationActionState>>({})
-  let moodLightManagerOpen = $state(false)
-  let moodLightMembershipPending = $state(false)
   let characterOrganizationMutationPending = $derived(
     Object.values(characterOrganizationActions).some((action) => action.status === 'pending'),
   )
@@ -190,14 +178,19 @@
     }
   }
 
-  async function openFolderActions(folderId: string, folderName: string): Promise<void> {
+  async function openFolderActions(folderId: string, folderName: string, askBeforeOpening: boolean): Promise<void> {
     if (
       isCharacterOrganizationActionPending('order') ||
       isCharacterOrganizationActionPending(characterFolderActionKey(folderId))
     ) {
       return
     }
-    const folderActions = [language.renameFolder, language.changeFolderColor, language.changeFolderImage]
+    const folderActions = [
+      language.renameFolder,
+      language.changeFolderColor,
+      language.changeFolderImage,
+      language.askBeforeOpening(askBeforeOpening),
+    ]
     const selectedAction = parseAlertSelection(
       await alertSelect(folderActions, language.folderActionsFor(folderName)),
       folderActions.length,
@@ -226,6 +219,13 @@
           updateCharacterOrderFolderWithOutcome(folderId, { color }),
         )
       }
+      return
+    }
+
+    if (selectedAction === 3) {
+      await runCharacterFolderAction(folderId, folderName, () =>
+        updateCharacterOrderFolderWithOutcome(folderId, { askBeforeOpening: !askBeforeOpening }),
+      )
       return
     }
 
@@ -344,51 +344,9 @@
     navigate(characterRoutePath(character.chaId))
   }
 
-  function reconcileMoodLightSelection(): void {
-    const selectedIndex = $selectedCharID
-    if (selectedIndex < 0) return
-    const characterId = getDatabase().characters?.[selectedIndex]?.chaId
-    if (isMoodLightCharacterVisible(getDatabase(), characterId, $moodLightMode)) return
-    selectedCharID.set(-1)
-    navigate('/')
-  }
-
-  async function toggleMoodLightMode(): Promise<void> {
-    if ($moodLightMode) {
-      setMoodLightModeActive(false)
-      selectedCharID.set(-1)
-      navigate('/')
-      return
-    }
-    if (!(await alertConfirm(language.moodLightEnableConfirm))) return
-    setMoodLightModeActive(true)
-    selectedCharID.set(-1)
-    navigate('/')
-  }
-
-  async function toggleMoodLightMembership(target: MoodLightManagementTarget): Promise<void> {
-    if (!$moodLightMode || moodLightMembershipPending) return
-    moodLightMembershipPending = true
-    try {
-      const persistence = persistServerBackedSettingsPatchWithSettlement({
-        moodLightMembership: toggleMoodLightManagementTarget(getDatabase(), target),
-      })
-      reconcileMoodLightSelection()
-      const receipt = await persistence
-      reconcileMoodLightSelection()
-      if (receipt.status === 'queued') {
-        alertNormal(language.moodLightSelectionQueued)
-        void receipt.settlement.finally(reconcileMoodLightSelection)
-      }
-    } finally {
-      moodLightMembershipPending = false
-    }
-  }
-
   const getSidebarCharacterList = createSidebarCharacterListMemo()
-  let visibleCharacterOrder = $derived(filterCharacterOrderForMoodLight(getDatabase(), $moodLightMode))
   let charImages: SidebarCharacterListItem[] = $derived.by(
-    () => getSidebarCharacterList(visibleCharacterOrder, getDatabase().characters).items,
+    () => getSidebarCharacterList(getDatabase().characterOrder, getDatabase().characters).items,
   )
   let IconRounded = $derived(getDatabase().roundIcons)
   let openFolders: string[] = $state([])
@@ -433,27 +391,55 @@
     return position.folder ? { folder: position.folder, index: position.index + 1 } : { index: position.index + 1 }
   }
 
-  function scrollToActiveCharacter() {
+  async function requestCharacterFolderOpening(
+    characterFolder: Extract<SidebarCharacterListItem, { type: 'folder' }>,
+  ): Promise<boolean> {
+    return canOpenCharacterFolder({
+      folderId: characterFolder.id,
+      askBeforeOpening: characterFolder.askBeforeOpening,
+      confirm: () => alertConfirm(language.confirmFolderOpening(characterFolder.name)),
+    })
+  }
+
+  async function toggleCharacterFolder(
+    characterFolder: Extract<SidebarCharacterListItem, { type: 'folder' }>,
+  ): Promise<void> {
+    const openIndex = openFolders.indexOf(characterFolder.id)
+    if (openIndex >= 0) {
+      openFolders.splice(openIndex, 1)
+      openFolders = openFolders
+      return
+    }
+
+    if (!(await requestCharacterFolderOpening(characterFolder))) return
+    if (!openFolders.includes(characterFolder.id)) {
+      openFolders.push(characterFolder.id)
+      openFolders = openFolders
+    }
+  }
+
+  async function scrollToActiveCharacter() {
     const selectedId = $selectedCharID
     if (selectedId === -1) return
 
     const characterId = getDatabase().characters[selectedId]?.chaId
     if (!characterId) return
 
-    let targetFolderId: string | null = null
+    let targetFolder: Extract<SidebarCharacterListItem, { type: 'folder' }> | null = null
 
     for (const item of charImages) {
       if (item.type === 'folder') {
         const foundChar = item.folder.find((c) => getDatabase().characters[c.index]?.chaId === characterId)
         if (foundChar) {
-          targetFolderId = item.id
+          targetFolder = item
           break
         }
       }
     }
 
-    if (targetFolderId && !openFolders.includes(targetFolderId)) {
-      openFolders.push(targetFolderId)
+    if (targetFolder && !openFolders.includes(targetFolder.id)) {
+      if (!(await requestCharacterFolderOpening(targetFolder))) return
+      openFolders.push(targetFolder.id)
       openFolders = openFolders
     }
 
@@ -472,7 +458,7 @@
     if (typeof window === 'undefined') return
 
     const handler = () => {
-      scrollToActiveCharacter()
+      void scrollToActiveCharacter()
     }
 
     window.addEventListener('scrollToActiveCharacter', handler)
@@ -722,18 +708,10 @@
                     backgroundimg={char.img ? getCharImage(char.img, 'plain') : ''}
                     oncontextmenu={(e) => {
                       e.preventDefault()
-                      void openFolderActions(char.id, char.name)
+                      void openFolderActions(char.id, char.name, char.askBeforeOpening)
                     }}
                     onClick={() => {
-                      if (char.type !== 'folder') {
-                        return
-                      }
-                      if (openFolders.includes(char.id)) {
-                        openFolders.splice(openFolders.indexOf(char.id), 1)
-                      } else {
-                        openFolders.push(char.id)
-                      }
-                      openFolders = openFolders
+                      if (char.type === 'folder') void toggleCharacterFolder(char)
                     }}>
                     {#if getDatabase().showFolderName}
                       <div class="h-full w-full flex justify-center items-center">
@@ -866,24 +844,6 @@
               stroke-width="2"
               d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg
           ></BaseRoundedButton>
-        <BaseRoundedButton
-          ariaLabel={$moodLightMode ? language.moodLightDisable : language.moodLightEnable}
-          isPressed={$moodLightMode}
-          onClick={() => {
-            void toggleMoodLightMode()
-          }}>
-          <Lightbulb size={22} />
-        </BaseRoundedButton>
-        {#if $moodLightMode}
-          <BaseRoundedButton
-            ariaLabel={language.moodLightManage}
-            isDisabled={moodLightMembershipPending}
-            onClick={() => {
-              moodLightManagerOpen = true
-            }}>
-            <SlidersHorizontal size={22} />
-          </BaseRoundedButton>
-        {/if}
       </div>
     </div>
     {#if getDatabase().hamburgerButtonBottom}
@@ -1027,15 +987,6 @@
     class:sidebar-dark-animation={!$sideBarClosing}
     class:sidebar-dark-close-animation={$sideBarClosing}>
   </button>
-{/if}
-
-{#if moodLightManagerOpen && $moodLightMode}
-  <MoodLightManageModal
-    pending={moodLightMembershipPending}
-    onToggle={toggleMoodLightMembership}
-    close={() => {
-      moodLightManagerOpen = false
-    }} />
 {/if}
 
 <style>

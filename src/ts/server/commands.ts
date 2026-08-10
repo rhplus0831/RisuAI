@@ -650,6 +650,7 @@ export type CharacterOrderEntry =
       name?: string
       color?: string
       data: string[]
+      askBeforeOpening?: boolean
       imgFile?: string | null
       img?: string
     })

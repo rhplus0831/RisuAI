@@ -149,7 +149,6 @@ The files below are accounted for here; cross-indexed operation, memory, platfor
 - Replace timing sleeps/poll loops in backup, bundle-abort and Realm disconnect tests with observable staging/upstream barriers where possible.
 - Maintain one central persisted-asset-owner catalog shared by command validation, GC and save walkers, or add a parity test that fails when those catalogs diverge.
 - Consider explicit upper bounds for export materialization where formats permit streaming; current metric tests report size/work but do not enforce a ceiling.
-- Add a round-trip test for a non-empty `moodLightMembership` through portable saves and server backup/restore; no test currently exercises that field across either boundary.
 
 ## Complete primary file manifest
 
