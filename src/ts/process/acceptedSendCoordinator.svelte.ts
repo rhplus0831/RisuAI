@@ -3,19 +3,24 @@ import type { ActiveChatTarget, AppendCurrentChatUserMessageResult, ChatMutation
 import { sleep } from '../util'
 import { clearActiveGenerationAbortController, createActiveGenerationAbortController, sendChat } from './index.svelte'
 import { chatGenerationTargetKey } from './generationActivity.svelte'
+import { refreshActiveGenerationJobsFromBootstrap } from './reattach'
+import type { SendChatFailure } from './sendChatFailure'
 
 type AcceptedAppendResult = Exclude<AppendCurrentChatUserMessageResult, { status: 'error' }>
 
 export type AcceptedSendCoordinatorResult =
   | { status: 'generated' }
   | { status: 'append_failed' }
-  | { status: 'generation_failed' }
+  | { status: 'generation_failed'; cause: AcceptedSendRecoveryCause }
+
+export type AcceptedSendRecoveryCause = 'generation_failed' | SendChatFailure['cause']
 
 export interface AcceptedSendRecovery {
   id: string
   target: ActiveChatTarget
   messageId: string
   syntheticSayNothing: boolean
+  cause: AcceptedSendRecoveryCause
   retrying: boolean
 }
 
@@ -76,10 +81,10 @@ function removeRecovery(id: string): void {
   acceptedSendRecoveries.update((recoveries) => recoveries.filter((recovery) => recovery.id !== id))
 }
 
-function recordRecovery(request: AcceptedGenerationRequest, retrying = false): void {
+function recordRecovery(request: AcceptedGenerationRequest, cause: AcceptedSendRecoveryCause, retrying = false): void {
   acceptedSendRecoveries.update((recoveries) => [
     ...recoveries.filter((recovery) => recovery.id !== request.id),
-    { ...request, retrying },
+    { ...request, cause, retrying },
   ])
 }
 
@@ -108,32 +113,53 @@ function notifyAppendFailed(
   }
 }
 
-async function attemptGeneration(request: AcceptedGenerationRequest, delayBeforeStart: boolean): Promise<boolean> {
+interface AcceptedGenerationAttempt {
+  generated: boolean
+  cause: AcceptedSendRecoveryCause
+}
+
+async function attemptGeneration(
+  request: AcceptedGenerationRequest,
+  delayBeforeStart: boolean,
+): Promise<AcceptedGenerationAttempt> {
   if (delayBeforeStart) await sleep(10)
 
   const abortController = createActiveGenerationAbortController()
+  let cause: AcceptedSendRecoveryCause = 'generation_failed'
   try {
-    return await sendChat(-1, {
+    const generated = await sendChat(-1, {
       signal: abortController.signal,
       expectedTarget: request.target,
       syntheticSayNothing: request.syntheticSayNothing,
+      onFailure: (failure) => {
+        cause = failure.cause
+      },
     })
+    return { generated, cause }
   } catch (error) {
     console.error(error)
-    return false
+    return { generated: false, cause }
   } finally {
     clearActiveGenerationAbortController(abortController)
   }
 }
 
+async function refreshRemoteGenerationIfNeeded(cause: AcceptedSendRecoveryCause): Promise<void> {
+  if (cause === 'generation_in_progress') {
+    await refreshActiveGenerationJobsFromBootstrap()
+  }
+}
+
 async function startAcceptedGeneration(request: AcceptedGenerationRequest): Promise<AcceptedSendCoordinatorResult> {
   removeRecovery(request.id)
-  if (await attemptGeneration(request, true)) {
+  const attempt = await attemptGeneration(request, true)
+  if (attempt.generated) {
     return { status: 'generated' }
   }
 
-  recordRecovery(request)
-  return { status: 'generation_failed' }
+  recordRecovery(request, attempt.cause)
+  await refreshRemoteGenerationIfNeeded(attempt.cause)
+  return { status: 'generation_failed', cause: attempt.cause }
 }
 
 /**
@@ -198,12 +224,15 @@ export async function retryAcceptedChatSend(id: string): Promise<boolean> {
     messageId: recovery.messageId,
     syntheticSayNothing: recovery.syntheticSayNothing,
   }
-  if (await attemptGeneration(request, false)) {
+  const attempt = await attemptGeneration(request, false)
+  if (attempt.generated) {
     removeRecovery(id)
     return true
   }
 
-  recordRecovery(request)
+  recordRecovery(request, attempt.cause, true)
+  await refreshRemoteGenerationIfNeeded(attempt.cause)
+  recordRecovery(request, attempt.cause)
   return false
 }
 

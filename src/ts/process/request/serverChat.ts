@@ -52,6 +52,7 @@ import type {
 } from './serverChatEvents'
 import type { requestDataResponse, StreamResponseChunk } from './request'
 import { HYPA_CONTEXT_TRUNCATION_CONFIRMATION_REQUIRED } from './hypaContextTruncation'
+import { GENERATION_IN_PROGRESS_FAILURE_CAUSE } from '../sendChatFailure'
 
 const CHAT_ENDPOINT = '/api/v1/generate/chat'
 const INCOMPLETE_CHAT_GENERATION_SETTINGS_ERROR = 'chat_generation_settings_incomplete'
@@ -160,6 +161,13 @@ function nonEmptyString(value: unknown): value is string {
 
 function truncationConfirmationCode(value: unknown): string | undefined {
   return value === HYPA_CONTEXT_TRUNCATION_CONFIRMATION_REQUIRED ? value : undefined
+}
+
+function httpErrorCode(value: unknown): string | undefined {
+  return (
+    truncationConfirmationCode(value) ??
+    (value === GENERATION_IN_PROGRESS_FAILURE_CAUSE ? GENERATION_IN_PROGRESS_FAILURE_CAUSE : undefined)
+  )
 }
 
 function httpErrorReason(body: { error?: unknown; message?: unknown; reason?: unknown }): string | null {
@@ -320,7 +328,7 @@ async function openChatResponse(
         reason?: unknown
       }
       if (body && typeof body === 'object') {
-        code = truncationConfirmationCode((body as { error?: unknown }).error)
+        code = httpErrorCode((body as { error?: unknown }).error)
       }
       reason = httpErrorReason(body) ?? reason
     } catch {

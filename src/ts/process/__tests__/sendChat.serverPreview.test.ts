@@ -1064,6 +1064,34 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     expect(getServerCompletionCalls()).toEqual([])
   })
 
+  it('reports generation-in-progress as a typed send failure', async () => {
+    await seedEcho()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+        if (url.endsWith('/api/v1/generate/chat')) {
+          return jsonResponse(
+            {
+              error: 'generation_in_progress',
+              reason: 'A generation is already running for this chat.',
+            },
+            409,
+          )
+        }
+        return serverChatWithContextFetch(input, init)
+      }) as unknown as typeof fetch,
+    )
+    const onFailure = vi.fn()
+
+    await expect(chatModule.sendChat(-1, { onFailure })).resolves.toBe(false)
+
+    expect(onFailure).toHaveBeenCalledOnce()
+    expect(onFailure).toHaveBeenCalledWith({ cause: 'generation_in_progress' })
+    expect(alertState.errors).toContain('A generation is already running for this chat.')
+    expect(get(doingChat)).toBe(false)
+  })
+
   it('does not enter the local assembler for the supported subset (server-mandatory)', async () => {
     await seedEcho()
     // Armed: if the classifier wrongly routed this in-subset send to local, the

@@ -2209,7 +2209,11 @@
           class="chat-screen-content-width mb-2 flex items-center gap-3 rounded-md border border-draculared p-3 text-sm text-draculared"
           role="alert"
           data-testid="accepted-send-recovery">
-          <span>{language.acceptedSendRecovery.generationFailed}</span>
+          <span>
+            {currentAcceptedSendRecovery.cause === 'generation_in_progress'
+              ? language.acceptedSendRecovery.generationInProgress
+              : language.acceptedSendRecovery.generationFailed}
+          </span>
           <button
             type="button"
             class="ml-auto shrink-0 rounded-md border border-draculared px-3 py-1.5 text-sm transition-colors hover:bg-draculared hover:text-white disabled:cursor-not-allowed disabled:opacity-50"

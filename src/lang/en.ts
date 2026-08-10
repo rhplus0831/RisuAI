@@ -63,6 +63,8 @@ export const languageEnglish = {
   acceptedSendRecovery: {
     generationFailed:
       'Your message was saved, but its reply could not be started. Retry without sending the message again.',
+    generationInProgress:
+      'Your message was saved, but another client or session was already generating in this chat. Retry the reply after that generation finishes.',
     retry: 'Retry reply',
     retrying: 'Retrying…',
   },

@@ -6,6 +6,7 @@ const coordinatorMocks = vi.hoisted(() => ({
   clearController: vi.fn(),
   controller: new AbortController(),
   createController: vi.fn(),
+  refreshActiveGenerationJobsFromBootstrap: vi.fn(),
   sendChat: vi.fn(),
   sleep: vi.fn(),
 }))
@@ -18,6 +19,10 @@ vi.mock('./index.svelte', () => ({
   clearActiveGenerationAbortController: coordinatorMocks.clearController,
   createActiveGenerationAbortController: coordinatorMocks.createController,
   sendChat: coordinatorMocks.sendChat,
+}))
+
+vi.mock('./reattach', () => ({
+  refreshActiveGenerationJobsFromBootstrap: coordinatorMocks.refreshActiveGenerationJobsFromBootstrap,
 }))
 
 import {
@@ -49,6 +54,7 @@ beforeEach(() => {
   coordinatorMocks.controller = new AbortController()
   coordinatorMocks.createController.mockReturnValue(coordinatorMocks.controller)
   coordinatorMocks.sendChat.mockResolvedValue(true)
+  coordinatorMocks.refreshActiveGenerationJobsFromBootstrap.mockResolvedValue(undefined)
   coordinatorMocks.sleep.mockResolvedValue(undefined)
   resetAcceptedSendCoordinatorForTests()
 })
@@ -117,10 +123,16 @@ describe('accepted send coordinator', () => {
         target: target(),
         append: { status: 'ok', messageId: 'message-a' },
       }),
-    ).resolves.toEqual({ status: 'generation_failed' })
+    ).resolves.toEqual({ status: 'generation_failed', cause: 'generation_failed' })
 
     const [recovery] = get(acceptedSendRecoveries)
-    expect(recovery).toMatchObject({ target: target(), messageId: 'message-a', retrying: false })
+    expect(recovery).toMatchObject({
+      target: target(),
+      messageId: 'message-a',
+      cause: 'generation_failed',
+      retrying: false,
+    })
+    expect(coordinatorMocks.refreshActiveGenerationJobsFromBootstrap).not.toHaveBeenCalled()
 
     await expect(retryAcceptedChatSend(recovery.id)).resolves.toBe(true)
     expect(coordinatorMocks.sendChat).toHaveBeenCalledTimes(2)
@@ -128,6 +140,45 @@ describe('accepted send coordinator', () => {
       -1,
       expect.objectContaining({ expectedTarget: target() }),
     )
+    expect(get(acceptedSendRecoveries)).toEqual([])
+  })
+
+  it('keeps a generation-in-progress recovery through a rejected retry and refreshes remote jobs', async () => {
+    const rejectForRunningGeneration = async (_index: number, args: unknown): Promise<boolean> => {
+      const onFailure = (args as { onFailure?: (failure: { cause: 'generation_in_progress' }) => void }).onFailure
+      onFailure?.({ cause: 'generation_in_progress' })
+      return false
+    }
+    coordinatorMocks.sendChat
+      .mockImplementationOnce(rejectForRunningGeneration)
+      .mockImplementationOnce(rejectForRunningGeneration)
+      .mockResolvedValueOnce(true)
+
+    await expect(
+      coordinateAcceptedChatSend({
+        target: target(),
+        append: { status: 'ok', messageId: 'message-a' },
+      }),
+    ).resolves.toEqual({ status: 'generation_failed', cause: 'generation_in_progress' })
+
+    const [recovery] = get(acceptedSendRecoveries)
+    expect(recovery).toMatchObject({
+      target: target(),
+      messageId: 'message-a',
+      cause: 'generation_in_progress',
+      retrying: false,
+    })
+    expect(coordinatorMocks.refreshActiveGenerationJobsFromBootstrap).toHaveBeenCalledTimes(1)
+
+    await expect(retryAcceptedChatSend(recovery.id)).resolves.toBe(false)
+    expect(get(acceptedSendRecoveries)).toEqual([
+      expect.objectContaining({ id: recovery.id, cause: 'generation_in_progress', retrying: false }),
+    ])
+    expect(coordinatorMocks.refreshActiveGenerationJobsFromBootstrap).toHaveBeenCalledTimes(2)
+    expect(coordinatorMocks.sendChat).toHaveBeenCalledTimes(2)
+
+    await expect(retryAcceptedChatSend(recovery.id)).resolves.toBe(true)
+    expect(coordinatorMocks.sendChat).toHaveBeenCalledTimes(3)
     expect(get(acceptedSendRecoveries)).toEqual([])
   })
 })

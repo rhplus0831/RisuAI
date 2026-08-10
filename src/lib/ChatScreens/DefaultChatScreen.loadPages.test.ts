@@ -29,7 +29,8 @@ const loadPageMocks = vi.hoisted(() => ({
   postChatFile: vi.fn(async () => []),
   preflightChatSendBeforeMutation: vi.fn(() => ({ type: 'server' as const })),
   processMultiCommand: vi.fn(async () => false),
-  sendChat: vi.fn(async () => true),
+  refreshActiveGenerationJobsFromBootstrap: vi.fn(async () => undefined),
+  sendChat: vi.fn(async (_index?: number, _args?: unknown) => true),
   sleep: vi.fn(async () => undefined),
   stopTTS: vi.fn(),
   guardActiveChatGenerationSettingsForSend: vi.fn(() => ({ status: 'ok' })),
@@ -81,6 +82,7 @@ vi.mock('../../lang', () => ({
             : property === 'acceptedSendRecovery'
               ? {
                   generationFailed: 'acceptedSendGenerationFailed',
+                  generationInProgress: 'acceptedSendGenerationInProgress',
                   retry: 'acceptedSendRetry',
                   retrying: 'acceptedSendRetrying',
                 }
@@ -171,6 +173,14 @@ vi.mock('src/ts/process/index.svelte', async () => {
     createActiveGenerationAbortController: loadPageMocks.createActiveGenerationAbortController,
     doingChat: writable(false),
     sendChat: loadPageMocks.sendChat,
+  }
+})
+
+vi.mock('src/ts/process/reattach', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/process/reattach')>()
+  return {
+    ...actual,
+    refreshActiveGenerationJobsFromBootstrap: loadPageMocks.refreshActiveGenerationJobsFromBootstrap,
   }
 })
 
@@ -309,6 +319,7 @@ import { translate } from '../../ts/translator/translator'
 import { runInputHook } from 'src/ts/process/inputHooks'
 import { chatProcessStage } from 'src/ts/process/index.svelte'
 import { resetAcceptedSendCoordinatorForTests } from 'src/ts/process/acceptedSendCoordinator.svelte'
+import { activeGenerationJobs } from 'src/ts/process/reattach'
 import { createBranchComment } from './branchComment'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -577,6 +588,9 @@ beforeEach(() => {
   loadPageMocks.appendCurrentChatUserMessageForSend.mockResolvedValue({ status: 'ok', messageId: 'message-a' })
   loadPageMocks.sendChat.mockReset()
   loadPageMocks.sendChat.mockResolvedValue(true)
+  loadPageMocks.refreshActiveGenerationJobsFromBootstrap.mockReset()
+  loadPageMocks.refreshActiveGenerationJobsFromBootstrap.mockResolvedValue(undefined)
+  activeGenerationJobs.set([])
   loadPageMocks.postChatFile.mockReset()
   loadPageMocks.postChatFile.mockResolvedValue([])
   loadPageMocks.captureActiveChatTarget.mockImplementation(captureActiveChatTargetForTest)
@@ -611,6 +625,7 @@ afterEach(() => {
   clearDefaultChatComposerDrafts()
   resetDraftRecoveryScopeForTests()
   resetAcceptedSendCoordinatorForTests()
+  activeGenerationJobs.set([])
 })
 
 describe('DefaultChatScreen overflow menu accessibility', () => {
@@ -2371,6 +2386,81 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')?.value).toBe(
       'Chat B stays untouched',
     )
+  })
+
+  it('explains a generation lock while bootstrap catches up and keeps the accepted row retryable', async () => {
+    seedDatabase([1])
+    loadPageMocks.appendCurrentChatUserMessageForSend.mockImplementationOnce(async (input?: unknown) => {
+      const chat = getResourceDatabase().characters[0].chats[0]
+      chat.message.push({ ...(input as Message), chatId: 'accepted-lock-message' })
+      return { status: 'ok', messageId: 'accepted-lock-message' }
+    })
+    const rejectForRunningGeneration = async (_index?: number, args?: unknown): Promise<boolean> => {
+      const onFailure = (args as { onFailure?: (failure: { cause: 'generation_in_progress' }) => void })?.onFailure
+      onFailure?.({ cause: 'generation_in_progress' })
+      return false
+    }
+    loadPageMocks.sendChat
+      .mockImplementationOnce(rejectForRunningGeneration)
+      .mockImplementationOnce(rejectForRunningGeneration)
+      .mockResolvedValueOnce(true)
+    loadPageMocks.refreshActiveGenerationJobsFromBootstrap.mockImplementation(async () => {
+      activeGenerationJobs.set([{ chatId: 'chat-0', jobId: 'remote-job' }])
+    })
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy())
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    textarea.value = 'Accepted while another client generates'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="accepted-send-recovery"]')?.textContent).toContain(
+        'acceptedSendGenerationInProgress',
+      )
+      expect(target.querySelector('[data-testid="default-chat-cancel-button"]')).toBeTruthy()
+    })
+    expect(textarea.value).toBe('')
+    expect(
+      Array.from(target.querySelectorAll('.risu-chat')).filter((row) =>
+        row.textContent?.includes('Accepted while another client generates'),
+      ),
+    ).toHaveLength(1)
+    expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledTimes(1)
+    expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(1)
+    expect(loadPageMocks.refreshActiveGenerationJobsFromBootstrap).toHaveBeenCalledTimes(1)
+
+    target.querySelector<HTMLButtonElement>('[data-testid="accepted-send-retry"]')!.click()
+    await waitFor(() => {
+      expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(2)
+      expect(loadPageMocks.refreshActiveGenerationJobsFromBootstrap).toHaveBeenCalledTimes(2)
+      expect(target.querySelector('[data-testid="accepted-send-recovery"]')?.textContent).toContain(
+        'acceptedSendGenerationInProgress',
+      )
+    })
+    expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledTimes(1)
+    expect(get(activeGenerationJobs)).toEqual([{ chatId: 'chat-0', jobId: 'remote-job' }])
+
+    activeGenerationJobs.set([])
+    await settle()
+    expect(target.querySelector('[data-testid="accepted-send-recovery"]')?.textContent).toContain(
+      'acceptedSendGenerationInProgress',
+    )
+    expect(target.querySelector('[data-testid="default-chat-send-button"]')).toBeTruthy()
+    expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(2)
+
+    target.querySelector<HTMLButtonElement>('[data-testid="accepted-send-retry"]')!.click()
+    await waitFor(() => {
+      expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(3)
+      expect(target.querySelector('[data-testid="accepted-send-recovery"]')).toBeNull()
+    })
+    expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledTimes(1)
+    expect(
+      Array.from(target.querySelectorAll('.risu-chat')).filter((row) =>
+        row.textContent?.includes('Accepted while another client generates'),
+      ),
+    ).toHaveLength(1)
   })
 
   it('does not restore old text or files over a newer draft when a delayed append fails', async () => {

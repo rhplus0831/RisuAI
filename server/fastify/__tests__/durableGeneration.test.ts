@@ -1167,17 +1167,34 @@ describe('Durable generation (Milestone 1)', () => {
     obsController.abort()
   }, 8000)
 
-  it('rejects a second durable send while a generation is running for the chat (409)', async () => {
+  it('keeps an accepted append when its durable generation hits the same-chat lock (409)', async () => {
     const gated = makeGatedProvider({ before: 'one' })
     providerImpl = gated.dispatchProvider
 
     const controller = newController()
     const res1 = await postDurable({}, { signal: controller.signal })
-    await readSse(res1, (ev) => ev.type === 'token')
+    const firstEvents = await readSse(res1, (ev) => ev.type === 'token')
+    const firstJobId = jobIdFromEvents(firstEvents)
 
-    const res2 = await postDurable({})
+    await appendMessage({
+      role: 'user',
+      data: 'accepted while the remote job runs',
+      chatId: 'accepted-user-message',
+    })
+    expect(
+      (await chatMessages(await bootstrap())).filter((message) => message.chatId === 'accepted-user-message'),
+    ).toEqual([expect.objectContaining({ role: 'user', data: 'accepted while the remote job runs' })])
+
+    const res2 = await postDurable({ userMessage: 'accepted while the remote job runs' })
     expect(res2.status).toBe(409)
     expect((await res2.json()).error).toBe('generation_in_progress')
+
+    const running = await bootstrap()
+    expect(running.activeGenerationJobs).toHaveLength(1)
+    expect(running.activeGenerationJobs[0]).toMatchObject({ chatId: 'chat-1', jobId: firstJobId, mode: 'send' })
+    expect((await chatMessages(running)).filter((message) => message.chatId === 'accepted-user-message')).toEqual([
+      expect.objectContaining({ role: 'user', data: 'accepted while the remote job runs' }),
+    ])
 
     gated.release()
     controller.abort()

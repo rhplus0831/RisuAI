@@ -42,6 +42,7 @@ import {
   type ChatGenerationActivity,
 } from './generationActivity.svelte'
 import { playMessageCompletionSoundIfEnabled } from './messageCompletionSound'
+import type { SendChatFailure } from './sendChatFailure'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -93,6 +94,8 @@ export interface SendChatArgs {
   /** True only for the UI-created `*says nothing*` empty-send sentinel. */
   syntheticSayNothing?: boolean
   expectedTarget?: ActiveChatTarget | null
+  /** Receives classified start failures without changing the legacy boolean result. */
+  onFailure?: (failure: SendChatFailure) => void
   /** Internal circuit-breaker depth for server-owned postGeneration resends. */
   serverResendDepth?: number
   /**
@@ -404,6 +407,13 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       }
       if (serverAssembly.status === 'failed') {
         currentChat = serverAssembly.currentChat
+        if (serverAssembly.failure) {
+          try {
+            arg.onFailure?.(serverAssembly.failure)
+          } catch (error) {
+            console.error(error)
+          }
+        }
         throwError(serverAssembly.error)
         return false
       }
@@ -606,6 +616,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
         signal: abortSignal,
         continue: serverRequestedResend ? true : undefined,
         ...(arg.expectedTarget !== undefined ? { expectedTarget: arg.expectedTarget } : {}),
+        ...(arg.onFailure ? { onFailure: arg.onFailure } : {}),
         serverResendDepth: serverRequestedResend ? (arg.serverResendDepth ?? 0) + 1 : 0,
       })
     }

@@ -418,6 +418,7 @@ describe('requestServerChat', () => {
     expect(res).toEqual({
       status: 'error',
       error: 'A generation is already running for this chat.',
+      code: 'generation_in_progress',
     })
   })
 
@@ -1337,6 +1338,7 @@ describe('requestServerChat', () => {
     expect(res).toEqual({
       status: 'error',
       error: 'A generation is already running for this chat.',
+      code: 'generation_in_progress',
     })
   })
 

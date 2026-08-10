@@ -37,6 +37,7 @@ import { alertConfirm } from '../alert'
 import { language } from '../../lang'
 import { currentChatStateSnapshot, dispatchUpdateChatWithOutcome } from '../chatCommands'
 import { HYPA_CONTEXT_TRUNCATION_CONFIRMATION_REQUIRED } from './request/hypaContextTruncation'
+import { sendChatFailureFromServerCode, type SendChatFailure } from './sendChatFailure'
 
 export interface ServerBackedStageTimings {
   stage1Start: number
@@ -81,7 +82,7 @@ function isServerBackedRestorationGuardFresh(guard: ServerBackedRestorationGuard
 
 export type ServerBackedAssemblyResult =
   | { status: 'aborted' }
-  | { status: 'failed'; error: string; currentChat: Chat }
+  | { status: 'failed'; error: string; currentChat: Chat; failure?: SendChatFailure }
   | { status: 'preview'; formated?: OpenAIChat[]; body?: string }
   | {
       status: 'assembled'
@@ -489,7 +490,8 @@ export async function assembleServerBackedSendChat(args: {
       targetChatId: args.currentChat.id,
       currentChat: args.currentChat,
     })
-    return { status: 'failed', error: served.error, currentChat }
+    const failure = sendChatFailureFromServerCode(served.code)
+    return { status: 'failed', error: served.error, currentChat, ...(failure ? { failure } : {}) }
   }
 
   args.stageTimings.stage1Duration =
@@ -599,7 +601,8 @@ export async function reattachServerBackedSendChat(args: {
       targetChatId: args.currentChat.id,
       currentChat: args.currentChat,
     })
-    return { status: 'failed', error: served.error, currentChat }
+    const failure = sendChatFailureFromServerCode(served.code)
+    return { status: 'failed', error: served.error, currentChat, ...(failure ? { failure } : {}) }
   }
 
   args.stageTimings.stage1Duration =

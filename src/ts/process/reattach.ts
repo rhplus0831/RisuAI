@@ -170,7 +170,7 @@ const handleGenerationOnline = (): void => {
   if (!reattachDisabled) void refreshRuntimeJobsAndTriggerReattach()
 }
 
-async function refreshRuntimeJobsAndTriggerReattach(): Promise<void> {
+export async function refreshActiveGenerationJobsFromBootstrap(): Promise<void> {
   if (reattachDisabled) return
   if (runtimeJobRefresh) return runtimeJobRefresh
   runtimeJobRefresh = (async () => {
@@ -184,10 +184,17 @@ async function refreshRuntimeJobsAndTriggerReattach(): Promise<void> {
       // Keep the locally remembered job; a later lifecycle event can retry.
     } finally {
       runtimeJobRefresh = null
-      if (!reattachDisabled) triggerOpenChatGenerationReattach()
     }
   })()
   return runtimeJobRefresh
+}
+
+async function refreshRuntimeJobsAndTriggerReattach(): Promise<void> {
+  try {
+    await refreshActiveGenerationJobsFromBootstrap()
+  } finally {
+    if (!reattachDisabled) triggerOpenChatGenerationReattach()
+  }
 }
 
 /**
