@@ -7,6 +7,7 @@ import { runImggenStableDiff } from './imggenStableDiff'
 import { fireDesktopNotification, type DesktopNotificationInput } from './notification'
 import { finalizeStage4, type StageTimings } from './stage4Finalize'
 import type { DispatchSuccessReq } from '../dispatch/dispatchRequest'
+import type { StablePostGenerationMessageTarget } from './stableTarget'
 
 export type RunStage4Result = { status: 'resend' } | { status: 'done' }
 
@@ -17,8 +18,7 @@ export interface RunStage4Args {
   resendChat: boolean
   emoChanged: boolean
   abortSignal: AbortSignal
-  selectedChar: number
-  selectedChat: number
+  target: StablePostGenerationMessageTarget | null
   /** Mutated: `stage3Duration`, `stage4Start`, `stage4Duration` written. */
   stageTimings: StageTimings
   /** Mutated: `stageTiming.stage3` written before stage 4 starts; `finalizeStage4` later writes all four stages. */
@@ -48,8 +48,7 @@ export async function runStage4(args: RunStage4Args): Promise<RunStage4Result> {
     result,
     resendChat,
     abortSignal,
-    selectedChar,
-    selectedChat,
+    target,
     stageTimings,
     generationInfo,
     throwError,
@@ -66,7 +65,7 @@ export async function runStage4(args: RunStage4Args): Promise<RunStage4Result> {
   stageTimings.stage4Start = Date.now()
 
   if (resendChat) {
-    finalizeStage4({ stageTimings, generationInfo, selectedChar, selectedChat })
+    finalizeStage4({ stageTimings, generationInfo, target })
     return { status: 'resend' }
   }
 
@@ -103,11 +102,11 @@ export async function runStage4(args: RunStage4Args): Promise<RunStage4Result> {
       })
       return { status: 'done' }
     } else if (currentChar.viewScreen === 'imggen' && abortSignal.aborted === false) {
-      await runImggenStableDiff({ currentChar, selectedChar, selectedChat, abortSignal })
+      await runImggenStableDiff({ currentChar, target, abortSignal })
     }
   }
 
-  finalizeStage4({ stageTimings, generationInfo, selectedChar, selectedChat })
+  finalizeStage4({ stageTimings, generationInfo, target })
   return { status: 'done' }
 }
 

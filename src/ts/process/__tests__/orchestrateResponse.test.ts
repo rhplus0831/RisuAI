@@ -73,7 +73,7 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {} }
 })
 
-import { setDatabase, type Chat, type Database, type character } from '../../storage/database.svelte'
+import { getDatabase, setDatabase, type Chat, type Database, type character } from '../../storage/database.svelte'
 import { orchestrateResponse, type OrchestrateResponseResult } from '../postGeneration/orchestrateResponse'
 import type { DispatchSuccessReq } from '../dispatch/dispatchRequest'
 
@@ -94,6 +94,7 @@ function makeChar(overrides: Partial<character> = {}): character {
 
 function makeChat(): Chat {
   return {
+    id: 'chat-1',
     name: 'main',
     note: '',
     localLore: [],
@@ -123,6 +124,8 @@ function baseArgs(over: Partial<Parameters<typeof orchestrateResponse>[0]> = {})
     currentChat: makeChat(),
     selectedChar: 0,
     selectedChat: 0,
+    targetCharacterId: 'cha-1',
+    targetChatId: 'chat-1',
     generationId: 'gen-1',
     generationInfo: {} as never,
     promptInfo: {} as never,
@@ -158,6 +161,7 @@ describe('orchestrateResponse - streaming branch', () => {
       msgIndex: 0,
       lastResponseChunk: { '0': 'streamed' },
       streamAborted: false,
+      projection: { chatId: 'chat-1', messageId: 'm0', generationId: 'gen-1' },
     }
     fakes.output.next = { chat: makeChat(), triggerChat: triggeredChat, resendChat: false }
 
@@ -171,8 +175,8 @@ describe('orchestrateResponse - streaming branch', () => {
     expect(fakes.rerolls.calls).toHaveLength(1)
     expect(fakes.rerolls.calls[0]).toEqual({ id: 'gen-1', arr: ['streamed'] })
     if (result.status !== 'done') throw new Error('unexpected status')
-    // Streaming branch reassigns local currentChat from triggerChat.
-    expect(result.currentChat).toBe(triggeredChat)
+    expect(result.currentChat.id).toBe('chat-1')
+    expect(result.currentChat.message[0].data).toBe('inlay-text')
     expect(result.result).toBe('streamed')
     expect(result.resendChat).toBe(false)
   })
@@ -185,6 +189,7 @@ describe('orchestrateResponse - streaming branch', () => {
       msgIndex: 0,
       lastResponseChunk: {},
       streamAborted: true,
+      projection: { chatId: 'chat-1', messageId: 'm0', generationId: 'gen-1' },
     }
 
     const result = await orchestrateResponse(baseArgs())
@@ -207,6 +212,7 @@ describe('orchestrateResponse - streaming branch', () => {
       msgIndex: 0,
       lastResponseChunk: {},
       streamAborted: false,
+      projection: { chatId: 'chat-1', messageId: 'm0', generationId: 'gen-1' },
     }
 
     const result = await orchestrateResponse(baseArgs({ abortSignal: ac.signal }))
@@ -221,7 +227,7 @@ describe('orchestrateResponse - non-streaming branch', () => {
     seedDb()
     const triggerChat = makeChat()
     triggerChat.message[0].data = 'rewritten'
-    fakes.nonStream.next = { result: 'done', emoChanged: true, mrerolls: ['a', 'b', 'c'] }
+    fakes.nonStream.next = { result: 'done', emoChanged: true, mrerolls: ['a', 'b', 'c'], messageId: 'm0' }
     fakes.output.next = { chat: makeChat(), triggerChat, resendChat: true }
 
     const initialCurrentChat = makeChat()
@@ -235,9 +241,8 @@ describe('orchestrateResponse - non-streaming branch', () => {
     expect(result.status).toBe('done')
     expect(fakes.stream.calls).toBe(0)
     expect(fakes.nonStream.calls).toBe(1)
-    // Asymmetry: local currentChat NOT reassigned (non-stream writes only to DB).
     if (result.status !== 'done') throw new Error('unexpected status')
-    expect(result.currentChat).toBe(initialCurrentChat)
+    expect(result.currentChat).toBe(triggerChat)
     expect(result.emoChanged).toBe(true)
     expect(result.resendChat).toBe(true)
     // DB writeback happened via the helper (verified indirectly via output trigger call).
@@ -251,7 +256,7 @@ describe('orchestrateResponse - non-streaming branch', () => {
 
   it('skips addRerolls when mrerolls.length <= 1', async () => {
     seedDb()
-    fakes.nonStream.next = { result: 'done', emoChanged: false, mrerolls: ['only'] }
+    fakes.nonStream.next = { result: 'done', emoChanged: false, mrerolls: ['only'], messageId: 'm0' }
     fakes.output.next = { chat: makeChat(), triggerChat: null, resendChat: false }
 
     await orchestrateResponse(baseArgs({ req: { type: 'success', result: 'done' } as unknown as DispatchSuccessReq }))
@@ -272,6 +277,7 @@ describe('orchestrateResponse - server-owned post-generation (A2)', () => {
       msgIndex: 0,
       lastResponseChunk: { '0': 'streamed' },
       streamAborted: false,
+      projection: { chatId: 'chat-1', messageId: 'm0', generationId: 'gen-1' },
     }
     // Stage a trigger result that WOULD fire if applyOutputTrigger were called.
     fakes.output.next = { chat: makeChat(), triggerChat: makeChat(), resendChat: true }
@@ -302,17 +308,90 @@ describe('orchestrateResponse - happy path returns', () => {
       msgIndex: 0,
       lastResponseChunk: { '0': 'final' },
       streamAborted: false,
+      projection: { chatId: 'chat-1', messageId: 'm0', generationId: 'gen-1' },
     }
     fakes.output.next = { chat: makeChat(), triggerChat: triggered, resendChat: true }
 
     const result = await orchestrateResponse(baseArgs())
 
     if (result.status !== 'done') throw new Error('unexpected status')
-    expect(result.currentChat).toBe(triggered)
+    expect(result.currentChat.id).toBe('chat-1')
+    expect(result.currentChat.message[0].data).toBe('inlay-text')
     expect(result.result).toBe('final')
     expect(result.emoChanged).toBe(true)
     expect(result.resendChat).toBe(true)
     // IGP runs once on the done path.
     expect(fakes.igp.calls).toBe(1)
+  })
+})
+
+function deferredString(): { promise: Promise<string>; resolve: (value: string) => void } {
+  let resolve!: (value: string) => void
+  const promise = new Promise<string>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
+describe('orchestrateResponse - stable asynchronous inlay target', () => {
+  it('writes a deferred inlay to the original message after character and message reordering', async () => {
+    const other = makeChar({
+      chaId: 'cha-2',
+      name: 'Other',
+      chats: [{ ...makeChat(), id: 'chat-2', message: [{ role: 'char', data: 'other', chatId: 'other-m' }] }],
+    })
+    seedDb({ characters: [makeChar({ chats: [makeChat()] }), other] })
+    const gate = deferredString()
+    fakes.stream.next = {
+      result: 'streamed',
+      emoChanged: false,
+      msgIndex: 0,
+      lastResponseChunk: { '0': 'streamed' },
+      streamAborted: false,
+      projection: { chatId: 'chat-1', messageId: 'm0', generationId: 'gen-1' },
+    }
+    fakes.output.next = { chat: makeChat(), triggerChat: null, resendChat: false }
+    fakes.inlay.next = { text: 'pending inlay', promise: gate.promise }
+
+    const pending = orchestrateResponse(baseArgs())
+    await vi.waitFor(() => expect(fakes.inlay.calls).toBe(1))
+    getDatabase().characters.reverse()
+    const targetChat = getDatabase().characters.find((char) => char.chaId === 'cha-1')!.chats[0]
+    targetChat.message.unshift({ role: 'char', data: 'inserted', chatId: 'inserted-m' })
+    gate.resolve('resolved inlay')
+    await pending
+
+    expect(targetChat.message.find((message) => message.chatId === 'm0')?.data).toBe('resolved inlay')
+    expect(targetChat.message.find((message) => message.chatId === 'inserted-m')?.data).toBe('inserted')
+    expect(getDatabase().characters.find((char) => char.chaId === 'cha-2')!.chats[0].message[0].data).toBe('other')
+  })
+
+  it('does not write a deferred inlay through a reused character index after target deletion', async () => {
+    const other = makeChar({
+      chaId: 'cha-2',
+      name: 'Other',
+      chats: [{ ...makeChat(), id: 'chat-2', message: [{ role: 'char', data: 'other', chatId: 'other-m' }] }],
+    })
+    seedDb({ characters: [makeChar({ chats: [makeChat()] }), other] })
+    const gate = deferredString()
+    fakes.stream.next = {
+      result: 'streamed',
+      emoChanged: false,
+      msgIndex: 0,
+      lastResponseChunk: { '0': 'streamed' },
+      streamAborted: false,
+      projection: { chatId: 'chat-1', messageId: 'm0', generationId: 'gen-1' },
+    }
+    fakes.output.next = { chat: makeChat(), triggerChat: null, resendChat: false }
+    fakes.inlay.next = { text: 'pending inlay', promise: gate.promise }
+
+    const pending = orchestrateResponse(baseArgs())
+    await vi.waitFor(() => expect(fakes.inlay.calls).toBe(1))
+    getDatabase().characters.splice(0, 1)
+    gate.resolve('resolved inlay')
+    await pending
+
+    expect(getDatabase().characters[0].chaId).toBe('cha-2')
+    expect(getDatabase().characters[0].chats[0].message[0].data).toBe('other')
   })
 })

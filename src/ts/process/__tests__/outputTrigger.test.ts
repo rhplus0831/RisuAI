@@ -33,6 +33,7 @@ function makeChar(): character {
     chaId: 'cha-1',
     chats: [
       {
+        id: 'chat-1',
         message: [{ role: 'user', data: 'hi' }],
         note: '',
         name: 'main',
@@ -81,8 +82,8 @@ describe('applyOutputTrigger', () => {
     const rccf = vi.fn((chat: Chat) => ({ ...chat, name: 'rccf-mutated' }))
     const out = await applyOutputTrigger({
       currentChar,
-      selectedChar: 0,
-      selectedChat: 0,
+      currentChat: currentChar.chats[0],
+      target: { characterId: 'cha-1', chatId: 'chat-1' },
       runCurrentChatFunction: rccf,
     })
     expect(rccf).toHaveBeenCalledTimes(1)
@@ -95,15 +96,15 @@ describe('applyOutputTrigger', () => {
     runTriggerSpy.mockResolvedValue(null)
     await applyOutputTrigger({
       currentChar,
-      selectedChar: 0,
-      selectedChat: 0,
+      currentChat: currentChar.chats[0],
+      target: { characterId: 'cha-1', chatId: 'chat-1' },
       runCurrentChatFunction: identityRccf,
     })
     expect(runTriggerSpy).toHaveBeenCalledTimes(1)
     const [charArg, modeArg, { chat }] = runTriggerSpy.mock.calls[0]
     expect(charArg).toBe(currentChar)
     expect(modeArg).toBe('output')
-    expect(chat).toBe(testDatabaseState.db.characters[0].chats[0])
+    expect(chat).toEqual(testDatabaseState.db.characters[0].chats[0])
   })
 
   it('surfaces triggerResult.chat as triggerChat when the trigger returns one', async () => {
@@ -117,8 +118,8 @@ describe('applyOutputTrigger', () => {
     runTriggerSpy.mockResolvedValue({ chat: replacementChat, sendAIprompt: false })
     const out = await applyOutputTrigger({
       currentChar,
-      selectedChar: 0,
-      selectedChat: 0,
+      currentChat: currentChar.chats[0],
+      target: { characterId: 'cha-1', chatId: 'chat-1' },
       runCurrentChatFunction: identityRccf,
     })
     expect(out.triggerChat).toBe(replacementChat)
@@ -130,8 +131,8 @@ describe('applyOutputTrigger', () => {
     runTriggerSpy.mockResolvedValue({ sendAIprompt: false })
     const out = await applyOutputTrigger({
       currentChar,
-      selectedChar: 0,
-      selectedChat: 0,
+      currentChat: currentChar.chats[0],
+      target: { characterId: 'cha-1', chatId: 'chat-1' },
       runCurrentChatFunction: identityRccf,
     })
     expect(out.triggerChat).toBeNull()
@@ -142,8 +143,8 @@ describe('applyOutputTrigger', () => {
     runTriggerSpy.mockResolvedValue({ sendAIprompt: true })
     const out = await applyOutputTrigger({
       currentChar,
-      selectedChar: 0,
-      selectedChat: 0,
+      currentChat: currentChar.chats[0],
+      target: { characterId: 'cha-1', chatId: 'chat-1' },
       runCurrentChatFunction: identityRccf,
     })
     expect(out.resendChat).toBe(true)
@@ -155,11 +156,30 @@ describe('applyOutputTrigger', () => {
     runTriggerSpy.mockResolvedValue(null)
     const out = await applyOutputTrigger({
       currentChar,
-      selectedChar: 0,
-      selectedChat: 0,
+      currentChat: currentChar.chats[0],
+      target: { characterId: 'cha-1', chatId: 'chat-1' },
       runCurrentChatFunction: identityRccf,
     })
     expect(out.triggerChat).toBeNull()
     expect(out.resendChat).toBe(false)
+  })
+
+  it('does not run or write when the stable chat target no longer exists', async () => {
+    const currentChar = seed()
+    const replacement = makeChar()
+    replacement.chaId = 'cha-replacement'
+    testDatabaseState.db.characters[0] = replacement
+    const rccf = vi.fn(identityRccf)
+
+    const out = await applyOutputTrigger({
+      currentChar,
+      currentChat: currentChar.chats[0],
+      target: { characterId: 'cha-1', chatId: 'chat-1' },
+      runCurrentChatFunction: rccf,
+    })
+
+    expect(rccf).not.toHaveBeenCalled()
+    expect(runTriggerSpy).not.toHaveBeenCalled()
+    expect(out).toMatchObject({ triggerChat: null, resendChat: false })
   })
 })

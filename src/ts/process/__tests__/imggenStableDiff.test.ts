@@ -22,6 +22,7 @@ function makeChar(): character {
     chaId: 'cha-1',
     chats: [
       {
+        id: 'chat-1',
         message: [],
         note: '',
         name: 'main',
@@ -46,6 +47,8 @@ function seed(char: character) {
   selectedCharID.set(0)
 }
 
+const target = { characterId: 'cha-1', chatId: 'chat-1' }
+
 describe('runImggenStableDiff', () => {
   beforeEach(() => {
     stableDiffSpy.mockReset()
@@ -61,7 +64,7 @@ describe('runImggenStableDiff', () => {
       { role: 'char', data: 'reply B', time: 0 },
     ]
     seed(char)
-    await runImggenStableDiff({ currentChar: char, selectedChar: 0, selectedChat: 0 })
+    await runImggenStableDiff({ currentChar: char, target })
     expect(stableDiffSpy).toHaveBeenCalledTimes(1)
     const [arg1, arg2] = stableDiffSpy.mock.calls[0]
     expect(arg1).toBe(char)
@@ -78,7 +81,7 @@ describe('runImggenStableDiff', () => {
       { role: 'char', data: 'multi\nline\nchar', time: 0 },
     ]
     seed(char)
-    await runImggenStableDiff({ currentChar: char, selectedChar: 0, selectedChat: 0 })
+    await runImggenStableDiff({ currentChar: char, target })
     const [, arg2] = stableDiffSpy.mock.calls[0]
     expect(arg2).toBe('user: multi line user \ncharacter: multi line char \n')
   })
@@ -90,7 +93,7 @@ describe('runImggenStableDiff', () => {
       { role: 'char', data: 'only-2', time: 0 },
     ]
     seed(char)
-    await runImggenStableDiff({ currentChar: char, selectedChar: 0, selectedChat: 0 })
+    await runImggenStableDiff({ currentChar: char, target })
     const [, arg2] = stableDiffSpy.mock.calls[0]
     expect(arg2).toBe('character: only-1 \ncharacter: only-2 \n')
   })
@@ -98,7 +101,7 @@ describe('runImggenStableDiff', () => {
   it('calls stableDiff with an empty transcript when the chat is empty', async () => {
     const char = makeChar()
     seed(char)
-    await runImggenStableDiff({ currentChar: char, selectedChar: 0, selectedChat: 0 })
+    await runImggenStableDiff({ currentChar: char, target })
     expect(stableDiffSpy).toHaveBeenCalledWith(char, '')
   })
 
@@ -107,7 +110,7 @@ describe('runImggenStableDiff', () => {
     const abortSignal = new AbortController().signal
     seed(char)
 
-    await runImggenStableDiff({ currentChar: char, selectedChar: 0, selectedChat: 0, abortSignal })
+    await runImggenStableDiff({ currentChar: char, target, abortSignal })
 
     expect(stableDiffSpy).toHaveBeenCalledWith(char, '', { signal: abortSignal })
   })
@@ -120,8 +123,7 @@ describe('runImggenStableDiff', () => {
 
     await runImggenStableDiff({
       currentChar: char,
-      selectedChar: 0,
-      selectedChat: 0,
+      target,
       abortSignal: controller.signal,
     })
 

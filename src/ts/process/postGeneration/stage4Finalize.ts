@@ -1,5 +1,6 @@
 import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
-import { getDatabase, type MessageGenerationInfo } from '../../storage/database.svelte'
+import type { MessageGenerationInfo } from '../../storage/database.svelte'
+import { resolveStablePostGenerationMessage, type StablePostGenerationMessageTarget } from './stableTarget'
 
 export interface StageTimings {
   stage1Start: number
@@ -15,12 +16,11 @@ export interface StageTimings {
 export interface FinalizeStage4Options {
   stageTimings: StageTimings
   generationInfo: MessageGenerationInfo
-  selectedChar: number
-  selectedChat: number
+  target: StablePostGenerationMessageTarget | null
 }
 
 export function finalizeStage4(opts: FinalizeStage4Options): void {
-  const { stageTimings, generationInfo, selectedChar, selectedChat } = opts
+  const { stageTimings, generationInfo, target } = opts
   stageTimings.stage4Duration = Date.now() - stageTimings.stage4Start
   if (generationInfo.stageTiming) {
     generationInfo.stageTiming.stage1 = stageTimings.stage1Duration
@@ -28,12 +28,9 @@ export function finalizeStage4(opts: FinalizeStage4Options): void {
     generationInfo.stageTiming.stage3 = stageTimings.stage3Duration
     generationInfo.stageTiming.stage4 = stageTimings.stage4Duration
   }
-  const messages = getDatabase().characters[selectedChar].chats[selectedChat].message
-  const lastMessageIndex = messages.length - 1
-  if (lastMessageIndex >= 0 && messages[lastMessageIndex].generationInfo) {
-    withTrustedResourceWrite(() => {
-      getDatabase().characters[selectedChar].chats[selectedChat].message[lastMessageIndex].generationInfo =
-        generationInfo
-    })
-  }
+  withTrustedResourceWrite(() => {
+    const resolution = resolveStablePostGenerationMessage(target)
+    if (!resolution?.message.generationInfo) return
+    resolution.message.generationInfo = generationInfo
+  })
 }

@@ -1,9 +1,4 @@
-import {
-  cloneJsonValue,
-  dispatchUpdateMessageScoped,
-  mutateChatWithScopedCommand,
-  type ChatScopedSnapshot,
-} from '../../chatCommands'
+import { cloneJsonValue, dispatchUpdateMessageScoped, type ChatScopedSnapshot } from '../../chatCommands'
 import { parseChatML } from '../../parser/chatML'
 import { getDatabase } from '../../storage/database.svelte'
 import { requestChatData } from '../request/request'
@@ -20,14 +15,12 @@ export interface IgpMessageTarget {
 export interface EvaluateIgpOptions {
   promptTemplate: string
   abortSignal: AbortSignal
-  selectedChar: number
-  selectedChat: number
   /**
    * Stable post-terminal row identity for server-backed generations. IGP only
    * appends while this exact derived text is still current, and carries the
    * same conditions into the durable message command.
    */
-  target?: IgpMessageTarget
+  target: IgpMessageTarget
 }
 
 function formatIgpAppendPayload(value: unknown): string {
@@ -76,23 +69,11 @@ export async function evaluateIgp(opts: EvaluateIgpOptions): Promise<void> {
   const formated = parseChatML(parsed)
   const rq = await requestChatData({ formated, bias: {} }, 'emotion', opts.abortSignal)
   const appended = formatIgpAppendPayload(rq)
-  if (opts.target) {
-    const previous = captureIgpTargetSnapshot(opts.target)
-    if (!previous) return
-    dispatchUpdateMessageScoped(opts.target.messageId, { data: opts.target.expectedData + appended }, previous, {
-      expectedData: opts.target.expectedData,
-      expectedChatId: opts.target.chatId,
-      expectedGenerationId: opts.target.expectedGenerationId,
-    })
-    return
-  }
-  mutateChatWithScopedCommand(
-    (chat) => {
-      const messages = chat.message
-      const last = messages[messages.length - 1]
-      if (!last) return
-      last.data += appended
-    },
-    { selectedChar: opts.selectedChar, selectedChat: opts.selectedChat },
-  )
+  const previous = captureIgpTargetSnapshot(opts.target)
+  if (!previous) return
+  dispatchUpdateMessageScoped(opts.target.messageId, { data: opts.target.expectedData + appended }, previous, {
+    expectedData: opts.target.expectedData,
+    expectedChatId: opts.target.chatId,
+    expectedGenerationId: opts.target.expectedGenerationId,
+  })
 }

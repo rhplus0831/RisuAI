@@ -63,7 +63,8 @@ function makeChar(): character {
     chaId: 'cha-1',
     chats: [
       {
-        message: [{ role: 'user', data: 'hi' }],
+        id: 'chat-1',
+        message: [{ role: 'user', data: 'hi', chatId: 'user-1' }],
         note: '',
         name: 'main',
         localLore: [],
@@ -94,20 +95,20 @@ function callArgs(
   req: requestDataResponse,
   currentChar: character,
   overrides: Partial<Parameters<typeof applyNonStreamResponse>[0]> = {},
-) {
-  return {
+): Parameters<typeof applyNonStreamResponse>[0] {
+  const args: Parameters<typeof applyNonStreamResponse>[0] = {
     req,
     arg: {},
     nowChatroom: currentChar,
     currentChar,
-    selectedChar: 0,
-    selectedChat: 0,
+    target: { characterId: 'cha-1', chatId: 'chat-1' },
     generationId: 'gen-1',
     generationInfo: {} as MessageGenerationInfo,
     promptInfo: {} as MessagePresetInfo,
     reformatContent: REFORMAT,
     ...overrides,
   }
+  return args
 }
 
 describe('applyNonStreamResponse', () => {
@@ -168,12 +169,18 @@ describe('applyNonStreamResponse', () => {
 
   it('arg.continue: overwrites the previous slot instead of pushing', async () => {
     const currentChar = seed()
-    testDatabaseState.db.characters[0].chats[0].message.push({ role: 'char', data: 'partial' })
+    testDatabaseState.db.characters[0].chats[0].message.push({
+      role: 'char',
+      data: 'partial',
+      chatId: 'assistant-1',
+    })
     const req: requestDataResponse = { type: 'success', result: 'continued' }
     const out = await applyNonStreamResponse(callArgs(req, currentChar, { arg: { continue: true } }))
     const messages = testDatabaseState.db.characters[0].chats[0].message
     expect(messages).toHaveLength(2)
     expect(messages[1].data).toBe('partialcontinued')
+    expect(messages[1].chatId).toBe('assistant-1')
+    expect(out.messageId).toBe('assistant-1')
     expect(out.mrerolls).toEqual([])
     expect(processScriptFullSpy).toHaveBeenCalledTimes(2)
     expect(processScriptFullSpy.mock.calls[1][1]).toBe('partialcontinued')

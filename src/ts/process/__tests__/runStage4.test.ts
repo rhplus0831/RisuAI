@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // tests stage return values without re-testing each helper's internals
 // (covered by their own test files).
 const fakes = vi.hoisted(() => ({
-  notification: { calls: [] as unknown[] },
+  notification: { calls: [] as unknown[], pending: undefined as Promise<void> | undefined },
   applyEmotion: { next: false, calls: 0 },
   loadEmotion: {
     next: { tempEmotion: [] as unknown[], charemotions: {} as Record<string, unknown> },
@@ -19,12 +19,14 @@ const fakes = vi.hoisted(() => ({
 vi.mock('../../postGeneration/notification', () => ({
   fireDesktopNotification: async (input: unknown) => {
     fakes.notification.calls.push(input)
+    await fakes.notification.pending
   },
 }))
 
 vi.mock('../postGeneration/notification', () => ({
   fireDesktopNotification: async (input: unknown) => {
     fakes.notification.calls.push(input)
+    await fakes.notification.pending
   },
 }))
 
@@ -82,7 +84,7 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {} }
 })
 
-import { setDatabase, type Database, type character } from '../../storage/database.svelte'
+import { getDatabase, setDatabase, type Database, type character } from '../../storage/database.svelte'
 import { runStage4 } from '../postGeneration/runStage4'
 import type { DispatchSuccessReq } from '../dispatch/dispatchRequest'
 
@@ -94,12 +96,21 @@ function makeChar(overrides: Partial<character> = {}): character {
     desc: '',
     chats: [
       {
+        id: 'chat-1',
         name: 'main',
         note: '',
         localLore: [],
         scriptstate: {},
         fmIndex: -1,
-        message: [{ role: 'char', data: 'reply', chatId: 'm0', time: 0 }],
+        message: [
+          {
+            role: 'char',
+            data: 'reply',
+            chatId: 'm0',
+            time: 0,
+            generationInfo: { model: 'before' },
+          },
+        ],
       },
     ],
     chatPage: 0,
@@ -158,8 +169,7 @@ function baseArgs(over: Partial<Parameters<typeof runStage4>[0]> = {}) {
       resendChat: false,
       emoChanged: false,
       abortSignal: new AbortController().signal,
-      selectedChar: 0,
-      selectedChat: 0,
+      target: { characterId: 'cha-1', chatId: 'chat-1', messageId: 'm0' },
       stageTimings: makeStageTimings(),
       generationInfo: makeGenerationInfo(),
       throwError: () => {},
@@ -172,6 +182,7 @@ function baseArgs(over: Partial<Parameters<typeof runStage4>[0]> = {}) {
 
 beforeEach(() => {
   fakes.notification.calls = []
+  fakes.notification.pending = undefined
   fakes.applyEmotion.next = false
   fakes.applyEmotion.calls = 0
   fakes.loadEmotion.calls = 0
@@ -357,8 +368,7 @@ describe('runStage4 - imggen routing', () => {
     expect(fakes.imggen.calls[0]).toMatchObject({
       abortSignal: args.abortSignal,
       currentChar: args.currentChar,
-      selectedChar: 0,
-      selectedChat: 0,
+      target: args.target,
     })
     expect(fakes.finalize.calls).toHaveLength(1)
   })
@@ -407,5 +417,109 @@ describe('runStage4 - default path', () => {
     expect(result).toEqual({ status: 'done' })
     expect(fakes.finalize.calls).toHaveLength(1)
     expect(args.stageTimings.stage4Duration).toBeGreaterThanOrEqual(0)
+  })
+})
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
+function makeOtherChar(): character {
+  return makeChar({
+    chaId: 'cha-2',
+    name: 'Other',
+    chats: [
+      {
+        id: 'chat-2',
+        name: 'other',
+        note: '',
+        localLore: [],
+        scriptstate: {},
+        fmIndex: -1,
+        message: [
+          {
+            role: 'char',
+            data: 'other reply',
+            chatId: 'm-other',
+            time: 0,
+            generationInfo: { model: 'other-before' },
+          },
+        ],
+      },
+    ],
+  } as Partial<character>)
+}
+
+describe('runStage4 - stable finalization target', () => {
+  it('finalizes the original message after characters are reordered during an await', async () => {
+    seedDb({ notification: true, characters: [makeChar(), makeOtherChar()] })
+    const gate = deferred()
+    fakes.notification.pending = gate.promise
+    const { args } = baseArgs()
+
+    const running = runStage4(args)
+    await vi.waitFor(() => expect(fakes.notification.calls).toHaveLength(1))
+    getDatabase().characters.reverse()
+    gate.resolve()
+    await running
+
+    const target = getDatabase().characters.find((char) => char.chaId === 'cha-1')!
+    const other = getDatabase().characters.find((char) => char.chaId === 'cha-2')!
+    expect(target.chats[0].message.find((message) => message.chatId === 'm0')?.generationInfo?.model).toBe('gpt-4o')
+    expect(other.chats[0].message[0].generationInfo?.model).toBe('other-before')
+  })
+
+  it('finalizes only the original message after chat and message insertion during an await', async () => {
+    seedDb({ notification: true })
+    const gate = deferred()
+    fakes.notification.pending = gate.promise
+    const { args } = baseArgs()
+
+    const running = runStage4(args)
+    await vi.waitFor(() => expect(fakes.notification.calls).toHaveLength(1))
+    const character = getDatabase().characters[0]
+    const originalChat = character.chats[0]
+    character.chats.unshift({
+      id: 'chat-inserted',
+      name: 'inserted',
+      note: '',
+      localLore: [],
+      message: [],
+    })
+    originalChat.message.push({
+      role: 'char',
+      data: 'newer row',
+      chatId: 'm-inserted',
+      generationInfo: { model: 'inserted-before' },
+    })
+    gate.resolve()
+    await running
+
+    expect(originalChat.message.find((message) => message.chatId === 'm0')?.generationInfo?.model).toBe('gpt-4o')
+    expect(originalChat.message.find((message) => message.chatId === 'm-inserted')?.generationInfo?.model).toBe(
+      'inserted-before',
+    )
+    expect(character.chats[0].message).toEqual([])
+  })
+
+  it('does not write through a reused index after the target is deleted during an await', async () => {
+    const other = makeOtherChar()
+    seedDb({ notification: true, characters: [makeChar(), other] })
+    const gate = deferred()
+    fakes.notification.pending = gate.promise
+    const { args } = baseArgs()
+
+    const running = runStage4(args)
+    await vi.waitFor(() => expect(fakes.notification.calls).toHaveLength(1))
+    getDatabase().characters.splice(0, 1)
+    gate.resolve()
+    await running
+
+    expect(getDatabase().characters[0].chaId).toBe('cha-2')
+    expect(getDatabase().characters[0].chats[0].message[0].generationInfo?.model).toBe('other-before')
   })
 })

@@ -116,9 +116,7 @@ function seed(opts: { inlayErrorResponse: boolean; char?: character | null }) {
 }
 
 const baseCtx: SendChatErrorContext = {
-  selectedChar: 0,
-  selectedChat: 0,
-  currentChar: undefined,
+  target: { characterId: 'test-cha-id', chatId: 'chat-1' },
   generationInfo: undefined,
 }
 
@@ -147,13 +145,13 @@ describe('reportSendChatError', () => {
     expect(testDatabaseState.db.characters[0].chats[0].message).toHaveLength(0)
   })
 
-  it('falls back to alertError when the character slot is missing', () => {
+  it('falls back to alertError when the stable character is missing', () => {
     seed({ inlayErrorResponse: true, char: null })
-    reportSendChatError('boom', { ...baseCtx, selectedChar: 5 })
+    reportSendChatError('boom', baseCtx)
     expect(alertErrorSpy).toHaveBeenCalledWith('boom')
   })
 
-  it('falls back to alertError when the chat slot is invalid', () => {
+  it('falls back to alertError when the stable chat is missing', () => {
     const char = makeChar()
     char.chats = []
     seed({ inlayErrorResponse: true, char })
@@ -161,25 +159,27 @@ describe('reportSendChatError', () => {
     expect(alertErrorSpy).toHaveBeenCalledWith('boom')
   })
 
-  it('appends the error suffix when the last message is from char', () => {
+  it('appends the error suffix only to the exact stable char message', () => {
     const char = makeChar()
     char.chats[0].message = [
-      { role: 'user', data: 'hi', time: 0 },
-      { role: 'char', data: 'hello', time: 0 },
+      { role: 'user', data: 'hi', time: 0, chatId: 'm-user' },
+      { role: 'char', data: 'hello', time: 0, chatId: 'm-char' },
+      { role: 'char', data: 'newer', time: 0, chatId: 'm-newer' },
     ]
     seed({ inlayErrorResponse: true, char })
-    reportSendChatError('boom', baseCtx)
+    reportSendChatError('boom', { ...baseCtx, messageId: 'm-char' })
     expect(alertErrorSpy).not.toHaveBeenCalled()
     const messages = testDatabaseState.db.characters[0].chats[0].message
-    expect(messages).toHaveLength(2)
+    expect(messages).toHaveLength(3)
     expect(messages[1].data).toBe('hello\n```risuerror\nboom\n```')
+    expect(messages[2].data).toBe('newer')
   })
 
   it('pushes a new char message when the last message is from user', () => {
     const char = makeChar()
     char.chats[0].message = [{ role: 'user', data: 'hi', time: 0 }]
     seed({ inlayErrorResponse: true, char })
-    reportSendChatError('boom', { ...baseCtx, currentChar: char })
+    reportSendChatError('boom', baseCtx)
     const messages = testDatabaseState.db.characters[0].chats[0].message
     expect(messages).toHaveLength(2)
     expect(messages[1].role).toBe('char')
@@ -209,29 +209,18 @@ describe('reportSendChatError', () => {
     })
   })
 
-  it('falls back to alertError when reading ctx.currentChar throws', () => {
-    const char = makeChar()
-    char.chats[0].message = [{ role: 'user', data: 'hi', time: 0 }]
-    seed({ inlayErrorResponse: true, char })
-    const evilChar = {
-      get chaId(): string {
-        throw new Error('forced')
-      },
-    } as unknown as character
-    reportSendChatError('boom', { ...baseCtx, currentChar: evilChar })
-    expect(alertErrorSpy).toHaveBeenCalledWith('boom')
-  })
-
-  it('falls back to selectedCharID store when ctx.selectedChar is negative', () => {
+  it('does not fall back to the current selection when the stable character is missing', () => {
     seed({ inlayErrorResponse: true })
     selectedCharID.set(0)
-    reportSendChatError('boom', { ...baseCtx, selectedChar: -1 })
-    const messages = testDatabaseState.db.characters[0].chats[0].message
-    expect(messages).toHaveLength(1)
-    expect(messages[0].data).toBe('```risuerror\nboom\n```')
+    reportSendChatError('boom', {
+      ...baseCtx,
+      target: { characterId: 'missing-character', chatId: 'chat-1' },
+    })
+    expect(alertErrorSpy).toHaveBeenCalledWith('boom')
+    expect(testDatabaseState.db.characters[0].chats[0].message).toEqual([])
   })
 
-  it('falls back to charRoom.chatPage when ctx.selectedChat is negative', () => {
+  it('does not fall back to chatPage when the stable chat is missing', () => {
     const char = makeChar()
     char.chats = [
       { id: 'chat-1', message: [], note: '', name: 'a', localLore: [] } as never,
@@ -239,9 +228,13 @@ describe('reportSendChatError', () => {
     ]
     char.chatPage = 1
     seed({ inlayErrorResponse: true, char })
-    reportSendChatError('boom', { ...baseCtx, selectedChat: -1 })
+    reportSendChatError('boom', {
+      ...baseCtx,
+      target: { characterId: 'test-cha-id', chatId: 'missing-chat' },
+    })
     expect(testDatabaseState.db.characters[0].chats[0].message).toHaveLength(0)
-    expect(testDatabaseState.db.characters[0].chats[1].message).toHaveLength(1)
+    expect(testDatabaseState.db.characters[0].chats[1].message).toHaveLength(0)
+    expect(alertErrorSpy).toHaveBeenCalledWith('boom')
   })
 
   it('L35: writes and persists the inlay bubble under the enabled resource guard', async () => {
@@ -254,7 +247,7 @@ describe('reportSendChatError', () => {
       testDatabaseState.db.characters[0].chats[0].message.push({ role: 'char', data: 'raw' })
     }).toThrow(/read-only (server projection|outside withResourceDatabaseWrite)/)
 
-    reportSendChatError('boom', { ...baseCtx, currentChar: char })
+    reportSendChatError('boom', baseCtx)
 
     const messages = testDatabaseState.db.characters[0].chats[0].message
     expect(alertErrorSpy).not.toHaveBeenCalled()
@@ -297,8 +290,40 @@ describe('reportSendChatError', () => {
     seed({ inlayErrorResponse: true, char: null })
     setResourceWriteGuardEnabled(true)
 
-    reportSendChatError('boom', { ...baseCtx, selectedChar: 99 })
+    reportSendChatError('boom', {
+      ...baseCtx,
+      target: { characterId: 'missing-character', chatId: 'chat-1' },
+    })
 
     expect(alertErrorSpy).toHaveBeenCalledWith('boom')
+  })
+
+  it('does not write through a reused character index when a deferred error target is deleted', async () => {
+    const targetChar = makeChar()
+    const replacement = makeChar()
+    replacement.chaId = 'replacement-cha-id'
+    replacement.name = 'Replacement'
+    replacement.chats[0].id = 'replacement-chat-id'
+    setDatabase({
+      inlayErrorResponse: true,
+      characters: [targetChar, replacement],
+    } as Database)
+    const capturedContext: SendChatErrorContext = {
+      target: { characterId: 'test-cha-id', chatId: 'chat-1' },
+      generationInfo: undefined,
+    }
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const pending = gate.then(() => reportSendChatError('deferred boom', capturedContext))
+
+    testDatabaseState.db.characters.splice(0, 1)
+    release()
+    await pending
+
+    expect(testDatabaseState.db.characters[0].chaId).toBe('replacement-cha-id')
+    expect(testDatabaseState.db.characters[0].chats[0].message).toEqual([])
+    expect(alertErrorSpy).toHaveBeenCalledWith('deferred boom')
   })
 })

@@ -45,6 +45,11 @@ import { playMessageCompletionSoundIfEnabled } from './messageCompletionSound'
 import type { SendChatFailure } from './sendChatFailure'
 import type { GenerationReattachOutcome } from './generationReattachOutcome'
 import { abortInputHookActivity } from './inputHookActivity.svelte'
+import {
+  stablePostGenerationChatTarget,
+  stablePostGenerationMessageTarget,
+  type StablePostGenerationChatTarget,
+} from './postGeneration/stableTarget'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -180,6 +185,8 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
   let currentChar: character
   let generationInfo: MessageGenerationInfo | undefined = undefined
   let reattachOutcome: GenerationReattachOutcome | undefined
+  let errorTarget: StablePostGenerationChatTarget | null = null
+  let errorTargetMessageId: string | undefined
 
   const stageTimings = {
     stage1Start: 0,
@@ -205,9 +212,8 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
 
   function throwError(error: string) {
     reportSendChatError(error, {
-      selectedChar,
-      selectedChat,
-      currentChar,
+      target: errorTarget,
+      ...(errorTargetMessageId ? { messageId: errorTargetMessageId } : {}),
       generationInfo,
     })
   }
@@ -216,6 +222,9 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
   if (!generationTarget) return false
   const generationSettingsState = resolveActiveChatGenerationSettings({ target: generationTarget })
   if (!generationSettingsState.character || !generationSettingsState.chat) return false
+  errorTarget = stablePostGenerationChatTarget(generationTarget.characterId, generationTarget.chatId)
+  errorTargetMessageId =
+    arg.regenerateMessageId ?? (arg.continue ? generationSettingsState.chat.message.at(-1)?.chatId : undefined)
 
   const existingActivity = findChatGenerationActivity(generationTarget)
   // Tests and compatibility callers can still drive the legacy store directly.
@@ -468,7 +477,9 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     const serverGenerationTargetCharacterId = serverDispatch ? currentChar.chaId : undefined
     const serverGenerationTargetChatId = serverDispatch ? currentChat.id : undefined
     const serverGenerationTargetMessageId =
-      serverDispatch && arg.continue ? currentChat.message.at(-1)?.chatId : undefined
+      serverDispatch && (arg.continue || arg.regenerateMessageId)
+        ? (arg.regenerateMessageId ?? currentChat.message.at(-1)?.chatId)
+        : undefined
     if (serverDispatch) {
       setProcessStage(3)
       stageTimings.stage3Start = Date.now()
@@ -516,6 +527,9 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       generationId = dispatch.generationId
       generationInfo = dispatch.generationInfo
     }
+    // New generations own the row keyed by generationId. Continue/regenerate
+    // captured their pre-existing row before dispatch and keep that identity.
+    errorTargetMessageId ??= generationId
 
     const orchestrate = await orchestrateResponse({
       req,
@@ -542,6 +556,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       return false
     }
     currentChat = orchestrate.currentChat
+    if (orchestrate.messageId) errorTargetMessageId = orchestrate.messageId
     const result = orchestrate.result
     const emoChanged = orchestrate.emoChanged
     // On the server-dispatch path, the resend request rides the terminal
@@ -580,11 +595,10 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       // stable row; if the terminal cannot identify it safely, do not fall back
       // to whichever chat happens to be selected now.
       if (terminalResult.igpTarget) {
+        errorTargetMessageId = terminalResult.igpTarget.messageId
         await evaluateIgp({
           promptTemplate: getDatabase().igpPrompt ?? '',
           abortSignal,
-          selectedChar,
-          selectedChat,
           target: terminalResult.igpTarget,
         })
       }
@@ -605,8 +619,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       resendChat,
       emoChanged,
       abortSignal,
-      selectedChar,
-      selectedChat,
+      target: stablePostGenerationMessageTarget(errorTarget?.characterId, errorTarget?.chatId, errorTargetMessageId),
       stageTimings,
       generationInfo,
       throwError,

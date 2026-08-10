@@ -1,11 +1,12 @@
-import { getDatabase, type Chat, type character } from '../../storage/database.svelte'
+import type { Chat, character } from '../../storage/database.svelte'
 import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 import { runTrigger } from '../triggers'
+import { resolveStablePostGenerationChat, type StablePostGenerationChatTarget } from './stableTarget'
 
 export interface ApplyOutputTriggerOptions {
   currentChar: character
-  selectedChar: number
-  selectedChat: number
+  currentChat: Chat
+  target: StablePostGenerationChatTarget | null
   runCurrentChatFunction: (chat: Chat) => Chat
 }
 
@@ -16,14 +17,22 @@ export interface ApplyOutputTriggerResult {
 }
 
 export async function applyOutputTrigger(opts: ApplyOutputTriggerOptions): Promise<ApplyOutputTriggerResult> {
-  const { currentChar, selectedChar, selectedChat, runCurrentChatFunction } = opts
+  const { currentChar, currentChat, target, runCurrentChatFunction } = opts
+  let chat = currentChat
   withTrustedResourceWrite(() => {
-    getDatabase().characters[selectedChar].chats[selectedChat] = runCurrentChatFunction(
-      getDatabase().characters[selectedChar].chats[selectedChat],
-    )
+    const resolution = resolveStablePostGenerationChat(target)
+    if (!resolution) return
+    const updatedChat = runCurrentChatFunction(resolution.chat)
+    resolution.character.chats[resolution.chatIndex] = updatedChat
+    chat = updatedChat
   })
-  const chat = getDatabase().characters[selectedChar].chats[selectedChat]
+  if (!resolveStablePostGenerationChat(target)) {
+    return { chat, triggerChat: null, resendChat: false }
+  }
   const triggerResult = await runTrigger(currentChar, 'output', { chat })
+  if (!resolveStablePostGenerationChat(target)) {
+    return { chat, triggerChat: null, resendChat: false }
+  }
   return {
     chat,
     triggerChat: triggerResult && triggerResult.chat ? triggerResult.chat : null,

@@ -86,15 +86,6 @@ function stubCommandFetch(): CapturedFetch[] {
   return calls
 }
 
-async function waitForMessageCommand(calls: CapturedFetch[]): Promise<CapturedFetch> {
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    const match = calls.find((call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT')
-    if (match) return match
-    await new Promise((resolve) => setTimeout(resolve, 0))
-  }
-  throw new Error(`message command not dispatched; saw ${JSON.stringify(calls)}`)
-}
-
 async function waitForTargetedMessageCommand(calls: CapturedFetch[]): Promise<CapturedFetch> {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const match = calls.find((call) => call.url === '/api/v1/commands/messages/message-1' && call.method === 'PATCH')
@@ -114,7 +105,7 @@ function makeChar(): character {
     chats: [
       {
         id: 'chat-1',
-        message: [{ role: 'char', data: 'hello', time: 0 }],
+        message: [{ role: 'char', data: 'hello', time: 0, chatId: 'message-1' }],
         note: '',
         name: 'main',
         localLore: [],
@@ -137,8 +128,12 @@ function seed(char: character) {
 
 const baseOpts = {
   abortSignal: new AbortController().signal,
-  selectedChar: 0,
-  selectedChat: 0,
+  target: {
+    characterId: 'cha-1',
+    chatId: 'chat-1',
+    messageId: 'message-1',
+    expectedData: 'hello',
+  },
 }
 
 describe('evaluateIgp', () => {
@@ -195,8 +190,8 @@ describe('evaluateIgp', () => {
     requestChatDataSpy.mockResolvedValueOnce({ type: 'success', result: 'IGP-RESULT' })
     await evaluateIgp({ ...baseOpts, promptTemplate: CHATML_PROMPT })
     expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('helloIGP-RESULT')
-    const command = await waitForMessageCommand(calls)
-    expect(command.body.messages.at(-1).data).toBe('helloIGP-RESULT')
+    const command = await waitForTargetedMessageCommand(calls)
+    expect(command.body.patch.data).toBe('helloIGP-RESULT')
   })
 
   it('L34/I11: stringifies non-string IGP result payloads without [object Object]', async () => {
@@ -209,16 +204,20 @@ describe('evaluateIgp', () => {
     expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('hello{"label":"joy"}')
   })
 
-  it('appends to the last message regardless of position', async () => {
+  it('appends only to the exact stable message regardless of position', async () => {
     stubCommandFetch()
     const char = makeChar()
     char.chats[0].message = [
-      { role: 'user', data: 'first', time: 0 },
-      { role: 'char', data: 'second', time: 0 },
-      { role: 'char', data: 'third', time: 0 },
+      { role: 'user', data: 'first', time: 0, chatId: 'message-user' },
+      { role: 'char', data: 'second', time: 0, chatId: 'message-2' },
+      { role: 'char', data: 'third', time: 0, chatId: 'message-3' },
     ]
     seed(char)
-    await evaluateIgp({ ...baseOpts, promptTemplate: CHATML_PROMPT })
+    await evaluateIgp({
+      ...baseOpts,
+      promptTemplate: CHATML_PROMPT,
+      target: { ...baseOpts.target, messageId: 'message-3', expectedData: 'third' },
+    })
     const messages = testDatabaseState.db.characters[0].chats[0].message
     expect(messages[0].data).toBe('first')
     expect(messages[1].data).toBe('second')
@@ -236,8 +235,8 @@ describe('evaluateIgp', () => {
     await evaluateIgp({ ...baseOpts, promptTemplate: CHATML_PROMPT })
 
     expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('helloIGP-RESULT')
-    const command = await waitForMessageCommand(calls)
-    expect(command.body.messages.at(-1).data).toBe('helloIGP-RESULT')
+    const command = await waitForTargetedMessageCommand(calls)
+    expect(command.body.patch.data).toBe('helloIGP-RESULT')
 
     withTrustedResourceWrite(() => {
       testDatabaseState.db.characters[0].chats[0].message[0].data = 'stale'
@@ -249,7 +248,12 @@ describe('evaluateIgp', () => {
           chats: [
             {
               ...makeChar().chats[0],
-              message: command.body.messages,
+              message: [
+                {
+                  ...makeChar().chats[0].message[0],
+                  data: command.body.patch.data,
+                },
+              ],
             },
           ],
         },
