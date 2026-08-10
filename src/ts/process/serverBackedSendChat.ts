@@ -38,6 +38,7 @@ import { language } from '../../lang'
 import { currentChatStateSnapshot, dispatchUpdateChatWithOutcome } from '../chatCommands'
 import { HYPA_CONTEXT_TRUNCATION_CONFIRMATION_REQUIRED } from './request/hypaContextTruncation'
 import { sendChatFailureFromServerCode, type SendChatFailure } from './sendChatFailure'
+import type { GenerationReattachOutcomeStatus } from './generationReattachOutcome'
 
 export interface ServerBackedStageTimings {
   stage1Start: number
@@ -82,7 +83,13 @@ function isServerBackedRestorationGuardFresh(guard: ServerBackedRestorationGuard
 
 export type ServerBackedAssemblyResult =
   | { status: 'aborted' }
-  | { status: 'failed'; error: string; currentChat: Chat; failure?: SendChatFailure }
+  | {
+      status: 'failed'
+      error: string
+      currentChat: Chat
+      failure?: SendChatFailure
+      reattachOutcome?: GenerationReattachOutcomeStatus
+    }
   | { status: 'preview'; formated?: OpenAIChat[]; body?: string }
   | {
       status: 'assembled'
@@ -96,7 +103,13 @@ export type ServerBackedAssemblyResult =
 
 export type ServerBackedTerminalResult =
   | { status: 'ok'; currentChat: Chat; resendChat: boolean; igpTarget?: IgpMessageTarget }
-  | { status: 'failed'; error: string; currentChat: Chat; resendChat: boolean }
+  | {
+      status: 'failed'
+      error: string
+      currentChat: Chat
+      resendChat: boolean
+      reattachOutcome?: GenerationReattachOutcomeStatus
+    }
 
 function numberFrom(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
@@ -491,7 +504,12 @@ export async function assembleServerBackedSendChat(args: {
       currentChat: args.currentChat,
     })
     const failure = sendChatFailureFromServerCode(served.code)
-    return { status: 'failed', error: served.error, currentChat, ...(failure ? { failure } : {}) }
+    return {
+      status: 'failed',
+      error: served.error,
+      currentChat,
+      ...(failure ? { failure } : {}),
+    }
   }
 
   args.stageTimings.stage1Duration =
@@ -558,8 +576,8 @@ export async function assembleServerBackedSendChat(args: {
  * server replays buffered `prompt` / `info` / `token` frames over
  * `GET /generate/chat/:jobId/stream`, so the coordinator can drive the same
  * orchestrate -> terminal -> stage4 flow. There is no client-side assembly; the
- * running job already owns the prompt. A 404 surfaces as `failed`, and the
- * coordinator falls back to the persisted projection.
+ * running job already owns the prompt. Typed failure metadata lets the
+ * reattach owner decide whether the consumed job may be retried.
  */
 export async function reattachServerBackedSendChat(args: {
   selectedChar: number
@@ -602,7 +620,13 @@ export async function reattachServerBackedSendChat(args: {
       currentChat: args.currentChat,
     })
     const failure = sendChatFailureFromServerCode(served.code)
-    return { status: 'failed', error: served.error, currentChat, ...(failure ? { failure } : {}) }
+    return {
+      status: 'failed',
+      error: served.error,
+      currentChat,
+      ...(failure ? { failure } : {}),
+      ...(served.reattachOutcome ? { reattachOutcome: served.reattachOutcome } : {}),
+    }
   }
 
   args.stageTimings.stage1Duration =
@@ -724,6 +748,7 @@ export async function applyServerBackedTerminal(args: {
         currentChat: args.currentChat,
       }),
       resendChat: false,
+      ...(args.terminal.reattachOutcome ? { reattachOutcome: args.terminal.reattachOutcome } : {}),
     }
   }
 

@@ -626,12 +626,69 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       }) as unknown as typeof fetch,
     )
 
-    await expect(chatModule.sendChat(-1, { reattachJobId: 'job-reattach' })).resolves.toBe(true)
+    const onReattachOutcome = vi.fn()
+    await expect(chatModule.sendChat(-1, { reattachJobId: 'job-reattach', onReattachOutcome })).resolves.toBe(true)
 
+    expect(onReattachOutcome).toHaveBeenCalledWith({ status: 'completed' })
     expect(messageCompletionSoundState.play).toHaveBeenCalledOnce()
     expect(maintenanceCalls).toEqual([])
     expect(testDatabaseState.db.characters[0].lastInteraction).toBe(previousLastInteraction)
     expect(getServerChatCalls()).toHaveLength(1)
+  })
+
+  it('reports a terminal SSE failure to the reattach owner', async () => {
+    await seedEcho()
+    setServerChatError('terminal generation failure')
+    vi.stubGlobal('fetch', serverChatWithContextFetch)
+    const onReattachOutcome = vi.fn()
+
+    await expect(chatModule.sendChat(-1, { reattachJobId: 'job-terminal', onReattachOutcome })).resolves.toBe(false)
+
+    expect(onReattachOutcome).toHaveBeenCalledWith({
+      status: 'terminal_failure',
+      error: 'terminal generation failure',
+    })
+  })
+
+  it('reports an expired reattach job as missing', async () => {
+    await seedEcho()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse(
+          {
+            error: 'generation job not found',
+          },
+          404,
+        ),
+      ) as unknown as typeof fetch,
+    )
+    const onReattachOutcome = vi.fn()
+
+    await expect(chatModule.sendChat(-1, { reattachJobId: 'job-expired', onReattachOutcome })).resolves.toBe(false)
+
+    expect(onReattachOutcome).toHaveBeenCalledWith({
+      status: 'missing_job',
+      error: 'generation job not found',
+    })
+  })
+
+  it('reports a reattach fetch failure as retryable transport', async () => {
+    await seedEcho()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('network unavailable')
+      }) as unknown as typeof fetch,
+    )
+    const onReattachOutcome = vi.fn()
+
+    await expect(chatModule.sendChat(-1, { reattachJobId: 'job-offline', onReattachOutcome })).resolves.toBe(false)
+
+    expect(onReattachOutcome).toHaveBeenCalledWith({
+      status: 'retryable_transport_failure',
+      error: 'Network error: network unavailable',
+    })
   })
 
   it.each([

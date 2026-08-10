@@ -43,6 +43,7 @@ import {
 } from './generationActivity.svelte'
 import { playMessageCompletionSoundIfEnabled } from './messageCompletionSound'
 import type { SendChatFailure } from './sendChatFailure'
+import type { GenerationReattachOutcome } from './generationReattachOutcome'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -96,6 +97,8 @@ export interface SendChatArgs {
   expectedTarget?: ActiveChatTarget | null
   /** Receives classified start failures without changing the legacy boolean result. */
   onFailure?: (failure: SendChatFailure) => void
+  /** Internal typed result channel for a durable-job reattach. */
+  onReattachOutcome?: (outcome: GenerationReattachOutcome) => void
   /** Internal circuit-breaker depth for server-owned postGeneration resends. */
   serverResendDepth?: number
   /**
@@ -186,6 +189,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
   let selectedChat = -1
   let currentChar: character
   let generationInfo: MessageGenerationInfo | undefined = undefined
+  let reattachOutcome: GenerationReattachOutcome | undefined
 
   const stageTimings = {
     stage1Start: 0,
@@ -341,8 +345,15 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
         continue: arg.continue,
         regenerateMessageId: arg.regenerateMessageId,
       })
-      if (reattached.status === 'aborted') return false
+      if (reattached.status === 'aborted') {
+        reattachOutcome = { status: 'aborted' }
+        return false
+      }
       if (reattached.status === 'failed') {
+        reattachOutcome = {
+          status: reattached.reattachOutcome ?? 'terminal_failure',
+          error: reattached.error,
+        }
         // Job GC'd / already completed: the result is persisted, so the
         // projection refresh surfaces it. Nothing to render live.
         return false
@@ -565,6 +576,12 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       })
       currentChat = terminalResult.currentChat
       if (terminalResult.status === 'failed') {
+        if (arg.reattachJobId) {
+          reattachOutcome = {
+            status: terminalResult.reattachOutcome ?? 'terminal_failure',
+            error: terminalResult.error,
+          }
+        }
         throwError(terminalResult.error)
         return false
       }
@@ -626,11 +643,22 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     // reconciles the terminal-frame revision and issues no generation-result
     // commands.
     playMessageCompletionSoundIfEnabled()
+    if (arg.reattachJobId) reattachOutcome = { status: 'completed' }
     return true
   } finally {
     if (ownsGenerationActivity && generationActivity) {
       finishChatGenerationActivity(generationActivity.id)
       refreshLegacyGenerationProjection()
+    }
+    if (arg.reattachJobId) {
+      const outcome: GenerationReattachOutcome = reattachOutcome ?? {
+        status: abortSignal.aborted ? 'aborted' : 'terminal_failure',
+      }
+      try {
+        arg.onReattachOutcome?.(outcome)
+      } catch (error) {
+        console.error(error)
+      }
     }
   }
 }

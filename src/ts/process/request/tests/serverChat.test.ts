@@ -1362,6 +1362,7 @@ describe('requestServerChat', () => {
     expect(res).toEqual({
       status: 'error',
       error: 'Generation job not found or already expired.',
+      reattachOutcome: 'missing_job',
     })
   })
 })
@@ -1589,7 +1590,7 @@ describe('requestServerChatGeneration reattach mode (Phase 7)', () => {
     if (res.status === 'ok') {
       expect(res.generationId).toBe('job-reattach')
       const terminal = await res.terminal
-      expect(terminal.status).toBe('done')
+      expect(terminal).toMatchObject({ status: 'done', reattachOutcome: 'completed' })
     }
     expect(calls[0]).toEqual({
       url: '/api/v1/generate/chat/job-reattach/stream',
@@ -1617,8 +1618,72 @@ describe('requestServerChatGeneration reattach mode (Phase 7)', () => {
     const pending = requestServerChatGeneration(baseInput, controller.signal, 'job-reattach')
     await new Promise((r) => setTimeout(r, 15))
     controller.abort()
-    await pending
+    const served = await pending
+    if (served.status === 'ok') {
+      await expect(served.terminal).resolves.toMatchObject({ status: 'error', reattachOutcome: 'aborted' })
+    }
     await new Promise((r) => setTimeout(r, 5))
     expect(deletes).toContain('/api/v1/generate/chat/job-reattach')
+  })
+
+  it('classifies a terminal SSE error as a terminal reattach failure', async () => {
+    setServerChatDispatchError(
+      'provider rejected the request',
+      { generationId: 'job-terminal', model: 'm' },
+      {
+        chatId: 'chat-1',
+        characterId: 'char-1',
+        selectedCharID: 0,
+        chatPage: 0,
+        messages: [{ role: 'user', data: 'hi' }],
+      },
+      'job-terminal',
+    )
+    vi.stubGlobal('fetch', serverChatFetch)
+
+    const served = await requestServerChatGeneration(baseInput, null, 'job-terminal')
+
+    expect(served.status).toBe('ok')
+    if (served.status === 'ok') {
+      await expect(served.terminal).resolves.toMatchObject({
+        status: 'error',
+        error: 'provider rejected the request',
+        reattachOutcome: 'terminal_failure',
+      })
+    }
+  })
+
+  it('classifies a 404 reattach response as a missing job', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: 'generation job not found' }), {
+            status: 404,
+            headers: { 'content-type': 'application/json' },
+          }),
+      ),
+    )
+
+    await expect(requestServerChatGeneration(baseInput, null, 'job-expired')).resolves.toMatchObject({
+      status: 'error',
+      error: 'generation job not found',
+      reattachOutcome: 'missing_job',
+    })
+  })
+
+  it('classifies a failed reattach fetch as a retryable transport failure', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('network unavailable')
+      }),
+    )
+
+    await expect(requestServerChatGeneration(baseInput, null, 'job-offline')).resolves.toMatchObject({
+      status: 'error',
+      error: 'Network error: network unavailable',
+      reattachOutcome: 'retryable_transport_failure',
+    })
   })
 })

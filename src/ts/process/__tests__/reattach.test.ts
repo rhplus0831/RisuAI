@@ -25,7 +25,17 @@ const h = vi.hoisted(() => {
     doingChat: makeStore(false),
     createActiveGenerationAbortController: vi.fn(() => new AbortController()),
     clearActiveGenerationAbortController: vi.fn(),
-    sendChat: vi.fn(async () => true),
+    sendChat: vi.fn(
+      async (
+        _chatProcessIndex: number,
+        _args: {
+          onReattachOutcome?: (outcome: {
+            status: 'retryable_transport_failure' | 'terminal_failure' | 'missing_job' | 'aborted' | 'completed'
+            error?: string
+          }) => void
+        },
+      ) => true,
+    ),
     fetchRuntimeJobs: vi.fn(),
   }
 })
@@ -72,6 +82,19 @@ function openChat(chatId: string): void {
   h.selectedCharID.set(0)
 }
 
+function reportReattachOutcome(
+  status: 'retryable_transport_failure' | 'terminal_failure' | 'missing_job' | 'completed',
+): void {
+  h.sendChat.mockImplementationOnce(async (_chatProcessIndex, args) => {
+    args.onReattachOutcome?.({ status, error: status === 'completed' ? undefined : `${status} test error` })
+    return status === 'completed'
+  })
+}
+
+async function flushMicrotasks(): Promise<void> {
+  for (let index = 0; index < 5; index += 1) await Promise.resolve()
+}
+
 beforeEach(() => {
   h.database = { characters: [] }
   h.selectedCharID.set(-1)
@@ -85,7 +108,7 @@ beforeEach(() => {
     bootstrap: { activeGenerationJobs: [] },
   })
   h.doingChat.set(false)
-  activeGenerationJobs.set([])
+  setActiveGenerationJobs([])
   resetChatGenerationActivitiesForTests()
 })
 
@@ -174,7 +197,7 @@ describe('reattach open-chat generation (Phase 4)', () => {
     expect(get(activeGenerationJobs)).toEqual([{ chatId: 'chat-other', jobId: 'job-x' }])
   })
 
-  it('restores a consumed job when reattach fails so a later probe can retry', async () => {
+  it('does not restore a consumed job after an unclassified exception', async () => {
     openChat('chat-1')
     const job = { chatId: 'chat-1', jobId: 'job-1', mode: 'continue' as const }
     setActiveGenerationJobs([job])
@@ -182,20 +205,87 @@ describe('reattach open-chat generation (Phase 4)', () => {
 
     await maybeReattachOpenChatGeneration()
 
-    expect(get(activeGenerationJobs)).toEqual([job])
+    expect(get(activeGenerationJobs)).toEqual([])
     expect(h.clearActiveGenerationAbortController).toHaveBeenCalledTimes(1)
   })
 
-  it('restores a consumed job when sendChat reports a non-throwing transport failure', async () => {
+  it('restores a consumed job after a retryable transport failure', async () => {
     openChat('chat-1')
     const job = { chatId: 'chat-1', jobId: 'job-1', mode: 'continue' as const }
     setActiveGenerationJobs([job])
-    h.sendChat.mockResolvedValueOnce(false)
+    reportReattachOutcome('retryable_transport_failure')
 
     await maybeReattachOpenChatGeneration()
+    triggerOpenChatGenerationReattach()
+    await flushMicrotasks()
 
     expect(get(activeGenerationJobs)).toEqual([job])
+    expect(h.sendChat).toHaveBeenCalledTimes(1)
     expect(h.clearActiveGenerationAbortController).toHaveBeenCalledTimes(1)
+  })
+
+  it('consumes a job after a terminal SSE error without retrying after microtasks settle', async () => {
+    openChat('chat-1')
+    setActiveGenerationJobs([{ chatId: 'chat-1', jobId: 'job-terminal' }])
+    reportReattachOutcome('terminal_failure')
+
+    await maybeReattachOpenChatGeneration()
+    triggerOpenChatGenerationReattach()
+    await flushMicrotasks()
+
+    expect(h.sendChat).toHaveBeenCalledTimes(1)
+    expect(get(activeGenerationJobs)).toEqual([])
+  })
+
+  it('consumes an expired 404 job without retrying after microtasks settle', async () => {
+    openChat('chat-1')
+    setActiveGenerationJobs([{ chatId: 'chat-1', jobId: 'job-missing' }])
+    reportReattachOutcome('missing_job')
+
+    await maybeReattachOpenChatGeneration()
+    triggerOpenChatGenerationReattach()
+    await flushMicrotasks()
+
+    expect(h.sendChat).toHaveBeenCalledTimes(1)
+    expect(get(activeGenerationJobs)).toEqual([])
+  })
+
+  it('backs off and bounds retries for a repeatedly failing transport', async () => {
+    vi.useFakeTimers()
+    try {
+      openChat('chat-1')
+      const job = { chatId: 'chat-1', jobId: 'job-transport' }
+      setActiveGenerationJobs([job])
+      h.sendChat.mockImplementation(async (_chatProcessIndex, args) => {
+        args.onReattachOutcome?.({ status: 'retryable_transport_failure', error: 'offline' })
+        return false
+      })
+
+      await maybeReattachOpenChatGeneration()
+      triggerOpenChatGenerationReattach()
+      triggerOpenChatGenerationReattach()
+      await flushMicrotasks()
+
+      expect(h.sendChat).toHaveBeenCalledTimes(1)
+      expect(get(activeGenerationJobs)).toEqual([job])
+      expect(vi.getTimerCount()).toBe(1)
+
+      for (let expectedAttempts = 2; expectedAttempts <= 4; expectedAttempts += 1) {
+        await vi.advanceTimersToNextTimerAsync()
+        await flushMicrotasks()
+        expect(h.sendChat).toHaveBeenCalledTimes(expectedAttempts)
+      }
+
+      expect(vi.getTimerCount()).toBe(0)
+      triggerOpenChatGenerationReattach()
+      triggerOpenChatGenerationReattach()
+      await flushMicrotasks()
+      expect(h.sendChat).toHaveBeenCalledTimes(4)
+      expect(get(activeGenerationJobs)).toEqual([job])
+    } finally {
+      setActiveGenerationJobs([])
+      vi.useRealTimers()
+    }
   })
 
   it('does not restore a consumed job after an explicit abort', async () => {
@@ -326,6 +416,27 @@ describe('reattach open-chat generation (Phase 4)', () => {
         }),
       )
     })
+    expect(get(activeGenerationJobs)).toEqual([])
+  })
+
+  it('does not reattach a terminal job again when generation activity settles', async () => {
+    openChat('chat-1')
+    setActiveGenerationJobs([{ chatId: 'chat-1', jobId: 'job-terminal' }])
+    startActiveGenerationReattach()
+    h.sendChat.mockImplementationOnce(async (_chatProcessIndex, args) => {
+      const activity = beginChatGenerationActivity({
+        target: { selectedCharID: 0, chatPage: 0, characterId: 'char-a', chatId: 'chat-1' },
+        kind: 'message',
+      })!
+      args.onReattachOutcome?.({ status: 'terminal_failure', error: 'terminal SSE error' })
+      finishChatGenerationActivity(activity.id)
+      return false
+    })
+
+    await maybeReattachOpenChatGeneration()
+    await flushMicrotasks()
+
+    expect(h.sendChat).toHaveBeenCalledTimes(1)
     expect(get(activeGenerationJobs)).toEqual([])
   })
 

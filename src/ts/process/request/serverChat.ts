@@ -53,6 +53,7 @@ import type {
 import type { requestDataResponse, StreamResponseChunk } from './request'
 import { HYPA_CONTEXT_TRUNCATION_CONFIRMATION_REQUIRED } from './hypaContextTruncation'
 import { GENERATION_IN_PROGRESS_FAILURE_CAUSE } from '../sendChatFailure'
+import type { GenerationReattachOutcomeStatus } from '../generationReattachOutcome'
 
 const CHAT_ENDPOINT = '/api/v1/generate/chat'
 const INCOMPLETE_CHAT_GENERATION_SETTINGS_ERROR = 'chat_generation_settings_incomplete'
@@ -119,6 +120,7 @@ export type ServerChatResult =
 export interface ServerChatTerminal {
   status: 'done' | 'error'
   error?: string
+  reattachOutcome?: GenerationReattachOutcomeStatus
   restoration?: ServerChatRestoration
   persistenceDisposition?: 'queued' | 'rejected'
   generationProjection?: ServerChatGenerationProjection
@@ -142,6 +144,7 @@ export type ServerChatGenerationResult =
       status: 'error'
       error: string
       code?: string
+      reattachOutcome?: GenerationReattachOutcomeStatus
       messagePatches?: ServerChatMessagePatch[]
       restoration?: ServerChatRestoration
     }
@@ -355,6 +358,14 @@ async function openChatResponse(
   return { status: 'ok', response, requestUid }
 }
 
+function classifyReattachOpenError(error: {
+  httpStatus?: number
+  retryable?: boolean
+}): GenerationReattachOutcomeStatus {
+  if (error.httpStatus === 404) return 'missing_job'
+  return error.retryable === true ? 'retryable_transport_failure' : 'terminal_failure'
+}
+
 async function waitForDurableReconnect(delayMs: number, signal: AbortSignal | null): Promise<boolean> {
   if (signal?.aborted) return false
   if (delayMs <= 0) return true
@@ -384,7 +395,11 @@ export async function requestServerChat(input: ServerChatInput, signal: AbortSig
   const opened = await openChatResponse(input, signal)
   if (opened.status !== 'ok') {
     return opened.status === 'error'
-      ? { status: 'error', error: opened.error, ...(opened.code ? { code: opened.code } : {}) }
+      ? {
+          status: 'error',
+          error: opened.error,
+          ...(opened.code ? { code: opened.code } : {}),
+        }
       : opened
   }
   const response = opened.response
@@ -504,7 +519,12 @@ export async function requestServerChatGeneration(
     clearPostGenerationProgress(postGenerationSession)
     clearHalfStreamingProgressForChat(input.characterId, input.chatId)
     return opened.status === 'error'
-      ? { status: 'error', error: opened.error, ...(opened.code ? { code: opened.code } : {}) }
+      ? {
+          status: 'error',
+          error: opened.error,
+          ...(opened.code ? { code: opened.code } : {}),
+          ...(reattachJobId ? { reattachOutcome: classifyReattachOpenError(opened) } : {}),
+        }
       : opened
   }
 
@@ -531,6 +551,10 @@ export async function requestServerChatGeneration(
   // bytes are still delayed by the network.
   let durableJobId = reattachJobId ?? opened.response.headers.get(DURABLE_JOB_ID_HEADER)?.trim() ?? ''
   const watchesDurableJob = input.durable === true || reattachJobId !== undefined
+  const reattachOutcomeFields = (
+    status: GenerationReattachOutcomeStatus,
+  ): { reattachOutcome: GenerationReattachOutcomeStatus } | Record<string, never> =>
+    reattachJobId ? { reattachOutcome: status } : {}
   let cancelledDurableJobId = ''
   const rememberDurableJob = (): void => {
     if (!watchesDurableJob || durableJobId.length === 0) return
@@ -629,16 +653,19 @@ export async function requestServerChatGeneration(
         cancelDurableOnAbort()
         forgetActiveGenerationJob(durableJobId)
         resolveReadyOnce({ status: 'aborted' })
-        resolveTerminalOnce({ status: 'error', error: 'Aborted', warnings })
+        resolveTerminalOnce({ status: 'error', error: 'Aborted', ...reattachOutcomeFields('aborted'), warnings })
         clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
         clearHalfStreamingProgressForChat(input.characterId, input.chatId)
         closeTokenStream()
         stopWatchingAbort()
       }
 
-      const settleTransportError = (error: string): void => {
-        resolveReadyOnce({ status: 'error', error })
-        resolveTerminalOnce({ status: 'error', error, warnings })
+      const settleTransportError = (
+        error: string,
+        reattachOutcome: GenerationReattachOutcomeStatus = 'retryable_transport_failure',
+      ): void => {
+        resolveReadyOnce({ status: 'error', error, ...reattachOutcomeFields(reattachOutcome) })
+        resolveTerminalOnce({ status: 'error', error, ...reattachOutcomeFields(reattachOutcome), warnings })
         clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
         clearHalfStreamingProgressForChat(input.characterId, input.chatId)
         closeTokenStream()
@@ -650,18 +677,19 @@ export async function requestServerChatGeneration(
         transportError: string,
       ): Promise<
         | { status: 'ok'; opened: Extract<Awaited<ReturnType<typeof openChatResponse>>, { status: 'ok' }> }
-        | { status: 'error'; error: string }
+        | { status: 'error'; error: string; reattachOutcome: GenerationReattachOutcomeStatus }
         | { status: 'aborted' }
       > => {
         if (!watchesDurableJob || durableJobId.length === 0) {
-          return { status: 'error', error: transportError }
+          return { status: 'error', error: transportError, reattachOutcome: 'retryable_transport_failure' }
         }
         if (reconnectCycles >= MAX_DURABLE_STREAM_RECONNECT_CYCLES) {
-          return { status: 'error', error: transportError }
+          return { status: 'error', error: transportError, reattachOutcome: 'retryable_transport_failure' }
         }
         reconnectCycles += 1
 
         let lastError = transportError
+        let reattachOutcome: GenerationReattachOutcomeStatus = 'retryable_transport_failure'
         for (const delayMs of DURABLE_STREAM_RECONNECT_DELAYS_MS) {
           if (!(await waitForDurableReconnect(delayMs, signal))) return { status: 'aborted' }
           const next = await openChatResponse(input, signal, durableJobId)
@@ -686,10 +714,11 @@ export async function requestServerChatGeneration(
           }
           if (next.status === 'aborted') return next
           lastError = next.error
+          reattachOutcome = classifyReattachOpenError(next)
           if (next.httpStatus === 404) forgetActiveGenerationJob(durableJobId)
           if (next.retryable === false) break
         }
-        return { status: 'error', error: lastError }
+        return { status: 'error', error: lastError, reattachOutcome }
       }
 
       void (async () => {
@@ -822,6 +851,7 @@ export async function requestServerChatGeneration(
                   resolveReadyOnce({
                     status: 'error',
                     error,
+                    ...reattachOutcomeFields('terminal_failure'),
                     ...(code ? { code } : {}),
                     ...(messagePatches.length > 0 ? { messagePatches } : {}),
                     ...(restoration ? { restoration } : {}),
@@ -829,6 +859,7 @@ export async function requestServerChatGeneration(
                   resolveTerminalOnce({
                     status: 'error',
                     error,
+                    ...reattachOutcomeFields('terminal_failure'),
                     restoration,
                     ...(persistenceDisposition ? { persistenceDisposition } : {}),
                     ...(generationProjection ? { generationProjection } : {}),
@@ -863,13 +894,20 @@ export async function requestServerChatGeneration(
                   if (!readyResolved) {
                     resolveReadyOnce({
                       status: 'error',
+                      ...reattachOutcomeFields('completed'),
                       error: prompt
                         ? 'server chat dispatch did not return generation metadata'
                         : 'stream ended without a prompt event',
                     })
                   }
                   forgetActiveGenerationJob(durableJobId)
-                  resolveTerminalOnce({ status: 'done', done: donePayload, sideEffects, warnings })
+                  resolveTerminalOnce({
+                    status: 'done',
+                    ...reattachOutcomeFields('completed'),
+                    done: donePayload,
+                    sideEffects,
+                    warnings,
+                  })
                   clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
                   closeTokenStream()
                   stopWatchingAbort()
@@ -893,7 +931,7 @@ export async function requestServerChatGeneration(
             continue
           }
           if (reconnected.status === 'aborted') settleAborted()
-          else settleTransportError(reconnected.error)
+          else settleTransportError(reconnected.error, reconnected.reattachOutcome)
           return
         }
       })()

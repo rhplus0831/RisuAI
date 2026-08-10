@@ -3,6 +3,7 @@ import { selectedCharID } from '../stores.svelte'
 import type { ActiveGenerationJob } from '../server/bootstrap'
 import { getDatabase } from '../storage/database.svelte'
 import type { ActiveChatTarget } from '../chatCommands'
+import type { GenerationReattachOutcome } from './generationReattachOutcome'
 import {
   activeChatGenerations,
   findChatGenerationActivity,
@@ -17,7 +18,29 @@ import {
  */
 export const activeGenerationJobs = writable<ActiveGenerationJob[]>([])
 
+const REATTACH_TRANSPORT_RETRY_DELAYS_MS = [250, 1_000, 4_000] as const
+
+interface ReattachRetryState {
+  transportFailures: number
+  timer: ReturnType<typeof setTimeout> | null
+}
+
+const reattachRetryStates = new Map<string, ReattachRetryState>()
+
+function clearReattachRetryState(jobId: string): void {
+  const state = reattachRetryStates.get(jobId)
+  if (state?.timer !== null && state?.timer !== undefined) clearTimeout(state.timer)
+  reattachRetryStates.delete(jobId)
+}
+
+function clearAllReattachRetryStates(): void {
+  for (const jobId of reattachRetryStates.keys()) clearReattachRetryState(jobId)
+}
+
 export function setActiveGenerationJobs(jobs: readonly ActiveGenerationJob[]): void {
+  // A bootstrap projection is authoritative and starts a fresh, bounded retry
+  // budget for the jobs it still reports as active.
+  clearAllReattachRetryStates()
   activeGenerationJobs.set([...jobs])
 }
 
@@ -36,6 +59,7 @@ export function rememberActiveGenerationJob(job: ActiveGenerationJob): void {
 /** Remove a locally/bootstrap-known job once its terminal frame is observed. */
 export function forgetActiveGenerationJob(jobId: string): void {
   if (!jobId) return
+  clearReattachRetryState(jobId)
   activeGenerationJobs.update((jobs) => jobs.filter((entry) => entry.jobId !== jobId))
 }
 
@@ -80,6 +104,32 @@ function isOpenChatTargetFresh(target: ActiveChatTarget): boolean {
 const reattachingJobIds = new Set<string>()
 let reattachQueued = false
 
+function isReattachRetryBlocked(jobId: string): boolean {
+  const state = reattachRetryStates.get(jobId)
+  return (
+    state !== undefined && (state.timer !== null || state.transportFailures > REATTACH_TRANSPORT_RETRY_DELAYS_MS.length)
+  )
+}
+
+function scheduleTransportReattachRetry(jobId: string): void {
+  const state = reattachRetryStates.get(jobId) ?? { transportFailures: 0, timer: null }
+  state.transportFailures += 1
+  const delay = REATTACH_TRANSPORT_RETRY_DELAYS_MS[state.transportFailures - 1]
+  state.timer = null
+  reattachRetryStates.set(jobId, state)
+  if (delay === undefined) return
+
+  state.timer = setTimeout(() => {
+    state.timer = null
+    if (reattachDisabled) return
+    if (!get(activeGenerationJobs).some((job) => job.jobId === jobId)) {
+      clearReattachRetryState(jobId)
+      return
+    }
+    triggerOpenChatGenerationReattach()
+  }, delay)
+}
+
 /**
  * Request a delayed reattach probe after projection state has settled. This
  * coalesces bursts from selected-character changes, active-chat projection
@@ -97,14 +147,21 @@ export function triggerOpenChatGenerationReattach(): void {
 /**
  * If the currently-open chat has a live server generation, re-attach to it and
  * render the replayed stream. No-op when nothing is open, no job matches, or a
- * generation is already in flight locally. Each job is reattached at most once.
+ * generation is already in flight locally. Terminal outcomes consume the job;
+ * transport failures receive a small, bounded retry budget.
  */
 export async function maybeReattachOpenChatGeneration(): Promise<void> {
   if (reattachDisabled) return
   const target = openChatTarget()
   if (!target?.chatId) return
   const job = get(activeGenerationJobs).find((entry) => entry.chatId === target.chatId)
-  if (!job || reattachingJobIds.has(job.jobId) || findChatGenerationActivity(target)) return
+  if (
+    !job ||
+    reattachingJobIds.has(job.jobId) ||
+    isReattachRetryBlocked(job.jobId) ||
+    findChatGenerationActivity(target)
+  )
+    return
 
   reattachingJobIds.add(job.jobId)
   try {
@@ -124,24 +181,38 @@ export async function maybeReattachOpenChatGeneration(): Promise<void> {
       activeGenerationJobs.update((jobs) => (jobs.some((entry) => entry.jobId === job.jobId) ? jobs : [job, ...jobs]))
     }
     try {
+      let outcome: GenerationReattachOutcome | undefined
       const attached = await sendChat(-1, {
         signal: controller.signal,
         reattachJobId: job.jobId,
         expectedTarget: target,
         continue: job.mode === 'continue' ? true : undefined,
         regenerateMessageId: job.mode === 'regenerate' ? job.regenerateMessageId : undefined,
+        onReattachOutcome: (value) => {
+          outcome = value
+        },
       })
-      if (!attached && !controller.signal.aborted) {
-        // sendChat reports HTTP/SSE/transport failures as `false`. Keep the
-        // durable job retryable until the next server projection confirms it is
-        // complete or gone. An explicit user abort is final and must not re-arm.
+      const settledOutcome: GenerationReattachOutcome =
+        outcome ??
+        (controller.signal.aborted
+          ? { status: 'aborted' }
+          : attached
+            ? { status: 'completed' }
+            : { status: 'terminal_failure' })
+      if (settledOutcome.status === 'retryable_transport_failure') {
         restoreJob()
+        scheduleTransportReattachRetry(job.jobId)
+      } else {
+        // The request layer may have remembered the job again after opening its
+        // stream. Terminal outcomes still own final removal, even if bootstrap
+        // or the response header refreshed the local projection mid-attempt.
+        forgetActiveGenerationJob(job.jobId)
       }
     } catch (error) {
-      // A transport/import failure does not mean the durable server job has
-      // stopped. Put it back so a later selection/SSE probe can retry instead of
-      // silently losing the only local record of the running generation.
-      restoreJob()
+      // Untyped exceptions are not transport failures. Consume any copy that
+      // the request layer may have remembered and let bootstrap be the only
+      // authority that can offer the job again later.
+      forgetActiveGenerationJob(job.jobId)
       throw error
     } finally {
       clearActiveGenerationAbortController(controller)
@@ -230,6 +301,7 @@ export function stopActiveGenerationReattach(): void {
   wired = false
   reattachQueued = false
   reattachingJobIds.clear()
+  clearAllReattachRetryStates()
   stopSelectedCharacterSubscription?.()
   stopSelectedCharacterSubscription = null
   stopGenerationActivitySubscription?.()
