@@ -65,12 +65,12 @@ overlap note explicitly says otherwise.
 
 | ID | Priority | Status | Work item | Primary area | Dependencies |
 | --- | --- | --- | --- | --- | --- |
-| MTC-01 | P1 | Needs design | Continue an accepted send after navigation | Composer/generation handoff | None |
-| MTC-02 | P1 | Needs design | Recover an append when the server rejects a duplicate same-chat generation | Composer/server lock | Coordinate with MTC-01 |
+| MTC-01 | P1 | Ready | Continue an accepted send after navigation | Composer/generation handoff | None |
+| MTC-02 | P1 | Ready | Recover an append when the server rejects a duplicate same-chat generation | Composer/server lock | Coordinate with MTC-01 |
 | MTC-03 | P1 | Ready | Preserve the plugin send target across awaits | Plugin API | Prefer MTC-01 target contract |
 | MTC-04 | P1 | Ready | Stop retrying terminal reattach failures | Reattach lifecycle | None |
 | MTC-05 | P1 | Ready | Cancel a reattached durable job before its response opens | Reattach cancellation | Coordinate with MTC-04 |
-| MTC-06 | P2 | Needs design | Scope Draft/BTW hook activity and cancellation by chat | Input hooks/composer | None |
+| MTC-06 | P2 | Ready | Scope Draft/BTW hook activity and cancellation by chat | Input hooks/composer | None |
 | MTC-07 | P2 | Ready | Make reroll candidates chat-scoped | Reroll navigation | None |
 | MTC-08 | P2 | Ready | Make live generation progress chat-scoped | Progress UI | None |
 | MTC-09 | P2 | Ready | Generate suggestions after background completion | Suggestions | MTC-08 optional |
@@ -101,9 +101,13 @@ can be assigned independently once their dependencies are resolved.
 ## MTC-01 — Continue an accepted send after navigation
 
 **Priority:** P1
-**Status:** Needs design
+**Status:** Ready
 **Owner:** Unassigned
 **Resolution:** —
+**Decision (2026-08-10):** Chat-independent coordinator. Once an append is
+durably accepted, generation is no longer tied to the chat being active; the
+send path must behave identically whether navigation happens before or after
+generation starts. The retry/error state is the failure branch, not the policy.
 
 ### Problem
 
@@ -137,12 +141,12 @@ failure rather than an undetected test failure.
 
 ### Implementation boundary
 
-Choose and document one explicit ownership policy:
-
-- preferred: hand the accepted operation to a chat-independent coordinator and
-  start generation exactly once for the captured Chat A target; or
-- if generation truly cannot start, restore an actionable draft/retry state in
-  Chat A and visibly report the failure.
+Hand the accepted operation to a chat-independent coordinator and start
+generation exactly once for the captured Chat A target, using the existing
+chat-keyed generation registry. If the coordinator cannot start generation
+(preflight failure, server rejection), restore an actionable retry state in
+Chat A and visibly report the failure — that path is the fallback for
+coordinator failure, not an alternative to starting generation.
 
 Do not navigate back automatically, write into Chat B, duplicate a queued
 append, or restore Chat A's draft over newer text typed after the send.
@@ -170,9 +174,14 @@ append, or restore Chat A's draft over newer text typed after the send.
 ## MTC-02 — Recover an append rejected by the same-chat generation lock
 
 **Priority:** P1
-**Status:** Needs design
+**Status:** Ready
 **Owner:** Unassigned
 **Resolution:** —
+**Decision (2026-08-10):** Explicit retryable state, no automatic recovery.
+Rollback is unsafe (the row may have been observed elsewhere) and
+auto-retry-when-free launches unwatched generations and can duel with other
+clients. Auto-continue after the remote job completes may be revisited later
+as a follow-up if manual retry proves annoying; it is out of scope here.
 
 ### Problem
 
@@ -202,9 +211,13 @@ accepted user row.
 
 ### Implementation boundary
 
-Coordinate with MTC-01 so every accepted append has one owner responsible for
-generation or recovery. Do not blindly delete a persisted row: another client
-may already have observed it, and revision conflicts must remain authoritative.
+The MTC-01 coordinator owns this path: on a 409 it marks the accepted append
+as needing generation, surfaces the already-running remote job through the
+normal `activeGenerationJobs` bootstrap so the user can see why, and exposes a
+one-click retry on the stranded row. Do not delete the persisted row: another
+client may already have observed it, and revision conflicts must remain
+authoritative. Do not start generation automatically when the remote lock
+frees.
 
 ### Acceptance criteria
 
@@ -384,9 +397,15 @@ the request layer takes ownership. Cancellation must be idempotent.
 ## MTC-06 — Scope Draft/BTW hook activity and cancellation by chat
 
 **Priority:** P2
-**Status:** Needs design
+**Status:** Ready
 **Owner:** Unassigned
 **Resolution:** —
+**Decision (2026-08-10):** Concurrent hooks across chats are allowed, keyed
+the same way as the chat-keyed generation registry (one shared mental model:
+each chat owns its own activity). Per-chat mutual exclusion is retained — one
+hook per chat at a time. A cross-chat gate would reintroduce the aggregate-lock
+pattern MTC-10 removes, and would not avoid the hard work anyway: stale-result
+and cleanup-ordering races exist even with a single hook.
 
 ### Problem
 
@@ -416,14 +435,15 @@ overlapping hook whose cleanup corrupts the shared state.
 ### Implementation boundary
 
 Define a chat-keyed input-hook activity contract, including stage, controller,
-hook kind, and composer-operation ownership. Decide whether different chats may
-run hooks concurrently; either policy must keep UI and cancellation target-safe.
+hook kind, and composer-operation ownership. Different chats may run hooks
+concurrently; within one chat, at most one hook runs at a time. UI and
+cancellation must remain target-safe under concurrency.
 
 ### Acceptance criteria
 
 - Chat A's hook never changes Chat B's composer controls or stage.
 - Stop cancels only the open chat's visible operation.
-- Concurrent hooks, if supported, cannot clear each other's state.
+- Concurrent hooks in different chats cannot clear each other's state.
 - Stale hook results still cannot overwrite a newer chat/draft.
 
 ### Required tests
@@ -631,8 +651,10 @@ and DevTool autopilot return without running.
 ### Implementation boundary
 
 Replace global gates with stable target ownership where the operation is safe
-across chats. Retain same-chat mutual exclusion and any documented provider
-capacity policy explicitly rather than inferring it from aggregate UI state.
+across chats. Retain same-chat mutual exclusion. Decided 2026-08-10: do not
+add a provider capacity policy — no designed throttle exists; the aggregate
+lock was incidental UI state. If provider rate-limiting becomes a measured
+problem, add a documented concurrency limit at the request layer then.
 
 ### Acceptance criteria
 
@@ -736,14 +758,16 @@ has become active.
 
 ### Implementation boundary
 
-Either cancel/discard a stale visible preview or store preview results by stable
-target and label/present them as belonging to that chat. Do not reintroduce a
-global block that prevents unrelated message generations.
+Decided 2026-08-10: discard the stale preview. Capture the target at start,
+compare at presentation time, and drop the result on mismatch — preview is an
+ephemeral inspection tool that is cheap to re-run, so per-chat storage is not
+worth the added state. Do not reintroduce a global block that prevents
+unrelated message generations.
 
 ### Acceptance criteria
 
 - Chat A's delayed preview is never presented as Chat B's result.
-- Navigation has a documented cancel, discard, or target-labeled behavior.
+- Navigation discards a pending preview result whose target no longer matches.
 - Normal background message generation remains unaffected.
 
 ### Required tests
