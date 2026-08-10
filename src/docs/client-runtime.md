@@ -315,7 +315,9 @@ can advance the revision cache, apply a server-owned `messagePatch`, render the
 inlay screen over `finalText`, request `resendChat`, or surface an Agent Preset
 error as a failed terminal result. Generation results are persisted server-side,
 so the browser suppresses the old generation-result command in server-backed
-paths.
+paths. The configured message-completion sound is emitted once from this
+successful terminal lifecycle, rather than from the currently selected chat
+component, so background and reattached generations retain the same behavior.
 
 When an `info` frame carries `halfStreaming: true`,
 `src/ts/process/request/serverChat.ts` marks the stream as half-streaming and

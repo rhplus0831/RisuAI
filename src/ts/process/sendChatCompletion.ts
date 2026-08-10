@@ -8,7 +8,6 @@ export interface SuccessfulSendChatEffects {
   clearRerollBuffer: () => void
   recordGeneratedReroll: (previousLength: number) => void
   markRerollChar: () => void
-  playSendSound: () => void
 }
 
 export function applySuccessfulSendChatEffects(
@@ -24,7 +23,6 @@ export function applySuccessfulSendChatEffects(
   }
   effects.recordGeneratedReroll(options.previousLength)
   effects.markRerollChar()
-  effects.playSendSound()
 
   return true
 }

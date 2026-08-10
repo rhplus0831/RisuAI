@@ -69,7 +69,6 @@
     updateAlertWait,
     type AlertWaitHandle,
   } from '../../ts/alert'
-  import sendSound from '../../etc/send.mp3'
   import CreatorQuote from './CreatorQuote.svelte'
   import { stopTTS } from 'src/ts/process/tts'
   import { resetBgmObserverForChatSwitch } from 'src/ts/observer.svelte'
@@ -1680,13 +1679,6 @@
     await runRerollPreflight(() => selectRerollCandidateNav(index))
   }
 
-  function playSendSoundIfEnabled() {
-    if (getDatabase().playMessage) {
-      const audio = new Audio(sendSound)
-      audio.play().catch(() => {})
-    }
-  }
-
   async function sendChatMain(
     continued: boolean = false,
     regenerateMessageId?: string,
@@ -1729,7 +1721,6 @@
             clearRerollBuffer,
             recordGeneratedReroll: (length) => recordGeneratedReroll(length, generationTarget),
             markRerollChar: () => markRerollChar(generationTarget),
-            playSendSound: playSendSoundIfEnabled,
           },
         )
       ) {

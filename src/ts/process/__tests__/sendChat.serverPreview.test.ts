@@ -12,6 +12,7 @@ import { get } from 'svelte/store'
 // before reaching them.
 
 const localAssemblerState = vi.hoisted(() => ({ throwIfEntered: false }))
+const messageCompletionSoundState = vi.hoisted(() => ({ play: vi.fn() }))
 const alertState = vi.hoisted(() => ({
   errors: [] as string[],
   confirmations: [] as string[],
@@ -49,6 +50,10 @@ vi.mock('../inlayScreen', () => import('../__fixtures__/mocks/inlayScreen'))
 vi.mock('../stableDiff', () => import('../__fixtures__/mocks/stableDiff'))
 vi.mock('../prereroll', () => import('../__fixtures__/mocks/prereroll'))
 vi.mock('../files/inlays', () => import('../__fixtures__/mocks/inlays'))
+
+vi.mock('../messageCompletionSound', () => ({
+  playMessageCompletionSoundIfEnabled: messageCompletionSoundState.play,
+}))
 
 vi.mock('../memory/hypav3', async (importActual) => {
   const actual = await importActual<typeof import('../memory/hypav3')>()
@@ -105,6 +110,7 @@ import { dispatchSaveChatGenerationSettings } from '../../chatCommands'
 import { currentPersonaStateSnapshot, queueSelectedPersonaUpdate, updateSelectedPersonaField } from '../../persona'
 import { clearCachedServerCommandRevision } from '../../server/commands'
 import { language } from '../../../lang'
+import { selectedCharID } from '../../stores.svelte'
 import {
   clearPendingMutationOutbox,
   listPendingMutations,
@@ -133,6 +139,7 @@ beforeEach(() => {
   abortChat.set(false)
   chatProcessStage.set(0)
   localAssemblerState.throwIfEntered = false
+  messageCompletionSoundState.play.mockReset()
   alertState.errors = []
   alertState.confirmations = []
   alertState.confirmationResult = true
@@ -285,6 +292,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
 
     const ok = await chatModule.sendChat(-1, { preview: true })
     expect(ok).toBe(true)
+    expect(messageCompletionSoundState.play).not.toHaveBeenCalled()
     expect(chatModule.previewFormated).toEqual([{ role: 'user', content: 'hi', name: 'User' }])
 
     const calls = getServerChatCalls()
@@ -303,6 +311,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
 
     const ok = await chatModule.sendChat(-1, { previewPrompt: true })
     expect(ok).toBe(true)
+    expect(messageCompletionSoundState.play).not.toHaveBeenCalled()
     expect(chatModule.previewBody).toBe('FLATTENED PROMPT')
     expect(getServerChatCalls()[0]).toMatchObject({ mode: 'preview_prompt' })
   })
@@ -589,6 +598,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
 
     await expect(chatModule.sendChat(-1, { reattachJobId: 'job-reattach' })).resolves.toBe(true)
 
+    expect(messageCompletionSoundState.play).toHaveBeenCalledOnce()
     expect(maintenanceCalls).toEqual([])
     expect(testDatabaseState.db.characters[0].lastInteraction).toBe(previousLastInteraction)
     expect(getServerChatCalls()).toHaveLength(1)
@@ -862,6 +872,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
 
     const ok = await chatModule.sendChat(-1)
     expect(ok).toBe(true)
+    expect(messageCompletionSoundState.play).toHaveBeenCalledOnce()
 
     expect(getServerChatCalls()[0]).toMatchObject({
       mode: 'send',
@@ -876,6 +887,45 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       inputTokens: 7,
       outputTokens: 50,
     })
+  })
+
+  it('plays the completion sound when a successful generation finishes after navigation', async () => {
+    await seedEcho()
+    setServerChatDispatchResult('background reply', {
+      model: 'echo_model',
+      generationId: 'uuid-background',
+      inputTokens: 7,
+      outputTokens: 50,
+      maxContext: 4000,
+    })
+    let releaseGenerationResponse: () => void = () => {
+      throw new Error('generation response was not requested')
+    }
+    const generationResponseGate = new Promise<void>((resolve) => {
+      releaseGenerationResponse = resolve
+    })
+    let markGenerationRequested: () => void = () => {
+      throw new Error('generation request observer was not initialized')
+    }
+    const generationRequested = new Promise<void>((resolve) => {
+      markGenerationRequested = resolve
+    })
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      if (url.endsWith('/api/v1/generate/chat')) {
+        markGenerationRequested()
+        await generationResponseGate
+      }
+      return serverChatWithContextFetch(input, init)
+    })
+
+    const sendPromise = chatModule.sendChat(-1)
+    await generationRequested
+    selectedCharID.set(-1)
+    releaseGenerationResponse()
+
+    await expect(sendPromise).resolves.toBe(true)
+    expect(messageCompletionSoundState.play).toHaveBeenCalledOnce()
   })
 
   it('streams a server-dispatched send without receiving assembled prompt rows', async () => {
@@ -918,6 +968,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     expect(ok).toBe(true)
     expect(getServerChatCalls()).toHaveLength(2)
     expect(getServerCompletionCalls()).toEqual([])
+    expect(messageCompletionSoundState.play).toHaveBeenCalledOnce()
   })
 
   it('caps repeated server-requested resend cycles for a root send', async () => {
@@ -943,6 +994,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     expect(ok).toBe(false)
     expect(getServerChatCalls()).toHaveLength(2)
     expect(getServerCompletionCalls()).toEqual([])
+    expect(messageCompletionSoundState.play).not.toHaveBeenCalled()
   })
 
   it('applies stop-trigger patches before surfacing the server assembly error', async () => {
@@ -974,6 +1026,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
 
     const ok = await chatModule.sendChat(-1)
     expect(ok).toBe(false)
+    expect(messageCompletionSoundState.play).not.toHaveBeenCalled()
 
     const chat = testDatabaseState.db.characters[0].chats[0]
     expect(chat.scriptstate?.$mood).toBe('bright')

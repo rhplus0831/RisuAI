@@ -39,6 +39,7 @@ import {
   updateChatGenerationActivityStage,
   type ChatGenerationActivity,
 } from './generationActivity.svelte'
+import { playMessageCompletionSoundIfEnabled } from './messageCompletionSound'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -615,6 +616,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     // continue/regenerate persists in the post-gen pass. The browser only
     // reconciles the terminal-frame revision and issues no generation-result
     // commands.
+    playMessageCompletionSoundIfEnabled()
     return true
   } finally {
     if (ownsGenerationActivity && generationActivity) {
