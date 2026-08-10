@@ -1,4 +1,5 @@
 import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
+import { language } from 'src/lang'
 import type { Chat, character, folder } from 'src/ts/storage/database.svelte'
 
 export interface PinnedChatItem {
@@ -65,7 +66,7 @@ export function collectPinnedChats(
         characterName: getCharacterDisplayName(character),
         characterImage: character.image ?? '',
         chatId: chat.id,
-        chatName: chat.name || 'Chat',
+        chatName: chat.name?.trim() ? chat.name : language.unnamedPinnedChat,
       })
     }
   }

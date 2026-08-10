@@ -724,6 +724,7 @@ const languageKoreanBase = {
   pinChat: '채팅 고정',
   unpinChat: '채팅 고정 해제',
   pinnedChats: '고정된 채팅',
+  unnamedPinnedChat: '채팅',
   generatingMessage: '메시지 생성 중',
   pinChatQueued: '채팅 고정 변경 사항을 이 기기에 저장했으며 서버 저장 대기열에 추가했습니다.',
   pinChatFailed: '채팅 고정 상태를 저장하지 못했습니다. 다시 시도해주세요.',

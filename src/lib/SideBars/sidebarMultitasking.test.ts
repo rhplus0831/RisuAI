@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { changeLanguage } from 'src/lang'
+import { languageEnglish } from 'src/lang/en'
+import { languageKorean } from 'src/lang/ko'
 import {
   characterFolderHasGeneratingChat,
   characterHasGeneratingChat,
@@ -27,6 +30,10 @@ const characters = [
   },
 ] as any
 
+afterEach(() => {
+  changeLanguage('en')
+})
+
 describe('sidebar multitasking projections', () => {
   it('collects pinned chats in character-order and chat-order', () => {
     const pinned = collectPinnedChats(characters, [{ data: ['char-b'] }, 'char-a'] as any)
@@ -35,6 +42,38 @@ describe('sidebar multitasking projections', () => {
       'char-b:chat-b1',
       'char-b:chat-b2',
       'char-a:chat-a1',
+    ])
+  })
+
+  it('uses the selected language fallback for empty and whitespace-only pinned chat names', () => {
+    const unnamedChats = [
+      {
+        chaId: 'char-a',
+        name: 'Alpha',
+        image: 'alpha.png',
+        chats: [
+          { id: 'chat-empty', name: '', pinned: true },
+          { id: 'chat-whitespace', name: ' \t ', pinned: true },
+          { id: 'chat-named', name: '  Named chat  ', pinned: true },
+        ],
+      },
+    ] as any
+
+    expect(languageEnglish.unnamedPinnedChat).toBe('Chat')
+    expect(languageKorean.unnamedPinnedChat).toBe('채팅')
+
+    changeLanguage('en')
+    expect(collectPinnedChats(unnamedChats, ['char-a']).map((item) => item.chatName)).toEqual([
+      languageEnglish.unnamedPinnedChat,
+      languageEnglish.unnamedPinnedChat,
+      '  Named chat  ',
+    ])
+
+    changeLanguage('ko')
+    expect(collectPinnedChats(unnamedChats, ['char-a']).map((item) => item.chatName)).toEqual([
+      languageKorean.unnamedPinnedChat,
+      languageKorean.unnamedPinnedChat,
+      '  Named chat  ',
     ])
   })
 

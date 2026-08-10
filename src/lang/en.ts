@@ -1034,6 +1034,7 @@ export const languageEnglish = {
   pinChat: 'Pin chat',
   unpinChat: 'Unpin chat',
   pinnedChats: 'Pinned chats',
+  unnamedPinnedChat: 'Chat',
   generatingMessage: 'Generating message',
   pinChatQueued: 'The pin change is saved on this device and queued for the server.',
   pinChatFailed: 'The chat pin could not be saved. Please try again.',
