@@ -72,8 +72,8 @@ overlap note explicitly says otherwise.
 | MTC-05 | P1 | Resolved | Cancel a reattached durable job before its response opens | Reattach cancellation | Coordinate with MTC-04 |
 | MTC-06 | P2 | Resolved | Scope Draft/BTW hook activity and cancellation by chat | Input hooks/composer | None |
 | MTC-07 | P2 | Resolved | Make reroll candidates chat-scoped | Reroll navigation | None |
-| MTC-08 | P2 | In progress | Make live generation progress chat-scoped | Progress UI | None |
-| MTC-09 | P2 | Ready | Generate suggestions after background completion | Suggestions | MTC-08 optional |
+| MTC-08 | P2 | Resolved | Make live generation progress chat-scoped | Progress UI | None |
+| MTC-09 | P2 | In progress | Generate suggestions after background completion | Suggestions | MTC-08 optional |
 | MTC-10 | P2 | Ready | Remove aggregate `doingChat` locks from cross-chat-safe features | Translation/preview/autopilot | None |
 | MTC-11 | P2 | Ready | Use stable IDs for asynchronous finalization and error writes | Post-generation/error handling | None |
 | MTC-12 | P2 | Ready | Keep preview results owned by their original chat | Prompt preview | Coordinate with MTC-10 |
@@ -554,9 +554,15 @@ completion in one chat to mutate another chat's active candidate index.
 ## MTC-08 — Make live generation progress chat-scoped
 
 **Priority:** P2
-**Status:** In progress
+**Status:** Resolved
 **Owner:** Codex (delegated 2026-08-10)
-**Resolution:** —
+**Resolution:** `6c8fc4f77` — the three progress stores are bounded 16-entry
+LRU collections (Agent Preset by chat, post-generation by target,
+half-streaming by target+generation) with session ownership; token recording
+requires an active registration so stale frames cannot revive or steal.
+Tests: `agentPresetProgress.test.ts`, `postGenerationProgress.test.ts`,
+`halfStreamingProgress.test.ts`, `serverChat.test.ts`,
+`DefaultChatScreen.loadPages.test.ts` (rendered chat switching).
 
 ### Problem
 
@@ -610,8 +616,8 @@ chats.
 ## MTC-09 — Generate suggestions after background completion
 
 **Priority:** P2
-**Status:** Ready
-**Owner:** Unassigned
+**Status:** In progress
+**Owner:** Codex (delegated 2026-08-10)
 **Resolution:** —
 
 ### Problem
@@ -1016,3 +1022,4 @@ Record completed items here as they land.
 | MTC-05 | `87dfae2ad` | `serverChat.test.ts`; `reattach.test.ts` | Fresh-send cancellation before any job ID exists is unchanged (out of item scope). |
 | MTC-06 | `424db300d` | `inputHookActivity.test.ts`; `DefaultChatScreen.loadPages.test.ts` | Concurrent cross-chat hooks allowed per the recorded decision; per-chat single-flight retained. |
 | MTC-07 | `94867c65b` | `rerollNavigation.test.ts`; `RerollList.svelte.test.ts`; `chatMessageHydration.test.ts`; `resourceReads.test.ts`; `serverLoadCostHarness.test.ts` | Bulk route now ships alternates (uncapped per chat — revisit if payloads grow). Pre-existing masked-preset test failure verified on HEAD and spun off separately. |
+| MTC-08 | `6c8fc4f77` | `agentPresetProgress.test.ts`; `postGenerationProgress.test.ts`; `halfStreamingProgress.test.ts`; `serverChat.test.ts`; `DefaultChatScreen.loadPages.test.ts` | Recording requires an active registration; eviction invalidates the session. |
