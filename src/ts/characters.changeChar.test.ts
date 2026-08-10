@@ -181,7 +181,7 @@ afterEach(() => {
 })
 
 describe('changeChar shell selection freshness', () => {
-  it('reopens exactly the active generation owner while blocking other character selections', async () => {
+  it('allows selecting another character while a generation is active', async () => {
     testDatabaseState.db = {
       currentChar: -1,
       characters: [fullCharacter('char-a', 'Character A'), fullCharacter('char-b', 'Character B')],
@@ -197,7 +197,7 @@ describe('changeChar shell selection freshness', () => {
     doingChat.set(true)
 
     await changeChar(1)
-    expect(get(selectedCharID)).toBe(-1)
+    expect(get(selectedCharID)).toBe(1)
 
     await changeChar(0)
 

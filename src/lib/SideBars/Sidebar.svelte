@@ -64,6 +64,17 @@
     setCharacterSidebarViewMode,
   } from 'src/ts/router'
   import { canOpenCharacterFolder } from 'src/ts/characterFolderOpening'
+  import GenerationIndicator from './GenerationIndicator.svelte'
+  import PinnedChatsRail from './PinnedChatsRail.svelte'
+  import {
+    characterFolderHasGeneratingChat,
+    characterHasGeneratingChat,
+    collectGeneratingChatIds,
+    collectPinnedChats,
+    type PinnedChatItem,
+  } from './sidebarMultitasking'
+  import { activeChatGenerations } from 'src/ts/process/generationActivity.svelte'
+  import { activeGenerationJobs } from 'src/ts/process/reattach'
   let sideBarMode = $state(0)
   let editMode = $state(false)
   let menuMode = $state(0)
@@ -349,6 +360,8 @@
     () => getSidebarCharacterList(getDatabase().characterOrder, getDatabase().characters).items,
   )
   let IconRounded = $derived(getDatabase().roundIcons)
+  let generatingChatIds = $derived(collectGeneratingChatIds($activeGenerationJobs, $activeChatGenerations))
+  let pinnedChats = $derived(collectPinnedChats(getDatabase().characters, getDatabase().characterOrder))
   let openFolders: string[] = $state([])
   const sidebarCharacterDrag = createSidebarCharacterDragController()
   interface Props {
@@ -376,6 +389,19 @@
       if (childIndex >= 0) return { folder: entry.id, index: childIndex }
     }
     return null
+  }
+
+  function openPinnedChat(item: PinnedChatItem): void {
+    reseter()
+    navigate(characterRoutePath(item.characterId, item.chatId))
+  }
+
+  function characterIsGenerating(index: number): boolean {
+    return characterHasGeneratingChat(getDatabase().characters?.[index], generatingChatIds)
+  }
+
+  function characterFolderIsGenerating(indexes: readonly number[]): boolean {
+    return characterFolderHasGeneratingChat(indexes, getDatabase().characters, generatingChatIds)
   }
 
   function sidebarItemPosition(item: SidebarCharacterListItem): DragData | null {
@@ -579,6 +605,7 @@
       <ShellIcon />
       <span class="text-xs">{language.playground.playground}</span>
     </button>
+    <PinnedChatsRail items={pinnedChats} {generatingChatIds} rounded={IconRounded} onOpen={openPinnedChat} />
   </div>
 {:else}
   <div
@@ -629,6 +656,7 @@
         {/if}
       </div>
     {/if}
+    <PinnedChatsRail items={pinnedChats} {generatingChatIds} rounded={IconRounded} onOpen={openPinnedChat} />
     <div
       class="flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0"
       data-risu-sidebar-character-controls
@@ -727,6 +755,11 @@
               {/key}
             {/if}
           </div>
+          {#if char.type === 'normal' && characterIsGenerating(char.index)}
+            <GenerationIndicator label={`${language.generatingMessage}: ${char.name}`} />
+          {:else if char.type === 'folder' && !openFolders.includes(char.id) && characterFolderIsGenerating(char.folder.map((item) => item.index))}
+            <GenerationIndicator label={`${language.generatingMessage}: ${char.name}`} />
+          {/if}
         </div>
         {#if char.type === 'folder' && openFolders.includes(char.id)}
           {#key char.color}
@@ -791,6 +824,9 @@
                       chaId={getDatabase().characters[char2.index]?.chaId}
                       onClick={() => openCharacterRoute(char2.index)} />
                   </div>
+                  {#if characterIsGenerating(char2.index)}
+                    <GenerationIndicator label={`${language.generatingMessage}: ${char2.name}`} />
+                  {/if}
                 </div>
                 <div
                   class="h-4 min-h-4 w-14 relative z-20"

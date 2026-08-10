@@ -440,11 +440,14 @@ async function bootstrap(): Promise<{
   } as never
 }
 
-async function chatHydration(_boot: Awaited<ReturnType<typeof bootstrap>>): Promise<{
+async function chatHydration(
+  _boot: Awaited<ReturnType<typeof bootstrap>>,
+  chatId = 'chat-1',
+): Promise<{
   message: Array<Record<string, unknown>>
   alternates: Array<Record<string, unknown>>
 }> {
-  const res = await fetch(`${harness.baseUrl}/api/v1/chats/chat-1/messages`, {
+  const res = await fetch(`${harness.baseUrl}/api/v1/chats/${encodeURIComponent(chatId)}/messages`, {
     headers: authHeaders(),
   })
   expect(res.status).toBe(200)
@@ -454,8 +457,11 @@ async function chatHydration(_boot: Awaited<ReturnType<typeof bootstrap>>): Prom
   }
 }
 
-async function chatMessages(boot: Awaited<ReturnType<typeof bootstrap>>): Promise<Array<Record<string, unknown>>> {
-  return (await chatHydration(boot)).message
+async function chatMessages(
+  boot: Awaited<ReturnType<typeof bootstrap>>,
+  chatId = 'chat-1',
+): Promise<Array<Record<string, unknown>>> {
+  return (await chatHydration(boot, chatId)).message
 }
 
 async function waitFor<T>(fn: () => Promise<T | undefined>, timeoutMs = 5000): Promise<T> {
@@ -486,6 +492,22 @@ async function seedChatWithMessages(messages: Array<Record<string, unknown>>): P
       },
     ],
   })
+}
+
+async function configureChatForDurableGeneration(chatId: string): Promise<void> {
+  const boot = await bootstrap()
+  const res = await fetch(
+    `${harness.baseUrl}/api/v1/commands/chats/${encodeURIComponent(chatId)}/generation-settings`,
+    {
+      method: 'PUT',
+      headers: authHeaders({ 'content-type': 'application/json' }),
+      body: JSON.stringify({
+        baseRevision: boot.revision,
+        generationSettings: durableGenerationSettings(),
+      }),
+    },
+  )
+  expect(res.status).toBe(200)
 }
 
 /** Cancel a running durable job over the DELETE route. */
@@ -1159,6 +1181,59 @@ describe('Durable generation (Milestone 1)', () => {
 
     gated.release()
     controller.abort()
+  })
+
+  it('runs durable generations for two different chats concurrently and persists both', async () => {
+    await seedDatabase({
+      ...fixtureDatabase,
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          chats: [durableChat(), { ...durableChat(), id: 'chat-2', name: 'Chat 2' }],
+        },
+      ],
+    })
+    await configureChatForDurableGeneration('chat-2')
+
+    const chatOne = makeGatedProvider({ before: 'one', after: ' complete' })
+    const chatTwo = makeGatedProvider({ before: 'two', after: ' complete' })
+    providerImpl = (context) =>
+      context.input.chatId === 'chat-2' ? chatTwo.dispatchProvider(context) : chatOne.dispatchProvider(context)
+
+    const controllerOne = newController()
+    const responseOne = await postDurable({}, { signal: controllerOne.signal })
+    const eventsOne = await readSse(responseOne, (event) => event.type === 'token')
+    const jobOne = jobIdFromEvents(eventsOne)
+
+    const controllerTwo = newController()
+    const responseTwo = await postDurable({ chatId: 'chat-2' }, { signal: controllerTwo.signal })
+    const eventsTwo = await readSse(responseTwo, (event) => event.type === 'token')
+    const jobTwo = jobIdFromEvents(eventsTwo)
+
+    const running = await bootstrap()
+    expect(running.activeGenerationJobs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ chatId: 'chat-1', jobId: jobOne }),
+        expect.objectContaining({ chatId: 'chat-2', jobId: jobTwo }),
+      ]),
+    )
+    expect(running.activeGenerationJobs).toHaveLength(2)
+
+    chatOne.release()
+    chatTwo.release()
+
+    await waitFor(async () => {
+      const boot = await bootstrap()
+      const [messagesOne, messagesTwo] = await Promise.all([chatMessages(boot, 'chat-1'), chatMessages(boot, 'chat-2')])
+      const resultOne = messagesOne.find((message) => message.role === 'char')
+      const resultTwo = messagesTwo.find((message) => message.role === 'char')
+      if (resultOne?.data !== 'one complete' || resultTwo?.data !== 'two complete') return undefined
+      if (boot.activeGenerationJobs.length !== 0) return undefined
+      return true
+    })
+
+    controllerOne.abort()
+    controllerTwo.abort()
   })
 
   it('rejects a durable send from a stale (non-active) writer with 423', async () => {

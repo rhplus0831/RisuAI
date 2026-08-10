@@ -273,9 +273,11 @@ provider dispatch.
 
 Important files:
 
-- `src/ts/process/index.svelte.ts` owns `doingChat`, `chatProcessStage`,
-  active abort controller state, and the high-level `sendChat` coordinator used
-  by `DefaultChatScreen.svelte`.
+- `src/ts/process/generationActivity.svelte.ts` owns the chat-keyed client
+  activity registry, including independent stages and abort controllers.
+  `src/ts/process/index.svelte.ts` owns the high-level `sendChat` coordinator;
+  `doingChat`, `chatProcessStage`, and `activeGenerationTarget` remain aggregate
+  compatibility projections rather than the per-chat UI source of truth.
 - `src/ts/process/request/providerCapability.ts` and
   `src/ts/process/request/serverPromptAssembly.ts` decide whether the selected
   request can run on the server.
@@ -290,8 +292,9 @@ Important files:
 - `src/ts/process/halfStreamingProgress.ts` owns half-streaming token counts and
   throughput for the active character/chat/generation target.
 - `src/ts/process/reattach.ts` uses bootstrap `activeGenerationJobs`, including
-  job mode and regenerate target when present, to reattach the current chat to
-  durable server jobs.
+  job mode and regenerate target when present, to reattach open chats to
+  durable server jobs. Reattach is keyed by job id, so jobs for different chats
+  can remain attached concurrently as the user navigates.
 
 Before prompt assembly or provider fetch, `sendChat` awaits the character-owned
 maintenance batch from `sendChatContext.ts`, the pending chat generation-settings

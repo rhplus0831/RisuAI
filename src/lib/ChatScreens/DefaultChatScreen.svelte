@@ -22,6 +22,7 @@
     ArrowDown,
     EyeOffIcon,
     PencilLineIcon,
+    PinIcon,
     SparkleIcon,
   } from '@lucide/svelte'
   import {
@@ -50,11 +51,9 @@
   import { getCharImage } from '../../ts/characters'
   import {
     abortActiveGeneration,
-    activeGenerationTarget,
     chatProcessStage,
     clearActiveGenerationAbortController,
     createActiveGenerationAbortController,
-    doingChat,
     sendChat,
   } from '../../ts/process/index.svelte'
   import { sleep } from '../../ts/util'
@@ -101,6 +100,7 @@
     appendCurrentChatUserMessageForSend,
     captureActiveChatTarget,
     isActiveChatTargetFresh,
+    setCurrentChatPinnedWithOutcome,
     setCurrentChatGreetingIndex,
     type ActiveChatTarget,
   } from 'src/ts/chatCommands'
@@ -121,6 +121,8 @@
   import PostGenerationScriptProgress from './PostGenerationScriptProgress.svelte'
   import AgentPresetProgress from './AgentPresetProgress.svelte'
   import { CHAT_GENERATION_INPUT_HOOK_STAGE } from './chatGenerationLoading'
+  import { activeChatGenerations } from 'src/ts/process/generationActivity.svelte'
+  import { activeGenerationJobs } from 'src/ts/process/reattach'
   import {
     deleteDefaultChatComposerDraft,
     isDefaultChatComposerDraftGenerationCurrent,
@@ -214,6 +216,7 @@
   let chatsInstance: any = $state()
   let isScrollingToMessage = $state(false)
   let preparingSend = $state(false)
+  let pinMutationPending = $state(false)
   let composerDraftPersistenceError = $state('')
   const composerDraftPersistenceAlerts = new Set<string>()
   let composerComponentDestroyed = false
@@ -320,19 +323,19 @@
   let showDraftArea = $derived(Boolean(selectedDraftHook || draftText.length > 0 || btwText.length > 0))
   let hookRunActive = $derived(doingDraftHook || doingBtwHook)
   let canContinueFromMenu = $derived(currentChat.length >= 2 && currentChat[currentChat.length - 1]?.role === 'char')
-  let currentChatOwnsGeneration = $derived.by(() => {
-    const target = $activeGenerationTarget
-    if (!$doingChat || !target || !currentCharacter) return false
-    if (target.characterId !== undefined || currentCharacter.chaId !== undefined) {
-      if (target.characterId !== currentCharacter.chaId) return false
-    } else if (target.selectedCharID !== $selectedCharID) {
-      return false
-    }
-    if (target.chatId !== undefined || currentChatId !== undefined) {
-      return target.chatId === currentChatId
-    }
-    return target.chatPage === currentCharacter.chatPage
-  })
+  let currentChatGenerationActivity = $derived(
+    currentChatId
+      ? $activeChatGenerations.find((activity) => activity.kind === 'message' && activity.chatId === currentChatId)
+      : undefined,
+  )
+  let currentChatOwnsGeneration = $derived(
+    Boolean(
+      currentChatGenerationActivity ||
+      (currentChatId && $activeGenerationJobs.some((job) => job.chatId === currentChatId)),
+    ),
+  )
+  let currentChatGenerationStage = $derived(currentChatGenerationActivity?.stage ?? 0)
+  let visibleChatProcessStage = $derived(hookRunActive ? $chatProcessStage : currentChatGenerationStage)
   let configuredChatLoadPages = $derived(getInitialChatLoadPages(getDatabase()))
   // The open chat ships as a message-less shell until the chat-messages resource
   // resolves; show a loading state over the message area until then so the
@@ -938,6 +941,22 @@
     }
   }
 
+  async function toggleCurrentChatPin(): Promise<void> {
+    if (pinMutationPending || !currentChatRecord?.id) return
+    pinMutationPending = true
+    const outcomePromise = setCurrentChatPinnedWithOutcome(currentChatRecord.pinned !== true)
+    closeChatMenu()
+    try {
+      const outcome = await outcomePromise
+      if (outcome?.status === 'queued') alertNormal(language.pinChatQueued)
+      else if (outcome?.status === 'failed') alertError(language.pinChatFailed)
+    } catch {
+      alertError(language.pinChatFailed)
+    } finally {
+      pinMutationPending = false
+    }
+  }
+
   function resetTranscriptWindowForChatSwitch() {
     loadPages = configuredChatLoadPages
     isScrollingToMessage = false
@@ -1310,7 +1329,7 @@
   }
 
   async function runBtwHook(hook: InputHook): Promise<void> {
-    if ($doingChat || preparingSend || hookRunActive) return
+    if (currentChatOwnsGeneration || preparingSend || hookRunActive) return
     const activeTarget = captureActiveChatTarget()
     if (!activeTarget || !isActiveChatTargetFresh(activeTarget)) return
     const composerOperation = beginComposerOperation('btw')
@@ -1350,7 +1369,7 @@
   }
 
   async function sendMain(continueResponse: boolean) {
-    if ($doingChat || preparingSend) {
+    if (currentChatOwnsGeneration || preparingSend) {
       return
     }
     const activeTarget = captureActiveChatTarget()
@@ -1496,7 +1515,7 @@
   }
 
   async function sendDraft(): Promise<void> {
-    if ($doingChat || preparingSend || hookRunActive || draftText.trim().length === 0) return
+    if (currentChatOwnsGeneration || preparingSend || hookRunActive || draftText.trim().length === 0) return
     const activeTarget = captureActiveChatTarget()
     if (!activeTarget || !isActiveChatTargetFresh(activeTarget)) return
     const composerOperation = beginComposerOperation('draft-send')
@@ -1578,7 +1597,7 @@
   }
 
   async function runRerollPreflight(action: (target: ActiveChatTarget) => Promise<void>) {
-    if ($doingChat || preparingSend) return
+    if (currentChatOwnsGeneration || preparingSend) return
     const targetIdentity = getActiveTranscriptWindowIdentity()
     const target = captureActiveChatTarget()
     if (!target || !isActiveChatTargetFresh(target)) return
@@ -1586,7 +1605,7 @@
     try {
       await hydrateActiveChatFully()
       if (
-        $doingChat ||
+        currentChatOwnsGeneration ||
         !preparingSend ||
         getActiveTranscriptWindowIdentity() !== targetIdentity ||
         !isActiveChatTargetFresh(target)
@@ -2186,7 +2205,7 @@
             class="peer-focus:border-textcolor flex justify-center border-y border-darkborderc items-center text-textcolor p-3 hover:bg-blue-500 hover:text-white transition-colors"
             onclick={abortChat}
             style:height={inputHeight}>
-            <div class="risu-ongoing-pulse loadmove chat-process-stage-{$chatProcessStage}"></div>
+            <div class="risu-ongoing-pulse loadmove chat-process-stage-{visibleChatProcessStage}"></div>
           </button>
         {:else if floatingDraftConversionActive}
           <button
@@ -2205,7 +2224,7 @@
             data-testid="default-chat-send-button"
             aria-label={language.hotkeyDesc.send}
             onclick={send}
-            disabled={$doingChat}
+            disabled={currentChatOwnsGeneration}
             class="flex justify-center border-y border-darkborderc items-center text-textcolor p-3 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors button-icon-send disabled:cursor-not-allowed disabled:opacity-50"
             style:height={inputHeight}>
             <Send />
@@ -2284,7 +2303,7 @@
               type="button"
               data-testid="default-chat-btw-button"
               aria-busy={doingBtwHook}
-              disabled={$doingChat || preparingSend || hookRunActive}
+              disabled={currentChatOwnsGeneration || preparingSend || hookRunActive}
               class="rounded-md border border-darkborderc px-3 py-2 text-sm transition-colors hover:border-textcolor hover:bg-selected disabled:cursor-not-allowed disabled:opacity-50"
               onclick={() => (showBtwHookDialog = true)}>
               {#if doingBtwHook}<LoaderCircleIcon size={16} class="risu-ongoing-pulse inline animate-spin" />{/if}
@@ -2293,7 +2312,7 @@
             <button
               type="button"
               data-testid="default-chat-draft-send"
-              disabled={draftText.trim().length === 0 || $doingChat || preparingSend || hookRunActive}
+              disabled={draftText.trim().length === 0 || currentChatOwnsGeneration || preparingSend || hookRunActive}
               class="ml-auto flex items-center gap-2 rounded-md border border-darkborderc px-3 py-2 text-sm transition-colors hover:border-textcolor hover:bg-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
               onclick={sendDraft}>
               <Send size={18} />
@@ -2407,7 +2426,8 @@
                 : msg
             markComposerDraftChanged('message')
           }}
-          {send} />
+          {send}
+          isGenerationActive={currentChatOwnsGeneration} />
       {/if}
 
       {#if chatPanelStore.length > 0}
@@ -2489,6 +2509,7 @@
             {userIcon}
             {userIconPortrait}
             isGenerationActive={currentChatOwnsGeneration}
+            generationStage={currentChatGenerationStage}
             bind:hasNewUnreadMessage={showNewMessageButton} />
         </div>
 
@@ -2592,6 +2613,18 @@
             <EyeOffIcon />
             <span class="ml-2">{language.hideInput}</span>
           </button>
+          <button
+            type="button"
+            role="menuitemcheckbox"
+            aria-checked={currentChatRecord?.pinned === true}
+            data-default-chat-menu-item
+            data-testid="floating-chat-pin-button"
+            disabled={pinMutationPending}
+            class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors disabled:cursor-not-allowed disabled:text-textcolor2"
+            onclick={() => void toggleCurrentChatPin()}>
+            <PinIcon />
+            <span class="ml-2">{currentChatRecord?.pinned ? language.unpinChat : language.pinChat}</span>
+          </button>
         </div>
       {:else if openMenu}
         <div
@@ -2632,6 +2665,19 @@
             onclick={sendContinue}>
             <StepForwardIcon />
             <span class="ml-2">{language.continueResponse}</span>
+          </button>
+
+          <button
+            type="button"
+            role="menuitemcheckbox"
+            aria-checked={currentChatRecord?.pinned === true}
+            data-default-chat-menu-item
+            data-testid="default-chat-pin-button"
+            disabled={pinMutationPending}
+            class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors disabled:cursor-not-allowed disabled:text-textcolor2"
+            onclick={() => void toggleCurrentChatPin()}>
+            <PinIcon />
+            <span class="ml-2">{currentChatRecord?.pinned ? language.unpinChat : language.pinChat}</span>
           </button>
 
           {#if getDatabase().showMenuChatList}

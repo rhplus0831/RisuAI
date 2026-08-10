@@ -31,6 +31,14 @@ import {
 } from '../chatCommands'
 import { flushPendingSelectedPersonaUpdate } from '../persona'
 import { language } from '../../lang'
+import {
+  activeChatGenerations,
+  beginChatGenerationActivity,
+  findChatGenerationActivity,
+  finishChatGenerationActivity,
+  updateChatGenerationActivityStage,
+  type ChatGenerationActivity,
+} from './generationActivity.svelte'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -64,7 +72,8 @@ export let requestTokenParts: { [key: string]: requestTokenPart[] } = {}
 export let previewFormated: OpenAIChat[] = []
 export let previewBody: string = ''
 
-let activeGenerationAbortController: AbortController | null = null
+const generationControllers = new Set<AbortController>()
+const generationControllerBySignal = new WeakMap<AbortSignal, AbortController>()
 const MAX_SERVER_RESEND_DEPTH = 1
 const SERVER_RESEND_CAP_ERROR = 'Server-requested resend limit reached. Stopping to avoid a repeated generation loop.'
 const CHAT_GENERATION_SETTINGS_SAVE_ERROR =
@@ -113,20 +122,56 @@ function isExpectedTargetFresh(target: ActiveChatTarget | null | undefined): boo
 
 export function createActiveGenerationAbortController(): AbortController {
   const controller = new AbortController()
-  activeGenerationAbortController = controller
+  generationControllers.add(controller)
+  generationControllerBySignal.set(controller.signal, controller)
   abortChat.set(false)
   return controller
 }
 
 export function clearActiveGenerationAbortController(controller: AbortController): void {
-  if (activeGenerationAbortController === controller) {
-    activeGenerationAbortController = null
-  }
+  generationControllers.delete(controller)
 }
 
 export function abortActiveGeneration(): void {
   abortChat.set(true)
-  activeGenerationAbortController?.abort()
+  const target = captureActiveChatTarget()
+  const activity = findChatGenerationActivity(target)
+  if (activity?.controller) {
+    activity.controller.abort()
+    return
+  }
+
+  // Input-hook work uses the same cancel control but does not create a message
+  // generation activity. Preserve that fallback without making message
+  // generations globally single-controller again.
+  const boundControllers = new Set(
+    get(activeChatGenerations).flatMap((entry) => (entry.controller ? [entry.controller] : [])),
+  )
+  const fallbackController = [...generationControllers].findLast((controller) => !boundControllers.has(controller))
+  if (fallbackController) {
+    fallbackController.abort()
+    return
+  }
+
+  // A bootstrap-discovered durable job can be visible for a brief moment before
+  // its reattach controller is installed. Let Stop cancel that exact chat too.
+  if (target?.chatId) {
+    void import('./reattach').then(({ activeGenerationJobs }) => {
+      const jobId = get(activeGenerationJobs).find((job) => job.chatId === target.chatId)?.jobId
+      if (!jobId) return
+      void import('./request/serverChat').then(({ cancelServerChatGeneration }) => cancelServerChatGeneration(jobId))
+    })
+  }
+}
+
+function refreshLegacyGenerationProjection(): void {
+  const activities = get(activeChatGenerations)
+  const latest = activities.at(-1)
+  doingChat.set(activities.length > 0)
+  activeGenerationTarget.set(latest?.target ?? null)
+  // Preserve the completed stage when the final activity leaves, matching the
+  // legacy store contract. A new send resets it to zero on entry.
+  if (latest) chatProcessStage.set(latest.stage)
 }
 
 export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): Promise<boolean> {
@@ -171,12 +216,18 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     })
   }
 
-  let isDoing = get(doingChat)
   const generationTarget = arg.expectedTarget === undefined ? captureActiveChatTarget() : arg.expectedTarget
 
   if (!isExpectedTargetFresh(generationTarget)) {
     return false
   }
+
+  const existingActivity = findChatGenerationActivity(generationTarget)
+  // Tests and compatibility callers can still drive the legacy store directly.
+  // In the live app, a non-empty activity registry is the source of truth and
+  // permits a different chat to start concurrently.
+  const legacyOnlyDoing = get(doingChat) && get(activeChatGenerations).length === 0
+  const isDoing = existingActivity !== undefined || legacyOnlyDoing
 
   if (isDoing) {
     if (chatProcessIndex === -1) {
@@ -192,28 +243,31 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     }
   }
 
-  // iOwnDoingChat contract: this call sets `doingChat = true` on entry and
-  // the `finally` clears it on exit only when this flag is true. Three states:
-  //   (a) own         — fresh call, finally clears.
-  //   (b) reentrant   — chatProcessIndex !== -1 while doingChat is already
-  //                     true; we never took ownership, finally must not clear.
-  //   (c) handoff     — a stage-4 `resend` recurses into
-  //                     sendChat. The inner call's entry guard refuses on
-  //                     `chatProcessIndex === -1` while doingChat is true, so
-  //                     before recursing we clear `doingChat` manually AND
-  //                     set `iOwnDoingChat = false` so the outer finally
-  //                     does not re-clear after the inner finally already did.
-  let iOwnDoingChat = false
-  if (!isDoing) {
-    activeGenerationTarget.set(generationTarget)
-    doingChat.set(true)
-    iOwnDoingChat = true
+  // This call owns only its chat-keyed activity. Re-entrant compatibility calls
+  // do not add one; a stage-4 resend explicitly hands the activity off to the
+  // recursive call before the outer `finally` runs.
+  let ownsGenerationActivity = false
+  let generationActivity: ChatGenerationActivity | undefined = existingActivity
+  if (!isDoing && generationTarget) {
+    generationActivity =
+      beginChatGenerationActivity({
+        target: generationTarget,
+        kind: arg.preview || arg.previewPrompt ? 'preview' : 'message',
+        controller: generationControllerBySignal.get(abortSignal),
+      }) ?? undefined
+    if (!generationActivity) return false
+    refreshLegacyGenerationProjection()
+    ownsGenerationActivity = true
   }
 
   try {
-    const setProcessStage = (stage: number) => chatProcessStage.set(stage)
-    if (!isExpectedTargetFresh(generationTarget)) {
-      return false
+    const setProcessStage = (stage: number) => {
+      if (!generationActivity) {
+        chatProcessStage.set(stage)
+        return
+      }
+      updateChatGenerationActivityStage(generationActivity.id, stage)
+      refreshLegacyGenerationProjection()
     }
     const ctx = setupSendChatContext({
       chatProcessIndex,
@@ -232,35 +286,21 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
 
     if (!arg.reattachJobId) {
       const contextPersistence = await ctx.persistence
-      if (!isExpectedTargetFresh(generationTarget)) {
-        return false
-      }
       if (contextPersistence.status !== 'ok') {
         alertError(language.errors.sendContextPersistenceFailed)
         return false
       }
       const settingsSaveResult = await waitForPendingChatGenerationSettingsSave(currentChat.id)
-      if (!isExpectedTargetFresh(generationTarget)) {
-        return false
-      }
       if (settingsSaveResult && settingsSaveResult.status !== 'ok') {
         throwError(chatGenerationSettingsSaveError(settingsSaveResult))
         return false
       }
       const personaSaveResult = await flushPendingSelectedPersonaUpdate()
-      if (!isExpectedTargetFresh(generationTarget)) {
-        return false
-      }
       if (personaSaveResult && personaSaveResult.status !== 'ok') {
         throwError(selectedPersonaSaveError(personaSaveResult))
         return false
       }
       currentChat = nowChatroom.chats[selectedChat]
-      const generationSettingsGuard = guardActiveChatGenerationSettingsForSend()
-      if (generationSettingsGuard.status === 'error') {
-        alertError(generationSettingsGuard.error)
-        return false
-      }
     }
 
     let formated: OpenAIChat[] = []
@@ -557,10 +597,12 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       setProcessStage,
     })
     if (stage4.status === 'resend') {
-      // Handoff — see iOwnDoingChat contract above.
-      activeGenerationTarget.set(null)
-      doingChat.set(false)
-      iOwnDoingChat = false
+      // Handoff — see the activity ownership contract above.
+      if (generationActivity && ownsGenerationActivity) {
+        finishChatGenerationActivity(generationActivity.id)
+        refreshLegacyGenerationProjection()
+      }
+      ownsGenerationActivity = false
       return await sendChat(chatProcessIndex, {
         signal: abortSignal,
         continue: serverRequestedResend ? true : undefined,
@@ -575,9 +617,9 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     // commands.
     return true
   } finally {
-    if (iOwnDoingChat) {
-      activeGenerationTarget.set(null)
-      doingChat.set(false)
+    if (ownsGenerationActivity && generationActivity) {
+      finishChatGenerationActivity(generationActivity.id)
+      refreshLegacyGenerationProjection()
     }
   }
 }

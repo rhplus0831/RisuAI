@@ -35,7 +35,7 @@ export interface RunStage4Args {
  * finalize stage 4 cleanly.
  *
  * The discriminated-union return lets `resend` ask the coordinator to release
- * the `doingChat` lease and recurse into `sendChat` (the helper avoids the
+ * the chat-keyed activity lease and recurse into `sendChat` (the helper avoids the
  * circular import that direct recursion would
  * introduce); `done` means the helper has already called `finalizeStage4`
  * (default path) or intentionally skipped it (emotion-fallback paths,

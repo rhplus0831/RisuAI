@@ -23,7 +23,6 @@ import { AppendableBuffer, downloadFile, requiresFullEncoderReload } from './glo
 import { updateInlayScreen } from './process/inlayScreen'
 import { parseMarkdownSafe } from './parser/parser.svelte'
 import { translateHTML } from './translator/translator'
-import { activeGenerationTarget, doingChat } from './process/index.svelte'
 import { importCharacter } from './characterCards'
 import { PngChunk } from './pngChunk'
 import {
@@ -95,25 +94,6 @@ let changeCharSelectionAttemptId = 0
 interface ChangeCharOptions {
   reseter?: () => any
   isFresh?: () => boolean
-  allowDuringGeneration?: () => boolean
-}
-
-function characterSelectionMatchesActiveGeneration(index: number): boolean {
-  const target = get(activeGenerationTarget)
-  const character = getDatabase().characters?.[index]
-  const chat = character?.chats?.[character.chatPage]
-  if (!target || !character || !chat) return false
-
-  if (target.characterId !== undefined || character.chaId !== undefined) {
-    if (target.characterId !== character.chaId) return false
-  } else if (target.selectedCharID !== index) {
-    return false
-  }
-
-  if (target.chatId !== undefined || chat.id !== undefined) {
-    return target.chatId === chat.id
-  }
-  return target.chatPage === character.chatPage
 }
 
 function cloneJsonValue<T>(value: T): T {
@@ -1411,9 +1391,6 @@ function isFreshCharacterImportNavigation(
 
 export async function changeChar(index: number, arg: ChangeCharOptions = {}) {
   const reseter = arg.reseter ?? (() => {})
-  if (get(doingChat) && !characterSelectionMatchesActiveGeneration(index) && !arg.allowDuringGeneration?.()) {
-    return
-  }
   const selectionAttemptId = ++changeCharSelectionAttemptId
   const isFreshSelectionAttempt = () => selectionAttemptId === changeCharSelectionAttemptId && (arg.isFresh?.() ?? true)
   reseter()

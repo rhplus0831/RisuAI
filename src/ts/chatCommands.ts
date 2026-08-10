@@ -179,6 +179,7 @@ export const CHAT_PATCH_ALLOWED_KEYS = new Set([
   'bookmarks',
   'bookmarkNames',
   'modules',
+  'pinned',
 ])
 
 export const MESSAGE_PATCH_ALLOWED_KEYS = new Set([
@@ -3153,6 +3154,33 @@ export function setCurrentChatTranslationSettingWithOutcome<Field extends ChatTr
   if (!applied) return
 
   return dispatchUpdateChatScopedWithOutcome(chatId, { [field]: value }, previous)
+}
+
+export function setCurrentChatPinnedWithOutcome(pinned: boolean): Promise<ChatMutationOutcome> | undefined {
+  const selectedChar = get(selectedCharID)
+  const character = getDatabase().characters?.[selectedChar]
+  const selectedChat = character?.chatPage
+  const chat = character?.chats?.[selectedChat]
+  const chatId = chat?.id
+  if (!character || selectedChat === undefined || selectedChat === null || !chat || !chatId) return
+
+  const previous: ChatScopedSnapshot = {
+    selectedCharID: selectedChar,
+    characterId: character.chaId,
+    chatId,
+    chat: cloneJsonValue(chat),
+  }
+  let applied = false
+  withTrustedResourceWrite(() => {
+    const liveCharacter = getDatabase().characters?.[selectedChar]
+    const liveChat = liveCharacter?.chats?.[selectedChat]
+    if (!liveChat || liveCharacter?.chaId !== character.chaId || liveChat.id !== chatId) return
+    liveChat.pinned = pinned
+    applied = true
+  })
+  if (!applied) return
+
+  return dispatchUpdateChatScopedWithOutcome(chatId, { pinned }, previous)
 }
 
 function settledChatGenerationSettingsSaveOperation(

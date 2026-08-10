@@ -26,6 +26,14 @@ list and character configuration. It consumes `selectedCharID`, `settingsOpen`,
 `sideBarStore`, `DynamicGUI`, `PlaygroundStore`, `botMakerMode`, and
 `CharEmotion` plus route and command helpers.
 
+The narrow rail also renders durable pinned-chat shortcuts below its menu
+button. `sidebarMultitasking.ts` derives those shortcuts from chat metadata and
+aggregates local plus bootstrap-discovered generation activity by stable chat
+id. A bot avatar shows one generation indicator when any owned chat is active;
+a collapsed character folder shows one aggregate indicator regardless of how
+many contained bots are active. Route navigation remains available while those
+generations continue in the background.
+
 On wide layouts `src/App.svelte` mounts the sidebar beside chat. On responsive
 layouts the app mounts it as a focus-trapped dialog when `sideBarStore` is open;
 Escape closes that dialog. Route/store synchronization and history ownership

@@ -4826,6 +4826,7 @@ export interface Chat {
   lastDate?: number
   bookmarks?: string[]
   bookmarkNames?: { [chatId: string]: string }
+  pinned?: boolean
 }
 
 export interface ChatFolder {

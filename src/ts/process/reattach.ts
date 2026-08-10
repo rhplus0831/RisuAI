@@ -3,6 +3,11 @@ import { selectedCharID } from '../stores.svelte'
 import type { ActiveGenerationJob } from '../server/bootstrap'
 import { getDatabase } from '../storage/database.svelte'
 import type { ActiveChatTarget } from '../chatCommands'
+import {
+  activeChatGenerations,
+  findChatGenerationActivity,
+  findChatGenerationActivityByChatId,
+} from './generationActivity.svelte'
 
 /**
  * Durable generations still running server-side, as surfaced by the bootstrap
@@ -32,6 +37,14 @@ export function rememberActiveGenerationJob(job: ActiveGenerationJob): void {
 export function forgetActiveGenerationJob(jobId: string): void {
   if (!jobId) return
   activeGenerationJobs.update((jobs) => jobs.filter((entry) => entry.jobId !== jobId))
+}
+
+export function isChatGenerationKnown(chatId: string | null | undefined): boolean {
+  if (!chatId) return false
+  return (
+    findChatGenerationActivityByChatId(chatId)?.kind === 'message' ||
+    get(activeGenerationJobs).some((job) => job.chatId === chatId)
+  )
 }
 
 function openChatTarget(): ActiveChatTarget | null {
@@ -64,13 +77,8 @@ function isOpenChatTargetFresh(target: ActiveChatTarget): boolean {
   return target.chatPage === current.chatPage
 }
 
-let reattaching = false
+const reattachingJobIds = new Set<string>()
 let reattachQueued = false
-// A trigger that arrived while a reattach was streaming the user
-// switched to another chat with its own live job. Re-arm one probe after the
-// in-flight reattach settles instead of dropping the request.
-let reattachDeferred = false
-let stopWaitingForGenerationIdle: (() => void) | null = null
 
 /**
  * Request a delayed reattach probe after projection state has settled. This
@@ -93,38 +101,16 @@ export function triggerOpenChatGenerationReattach(): void {
  */
 export async function maybeReattachOpenChatGeneration(): Promise<void> {
   if (reattachDisabled) return
-  if (reattaching) {
-    reattachDeferred = true
-    return
-  }
   const target = openChatTarget()
   if (!target?.chatId) return
   const job = get(activeGenerationJobs).find((entry) => entry.chatId === target.chatId)
-  if (!job) return
+  if (!job || reattachingJobIds.has(job.jobId) || findChatGenerationActivity(target)) return
 
-  reattaching = true
+  reattachingJobIds.add(job.jobId)
   try {
-    const { sendChat, doingChat, createActiveGenerationAbortController, clearActiveGenerationAbortController } =
+    const { sendChat, createActiveGenerationAbortController, clearActiveGenerationAbortController } =
       await import('./index.svelte')
     if (!isOpenChatTargetFresh(target)) {
-      reattachDeferred = true
-      return
-    }
-    if (get(doingChat)) {
-      // A foreground/online probe can race the old stream unwinding. Remember
-      // one probe for the transition back to idle instead of dropping it.
-      if (!stopWaitingForGenerationIdle) {
-        let subscribing = true
-        const unsubscribe = doingChat.subscribe((active) => {
-          if (subscribing || active) return
-          const stop = stopWaitingForGenerationIdle
-          stopWaitingForGenerationIdle = null
-          stop?.()
-          triggerOpenChatGenerationReattach()
-        })
-        stopWaitingForGenerationIdle = unsubscribe
-        subscribing = false
-      }
       return
     }
     // Consume the job up front so a re-render / re-selection does not double
@@ -164,14 +150,7 @@ export async function maybeReattachOpenChatGeneration(): Promise<void> {
     // Reattach is an optimization; the persisted result still surfaces via the
     // projection refresh.
   } finally {
-    reattaching = false
-    // Re-arm a probe requested mid-stream targets whatever chat is
-    // open NOW — without this, switching between two chats with live jobs left
-    // the second un-reattached until another selection change.
-    if (!reattachDisabled && reattachDeferred) {
-      reattachDeferred = false
-      triggerOpenChatGenerationReattach()
-    }
+    reattachingJobIds.delete(job.jobId)
   }
 }
 
@@ -179,6 +158,7 @@ let wired = false
 let reattachDisabled = false
 let runtimeJobRefresh: Promise<void> | null = null
 let stopSelectedCharacterSubscription: (() => void) | null = null
+let stopGenerationActivitySubscription: (() => void) | null = null
 
 const handleGenerationVisibilityChange = (): void => {
   if (!reattachDisabled && document.visibilityState === 'visible') void refreshRuntimeJobsAndTriggerReattach()
@@ -222,6 +202,9 @@ export function startActiveGenerationReattach(): void {
   stopSelectedCharacterSubscription = selectedCharID.subscribe(() => {
     triggerOpenChatGenerationReattach()
   })
+  stopGenerationActivitySubscription = activeChatGenerations.subscribe(() => {
+    triggerOpenChatGenerationReattach()
+  })
 
   // A mobile tab can remain mounted while its fetch/SSE sockets are discarded.
   // Refresh the server's active-job projection when the page or network returns
@@ -239,11 +222,11 @@ export function stopActiveGenerationReattach(): void {
   reattachDisabled = true
   wired = false
   reattachQueued = false
-  reattachDeferred = false
-  stopWaitingForGenerationIdle?.()
-  stopWaitingForGenerationIdle = null
+  reattachingJobIds.clear()
   stopSelectedCharacterSubscription?.()
   stopSelectedCharacterSubscription = null
+  stopGenerationActivitySubscription?.()
+  stopGenerationActivitySubscription = null
   if (typeof document !== 'undefined') {
     document.removeEventListener('visibilitychange', handleGenerationVisibilityChange)
   }

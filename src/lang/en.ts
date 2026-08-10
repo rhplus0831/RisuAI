@@ -1023,6 +1023,12 @@ export const languageEnglish = {
   rerollCandidate: 'Response',
   newReroll: 'New reroll',
   chatList: 'Chat List',
+  pinChat: 'Pin chat',
+  unpinChat: 'Unpin chat',
+  pinnedChats: 'Pinned chats',
+  generatingMessage: 'Generating message',
+  pinChatQueued: 'The pin change is saved on this device and queued for the server.',
+  pinChatFailed: 'The chat pin could not be saved. Please try again.',
   chatListExportAll: 'Export all chats',
   chatListDeleteAllAfterExportConfirm:
     'All chats were downloaded. Do you want to delete every chat for this character?',

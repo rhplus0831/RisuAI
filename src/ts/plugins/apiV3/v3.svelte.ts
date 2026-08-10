@@ -49,7 +49,8 @@ import { registerMCPModule, unregisterMCPModule } from 'src/ts/process/mcp/plugi
 import { getInlayAsset } from 'src/ts/process/files/inlays'
 import { getLLMCache, searchLLMCache } from 'src/ts/translator/translator'
 import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer, type LLMModel } from 'src/ts/model/types'
-import { sendChat as processSendChat, doingChat } from 'src/ts/process/index.svelte'
+import { sendChat as processSendChat } from 'src/ts/process/index.svelte'
+import { isChatGenerationKnown } from 'src/ts/process/reattach'
 import { getModelInfo } from 'src/ts/model/modellist'
 import type { ModelModeExtended } from 'src/ts/process/request/shared'
 import { requestChatDataMain } from 'src/ts/process/request/request'
@@ -1871,10 +1872,6 @@ const makeRisuaiAPIV3 = (
         throw new Error('Message must be a string')
       }
 
-      if (get(doingChat)) {
-        throw new Error('A chat is already in progress')
-      }
-
       if (getModelInfo(getDatabase().aiModel).id.startsWith('pluginmodel:::')) {
         // Plugin-provided models are blocked from chat sends to keep plugin IPC
         // outside provider execution.
@@ -1890,6 +1887,9 @@ const makeRisuaiAPIV3 = (
       const chat = char.chats[char.chatPage]
       if (!chat) {
         throw new Error('No active chat found')
+      }
+      if (isChatGenerationKnown(chat.id)) {
+        throw new Error('A generation is already in progress for this chat')
       }
 
       if (message) {

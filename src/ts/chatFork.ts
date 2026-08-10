@@ -22,6 +22,7 @@ export function rekeyClonedChat(
 ): Map<string, string> {
   chat.id = createId()
   delete chat.hypaContextTruncationAcknowledged
+  delete chat.pinned
   ensureClientLorebookEntryIds(chat.localLore ?? (chat.localLore = []))
   const messageIdMap = new Map<string, string>()
 

@@ -360,10 +360,10 @@ function applyNextPrefetchedReroll(operation: RerollOperation): boolean {
 }
 
 // Concurrency contract: callers MUST NOT invoke reroll/unReroll while a generation
-// is in flight (the component wrappers gate on `$doingChat`). A swipe's
+// is in flight for the same chat (the component wrappers use chat-keyed activity). A swipe's
 // dispatchReplaceMessages would otherwise race an in-flight regenerate's persist —
 // the swap could remove the regenerate's target row before the server commits it.
-// The one-job-per-chat lock + the `$doingChat` gate keep these mutually exclusive.
+// The server lock and client activity entry keep same-chat work mutually exclusive.
 export async function reroll(deps: RerollDeps): Promise<void> {
   const operation = beginRerollOperation()
   try {

@@ -13,6 +13,8 @@ interface TestStore<T> {
 
 const shellMocks = vi.hoisted(() => ({
   abortActiveGeneration: vi.fn(),
+  activeChatGenerations: undefined as TestStore<Array<Record<string, unknown>>> | undefined,
+  activeGenerationJobs: undefined as TestStore<Array<Record<string, unknown>>> | undefined,
   activeGenerationTarget: undefined as TestStore<Record<string, unknown> | null> | undefined,
   alertError: vi.fn(),
   alertNormal: vi.fn(),
@@ -135,6 +137,20 @@ vi.mock('src/ts/process/index.svelte', async () => {
     doingChat: shellMocks.doingChat,
     sendChat: shellMocks.sendChat,
   }
+})
+
+vi.mock('src/ts/process/generationActivity.svelte', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/process/generationActivity.svelte')>()
+  const { writable } = await import('svelte/store')
+  shellMocks.activeChatGenerations ??= writable([])
+  return { ...actual, activeChatGenerations: shellMocks.activeChatGenerations }
+})
+
+vi.mock('src/ts/process/reattach', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/process/reattach')>()
+  const { writable } = await import('svelte/store')
+  shellMocks.activeGenerationJobs ??= writable([])
+  return { ...actual, activeGenerationJobs: shellMocks.activeGenerationJobs }
 })
 
 vi.mock('src/ts/process/rerollNavigation.svelte', () => ({
@@ -344,6 +360,8 @@ beforeEach(() => {
   shellMocks.hydrateActiveChat.mockClear()
   shellMocks.hydrationFailed = false
   shellMocks.activeGenerationTarget!.set(null)
+  shellMocks.activeChatGenerations!.set([])
+  shellMocks.activeGenerationJobs!.set([])
   shellMocks.doingChat!.set(false)
   target = document.createElement('div')
   document.body.appendChild(target)
@@ -438,7 +456,7 @@ describe('playground character creation reconciliation', () => {
 })
 
 describe('generation control ownership', () => {
-  it('does not expose the previous chat abort control while its stream settles', async () => {
+  it('shows the abort control only on its owner while another chat remains sendable', async () => {
     const stream = deferred<void>()
     seedDatabase(makeHydratedCharacterWithTwoChats())
     shellMocks.activeGenerationTarget!.set({
@@ -448,9 +466,21 @@ describe('generation control ownership', () => {
       chatId: 'chat-0',
     })
     shellMocks.doingChat!.set(true)
+    shellMocks.activeChatGenerations!.set([
+      {
+        id: 1,
+        targetKey: 'chat:chat-0',
+        target: { selectedCharID: 0, chatPage: 0, characterId: 'character-0', chatId: 'chat-0' },
+        characterId: 'character-0',
+        chatId: 'chat-0',
+        stage: 3,
+        kind: 'message',
+      },
+    ])
     const settleStream = stream.promise.finally(() => {
       shellMocks.doingChat!.set(false)
       shellMocks.activeGenerationTarget!.set(null)
+      shellMocks.activeChatGenerations!.set([])
     })
 
     const error = tryMount()
@@ -469,7 +499,7 @@ describe('generation control ownership', () => {
     await tick()
 
     expect(target.querySelector('[data-testid="default-chat-cancel-button"]')).toBeNull()
-    expect(target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')?.disabled).toBe(true)
+    expect(target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')?.disabled).toBe(false)
 
     getResourceDatabase().characters[0].chatPage = 0
     shellMocks.setCurrentRoute({

@@ -9,7 +9,6 @@
   import { get } from 'svelte/store'
   import { getTranscriptWindowRange } from './DefaultChatScreen.loadPages'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
-  import { chatProcessStage } from 'src/ts/process/index.svelte'
   import { didChatOwnerChange } from './ChatsUnread'
   import { scrollElementToContainerStart } from './chatScroll'
   import { isMemoryLimitMessage } from './memoryLimitMarker'
@@ -43,6 +42,7 @@
     loadPages,
     userIconPortrait,
     isGenerationActive = false,
+    generationStage = 0,
     hasNewUnreadMessage = $bindable(false),
   }: {
     messages: Message[]
@@ -56,6 +56,7 @@
     loadPages: number
     userIconPortrait?: boolean
     isGenerationActive?: boolean
+    generationStage?: number
     hasNewUnreadMessage?: boolean
   } = $props()
 
@@ -242,7 +243,7 @@
           !$serverOwnedGeneratedMessageIds.has(row.message.chatId)}
         onAutoTranslationEligibilityConsumed={() => consumeAutomaticTranslationEligibility(row.message.chatId ?? '')}
         isGenerationPersistenceQueued={row.isGenerationPersistenceQueued}
-        generationStage={$chatProcessStage}
+        {generationStage}
         disabled={row.message.disabled ?? false} />
     </div>
   {/each}

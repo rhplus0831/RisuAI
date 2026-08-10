@@ -37,6 +37,7 @@ export interface ChatRecord extends JsonRecord {
   bilingualDisplay?: boolean
   bilingualEmphasis?: 'original' | 'translation'
   modules?: string[]
+  pinned?: boolean
   generationSettings?: ChatGenerationSettings
 }
 
@@ -90,6 +91,7 @@ const ALLOWED_CHAT_PATCH_KEYS = new Set([
   'bookmarks',
   'bookmarkNames',
   'modules',
+  'pinned',
 ])
 
 const ALLOWED_CHAT_FOLDER_PATCH_KEYS = new Set(['name', 'color', 'folded'])
@@ -855,6 +857,7 @@ function validateChatRecord(record: JsonRecord, label: string, options: { partia
     'autoTranslate',
     'autoTranslateBotOnly',
     'bilingualDisplay',
+    'pinned',
   ] as const) {
     if (
       field in record &&

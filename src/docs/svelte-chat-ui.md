@@ -139,7 +139,10 @@ opens.
 labels and bounded progress. The visible sequence covers starting, preparing
 the prompt, checking memory, waiting for the model, finalizing, and stage `5`
 for input hooks. `Chat.svelte` renders the message-row loading track, while the
-composer cancel button mirrors the same stage colors.
+composer cancel button mirrors the same stage colors. Message-generation stage
+and cancellation state come from the open chat's entry in
+`generationActivity.svelte.ts`, so another chat can generate concurrently
+without replacing the visible state of this one.
 
 Both the placeholder loading row and the half-streaming row use `w-full`, so
 they fill the message content width instead of stopping at the former fixed

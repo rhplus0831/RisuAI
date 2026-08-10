@@ -140,7 +140,7 @@ function messageIdBackfillTail(messages: Message[]): { startIndex: number; after
  * Reattach callers disable maintenance so they only reconstruct render context.
  *
  * The coordinator handles the closures (`throwError`,
- * `runCurrentChatFunction`, etc.) and the `doingChat` lifecycle around
+ * `runCurrentChatFunction`, etc.) and the chat-keyed generation lifecycle around
  * this helper.
  */
 export function setupSendChatContext(args: {

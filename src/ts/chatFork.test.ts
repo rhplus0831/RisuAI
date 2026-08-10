@@ -33,6 +33,7 @@ describe('rekeyClonedChat', () => {
         summaries: [{ chatMemos: ['message-a', 'message-b', 'message-tail'] }],
       },
       hypaContextTruncationAcknowledged: true,
+      pinned: true,
     } as unknown as Chat
 
     const messageIdMap = rekeyClonedChat(chat, {
@@ -52,6 +53,7 @@ describe('rekeyClonedChat', () => {
     expect(chat.bookmarkNames).toEqual({ 'fork-message-a': 'Opening' })
     expect(chat.hypaV3Data?.summaries?.[0]?.chatMemos).toEqual(['fork-message-a', 'fork-message-b'])
     expect(chat.hypaContextTruncationAcknowledged).toBeUndefined()
+    expect(chat.pinned).toBeUndefined()
   })
 
   it('can retain unknown legacy references while rekeying an imported chat', () => {

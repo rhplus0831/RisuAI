@@ -637,6 +637,10 @@ describe('DefaultChatScreen overflow menu accessibility', () => {
     expect(items.every((item) => item.tagName === 'BUTTON')).toBe(true)
     expect(items.every((item) => item.textContent?.trim())).toBe(true)
     expect(items.every((item) => item.getAttribute('role')?.startsWith('menuitem'))).toBe(true)
+    const pinItem = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-pin-button"]')
+    expect(pinItem?.getAttribute('role')).toBe('menuitemcheckbox')
+    expect(pinItem?.getAttribute('aria-checked')).toBe('false')
+    expect(pinItem?.textContent?.trim()).toBe('pinChat')
     expect(document.activeElement).toBe(items[0])
   })
 
@@ -763,7 +767,7 @@ describe('DefaultChatScreen floating action accessibility', () => {
     const menuItems = Array.from(target.querySelectorAll<HTMLButtonElement>('[data-default-chat-menu-item]')).map(
       (button) => button.textContent?.trim(),
     )
-    expect(menuItems).toEqual(['goToBottom', 'hideInput'])
+    expect(menuItems).toEqual(['goToBottom', 'hideInput', 'pinChat'])
     expect(target.querySelector('[data-testid="default-chat-overflow-menu"]')?.classList).toContain(
       'chat-overflow-menu-fixed',
     )

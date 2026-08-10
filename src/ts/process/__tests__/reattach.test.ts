@@ -59,6 +59,11 @@ import {
   stopActiveGenerationReattach,
   triggerOpenChatGenerationReattach,
 } from '../reattach'
+import {
+  beginChatGenerationActivity,
+  finishChatGenerationActivity,
+  resetChatGenerationActivitiesForTests,
+} from '../generationActivity.svelte'
 
 function openChat(chatId: string): void {
   h.database = {
@@ -81,6 +86,7 @@ beforeEach(() => {
   })
   h.doingChat.set(false)
   activeGenerationJobs.set([])
+  resetChatGenerationActivitiesForTests()
 })
 
 describe('reattach open-chat generation (Phase 4)', () => {
@@ -206,20 +212,22 @@ describe('reattach open-chat generation (Phase 4)', () => {
     expect(h.clearActiveGenerationAbortController).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps the job while a generation is in flight and retries when it becomes idle', async () => {
+  it('keeps the job while the same chat already has a client generation activity', async () => {
     openChat('chat-1')
     setActiveGenerationJobs([{ chatId: 'chat-1', jobId: 'job-1' }])
-    h.doingChat.set(true)
+    const activity = beginChatGenerationActivity({
+      target: { selectedCharID: 0, chatPage: 0, characterId: 'char-a', chatId: 'chat-1' },
+      kind: 'message',
+    })!
 
     await maybeReattachOpenChatGeneration()
 
     expect(h.sendChat).not.toHaveBeenCalled()
     expect(get(activeGenerationJobs)).toEqual([{ chatId: 'chat-1', jobId: 'job-1' }])
 
-    h.doingChat.set(false)
-    await vi.waitFor(() => {
-      expect(h.sendChat).toHaveBeenCalledWith(-1, expect.objectContaining({ reattachJobId: 'job-1' }))
-    })
+    finishChatGenerationActivity(activity.id)
+    await maybeReattachOpenChatGeneration()
+    expect(h.sendChat).toHaveBeenCalledWith(-1, expect.objectContaining({ reattachJobId: 'job-1' }))
   })
 
   it('does nothing when no chat is open', async () => {
@@ -254,10 +262,7 @@ describe('reattach open-chat generation (Phase 4)', () => {
     expect(get(activeGenerationJobs)).toEqual([{ chatId: 'chat-1', jobId: 'job-1' }])
   })
 
-  it('re-arms and reattaches a second live-job chat after the first completes (L30)', async () => {
-    // The first chat's reattach streams (sendChat blocked on a gate) while the
-    // user switches to a second chat with its own live job. The mid-stream
-    // trigger must defer — not drop — and fire once the first settles.
+  it('reattaches a second live-job chat while the first remains in flight', async () => {
     let releaseFirst!: () => void
     const firstGate = new Promise<void>((resolve) => {
       releaseFirst = resolve
@@ -282,19 +287,14 @@ describe('reattach open-chat generation (Phase 4)', () => {
     const first = maybeReattachOpenChatGeneration()
     await vi.waitFor(() => expect(h.sendChat).toHaveBeenCalledTimes(1))
 
-    // Switch to the second chat mid-stream and request a probe: it must not
-    // start a second reattach now (one is in flight) and must not be lost.
+    // A different job id owns an independent reattach lease.
     h.selectedCharID.set(1)
-    triggerOpenChatGenerationReattach()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(h.sendChat).toHaveBeenCalledTimes(1)
+    await maybeReattachOpenChatGeneration()
+    expect(h.sendChat).toHaveBeenCalledWith(-1, expect.objectContaining({ reattachJobId: 'job-2' }))
+    expect(h.sendChat).toHaveBeenCalledTimes(2)
 
     releaseFirst()
     await first
-
-    await vi.waitFor(() => {
-      expect(h.sendChat).toHaveBeenCalledWith(-1, expect.objectContaining({ reattachJobId: 'job-2' }))
-    })
     expect(get(activeGenerationJobs)).toEqual([])
   })
 

@@ -4,7 +4,6 @@ import { changeChar } from './characters'
 import { changeChatTo } from './globalApi.svelte'
 import { openPlaygroundChat, PLAYGROUND_CHARACTER_ID } from './playground'
 import { changeUserPersonaWithOutcome } from './persona'
-import { activeGenerationTarget, doingChat } from './process/index.svelte'
 import { findCharacterIndexbyId } from './characterState'
 import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
 import {
@@ -219,10 +218,8 @@ export function installRouter(): void {
 export function navigate(path: string, options: { replace?: boolean } = {}): void {
   if (typeof window === 'undefined') return
 
-  const requestedRoute = parseRoute(path)
-  const canonicalPath = activeGenerationOwnerPathForCharacterRoute(requestedRoute) ?? path
-  const nextRoute = canonicalPath === path ? requestedRoute : parseRoute(canonicalPath)
-  if (blocksActiveCharacterGeneration(nextRoute)) return
+  const canonicalPath = path
+  const nextRoute = parseRoute(canonicalPath)
 
   if (nextRoute.kind === 'settings') {
     const currentPath = normalizePath(window.location.pathname)
@@ -391,15 +388,6 @@ export async function applyRouteToStores(route: AppRoute): Promise<void> {
   const isFreshRouteApplication = () => applicationEpoch === routeApplicationEpoch
   applyingRoute = true
   try {
-    if (blocksActiveCharacterGeneration(route)) {
-      const owner = restoreActiveGenerationOwnerRoute()
-      if (owner) {
-        closeRouteBlockingViews()
-        await openCharacterRoute(owner.characterId, owner.chatId, isFreshRouteApplication)
-      }
-      return
-    }
-
     closeRouteBlockingViews()
     switch (route.kind) {
       case 'home': {
@@ -642,8 +630,7 @@ async function openCharacterRoute(
   chatId: string | undefined,
   isFreshRouteApplication: () => boolean,
 ): Promise<void> {
-  const isFreshCharacterRoute = () =>
-    isFreshRouteApplication() && (!get(doingChat) || activeGenerationOwnerMatches(characterId, chatId))
+  const isFreshCharacterRoute = () => isFreshRouteApplication()
   const index = findCharacterIndexbyId(characterId)
   if (index < 0) {
     selectedCharID.set(-1)
@@ -657,13 +644,7 @@ async function openCharacterRoute(
   OpenRealmStore.set(false)
 
   if (get(selectedCharID) !== index) {
-    const reopeningActiveGeneration = get(doingChat)
-    await changeChar(index, {
-      isFresh: isFreshCharacterRoute,
-      ...(reopeningActiveGeneration
-        ? { allowDuringGeneration: () => activeGenerationOwnerMatches(characterId, chatId) }
-        : {}),
-    })
+    await changeChar(index, { isFresh: isFreshCharacterRoute })
   }
 
   if (!isFreshCharacterRoute()) return
@@ -690,54 +671,6 @@ async function openCharacterRoute(
   if (character.chatPage === chatIndex) return
   if (!isFreshCharacterRoute()) return
   changeChatTo(chatId)
-}
-
-function resolvedActiveGenerationOwner(): { characterId: string; chatId: string | undefined } | null {
-  const target = get(activeGenerationTarget)
-  if (!target) return null
-
-  const targetCharacter =
-    (target.characterId
-      ? getDatabase().characters?.find((character) => character?.chaId === target.characterId)
-      : getDatabase().characters?.[target.selectedCharID]) ?? null
-  const characterId = target.characterId ?? targetCharacter?.chaId
-  if (!characterId) return null
-
-  return {
-    characterId,
-    chatId: target.chatId ?? targetCharacter?.chats?.[target.chatPage]?.id,
-  }
-}
-
-function activeGenerationOwnerMatches(characterId: string, chatId: string | undefined): boolean {
-  const owner = resolvedActiveGenerationOwner()
-  return !!owner && owner.characterId === characterId && owner.chatId === chatId
-}
-
-function activeGenerationOwnerPathForCharacterRoute(route: AppRoute): string | null {
-  if (route.kind !== 'character' || route.chatId !== undefined || !get(doingChat)) return null
-  const owner = resolvedActiveGenerationOwner()
-  if (!owner?.chatId || owner.characterId !== route.chaId) return null
-  return characterRoutePath(owner.characterId, owner.chatId)
-}
-
-function blocksActiveCharacterGeneration(nextRoute: AppRoute): boolean {
-  if (nextRoute.kind !== 'character' || !get(doingChat)) return false
-  return !activeGenerationOwnerMatches(nextRoute.chaId, nextRoute.chatId)
-}
-
-function restoreActiveGenerationOwnerRoute(): { characterId: string; chatId: string | undefined } | null {
-  const owner = resolvedActiveGenerationOwner()
-  if (!owner) {
-    restoreSelectedCharacterRoute()
-    return null
-  }
-
-  commitPath(characterRoutePath(owner.characterId, owner.chatId), {
-    replace: true,
-    stateDriven: true,
-  })
-  return owner
 }
 
 function restoreSelectedCharacterRoute(): void {

@@ -121,6 +121,7 @@ import {
   sanitizeChatPatch,
   setChatNoteValue,
   setChatScriptstateValue,
+  setCurrentChatPinnedWithOutcome,
   setCurrentChatSelectedDraftHookId,
   setCurrentChatTranslationSettingWithOutcome,
   stageChatNoteMutation,
@@ -809,6 +810,26 @@ describe('chat command projection helpers', () => {
       autoTranslateBotOnly: true,
       bilingualDisplay: true,
       bilingualEmphasis: 'translation',
+    })
+  })
+
+  it('persists the selected chat pin through the guarded chat-scoped path', async () => {
+    const calls = stubCommandFetch()
+    setResourceWriteGuardEnabled(true)
+
+    const persistence = setCurrentChatPinnedWithOutcome(true)
+    expect(getDatabase().characters[0].chats[0].pinned).toBe(true)
+    await expect(persistence).resolves.toMatchObject({ status: 'accepted' })
+
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a',
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: { pinned: true },
+        select: false,
+      },
     })
   })
 
@@ -5267,6 +5288,7 @@ describe('Phase 4 chat metadata allowed-key diff (M9)', () => {
       bookmarks: ['msg-old'],
       bookmarkNames: { 'msg-old': 'Old bookmark' },
       modules: ['module-a'],
+      pinned: false,
     })
     const current = orderedChatMetadata({
       name: 'New chat',
@@ -5279,6 +5301,7 @@ describe('Phase 4 chat metadata allowed-key diff (M9)', () => {
       bookmarks: ['msg-new'],
       bookmarkNames: { 'msg-new': 'New bookmark' },
       modules: ['module-a', 'module-b'],
+      pinned: true,
     })
     current.message = [{ role: 'char', data: 'ignored transcript change', chatId: 'msg-new' }]
     current.localLore = [{ id: 'ignored-lore-new', key: 'y', content: 'ignored changed lore' }] as any

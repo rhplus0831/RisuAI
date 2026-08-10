@@ -1,0 +1,59 @@
+import { beforeEach, describe, expect, it } from 'vitest'
+import { get } from 'svelte/store'
+import {
+  activeChatGenerations,
+  beginChatGenerationActivity,
+  chatGenerationTargetKey,
+  findChatGenerationActivity,
+  finishChatGenerationActivity,
+  resetChatGenerationActivitiesForTests,
+  updateChatGenerationActivityStage,
+} from './generationActivity.svelte'
+
+function target(characterId: string, chatId: string, selectedCharID: number) {
+  return {
+    selectedCharID,
+    chatPage: 0,
+    characterId,
+    chatId,
+  }
+}
+
+beforeEach(() => {
+  resetChatGenerationActivitiesForTests()
+})
+
+describe('chat generation activity registry', () => {
+  it('tracks different chats concurrently while keeping each chat single-flight', () => {
+    const chatA = target('char-a', 'chat-a', 0)
+    const chatB = target('char-b', 'chat-b', 1)
+    const activityA = beginChatGenerationActivity({ target: chatA, kind: 'message' })
+    const activityB = beginChatGenerationActivity({ target: chatB, kind: 'message' })
+
+    expect(activityA).not.toBeNull()
+    expect(activityB).not.toBeNull()
+    expect(beginChatGenerationActivity({ target: chatA, kind: 'message' })).toBeNull()
+    expect(get(activeChatGenerations).map((activity) => activity.chatId)).toEqual(['chat-a', 'chat-b'])
+  })
+
+  it('keeps stages and completion scoped to the owning activity', () => {
+    const activityA = beginChatGenerationActivity({ target: target('char-a', 'chat-a', 0), kind: 'message' })!
+    const activityB = beginChatGenerationActivity({ target: target('char-b', 'chat-b', 1), kind: 'message' })!
+
+    updateChatGenerationActivityStage(activityA.id, 2)
+    updateChatGenerationActivityStage(activityB.id, 4)
+    expect(findChatGenerationActivity(activityA.target)?.stage).toBe(2)
+    expect(findChatGenerationActivity(activityB.target)?.stage).toBe(4)
+
+    finishChatGenerationActivity(activityB.id)
+    expect(findChatGenerationActivity(activityB.target)).toBeUndefined()
+    expect(findChatGenerationActivity(activityA.target)?.stage).toBe(2)
+  })
+
+  it('uses stable chat IDs before index fallbacks', () => {
+    expect(chatGenerationTargetKey(target('char-a', 'chat-a', 3))).toBe('chat:chat-a')
+    expect(chatGenerationTargetKey({ selectedCharID: 3, chatPage: 2, characterId: 'char-a', chatId: undefined })).toBe(
+      'character:char-a:page:2',
+    )
+  })
+})

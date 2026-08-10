@@ -561,7 +561,7 @@ describe('router character route freshness', () => {
     expect(get(stores.botMakerMode)).toBe(false)
   })
 
-  it('routes character-only navigation to the active generation owner chat', async () => {
+  it('allows character-only navigation away from an active generation', async () => {
     const router = await importRouterAt('/')
     const { activeGenerationTarget, doingChat } = await import('./process/index.svelte')
     activeGenerationTarget.set({
@@ -574,15 +574,14 @@ describe('router character route freshness', () => {
 
     router.navigate('/character/char-a')
 
-    expect(window.location.pathname).toBe('/character/char-a/chat-owner')
+    expect(window.location.pathname).toBe('/character/char-a')
     expect(get(router.currentRoute)).toMatchObject({
       kind: 'character',
       chaId: 'char-a',
-      chatId: 'chat-owner',
     })
 
     router.navigate('/character/char-b')
-    expect(window.location.pathname).toBe('/character/char-a/chat-owner')
+    expect(window.location.pathname).toBe('/character/char-b')
   })
 
   it('reopens exactly the active generation owner after leaving the chat', async () => {
@@ -626,7 +625,7 @@ describe('router character route freshness', () => {
 
     router.navigate('/character/char-a/chat-a')
     router.navigate('/character/char-b/chat-b')
-    expect(window.location.pathname).toBe('/settings/model')
+    expect(window.location.pathname).toBe('/character/char-b/chat-b')
 
     router.navigate('/character/char-a/chat-owner')
     expect(window.location.pathname).toBe('/character/char-a/chat-owner')
@@ -635,13 +634,12 @@ describe('router character route freshness', () => {
 
     expect(routerMocks.changeChar).toHaveBeenCalledWith(0, {
       isFresh: expect.any(Function),
-      allowDuringGeneration: expect.any(Function),
     })
     expect(routerMocks.changeChatTo).toHaveBeenCalledWith('chat-owner')
     expect(get(selectedCharID)).toBe(0)
   })
 
-  it('canonicalizes history navigation to another chat back to the active generation owner', async () => {
+  it('applies history navigation to another chat during an active generation', async () => {
     const router = await importRouterAt('/character/char-a/chat-other')
     const stores = await import('./stores.svelte')
     const { activeGenerationTarget, doingChat } = await import('./process/index.svelte')
@@ -674,21 +672,20 @@ describe('router character route freshness', () => {
     await router.applyRouteToStores(get(router.currentRoute))
     await flushMicrotasks()
 
-    expect(window.location.pathname).toBe('/character/char-a/chat-owner')
+    expect(window.location.pathname).toBe('/character/char-a/chat-other')
     expect(get(router.currentRoute)).toMatchObject({
       kind: 'character',
       chaId: 'char-a',
-      chatId: 'chat-owner',
+      chatId: 'chat-other',
     })
     expect(routerMocks.changeChar).toHaveBeenCalledWith(0, {
       isFresh: expect.any(Function),
-      allowDuringGeneration: expect.any(Function),
     })
-    expect(routerMocks.changeChatTo).not.toHaveBeenCalled()
+    expect(routerMocks.changeChatTo).toHaveBeenCalledWith('chat-other')
     expect(get(stores.selectedCharID)).toBe(0)
   })
 
-  it('keeps the selected character route when in-app navigation is attempted during generation', async () => {
+  it('allows in-app navigation to another character during generation', async () => {
     const router = await importRouterAt('/')
     const stores = await import('./stores.svelte')
     const { activeGenerationTarget, doingChat } = await import('./process/index.svelte')
@@ -728,11 +725,11 @@ describe('router character route freshness', () => {
 
     router.navigate('/character/char-b/chat-b')
 
-    expect(window.location.pathname).toBe('/character/char-a/chat-a')
+    expect(window.location.pathname).toBe('/character/char-b/chat-b')
     expect(get(router.currentRoute)).toMatchObject({
       kind: 'character',
-      chaId: 'char-a',
-      chatId: 'chat-a',
+      chaId: 'char-b',
+      chatId: 'chat-b',
     })
     expect(get(selectedCharID)).toBe(0)
     expect(routerMocks.changeChar).not.toHaveBeenCalled()

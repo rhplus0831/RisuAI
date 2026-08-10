@@ -8308,6 +8308,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
           note: 'Author note',
           bookmarks: ['msg-a'],
           bookmarkNames: { 'msg-a': 'Pinned' },
+          pinned: true,
         },
         select: true,
       },
@@ -8488,6 +8489,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       note: 'Author note',
       bookmarks: ['msg-a'],
       bookmarkNames: { 'msg-a': 'Pinned' },
+      pinned: true,
     })
   })
 

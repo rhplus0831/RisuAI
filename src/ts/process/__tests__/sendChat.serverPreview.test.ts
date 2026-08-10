@@ -453,8 +453,9 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     expect(getServerChatCalls()).toHaveLength(1)
   })
 
-  it('rechecks the active target after context persistence before generation', async () => {
+  it('keeps targeting the original chat when navigation changes during context persistence', async () => {
     await seedEcho()
+    setServerChatDispatchResult('server reply', { model: 'echo_model', outputTokens: 2, maxContext: 4000 })
     const character = testDatabaseState.db.characters[0]
     const firstChat = character.chats[0]
     firstChat.id = 'chat-1'
@@ -489,8 +490,9 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     character.chatPage = 1
     resolveContext(contextCommandSuccessResponse(contextInit))
 
-    await expect(sendPromise).resolves.toBe(false)
-    expect(getServerChatCalls()).toHaveLength(0)
+    await expect(sendPromise).resolves.toBe(true)
+    expect(getServerChatCalls()).toHaveLength(1)
+    expect(getServerChatCalls()[0]).toMatchObject({ chatId: 'chat-1' })
     expect(get(activeGenerationTarget)).toBeNull()
   })
 

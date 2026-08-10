@@ -101,7 +101,6 @@
   import { language } from 'src/lang'
   import { getUserName, replacePlaceholders } from '../../ts/utilState'
   import { onDestroy, untrack } from 'svelte'
-  import { get } from 'svelte/store'
   import { ParseMarkdown } from 'src/ts/parser/parser.svelte'
   import { defaultAutoSuggestPrompt } from '../../ts/storage/defaultPrompts.js'
   import { dispatchUpdateChatRow, type ChatRowMetadataSnapshot } from 'src/ts/chatCommands'
@@ -115,6 +114,7 @@
   interface Props {
     send: () => any
     messageInput: (string: string) => any
+    isGenerationActive?: boolean
   }
 
   interface SuggestionTargetSnapshot {
@@ -129,7 +129,8 @@
     controller: AbortController
   }
 
-  let { send, messageInput }: Props = $props()
+  let { send, messageInput, isGenerationActive }: Props = $props()
+  let effectiveGenerationActive = $derived(isGenerationActive ?? $doingChat)
   const initialCharacter = getDatabase().characters[$selectedCharID]
   const initialChat = initialCharacter?.chats[initialCharacter.chatPage]
   let suggestMessages: string[] | undefined = $state(initialChat?.suggestMessages)
@@ -242,7 +243,7 @@
 
   const updateSuggestions = () => {
     if (destroyed) return
-    if ($selectedCharID > -1 && !$doingChat) {
+    if ($selectedCharID > -1 && !effectiveGenerationActive) {
       const currentChar = getDatabase().characters[$selectedCharID]
       const currentChat = currentChar?.chats[currentChar.chatPage]
       if (progress && progressChatId && progressChatId !== currentChat?.id) {
@@ -321,7 +322,7 @@
     const target = captureSuggestionTarget()
     alertConfirm(language.askReRollAutoSuggestions).then((result) => {
       if (destroyed) return
-      if (!result || get(doingChat)) return
+      if (!result || effectiveGenerationActive) return
       if (clearFreshSuggestions(target)) requestSuggestions()
     })
   }
@@ -339,7 +340,7 @@
   }
 
   function requestSuggestions(): void {
-    if (destroyed || get(doingChat)) return
+    if (destroyed || effectiveGenerationActive) return
     if ($selectedCharID > -1 && (!suggestMessages || suggestMessages.length === 0) && !progress) {
       const requestSelectedCharId = $selectedCharID
       const database = getDatabase()
@@ -461,7 +462,13 @@
     }
   }
 
-  const unsub = doingChat.subscribe(handleDoingChatChange)
+  let observedGenerationActive: boolean | undefined
+  $effect(() => {
+    const active = effectiveGenerationActive
+    if (active === observedGenerationActive) return
+    observedGenerationActive = active
+    untrack(() => handleDoingChatChange(active))
+  })
 
   const translateSuggest = async (toggle: boolean, messages: string[] | undefined) => {
     if (destroyed) return
@@ -495,7 +502,6 @@
     destroyed = true
     suggestionTranslationId += 1
     abandonActiveSuggestionRequest()
-    unsub()
   })
 
   $effect.pre(() => {
@@ -517,7 +523,7 @@
     observedTranscriptOwner = transcriptOwner
     observedResidentMessageCount = residentMessageCount
     updateSuggestions()
-    if (hydrationCompleted && !$doingChat && persistedSuggestionCount === 0) {
+    if (hydrationCompleted && !effectiveGenerationActive && persistedSuggestionCount === 0) {
       untrack(() => {
         void handleDoingChatChange(false)
       })
@@ -534,7 +540,7 @@
       <div class="loadmove mx-2"></div>
       <div>{language.creatingSuggestions}</div>
     </div>
-  {:else if !$doingChat}
+  {:else if !effectiveGenerationActive}
     {#if getDatabase().translator !== ''}
       <div class="flex mr-2 mb-2">
         <button
