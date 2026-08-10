@@ -44,6 +44,7 @@ import {
 import { playMessageCompletionSoundIfEnabled } from './messageCompletionSound'
 import type { SendChatFailure } from './sendChatFailure'
 import type { GenerationReattachOutcome } from './generationReattachOutcome'
+import { abortInputHookActivity } from './inputHookActivity.svelte'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -77,7 +78,6 @@ export let requestTokenParts: { [key: string]: requestTokenPart[] } = {}
 export let previewFormated: OpenAIChat[] = []
 export let previewBody: string = ''
 
-const generationControllers = new Set<AbortController>()
 const generationControllerBySignal = new WeakMap<AbortSignal, AbortController>()
 const MAX_SERVER_RESEND_DEPTH = 1
 const SERVER_RESEND_CAP_ERROR = 'Server-requested resend limit reached. Stopping to avoid a repeated generation loop.'
@@ -127,14 +127,13 @@ function selectedPersonaSaveError(
 
 export function createActiveGenerationAbortController(): AbortController {
   const controller = new AbortController()
-  generationControllers.add(controller)
   generationControllerBySignal.set(controller.signal, controller)
   abortChat.set(false)
   return controller
 }
 
 export function clearActiveGenerationAbortController(controller: AbortController): void {
-  generationControllers.delete(controller)
+  generationControllerBySignal.delete(controller.signal)
 }
 
 export function abortActiveGeneration(): void {
@@ -146,17 +145,7 @@ export function abortActiveGeneration(): void {
     return
   }
 
-  // Input-hook work uses the same cancel control but does not create a message
-  // generation activity. Preserve that fallback without making message
-  // generations globally single-controller again.
-  const boundControllers = new Set(
-    get(activeChatGenerations).flatMap((entry) => (entry.controller ? [entry.controller] : [])),
-  )
-  const fallbackController = [...generationControllers].findLast((controller) => !boundControllers.has(controller))
-  if (fallbackController) {
-    fallbackController.abort()
-    return
-  }
+  if (abortInputHookActivity(target)) return
 
   // A bootstrap-discovered durable job can be visible for a brief moment before
   // its reattach controller is installed. Let Stop cancel that exact chat too.

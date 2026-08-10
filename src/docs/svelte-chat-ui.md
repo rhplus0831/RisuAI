@@ -149,11 +149,14 @@ they fill the message content width instead of stopping at the former fixed
 34-rem cap. The surrounding transcript/content column still enforces the user's
 configured chat width.
 
-Draft and BTW hook execution temporarily sets stage `5`. Its progress fill and
-composer spinner are amber (`#f59e0b`); each hook restores the stage it replaced
-in `finally`, but only if no other work has changed it. Stage mapping is covered
-by `chatGenerationLoading.test.ts` and the DOM behavior by
-`DefaultChatScreen.loadPages.test.ts`.
+Draft and BTW hook execution registers a chat-keyed activity in
+`src/ts/process/inputHookActivity.svelte.ts`. Each entry owns stage `5`, its
+abort controller, hook kind, and composer-operation token/version; different
+chats may run concurrently while one chat remains single-flight. The progress
+fill and composer spinner are amber (`#f59e0b`), and ID-scoped cleanup prevents
+one hook from clearing another chat's state. Stage mapping is covered by
+`chatGenerationLoading.test.ts`, the registry by `inputHookActivity.test.ts`,
+and the DOM behavior by `DefaultChatScreen.loadPages.test.ts`.
 
 `AgentPresetProgress.svelte` and `PostGenerationScriptProgress.svelte` mount
 above the transcript in the shared content column. Their visible snapshots are

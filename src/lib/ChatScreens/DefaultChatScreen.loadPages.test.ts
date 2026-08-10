@@ -317,9 +317,13 @@ import {
 } from 'src/ts/activeChatGenerationSettings'
 import { translate } from '../../ts/translator/translator'
 import { runInputHook } from 'src/ts/process/inputHooks'
-import { chatProcessStage } from 'src/ts/process/index.svelte'
 import { resetAcceptedSendCoordinatorForTests } from 'src/ts/process/acceptedSendCoordinator.svelte'
 import { activeGenerationJobs } from 'src/ts/process/reattach'
+import {
+  abortInputHookActivity,
+  activeInputHookActivities,
+  resetInputHookActivitiesForTests,
+} from 'src/ts/process/inputHookActivity.svelte'
 import { createBranchComment } from './branchComment'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -515,6 +519,18 @@ function switchToCharacterChat(characterIndex: number) {
   })
 }
 
+async function startDraftHookFromComposer(source: string, expectedCallCount: number): Promise<void> {
+  await waitFor(() => expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy())
+  const composer = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+  composer.value = source
+  composer.dispatchEvent(new Event('input', { bubbles: true }))
+  await tick()
+  const sendButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')
+  expect(sendButton).toBeTruthy()
+  sendButton!.click()
+  await waitFor(() => expect(runInputHook).toHaveBeenCalledTimes(expectedCallCount))
+}
+
 async function clickScreenshotMenuItem() {
   const menuButton = target.querySelector<HTMLElement>('[data-testid="default-chat-menu-button"]')
   expect(menuButton).toBeTruthy()
@@ -570,6 +586,7 @@ function findButtonByText(text: string): HTMLButtonElement | undefined {
 
 beforeEach(() => {
   resetAcceptedSendCoordinatorForTests()
+  resetInputHookActivitiesForTests()
   resetDraftRecoveryScopeForTests()
   clearDefaultChatComposerDrafts()
   initializeDraftRecoveryScope({ databaseLineage: 'database-a', writerSessionId: 'writer-a' })
@@ -584,6 +601,9 @@ beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,AA==')
   consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
   vi.clearAllMocks()
+  loadPageMocks.abortActiveGeneration.mockImplementation(() => {
+    abortInputHookActivity(captureActiveChatTargetForTest())
+  })
   loadPageMocks.appendCurrentChatUserMessageForSend.mockReset()
   loadPageMocks.appendCurrentChatUserMessageForSend.mockResolvedValue({ status: 'ok', messageId: 'message-a' })
   loadPageMocks.sendChat.mockReset()
@@ -625,6 +645,7 @@ afterEach(() => {
   clearDefaultChatComposerDrafts()
   resetDraftRecoveryScopeForTests()
   resetAcceptedSendCoordinatorForTests()
+  resetInputHookActivitiesForTests()
   activeGenerationJobs.set([])
 })
 
@@ -1869,13 +1890,161 @@ describe('DefaultChatScreen transcript window state', () => {
     target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
 
     await waitFor(() => {
-      expect(get(chatProcessStage)).toBe(5)
+      expect(get(activeInputHookActivities)).toEqual([
+        expect.objectContaining({ chatId: 'chat-0', kind: 'draft', stage: 5 }),
+      ])
       expect(target.querySelector('[data-testid="default-chat-cancel-button"] .chat-process-stage-5')).toBeTruthy()
     })
 
     pending.resolve('Refined draft')
-    await waitFor(() => expect(get(chatProcessStage)).toBe(0))
+    await waitFor(() => expect(get(activeInputHookActivities)).toEqual([]))
     expect(target.querySelector('[data-testid="default-chat-cancel-button"]')).toBeNull()
+  })
+
+  it('shows Chat B send controls while Chat A owns a pending draft hook', async () => {
+    seedDatabase([1, 1])
+    const hook = { id: 'draft-hook', name: 'Draft Hook', type: 'draft' as const, prompt: 'prompt' }
+    getResourceDatabase().inputHooks = [hook]
+    getResourceDatabase().characters[0].chats[0].selectedDraftHookId = hook.id
+    const pendingA = createDeferred<string>()
+    vi.mocked(runInputHook).mockReturnValueOnce(pendingA.promise)
+    mountScreen()
+
+    await startDraftHookFromComposer('Chat A source', 1)
+    await waitFor(() => {
+      expect(get(activeInputHookActivities)).toEqual([
+        expect.objectContaining({ chatId: 'chat-0', kind: 'draft', stage: 5 }),
+      ])
+      expect(target.querySelector('[data-testid="default-chat-cancel-button"]')).toBeTruthy()
+    })
+
+    switchToCharacterChat(1)
+    await waitFor(() => {
+      const sendButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')
+      expect(sendButton).toBeTruthy()
+      expect(sendButton?.disabled).toBe(false)
+      expect(target.querySelector('[data-testid="default-chat-cancel-button"]')).toBeNull()
+    })
+
+    pendingA.resolve('Stale Chat A result')
+    await waitFor(() => expect(get(activeInputHookActivities)).toEqual([]))
+    expect(target.querySelector('[data-testid="default-chat-send-button"]')).toBeTruthy()
+    expect(target.querySelector('[data-testid="default-chat-cancel-button"]')).toBeNull()
+  })
+
+  it('cancels only the open chat hook when two chat targets are active', async () => {
+    seedDatabase([1, 1])
+    const hook = { id: 'draft-hook', name: 'Draft Hook', type: 'draft' as const, prompt: 'prompt' }
+    getResourceDatabase().inputHooks = [hook]
+    getResourceDatabase().characters[0].chats[0].selectedDraftHookId = hook.id
+    getResourceDatabase().characters[1].chats[0].selectedDraftHookId = hook.id
+    const pendingA = createDeferred<string>()
+    const pendingB = createDeferred<string>()
+    const signals = new Map<string, AbortSignal>()
+    vi.mocked(runInputHook).mockImplementation((_hook, slots, signal) => {
+      signals.set(slots.content, signal)
+      return slots.content === 'Chat A source' ? pendingA.promise : pendingB.promise
+    })
+    mountScreen()
+
+    await startDraftHookFromComposer('Chat A source', 1)
+    switchToCharacterChat(1)
+    await startDraftHookFromComposer('Chat B source', 2)
+    await waitFor(() => expect(get(activeInputHookActivities)).toHaveLength(2))
+
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-cancel-button"]')!.click()
+
+    expect(signals.get('Chat B source')?.aborted).toBe(true)
+    expect(signals.get('Chat A source')?.aborted).toBe(false)
+    pendingB.reject(new Error('Chat B aborted'))
+    await waitFor(() => {
+      expect(get(activeInputHookActivities).map((activity) => activity.chatId)).toEqual(['chat-0'])
+    })
+
+    switchToCharacterChat(0)
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-cancel-button"]')).toBeTruthy())
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-cancel-button"]')!.click()
+    expect(signals.get('Chat A source')?.aborted).toBe(true)
+    pendingA.reject(new Error('Chat A aborted'))
+    await waitFor(() => expect(get(activeInputHookActivities)).toEqual([]))
+    expect(loadPageMocks.abortActiveGeneration).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps Chat A hook state when Chat B finishes first and cleans up in reverse order', async () => {
+    seedDatabase([1, 1])
+    const hook = { id: 'draft-hook', name: 'Draft Hook', type: 'draft' as const, prompt: 'prompt' }
+    getResourceDatabase().inputHooks = [hook]
+    getResourceDatabase().characters[0].chats[0].selectedDraftHookId = hook.id
+    getResourceDatabase().characters[1].chats[0].selectedDraftHookId = hook.id
+    const pendingA = createDeferred<string>()
+    const pendingB = createDeferred<string>()
+    vi.mocked(runInputHook).mockImplementation((_hook, slots) =>
+      slots.content === 'Chat A source' ? pendingA.promise : pendingB.promise,
+    )
+    mountScreen()
+
+    await startDraftHookFromComposer('Chat A source', 1)
+    switchToCharacterChat(1)
+    await startDraftHookFromComposer('Chat B source', 2)
+    await waitFor(() => expect(get(activeInputHookActivities)).toHaveLength(2))
+
+    pendingB.resolve('Chat B draft')
+    await waitFor(() => {
+      expect(get(activeInputHookActivities).map((activity) => activity.chatId)).toEqual(['chat-0'])
+      expect(target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-draft-input"]')?.value).toBe(
+        'Chat B draft',
+      )
+      expect(target.querySelector('[data-testid="default-chat-cancel-button"]')).toBeNull()
+    })
+
+    switchToCharacterChat(0)
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-cancel-button"]')).toBeTruthy())
+    pendingA.resolve('Stale Chat A draft')
+    await waitFor(() => expect(get(activeInputHookActivities)).toEqual([]))
+    expect(target.querySelector('[data-testid="default-chat-cancel-button"]')).toBeNull()
+
+    switchToCharacterChat(1)
+    await waitFor(() =>
+      expect(target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-draft-input"]')?.value).toBe(
+        'Chat B draft',
+      ),
+    )
+  })
+
+  it('submits Chat B with Enter while Chat A owns a pending hook', async () => {
+    seedDatabase([1, 1])
+    getResourceDatabase().sendWithEnter = true
+    const hook = { id: 'draft-hook', name: 'Draft Hook', type: 'draft' as const, prompt: 'prompt' }
+    getResourceDatabase().inputHooks = [hook]
+    getResourceDatabase().characters[0].chats[0].selectedDraftHookId = hook.id
+    const pendingA = createDeferred<string>()
+    vi.mocked(runInputHook).mockReturnValueOnce(pendingA.promise)
+    mountScreen()
+
+    await startDraftHookFromComposer('Chat A source', 1)
+    switchToCharacterChat(1)
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-send-button"]')).toBeTruthy()
+      expect(target.querySelector('[data-testid="default-chat-cancel-button"]')).toBeNull()
+    })
+    const composerB = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    composerB.value = 'Chat B keyboard send'
+    composerB.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    const keydown = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+
+    composerB.dispatchEvent(keydown)
+
+    expect(keydown.defaultPrevented).toBe(true)
+    await waitFor(() => expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledTimes(1))
+    expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledWith(
+      expect.objectContaining({ data: 'Chat B keyboard send' }),
+      { expectedTarget: expectedActiveTarget(1) },
+    )
+    expect(runInputHook).toHaveBeenCalledTimes(1)
+
+    pendingA.resolve('Stale Chat A result')
+    await waitFor(() => expect(get(activeInputHookActivities)).toEqual([]))
   })
 
   it('discards a draft-hook result after the active chat target changes', async () => {

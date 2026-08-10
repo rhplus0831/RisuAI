@@ -51,7 +51,6 @@
   import { getCharImage } from '../../ts/characters'
   import {
     abortActiveGeneration,
-    chatProcessStage,
     clearActiveGenerationAbortController,
     createActiveGenerationAbortController,
     sendChat,
@@ -122,6 +121,11 @@
   import AgentPresetProgress from './AgentPresetProgress.svelte'
   import { CHAT_GENERATION_INPUT_HOOK_STAGE } from './chatGenerationLoading'
   import { activeChatGenerations, chatGenerationTargetKey } from 'src/ts/process/generationActivity.svelte'
+  import {
+    activeInputHookActivities,
+    beginInputHookActivity,
+    finishInputHookActivity,
+  } from 'src/ts/process/inputHookActivity.svelte'
   import {
     acceptedSendRecoveries,
     coordinateAcceptedChatSend,
@@ -201,8 +205,6 @@
   let chatMenuButton: HTMLButtonElement | null = $state(null)
   let chatMenuElement: HTMLDivElement | null = $state(null)
   let loadPages = $state(getInitialChatLoadPages(getDatabase()))
-  let doingDraftHook = $state(false)
-  let doingBtwHook = $state(false)
   let showBtwHookDialog = $state(false)
   let toggleStickers: boolean = $state(false)
   let fileInput: string[] = $state([])
@@ -331,7 +333,6 @@
   })
 
   let showDraftArea = $derived(Boolean(selectedDraftHook || draftText.length > 0 || btwText.length > 0))
-  let hookRunActive = $derived(doingDraftHook || doingBtwHook)
   let canContinueFromMenu = $derived(currentChat.length >= 2 && currentChat[currentChat.length - 1]?.role === 'char')
   let currentChatGenerationActivity = $derived(
     currentChatId
@@ -355,10 +356,18 @@
         })
       : null,
   )
+  let currentChatInputHookActivity = $derived(
+    currentChatPreparationTargetKey
+      ? $activeInputHookActivities.find((activity) => activity.targetKey === currentChatPreparationTargetKey)
+      : undefined,
+  )
+  let doingDraftHook = $derived(currentChatInputHookActivity?.kind === 'draft')
+  let doingBtwHook = $derived(currentChatInputHookActivity?.kind === 'btw')
+  let hookRunActive = $derived(currentChatInputHookActivity !== undefined)
   let currentChatPreparingSend = $derived(
     currentChatPreparationTargetKey !== null && preparingSendTargetKeys.has(currentChatPreparationTargetKey),
   )
-  let visibleChatProcessStage = $derived(hookRunActive ? $chatProcessStage : currentChatGenerationStage)
+  let visibleChatProcessStage = $derived(currentChatInputHookActivity?.stage ?? currentChatGenerationStage)
   let configuredChatLoadPages = $derived(getInitialChatLoadPages(getDatabase()))
   // The open chat ships as a message-less shell until the chat-messages resource
   // resolves; show a loading state over the message area until then so the
@@ -1354,17 +1363,23 @@
     composerOperation: ComposerOperation
     activeTarget: ActiveChatTarget
   }): Promise<void> {
-    const abortController = createActiveGenerationAbortController()
-    const previousProcessStage = $chatProcessStage
-    chatProcessStage.set(CHAT_GENERATION_INPUT_HOOK_STAGE)
-    doingDraftHook = true
+    const hookActivity = beginInputHookActivity({
+      target: input.activeTarget,
+      stage: CHAT_GENERATION_INPUT_HOOK_STAGE,
+      kind: 'draft',
+      composerOperation: {
+        token: input.composerOperation.token,
+        composerVersion: input.composerOperation.composerVersion,
+      },
+    })
+    if (!hookActivity) return
     try {
       const historyContext = await prepareInputHookHistoryContext(input.hook, input.activeTarget)
       if (historyContext === null) return
       const result = await runInputHook(
         input.hook,
         { content: input.composerOperation.messageInput, draft: input.composerOperation.draftText },
-        abortController.signal,
+        hookActivity.controller.signal,
         historyContext,
       )
       if (!isActiveChatTargetFresh(input.activeTarget) || !isCurrentComposerOperation(input.composerOperation)) {
@@ -1380,13 +1395,11 @@
       markComposerDraftChanged('draft')
       updateInputSizeAll()
     } catch (error) {
-      if (!abortController.signal.aborted) {
+      if (!hookActivity.controller.signal.aborted) {
         alertError(error)
       }
     } finally {
-      if ($chatProcessStage === CHAT_GENERATION_INPUT_HOOK_STAGE) chatProcessStage.set(previousProcessStage)
-      doingDraftHook = false
-      clearActiveGenerationAbortController(abortController)
+      finishInputHookActivity(hookActivity.id)
     }
   }
 
@@ -1412,17 +1425,27 @@
       return
     }
 
-    doingBtwHook = true
-    const previousProcessStage = $chatProcessStage
-    chatProcessStage.set(CHAT_GENERATION_INPUT_HOOK_STAGE)
-    const abortController = createActiveGenerationAbortController()
+    const hookActivity = beginInputHookActivity({
+      target: activeTarget,
+      stage: CHAT_GENERATION_INPUT_HOOK_STAGE,
+      kind: 'btw',
+      composerOperation: {
+        token: composerOperation.token,
+        composerVersion: composerOperation.composerVersion,
+      },
+    })
+    if (!hookActivity) {
+      releasePreparingSendTarget(preparingTargetKey)
+      composerOperationGuard.clear(composerOperation.token)
+      return
+    }
     try {
       const historyContext = await prepareInputHookHistoryContext(hook, activeTarget)
       if (historyContext === null) return
       const result = await runInputHook(
         hook,
         { content: composerOperation.messageInput, draft: composerOperation.draftText },
-        abortController.signal,
+        hookActivity.controller.signal,
         historyContext,
       )
       if (!isActiveChatTargetFresh(activeTarget) || !isCurrentComposerOperation(composerOperation)) return
@@ -1434,13 +1457,11 @@
       btwText = nextBtw
       markComposerDraftChanged('btw')
     } catch (error) {
-      if (!abortController.signal.aborted) alertError(error)
+      if (!hookActivity.controller.signal.aborted) alertError(error)
     } finally {
-      if ($chatProcessStage === CHAT_GENERATION_INPUT_HOOK_STAGE) chatProcessStage.set(previousProcessStage)
-      doingBtwHook = false
       releasePreparingSendTarget(preparingTargetKey)
       composerOperationGuard.clear(composerOperation.token)
-      clearActiveGenerationAbortController(abortController)
+      finishInputHookActivity(hookActivity.id)
     }
   }
 
