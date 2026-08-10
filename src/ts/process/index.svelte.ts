@@ -70,6 +70,7 @@ export interface requestTokenPart {
   tokens: number
 }
 
+/** Aggregate compatibility projection. Chat-owned gates must use `activeChatGenerations`. */
 export const doingChat = writable(false)
 export const activeGenerationTarget = writable<ActiveChatTarget | null>(null)
 export const chatProcessStage = writable(0)

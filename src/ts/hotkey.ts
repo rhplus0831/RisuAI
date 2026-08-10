@@ -33,14 +33,15 @@ import { language } from 'src/lang'
 import { hasDragType, RISU_SIDEBAR_DRAG_TYPE } from './dragTypes'
 import { updateTextThemeAndCSS } from './gui/colorscheme'
 import { defaultHotkeys } from './defaulthotkeys'
-import { doingChat, previewBody, sendChat } from './process/index.svelte'
+import { previewBody, sendChat } from './process/index.svelte'
 import {
   createManualModelPresetSelection,
   resolveActiveChatGenerationSettings,
   saveActiveChatGenerationSettingsSelectionWithOutcome,
 } from './activeChatGenerationSettings'
-import { captureActiveChatTarget } from './chatCommands'
+import { captureActiveChatTarget, isActiveChatTargetFresh } from './chatCommands'
 import { closeSettingsRoute, navigate, openSettingsRoute } from './router'
+import { findChatGenerationActivity } from './process/generationActivity.svelte'
 
 export function initHotkey() {
   const handleHotkeyKeydown = async (ev: KeyboardEvent): Promise<void> => {
@@ -205,15 +206,16 @@ export function initHotkey() {
           break
         }
         case 'previewRequest': {
-          if (get(doingChat) && get(selectedCharID) !== -1) {
-            return
-          }
+          const target = captureActiveChatTarget()
+          if (!target || findChatGenerationActivity(target)) return
           alertWait('Loading...')
           ev.preventDefault()
           ev.stopPropagation()
-          await sendChat(-1, {
+          const generated = await sendChat(-1, {
             previewPrompt: true,
+            expectedTarget: target,
           })
+          if (!generated || !isActiveChatTargetFresh(target)) return
 
           let parsedPreview: unknown
           try {

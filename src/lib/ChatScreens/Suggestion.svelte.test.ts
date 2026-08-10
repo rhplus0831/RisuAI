@@ -2,26 +2,7 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const suggestionMocks = vi.hoisted(() => {
-  function makeStore<T>(initial: T) {
-    let value = initial
-    const subscribers = new Set<(value: T) => void>()
-    return {
-      subscribe(callback: (value: T) => void) {
-        callback(value)
-        subscribers.add(callback)
-        return () => subscribers.delete(callback)
-      },
-      set(next: T) {
-        value = next
-        for (const callback of subscribers) {
-          callback(value)
-        }
-      },
-    }
-  }
-
   return {
-    doingChat: makeStore(false),
     requestChatData: vi.fn(),
     translate: vi.fn(),
     alertConfirm: vi.fn(async () => false),
@@ -31,10 +12,6 @@ const suggestionMocks = vi.hoisted(() => {
     withTrustedResourceWrite: vi.fn((callback: () => void) => callback()),
   }
 })
-
-vi.mock('../../ts/process/index.svelte', () => ({
-  doingChat: suggestionMocks.doingChat,
-}))
 
 vi.mock('src/ts/process/request/request', () => ({
   requestChatData: suggestionMocks.requestChatData,
@@ -85,6 +62,7 @@ import type { Database } from 'src/ts/storage/database.svelte'
 import { defaultAutoSuggestPrompt } from 'src/ts/storage/defaultPrompts'
 import { replacePlaceholders } from 'src/ts/utilState'
 import {
+  activeChatGenerations,
   beginChatGenerationActivity,
   finishChatGenerationActivity,
   resetChatGenerationActivitiesForTests,
@@ -203,7 +181,6 @@ function beginChatAGeneration() {
 
 afterEach(() => {
   resetChatGenerationActivitiesForTests()
-  suggestionMocks.doingChat.set(false)
   selectedCharID.set(-1)
   replaceResourceDatabase({} as Database)
   vi.clearAllMocks()
@@ -381,8 +358,8 @@ describe('Suggestion component persistence', () => {
     seedSuggestionDatabase(['Take the lead'])
     const confirmation = deferred<boolean>()
     suggestionMocks.alertConfirm.mockReturnValueOnce(confirmation.promise)
-    const observedDoingChat: boolean[] = []
-    const unsubscribe = suggestionMocks.doingChat.subscribe((value) => observedDoingChat.push(value))
+    const observedActivityCounts: number[] = []
+    const unsubscribe = activeChatGenerations.subscribe((activities) => observedActivityCounts.push(activities.length))
     const target = document.createElement('div')
     document.body.appendChild(target)
     let component: MountedComponent | undefined
@@ -397,11 +374,11 @@ describe('Suggestion component persistence', () => {
       })
 
       target.querySelector<HTMLButtonElement>(`button[aria-label="${language.reroll}"]`)!.click()
-      suggestionMocks.doingChat.set(true)
+      beginChatAGeneration()
       confirmation.resolve(true)
       await settle()
 
-      expect(observedDoingChat).toEqual([false, true])
+      expect(observedActivityCounts).toEqual([0, 1])
       expect(suggestionMocks.requestChatData).not.toHaveBeenCalled()
     } finally {
       unsubscribe()
@@ -414,8 +391,8 @@ describe('Suggestion component persistence', () => {
     seedSuggestionDatabase(['Take the lead'])
     suggestionMocks.alertConfirm.mockResolvedValueOnce(true)
     suggestionMocks.requestChatData.mockResolvedValue({ type: 'success', result: '- Follow the new path' })
-    const observedDoingChat: boolean[] = []
-    const unsubscribe = suggestionMocks.doingChat.subscribe((value) => observedDoingChat.push(value))
+    const observedActivityCounts: number[] = []
+    const unsubscribe = activeChatGenerations.subscribe((activities) => observedActivityCounts.push(activities.length))
     const target = document.createElement('div')
     document.body.appendChild(target)
     let component: MountedComponent | undefined
@@ -434,7 +411,7 @@ describe('Suggestion component persistence', () => {
         expect(target.textContent).toContain('Follow the new path')
       })
 
-      expect(observedDoingChat).toEqual([false])
+      expect(observedActivityCounts).toEqual([0])
       expect(suggestionMocks.requestChatData).toHaveBeenCalledOnce()
     } finally {
       unsubscribe()
@@ -483,7 +460,6 @@ describe('Suggestion component persistence', () => {
   it('requests suggestions once after a resident chat completes in the background and is reopened', async () => {
     seedBackgroundSuggestionDatabase()
     const generation = beginChatAGeneration()
-    suggestionMocks.doingChat.set(true)
     const request = deferred<{ type: 'success'; result: string }>()
     suggestionMocks.requestChatData.mockReturnValue(request.promise)
     const target = document.createElement('div')
@@ -498,7 +474,6 @@ describe('Suggestion component persistence', () => {
       await settle()
 
       getResourceDatabase().characters[0].chatPage = 1
-      suggestionMocks.doingChat.set(false)
       await settle()
       finishChatGenerationActivity(generation.id)
       await settle()
@@ -534,7 +509,6 @@ describe('Suggestion component persistence', () => {
   it('waits for a background-completed chat shell to hydrate before requesting suggestions once', async () => {
     seedBackgroundSuggestionDatabase({ shell: true })
     const generation = beginChatAGeneration()
-    suggestionMocks.doingChat.set(true)
     const request = deferred<{ type: 'success'; result: string }>()
     suggestionMocks.requestChatData.mockReturnValue(request.promise)
     const target = document.createElement('div')
@@ -549,7 +523,6 @@ describe('Suggestion component persistence', () => {
       await settle()
 
       getResourceDatabase().characters[0].chatPage = 1
-      suggestionMocks.doingChat.set(false)
       await settle()
       finishChatGenerationActivity(generation.id)
       await settle()
@@ -579,7 +552,6 @@ describe('Suggestion component persistence', () => {
   it('uses persisted suggestions for a background completion without issuing a duplicate request', async () => {
     seedBackgroundSuggestionDatabase()
     const generation = beginChatAGeneration()
-    suggestionMocks.doingChat.set(true)
     const target = document.createElement('div')
     document.body.appendChild(target)
     let component: MountedComponent | undefined
@@ -592,7 +564,6 @@ describe('Suggestion component persistence', () => {
       await settle()
 
       getResourceDatabase().characters[0].chatPage = 1
-      suggestionMocks.doingChat.set(false)
       await settle()
       finishChatGenerationActivity(generation.id)
       getResourceDatabase().characters[0].chats[0].suggestMessages = ['Persisted background suggestion']
@@ -615,7 +586,6 @@ describe('Suggestion component persistence', () => {
   it('does not persist a background suggestion response after its chat becomes stale', async () => {
     seedBackgroundSuggestionDatabase()
     const generation = beginChatAGeneration()
-    suggestionMocks.doingChat.set(true)
     const request = deferred<{ type: 'success'; result: string }>()
     suggestionMocks.requestChatData.mockReturnValue(request.promise)
     const target = document.createElement('div')
@@ -630,7 +600,6 @@ describe('Suggestion component persistence', () => {
       await settle()
 
       getResourceDatabase().characters[0].chatPage = 1
-      suggestionMocks.doingChat.set(false)
       await settle()
       finishChatGenerationActivity(generation.id)
       getResourceDatabase().characters[0].chatPage = 0
@@ -932,13 +901,13 @@ describe('Suggestion component persistence', () => {
         expect(target.textContent).toContain('Take the lead')
       })
 
-      suggestionMocks.doingChat.set(true)
+      const generation = beginChatAGeneration()
       await settle()
 
       expect(getResourceDatabase().characters[0].chats[0].suggestMessages).toEqual([])
       expect(target.textContent).not.toContain('Take the lead')
 
-      suggestionMocks.doingChat.set(false)
+      finishChatGenerationActivity(generation.id)
       await waitFor(() => {
         expect(target.textContent).toContain('Follow the new path')
         expect(getResourceDatabase().characters[0].chats[0].suggestMessages).toEqual(['Follow the new path'])

@@ -4,7 +4,6 @@ import { getCurrentTranslatorPresetFromState, type TranslatorPreset } from './pr
 import { globalFetch } from '../globalApi.svelte'
 import { alertError } from '../alert'
 import { requestChatData } from '../process/request/request'
-import { doingChat } from '../process/index.svelte'
 import { applyMarkdownToNode, type simpleCharacterArgument } from '../parser/parser.svelte'
 import { selectedCharID } from '../stores.svelte'
 import { getModuleRegexScripts } from '../process/modules'
@@ -17,6 +16,8 @@ import sendSound from '../../etc/send.mp3'
 import { providerOperationCredential, requestProviderOperation } from '../server/providerOperations'
 import { resolveTranslatorPipeline, runTranslatorPipeline, translatorPipelineSignature } from './pipeline'
 import { stripInternalReasoning } from '../process/internalReasoning'
+import { captureActiveChatTarget } from '../chatCommands'
+import { findChatGenerationActivity } from '../process/generationActivity.svelte'
 
 export const TRANSLATE_CACHE_MAX_ENTRIES = 256
 export const TRANSLATE_HTML_OUTPUT_MEMO_MAX_ENTRIES = 64
@@ -837,6 +838,7 @@ export async function translateHTML(
   chatID: number,
   regenerate = false,
 ): Promise<string> {
+  const translationTarget = captureActiveChatTarget()
   let alwaysExistChar: character | simpleCharacterArgument
   if (charArg !== '') {
     if (typeof charArg === 'string') {
@@ -857,8 +859,7 @@ export async function translateHTML(
   }
   let db = getDatabase()
   const sendTextAsIs = db.translatorType === 'llm' && db.translatorSendTextAsIs === true
-  let DoingChat = get(doingChat)
-  if (DoingChat) {
+  if (findChatGenerationActivity(translationTarget)) {
     if (!(db.translatorType === 'llm' && (await getLLMCache(html)) !== null)) {
       return html
     }

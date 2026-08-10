@@ -44,7 +44,6 @@ const testState = vi.hoisted(() => {
 
   return {
     db: {} as any,
-    doingChat: makeStore(false),
     selectedCharID: makeStore(0),
     globalFetch: vi.fn(),
     requestProviderOperation: vi.fn(),
@@ -56,7 +55,7 @@ const testState = vi.hoisted(() => {
           : { source: 'none' },
     ),
     alertError: vi.fn(),
-    requestChatData: vi.fn(async () => {
+    requestChatData: vi.fn<(...args: unknown[]) => Promise<{ type: 'success'; result: string }>>(async () => {
       throw new Error('requestChatData should not run in cached translator tests')
     }),
     processScriptFull: vi.fn(async (_char: unknown, text: string) => ({ data: text })),
@@ -78,8 +77,19 @@ vi.mock('../stores.svelte', () => ({
   selectedCharID: testState.selectedCharID,
 }))
 
-vi.mock('../process/index.svelte', () => ({
-  doingChat: testState.doingChat,
+vi.mock('../chatCommands', () => ({
+  captureActiveChatTarget: () => {
+    const character = testState.db.characters?.[0]
+    const chatPage = character?.chatPage ?? 0
+    const chat = character?.chats?.[chatPage]
+    if (!character || !chat) return null
+    return {
+      selectedCharID: 0,
+      chatPage,
+      characterId: character.chaId,
+      chatId: chat.id,
+    }
+  },
 }))
 
 vi.mock('../globalApi.svelte', () => ({
@@ -152,6 +162,10 @@ vi.mock('../../etc/send.mp3', () => ({
 }))
 
 import { DEEPLX_DELIMITER_FALLBACK_MAX_SEGMENTS, __translatorTestHooks, setLLMCache, translateHTML } from './translator'
+import {
+  beginChatGenerationActivity,
+  resetChatGenerationActivitiesForTests,
+} from '../process/generationActivity.svelte'
 
 function resetDatabase() {
   Object.assign(testState.db, {
@@ -196,11 +210,27 @@ function stubGoogleFetch() {
   return fetchMock
 }
 
+function beginGenerationForChat(chatPage: number) {
+  const character = testState.db.characters[0]
+  const chat = character.chats[chatPage]
+  const activity = beginChatGenerationActivity({
+    target: {
+      selectedCharID: 0,
+      chatPage,
+      characterId: character.chaId,
+      chatId: chat.id,
+    },
+    kind: 'message',
+  })
+  if (!activity) throw new Error(`could not start test generation for ${chat.id}`)
+  return activity
+}
+
 describe('translateHTML streaming guards', () => {
   beforeEach(() => {
     resetDatabase()
     testState.selectedCharID.set(0)
-    testState.doingChat.set(false)
+    resetChatGenerationActivitiesForTests()
     testState.llmCache.clear()
     __translatorTestHooks.clearTranslateCache()
     vi.clearAllMocks()
@@ -211,8 +241,8 @@ describe('translateHTML streaming guards', () => {
     vi.restoreAllMocks()
   })
 
-  it('M16: skips Google auto-translate work while a message is streaming', async () => {
-    testState.doingChat.set(true)
+  it('M16: skips Google auto-translate work while the same chat is streaming', async () => {
+    beginGenerationForChat(0)
     const html = '<p>streaming frame</p>'
     const fetchMock = vi.fn()
     const domParserMock = vi.fn(function () {
@@ -243,7 +273,7 @@ describe('translateHTML streaming guards', () => {
 
   it('M16: preserves cached LLM translations during streaming', async () => {
     testState.db.translatorType = 'llm'
-    testState.doingChat.set(true)
+    beginGenerationForChat(0)
     await setLLMCache('<p>Hello</p>', '<p>Cached result</p>')
     const fetchMock = vi.fn()
     const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -255,6 +285,29 @@ describe('translateHTML streaming guards', () => {
     expect(testState.requestChatData).not.toHaveBeenCalled()
     expect(fetchMock).not.toHaveBeenCalled()
     expect(consoleLog).not.toHaveBeenCalled()
+  })
+
+  it('MTC-10: runs an uncached LLM translation in idle Chat B while Chat A generates', async () => {
+    testState.db.translatorType = 'llm'
+    testState.db.characters[0].chats.push({ id: 'chat-b', message: [] })
+    beginGenerationForChat(0)
+    testState.db.characters[0].chatPage = 1
+    testState.requestChatData.mockResolvedValue({ type: 'success', result: '<p>Translated in B</p>' })
+
+    const translated = await translateHTML('<p>Uncached in B</p>', false, '', 0)
+
+    expect(translated).toBe('<p>Translated in B</p>')
+    expect(testState.requestChatData).toHaveBeenCalledOnce()
+  })
+
+  it('MTC-10: blocks an uncached LLM translation while its own chat generates', async () => {
+    testState.db.translatorType = 'llm'
+    beginGenerationForChat(0)
+    testState.requestChatData.mockResolvedValue({ type: 'success', result: '<p>Should not run</p>' })
+    const html = '<p>Uncached in A</p>'
+
+    await expect(translateHTML(html, false, '', 0)).resolves.toBe(html)
+    expect(testState.requestChatData).not.toHaveBeenCalled()
   })
 
   it('v4-L24: memoizes translated HTML output until the explicit signature changes', async () => {

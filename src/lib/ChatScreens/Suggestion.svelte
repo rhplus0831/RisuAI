@@ -93,7 +93,7 @@
 
 <script lang="ts">
   import { requestChatData } from 'src/ts/process/request/request'
-  import { doingChat, type OpenAIChat } from '../../ts/process/index.svelte'
+  import type { OpenAIChat } from '../../ts/process/index.svelte'
   import { getDatabase, type character, type Message } from '../../ts/storage/database.svelte'
   import { selectedCharID } from '../../ts/stores.svelte'
   import { translate } from 'src/ts/translator/translator'
@@ -116,6 +116,7 @@
     findPendingChatSuggestionCompletion,
     pendingChatSuggestionCompletions,
   } from 'src/ts/process/chatSuggestionCompletion.svelte'
+  import { activeChatGenerations, chatGenerationTargetKey } from 'src/ts/process/generationActivity.svelte'
 
   interface Props {
     send: () => any
@@ -136,7 +137,22 @@
   }
 
   let { send, messageInput, isGenerationActive }: Props = $props()
-  let effectiveGenerationActive = $derived(isGenerationActive ?? $doingChat)
+  let fallbackGenerationTargetKey = $derived.by(() => {
+    const character = getDatabase().characters[$selectedCharID]
+    const chat = character?.chats[character.chatPage]
+    if (!character || !chat) return null
+    return chatGenerationTargetKey({
+      selectedCharID: $selectedCharID,
+      chatPage: character.chatPage,
+      characterId: character.chaId,
+      chatId: chat.id,
+    })
+  })
+  let effectiveGenerationActive = $derived(
+    isGenerationActive ??
+      (fallbackGenerationTargetKey !== null &&
+        $activeChatGenerations.some((activity) => activity.targetKey === fallbackGenerationTargetKey)),
+  )
   const initialCharacter = getDatabase().characters[$selectedCharID]
   const initialChat = initialCharacter?.chats[initialCharacter.chatPage]
   let suggestMessages: string[] | undefined = $state(initialChat?.suggestMessages)

@@ -44,7 +44,6 @@ const testState = vi.hoisted(() => {
 
   return {
     db: {} as any,
-    doingChat: makeStore(false),
     selectedCharID: makeStore(0),
     globalFetch: vi.fn(),
     requestProviderOperation: vi.fn(),
@@ -71,8 +70,19 @@ vi.mock('../stores.svelte', () => ({
   selectedCharID: testState.selectedCharID,
 }))
 
-vi.mock('../process/index.svelte', () => ({
-  doingChat: testState.doingChat,
+vi.mock('../chatCommands', () => ({
+  captureActiveChatTarget: () => {
+    const character = testState.db.characters?.[0]
+    const chatPage = character?.chatPage ?? 0
+    const chat = character?.chats?.[chatPage]
+    if (!character || !chat) return null
+    return {
+      selectedCharID: 0,
+      chatPage,
+      characterId: character.chaId,
+      chatId: chat.id,
+    }
+  },
 }))
 
 vi.mock('../globalApi.svelte', () => ({
@@ -132,6 +142,7 @@ import {
   translateHTML,
 } from './translator'
 import { createTranslatorPreset } from './presets'
+import { resetChatGenerationActivitiesForTests } from '../process/generationActivity.svelte'
 
 function resetDatabase() {
   Object.assign(testState.db, {
@@ -202,7 +213,7 @@ describe('auto-translate cache', () => {
   beforeEach(() => {
     resetDatabase()
     testState.selectedCharID.set(0)
-    testState.doingChat.set(false)
+    resetChatGenerationActivitiesForTests()
     testState.llmCache.clear()
     __translatorTestHooks.clearTranslateCache()
     vi.clearAllMocks()

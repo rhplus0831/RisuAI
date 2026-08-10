@@ -13,7 +13,7 @@
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   import { HardDriveUploadIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
   import { selectSingleFile } from 'src/ts/filePicker'
-  import { doingChat, previewFormated, previewBody, sendChat } from 'src/ts/process/index.svelte'
+  import { previewFormated, previewBody, sendChat } from 'src/ts/process/index.svelte'
   import SelectInput from '../UI/GUI/SelectInput.svelte'
   import { applyChatTemplate, chatTemplates } from 'src/ts/process/templates/chatTemplate'
   import OptionInput from '../UI/GUI/OptionInput.svelte'
@@ -28,6 +28,7 @@
   import CheckInput from '../UI/GUI/CheckInput.svelte'
   import { language } from 'src/lang'
   import { parseDevToolAutopilotImport } from './devToolAutopilotImport'
+  import { findChatGenerationActivity } from 'src/ts/process/generationActivity.svelte'
 
   let previewMode = $state('chat')
   let previewJoin = $state('yes')
@@ -35,14 +36,15 @@
   let instructCustom = $state('')
 
   const preview = async () => {
-    if ($doingChat) {
-      return false
-    }
+    const target = captureActiveChatTarget()
+    if (!target || findChatGenerationActivity(target)) return false
     alertWait('Loading...')
-    await sendChat(-1, {
+    const generated = await sendChat(-1, {
       preview: previewJoin !== 'prompt',
       previewPrompt: previewJoin === 'prompt',
+      expectedTarget: target,
     })
+    if (!generated || !isActiveChatTargetFresh(target)) return false
 
     let md = ''
     const styledRole = {
@@ -234,15 +236,10 @@
   <Button
     className="mt-2"
     onclick={async () => {
-      if ($doingChat) {
-        return
-      }
       const activeTarget = captureActiveChatTarget()
-      if (!activeTarget) {
-        return
-      }
+      if (!activeTarget || findChatGenerationActivity(activeTarget)) return
       for (let i = 0; i < autopilot.length; i++) {
-        if ($doingChat || !isActiveChatTargetFresh(activeTarget)) {
+        if (findChatGenerationActivity(activeTarget) || !isActiveChatTargetFresh(activeTarget)) {
           return
         }
         const appended = await appendCurrentChatUserMessageForSend(autopilot[i], {
@@ -262,7 +259,8 @@
         if (!isActiveChatTargetFresh(activeTarget)) {
           return
         }
-        await sendChat(i)
+        const generated = await sendChat(i, { expectedTarget: activeTarget })
+        if (!generated) return
         if (!isActiveChatTargetFresh(activeTarget)) {
           return
         }
