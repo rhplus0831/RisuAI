@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { get } from 'svelte/store'
 import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 
 const projectionState = vi.hoisted(() => ({
@@ -66,6 +67,7 @@ import {
   markCharacterLorebookProjectionApplied,
 } from './resourceState.svelte'
 import { clearRetainedChatProjections, registerRetainedChatProjection } from './chatRetainedProjection'
+import { acceptedSendRecoveries, recordAcceptedSendRecovery } from '../process/acceptedSendRecoveryState'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -183,6 +185,7 @@ beforeEach(() => {
   resetChatHydration()
   resetLorebookHydration()
   resetRerollNavigation()
+  acceptedSendRecoveries.set([])
   clearRetainedChatProjections()
   seedTwoStubChats()
 })
@@ -318,6 +321,33 @@ describe('chat message hydration bridge', () => {
     projectionState.fetchChat.mockClear()
     await hydrateActiveChatWindow(3)
     expect(projectionState.fetchChat).not.toHaveBeenCalled()
+  })
+
+  it('clears an accepted-send warning when a ranged generation projection supplies the persisted reply', async () => {
+    const accepted = { role: 'user', data: 'hello', chatId: 'message-a' }
+    projectionState.fetchChat.mockResolvedValue(okResult('chat-1', [accepted]))
+    await hydrateActiveChatFully()
+    recordAcceptedSendRecovery(
+      {
+        id: 'chat-1:message:message-a',
+        target: { selectedCharID: 0, chatPage: 0, characterId: 'char-1', chatId: 'chat-1' },
+        messageId: 'message-a',
+        syntheticSayNothing: false,
+      },
+      'generation_failed',
+    )
+
+    expect(
+      applyServerChatMessagesResource(
+        'chat-1',
+        [{ role: 'char', data: 'completed while backgrounded', chatId: 'generation-a' }],
+        undefined,
+        [],
+        { start: 1, total: 2 },
+      ),
+    ).toBe(true)
+
+    expect(get(acceptedSendRecoveries)).toEqual([])
   })
 
   it('hydrates only the active chat tail window and keeps absolute indexes stable', async () => {

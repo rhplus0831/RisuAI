@@ -39,6 +39,7 @@ import {
 } from './resourceState.svelte'
 import { reapplyRetainedChatBodyProjections } from './chatRetainedProjection'
 import { acknowledgeHydratedGenerationPersistences } from '../process/generationPersistenceState'
+import { acknowledgeHydratedAcceptedSendRecoveries } from '../process/acceptedSendRecoveryState'
 
 export const BULK_HYDRATION_BATCH_SIZE = 32
 export const ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW = DEFAULT_CHAT_LOAD_INITIAL_PAGES
@@ -170,6 +171,14 @@ function chatStateSnapshot(chatId: string): string | null {
     })
   }
   return 'missing-chat'
+}
+
+function acknowledgeHydratedChatGenerationState(chatId: string, fallbackMessages: readonly Message[]): void {
+  acknowledgeHydratedGenerationPersistences(chatId, fallbackMessages)
+  const residentMessages = getDatabase()
+    .characters?.flatMap((character) => character.chats ?? [])
+    .find((chat) => chat.id === chatId)?.message
+  acknowledgeHydratedAcceptedSendRecoveries(chatId, residentMessages ?? fallbackMessages)
 }
 
 function rerollStateSnapshot(chatId: string): string | null {
@@ -393,7 +402,7 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
       markChatBodyResourceRevision(chatId, result.revision)
       markChatBodyProjectionApplied(chatId)
       reapplyRetainedChatBodyProjections(chatId)
-      acknowledgeHydratedGenerationPersistences(chatId, result.message as Message[])
+      acknowledgeHydratedChatGenerationState(chatId, result.message as Message[])
       if (wantsFullHydration || !range || isFullRange(range.start, range.total, result.message.length)) {
         hydratedChatIds.add(chatId)
       }
@@ -482,7 +491,7 @@ async function hydrateChatsBulk(chatIds: readonly string[], options: BulkHydrati
         markChatBodyResourceRevision(chatId, result.revision)
         markChatBodyProjectionApplied(chatId)
         reapplyRetainedChatBodyProjections(chatId)
-        acknowledgeHydratedGenerationPersistences(chatId, hydration.message as Message[])
+        acknowledgeHydratedChatGenerationState(chatId, hydration.message as Message[])
         hydratedChatIds.add(chatId)
         seedRerollBufferFromAlternates(hydration.message, hydration.alternates, rerollTargetForChatId(chatId))
         refreshPendingFreshnessAfterHydration(chatId, freshness)
@@ -596,7 +605,7 @@ export function applyServerChatMessagesResource(
   if (!applied) return false
   advanceChatProjectionEpoch(chatId)
   reapplyRetainedChatBodyProjections(chatId)
-  acknowledgeHydratedGenerationPersistences(chatId, message as Message[])
+  acknowledgeHydratedChatGenerationState(chatId, message as Message[])
   if (!range || isFullRange(range.start, range.total, message.length)) {
     hydratedChatIds.add(chatId)
   }
