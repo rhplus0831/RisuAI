@@ -2317,6 +2317,46 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
   })
 
+  it('starts generation in another chat while the first chat generation remains pending', async () => {
+    seedDatabase([1, 1])
+    const firstSend = createDeferred<boolean>()
+    const secondSend = createDeferred<boolean>()
+    loadPageMocks.sendChat.mockReturnValueOnce(firstSend.promise).mockReturnValueOnce(secondSend.promise)
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy())
+    const firstTextarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    firstTextarea.value = 'Generate from first chat'
+    firstTextarea.dispatchEvent(new Event('input', { bubbles: true }))
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
+
+    await waitFor(() => expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(1))
+    expect(loadPageMocks.sendChat).toHaveBeenLastCalledWith(
+      -1,
+      expect.objectContaining({ expectedTarget: expectedActiveTarget(0) }),
+    )
+
+    switchToCharacterChat(1)
+    await settle()
+    const secondTextarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    secondTextarea.value = 'Generate from second chat'
+    secondTextarea.dispatchEvent(new Event('input', { bubbles: true }))
+    const secondSendButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!
+    expect(secondSendButton.disabled).toBe(false)
+    secondSendButton.click()
+
+    await waitFor(() => expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(2))
+    expect(loadPageMocks.sendChat).toHaveBeenLastCalledWith(
+      -1,
+      expect.objectContaining({ expectedTarget: expectedActiveTarget(1) }),
+    )
+
+    secondSend.resolve(true)
+    await settle()
+    firstSend.resolve(true)
+    await settle()
+  })
+
   it('skips successful send effects when send resolves after the active chat changes', async () => {
     seedDatabase([1, 1])
     const send = createDeferred<boolean>()

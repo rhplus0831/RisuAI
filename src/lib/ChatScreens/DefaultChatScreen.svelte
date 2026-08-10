@@ -56,6 +56,7 @@
     createActiveGenerationAbortController,
     sendChat,
   } from '../../ts/process/index.svelte'
+  import { SvelteSet } from 'svelte/reactivity'
   import { sleep } from '../../ts/util'
   import { getUserDisplayName, getUserIcon, getUserIconProtrait } from '../../ts/utilState'
   import { language } from '../../lang'
@@ -121,7 +122,7 @@
   import PostGenerationScriptProgress from './PostGenerationScriptProgress.svelte'
   import AgentPresetProgress from './AgentPresetProgress.svelte'
   import { CHAT_GENERATION_INPUT_HOOK_STAGE } from './chatGenerationLoading'
-  import { activeChatGenerations } from 'src/ts/process/generationActivity.svelte'
+  import { activeChatGenerations, chatGenerationTargetKey } from 'src/ts/process/generationActivity.svelte'
   import { activeGenerationJobs } from 'src/ts/process/reattach'
   import {
     deleteDefaultChatComposerDraft,
@@ -215,7 +216,7 @@
   let refreshChatContentGeometry = () => {}
   let chatsInstance: any = $state()
   let isScrollingToMessage = $state(false)
-  let preparingSend = $state(false)
+  const preparingSendTargetKeys = new SvelteSet<string>()
   let pinMutationPending = $state(false)
   let composerDraftPersistenceError = $state('')
   const composerDraftPersistenceAlerts = new Set<string>()
@@ -335,6 +336,19 @@
     ),
   )
   let currentChatGenerationStage = $derived(currentChatGenerationActivity?.stage ?? 0)
+  let currentChatPreparationTargetKey = $derived(
+    currentCharacter && currentChatRecord
+      ? chatGenerationTargetKey({
+          selectedCharID: $selectedCharID,
+          chatPage: currentCharacter.chatPage,
+          characterId: currentCharacter.chaId,
+          chatId: currentChatId,
+        })
+      : null,
+  )
+  let currentChatPreparingSend = $derived(
+    currentChatPreparationTargetKey !== null && preparingSendTargetKeys.has(currentChatPreparationTargetKey),
+  )
   let visibleChatProcessStage = $derived(hookRunActive ? $chatProcessStage : currentChatGenerationStage)
   let configuredChatLoadPages = $derived(getInitialChatLoadPages(getDatabase()))
   // The open chat ships as a message-less shell until the chat-messages resource
@@ -587,6 +601,17 @@
       chatPage,
       chatId: chat?.id,
     })
+  }
+
+  function claimPreparingSendTarget(target: ActiveChatTarget): string | null {
+    const targetKey = chatGenerationTargetKey(target)
+    if (!targetKey || preparingSendTargetKeys.has(targetKey)) return null
+    preparingSendTargetKeys.add(targetKey)
+    return targetKey
+  }
+
+  function releasePreparingSendTarget(targetKey: string): void {
+    preparingSendTargetKeys.delete(targetKey)
   }
 
   function beginScreenshotOperation(): ScreenshotOperation | null {
@@ -1329,13 +1354,17 @@
   }
 
   async function runBtwHook(hook: InputHook): Promise<void> {
-    if (currentChatOwnsGeneration || preparingSend || hookRunActive) return
+    if (currentChatOwnsGeneration || currentChatPreparingSend || hookRunActive) return
     const activeTarget = captureActiveChatTarget()
     if (!activeTarget || !isActiveChatTargetFresh(activeTarget)) return
     const composerOperation = beginComposerOperation('btw')
     if (!composerOperation) return
+    const preparingTargetKey = claimPreparingSendTarget(activeTarget)
+    if (!preparingTargetKey) {
+      composerOperationGuard.clear(composerOperation.token)
+      return
+    }
 
-    preparingSend = true
     doingBtwHook = true
     const previousProcessStage = $chatProcessStage
     chatProcessStage.set(CHAT_GENERATION_INPUT_HOOK_STAGE)
@@ -1362,14 +1391,14 @@
     } finally {
       if ($chatProcessStage === CHAT_GENERATION_INPUT_HOOK_STAGE) chatProcessStage.set(previousProcessStage)
       doingBtwHook = false
-      preparingSend = false
+      releasePreparingSendTarget(preparingTargetKey)
       composerOperationGuard.clear(composerOperation.token)
       clearActiveGenerationAbortController(abortController)
     }
   }
 
   async function sendMain(continueResponse: boolean) {
-    if (currentChatOwnsGeneration || preparingSend) {
+    if (currentChatOwnsGeneration || currentChatPreparingSend) {
       return
     }
     const activeTarget = captureActiveChatTarget()
@@ -1377,12 +1406,14 @@
       return
     }
     const selectedChar = activeTarget.selectedCharID
-    preparingSend = true
     const composerOperation = beginComposerOperation(continueResponse ? 'continue' : 'send')
+    if (!composerOperation) return
+    const preparingTargetKey = claimPreparingSendTarget(activeTarget)
+    if (!preparingTargetKey) {
+      composerOperationGuard.clear(composerOperation.token)
+      return
+    }
     try {
-      if (!composerOperation) {
-        return
-      }
       const generationSettingsGuard = guardActiveChatGenerationSettingsForSend()
       if (generationSettingsGuard.status === 'error') {
         alertError(generationSettingsGuard.error)
@@ -1507,21 +1538,23 @@
       // Clear the reroll buffer only after send/continue succeeds.
       await sendChatMain(continueResponse, undefined, true, composerOperation, activeTarget, syntheticSayNothing)
     } finally {
-      if (composerOperation) {
-        composerOperationGuard.clear(composerOperation.token)
-      }
-      preparingSend = false
+      composerOperationGuard.clear(composerOperation.token)
+      releasePreparingSendTarget(preparingTargetKey)
     }
   }
 
   async function sendDraft(): Promise<void> {
-    if (currentChatOwnsGeneration || preparingSend || hookRunActive || draftText.trim().length === 0) return
+    if (currentChatOwnsGeneration || currentChatPreparingSend || hookRunActive || draftText.trim().length === 0) return
     const activeTarget = captureActiveChatTarget()
     if (!activeTarget || !isActiveChatTargetFresh(activeTarget)) return
     const composerOperation = beginComposerOperation('draft-send')
     if (!composerOperation) return
+    const preparingTargetKey = claimPreparingSendTarget(activeTarget)
+    if (!preparingTargetKey) {
+      composerOperationGuard.clear(composerOperation.token)
+      return
+    }
 
-    preparingSend = true
     try {
       const generationSettingsGuard = guardActiveChatGenerationSettingsForSend()
       if (generationSettingsGuard.status === 'error') {
@@ -1592,21 +1625,22 @@
       await sendChatMain(false, undefined, true, composerOperation, activeTarget)
     } finally {
       composerOperationGuard.clear(composerOperation.token)
-      preparingSend = false
+      releasePreparingSendTarget(preparingTargetKey)
     }
   }
 
   async function runRerollPreflight(action: (target: ActiveChatTarget) => Promise<void>) {
-    if (currentChatOwnsGeneration || preparingSend) return
+    if (currentChatOwnsGeneration || currentChatPreparingSend) return
     const targetIdentity = getActiveTranscriptWindowIdentity()
     const target = captureActiveChatTarget()
     if (!target || !isActiveChatTargetFresh(target)) return
-    preparingSend = true
+    const preparingTargetKey = claimPreparingSendTarget(target)
+    if (!preparingTargetKey) return
     try {
       await hydrateActiveChatFully()
       if (
         currentChatOwnsGeneration ||
-        !preparingSend ||
+        !preparingSendTargetKeys.has(preparingTargetKey) ||
         getActiveTranscriptWindowIdentity() !== targetIdentity ||
         !isActiveChatTargetFresh(target)
       ) {
@@ -1614,7 +1648,7 @@
       }
       await action(target)
     } finally {
-      preparingSend = false
+      releasePreparingSendTarget(preparingTargetKey)
     }
   }
 
@@ -2303,7 +2337,7 @@
               type="button"
               data-testid="default-chat-btw-button"
               aria-busy={doingBtwHook}
-              disabled={currentChatOwnsGeneration || preparingSend || hookRunActive}
+              disabled={currentChatOwnsGeneration || currentChatPreparingSend || hookRunActive}
               class="rounded-md border border-darkborderc px-3 py-2 text-sm transition-colors hover:border-textcolor hover:bg-selected disabled:cursor-not-allowed disabled:opacity-50"
               onclick={() => (showBtwHookDialog = true)}>
               {#if doingBtwHook}<LoaderCircleIcon size={16} class="risu-ongoing-pulse inline animate-spin" />{/if}
@@ -2312,7 +2346,10 @@
             <button
               type="button"
               data-testid="default-chat-draft-send"
-              disabled={draftText.trim().length === 0 || currentChatOwnsGeneration || preparingSend || hookRunActive}
+              disabled={draftText.trim().length === 0 ||
+                currentChatOwnsGeneration ||
+                currentChatPreparingSend ||
+                hookRunActive}
               class="ml-auto flex items-center gap-2 rounded-md border border-darkborderc px-3 py-2 text-sm transition-colors hover:border-textcolor hover:bg-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
               onclick={sendDraft}>
               <Send size={18} />
