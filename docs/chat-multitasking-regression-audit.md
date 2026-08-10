@@ -77,8 +77,8 @@ overlap note explicitly says otherwise.
 | MTC-10 | P2 | Resolved | Remove aggregate `doingChat` locks from cross-chat-safe features | Translation/preview/autopilot | None |
 | MTC-11 | P2 | Resolved | Use stable IDs for asynchronous finalization and error writes | Post-generation/error handling | None |
 | MTC-12 | P2 | Resolved | Keep preview results owned by their original chat | Prompt preview | Coordinate with MTC-10 |
-| MTC-13 | P3 | In progress | Prevent generation indicators from intercepting avatar clicks | Sidebar indicators | None |
-| MTC-14 | P3 | Ready | Make the pinned rail inert with the narrow menu | Sidebar accessibility | None |
+| MTC-13 | P3 | Resolved | Prevent generation indicators from intercepting avatar clicks | Sidebar indicators | None |
+| MTC-14 | P3 | In progress | Make the pinned rail inert with the narrow menu | Sidebar accessibility | None |
 | MTC-15 | P3 | Ready | Expose active pinned-chat state | Sidebar accessibility | None |
 | MTC-16 | P3 | Ready | Localize the unnamed pinned-chat fallback | Sidebar localization | None |
 | MTC-17 | P3 | Ready | Canonicalize missing-character routes after multitasking navigation | Router | None |
@@ -851,9 +851,13 @@ unrelated message generations.
 ## MTC-13 — Prevent generation indicators from intercepting avatar clicks
 
 **Priority:** P3
-**Status:** In progress
+**Status:** Resolved
 **Owner:** Codex (delegated 2026-08-10)
-**Resolution:** —
+**Resolution:** `5d69361e6` — badge forwards clicks to the owning avatar
+action (propagation stopped, one activation) instead of going
+pointer-transparent, preserving tooltip and status semantics; all four
+overlay sites wired. Tests: `Sidebar.keyboard.dom.test.ts` (character and
+pinned-chat indicator clicks).
 
 ### Problem
 
@@ -885,8 +889,8 @@ handler, so clicks on the badge area do not activate the avatar underneath.
 ## MTC-14 — Make the pinned rail inert with the narrow menu
 
 **Priority:** P3
-**Status:** Ready
-**Owner:** Unassigned
+**Status:** In progress
+**Owner:** Codex (delegated 2026-08-10)
 **Resolution:** —
 
 ### Problem
@@ -1049,3 +1053,4 @@ Record completed items here as they land.
 | MTC-10 | `097e80a38` | `translator.html.test.ts`; `hotkey.preview.test.ts`; `DevTool.svelte.test.ts`; `Suggestion.svelte.test.ts` | Full consumer inventory recorded; hotkey preview already drops stale results (MTC-12 finishes result ownership). |
 | MTC-11 | `d05c062e6` | `stage4Finalize.test.ts`; `runStage4.test.ts`; `orchestrateResponse.test.ts`; `nonStreamResponse.test.ts`; `outputTrigger.test.ts`; `igp.test.ts`; `imggenStableDiff.test.ts`; `sendChatErrors.test.ts` | Resolution happens inside the trusted-write boundary; IGP's indexed fallback removed. |
 | MTC-12 | `5f6fdbe01` | `sendChat.serverPreview.test.ts`; `hotkey.preview.test.ts`; `DevTool.svelte.test.ts` | Producer-side discard per the recorded policy; consumer freshness checks retained for the return-to-presentation window. |
+| MTC-13 | `5d69361e6` | `Sidebar.keyboard.dom.test.ts` | Click forwarding chosen over pointer-events-none to keep the tooltip. |
