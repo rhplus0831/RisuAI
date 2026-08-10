@@ -75,8 +75,8 @@ overlap note explicitly says otherwise.
 | MTC-08 | P2 | Resolved | Make live generation progress chat-scoped | Progress UI | None |
 | MTC-09 | P2 | Resolved | Generate suggestions after background completion | Suggestions | MTC-08 optional |
 | MTC-10 | P2 | Resolved | Remove aggregate `doingChat` locks from cross-chat-safe features | Translation/preview/autopilot | None |
-| MTC-11 | P2 | In progress | Use stable IDs for asynchronous finalization and error writes | Post-generation/error handling | None |
-| MTC-12 | P2 | Ready | Keep preview results owned by their original chat | Prompt preview | Coordinate with MTC-10 |
+| MTC-11 | P2 | Resolved | Use stable IDs for asynchronous finalization and error writes | Post-generation/error handling | None |
+| MTC-12 | P2 | In progress | Keep preview results owned by their original chat | Prompt preview | Coordinate with MTC-10 |
 | MTC-13 | P3 | Ready | Prevent generation indicators from intercepting avatar clicks | Sidebar indicators | None |
 | MTC-14 | P3 | Ready | Make the pinned rail inert with the narrow menu | Sidebar accessibility | None |
 | MTC-15 | P3 | Ready | Expose active pinned-chat state | Sidebar accessibility | None |
@@ -734,9 +734,15 @@ problem, add a documented concurrency limit at the request layer then.
 ## MTC-11 — Use stable IDs for asynchronous finalization and error writes
 
 **Priority:** P2
-**Status:** In progress
+**Status:** Resolved
 **Owner:** Codex (delegated 2026-08-10)
-**Resolution:** —
+**Resolution:** `d05c062e6` — strict `postGeneration/stableTarget.ts`
+resolver; sendChat tracks the exact output row and threads
+`{characterId, chatId, messageId}` through stage 4, inlays, triggers, IGP,
+imggen lookup, and error reporting; missing targets no-op (errors fall back
+to the modal). Sweep found `streamResponse.ts` / `serverBackedSendChat.ts` /
+server patches already ID-safe. Tests: reorder/insert/delete/index-reuse
+regressions in the eight post-generation and error suites.
 
 ### Problem
 
@@ -787,8 +793,8 @@ current selection or the row now occupying an old index.
 ## MTC-12 — Keep preview results owned by their original chat
 
 **Priority:** P2
-**Status:** Ready
-**Owner:** Unassigned
+**Status:** In progress
+**Owner:** Codex (delegated 2026-08-10)
 **Resolution:** —
 
 ### Problem
@@ -1036,3 +1042,4 @@ Record completed items here as they land.
 | MTC-08 | `6c8fc4f77` | `agentPresetProgress.test.ts`; `postGenerationProgress.test.ts`; `halfStreamingProgress.test.ts`; `serverChat.test.ts`; `DefaultChatScreen.loadPages.test.ts` | Recording requires an active registration; eviction invalidates the session. |
 | MTC-09 | `191409c0e` | `Suggestion.svelte.test.ts`; `generationActivity.test.ts` | Consume-once markers; in-flight ownership now rejects duplicates outright. |
 | MTC-10 | `097e80a38` | `translator.html.test.ts`; `hotkey.preview.test.ts`; `DevTool.svelte.test.ts`; `Suggestion.svelte.test.ts` | Full consumer inventory recorded; hotkey preview already drops stale results (MTC-12 finishes result ownership). |
+| MTC-11 | `d05c062e6` | `stage4Finalize.test.ts`; `runStage4.test.ts`; `orchestrateResponse.test.ts`; `nonStreamResponse.test.ts`; `outputTrigger.test.ts`; `igp.test.ts`; `imggenStableDiff.test.ts`; `sendChatErrors.test.ts` | Resolution happens inside the trusted-write boundary; IGP's indexed fallback removed. |
