@@ -1,6 +1,7 @@
 <script lang="ts">
   import { language } from 'src/lang'
   import { getCharImage } from 'src/ts/characters'
+  import { currentRoute } from 'src/ts/router'
   import GenerationIndicator from './GenerationIndicator.svelte'
   import SidebarAvatar from './SidebarAvatar.svelte'
   import type { PinnedChatItem } from './sidebarMultitasking'
@@ -23,12 +24,21 @@
     inert={isInert}
     data-risu-pinned-chats>
     {#each items as item (`${item.characterId}:${item.chatId}`)}
-      <div class="relative flex w-full flex-col items-center" data-risu-pinned-chat={item.chatId}>
+      {@const isCurrent =
+        $currentRoute.kind === 'character' &&
+        $currentRoute.chaId === item.characterId &&
+        $currentRoute.chatId === item.chatId}
+      <div
+        class="relative flex w-full flex-col items-center rounded-md"
+        class:bg-selected={isCurrent}
+        data-risu-pinned-chat={item.chatId}
+        data-risu-pinned-chat-current={isCurrent ? 'true' : 'false'}>
         <SidebarAvatar
           src={item.characterImage ? getCharImage(item.characterImage, 'plain') : '/none.webp'}
           size="42"
           {rounded}
           name={`${item.characterName} · ${item.chatName}`}
+          {isCurrent}
           onClick={() => onOpen(item)} />
         <span class="mt-0.5 w-16 truncate text-center text-[10px] leading-tight text-textcolor2">
           {item.chatName}

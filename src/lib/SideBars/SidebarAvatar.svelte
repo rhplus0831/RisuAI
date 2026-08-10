@@ -17,6 +17,7 @@
       },
     ) => any
     chaId?: string
+    isCurrent?: boolean
   }
 
   let {
@@ -31,6 +32,7 @@
     children,
     oncontextmenu,
     chaId,
+    isCurrent = false,
   }: Props = $props()
 </script>
 
@@ -50,6 +52,7 @@
   role="button"
   tabindex="0"
   aria-label={name}
+  aria-current={isCurrent ? 'page' : undefined}
   data-char-id={chaId}>
   {#if src}
     {#if src === 'slot'}
