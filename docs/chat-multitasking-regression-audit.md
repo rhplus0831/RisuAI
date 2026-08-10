@@ -2,7 +2,8 @@
 
 Last verified: 2026-08-10
 Review range: `HEAD~4..HEAD` (`ed8f173f4` through `cb7152ee6`)
-Status: Open work ledger
+Status: CLOSED 2026-08-10 — all 17 items resolved (commits in the
+resolution log)
 
 ## Purpose
 
@@ -81,7 +82,7 @@ overlap note explicitly says otherwise.
 | MTC-14 | P3 | Resolved | Make the pinned rail inert with the narrow menu | Sidebar accessibility | None |
 | MTC-15 | P3 | Resolved | Expose active pinned-chat state | Sidebar accessibility | None |
 | MTC-16 | P3 | Resolved | Localize the unnamed pinned-chat fallback | Sidebar localization | None |
-| MTC-17 | P3 | In progress | Canonicalize missing-character routes after multitasking navigation | Router | None |
+| MTC-17 | P3 | Resolved | Canonicalize missing-character routes after multitasking navigation | Router | None |
 
 ## Recommended execution order
 
@@ -994,9 +995,12 @@ language packs.
 ## MTC-17 — Canonicalize missing-character routes after multitasking navigation
 
 **Priority:** P3
-**Status:** In progress
+**Status:** Resolved
 **Owner:** Codex (delegated 2026-08-10)
-**Resolution:** —
+**Resolution:** `9ab7f00d4` — missing-character routes canonicalize to `/`
+via the missing-chat path's state-driven replace; generation untouched.
+Tests: `router.test.ts` (missing character during generation,
+back/forward history).
 
 ### Problem
 
@@ -1066,3 +1070,4 @@ Record completed items here as they land.
 | MTC-14 | `7d1201ae2` | `Sidebar.keyboard.dom.test.ts` | Inert prop plus a guard for synthetic clicks that bypass inertness. |
 | MTC-15 | `7d8d18b31` | `PinnedChatsRail.svelte.test.ts` | aria-current="page" on the avatar action; bg-selected visual. |
 | MTC-16 | `1402b9730` | `sidebarMultitasking.test.ts`; `src/lang/index.test.ts` | Follow-up `8fa5d4416` restored lang parity for the MTC-01/02 recovery keys. |
+| MTC-17 | `9ab7f00d4` | `router.test.ts` | Canonical target is `/`, matching the missing-chat mechanism. |
