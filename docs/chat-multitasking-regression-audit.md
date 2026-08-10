@@ -80,8 +80,8 @@ overlap note explicitly says otherwise.
 | MTC-13 | P3 | Resolved | Prevent generation indicators from intercepting avatar clicks | Sidebar indicators | None |
 | MTC-14 | P3 | Resolved | Make the pinned rail inert with the narrow menu | Sidebar accessibility | None |
 | MTC-15 | P3 | Resolved | Expose active pinned-chat state | Sidebar accessibility | None |
-| MTC-16 | P3 | In progress | Localize the unnamed pinned-chat fallback | Sidebar localization | None |
-| MTC-17 | P3 | Ready | Canonicalize missing-character routes after multitasking navigation | Router | None |
+| MTC-16 | P3 | Resolved | Localize the unnamed pinned-chat fallback | Sidebar localization | None |
+| MTC-17 | P3 | In progress | Canonicalize missing-character routes after multitasking navigation | Router | None |
 
 ## Recommended execution order
 
@@ -960,9 +960,13 @@ shortcut represents the open chat visually or semantically.
 ## MTC-16 — Localize the unnamed pinned-chat fallback
 
 **Priority:** P3
-**Status:** In progress
+**Status:** Resolved
 **Owner:** Codex (delegated 2026-08-10)
-**Resolution:** —
+**Resolution:** `1402b9730` — `language.unnamedPinnedChat` with trim()-based
+blank detection matching the regular chat list. Follow-up `8fa5d4416` added
+the Korean `acceptedSendRecovery` translations MTC-01/02 had omitted
+(caught by the lang parity test). Tests: `sidebarMultitasking.test.ts`,
+`src/lang/index.test.ts`.
 
 ### Problem
 
@@ -990,8 +994,8 @@ language packs.
 ## MTC-17 — Canonicalize missing-character routes after multitasking navigation
 
 **Priority:** P3
-**Status:** Ready
-**Owner:** Unassigned
+**Status:** In progress
+**Owner:** Codex (delegated 2026-08-10)
 **Resolution:** —
 
 ### Problem
@@ -1061,3 +1065,4 @@ Record completed items here as they land.
 | MTC-13 | `5d69361e6` | `Sidebar.keyboard.dom.test.ts` | Click forwarding chosen over pointer-events-none to keep the tooltip. |
 | MTC-14 | `7d1201ae2` | `Sidebar.keyboard.dom.test.ts` | Inert prop plus a guard for synthetic clicks that bypass inertness. |
 | MTC-15 | `7d8d18b31` | `PinnedChatsRail.svelte.test.ts` | aria-current="page" on the avatar action; bg-selected visual. |
+| MTC-16 | `1402b9730` | `sidebarMultitasking.test.ts`; `src/lang/index.test.ts` | Follow-up `8fa5d4416` restored lang parity for the MTC-01/02 recovery keys. |
