@@ -1,6 +1,6 @@
 # Structure Documentation Index
 
-Last audited: 2026-08-09.
+Last audited: 2026-08-11.
 
 Read [`STRUCTURE.md`](../../STRUCTURE.md) for repository boundaries and stable
 invariants. Then open only the document that owns the behavior you are changing.
@@ -36,7 +36,6 @@ in `docs/structure/` appears below.
 | [`docs/tests/README.md`](../tests/README.md) | Find product-flow, domain, server, browser, and visible-state tests without searching the full test tree. |
 | [`docs/data-driven-ui.md`](../data-driven-ui.md) | Trace server-backed, session-local, and asynchronous state into current UI consumers. |
 | [`docs/upstream-sync/README.md`](../upstream-sync/README.md) | Apply the current upstream-fork sweep procedure and update its ledger. |
-| [`docs/audit/WORK-INDEX.md`](../audit/WORK-INDEX.md) | Consult point-in-time message-generation parity evidence; reverify its 51 resolved and two deferred items before acting. |
 | [`server/fastify/__tests__/README.md`](../../server/fastify/__tests__/README.md) | Navigate the flat Fastify test directory by feature area. |
 
 [`frontend.md`](frontend.md) remains only as a compatibility pointer for older

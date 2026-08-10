@@ -1,6 +1,6 @@
 # Project Structure
 
-Last audited: 2026-08-09.
+Last audited: 2026-08-11.
 
 Use this file to orient yourself in the Fastify-only RisuAI codebase. The
 supported toolchain is Node.js 24 or newer with pnpm. Choose the guide for your
@@ -49,8 +49,7 @@ records past decisions and is not authoritative.
 | `STRUCTURE.md`, `docs/structure/`, `src/docs/` | Current architecture and implementation guides. Start at the [Architecture Index](docs/structure/README.md). |
 | `docs/tests/`, `docs/data-driven-ui.md` | Current test-discovery and data-dependent UI inventories. |
 | `docs/upstream-sync/` | Current fork-maintenance procedure and per-sweep ledger for upstream changes. |
-| `docs/audit/` | Point-in-time message-generation parity evidence and work index; 51 items are resolved and two are deferred, so reverify findings before acting. |
-| `.archived-docs/` | Closed workstreams and dated reports. Do not infer current behavior from them. |
+| `.archived-docs/` | Closed workstreams and dated reports, including the message-generation parity audit. Do not infer current behavior from them. |
 | `public/` | Static application sources copied or served by Vite, including the service worker and vendor/tokenizer payloads. |
 | `resources/` | Retained packaging artwork; the current Vite/Fastify build does not consume it. |
 | `util/` | Full-stack dev runners, database analyzer, tsserver wrapper, API-flag runner, and userscript bridge. |

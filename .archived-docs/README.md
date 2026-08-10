@@ -18,6 +18,7 @@ codebase whenever an archived line number or contract has drifted.
 | [Deferred work](deferred-work/README.md)                           | The consolidated deferred-feature inventory/progress record and the older Fastify leftover snapshot.                              |
 | [July 23 audit scopes](audit-scopes-2026-07-23/README.md)          | Closed cross-cutting audit charters, verification records, and the plans implemented on 2026-07-23.                                |
 | [August 5 data-loss delta audit](data-loss-delta-audit-2026-08-05/README.md) | Closed dual-track (Codex+Claude) pre-beta data-loss audit: charter, ten pass reports, consolidated conclusion, D1/D2 decisions. |
+| [Message-generation parity audit](audit/WORK-INDEX.md) | Closed August 2026 parity review: 51 resolved findings, two deferred items, and the supporting area evidence. |
 
 ## Archive Conventions
 
