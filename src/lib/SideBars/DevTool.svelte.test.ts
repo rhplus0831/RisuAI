@@ -11,7 +11,8 @@ const devToolMocks = vi.hoisted(() => ({
   alertError: vi.fn(),
   alertMd: vi.fn(),
   alertNormal: vi.fn(),
-  alertWait: vi.fn(),
+  beginAlertWait: vi.fn(() => Symbol('preview-wait')),
+  clearAlertWait: vi.fn(() => true),
   appendCurrentChatUserMessageForSend: vi.fn(async () => ({ status: 'ok', messageId: 'message-b' })),
   sendChat: vi.fn(async () => true),
   setChatScriptstateValue: vi.fn(),
@@ -36,7 +37,8 @@ vi.mock('src/ts/alert', async (importActual) => ({
   alertError: devToolMocks.alertError,
   alertMd: devToolMocks.alertMd,
   alertNormal: devToolMocks.alertNormal,
-  alertWait: devToolMocks.alertWait,
+  beginAlertWait: devToolMocks.beginAlertWait,
+  clearAlertWait: devToolMocks.clearAlertWait,
 }))
 
 vi.mock('src/ts/tokenizer', () => ({
@@ -135,11 +137,12 @@ beforeEach(() => {
     devToolMocks.alertError,
     devToolMocks.alertMd,
     devToolMocks.alertNormal,
-    devToolMocks.alertWait,
     devToolMocks.setChatScriptstateValue,
   ]) {
     mock.mockReset()
   }
+  devToolMocks.beginAlertWait.mockReset().mockImplementation(() => Symbol('preview-wait'))
+  devToolMocks.clearAlertWait.mockReset().mockReturnValue(true)
   devToolMocks.appendCurrentChatUserMessageForSend.mockReset().mockResolvedValue({
     status: 'ok',
     messageId: 'message-b',
@@ -188,6 +191,8 @@ describe('DevTool chat generation ownership', () => {
       previewPrompt: false,
       expectedTarget: targetB,
     })
+    expect(devToolMocks.beginAlertWait).toHaveBeenCalledWith('Loading...')
+    expect(devToolMocks.clearAlertWait).toHaveBeenCalledOnce()
     expect(devToolMocks.alertMd).toHaveBeenCalledOnce()
 
     devToolMocks.sendChat.mockClear()
@@ -216,7 +221,19 @@ describe('DevTool chat generation ownership', () => {
 
     expect(devToolMocks.sendChat).not.toHaveBeenCalled()
     expect(devToolMocks.appendCurrentChatUserMessageForSend).not.toHaveBeenCalled()
-    expect(devToolMocks.alertWait).not.toHaveBeenCalled()
+    expect(devToolMocks.beginAlertWait).not.toHaveBeenCalled()
+  })
+
+  it('clears its loading state when the producer discards a stale preview', async () => {
+    devToolMocks.sendChat.mockResolvedValueOnce(false)
+    const previewPanel = await openSection('Preview Prompt')
+
+    runButton(previewPanel).click()
+    await settle()
+
+    expect(devToolMocks.beginAlertWait).toHaveBeenCalledWith('Loading...')
+    expect(devToolMocks.clearAlertWait).toHaveBeenCalledOnce()
+    expect(devToolMocks.alertMd).not.toHaveBeenCalled()
   })
 
   it('does not redirect autopilot generation after navigation during append', async () => {

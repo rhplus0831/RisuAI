@@ -28,6 +28,7 @@ import {
 import { alertError } from '../alert'
 import {
   captureActiveChatTarget,
+  isActiveChatTargetFresh,
   waitForPendingChatGenerationSettingsSave,
   type ActiveChatTarget,
 } from '../chatCommands'
@@ -428,6 +429,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
         return false
       }
       if (serverAssembly.status === 'preview') {
+        if (!isActiveChatTargetFresh(generationTarget)) return false
         if (serverAssembly.body !== undefined) previewBody = serverAssembly.body
         if (serverAssembly.formated !== undefined) previewFormated = serverAssembly.formated
         return true
@@ -508,10 +510,12 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
         setProcessStage,
       })
       if (dispatch.status === 'preview') {
+        if (!isActiveChatTargetFresh(generationTarget)) return false
         previewFormated = dispatch.formated
         return true
       }
       if (dispatch.status === 'previewPrompt') {
+        if (!isActiveChatTargetFresh(generationTarget)) return false
         previewBody = dispatch.body
         return true
       }

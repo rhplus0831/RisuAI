@@ -4,7 +4,7 @@
   import NumberInput from '../UI/GUI/NumberInput.svelte'
   import Button from '../UI/GUI/Button.svelte'
   import { getRequestLog } from 'src/ts/globalApi.svelte'
-  import { alertError, alertMd, alertNormal, alertWait } from 'src/ts/alert'
+  import { alertError, alertMd, alertNormal, beginAlertWait, clearAlertWait } from 'src/ts/alert'
   import Accordion from '../UI/Accordion.svelte'
   import { getCharToken, getChatToken } from 'src/ts/tokenizer'
   import { tokenizePreset } from 'src/ts/process/prompt'
@@ -38,12 +38,17 @@
   const preview = async () => {
     const target = captureActiveChatTarget()
     if (!target || findChatGenerationActivity(target)) return false
-    alertWait('Loading...')
-    const generated = await sendChat(-1, {
-      preview: previewJoin !== 'prompt',
-      previewPrompt: previewJoin === 'prompt',
-      expectedTarget: target,
-    })
+    const waitOwner = beginAlertWait('Loading...')
+    let generated = false
+    try {
+      generated = await sendChat(-1, {
+        preview: previewJoin !== 'prompt',
+        previewPrompt: previewJoin === 'prompt',
+        expectedTarget: target,
+      })
+    } finally {
+      clearAlertWait(waitOwner)
+    }
     if (!generated || !isActiveChatTargetFresh(target)) return false
 
     let md = ''

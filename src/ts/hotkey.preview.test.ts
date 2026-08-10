@@ -2,7 +2,8 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const previewMocks = vi.hoisted(() => ({
   alertMd: vi.fn(),
-  alertWait: vi.fn(),
+  beginAlertWait: vi.fn(() => Symbol('preview-wait')),
+  clearAlertWait: vi.fn(() => true),
   sendChat: vi.fn(async () => true),
 }))
 
@@ -14,7 +15,8 @@ vi.mock('./process/index.svelte', () => ({
 vi.mock('./alert', async (importActual) => ({
   ...(await importActual<typeof import('./alert')>()),
   alertMd: previewMocks.alertMd,
-  alertWait: previewMocks.alertWait,
+  beginAlertWait: previewMocks.beginAlertWait,
+  clearAlertWait: previewMocks.clearAlertWait,
 }))
 
 vi.mock('./process/modules', async (importActual) => {
@@ -80,7 +82,8 @@ beforeAll(() => {
 beforeEach(() => {
   resetChatGenerationActivitiesForTests()
   previewMocks.alertMd.mockReset()
-  previewMocks.alertWait.mockReset()
+  previewMocks.beginAlertWait.mockReset().mockImplementation(() => Symbol('preview-wait'))
+  previewMocks.clearAlertWait.mockReset().mockReturnValue(true)
   previewMocks.sendChat.mockReset().mockResolvedValue(true)
   alertStore.set({ type: 'none', msg: '' })
   seedPreviewHotkeyDatabase()
@@ -98,6 +101,8 @@ describe('prompt-preview hotkey generation ownership', () => {
       previewPrompt: true,
       expectedTarget: targetB,
     })
+    expect(previewMocks.beginAlertWait).toHaveBeenCalledWith('Loading...')
+    expect(previewMocks.clearAlertWait).toHaveBeenCalledOnce()
     expect(previewMocks.alertMd).toHaveBeenCalledOnce()
   })
 
@@ -108,7 +113,7 @@ describe('prompt-preview hotkey generation ownership', () => {
 
     expect(event.defaultPrevented).toBe(false)
     expect(previewMocks.sendChat).not.toHaveBeenCalled()
-    expect(previewMocks.alertWait).not.toHaveBeenCalled()
+    expect(previewMocks.beginAlertWait).not.toHaveBeenCalled()
   })
 
   it('keeps a deferred preview owned by its captured chat after navigation', async () => {
@@ -129,6 +134,17 @@ describe('prompt-preview hotkey generation ownership', () => {
       previewPrompt: true,
       expectedTarget: targetB,
     })
+    expect(previewMocks.clearAlertWait).toHaveBeenCalledOnce()
+    expect(previewMocks.alertMd).not.toHaveBeenCalled()
+  })
+
+  it('clears its loading state when the producer discards a stale preview', async () => {
+    previewMocks.sendChat.mockResolvedValueOnce(false)
+
+    await pressPreviewHotkey()
+
+    expect(previewMocks.beginAlertWait).toHaveBeenCalledWith('Loading...')
+    expect(previewMocks.clearAlertWait).toHaveBeenCalledOnce()
     expect(previewMocks.alertMd).not.toHaveBeenCalled()
   })
 })

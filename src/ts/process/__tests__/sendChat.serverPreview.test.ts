@@ -316,6 +316,148 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     expect(getServerChatCalls()[0]).toMatchObject({ mode: 'preview_prompt' })
   })
 
+  it('discards a formatted preview when navigation changes during generation-settings maintenance', async () => {
+    await seedEcho()
+    const character = testDatabaseState.db.characters[0]
+    const firstChat = character.chats[0]
+    firstChat.id = 'chat-1'
+    character.chats.push({
+      ...safeStructuredClone(firstChat),
+      id: 'chat-2',
+      name: 'other chat',
+      message: [{ role: 'user', data: 'other chat message', chatId: 'other-message' }],
+    })
+    setServerChatPrompt(
+      [{ role: 'user', content: 'stale formatted preview' }],
+      { promptText: 'STALE FORMATTED PREVIEW' },
+      { formated: [{ role: 'user', content: 'stale formatted preview' }] },
+    )
+    const previousPreview = safeStructuredClone(chatModule.previewFormated)
+    let resolveSettingsSave!: (response: Response) => void
+    const pendingSettingsSave = new Promise<Response>((resolve) => {
+      resolveSettingsSave = resolve
+    })
+    let settingsSaveRequests = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.endsWith('/generation-settings')) {
+          settingsSaveRequests += 1
+          return pendingSettingsSave
+        }
+        return serverChatWithContextFetch(input, init)
+      }) as unknown as typeof fetch,
+    )
+    expect(
+      dispatchSaveChatGenerationSettings(firstChat.id, {
+        ...firstChat.generationSettings!,
+        jailbreakToggle: true,
+      }),
+    ).toBe(true)
+    await waitForState(() => expect(settingsSaveRequests).toBe(1))
+
+    const previewPromise = chatModule.sendChat(-1, { preview: true })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(getServerChatCalls()).toHaveLength(0)
+    character.chatPage = 1
+    resolveSettingsSave(
+      jsonResponse({
+        revision: 2,
+        event: {
+          type: 'chat.updated',
+          revision: 2,
+          resource: 'characterRow',
+          id: firstChat.id,
+          parentId: character.chaId,
+        },
+        chatId: firstChat.id,
+        characterId: character.chaId,
+        certificate: 'chat-generation-settings-sparse-v1',
+        patchedKeys: ['jailbreakToggle'],
+        deletedKeys: [],
+        sidebarTogglePatchedKeys: [],
+        sidebarToggleDeletedKeys: [],
+        prunedSidebarToggleKeys: [],
+      }),
+    )
+
+    await expect(previewPromise).resolves.toBe(false)
+    expect(chatModule.previewFormated).toEqual(previousPreview)
+    expect(getServerChatCalls()).toHaveLength(1)
+    expect(getServerChatCalls()[0]).toMatchObject({ mode: 'preview', chatId: 'chat-1' })
+  })
+
+  it('discards a raw-body preview when navigation changes during generation-settings maintenance', async () => {
+    await seedEcho()
+    const character = testDatabaseState.db.characters[0]
+    const firstChat = character.chats[0]
+    firstChat.id = 'chat-1'
+    character.chats.push({
+      ...safeStructuredClone(firstChat),
+      id: 'chat-2',
+      name: 'other chat',
+      message: [{ role: 'user', data: 'other chat message', chatId: 'other-message' }],
+    })
+    setServerChatPrompt([{ role: 'user', content: 'stale raw preview' }], {
+      promptText: 'STALE RAW PREVIEW',
+    })
+    const previousPreview = chatModule.previewBody
+    let resolveSettingsSave!: (response: Response) => void
+    const pendingSettingsSave = new Promise<Response>((resolve) => {
+      resolveSettingsSave = resolve
+    })
+    let settingsSaveRequests = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.endsWith('/generation-settings')) {
+          settingsSaveRequests += 1
+          return pendingSettingsSave
+        }
+        return serverChatWithContextFetch(input, init)
+      }) as unknown as typeof fetch,
+    )
+    expect(
+      dispatchSaveChatGenerationSettings(firstChat.id, {
+        ...firstChat.generationSettings!,
+        jailbreakToggle: true,
+      }),
+    ).toBe(true)
+    await waitForState(() => expect(settingsSaveRequests).toBe(1))
+
+    const previewPromise = chatModule.sendChat(-1, { previewPrompt: true })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(getServerChatCalls()).toHaveLength(0)
+    character.chatPage = 1
+    resolveSettingsSave(
+      jsonResponse({
+        revision: 2,
+        event: {
+          type: 'chat.updated',
+          revision: 2,
+          resource: 'characterRow',
+          id: firstChat.id,
+          parentId: character.chaId,
+        },
+        chatId: firstChat.id,
+        characterId: character.chaId,
+        certificate: 'chat-generation-settings-sparse-v1',
+        patchedKeys: ['jailbreakToggle'],
+        deletedKeys: [],
+        sidebarTogglePatchedKeys: [],
+        sidebarToggleDeletedKeys: [],
+        prunedSidebarToggleKeys: [],
+      }),
+    )
+
+    await expect(previewPromise).resolves.toBe(false)
+    expect(chatModule.previewBody).toBe(previousPreview)
+    expect(getServerChatCalls()).toHaveLength(1)
+    expect(getServerChatCalls()[0]).toMatchObject({ mode: 'preview_prompt', chatId: 'chat-1' })
+  })
+
   it.each([
     ['send', {}],
     ['continue', { continue: true }],

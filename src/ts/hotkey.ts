@@ -5,7 +5,8 @@ import {
   alertNormal,
   alertSelect,
   alertToast,
-  alertWait,
+  beginAlertWait,
+  clearAlertWait,
   doingAlert,
   alertRequestLogs,
   cardExportCancelMessage,
@@ -208,13 +209,18 @@ export function initHotkey() {
         case 'previewRequest': {
           const target = captureActiveChatTarget()
           if (!target || findChatGenerationActivity(target)) return
-          alertWait('Loading...')
+          const waitOwner = beginAlertWait('Loading...')
           ev.preventDefault()
           ev.stopPropagation()
-          const generated = await sendChat(-1, {
-            previewPrompt: true,
-            expectedTarget: target,
-          })
+          let generated = false
+          try {
+            generated = await sendChat(-1, {
+              previewPrompt: true,
+              expectedTarget: target,
+            })
+          } finally {
+            clearAlertWait(waitOwner)
+          }
           if (!generated || !isActiveChatTargetFresh(target)) return
 
           let parsedPreview: unknown
