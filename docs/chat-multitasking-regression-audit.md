@@ -65,7 +65,7 @@ overlap note explicitly says otherwise.
 
 | ID | Priority | Status | Work item | Primary area | Dependencies |
 | --- | --- | --- | --- | --- | --- |
-| MTC-01 | P1 | Ready | Continue an accepted send after navigation | Composer/generation handoff | None |
+| MTC-01 | P1 | Resolved | Continue an accepted send after navigation | Composer/generation handoff | None |
 | MTC-02 | P1 | Ready | Recover an append when the server rejects a duplicate same-chat generation | Composer/server lock | Coordinate with MTC-01 |
 | MTC-03 | P1 | Ready | Preserve the plugin send target across awaits | Plugin API | Prefer MTC-01 target contract |
 | MTC-04 | P1 | Ready | Stop retrying terminal reattach failures | Reattach lifecycle | None |
@@ -101,9 +101,15 @@ can be assigned independently once their dependencies are resolved.
 ## MTC-01 — Continue an accepted send after navigation
 
 **Priority:** P1
-**Status:** Ready
-**Owner:** Unassigned
-**Resolution:** —
+**Status:** Resolved
+**Owner:** Codex (delegated 2026-08-10)
+**Resolution:** `b5e0be10d` — `src/ts/process/acceptedSendCoordinator.svelte.ts`
+owns accepted/queued append settlement and starts generation once per
+captured target. Tests: `acceptedSendCoordinator.test.ts`,
+`DefaultChatScreen.loadPages.test.ts` (captured-target handoff replaces the
+silent-abort test; post-append-delay navigation; queued single-generation;
+chat-scoped retry banner), `sendChatContext.test.ts` (stable-ID resolution),
+`sendChat.serverPreview.test.ts`.
 **Decision (2026-08-10):** Chat-independent coordinator. Once an append is
 durably accepted, generation is no longer tied to the chat being active; the
 send path must behave identically whether navigation happens before or after
@@ -967,3 +973,4 @@ Record completed items here as they land.
 
 | ID | Commit | Regression tests | Notes |
 | --- | --- | --- | --- |
+| MTC-01 | `b5e0be10d` | `acceptedSendCoordinator.test.ts`; `DefaultChatScreen.loadPages.test.ts`; `sendChatContext.test.ts`; `sendChat.serverPreview.test.ts` | Coordinator exposes seams for MTC-02 (409 recovery metadata) and MTC-03 (plugin-passed target). |
