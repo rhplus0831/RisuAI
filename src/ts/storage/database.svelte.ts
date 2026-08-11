@@ -4870,6 +4870,10 @@ export interface MessageGenerationInfo {
   acceptedMessageId?: string
   attemptNo?: number
   jobId?: string
+  effectLedgerKeyType?: 'operation' | 'generation'
+  effectLedgerKeyId?: string
+  effectLedgerCharacterId?: string
+  effectLedgerChatId?: string
   inputTokens?: number
   outputTokens?: number
   maxContext?: number

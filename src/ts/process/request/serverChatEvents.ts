@@ -312,6 +312,19 @@ export interface ServerChatPostGeneration {
   agentPresetError?: ServerChatAgentPresetError
   revision?: number
   translation?: ServerChatPostGenerationTranslation
+  /** Exact durable effect identity; absent on older servers and inline generations. */
+  effectLedger?: ServerGenerationEffectLedgerRef
+}
+
+export interface ServerGenerationEffectLedgerRef {
+  version: 1
+  databaseLineage: string
+  keyType: 'operation' | 'generation'
+  keyId: string
+  generationId: string
+  characterId: string
+  chatId: string
+  messageId: string
 }
 
 export type ServerChatPostGenerationTranslation =

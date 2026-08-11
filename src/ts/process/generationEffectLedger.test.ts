@@ -1,0 +1,148 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  completedGenerationEffect,
+  resetGenerationEffectLedgerForTests,
+  runLedgeredGenerationEffect,
+} from './generationEffectLedger'
+import type { ServerGenerationEffectLedgerRef } from './request/serverChatEvents'
+
+vi.mock('../storage/fastifyStorage', () => ({ getNodeServerProxyAuth: vi.fn().mockResolvedValue('auth') }))
+vi.mock('../server/activeWriterSession', () => ({
+  activeWriterSessionHeader: () => ({ 'risu-writer-session': 'writer-a' }),
+  handleActiveWriterStaleResponse: () => false,
+}))
+
+const ref: ServerGenerationEffectLedgerRef = {
+  version: 1,
+  databaseLineage: 'lineage-a',
+  keyType: 'operation',
+  keyId: 'operation-a',
+  generationId: 'generation-a',
+  characterId: 'character-a',
+  chatId: 'chat-a',
+  messageId: 'message-a',
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+}
+
+beforeEach(() => {
+  vi.restoreAllMocks()
+  resetGenerationEffectLedgerForTests()
+})
+
+describe('client generation effect ledger', () => {
+  it('runs a live durable effect once and writes its completion receipt', async () => {
+    let claimed = false
+    let receipted = false
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        if (claimed) return jsonResponse({ status: 'not_claimed', reason: 'already_receipted' })
+        claimed = true
+        return jsonResponse({ status: 'claimed', claimId: 'claim-a' }, 201)
+      }
+      receipted = true
+      return jsonResponse({ effect: { status: 'completed' } })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const effect = vi.fn(() => completedGenerationEffect('applied'))
+
+    await expect(runLedgeredGenerationEffect(ref, 'igp', 'live_terminal', effect)).resolves.toEqual({
+      executed: true,
+      value: 'applied',
+      status: 'completed',
+    })
+    await expect(runLedgeredGenerationEffect(ref, 'igp', 'late_recovery', effect)).resolves.toEqual({
+      executed: false,
+      status: 'already_receipted',
+    })
+
+    expect(effect).toHaveBeenCalledTimes(1)
+    expect(receipted).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      claimId: 'claim-a',
+      status: 'completed',
+    })
+  })
+
+  it('does not invoke an ephemeral effect when late recovery records its skip', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        status: 'not_claimed',
+        reason: 'late_recovery_skipped',
+        effect: { status: 'skipped', reason: 'late_recovery' },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const effect = vi.fn(() => completedGenerationEffect(undefined))
+
+    await expect(runLedgeredGenerationEffect(ref, 'notification', 'late_recovery', effect)).resolves.toEqual({
+      executed: false,
+      status: 'already_receipted',
+    })
+    expect(effect).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      delivery: 'late_recovery',
+      messageId: 'message-a',
+    })
+  })
+
+  it('fires every ephemeral effect on a live terminal and writes each receipt', async () => {
+    const claimedKinds: string[] = []
+    const receiptedKinds: string[] = []
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const kind = url.split('/').at(-2) ?? ''
+      if (init?.method === 'POST') {
+        claimedKinds.push(kind)
+        return jsonResponse({ status: 'claimed', claimId: `claim-${kind}` }, 201)
+      }
+      receiptedKinds.push(kind)
+      return jsonResponse({ effect: { status: 'completed' } })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const callbacks = {
+      notification: vi.fn(() => completedGenerationEffect(undefined)),
+      tts: vi.fn(() => completedGenerationEffect(undefined)),
+      completion_sound: vi.fn(() => completedGenerationEffect(undefined)),
+    }
+
+    for (const kind of ['notification', 'tts', 'completion_sound'] as const) {
+      await expect(runLedgeredGenerationEffect(ref, kind, 'live_terminal', callbacks[kind])).resolves.toMatchObject({
+        executed: true,
+        status: 'completed',
+      })
+      expect(callbacks[kind]).toHaveBeenCalledTimes(1)
+    }
+
+    expect(claimedKinds).toEqual(['notification', 'tts', 'completion_sound'])
+    expect(receiptedKinds).toEqual(['notification', 'tts', 'completion_sound'])
+  })
+
+  it('coalesces concurrent recovery attempts behind one durable claim', async () => {
+    let releaseClaim!: () => void
+    const claimBarrier = new Promise<void>((resolve) => {
+      releaseClaim = resolve
+    })
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        await claimBarrier
+        return jsonResponse({ status: 'claimed', claimId: 'claim-a' }, 201)
+      }
+      return jsonResponse({ effect: { status: 'completed' } })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const effect = vi.fn(() => completedGenerationEffect(undefined))
+
+    const first = runLedgeredGenerationEffect(ref, 'plugin_output', 'late_recovery', effect)
+    const second = runLedgeredGenerationEffect(ref, 'plugin_output', 'late_recovery', effect)
+    releaseClaim()
+    await Promise.all([first, second])
+
+    expect(effect).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+})

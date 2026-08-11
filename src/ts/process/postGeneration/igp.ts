@@ -15,6 +15,8 @@ export interface IgpMessageTarget {
 export interface EvaluateIgpOptions {
   promptTemplate: string
   abortSignal: AbortSignal
+  /** A ledger receipt is terminal only after the durable message command settles. */
+  waitForPersistence?: boolean
   /**
    * Stable post-terminal row identity for server-backed generations. IGP only
    * appends while this exact derived text is still current, and carries the
@@ -63,17 +65,31 @@ function captureIgpTargetSnapshot(target: IgpMessageTarget): ChatScopedSnapshot 
   }
 }
 
-export async function evaluateIgp(opts: EvaluateIgpOptions): Promise<void> {
+export async function evaluateIgp(opts: EvaluateIgpOptions): Promise<boolean> {
   const parsed = risuChatParser(opts.promptTemplate ?? '')
-  if (!parsed) return
+  if (!parsed) return false
   const formated = parseChatML(parsed)
   const rq = await requestChatData({ formated, bias: {} }, 'emotion', opts.abortSignal)
   const appended = formatIgpAppendPayload(rq)
   const previous = captureIgpTargetSnapshot(opts.target)
-  if (!previous) return
-  dispatchUpdateMessageScoped(opts.target.messageId, { data: opts.target.expectedData + appended }, previous, {
-    expectedData: opts.target.expectedData,
-    expectedChatId: opts.target.chatId,
-    expectedGenerationId: opts.target.expectedGenerationId,
-  })
+  if (!previous) return false
+  const outcome = dispatchUpdateMessageScoped(
+    opts.target.messageId,
+    { data: opts.target.expectedData + appended },
+    previous,
+    {
+      expectedData: opts.target.expectedData,
+      expectedChatId: opts.target.chatId,
+      expectedGenerationId: opts.target.expectedGenerationId,
+    },
+  )
+  if (!outcome) return false
+  if (!opts.waitForPersistence) {
+    void outcome
+    return true
+  }
+  const result = await outcome
+  if (result.status === 'accepted') return true
+  if (result.status === 'queued') return (await result.settlement).status === 'accepted'
+  return false
 }

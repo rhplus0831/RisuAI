@@ -142,6 +142,14 @@ import {
   type GenerationOperationProjection,
   type GenerationOperationTerminalOutcome,
 } from '../generationOperations.js'
+import {
+  claimGenerationEffect,
+  ensureGenerationEffectLedgerInTransaction,
+  generationEffectLedgerRef,
+  listPendingServerGenerationEffects,
+  settleGenerationEffect,
+  type GenerationEffectLedgerRef,
+} from '../generationEffects.js'
 
 const ALLOWED_MODES = new Set(['send', 'continue', 'preview', 'preview_prompt', 'regenerate'])
 const SERVER_INLAY_SIGNATURE_CONTENT_TYPE = 'application/x-risu-inlay-signature+json'
@@ -2101,11 +2109,13 @@ function buildPostGenerationFrameBody(
   messageId?: string,
   translation?: PostGenerationFrame['translation'],
   persistence?: AppliedGenerationScriptMutations,
+  effectLedger?: GenerationEffectLedgerRef,
 ): PostGenerationFrame {
   const frame: PostGenerationFrame = {
     revision,
     ...(messageId ? { messageId } : {}),
     ...(translation ? { translation } : {}),
+    ...(effectLedger ? { effectLedger } : {}),
   }
   if (postGen) {
     const mutations = persistence ? persistedPostGenerationMutations(postGen.mutations, persistence) : postGen.mutations
@@ -2155,40 +2165,87 @@ function handlePersistedGenerationCompletion(args: {
   emit?: (event: PromptChatEvent) => void
   pushNotifications?: false | PushNotificationService
   runMessageTranslation?: ServerMessageTranslationRunner
-}): Promise<{ translation?: PostGenerationFrame['translation']; revision?: number }> {
+  generationId?: string
+}): Promise<{ translation?: PostGenerationFrame['translation']; revision?: number; translationStarted?: boolean }> {
   const messageId = args.targetMessageId ?? args.message.chatId
   if (typeof messageId !== 'string' || messageId.trim().length === 0) {
     notifyChatCompletion(args.pushNotifications, { characterId: args.characterId, chatId: args.chatId })
     return Promise.resolve({})
   }
-  return handleGeneratedChatCompletion({
-    db: args.db,
-    dataDir: args.dataDir,
-    eventSink: args.eventSink,
-    messageTranslationJobs: args.messageTranslationJobs,
+  const run = () =>
+    handleGeneratedChatCompletion({
+      db: args.db,
+      dataDir: args.dataDir,
+      eventSink: args.eventSink,
+      messageTranslationJobs: args.messageTranslationJobs,
+      messageId,
+      chatId: args.chatId,
+      ...(args.characterId ? { characterId: args.characterId } : {}),
+      completedAt: args.completedAt,
+      pushNotifications: args.pushNotifications,
+      runMessageTranslation: args.runMessageTranslation,
+      onTranslationStarted: ({ jobId }) =>
+        args.emit?.({
+          type: 'post_generation_progress',
+          phase: 'translation',
+          status: 'translating',
+          runSeq: 0,
+          messageId,
+          jobId,
+          llmCallCount: 0,
+          pendingLlmCount: 0,
+          llmCallCounts: { LLM: 0, axLLM: 0 },
+          pendingLlmCounts: { LLM: 0, axLLM: 0 },
+        }),
+    })
+
+  const generationId = args.generationId?.trim()
+  if (!generationId) {
+    return run().then((followup) => ({
+      translationStarted: followup.translationStarted,
+      ...(followup.frame ? { translation: followup.frame } : {}),
+      ...(followup.revision !== undefined ? { revision: followup.revision } : {}),
+    }))
+  }
+
+  const databaseLineage = getDatabaseLineage(args.db)
+  const claim = claimGenerationEffect(args.db, {
+    databaseLineage,
+    generationId,
+    kind: 'generated_translation',
+    delivery: 'server',
     messageId,
-    chatId: args.chatId,
-    ...(args.characterId ? { characterId: args.characterId } : {}),
-    completedAt: args.completedAt,
-    pushNotifications: args.pushNotifications,
-    runMessageTranslation: args.runMessageTranslation,
-    onTranslationStarted: ({ jobId }) =>
-      args.emit?.({
-        type: 'post_generation_progress',
-        phase: 'translation',
-        status: 'translating',
-        runSeq: 0,
-        messageId,
-        jobId,
-        llmCallCount: 0,
-        pendingLlmCount: 0,
-        llmCallCounts: { LLM: 0, axLLM: 0 },
-        pendingLlmCounts: { LLM: 0, axLLM: 0 },
-      }),
-  }).then((followup) => ({
-    ...(followup.frame ? { translation: followup.frame } : {}),
-    ...(followup.revision !== undefined ? { revision: followup.revision } : {}),
-  }))
+  })
+  if (claim.status !== 'claimed') return Promise.resolve({})
+
+  return run().then(
+    (followup) => {
+      settleGenerationEffect(args.db, {
+        databaseLineage,
+        generationId,
+        kind: 'generated_translation',
+        claimId: claim.claimId,
+        status: followup.translationStarted ? 'completed' : 'skipped',
+        reason: followup.translationStarted ? null : 'not_applicable',
+      })
+      return {
+        translationStarted: followup.translationStarted,
+        ...(followup.frame ? { translation: followup.frame } : {}),
+        ...(followup.revision !== undefined ? { revision: followup.revision } : {}),
+      }
+    },
+    (error) => {
+      settleGenerationEffect(args.db, {
+        databaseLineage,
+        generationId,
+        kind: 'generated_translation',
+        claimId: claim.claimId,
+        status: 'failed',
+        lastError: errorMessage(error, 'generated-message translation failed'),
+      })
+      throw error
+    },
+  )
 }
 
 /**
@@ -3020,6 +3077,7 @@ interface GenerationFinalizationPersistenceResult extends AppliedGenerationScrip
   revision: number
   droppedScriptMutations: GenerationScriptMutationConflict[]
   bookkeepingErrors: Array<{ phase: 'event_emission'; error: string }>
+  effectLedger?: GenerationEffectLedgerRef
 }
 
 function applyGenerationChatVarMutationsDroppingConflicts(args: {
@@ -3156,6 +3214,7 @@ type GenerationFinalizationMutationExtra = Record<string, unknown> &
     chatId: string
     messageId: string
     droppedScriptMutations: GenerationScriptMutationConflict[]
+    effectLedger?: GenerationEffectLedgerRef
   }
 
 /**
@@ -3355,6 +3414,23 @@ function persistServerGenerationResult(args: {
             resultMessageId: write.messageId,
           })
         }
+        const effectLedger =
+          args.operationLineage?.terminalOutcome === 'completed'
+            ? ensureGenerationEffectLedgerInTransaction(targetDb, {
+                databaseLineage: args.operationLineage.databaseLineage,
+                operationId: args.operationLineage.operationId,
+                operationProtocolVersion:
+                  getGenerationOperationProjection(
+                    targetDb,
+                    args.operationLineage.databaseLineage,
+                    args.operationLineage.operationId,
+                  )?.protocolVersion ?? 0,
+                generationId: args.operationLineage.generationId,
+                characterId: character.chaId as string,
+                chatId: args.chatId,
+                messageId: write.messageId,
+              })
+            : undefined
         return {
           event: args.operationLineage
             ? {
@@ -3374,6 +3450,7 @@ function persistServerGenerationResult(args: {
             characterFieldMutations: characterFieldResult.applied,
             ...(localLoreResult.applied ? { localLoreMutation: localLoreResult.applied } : {}),
             droppedScriptMutations,
+            ...(effectLedger ? { effectLedger } : {}),
           },
         }
       },
@@ -3385,6 +3462,7 @@ function persistServerGenerationResult(args: {
       ...(result.extra.localLoreMutation ? { localLoreMutation: result.extra.localLoreMutation } : {}),
       droppedScriptMutations: result.extra.droppedScriptMutations,
       bookkeepingErrors,
+      ...(result.extra.effectLedger ? { effectLedger: result.extra.effectLedger } : {}),
     }
     if (persistence.droppedScriptMutations.length > 0) {
       emitProtocolMetric('generation_script_mutation_conflict', {
@@ -3404,6 +3482,15 @@ function persistServerGenerationResult(args: {
         characterFieldMutations: [],
         droppedScriptMutations: [],
         bookkeepingErrors: [],
+        ...(args.operationLineage
+          ? {
+              effectLedger: generationEffectLedgerRef(
+                args.db,
+                args.operationLineage.databaseLineage,
+                args.operationLineage.generationId,
+              ),
+            }
+          : {}),
       }
     }
     throw err
@@ -3734,6 +3821,7 @@ export function retryQueuedGenerationFinalizations(args: {
         message: attempt.message,
         targetMessageId: attempt.targetMessageId,
         chatId: attempt.chatId,
+        generationId: attempt.generationId,
         completedAt: Date.now(),
         pushNotifications: args.pushNotifications,
         runMessageTranslation: args.runMessageTranslation,
@@ -3828,6 +3916,40 @@ export function retryQueuedGenerationFinalizations(args: {
     }
   }
   return { attempted: retries.length, persisted, terminal, retryable }
+}
+
+/** Resume server-owned translation effects that were pending at process loss. */
+export async function retryPendingGenerationCompletionEffects(args: {
+  db: DatabaseSync
+  dataDir: string
+  eventSink: CommandEventSink
+  messageTranslationJobs: MessageTranslationJobRegistry
+  runMessageTranslation?: ServerMessageTranslationRunner
+}): Promise<number> {
+  const pending = listPendingServerGenerationEffects(args.db)
+  let settled = 0
+  for (const effect of pending) {
+    const message = getChatMessages(args.db, effect.chatId).find(
+      (candidate) => candidate.chatId === effect.messageId,
+    ) as unknown as Message | undefined
+    if (!message || message.role !== 'char') continue
+    await handlePersistedGenerationCompletion({
+      db: args.db,
+      dataDir: args.dataDir,
+      eventSink: args.eventSink,
+      messageTranslationJobs: args.messageTranslationJobs,
+      message,
+      targetMessageId: effect.messageId,
+      chatId: effect.chatId,
+      characterId: effect.characterId,
+      completedAt: Date.now(),
+      pushNotifications: false,
+      runMessageTranslation: args.runMessageTranslation,
+      generationId: effect.generationId,
+    })
+    settled += 1
+  }
+  return settled
 }
 
 /**
@@ -4035,6 +4157,7 @@ async function buildDurablePostGeneration(args: {
       message,
       targetMessageId,
       chatId: args.input.chatId,
+      generationId: args.generationId,
       characterId: args.input.characterId,
       completedAt,
       emit: args.emit,
@@ -4048,6 +4171,7 @@ async function buildDurablePostGeneration(args: {
         messageId,
         translationFollowup.translation,
         persistence,
+        persistence.effectLedger,
       ),
       primary: message.data,
       alternates: alternateTexts,
@@ -4091,6 +4215,7 @@ async function buildDurablePostGeneration(args: {
     message,
     targetMessageId,
     chatId: args.input.chatId,
+    generationId: args.generationId,
     characterId: args.input.characterId,
     completedAt,
     emit: args.emit,
@@ -4104,6 +4229,7 @@ async function buildDurablePostGeneration(args: {
       messageId,
       translationFollowup.translation,
       persistence,
+      persistence.effectLedger,
     ),
     primary: message.data,
     alternates: alternateTexts,
@@ -4387,6 +4513,10 @@ async function runGenerationJob(args: {
                       acceptedMessageId: job.acceptedMessageId,
                       attemptNo: job.attemptNo,
                       jobId: job.id,
+                      effectLedgerKeyType: (job.operationProtocolVersion ?? 0) >= 1 ? 'operation' : 'generation',
+                      effectLedgerKeyId: (job.operationProtocolVersion ?? 0) >= 1 ? job.operationId : generationId,
+                      effectLedgerCharacterId: input.characterId,
+                      effectLedgerChatId: input.chatId,
                     }
                   : {}),
               }

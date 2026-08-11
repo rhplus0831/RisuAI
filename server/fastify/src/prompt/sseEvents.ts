@@ -5,6 +5,7 @@ import type { AgentPresetGenerationErrorBody } from './agentPresetExecution.js'
 import type { AgentPresetProgress } from './agentPresetExecution.js'
 import type { PostGenerationLuaProgressEvent } from './luaPostGenerationProgress.js'
 import type { RawMessageTranslation } from '../translation/rawMessageTranslation.js'
+import type { GenerationEffectLedgerRef } from '../generationEffects.js'
 
 /**
  * SSE event taxonomy for `POST /api/v1/generate/chat`.
@@ -204,6 +205,8 @@ export interface PostGenerationFrame {
   revision?: number
   /** Server-owned automatic raw-message translation outcome at frame release. */
   translation?: PostGenerationTranslationFrame
+  /** Exact durable effect identity; additive for clients that support effect receipts. */
+  effectLedger?: GenerationEffectLedgerRef
 }
 
 export interface DoneEvent {

@@ -1,0 +1,506 @@
+import { randomUUID } from 'node:crypto'
+import type { DatabaseSync } from 'node:sqlite'
+import { getDatabaseLineage } from './databaseLineage.js'
+
+export const GENERATION_EFFECT_LEDGER_VERSION = 1
+
+export const GENERATION_EFFECT_KINDS = [
+  'igp',
+  'plugin_output',
+  'generated_translation',
+  'notification',
+  'tts',
+  'completion_sound',
+  'emotion_image_state',
+] as const
+
+export type GenerationEffectKind = (typeof GENERATION_EFFECT_KINDS)[number]
+export type GenerationEffectClass = 'durable' | 'ephemeral' | 'recomputed'
+export type GenerationEffectKeyType = 'operation' | 'generation'
+export type GenerationEffectStatus = 'pending' | 'claimed' | 'completed' | 'skipped' | 'failed'
+export type GenerationEffectDelivery = 'server' | 'live_terminal' | 'late_recovery'
+
+const EFFECT_CLASS: Readonly<Record<GenerationEffectKind, GenerationEffectClass>> = {
+  igp: 'durable',
+  plugin_output: 'durable',
+  generated_translation: 'durable',
+  notification: 'ephemeral',
+  tts: 'ephemeral',
+  completion_sound: 'ephemeral',
+  emotion_image_state: 'recomputed',
+}
+
+const CLIENT_EFFECT_KINDS = new Set<GenerationEffectKind>([
+  'igp',
+  'plugin_output',
+  'notification',
+  'tts',
+  'completion_sound',
+  'emotion_image_state',
+])
+
+interface GenerationEffectRow {
+  database_lineage: string
+  key_type: GenerationEffectKeyType
+  key_id: string
+  effect_kind: GenerationEffectKind
+  effect_class: GenerationEffectClass
+  operation_id: string | null
+  generation_id: string
+  character_id: string
+  chat_id: string
+  message_id: string
+  status: GenerationEffectStatus
+  claim_id: string | null
+  delivery: GenerationEffectDelivery | null
+  reason: string | null
+  last_error: string | null
+  created_at: string
+  claimed_at: string | null
+  settled_at: string | null
+  updated_at: string
+}
+
+export interface GenerationEffectProjection {
+  ledgerVersion: 1
+  databaseLineage: string
+  keyType: GenerationEffectKeyType
+  keyId: string
+  kind: GenerationEffectKind
+  effectClass: GenerationEffectClass
+  operationId?: string
+  generationId: string
+  characterId: string
+  chatId: string
+  messageId: string
+  status: GenerationEffectStatus
+  claimId?: string
+  delivery?: GenerationEffectDelivery
+  reason?: string
+  lastError?: string
+  createdAt: string
+  claimedAt?: string
+  settledAt?: string
+  updatedAt: string
+}
+
+export interface GenerationEffectLedgerRef {
+  version: 1
+  databaseLineage: string
+  keyType: GenerationEffectKeyType
+  keyId: string
+  generationId: string
+  characterId: string
+  chatId: string
+  messageId: string
+}
+
+export interface EnsureGenerationEffectLedgerInput {
+  databaseLineage: string
+  operationId: string
+  operationProtocolVersion: number
+  generationId: string
+  characterId: string
+  chatId: string
+  messageId: string
+  createdAt?: string
+}
+
+export interface ClaimGenerationEffectInput {
+  databaseLineage: string
+  generationId: string
+  kind: GenerationEffectKind
+  delivery: GenerationEffectDelivery
+  messageId?: string
+  claimedAt?: string
+}
+
+export type ClaimGenerationEffectResult =
+  | { status: 'claimed'; effect: GenerationEffectProjection; claimId: string }
+  | { status: 'not_claimed'; effect?: GenerationEffectProjection; reason: string }
+
+export interface SettleGenerationEffectInput {
+  databaseLineage: string
+  generationId: string
+  kind: GenerationEffectKind
+  claimId: string
+  status: 'completed' | 'skipped' | 'failed'
+  reason?: string | null
+  lastError?: string | null
+  settledAt?: string
+}
+
+export function generationEffectClass(kind: GenerationEffectKind): GenerationEffectClass {
+  return EFFECT_CLASS[kind]
+}
+
+export function isGenerationEffectKind(value: unknown): value is GenerationEffectKind {
+  return typeof value === 'string' && (GENERATION_EFFECT_KINDS as readonly string[]).includes(value)
+}
+
+export function createGenerationEffectLedgerTable(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS generation_effects (
+      database_lineage TEXT NOT NULL,
+      key_type TEXT NOT NULL CHECK (key_type IN ('operation', 'generation')),
+      key_id TEXT NOT NULL,
+      effect_kind TEXT NOT NULL CHECK (effect_kind IN (
+        'igp', 'plugin_output', 'generated_translation',
+        'notification', 'tts', 'completion_sound', 'emotion_image_state'
+      )),
+      effect_class TEXT NOT NULL CHECK (effect_class IN ('durable', 'ephemeral', 'recomputed')),
+      operation_id TEXT,
+      generation_id TEXT NOT NULL,
+      character_id TEXT NOT NULL,
+      chat_id TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('pending', 'claimed', 'completed', 'skipped', 'failed')),
+      claim_id TEXT,
+      delivery TEXT CHECK (delivery IS NULL OR delivery IN ('server', 'live_terminal', 'late_recovery')),
+      reason TEXT,
+      last_error TEXT,
+      created_at TEXT NOT NULL,
+      claimed_at TEXT,
+      settled_at TEXT,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (database_lineage, key_type, key_id, effect_kind),
+      UNIQUE (database_lineage, generation_id, effect_kind),
+      CHECK (
+        (key_type = 'operation' AND operation_id = key_id)
+        OR key_type = 'generation'
+      ),
+      CHECK (
+        (status = 'pending' AND claim_id IS NULL AND delivery IS NULL AND claimed_at IS NULL)
+        OR (status <> 'pending' AND claim_id IS NOT NULL AND delivery IS NOT NULL AND claimed_at IS NOT NULL)
+      )
+    );
+
+    CREATE INDEX IF NOT EXISTS generation_effects_pending
+      ON generation_effects (database_lineage, status, updated_at);
+  `)
+}
+
+export function ensureGenerationEffectLedgerInTransaction(
+  db: DatabaseSync,
+  input: EnsureGenerationEffectLedgerInput,
+): GenerationEffectLedgerRef {
+  const keyType: GenerationEffectKeyType = input.operationProtocolVersion >= 1 ? 'operation' : 'generation'
+  const keyId = keyType === 'operation' ? input.operationId : input.generationId
+  const now = normalizeTimestamp(input.createdAt)
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO generation_effects (
+      database_lineage, key_type, key_id, effect_kind, effect_class,
+      operation_id, generation_id, character_id, chat_id, message_id,
+      status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+  `)
+  for (const kind of GENERATION_EFFECT_KINDS) {
+    insert.run(
+      input.databaseLineage,
+      keyType,
+      keyId,
+      kind,
+      EFFECT_CLASS[kind],
+      input.operationId,
+      input.generationId,
+      input.characterId,
+      input.chatId,
+      input.messageId,
+      now,
+      now,
+    )
+  }
+  return {
+    version: GENERATION_EFFECT_LEDGER_VERSION,
+    databaseLineage: input.databaseLineage,
+    keyType,
+    keyId,
+    generationId: input.generationId,
+    characterId: input.characterId,
+    chatId: input.chatId,
+    messageId: input.messageId,
+  }
+}
+
+export function ensureGenerationEffectLedger(
+  db: DatabaseSync,
+  input: EnsureGenerationEffectLedgerInput,
+): GenerationEffectLedgerRef {
+  return withImmediateTransaction(db, () => ensureGenerationEffectLedgerInTransaction(db, input))
+}
+
+export function generationEffectLedgerRef(
+  db: DatabaseSync,
+  databaseLineage: string,
+  generationId: string,
+): GenerationEffectLedgerRef | undefined {
+  const row = selectGenerationEffectRows(
+    db,
+    'WHERE database_lineage = ? AND generation_id = ? ORDER BY effect_kind LIMIT 1',
+    [databaseLineage, generationId],
+  )[0]
+  return row
+    ? {
+        version: GENERATION_EFFECT_LEDGER_VERSION,
+        databaseLineage: row.database_lineage,
+        keyType: row.key_type,
+        keyId: row.key_id,
+        generationId: row.generation_id,
+        characterId: row.character_id,
+        chatId: row.chat_id,
+        messageId: row.message_id,
+      }
+    : undefined
+}
+
+export function listGenerationEffects(
+  db: DatabaseSync,
+  generationId: string,
+  databaseLineage = getDatabaseLineage(db),
+): GenerationEffectProjection[] {
+  return selectGenerationEffectRows(db, 'WHERE database_lineage = ? AND generation_id = ? ORDER BY effect_kind', [
+    databaseLineage,
+    generationId,
+  ]).map(projectionFromRow)
+}
+
+/** Pending browser work projected only to the active writer during bootstrap. */
+export function listPendingClientGenerationEffects(
+  db: DatabaseSync,
+  databaseLineage = getDatabaseLineage(db),
+): GenerationEffectProjection[] {
+  const clientKinds = [...CLIENT_EFFECT_KINDS]
+  const placeholders = clientKinds.map(() => '?').join(', ')
+  return selectGenerationEffectRows(
+    db,
+    `WHERE database_lineage = ? AND status = 'pending' AND effect_kind IN (${placeholders})
+     ORDER BY created_at, generation_id, effect_kind`,
+    [databaseLineage, ...clientKinds],
+  ).map(projectionFromRow)
+}
+
+export function listPendingServerGenerationEffects(
+  db: DatabaseSync,
+  databaseLineage = getDatabaseLineage(db),
+): GenerationEffectProjection[] {
+  return selectGenerationEffectRows(
+    db,
+    "WHERE database_lineage = ? AND status = 'pending' AND effect_kind = 'generated_translation' ORDER BY created_at, generation_id",
+    [databaseLineage],
+  ).map(projectionFromRow)
+}
+
+export function claimGenerationEffect(
+  db: DatabaseSync,
+  input: ClaimGenerationEffectInput,
+): ClaimGenerationEffectResult {
+  return withImmediateTransaction(db, () => claimGenerationEffectInTransaction(db, input))
+}
+
+export function claimGenerationEffectInTransaction(
+  db: DatabaseSync,
+  input: ClaimGenerationEffectInput,
+): ClaimGenerationEffectResult {
+  const current = selectGenerationEffectRows(
+    db,
+    'WHERE database_lineage = ? AND generation_id = ? AND effect_kind = ?',
+    [input.databaseLineage, input.generationId, input.kind],
+  )[0]
+  if (!current) return { status: 'not_claimed', reason: 'effect_not_found' }
+  if (input.messageId !== undefined && current.message_id !== input.messageId) {
+    return { status: 'not_claimed', effect: projectionFromRow(current), reason: 'message_mismatch' }
+  }
+  if (input.delivery !== 'server' && !CLIENT_EFFECT_KINDS.has(input.kind)) {
+    return { status: 'not_claimed', effect: projectionFromRow(current), reason: 'server_owned' }
+  }
+  if (input.delivery === 'server' && input.kind !== 'generated_translation') {
+    return { status: 'not_claimed', effect: projectionFromRow(current), reason: 'client_owned' }
+  }
+  if (current.status !== 'pending') {
+    return { status: 'not_claimed', effect: projectionFromRow(current), reason: 'already_receipted' }
+  }
+
+  const now = normalizeTimestamp(input.claimedAt)
+  const claimId = randomUUID()
+  if (input.delivery === 'late_recovery' && current.effect_class === 'ephemeral') {
+    db.prepare(
+      `UPDATE generation_effects
+       SET status = 'skipped', claim_id = ?, delivery = ?, reason = 'late_recovery',
+           claimed_at = ?, settled_at = ?, updated_at = ?
+       WHERE database_lineage = ? AND generation_id = ? AND effect_kind = ? AND status = 'pending'`,
+    ).run(claimId, input.delivery, now, now, now, input.databaseLineage, input.generationId, input.kind)
+    const skipped = requireGenerationEffectRow(db, input.databaseLineage, input.generationId, input.kind)
+    return { status: 'not_claimed', effect: projectionFromRow(skipped), reason: 'late_recovery_skipped' }
+  }
+
+  const result = db
+    .prepare(
+      `UPDATE generation_effects
+       SET status = 'claimed', claim_id = ?, delivery = ?, claimed_at = ?, updated_at = ?
+       WHERE database_lineage = ? AND generation_id = ? AND effect_kind = ? AND status = 'pending'`,
+    )
+    .run(claimId, input.delivery, now, now, input.databaseLineage, input.generationId, input.kind)
+  if (result.changes !== 1) {
+    const raced = requireGenerationEffectRow(db, input.databaseLineage, input.generationId, input.kind)
+    return { status: 'not_claimed', effect: projectionFromRow(raced), reason: 'already_receipted' }
+  }
+  return {
+    status: 'claimed',
+    claimId,
+    effect: projectionFromRow(requireGenerationEffectRow(db, input.databaseLineage, input.generationId, input.kind)),
+  }
+}
+
+export function settleGenerationEffect(
+  db: DatabaseSync,
+  input: SettleGenerationEffectInput,
+): GenerationEffectProjection | undefined {
+  const now = normalizeTimestamp(input.settledAt)
+  const result = db
+    .prepare(
+      `UPDATE generation_effects
+       SET status = ?, reason = ?, last_error = ?, settled_at = ?, updated_at = ?
+       WHERE database_lineage = ? AND generation_id = ? AND effect_kind = ?
+         AND status = 'claimed' AND claim_id = ?`,
+    )
+    .run(
+      input.status,
+      input.reason ?? null,
+      input.lastError ?? null,
+      now,
+      now,
+      input.databaseLineage,
+      input.generationId,
+      input.kind,
+      input.claimId,
+    )
+  if (result.changes !== 1) return undefined
+  return projectionFromRow(requireGenerationEffectRow(db, input.databaseLineage, input.generationId, input.kind))
+}
+
+/**
+ * Schema upgrades can find completed v29/v30 operations whose result predates
+ * the effect table. Backfill their exact lineage without inventing effects for
+ * cancelled or failed terminals.
+ */
+export function reconcileGenerationEffectsAtStartup(db: DatabaseSync): number {
+  const databaseLineage = getDatabaseLineage(db)
+  const rows = db
+    .prepare(
+      `SELECT o.operation_id AS operationId, o.protocol_version AS protocolVersion,
+              o.character_id AS characterId, o.chat_id AS chatId,
+              o.result_message_id AS messageId,
+              COALESCE(a.finalization_generation_id, a.job_id) AS generationId
+       FROM generation_operations AS o
+       LEFT JOIN generation_operation_attempts AS a
+         ON a.database_lineage = o.database_lineage
+        AND a.operation_id = o.operation_id
+        AND a.attempt_no = o.current_attempt_no
+       WHERE o.database_lineage = ? AND o.state = 'completed'
+         AND o.character_id IS NOT NULL AND o.chat_id IS NOT NULL
+         AND o.result_message_id IS NOT NULL
+         AND COALESCE(a.finalization_generation_id, a.job_id) IS NOT NULL`,
+    )
+    .all(databaseLineage) as Array<{
+    operationId: string
+    protocolVersion: number
+    characterId: string
+    chatId: string
+    messageId: string
+    generationId: string
+  }>
+  let inserted = 0
+  withImmediateTransaction(db, () => {
+    for (const row of rows) {
+      const before = db
+        .prepare('SELECT COUNT(*) AS count FROM generation_effects WHERE database_lineage = ? AND generation_id = ?')
+        .get(databaseLineage, row.generationId) as { count: number }
+      ensureGenerationEffectLedgerInTransaction(db, {
+        databaseLineage,
+        operationId: row.operationId,
+        operationProtocolVersion: row.protocolVersion,
+        generationId: row.generationId,
+        characterId: row.characterId,
+        chatId: row.chatId,
+        messageId: row.messageId,
+      })
+      if (before.count === 0) {
+        const now = new Date().toISOString()
+        db.prepare(
+          `UPDATE generation_effects
+           SET status = 'skipped', claim_id = ?, delivery = 'server',
+               reason = 'pre_ledger_terminal', claimed_at = ?, settled_at = ?, updated_at = ?
+           WHERE database_lineage = ? AND generation_id = ? AND status = 'pending'`,
+        ).run(randomUUID(), now, now, now, databaseLineage, row.generationId)
+        inserted += GENERATION_EFFECT_KINDS.length
+      }
+    }
+  })
+  return inserted
+}
+
+function selectGenerationEffectRows(
+  db: DatabaseSync,
+  whereSql: string,
+  params: Array<string | number | null>,
+): GenerationEffectRow[] {
+  return db.prepare(`SELECT * FROM generation_effects ${whereSql}`).all(...params) as unknown as GenerationEffectRow[]
+}
+
+function requireGenerationEffectRow(
+  db: DatabaseSync,
+  databaseLineage: string,
+  generationId: string,
+  kind: GenerationEffectKind,
+): GenerationEffectRow {
+  const row = selectGenerationEffectRows(db, 'WHERE database_lineage = ? AND generation_id = ? AND effect_kind = ?', [
+    databaseLineage,
+    generationId,
+    kind,
+  ])[0]
+  if (!row) throw new Error('generation effect row is missing')
+  return row
+}
+
+function projectionFromRow(row: GenerationEffectRow): GenerationEffectProjection {
+  return {
+    ledgerVersion: GENERATION_EFFECT_LEDGER_VERSION,
+    databaseLineage: row.database_lineage,
+    keyType: row.key_type,
+    keyId: row.key_id,
+    kind: row.effect_kind,
+    effectClass: row.effect_class,
+    ...(row.operation_id !== null ? { operationId: row.operation_id } : {}),
+    generationId: row.generation_id,
+    characterId: row.character_id,
+    chatId: row.chat_id,
+    messageId: row.message_id,
+    status: row.status,
+    ...(row.claim_id !== null ? { claimId: row.claim_id } : {}),
+    ...(row.delivery !== null ? { delivery: row.delivery } : {}),
+    ...(row.reason !== null ? { reason: row.reason } : {}),
+    ...(row.last_error !== null ? { lastError: row.last_error } : {}),
+    createdAt: row.created_at,
+    ...(row.claimed_at !== null ? { claimedAt: row.claimed_at } : {}),
+    ...(row.settled_at !== null ? { settledAt: row.settled_at } : {}),
+    updatedAt: row.updated_at,
+  }
+}
+
+function normalizeTimestamp(value?: string): string {
+  if (value !== undefined && !Number.isNaN(Date.parse(value))) return new Date(value).toISOString()
+  return new Date().toISOString()
+}
+
+function withImmediateTransaction<T>(db: DatabaseSync, fn: () => T): T {
+  db.exec('BEGIN IMMEDIATE')
+  let committed = false
+  try {
+    const result = fn()
+    db.exec('COMMIT')
+    committed = true
+    return result
+  } finally {
+    if (!committed) db.exec('ROLLBACK')
+  }
+}

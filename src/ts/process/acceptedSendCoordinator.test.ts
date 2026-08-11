@@ -8,6 +8,7 @@ const coordinatorMocks = vi.hoisted(() => ({
   controller: new AbortController(),
   createController: vi.fn(),
   reconcileAcceptedSendCompletion: vi.fn(),
+  reconcileAcceptedSendGenerationEffects: vi.fn(),
   refreshActiveGenerationJobsFromBootstrap: vi.fn(),
   readGenerationOperationStatus: vi.fn(),
   retryGenerationOperation: vi.fn(),
@@ -65,6 +66,10 @@ vi.mock('../server/chatMessageHydration.svelte', () => ({
   reconcileAcceptedSendCompletion: coordinatorMocks.reconcileAcceptedSendCompletion,
 }))
 
+vi.mock('./recoveredGenerationEffects', () => ({
+  reconcileAcceptedSendGenerationEffects: coordinatorMocks.reconcileAcceptedSendGenerationEffects,
+}))
+
 import {
   ACCEPTED_SEND_AUTHORITY_PROBE_TIMEOUT_MS,
   acceptedSendRecoveries,
@@ -101,6 +106,7 @@ beforeEach(() => {
     status: 'not_reconciled',
     reason: 'authority_unavailable',
   })
+  coordinatorMocks.reconcileAcceptedSendGenerationEffects.mockResolvedValue({ durableEffectsReconciled: true })
   coordinatorMocks.refreshActiveGenerationJobsFromBootstrap.mockResolvedValue(undefined)
   coordinatorMocks.sleep.mockResolvedValue(undefined)
   resetAcceptedSendCoordinatorForTests()
@@ -280,6 +286,7 @@ describe('accepted send coordinator', () => {
     expect(coordinatorMocks.reconcileAcceptedSendCompletion).toHaveBeenCalledWith(target(), 'message-a', {
       signal: expect.any(AbortSignal),
     })
+    expect(coordinatorMocks.reconcileAcceptedSendGenerationEffects).toHaveBeenCalledWith(target(), 'message-a')
     expect(get(acceptedSendRecoveries)).toEqual([])
   })
 

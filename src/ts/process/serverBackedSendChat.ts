@@ -32,13 +32,19 @@ import { hydrateChatMessages } from '../server/chatMessageHydration.svelte'
 import type { StreamMessageProjection } from './postGeneration/streamResponse'
 import type { IgpMessageTarget } from './postGeneration/igp'
 import { clearGenerationPersistence, markGenerationPersistenceQueued } from './generationPersistenceState'
-import { runChatOutputListeners } from '../plugins/chatOutputListeners'
+import { chatOutputListeners, runChatOutputListeners } from '../plugins/chatOutputListeners'
 import { alertConfirm } from '../alert'
 import { language } from '../../lang'
 import { currentChatStateSnapshot, dispatchUpdateChatWithOutcome } from '../chatCommands'
 import { HYPA_CONTEXT_TRUNCATION_CONFIRMATION_REQUIRED } from './request/hypaContextTruncation'
 import { sendChatFailureFromServerCode, type SendChatFailure } from './sendChatFailure'
 import type { GenerationReattachOutcomeStatus } from './generationReattachOutcome'
+import {
+  completedGenerationEffect,
+  runLedgeredGenerationEffect,
+  skippedGenerationEffect,
+} from './generationEffectLedger'
+import type { ServerGenerationEffectLedgerRef } from './request/serverChatEvents'
 
 export interface ServerBackedStageTimings {
   stage1Start: number
@@ -102,7 +108,13 @@ export type ServerBackedAssemblyResult =
     }
 
 export type ServerBackedTerminalResult =
-  | { status: 'ok'; currentChat: Chat; resendChat: boolean; igpTarget?: IgpMessageTarget }
+  | {
+      status: 'ok'
+      currentChat: Chat
+      resendChat: boolean
+      igpTarget?: IgpMessageTarget
+      effectLedger?: ServerGenerationEffectLedgerRef
+    }
   | {
       status: 'cancelled'
       currentChat: Chat
@@ -810,6 +822,7 @@ export async function applyServerBackedTerminal(args: {
   // post-gen patch, renders the inlay screen over the server-owned final text, and
   // reports any resend request back to the coordinator.
   const postGen = args.terminal.done?.postGeneration
+  const effectLedger = postGen?.effectLedger
   const resendChat = !!postGen?.resendChat
   const generationId = args.generationInfo.generationId ?? ''
   const terminalTarget = targetFromPayloadOrContext(postGen?.messagePatch, contextTarget)
@@ -872,17 +885,21 @@ export async function applyServerBackedTerminal(args: {
   // The terminal patch is already durable on the server. Mirror it before
   // waiting on best-effort client TTS so a newer message edit cannot be
   // overwritten when slow synthesis eventually settles.
-  for (let index = 0; index < pendingTtsTexts.length; index++) {
-    const text = pendingTtsTexts[index]
-    // The server payload is post-editoutput; inlay remains browser-owned. Reuse
-    // the primary display pass when possible, then process each alternate in
-    // provider choice order before speaking it (baseline buffered semantics).
-    const processedText =
-      index === 0 && processedPrimaryTtsText !== undefined
-        ? processedPrimaryTtsText
-        : runInlayScreen(args.currentChar, text).text
-    await sayTTS(args.currentChar, processedText)
-  }
+  await runLedgeredGenerationEffect(effectLedger, 'tts', 'live_terminal', async () => {
+    if (pendingTtsTexts.length === 0) return skippedGenerationEffect('not_requested')
+    for (let index = 0; index < pendingTtsTexts.length; index++) {
+      const text = pendingTtsTexts[index]
+      // The server payload is post-editoutput; inlay remains browser-owned. Reuse
+      // the primary display pass when possible, then process each alternate in
+      // provider choice order before speaking it (baseline buffered semantics).
+      const processedText =
+        index === 0 && processedPrimaryTtsText !== undefined
+          ? processedPrimaryTtsText
+          : runInlayScreen(args.currentChar, text).text
+      await sayTTS(args.currentChar, processedText)
+    }
+    return completedGenerationEffect(undefined)
+  })
 
   const settleInlayProjection = (finalization: InlayFinalizationState, finalData: string, persisted: boolean): void => {
     withTrustedResourceWrite(() => {
@@ -1005,7 +1022,8 @@ export async function applyServerBackedTerminal(args: {
       ? finalChat.message.find((message) => message.chatId === args.targetMessageId && message.role === 'char')
       : undefined)
 
-  if (finalResolution) {
+  await runLedgeredGenerationEffect(effectLedger, 'plugin_output', 'live_terminal', async () => {
+    if (!finalResolution || chatOutputListeners.size === 0) return skippedGenerationEffect('not_configured')
     const characters = getDatabase().characters
     await runChatOutputListeners({
       char: finalResolution.character,
@@ -1014,7 +1032,8 @@ export async function applyServerBackedTerminal(args: {
       chatIndex: finalResolution.character.chats.indexOf(finalChat),
       messageIndex: finalAssistant ? finalChat.message.indexOf(finalAssistant) : -1,
     })
-  }
+    return completedGenerationEffect(undefined)
+  })
 
   if (postGen?.agentPresetError) {
     return {
@@ -1054,5 +1073,6 @@ export async function applyServerBackedTerminal(args: {
     currentChat: finalChat,
     resendChat,
     ...(igpTarget ? { igpTarget } : {}),
+    ...(effectLedger ? { effectLedger } : {}),
   }
 }

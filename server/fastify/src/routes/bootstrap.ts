@@ -17,6 +17,7 @@ import {
   listGenerationOperationProjections,
 } from '../generationOperations.js'
 import { listGenerationFinalizationRetryProjections } from '../generationFinalizationRetry.js'
+import { listPendingClientGenerationEffects } from '../generationEffects.js'
 
 export const ASSET_BASE_URL = '/api/v1/assets'
 export const WRITER_OBSERVER_SESSION_HEADER = 'risu-writer-observer-session'
@@ -75,6 +76,7 @@ export function registerBootstrapRoutes(
       // SQLite-backed finalization work is projected only to the active writer.
       // Unlike process-local jobs, these rows survive browser and server restarts.
       ...(ownsWriterScope ? { generationFinalizations: listGenerationFinalizationRetryProjections(db) } : {}),
+      ...(ownsWriterScope ? { pendingGenerationEffects: listPendingClientGenerationEffects(db) } : {}),
       // Detached message translations and their short-lived terminal outcomes.
       // This lets a returning browser preserve busy controls, report failures,
       // and rehydrate successful translations after reload.
@@ -91,6 +93,8 @@ export function registerBootstrapRoutes(
         generationOperationProjectionEpoch,
         generationFinalizationCount:
           'generationFinalizations' in response ? (response.generationFinalizations?.length ?? 0) : 0,
+        pendingGenerationEffectCount:
+          'pendingGenerationEffects' in response ? (response.pendingGenerationEffects?.length ?? 0) : 0,
         activeMessageTranslationCount: response.activeMessageTranslations.length,
         activeGreetingTranslationCount: response.activeGreetingTranslations.length,
       }),

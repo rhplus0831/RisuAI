@@ -121,6 +121,32 @@ export interface GenerationOperationProjection {
   recoveryDisposition?: 'retryable'
 }
 
+export type GenerationEffectKind =
+  | 'igp'
+  | 'plugin_output'
+  | 'generated_translation'
+  | 'notification'
+  | 'tts'
+  | 'completion_sound'
+  | 'emotion_image_state'
+
+export interface PendingGenerationEffect {
+  ledgerVersion: 1
+  databaseLineage: string
+  keyType: 'operation' | 'generation'
+  keyId: string
+  kind: GenerationEffectKind
+  effectClass: 'durable' | 'ephemeral' | 'recomputed'
+  operationId?: string
+  generationId: string
+  characterId: string
+  chatId: string
+  messageId: string
+  status: 'pending'
+  createdAt: string
+  updatedAt: string
+}
+
 export type GenerationFinalizationState =
   | 'queued'
   | 'stalled'
@@ -183,6 +209,8 @@ export interface ServerBootstrapRuntime {
   activeGenerationJobs?: ActiveGenerationJob[]
   /** Active-writer-scoped SQLite finalization work, including retained terminal rows. */
   generationFinalizations?: GenerationFinalizationProjection[]
+  /** Active-writer-only terminal effects not yet dispatched or permanently skipped. */
+  pendingGenerationEffects?: PendingGenerationEffect[]
   /**
    * Message translations still running server-side after a detached request.
    * Used to keep row-level translation spinners and mutation controls stable
@@ -294,6 +322,9 @@ async function fetchServerBootstrapWithMode(input: {
     ...(Array.isArray(record.generationFinalizations)
       ? { generationFinalizations: parseGenerationFinalizations(record.generationFinalizations) }
       : {}),
+    ...(Array.isArray(record.pendingGenerationEffects)
+      ? { pendingGenerationEffects: parsePendingGenerationEffects(record.pendingGenerationEffects) }
+      : {}),
     activeMessageTranslations: parseActiveMessageTranslations(record.activeMessageTranslations),
     activeGreetingTranslations: parseActiveGreetingTranslations(record.activeGreetingTranslations),
   }
@@ -301,6 +332,57 @@ async function fetchServerBootstrapWithMode(input: {
     status: 'ok',
     bootstrap,
   }
+}
+
+function parsePendingGenerationEffects(value: unknown): PendingGenerationEffect[] {
+  if (!Array.isArray(value)) return []
+  const effects: PendingGenerationEffect[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+    const record = entry as Record<string, unknown>
+    const kind = record.kind
+    const effectClass = record.effectClass
+    if (
+      record.ledgerVersion !== 1 ||
+      typeof record.databaseLineage !== 'string' ||
+      (record.keyType !== 'operation' && record.keyType !== 'generation') ||
+      typeof record.keyId !== 'string' ||
+      (kind !== 'igp' &&
+        kind !== 'plugin_output' &&
+        kind !== 'generated_translation' &&
+        kind !== 'notification' &&
+        kind !== 'tts' &&
+        kind !== 'completion_sound' &&
+        kind !== 'emotion_image_state') ||
+      (effectClass !== 'durable' && effectClass !== 'ephemeral' && effectClass !== 'recomputed') ||
+      typeof record.generationId !== 'string' ||
+      typeof record.characterId !== 'string' ||
+      typeof record.chatId !== 'string' ||
+      typeof record.messageId !== 'string' ||
+      record.status !== 'pending' ||
+      typeof record.createdAt !== 'string' ||
+      typeof record.updatedAt !== 'string'
+    ) {
+      continue
+    }
+    effects.push({
+      ledgerVersion: 1,
+      databaseLineage: record.databaseLineage,
+      keyType: record.keyType,
+      keyId: record.keyId,
+      kind,
+      effectClass,
+      ...(typeof record.operationId === 'string' ? { operationId: record.operationId } : {}),
+      generationId: record.generationId,
+      characterId: record.characterId,
+      chatId: record.chatId,
+      messageId: record.messageId,
+      status: 'pending',
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+    })
+  }
+  return effects
 }
 
 function parseGenerationOperationProtocol(value: unknown): { version: number } | undefined {

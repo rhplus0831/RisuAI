@@ -28,10 +28,12 @@ import { registerEmbeddingOperationRoutes, type EmbeddingOperationRouteOptions }
 import { registerGenerationRoutes } from './routes/generation.js'
 import {
   registerGenerationChatRoutes,
+  retryPendingGenerationCompletionEffects,
   retryQueuedGenerationFinalizations,
   type GenerationChatRouteOptions,
 } from './routes/generationChat.js'
 import { registerGenerationOperationRoutes } from './routes/generationOperations.js'
+import { registerGenerationEffectRoutes } from './routes/generationEffects.js'
 import { bootPromptVariables } from './prompt/promptVariablesBoot.js'
 import { registerHealthRoutes } from './routes/health.js'
 import { registerHubRoutes } from './routes/hub.js'
@@ -76,6 +78,7 @@ import {
   reconcileGenerationOperationsAtStartup,
   transitionGenerationOperation,
 } from './generationOperations.js'
+import { reconcileGenerationEffectsAtStartup } from './generationEffects.js'
 
 /**
  * Node `server.requestTimeout` backstop the wall-clock bound for
@@ -197,6 +200,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   // workers can load them into a response, command baseline, or export.
   repairPersistedModelProfileInlineSecretsInSqlite(db)
   reconcileGenerationOperationsAtStartup(db, serverInstanceId, app.log)
+  reconcileGenerationEffectsAtStartup(db)
   const memoryEventBus = createMemoryEventBus(app.log)
   if (opts.memoryEvents) memoryEventBus.subscribe(opts.memoryEvents)
   const emitMemoryEvent: MemoryEventSink = (event) => memoryEventBus.emit(event)
@@ -409,8 +413,18 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     },
     generationTrace: config.generationTrace,
   })
+  registerGenerationEffectRoutes(app, db, authState)
   const finalizationRetryRaw = opts.generationChat?.finalizationRetry
   const finalizationRetryOptions = finalizationRetryRaw === false ? false : (finalizationRetryRaw ?? {})
+  const runGenerationCompletionEffectRetrySweep = (): void => {
+    void retryPendingGenerationCompletionEffects({
+      db,
+      dataDir: config.dataDir,
+      eventSink: commandEventSink,
+      messageTranslationJobs: messageTranslationJobRegistry,
+      runMessageTranslation: opts.generationChat?.runMessageTranslation,
+    }).catch((err) => app.log.error({ err }, 'generation completion effect retry sweep failed'))
+  }
   const runGenerationFinalizationRetrySweep = (): void => {
     try {
       retryQueuedGenerationFinalizations({
@@ -428,9 +442,14 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     } catch (err) {
       app.log.error({ err }, 'generation finalization retry sweep failed')
     }
+    runGenerationCompletionEffectRetrySweep()
   }
   if (finalizationRetryOptions !== false) {
     runGenerationFinalizationRetrySweep()
+  } else {
+    // Server-owned translation receipts survive independently of the
+    // finalization queue and must reconcile even when that retry loop is off.
+    runGenerationCompletionEffectRetrySweep()
   }
   generationFinalizationRetryTimer =
     finalizationRetryOptions === false

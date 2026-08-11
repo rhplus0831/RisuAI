@@ -1114,6 +1114,51 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'generation-effect-status',
+    methods: GET_ONLY,
+    path: '/api/v1/generation-effects/:generationId',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Effect receipts expose private generation automation state.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only exact generation effect probe.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'generation-effect-claim',
+    methods: ['POST'],
+    path: '/api/v1/generation-effects/:generationId/:effectKind/claims',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Claiming grants the exact browser generation effect delivery authority.',
+    },
+    activeWriter: {
+      decision: 'active-writer',
+      reason: 'Only the active writer may claim durable or observable generation effects.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'generation-effect-receipt',
+    methods: ['PUT'],
+    path: '/api/v1/generation-effects/:generationId/:effectKind/receipt',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Effect completion receipts are private durable operation metadata.',
+    },
+    activeWriter: {
+      decision: 'active-writer',
+      reason: 'Only the active writer may settle its generation effect claim.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'generation-chat',
     methods: ['POST'],
     path: '/api/v1/generate/chat',

@@ -34,6 +34,7 @@ import {
   type AcceptedSendRecoveryCause,
 } from './acceptedSendRecoveryState'
 import { refreshActiveGenerationJobsFromBootstrap } from './reattach'
+import { reconcileAcceptedSendGenerationEffects } from './recoveredGenerationEffects'
 
 export {
   acceptedSendRecoveries,
@@ -221,7 +222,13 @@ async function acceptedGenerationReachedServer(
       controller.signal,
     )
     if (completion.status === 'aborted' || controller.signal.aborted) return 'authority_unknown'
-    return completion.value.status === 'reconciled' ? 'reconciled' : 'not_reconciled'
+    if (completion.value.status !== 'reconciled') return 'not_reconciled'
+    const effects = await settleBeforeAbort(
+      reconcileAcceptedSendGenerationEffects(request.target, request.messageId),
+      controller.signal,
+    )
+    if (effects.status === 'aborted' || controller.signal.aborted) return 'authority_unknown'
+    return effects.value.durableEffectsReconciled ? 'reconciled' : 'not_reconciled'
   } catch {
     return controller.signal.aborted ? 'authority_unknown' : 'not_reconciled'
   } finally {

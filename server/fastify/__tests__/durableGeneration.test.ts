@@ -3106,12 +3106,33 @@ describe('Durable generation (Milestone 1)', () => {
 
     const controller = newController()
     const res = await postDurable({}, { signal: controller.signal })
-    await readSse(res, (ev) => ev.type === 'token')
+    const events = await readSse(res, (ev) => ev.type === 'token')
+    const jobId = jobIdFromEvents(events)
     controller.abort() // disconnect only — no DELETE
 
     gated.release()
     const message = await waitForAssistantMessage()
     expect(message.data).toBe('Hello')
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(
+        db
+          .prepare(
+            `SELECT key_type AS keyType, key_id AS keyId, COUNT(*) AS count
+             FROM generation_effects WHERE generation_id = ? GROUP BY key_type, key_id`,
+          )
+          .get(jobId),
+      ).toEqual({ keyType: 'generation', keyId: jobId, count: 7 })
+      expect(
+        db
+          .prepare(
+            "SELECT status FROM generation_effects WHERE generation_id = ? AND effect_kind = 'generated_translation'",
+          )
+          .get(jobId),
+      ).toEqual({ status: 'skipped' })
+    } finally {
+      db.close()
+    }
   })
 
   it('returns 404 reattaching/cancelling an unknown job', async () => {

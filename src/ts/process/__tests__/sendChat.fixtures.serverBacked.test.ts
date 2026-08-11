@@ -1042,6 +1042,24 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
 
   const serverChatFixtureFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+    const messageUpdate = url.match(/\/api\/v1\/commands\/messages\/([^/]+)$/)
+    if (messageUpdate && (init?.method ?? 'GET') === 'PATCH') {
+      const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as { baseRevision?: unknown }) : undefined
+      const baseRevision = typeof body?.baseRevision === 'number' ? body.baseRevision : contextCommandRevision
+      contextCommandRevision = Math.max(contextCommandRevision, baseRevision) + 1
+      return new Response(
+        JSON.stringify({
+          revision: contextCommandRevision,
+          event: {
+            type: 'message.updated',
+            revision: contextCommandRevision,
+            resource: 'message',
+            id: decodeURIComponent(messageUpdate[1]),
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }
     if (
       (/\/api\/v1\/commands\/characters\/[^/]+$/.test(url) && (init?.method ?? 'GET') === 'PATCH') ||
       (/\/api\/v1\/commands\/chats\/[^/]+\/messages\/tail$/.test(url) && (init?.method ?? 'GET') === 'POST')

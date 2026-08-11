@@ -8,6 +8,12 @@ import { fireDesktopNotification, type DesktopNotificationInput } from './notifi
 import { finalizeStage4, type StageTimings } from './stage4Finalize'
 import type { DispatchSuccessReq } from '../dispatch/dispatchRequest'
 import type { StablePostGenerationMessageTarget } from './stableTarget'
+import type { ServerGenerationEffectLedgerRef } from '../request/serverChatEvents'
+import {
+  completedGenerationEffect,
+  runLedgeredGenerationEffect,
+  skippedGenerationEffect,
+} from '../generationEffectLedger'
 
 export type RunStage4Result = { status: 'resend' } | { status: 'done' }
 
@@ -25,6 +31,8 @@ export interface RunStage4Args {
   generationInfo: MessageGenerationInfo
   throwError: (msg: string) => void
   setProcessStage: (n: number) => void
+  effectLedger?: ServerGenerationEffectLedgerRef
+  effectDelivery?: 'live_terminal' | 'late_recovery'
 }
 
 /**
@@ -65,46 +73,76 @@ export async function runStage4(args: RunStage4Args): Promise<RunStage4Result> {
   stageTimings.stage4Start = Date.now()
 
   if (resendChat) {
+    await Promise.all([
+      runLedgeredGenerationEffect(args.effectLedger, 'notification', args.effectDelivery ?? 'live_terminal', () =>
+        skippedGenerationEffect('resend'),
+      ),
+      runLedgeredGenerationEffect(
+        args.effectLedger,
+        'emotion_image_state',
+        args.effectDelivery ?? 'live_terminal',
+        () => skippedGenerationEffect('resend', false),
+      ),
+    ])
     finalizeStage4({ stageTimings, generationInfo, target })
     return { status: 'resend' }
   }
 
-  if (getDatabase().notification) {
-    await fireDesktopNotification(chatCompletionNotificationInput(currentChar, result))
-  }
+  await runLedgeredGenerationEffect(
+    args.effectLedger,
+    'notification',
+    args.effectDelivery ?? 'live_terminal',
+    async () => {
+      if (!getDatabase().notification) return skippedGenerationEffect('not_configured')
+      await fireDesktopNotification(chatCompletionNotificationInput(currentChar, result))
+      return completedGenerationEffect(undefined)
+    },
+  )
 
-  if (req.special && applyEmotionFromResponse({ emotion: req.special.emotion, currentChar })) {
-    emoChanged = true
-  }
+  const stateEffect = await runLedgeredGenerationEffect(
+    args.effectLedger,
+    'emotion_image_state',
+    args.effectDelivery ?? 'live_terminal',
+    async () => {
+      if (req.special && applyEmotionFromResponse({ emotion: req.special.emotion, currentChar })) {
+        emoChanged = true
+      }
 
-  if (!currentChar.inlayViewScreen) {
-    if (currentChar.viewScreen === 'emotion' && !emoChanged && abortSignal.aborted === false) {
-      const { tempEmotion, charemotions } = loadAndTrimCharEmotion(currentChar.chaId)
+      if (currentChar.inlayViewScreen || abortSignal.aborted) {
+        return skippedGenerationEffect('current_state_not_applicable', false)
+      }
+      if (currentChar.viewScreen === 'emotion' && !emoChanged) {
+        const { tempEmotion, charemotions } = loadAndTrimCharEmotion(currentChar.chaId)
 
-      if (getDatabase().emotionProcesser === 'embedding') {
-        await runEmotionEmbeddingFallback({
+        if (getDatabase().emotionProcesser === 'embedding') {
+          await runEmotionEmbeddingFallback({
+            result,
+            currentChar,
+            tempEmotion,
+            charemotions,
+          })
+          return completedGenerationEffect(true)
+        }
+
+        await runEmotionLlmFallback({
           result,
           currentChar,
+          abortSignal,
+          throwError,
+          emotionPrompt2: getDatabase().emotionPrompt2,
           tempEmotion,
           charemotions,
         })
-        return { status: 'done' }
+        return completedGenerationEffect(true)
       }
-
-      await runEmotionLlmFallback({
-        result,
-        currentChar,
-        abortSignal,
-        throwError,
-        emotionPrompt2: getDatabase().emotionPrompt2,
-        tempEmotion,
-        charemotions,
-      })
-      return { status: 'done' }
-    } else if (currentChar.viewScreen === 'imggen' && abortSignal.aborted === false) {
-      await runImggenStableDiff({ currentChar, target, abortSignal })
-    }
-  }
+      if (currentChar.viewScreen === 'imggen') {
+        await runImggenStableDiff({ currentChar, target, abortSignal })
+        return completedGenerationEffect(false)
+      }
+      return skippedGenerationEffect('current_state_not_applicable', false)
+    },
+  )
+  if (stateEffect.value === true) return { status: 'done' }
 
   finalizeStage4({ stageTimings, generationInfo, target })
   return { status: 'done' }

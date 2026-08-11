@@ -12,6 +12,7 @@ import { createDatabaseMetadataTable } from './databaseLineage.js'
 import { createGreetingTranslationTable } from './translation/greetingTranslationStore.js'
 import { createRequestHistoryTable } from './requestHistory.js'
 import { createGenerationOperationTables } from './generationOperations.js'
+import { createGenerationEffectLedgerTable } from './generationEffects.js'
 import {
   createAssetMetadataTable,
   createInlayCatalogTable,
@@ -21,7 +22,7 @@ import {
   repairPersistedGlobalLorebookIdsInSqlite,
 } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 30
+export const CURRENT_SCHEMA_VERSION = 31
 
 export interface OpenDatabaseOptions {
   allowMissingDatabase?: boolean
@@ -363,6 +364,13 @@ export const MIGRATIONS: readonly MigrationStep[] = [
       `)
     },
   },
+  {
+    version: 31,
+    name: 'generation-effect-ledger',
+    up: (db) => {
+      createGenerationEffectLedgerTable(db)
+    },
+  },
 ]
 
 /** Whether `table` already has a column named `column` (PRAGMA table_info). */
@@ -432,6 +440,7 @@ export function openDatabase(dataDir: string, options: OpenDatabaseOptions = {})
       createCommandMutationReceiptTable(db)
       createGenerationFinalizationRetryTable(db)
       createGenerationOperationTables(db)
+      createGenerationEffectLedgerTable(db)
       createAssetMetadataTable(db)
       createInlayCatalogTable(db)
       createCharacterTables(db)

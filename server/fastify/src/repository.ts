@@ -2408,6 +2408,7 @@ export async function applyImport(
     // Portable imports never own the live accepted-send ledger. Remove the
     // replaced database lifetime's operations before rotating lineage; any
     // historical assistant metadata remains ordinary transcript metadata.
+    db.exec('DELETE FROM generation_effects')
     db.exec('DELETE FROM generation_operation_attempts')
     db.exec('DELETE FROM generation_operations')
     bumpGenerationOperationProjectionEpoch(db)
@@ -2766,6 +2767,7 @@ export const SQLITE_BACKUP_TABLES = [
   'generation_operation_projection_state',
   'generation_operations',
   'generation_operation_attempts',
+  'generation_effects',
   'memory_chunks',
   'memory_summaries',
   'memory_legacy_summary_tombstones',
@@ -3457,6 +3459,7 @@ function rewriteRestoredGenerationOperationLineage(db: DatabaseSync, databaseLin
     `,
   ).run(databaseLineage, projectionEpoch)
   db.prepare('UPDATE generation_operation_attempts SET database_lineage = ?').run(databaseLineage)
+  db.prepare('UPDATE generation_effects SET database_lineage = ?').run(databaseLineage)
   db.prepare(
     `
       UPDATE generation_finalization_retries

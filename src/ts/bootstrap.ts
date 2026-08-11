@@ -158,6 +158,10 @@ import {
 import { setSettingsRuntimeProjectionHook } from './server/settingsRuntimeProjectionHooks'
 import { updateHeightMode } from './gui/heightMode'
 import { normalizeLegacyCustomBackgroundSetting } from './server/customBackgroundSetting'
+import {
+  reconcilePendingRecoveredGenerationEffects,
+  setPendingRecoveredGenerationEffects,
+} from './process/recoveredGenerationEffects'
 
 setPendingMutationDiscardNotifier((key, error) => {
   alertError(`${language.pendingMutationDiscarded}\n\n${language.pendingMutationDiscardedDetail(key, error)}`)
@@ -228,6 +232,7 @@ export async function loadData(): Promise<void> {
       LoadingStatusState.text = 'Loading Plugins...'
       await loadPlugins()
       startPluginRuntimeSync()
+      await reconcilePendingRecoveredGenerationEffects()
       LoadingStatusState.text = 'Checking For Format Update...'
 
       LoadingStatusState.text = 'Updating States...'
@@ -343,6 +348,7 @@ export async function loadWebInitialDatabase() {
   setResourceWriteGuardEnabled(true)
   applyGenerationOperationBootstrap(runtime)
   setActiveGenerationJobs(runtime.activeGenerationJobs ?? [])
+  setPendingRecoveredGenerationEffects(runtime.pendingGenerationEffects ?? [])
   setGenerationFinalizationPersistences(runtime.generationFinalizations ?? [])
   startGenerationFinalizationPersistenceRefresh()
   setActiveMessageTranslations(runtime.activeMessageTranslations ?? [])

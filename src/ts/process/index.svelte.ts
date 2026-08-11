@@ -52,6 +52,12 @@ import {
   stablePostGenerationMessageTarget,
   type StablePostGenerationChatTarget,
 } from './postGeneration/stableTarget'
+import {
+  completedGenerationEffect,
+  runLedgeredGenerationEffect,
+  skippedGenerationEffect,
+} from './generationEffectLedger'
+import type { ServerGenerationEffectLedgerRef } from './request/serverChatEvents'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -481,6 +487,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     let req: DispatchSuccessReq
     let generationId: string
     let serverTerminal: ServerBackedDispatch['terminal'] | undefined
+    let effectLedger: ServerGenerationEffectLedgerRef | undefined
     const serverGenerationTargetCharacterId = serverDispatch ? currentChar.chaId : undefined
     const serverGenerationTargetChatId = serverDispatch ? currentChat.id : undefined
     const serverGenerationTargetMessageId =
@@ -605,18 +612,25 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
         throwError(terminalResult.error)
         return false
       }
+      effectLedger = terminalResult.effectLedger
       // Server-backed streams only expose the derived editoutput/trigger/inlay
       // text after the terminal frame is reconciled. Append IGP to that exact
       // stable row; if the terminal cannot identify it safely, do not fall back
       // to whichever chat happens to be selected now.
-      if (terminalResult.igpTarget) {
+      await runLedgeredGenerationEffect(effectLedger, 'igp', 'live_terminal', async () => {
+        const promptTemplate = getDatabase().igpPrompt ?? ''
+        if (!terminalResult.igpTarget || !promptTemplate.trim()) {
+          return skippedGenerationEffect('not_configured')
+        }
         errorTargetMessageId = terminalResult.igpTarget.messageId
-        await evaluateIgp({
-          promptTemplate: getDatabase().igpPrompt ?? '',
+        const updated = await evaluateIgp({
+          promptTemplate,
           abortSignal,
+          waitForPersistence: !!effectLedger,
           target: terminalResult.igpTarget,
         })
-      }
+        return updated ? completedGenerationEffect(undefined) : skippedGenerationEffect('target_changed')
+      })
       if (terminalResult.resendChat) {
         serverRequestedResend = true
         if ((arg.serverResendDepth ?? 0) >= MAX_SERVER_RESEND_DEPTH) {
@@ -639,8 +653,13 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       generationInfo,
       throwError,
       setProcessStage,
+      effectLedger,
+      effectDelivery: 'live_terminal',
     })
     if (stage4.status === 'resend') {
+      await runLedgeredGenerationEffect(effectLedger, 'completion_sound', 'live_terminal', () =>
+        skippedGenerationEffect('resend'),
+      )
       // Handoff — see the activity ownership contract above.
       if (generationActivity && ownsGenerationActivity) {
         finishChatGenerationActivity(generationActivity.id)
@@ -660,7 +679,11 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     // continue/regenerate persists in the post-gen pass. The browser only
     // reconciles the terminal-frame revision and issues no generation-result
     // commands.
-    playMessageCompletionSoundIfEnabled()
+    await runLedgeredGenerationEffect(effectLedger, 'completion_sound', 'live_terminal', () =>
+      playMessageCompletionSoundIfEnabled()
+        ? completedGenerationEffect(undefined)
+        : skippedGenerationEffect('not_configured'),
+    )
     if (arg.reattachJobId) reattachOutcome = { status: 'completed' }
     return true
   } finally {
