@@ -2,6 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 
 const alertMocks = vi.hoisted(() => ({ alertToast: vi.fn() }))
+const generationOperationMocks = vi.hoisted(() => ({
+  applySseEvent: vi.fn(),
+  registerViewer: vi.fn((_operationId: string, _detach: () => void) => () => undefined),
+  stopOperation: vi.fn(async (_operationId: string) => ({ status: 'acknowledged' })),
+}))
 
 vi.mock('../../../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'test-auth-token',
@@ -13,6 +18,12 @@ vi.mock('../../../server/activeWriterSession', () => ({
 }))
 
 vi.mock('../../../alert', () => alertMocks)
+
+vi.mock('../../../server/generationOperations', () => ({
+  applyGenerationOperationSseEvent: generationOperationMocks.applySseEvent,
+  registerGenerationOperationViewer: generationOperationMocks.registerViewer,
+  stopGenerationOperation: generationOperationMocks.stopOperation,
+}))
 
 import {
   cancelServerChatGeneration,
@@ -141,6 +152,11 @@ beforeEach(() => {
   localStorage.removeItem('risu:protocol-debug')
   vi.mocked(handleActiveWriterStaleResponse).mockClear()
   alertMocks.alertToast.mockReset()
+  generationOperationMocks.applySseEvent.mockReset()
+  generationOperationMocks.registerViewer.mockReset()
+  generationOperationMocks.registerViewer.mockReturnValue(() => undefined)
+  generationOperationMocks.stopOperation.mockReset()
+  generationOperationMocks.stopOperation.mockResolvedValue({ status: 'acknowledged' })
 })
 
 afterEach(() => {
@@ -1129,7 +1145,7 @@ describe('requestServerChat', () => {
       expect(debug).toHaveBeenCalledTimes(1)
       expect(debug).toHaveBeenCalledWith('[risu:protocol]', 'server-chat-cancel-response', {
         requestUid: 'fixture-cancel-request-uid',
-        status: 200,
+        status: 202,
         ok: true,
       })
     } finally {
@@ -1734,10 +1750,14 @@ describe('cancelServerChatGeneration', () => {
         method: init?.method,
         headers: (init?.headers ?? {}) as Record<string, string>,
       })
-      return new Response(JSON.stringify({ success: true }), { status: 200 })
+      return new Response(JSON.stringify({ disposition: 'cancelling', jobId: 'gen-123' }), { status: 202 })
     })
 
-    await cancelServerChatGeneration('gen-123')
+    await expect(cancelServerChatGeneration('gen-123')).resolves.toEqual({
+      status: 'acknowledged',
+      disposition: 'cancelling',
+      jobId: 'gen-123',
+    })
     expect(calls).toHaveLength(1)
     expect(calls[0].url).toBe('/api/v1/generate/chat/gen-123')
     expect(calls[0].method).toBe('DELETE')
@@ -1759,15 +1779,43 @@ describe('cancelServerChatGeneration', () => {
     })
   })
 
-  it('is a no-op for an empty generationId and swallows fetch failures', async () => {
+  it('returns typed failures for an empty generationId and transport errors', async () => {
     const fetchSpy = vi.fn(async () => {
       throw new Error('network down')
     })
     vi.stubGlobal('fetch', fetchSpy)
-    await expect(cancelServerChatGeneration('')).resolves.toBeUndefined()
+    await expect(cancelServerChatGeneration('')).resolves.toEqual({
+      status: 'failed',
+      error: 'Generation job ID is required.',
+    })
     expect(fetchSpy).not.toHaveBeenCalled()
-    await expect(cancelServerChatGeneration('gen-x')).resolves.toBeUndefined()
+    await expect(cancelServerChatGeneration('gen-x')).resolves.toEqual({
+      status: 'failed',
+      error: 'Network error: network down',
+    })
     expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns a typed not-found outcome for an expired compatibility job', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              disposition: 'not_found',
+              error: 'generation_job_not_found',
+              reason: 'Generation job not found or already expired.',
+            }),
+            { status: 404 },
+          ),
+      ),
+    )
+
+    await expect(cancelServerChatGeneration('expired-job')).resolves.toEqual({
+      status: 'not_found',
+      error: 'Generation job not found or already expired.',
+    })
   })
 })
 
@@ -1844,6 +1892,51 @@ describe('requestServerChatGeneration durable cancel-on-abort', () => {
     await vi.waitFor(() => {
       expect(deletes).toEqual(['/api/v1/generate/chat/job-from-header'])
     })
+  })
+
+  it('routes protocol-v1 owner abort through the operation controller before detaching its viewer', async () => {
+    let detachViewer: (() => void) | undefined
+    let viewerSignal: AbortSignal | null | undefined
+    generationOperationMocks.registerViewer.mockImplementation((_operationId, detach) => {
+      detachViewer = detach
+      return () => undefined
+    })
+    generationOperationMocks.stopOperation.mockImplementation(async () => ({ status: 'acknowledged' }))
+    vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
+      viewerSignal = init?.signal
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start() {
+            // Remain open until the operation controller detaches the viewer.
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      )
+    })
+    const owner = new AbortController()
+    const stream = {
+      operationId: '11111111-1111-4111-8111-111111111111',
+      acceptedMessageId: '22222222-2222-4222-8222-222222222222',
+      attemptNo: 1,
+      jobId: 'job-operation-a',
+      projectionEpoch: 4,
+      href: '/api/v1/generation-operations/11111111-1111-4111-8111-111111111111/stream?attemptNo=1&jobId=job-operation-a&projectionEpoch=4',
+    }
+    const pending = requestServerChatGeneration(baseInput, owner.signal, undefined, stream)
+    await vi.waitFor(() => expect(generationOperationMocks.registerViewer).toHaveBeenCalled())
+
+    owner.abort()
+    await vi.waitFor(() => {
+      expect(generationOperationMocks.stopOperation).toHaveBeenCalledWith(stream.operationId)
+    })
+    expect(viewerSignal?.aborted).toBe(false)
+
+    detachViewer?.()
+    await expect(pending).resolves.toMatchObject({ status: 'aborted' })
+    expect(viewerSignal?.aborted).toBe(true)
+    expect(get(activeGenerationJobs)).toEqual([
+      expect.objectContaining({ jobId: stream.jobId, operationId: stream.operationId }),
+    ])
   })
 
   it('does NOT cancel on abort for a non-durable send', async () => {

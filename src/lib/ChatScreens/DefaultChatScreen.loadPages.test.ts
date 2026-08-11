@@ -93,32 +93,39 @@ vi.mock('../../lang', () => ({
                   retry: 'acceptedSendRetry',
                   retrying: 'acceptedSendRetrying',
                 }
-              : property === 'generationReattachFailure'
+              : property === 'generationStop'
                 ? {
-                    message: 'generationReattachMessage',
-                    lastError: (error: string) => `generationReattachLastError:${error}`,
-                    retry: 'Retry',
-                    refresh: 'Refresh',
-                    stop: 'Stop',
-                    sidebarWarning: (name: string) => `generationReattachWarning:${name}`,
+                    stopping: 'Stopping acknowledged operation',
+                    failed: 'Stop acknowledgement failed',
+                    retry: 'Retry Stop',
+                    savingStoppedPartial: 'Saving stopped partial',
                   }
-                : property === 'agentPresets'
+                : property === 'generationReattachFailure'
                   ? {
-                      progressBeforeMain: 'beforeMain',
-                      progressAfterMain: 'afterMain',
-                      progressLabel: (name: string) => name,
-                      progressActiveSteps: (names: string) => names,
-                      progressWaiting: 'waiting',
+                      message: 'generationReattachMessage',
+                      lastError: (error: string) => `generationReattachLastError:${error}`,
+                      retry: 'Retry',
+                      refresh: 'Refresh',
+                      stop: 'Stop',
+                      sidebarWarning: (name: string) => `generationReattachWarning:${name}`,
                     }
-                  : property === 'chatPostGenerationProgressModuleScript'
-                    ? (name: string) => name
-                    : property === 'chatPostGenerationProgressCharacterScript'
+                  : property === 'agentPresets'
+                    ? {
+                        progressBeforeMain: 'beforeMain',
+                        progressAfterMain: 'afterMain',
+                        progressLabel: (name: string) => name,
+                        progressActiveSteps: (names: string) => names,
+                        progressWaiting: 'waiting',
+                      }
+                    : property === 'chatPostGenerationProgressModuleScript'
                       ? (name: string) => name
-                      : property === 'chatPostGenerationProgressWithComment'
-                        ? (owner: string) => owner
-                        : property === 'chatPostGenerationProgressLabel'
+                      : property === 'chatPostGenerationProgressCharacterScript'
+                        ? (name: string) => name
+                        : property === 'chatPostGenerationProgressWithComment'
                           ? (owner: string) => owner
-                          : String(property),
+                          : property === 'chatPostGenerationProgressLabel'
+                            ? (owner: string) => owner
+                            : String(property),
     },
   ),
 }))
@@ -354,6 +361,10 @@ import { translate } from '../../ts/translator/translator'
 import { runInputHook } from 'src/ts/process/inputHooks'
 import { resetAcceptedSendCoordinatorForTests } from 'src/ts/process/acceptedSendCoordinator.svelte'
 import { applyAcceptedSendOperationProjection } from 'src/ts/process/acceptedSendRecoveryState'
+import {
+  generationOperationCancellations,
+  resetGenerationOperationClientForTests,
+} from 'src/ts/server/generationOperations'
 import { activeGenerationJobs, generationJobLifecycles } from 'src/ts/process/reattach'
 import {
   abortInputHookActivity,
@@ -636,6 +647,7 @@ function findButtonByText(text: string): HTMLButtonElement | undefined {
 }
 
 beforeEach(() => {
+  resetGenerationOperationClientForTests()
   resetAcceptedSendCoordinatorForTests()
   resetInputHookActivitiesForTests()
   clearAgentPresetProgress()
@@ -712,6 +724,61 @@ afterEach(() => {
   resetHalfStreamingProgressForTests()
   activeGenerationJobs.set([])
   generationJobLifecycles.set({})
+  resetGenerationOperationClientForTests()
+})
+
+describe('DefaultChatScreen acknowledged Stop lifecycle', () => {
+  it('keeps Stopping visible until authority responds, then exposes retry and stopped-partial saving states', async () => {
+    seedDatabase([1])
+    mountScreen()
+    generationOperationCancellations.set([
+      {
+        operationId: '11111111-1111-4111-8111-111111111111',
+        target: captureActiveChatTargetForTest()!,
+        state: 'stop_waiting',
+        operationState: 'stopping',
+      },
+    ])
+    await waitFor(() => {
+      const stop = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-cancel-button"]')
+      expect(stop?.disabled).toBe(true)
+      expect(stop?.textContent).toContain('Stopping acknowledged operation')
+      expect(stop?.getAttribute('aria-busy')).toBe('true')
+    })
+
+    generationOperationCancellations.set([
+      {
+        operationId: '11111111-1111-4111-8111-111111111111',
+        target: captureActiveChatTargetForTest()!,
+        state: 'stop_failed',
+        operationState: 'stopping',
+        error: 'network unavailable',
+      },
+    ])
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="generation-stop-failed"]')?.textContent).toContain(
+        'Stop acknowledgement failed',
+      )
+      expect(target.querySelector<HTMLButtonElement>('[data-testid="generation-stop-retry"]')?.disabled).toBe(false)
+      expect(target.querySelector('[data-testid="default-chat-cancel-button"]')?.textContent).toContain('Retry Stop')
+    })
+
+    generationOperationCancellations.set([
+      {
+        operationId: '11111111-1111-4111-8111-111111111111',
+        target: captureActiveChatTargetForTest()!,
+        state: 'stopped_finalizing',
+        disposition: 'cancelled_finalizing',
+        operationState: 'finalizing',
+      },
+    ])
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="generation-stop-saving-partial"]')?.textContent).toContain(
+        'Saving stopped partial',
+      )
+      expect(target.querySelector('[data-testid="default-chat-send-button"]')).toBeTruthy()
+    })
+  })
 })
 
 describe('DefaultChatScreen accepted-send recovery projection', () => {

@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { get } from 'svelte/store'
+import type { GenerationOperationProjection } from './bootstrap'
 
 const operationMocks = vi.hoisted(() => ({
   acknowledgeLocalEffect: vi.fn(),
@@ -43,7 +45,9 @@ vi.mock('./pendingMutationOutbox', () => ({
   beginPendingMutationDispatch: operationMocks.beginDispatch,
   discardPendingMutation: operationMocks.discard,
   isGenerationOperationPendingIntent: (intent: { kind?: string }) =>
-    intent.kind === 'generation-operation-submit' || intent.kind === 'generation-operation-retry',
+    intent.kind === 'generation-operation-submit' ||
+    intent.kind === 'generation-operation-cancel' ||
+    intent.kind === 'generation-operation-retry',
   stagePendingMutation: operationMocks.stage,
 }))
 vi.mock('./bootstrap', () => ({
@@ -58,15 +62,23 @@ vi.mock('./bootstrap', () => ({
 }))
 
 import {
+  applyGenerationOperationProjection,
   dispatchGenerationOperationPendingReplay,
+  generationOperationCancellations,
+  resetGenerationOperationClientForTests,
   stageAcceptedSendGenerationOperation,
+  stopGenerationOperation,
   submitStagedAcceptedSendOperation,
 } from './generationOperations'
 
 const operationId = '11111111-1111-4111-8111-111111111111'
 const messageId = '22222222-2222-4222-8222-222222222222'
 
-function responseBody(state = 'owned_by_job') {
+function responseBody(state: GenerationOperationProjection['state'] = 'owned_by_job'): {
+  operation: GenerationOperationProjection
+  append: { disposition: 'accepted'; messageId: string; revision: number }
+  stream: { href: string }
+} {
   return {
     operation: {
       operationId,
@@ -105,6 +117,7 @@ function responseBody(state = 'owned_by_job') {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  resetGenerationOperationClientForTests()
   let uuidIndex = 0
   vi.stubGlobal('crypto', {
     randomUUID: vi.fn(() => [operationId, messageId][uuidIndex++] ?? operationId),
@@ -124,6 +137,10 @@ beforeEach(() => {
     phase: 'staged',
     ready: Promise.resolve('persisted'),
   }))
+})
+
+afterEach(() => {
+  resetGenerationOperationClientForTests()
 })
 
 describe('generation operation client', () => {
@@ -213,5 +230,178 @@ describe('generation operation client', () => {
     const replayBody = JSON.parse(fetchMock.mock.calls[1][1].body as string)
     expect(replayBody).toEqual(firstBody)
     expect(replayBody).toMatchObject({ operationId, acceptedMessageId: messageId })
+  })
+
+  it('persists Stop before dispatch, exposes acknowledgement failure, and retries the same control', async () => {
+    const rollback = vi.fn()
+    operationMocks.appendOptimistic.mockReturnValueOnce({ status: 'ok', rollback })
+    const staged = await stageAcceptedSendGenerationOperation({
+      target: { selectedCharID: 0, chatPage: 0, characterId: 'character-a', chatId: 'chat-a' },
+      message: 'hello',
+      generation: {
+        syntheticSayNothing: false,
+        resetMessages: false,
+        inlayAssetRefs: [],
+        clientContext: {},
+        clientCapabilities: {},
+      },
+    })
+    if ('status' in staged) throw new Error(staged.error)
+
+    const tombstone = {
+      operation: {
+        operationId,
+        protocolVersion: 1,
+        requestOrigin: 'unbound',
+        state: 'cancel_requested',
+        stateVersion: 1,
+        projectionEpoch: 2,
+        creatorWriterSessionId: 'writer-a',
+        creatorWriterEpoch: 1,
+        providerMayHaveRun: false,
+      },
+      disposition: 'cancelled_before_acceptance',
+      knownAttemptMatched: false,
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: 'temporary_failure', message: 'try later' }), { status: 503 }),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify(tombstone), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(stopGenerationOperation(operationId)).resolves.toMatchObject({ status: 'failed' })
+    expect(operationMocks.stage).toHaveBeenLastCalledWith(
+      `generation-operation-cancel:${operationId}`,
+      expect.objectContaining({
+        kind: 'generation-operation-cancel',
+        requests: [
+          {
+            method: 'PUT',
+            path: `/generation-operations/${operationId}/cancellation`,
+            body: { reason: 'user_stop' },
+          },
+        ],
+      }),
+    )
+    expect(get(generationOperationCancellations)).toEqual([
+      expect.objectContaining({ operationId, state: 'stop_failed', error: 'try later' }),
+    ])
+    expect(rollback).not.toHaveBeenCalled()
+
+    await expect(stopGenerationOperation(operationId)).resolves.toMatchObject({
+      status: 'acknowledged',
+      disposition: 'cancelled_before_acceptance',
+    })
+    expect(operationMocks.stage).toHaveBeenCalledTimes(2)
+    expect(get(generationOperationCancellations)).toEqual([
+      expect.objectContaining({ operationId, state: 'settled_cancelled' }),
+    ])
+    expect(rollback).toHaveBeenCalledTimes(1)
+    expect(operationMocks.discard).toHaveBeenCalledWith(
+      expect.objectContaining({ key: expect.stringContaining('cancel') }),
+    )
+  })
+
+  it('replays a persisted pre-job-ID Stop after reload until the operation settles', async () => {
+    const operation = responseBody('stopping').operation
+    const handle = {
+      key: `generation-operation-cancel:${operationId}`,
+      mutationId: 'cancel-mutation-a',
+      sequence: 2,
+      ownerWriterSessionId: 'writer-a',
+      writerEpoch: 1,
+      databaseLineage: 'database-a',
+      phase: 'staged' as const,
+      ready: Promise.resolve<'persisted'>('persisted'),
+    }
+    const intent = {
+      version: 1 as const,
+      kind: 'generation-operation-cancel' as const,
+      requests: [
+        {
+          method: 'PUT' as const,
+          path: `/generation-operations/${operationId}/cancellation`,
+          body: { reason: 'user_stop' },
+        },
+      ],
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              operation,
+              disposition: 'cancelling',
+              knownAttemptMatched: false,
+            }),
+            { status: 202 },
+          ),
+      ),
+    )
+
+    await expect(dispatchGenerationOperationPendingReplay(handle, intent)).resolves.toMatchObject({
+      disposition: 'retained',
+      result: { status: 'acknowledged', disposition: 'cancelling' },
+    })
+    expect(get(generationOperationCancellations)).toEqual([
+      expect.objectContaining({
+        operationId,
+        state: 'stop_waiting',
+        disposition: 'cancelling',
+        jobId: 'job-a',
+      }),
+    ])
+    expect(operationMocks.discard).not.toHaveBeenCalled()
+  })
+
+  it('keeps an unacknowledged Stop failed when status still shows an owned runner', () => {
+    generationOperationCancellations.set([
+      {
+        operationId,
+        target: { selectedCharID: 0, chatPage: 0, characterId: 'character-a', chatId: 'chat-a' },
+        state: 'stop_failed',
+        error: 'Stop acknowledgement failed.',
+      },
+    ])
+
+    applyGenerationOperationProjection(responseBody('owned_by_job').operation)
+
+    expect(get(generationOperationCancellations)).toEqual([
+      expect.objectContaining({
+        operationId,
+        state: 'stop_failed',
+        operationState: 'owned_by_job',
+        error: 'Stop acknowledgement failed.',
+      }),
+    ])
+  })
+
+  it('projects completion-finalizing authority without claiming Stop', () => {
+    generationOperationCancellations.set([
+      {
+        operationId,
+        target: { selectedCharID: 0, chatPage: 0, characterId: 'character-a', chatId: 'chat-a' },
+        state: 'stop_waiting',
+        disposition: 'cancelling',
+      },
+    ])
+    const operation = {
+      ...responseBody('finalizing').operation,
+      desiredTerminalOutcome: 'completed' as const,
+    }
+
+    applyGenerationOperationProjection(operation)
+
+    expect(get(generationOperationCancellations)).toEqual([
+      expect.objectContaining({
+        operationId,
+        state: 'stop_waiting',
+        disposition: 'completion_finalizing',
+        operationState: 'finalizing',
+      }),
+    ])
   })
 })

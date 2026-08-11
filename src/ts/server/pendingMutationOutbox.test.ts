@@ -8,6 +8,7 @@ import {
   beginPendingMutationDispatch,
   clearPendingMutationOutbox,
   completePendingMutation,
+  countBlockingPendingMutationRecords,
   countPendingMutationRecords,
   deletePendingMutationReceiptAcknowledgement,
   discardPendingMutation,
@@ -109,6 +110,34 @@ describe('pending mutation outbox', () => {
     expect(pendingMutationProjectionTargets(intent)).toEqual([
       'generation-operation:11111111-1111-4111-8111-111111111111',
     ])
+  })
+
+  it('encrypts Stop controls without treating an acknowledged pending cancellation as startup-blocking', async () => {
+    const intent: DurableMutationIntent = {
+      version: 1,
+      kind: 'generation-operation-cancel',
+      requests: [
+        {
+          method: 'PUT',
+          path: '/generation-operations/11111111-1111-4111-8111-111111111111/cancellation',
+          body: {
+            reason: 'user_stop',
+            knownStateVersion: 3,
+            knownAttemptNo: 1,
+            knownJobId: 'job-a',
+          },
+        },
+      ],
+    }
+    const handle = stagePendingMutation('generation-operation-cancel:operation-a', intent)
+
+    await expect(handle.ready).resolves.toBe('persisted')
+    expect((await listPendingMutations())[0]?.intent).toEqual(intent)
+    expect(pendingMutationProjectionTargets(intent)).toEqual([
+      'generation-operation:11111111-1111-4111-8111-111111111111',
+    ])
+    await expect(countPendingMutationRecords()).resolves.toBe(1)
+    await expect(countBlockingPendingMutationRecords()).resolves.toBe(0)
   })
 
   it('lazily advances an explicit committed-order counter and retains it when rows are cleared', async () => {

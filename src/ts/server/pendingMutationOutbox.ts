@@ -16,7 +16,7 @@ export interface DurableMutationRequest {
 export interface DurableMutationIntent {
   version: 1
   /** Non-command mutation families that share the encrypted transport outbox. */
-  kind?: 'generation-operation-submit' | 'generation-operation-retry'
+  kind?: 'generation-operation-submit' | 'generation-operation-cancel' | 'generation-operation-retry'
   requests: DurableMutationRequest[]
   /**
    * Additional semantic lanes that must settle before this intent. The keys
@@ -920,6 +920,38 @@ export async function countPendingMutationRecords(): Promise<number | null> {
 }
 
 /**
+ * Count startup-blocking rows after replay. A cancellation control is allowed
+ * to remain encrypted while its acknowledged operation settles; replay has
+ * already refreshed its visible controller state, and keeping it must not
+ * prevent authoritative resource hydration. Unreadable rows still fail closed.
+ */
+export async function countBlockingPendingMutationRecords(): Promise<number | null> {
+  const scope = pendingMutationScope
+  if (!scope) return 0
+  if (typeof globalThis.indexedDB === 'undefined') return 0
+  const database = await openOutboxDatabase()
+  if (!database) return null
+
+  try {
+    const transaction = database.transaction(OUTBOX_MUTATION_STORE, 'readonly')
+    const stored = await requestResult<StoredPendingMutation[]>(transaction.objectStore(OUTBOX_MUTATION_STORE).getAll())
+    await transactionDone(transaction)
+    let blocking = 0
+    for (const record of stored.filter(
+      (candidate) =>
+        candidate.ownerWriterSessionId === scope.writerSessionId && candidate.databaseLineage === scope.databaseLineage,
+    )) {
+      const intent = await decryptIntent(record)
+      if (intent.kind !== 'generation-operation-cancel') blocking += 1
+    }
+    return blocking
+  } catch (error) {
+    reportPersistenceWarning('Unable to classify pending server mutations for startup', error)
+    return null
+  }
+}
+
+/**
  * Read the transitive closure of older generations that this mutation owns or
  * depends on. A dependency introduced by an older predecessor only reaches
  * rows older than that predecessor, preserving the durable global-order
@@ -1515,6 +1547,7 @@ function normalizeIntent(value: unknown): DurableMutationIntent {
   if (
     record.kind !== undefined &&
     record.kind !== 'generation-operation-submit' &&
+    record.kind !== 'generation-operation-cancel' &&
     record.kind !== 'generation-operation-retry'
   ) {
     throw new TypeError('Unsupported pending mutation intent kind')
@@ -1541,9 +1574,13 @@ function normalizeIntent(value: unknown): DurableMutationIntent {
 }
 
 export function isGenerationOperationPendingIntent(intent: DurableMutationIntent): intent is DurableMutationIntent & {
-  kind: 'generation-operation-submit' | 'generation-operation-retry'
+  kind: 'generation-operation-submit' | 'generation-operation-cancel' | 'generation-operation-retry'
 } {
-  return intent.kind === 'generation-operation-submit' || intent.kind === 'generation-operation-retry'
+  return (
+    intent.kind === 'generation-operation-submit' ||
+    intent.kind === 'generation-operation-cancel' ||
+    intent.kind === 'generation-operation-retry'
+  )
 }
 
 function generationOperationIdFromPendingIntent(intent: DurableMutationIntent): string | undefined {
@@ -1551,8 +1588,9 @@ function generationOperationIdFromPendingIntent(intent: DurableMutationIntent): 
   if (intent.kind === 'generation-operation-submit') {
     return typeof request?.body.operationId === 'string' ? request.body.operationId : undefined
   }
-  if (intent.kind === 'generation-operation-retry') {
-    const match = /^\/generation-operations\/([^/?#]+)\/retries$/.exec(request?.path ?? '')
+  if (intent.kind === 'generation-operation-cancel' || intent.kind === 'generation-operation-retry') {
+    const suffix = intent.kind === 'generation-operation-cancel' ? 'cancellation' : 'retries'
+    const match = new RegExp(`^/generation-operations/([^/?#]+)/${suffix}$`).exec(request?.path ?? '')
     if (!match) return undefined
     try {
       return decodeURIComponent(match[1]!)
@@ -1587,6 +1625,9 @@ function normalizeRequest(value: unknown, kind?: DurableMutationIntent['kind']):
   const method = request.method as DurableMutationRequestMethod
   const generationOperationPathAllowed =
     (kind === 'generation-operation-submit' && method === 'POST' && request.path === '/generation-operations') ||
+    (kind === 'generation-operation-cancel' &&
+      method === 'PUT' &&
+      /^\/generation-operations\/[^/?#]+\/cancellation$/.test(request.path)) ||
     (kind === 'generation-operation-retry' &&
       method === 'POST' &&
       /^\/generation-operations\/[^/?#]+\/retries$/.test(request.path))

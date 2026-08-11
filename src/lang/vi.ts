@@ -12,6 +12,12 @@ export const languageVietnamese = {
     retry: 'Thử lại câu trả lời',
     retrying: 'Đang thử lại…',
   },
+  generationStop: {
+    stopping: 'Đang dừng…',
+    failed: 'Không thể xác nhận lệnh dừng. Quá trình tạo có thể vẫn đang chạy.',
+    retry: 'Thử dừng lại',
+    savingStoppedPartial: 'Đã dừng. Đang lưu câu trả lời một phần…',
+  },
   generationPersistenceQueued: 'Phản hồi này đang chờ được lưu và vẫn là dữ liệu tạm thời.',
   generationPersistenceStalled:
     'Việc lưu phản hồi tạm thời này liên tục thất bại. Phản hồi vẫn nằm trong hàng đợi và sẽ tự động thử lại.',

@@ -8,6 +8,12 @@ export const languageChineseTraditional = {
     retry: '重試回覆',
     retrying: '正在重試…',
   },
+  generationStop: {
+    stopping: '正在停止…',
+    failed: '無法確認停止操作。產生作業可能仍在執行。',
+    retry: '重試停止',
+    savingStoppedPartial: '已停止。正在儲存部分回覆…',
+  },
   generationPersistenceQueued: '此回覆正在等待儲存，仍處於暫存狀態。',
   generationPersistenceStalled: '此暫存回覆持續儲存失敗。它仍保留在佇列中，並會自動重試。',
   generationPersistenceTerminal: '無法安全儲存此暫存回覆，系統不會再自動重試。其日誌記錄已保留。',

@@ -8,6 +8,12 @@ export const languageChinese = {
     retry: '重试回复',
     retrying: '正在重试…',
   },
+  generationStop: {
+    stopping: '正在停止…',
+    failed: '无法确认停止操作。生成可能仍在进行中。',
+    retry: '重试停止',
+    savingStoppedPartial: '已停止。正在保存部分回复…',
+  },
   generationPersistenceQueued: '此回复正在等待保存，仍处于临时状态。',
   generationPersistenceStalled: '此临时回复持续保存失败。它仍保留在队列中，并会自动重试。',
   generationPersistenceTerminal: '无法安全保存此临时回复，系统不会再自动重试。其日志记录已保留。',

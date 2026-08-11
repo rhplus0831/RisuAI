@@ -47,6 +47,8 @@ const h = vi.hoisted(() => {
     fetchRuntimeJobs: vi.fn(),
     hydrateChatMessages: vi.fn(async () => undefined),
     cancelServerChatGeneration: vi.fn(async () => undefined),
+    applyGenerationOperationBootstrap: vi.fn(),
+    stopGenerationOperation: vi.fn(async () => ({ status: 'acknowledged' })),
   }
 })
 
@@ -68,6 +70,11 @@ vi.mock('../../server/chatMessageHydration.svelte', () => ({
 
 vi.mock('../request/serverChat', () => ({
   cancelServerChatGeneration: h.cancelServerChatGeneration,
+}))
+
+vi.mock('../../server/generationOperations', () => ({
+  applyGenerationOperationBootstrap: h.applyGenerationOperationBootstrap,
+  stopGenerationOperation: h.stopGenerationOperation,
 }))
 
 vi.mock('../index.svelte', () => ({
@@ -133,6 +140,8 @@ beforeEach(() => {
   })
   h.hydrateChatMessages.mockClear()
   h.cancelServerChatGeneration.mockClear()
+  h.applyGenerationOperationBootstrap.mockClear()
+  h.stopGenerationOperation.mockClear()
   h.doingChat.set(false)
   resetGenerationJobLifecyclesForTests()
   setActiveGenerationJobs([])
@@ -440,6 +449,19 @@ describe('reattach open-chat generation (Phase 4)', () => {
 
     expect(h.cancelServerChatGeneration).toHaveBeenCalledTimes(1)
     expect(h.cancelServerChatGeneration).toHaveBeenCalledWith('job-stop')
+  })
+
+  it('stops a protocol-v1 job through its exact operation identity', async () => {
+    setActiveGenerationJobs([
+      { chatId: 'chat-1', jobId: 'job-stop', operationId: 'operation-stop' },
+      { chatId: 'chat-2', jobId: 'job-other', operationId: 'operation-other' },
+    ])
+
+    await stopGenerationJob('job-stop')
+
+    expect(h.stopGenerationOperation).toHaveBeenCalledOnce()
+    expect(h.stopGenerationOperation).toHaveBeenCalledWith('operation-stop')
+    expect(h.cancelServerChatGeneration).not.toHaveBeenCalled()
   })
 
   it('authoritatively clears and hydrates a stale known job during the generic bootstrap refresh', async () => {

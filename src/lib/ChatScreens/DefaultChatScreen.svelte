@@ -133,7 +133,14 @@
     findAcceptedSendRecoveries,
     retryAcceptedChatSend,
   } from 'src/ts/process/acceptedSendCoordinator.svelte'
-  import { canUseGenerationOperationProtocol } from 'src/ts/server/generationOperations'
+  import {
+    canUseGenerationOperationProtocol,
+    findGenerationOperationIdForTarget,
+    generationOperationCancellations,
+    generationOperationProjections,
+    refreshGenerationOperationCancellation,
+    stopGenerationOperation,
+  } from 'src/ts/server/generationOperations'
   import { registerAcceptedSendDraftGenerationListener } from 'src/ts/process/acceptedSendRecoveryState'
   import {
     activeGenerationJobs,
@@ -382,10 +389,41 @@
       ? $activeChatGenerations.find((activity) => activity.kind === 'message' && activity.chatId === currentChatId)
       : undefined,
   )
+  let currentChatGenerationCancellation = $derived.by(() => {
+    if (!currentChatId) return undefined
+    return $generationOperationCancellations.filter((control) => control.target?.chatId === currentChatId).at(-1)
+  })
+  let currentChatGenerationOperationId = $derived.by(() => {
+    void $generationOperationProjections
+    return (
+      currentChatGenerationActivity?.operationId ??
+      currentChatGenerationCancellation?.operationId ??
+      findGenerationOperationIdForTarget(captureActiveChatTarget())
+    )
+  })
+  let currentChatStopPending = $derived(
+    currentChatGenerationCancellation?.disposition !== 'completion_finalizing' &&
+      (currentChatGenerationCancellation?.state === 'stop_staging' ||
+        currentChatGenerationCancellation?.state === 'stop_sending' ||
+        currentChatGenerationCancellation?.state === 'stop_waiting'),
+  )
+  let currentChatStopFailed = $derived(currentChatGenerationCancellation?.state === 'stop_failed')
+  let currentChatStoppedFinalizing = $derived(currentChatGenerationCancellation?.state === 'stopped_finalizing')
+  let currentChatCancellationReleasesGenerationClaim = $derived(
+    currentChatStoppedFinalizing ||
+      currentChatGenerationCancellation?.disposition === 'completion_finalizing' ||
+      currentChatGenerationCancellation?.state === 'settled_cancelled' ||
+      currentChatGenerationCancellation?.state === 'settled_completed' ||
+      currentChatGenerationCancellation?.state === 'settled_nonrunning',
+  )
   let currentChatOwnsGeneration = $derived(
     Boolean(
-      currentChatGenerationActivity ||
-      (currentChatId && $activeGenerationJobs.some((job) => job.chatId === currentChatId)),
+      !currentChatCancellationReleasesGenerationClaim &&
+      (currentChatGenerationActivity ||
+        (currentChatId && $activeGenerationJobs.some((job) => job.chatId === currentChatId)) ||
+        currentChatGenerationCancellation?.state === 'none' ||
+        currentChatStopPending ||
+        currentChatStopFailed),
     ),
   )
   let currentChatDeadGeneration = $derived.by(() => {
@@ -1892,6 +1930,16 @@
     abortActiveGeneration()
   }
 
+  function retryGenerationStop() {
+    if (currentChatGenerationOperationId) void stopGenerationOperation(currentChatGenerationOperationId)
+  }
+
+  function refreshGenerationStop() {
+    if (currentChatGenerationOperationId) {
+      void refreshGenerationOperationCancellation(currentChatGenerationOperationId)
+    }
+  }
+
   let { userIconPortrait, currentUsername, userIcon } = $derived.by(() => {
     return {
       currentUsername: getUserDisplayName(),
@@ -2315,6 +2363,48 @@
           {composerDraftPersistenceError}
         </div>
       {/if}
+      {#if currentChatStopFailed && currentChatGenerationCancellation}
+        <div
+          class="chat-screen-content-width mb-2 flex flex-col gap-2 rounded-md border border-draculared p-3 text-sm text-draculared"
+          role="alert"
+          data-testid="generation-stop-failed"
+          data-generation-operation-id={currentChatGenerationCancellation.operationId}>
+          <p>{language.generationStop.failed}</p>
+          {#if currentChatGenerationCancellation.error}
+            <p class="break-words text-textcolor2">{currentChatGenerationCancellation.error}</p>
+          {/if}
+          <div class="flex flex-wrap gap-2">
+            <button
+              type="button"
+              class="rounded-md border border-draculared px-3 py-1.5 transition-colors hover:bg-draculared hover:text-white"
+              data-testid="generation-stop-retry"
+              onclick={retryGenerationStop}>
+              {language.generationStop.retry}
+            </button>
+            <button
+              type="button"
+              class="rounded-md border border-darkborderc px-3 py-1.5 text-textcolor transition-colors hover:border-textcolor hover:bg-selected"
+              data-testid="generation-stop-refresh"
+              onclick={refreshGenerationStop}>
+              {language.generationReattachFailure.refresh}
+            </button>
+          </div>
+        </div>
+      {:else if currentChatStoppedFinalizing}
+        <div
+          class="chat-screen-content-width mb-2 rounded-md border border-yellow-500 bg-yellow-500/10 p-3 text-sm text-textcolor"
+          role="status"
+          data-testid="generation-stop-saving-partial">
+          {language.generationStop.savingStoppedPartial}
+        </div>
+      {:else if currentChatGenerationCancellation?.disposition === 'completion_finalizing'}
+        <div
+          class="chat-screen-content-width mb-2 rounded-md border border-yellow-500 bg-yellow-500/10 p-3 text-sm text-textcolor"
+          role="status"
+          data-testid="generation-stop-completion-saving">
+          {language.generationPersistenceQueued}
+        </div>
+      {/if}
       {#if currentChatDeadGeneration}
         <div
           class="chat-screen-content-width mb-2 flex flex-col gap-2 rounded-md border border-yellow-500 bg-yellow-500/10 p-3 text-sm text-textcolor"
@@ -2469,11 +2559,26 @@
         {:else if currentChatOwnsGeneration || hookRunActive}
           <button
             data-testid="default-chat-cancel-button"
-            aria-label={language.cancelGeneration}
-            class="peer-focus:border-textcolor flex justify-center border-y border-darkborderc items-center text-textcolor p-3 hover:bg-blue-500 hover:text-white transition-colors"
+            aria-label={currentChatStopPending
+              ? language.generationStop.stopping
+              : currentChatStopFailed
+                ? language.generationStop.retry
+                : language.cancelGeneration}
+            aria-busy={currentChatStopPending}
+            disabled={currentChatStopPending || currentChatStoppedFinalizing}
+            class="peer-focus:border-textcolor flex justify-center gap-2 border-y border-darkborderc items-center text-textcolor p-3 hover:bg-blue-500 hover:text-white transition-colors disabled:cursor-not-allowed disabled:opacity-70"
             onclick={abortChat}
             style:height={inputHeight}>
-            <div class="risu-ongoing-pulse loadmove chat-process-stage-{visibleChatProcessStage}"></div>
+            {#if currentChatStopFailed}
+              <TriangleAlertIcon size={18} aria-hidden="true" />
+            {:else}
+              <div class="risu-ongoing-pulse loadmove chat-process-stage-{visibleChatProcessStage}"></div>
+            {/if}
+            {#if currentChatStopPending}
+              <span class="whitespace-nowrap text-sm">{language.generationStop.stopping}</span>
+            {:else if currentChatStopFailed}
+              <span class="whitespace-nowrap text-sm">{language.generationStop.retry}</span>
+            {/if}
           </button>
         {:else if floatingDraftConversionActive}
           <button

@@ -1948,6 +1948,12 @@ export const languageKorean = {
     retry: '답장 다시 시도',
     retrying: '다시 시도 중…',
   },
+  generationStop: {
+    stopping: '중지하는 중…',
+    failed: '중지 요청을 확인하지 못했습니다. 생성 작업이 아직 실행 중일 수 있습니다.',
+    retry: '중지 다시 시도',
+    savingStoppedPartial: '중지되었습니다. 일부 답변을 저장하는 중…',
+  },
   fileSelectionStale: '파일을 선택하는 동안 설정이 변경되었습니다. 다시 시도하려면 파일을 다시 선택하세요.',
   alternateGreetingMutationQueued:
     '대체 인사말 변경 사항이 이 기기에 저장되어 대기열에 추가되었습니다. 자동으로 다시 시도합니다.',

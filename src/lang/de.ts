@@ -12,6 +12,12 @@ export const languageGerman = {
     retry: 'Antwort erneut versuchen',
     retrying: 'Wird erneut versucht…',
   },
+  generationStop: {
+    stopping: 'Wird gestoppt…',
+    failed: 'Der Stopp konnte nicht bestätigt werden. Die Generierung läuft möglicherweise noch.',
+    retry: 'Stopp erneut versuchen',
+    savingStoppedPartial: 'Gestoppt. Die Teilantwort wird gespeichert…',
+  },
   generationPersistenceQueued: 'Diese Antwort wartet auf das Speichern und bleibt vorläufig.',
   generationPersistenceStalled:
     'Das Speichern dieser vorläufigen Antwort schlägt weiterhin fehl. Sie bleibt in der Warteschlange und wird automatisch erneut versucht.',

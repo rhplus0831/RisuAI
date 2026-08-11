@@ -13,6 +13,8 @@ export interface ChatGenerationActivity {
   stage: number
   kind: ChatGenerationActivityKind
   controller?: AbortController
+  operationId?: string
+  acceptedMessageId?: string
 }
 
 export const activeChatGenerations = writable<ChatGenerationActivity[]>([])
@@ -45,6 +47,8 @@ export function beginChatGenerationActivity(input: {
   target: ActiveChatTarget
   kind: ChatGenerationActivityKind
   controller?: AbortController
+  operationId?: string
+  acceptedMessageId?: string
 }): ChatGenerationActivity | null {
   const targetKey = chatGenerationTargetKey(input.target)
   if (!targetKey || findChatGenerationActivity(input.target)) return null
@@ -58,6 +62,8 @@ export function beginChatGenerationActivity(input: {
     stage: 0,
     kind: input.kind,
     controller: input.controller,
+    operationId: input.operationId,
+    acceptedMessageId: input.acceptedMessageId,
   }
   activeChatGenerations.update((activities) => [...activities, activity])
   return activity

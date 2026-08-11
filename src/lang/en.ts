@@ -92,6 +92,12 @@ export const languageEnglish = {
     retry: 'Retry reply',
     retrying: 'Retrying…',
   },
+  generationStop: {
+    stopping: 'Stopping…',
+    failed: 'Stop could not be acknowledged. The generation may still be running.',
+    retry: 'Retry Stop',
+    savingStoppedPartial: 'Stopped. Saving the partial reply…',
+  },
   fileSelectionStale: 'Settings changed while you were choosing the file. Please choose it again to retry.',
   alternateGreetingMutationQueued:
     'The alternate greeting change is saved on this device and queued. It will retry automatically.',

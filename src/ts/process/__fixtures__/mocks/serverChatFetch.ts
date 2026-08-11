@@ -374,8 +374,9 @@ export async function serverChatFetch(input: RequestInfo | URL, init?: RequestIn
   })
 
   if (method === 'DELETE') {
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
+    const jobId = decodeURIComponent(url.split('/').at(-1) ?? '')
+    return new Response(JSON.stringify({ disposition: 'cancelling', jobId }), {
+      status: 202,
       headers: { 'content-type': 'application/json', 'X-Request-UID': 'fixture-cancel-request-uid' },
     })
   }

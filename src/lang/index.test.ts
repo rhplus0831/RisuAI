@@ -213,6 +213,35 @@ describe('changeLanguage same-code cache', () => {
     }
   })
 
+  it('defines the acknowledged Stop lifecycle copy in every language pack', async () => {
+    const {
+      languageChinese,
+      languageChineseTraditional,
+      languageEnglish,
+      languageGerman,
+      languageKorean,
+      languageSpanish,
+      languageVietnamese,
+    } = await loadLanguageModule()
+
+    for (const pack of [
+      languageEnglish,
+      languageGerman,
+      languageSpanish,
+      languageVietnamese,
+      languageChinese,
+      languageChineseTraditional,
+      languageKorean,
+    ]) {
+      expect(pack.generationStop).toMatchObject({
+        stopping: expect.any(String),
+        failed: expect.any(String),
+        retry: expect.any(String),
+        savingStoppedPartial: expect.any(String),
+      })
+    }
+  })
+
   it('renders Vietnamese inlay counts without a stray template-literal dollar sign', async () => {
     const { languageVietnamese } = await loadLanguageModule()
 

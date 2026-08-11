@@ -173,7 +173,7 @@ vi.mock('./server/pendingMutationReplay', () => ({
   replayPendingMutations: pendingMutationApi.replay,
 }))
 vi.mock('./server/pendingMutationOutbox', () => ({
-  countPendingMutationRecords: pendingMutationApi.count,
+  countBlockingPendingMutationRecords: pendingMutationApi.count,
   preparePendingMutationOutbox: pendingMutationApi.prepare,
   readSinglePendingMutationOwner: pendingMutationApi.readOwner,
 }))
@@ -620,6 +620,22 @@ describe('API-backed client bootstrap', () => {
     await expect(loadWebInitialDatabase()).rejects.toThrow('pending changes')
 
     expect(resourceApi.loadInitial).not.toHaveBeenCalled()
+  })
+
+  it('hydrates with a retained Stop control so its retry UI can remain available', async () => {
+    pendingMutationApi.replay.mockResolvedValue({
+      attempted: 1,
+      controlRetained: 1,
+      discarded: 0,
+      retained: 0,
+      succeeded: 0,
+    })
+    pendingMutationApi.count.mockResolvedValue(0)
+
+    await loadWebInitialDatabase()
+
+    expect(resourceApi.loadInitial).toHaveBeenCalledOnce()
+    expect(runtimeApi.applyGenerationOperationBootstrap).toHaveBeenCalledOnce()
   })
 
   it.each([1, null])('stops before hydration when the raw pending-row count is %s', async (count) => {

@@ -59,6 +59,56 @@ describe('pending mutation replay', () => {
     expect(durableApi.replay).not.toHaveBeenCalled()
   })
 
+  it('replays a persisted Stop before its older submit for cancel-before-POST recovery', async () => {
+    const submit: any = entry('generation-operation-submit:operation-a', 'submit-a')
+    submit.handle.sequence = 1
+    submit.intent.kind = 'generation-operation-submit'
+    submit.intent.requests = [{ method: 'POST', path: '/generation-operations', body: { operationId: 'operation-a' } }]
+    const cancel: any = entry('generation-operation-cancel:operation-a', 'cancel-a')
+    cancel.handle.sequence = 2
+    cancel.intent.kind = 'generation-operation-cancel'
+    cancel.intent.requests = [
+      {
+        method: 'PUT',
+        path: '/generation-operations/operation-a/cancellation',
+        body: { reason: 'user_stop' },
+      },
+    ]
+    outboxApi.list.mockResolvedValue([submit, cancel])
+
+    await replayPendingMutations()
+
+    expect(generationOperationApi.replay.mock.calls.map(([handle]) => handle.mutationId)).toEqual([
+      'cancel-a',
+      'submit-a',
+    ])
+  })
+
+  it('reports an unacknowledged Stop as a nonblocking retained control', async () => {
+    const cancel: any = entry('generation-operation-cancel:operation-a', 'cancel-a')
+    cancel.intent.kind = 'generation-operation-cancel'
+    cancel.intent.requests = [
+      {
+        method: 'PUT',
+        path: '/generation-operations/operation-a/cancellation',
+        body: { reason: 'user_stop' },
+      },
+    ]
+    outboxApi.list.mockResolvedValue([cancel])
+    generationOperationApi.replay.mockResolvedValue({
+      disposition: 'retained',
+      result: { status: 'failed', error: 'offline' },
+    })
+
+    await expect(replayPendingMutations()).resolves.toEqual({
+      attempted: 1,
+      controlRetained: 1,
+      discarded: 0,
+      retained: 0,
+      succeeded: 0,
+    })
+  })
+
   it('counts terminal mutation-id failures as discarded instead of retrying forever', async () => {
     outboxApi.list.mockResolvedValue([entry('settings:runtime', 'conflict-a')])
     durableApi.replay.mockResolvedValue({

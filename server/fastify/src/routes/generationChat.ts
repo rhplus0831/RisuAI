@@ -5269,14 +5269,34 @@ export function registerGenerationChatRoutes(
     const job = generationJobs.registry.get(req.params.id)
     if (!job) {
       reply.code(404).send({
+        disposition: 'not_found',
         error: 'generation_job_not_found',
         reason: 'Generation job not found or already expired.',
       })
       return
     }
     const lineage = generationOperationLineageForJob(job)
+    let operation = lineage
+      ? getGenerationOperationProjection(db, lineage.databaseLineage, lineage.operationId)
+      : undefined
+    if (operation?.state === 'completed') {
+      return { disposition: 'already_completed', jobId: job.id, operation }
+    }
+    if (operation?.state === 'cancelled') {
+      return { disposition: 'already_cancelled', jobId: job.id, operation }
+    }
+    if (operation?.state === 'finalizing') {
+      return {
+        disposition:
+          operation.desiredTerminalOutcome === 'cancelled' ? 'cancelled_finalizing' : 'completion_finalizing',
+        jobId: job.id,
+        operation,
+      }
+    }
+    if (operation?.state === 'terminal_failed' || operation?.state === 'invalidated' || job.done) {
+      return { disposition: 'already_terminal', jobId: job.id, ...(operation ? { operation } : {}) }
+    }
     if (lineage) {
-      const operation = getGenerationOperationProjection(db, lineage.databaseLineage, lineage.operationId)
       if (operation?.state === 'owned_by_job') {
         const stopping = transitionGenerationOperation(db, {
           databaseLineage: lineage.databaseLineage,
@@ -5286,7 +5306,10 @@ export function registerGenerationChatRoutes(
           nextState: 'stopping',
           cancelRequestedAt: new Date().toISOString(),
         })
-        if (stopping.operation) updateJobOperationProjection(job, stopping.operation)
+        if (stopping.operation) {
+          operation = stopping.operation
+          updateJobOperationProjection(job, stopping.operation)
+        }
       }
     }
     // Abort only — the runner's finally persists the streaming-so-far text and THEN
@@ -5294,7 +5317,7 @@ export function registerGenerationChatRoutes(
     // async cancel-persist lands) would let an overlapping send for the same chat
     // start and race the cancel write.
     job.abortController.abort('user_stop')
-    return { success: true }
+    return reply.code(202).send({ disposition: 'cancelling', jobId: job.id, ...(operation ? { operation } : {}) })
   })
 
   // One-shot JSON preview. Unlike `/chat`, this never opens an SSE stream, so

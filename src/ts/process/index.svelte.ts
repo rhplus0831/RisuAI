@@ -46,7 +46,8 @@ import { playMessageCompletionSoundIfEnabled } from './messageCompletionSound'
 import type { SendChatFailure } from './sendChatFailure'
 import type { GenerationReattachOutcome } from './generationReattachOutcome'
 import type { ServerChatOperationStream } from './request/serverChat'
-import { abortInputHookActivity } from './inputHookActivity.svelte'
+import { abortChat } from './generationStop.svelte'
+export { abortActiveGeneration, abortChat } from './generationStop.svelte'
 import {
   stablePostGenerationChatTarget,
   stablePostGenerationMessageTarget,
@@ -87,7 +88,6 @@ export interface requestTokenPart {
 export const doingChat = writable(false)
 export const activeGenerationTarget = writable<ActiveChatTarget | null>(null)
 export const chatProcessStage = writable(0)
-export const abortChat = writable(false)
 export let requestTokenParts: { [key: string]: requestTokenPart[] } = {}
 export let previewFormated: OpenAIChat[] = []
 export let previewBody: string = ''
@@ -150,28 +150,6 @@ export function createActiveGenerationAbortController(): AbortController {
 
 export function clearActiveGenerationAbortController(controller: AbortController): void {
   generationControllerBySignal.delete(controller.signal)
-}
-
-export function abortActiveGeneration(): void {
-  abortChat.set(true)
-  const target = captureActiveChatTarget()
-  const activity = findChatGenerationActivity(target)
-  if (activity?.controller) {
-    activity.controller.abort()
-    return
-  }
-
-  if (abortInputHookActivity(target)) return
-
-  // A bootstrap-discovered durable job can be visible for a brief moment before
-  // its reattach controller is installed. Let Stop cancel that exact chat too.
-  if (target?.chatId) {
-    void import('./reattach').then(({ activeGenerationJobs }) => {
-      const jobId = get(activeGenerationJobs).find((job) => job.chatId === target.chatId)?.jobId
-      if (!jobId) return
-      void import('./request/serverChat').then(({ cancelServerChatGeneration }) => cancelServerChatGeneration(jobId))
-    })
-  }
 }
 
 function refreshLegacyGenerationProjection(): void {
@@ -269,6 +247,8 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
         target: generationTarget,
         kind: arg.preview || arg.previewPrompt ? 'preview' : 'message',
         controller: generationControllerBySignal.get(abortSignal),
+        operationId: arg.generationOperationStream?.operationId,
+        acceptedMessageId: arg.generationOperationStream?.acceptedMessageId,
       }) ?? undefined
     if (!generationActivity) return false
     refreshLegacyGenerationProjection()

@@ -11,6 +11,12 @@ export const languageSpanish = {
     retry: 'Reintentar respuesta',
     retrying: 'Reintentando…',
   },
+  generationStop: {
+    stopping: 'Deteniendo…',
+    failed: 'No se pudo confirmar la detención. Es posible que la generación siga en curso.',
+    retry: 'Reintentar detención',
+    savingStoppedPartial: 'Detenido. Guardando la respuesta parcial…',
+  },
   generationPersistenceQueued: 'Esta respuesta está esperando a guardarse y sigue siendo provisional.',
   generationPersistenceStalled:
     'El guardado de esta respuesta provisional sigue fallando. Permanece en cola y se reintentará automáticamente.',

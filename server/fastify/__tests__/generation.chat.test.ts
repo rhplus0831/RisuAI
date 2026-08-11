@@ -5381,8 +5381,8 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         method: 'DELETE',
         headers: authHeaders(assertion),
       })
-      expect(del.status).toBe(200)
-      expect(await del.json()).toEqual({ success: true })
+      expect(del.status).toBe(202)
+      expect(await del.json()).toMatchObject({ disposition: 'cancelling', jobId })
 
       const observerEvents = await observerEventsPromise
       const doneFrames = observerEvents.filter((event) => event.type === 'done')
@@ -5394,6 +5394,13 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       })
       expect(observerEvents.some((event) => event.type === 'side_effect')).toBe(false)
       expect(providerSawAbort).toBe(true)
+
+      const replay = await fetch(`${baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`, {
+        method: 'DELETE',
+        headers: authHeaders(assertion),
+      })
+      expect(replay.status).toBe(200)
+      expect(await replay.json()).toMatchObject({ disposition: 'already_cancelled', jobId })
 
       const bootstrap = await harness.app.inject({
         method: 'GET',

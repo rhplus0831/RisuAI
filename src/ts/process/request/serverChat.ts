@@ -59,7 +59,11 @@ import type { GenerationReattachOutcomeStatus } from '../generationReattachOutco
 import { readBrowserClientContext } from './clientContext'
 import { alertToast } from '../../alert'
 import { language } from '../../../lang'
-import { applyGenerationOperationSseEvent } from '../../server/generationOperations'
+import {
+  applyGenerationOperationSseEvent,
+  registerGenerationOperationViewer,
+  stopGenerationOperation,
+} from '../../server/generationOperations'
 
 const CHAT_ENDPOINT = '/api/v1/generate/chat'
 const INCOMPLETE_CHAT_GENERATION_SETTINGS_ERROR = 'chat_generation_settings_incomplete'
@@ -179,6 +183,19 @@ export type ServerChatGenerationResult =
     }
   | { status: 'aborted' }
 
+export type LegacyGenerationCancellationDisposition =
+  | 'cancelling'
+  | 'cancelled_finalizing'
+  | 'completion_finalizing'
+  | 'already_cancelled'
+  | 'already_completed'
+  | 'already_terminal'
+
+export type LegacyGenerationCancellationResult =
+  | { status: 'acknowledged'; disposition: LegacyGenerationCancellationDisposition; jobId: string }
+  | { status: 'not_found'; error: string }
+  | { status: 'failed'; error: string; code?: string }
+
 function parseData(data: string): Record<string, unknown> | null {
   try {
     return JSON.parse(data) as Record<string, unknown>
@@ -213,6 +230,14 @@ function httpErrorReason(body: { error?: unknown; message?: unknown; reason?: un
   if (nonEmptyString(body.error)) return body.error
   if (nonEmptyString(body.reason)) return body.reason
   return null
+}
+
+function cancellationHttpError(body: unknown, status: number, statusText: string): string {
+  const reason =
+    body && typeof body === 'object' && !Array.isArray(body)
+      ? httpErrorReason(body as { error?: unknown; message?: unknown; reason?: unknown })
+      : null
+  return reason ?? `HTTP ${status}${statusText ? ` ${statusText}` : ''}`
 }
 
 function serverChatCaller(input: ServerChatInput): 'chat-generate' | 'preview-prompt' {
@@ -264,12 +289,13 @@ function reconcileServerCommandRevision(info: ServerChatInfo): void {
  * Explicitly cancel a running durable job. A bare disconnect only detaches the
  * viewer; the job keeps generating, so the stop button must
  * `DELETE /generate/chat/:id` to abort it. Authorized by the current active
- * writer. Best-effort: if the cancel fails the job still finishes and persists.
+ * writer. Compatibility callers receive typed acknowledgement instead of
+ * treating dispatch as cancellation success.
  */
-export async function cancelServerChatGeneration(generationId: string): Promise<void> {
-  if (!generationId) return
-  const auth = await getNodeServerProxyAuth()
+export async function cancelServerChatGeneration(generationId: string): Promise<LegacyGenerationCancellationResult> {
+  if (!generationId) return { status: 'failed', error: 'Generation job ID is required.' }
   try {
+    const auth = await getNodeServerProxyAuth()
     const response = await fetch(`${CHAT_ENDPOINT}/${encodeURIComponent(generationId)}`, {
       method: 'DELETE',
       headers: {
@@ -284,8 +310,56 @@ export async function cancelServerChatGeneration(generationId: string): Promise<
       status: response.status,
       ok: response.ok,
     })
-  } catch {
-    // best-effort cancel
+    let body: unknown = null
+    try {
+      body = await response.json()
+    } catch {
+      // A non-JSON response cannot acknowledge the requested job lifecycle.
+    }
+    if (response.status === 404) {
+      return {
+        status: 'not_found',
+        error: cancellationHttpError(body, response.status, response.statusText),
+      }
+    }
+    if (!response.ok) {
+      handleActiveWriterStaleResponse(response, body)
+      return {
+        status: 'failed',
+        error: cancellationHttpError(body, response.status, response.statusText),
+        ...(body && typeof body === 'object' && typeof (body as Record<string, unknown>).error === 'string'
+          ? { code: (body as Record<string, unknown>).error as string }
+          : {}),
+      }
+    }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return { status: 'failed', error: 'Invalid generation cancellation response.' }
+    }
+    const record = body as Record<string, unknown>
+    const allowed: readonly LegacyGenerationCancellationDisposition[] = [
+      'cancelling',
+      'cancelled_finalizing',
+      'completion_finalizing',
+      'already_cancelled',
+      'already_completed',
+      'already_terminal',
+    ]
+    if (
+      typeof record.jobId !== 'string' ||
+      !allowed.includes(record.disposition as LegacyGenerationCancellationDisposition)
+    ) {
+      return { status: 'failed', error: 'Invalid generation cancellation response.' }
+    }
+    return {
+      status: 'acknowledged',
+      disposition: record.disposition as LegacyGenerationCancellationDisposition,
+      jobId: record.jobId,
+    }
+  } catch (error) {
+    return {
+      status: 'failed',
+      error: error instanceof Error ? `Network error: ${error.message}` : `Network error: ${String(error)}`,
+    }
   }
 }
 
@@ -584,18 +658,37 @@ export async function requestServerChatGeneration(
   let cancelledDurableJobId = ''
   const viewerAbortController = new AbortController()
   let consumerDetached = false
+  let operationStopDetached = false
+  let operationCancellationRequested = false
+  const unregisterGenerationOperationViewer = operationStream
+    ? registerGenerationOperationViewer(operationStream.operationId, () => {
+        operationCancellationRequested = true
+        operationStopDetached = true
+        viewerAbortController.abort()
+      })
+    : () => undefined
   const cancelDurableOnAbort = (): void => {
-    // A durable send or a reattached generation: an explicit abort (the stop
-    // button) cancels the server job; a bare disconnect only detaches.
+    // Protocol-v1 Stop is addressed before a job ID exists and stages its own
+    // durable control before detaching this viewer.
+    if (operationStream?.operationId) {
+      if (operationCancellationRequested) return
+      operationCancellationRequested = true
+      void stopGenerationOperation(operationStream.operationId)
+      return
+    }
+    // Compatibility jobs retain their typed job-ID cancellation boundary.
     if (!watchesDurableJob || durableJobId.length === 0 || cancelledDurableJobId === durableJobId) return
     cancelledDurableJobId = durableJobId
     void cancelServerChatGeneration(durableJobId)
   }
   const onOwnerAbort = (): void => {
     cancelDurableOnAbort()
-    viewerAbortController.abort()
+    if (!operationStream?.operationId) viewerAbortController.abort()
   }
-  const stopWatchingAbort = (): void => signal?.removeEventListener('abort', onOwnerAbort)
+  const stopWatchingAbort = (): void => {
+    signal?.removeEventListener('abort', onOwnerAbort)
+    unregisterGenerationOperationViewer()
+  }
   if (signal?.aborted) {
     onOwnerAbort()
   } else {
@@ -751,7 +844,9 @@ export async function requestServerChatGeneration(
 
       const settleAborted = (): void => {
         cancelDurableOnAbort()
-        forgetActiveGenerationJob(durableJobId)
+        // Operation Stop detaches this viewer after staging, but the exact job
+        // remains locally owned until operation reconciliation proves terminal.
+        if (!operationStopDetached) forgetActiveGenerationJob(durableJobId)
         resolveReadyOnce({ status: 'aborted' })
         resolveTerminalOnce({ status: 'error', error: 'Aborted', ...reattachOutcomeFields('aborted'), warnings })
         clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
@@ -1074,7 +1169,7 @@ export async function requestServerChatGeneration(
           }
 
           if (consumerDetached) return
-          if (signal?.aborted) {
+          if (signal?.aborted || operationStopDetached) {
             settleAborted()
             return
           }

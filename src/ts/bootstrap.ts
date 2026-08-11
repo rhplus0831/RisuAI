@@ -45,7 +45,7 @@ import { startBridgePatchLifecycleFlush } from './server/bridgeFlush'
 import { replayPendingMutations } from './server/pendingMutationReplay'
 import { applyGenerationOperationBootstrap, configureGenerationOperationProtocol } from './server/generationOperations'
 import {
-  countPendingMutationRecords,
+  countBlockingPendingMutationRecords,
   preparePendingMutationOutbox,
   readSinglePendingMutationOwner,
 } from './server/pendingMutationOutbox'
@@ -310,7 +310,7 @@ export async function loadWebInitialDatabase() {
   }
   await flushPendingMutationReceiptAcknowledgements()
   const pendingMutationReplay = await replayPendingMutations()
-  const remainingPendingMutationRecords = await countPendingMutationRecords()
+  const remainingPendingMutationRecords = await countBlockingPendingMutationRecords()
   if (
     pendingMutationReplay.retained > 0 ||
     remainingPendingMutationRecords === null ||

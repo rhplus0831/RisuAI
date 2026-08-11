@@ -33,6 +33,8 @@ import { parseGenerationOperations, type GenerationOperationProjection, type Ser
 const GENERATION_OPERATIONS_ENDPOINT = '/api/v1/generation-operations'
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 const MAX_REVISION_RETRIES = 3
+const CANCELLATION_STATUS_TIMEOUT_MS = 10_000
+const CANCELLATION_RECONCILE_DELAYS_MS = [250, 500, 1_000, 2_000, 4_000, 5_000] as const
 
 export interface GenerationOperationGenerationIntent {
   syntheticSayNothing: boolean
@@ -75,6 +77,51 @@ export interface GenerationOperationResponse {
   stream?: { href: string }
 }
 
+export type GenerationOperationCancellationDisposition =
+  | 'cancelled_before_acceptance'
+  | 'cancelling'
+  | 'cancelled'
+  | 'cancelled_finalizing'
+  | 'completion_finalizing'
+  | 'already_cancelled'
+  | 'already_completed'
+  | 'terminal_nonrunning'
+
+export type GenerationOperationCancellationState =
+  | 'none'
+  | 'stop_staging'
+  | 'stop_sending'
+  | 'stop_waiting'
+  | 'stop_failed'
+  | 'stopped_finalizing'
+  | 'settled_cancelled'
+  | 'settled_completed'
+  | 'settled_nonrunning'
+
+export interface GenerationOperationCancellation {
+  operationId: string
+  target?: ActiveChatTarget
+  state: GenerationOperationCancellationState
+  disposition?: GenerationOperationCancellationDisposition
+  operationState?: GenerationOperationProjection['state']
+  stateVersion?: number
+  projectionEpoch?: number
+  attemptNo?: number
+  jobId?: string
+  error?: string
+  code?: string
+  knownAttemptMatched?: boolean
+}
+
+export type GenerationOperationCancellationResult =
+  | {
+      status: 'acknowledged'
+      disposition: GenerationOperationCancellationDisposition
+      operation: GenerationOperationProjection
+      knownAttemptMatched: boolean
+    }
+  | { status: 'failed'; error: string; code?: string }
+
 export interface StagedAcceptedSendOperation {
   target: ActiveChatTarget
   request: GenerationOperationSubmitRequest
@@ -95,10 +142,24 @@ export type GenerationOperationDispatchResult =
 
 export type GenerationOperationPendingReplayOutcome = {
   disposition: 'discarded' | 'retained' | 'succeeded'
-  result?: GenerationOperationDispatchResult
+  result?: GenerationOperationDispatchResult | GenerationOperationCancellationResult
 }
 
 export const generationOperationProjections = writable<GenerationOperationProjection[]>([])
+export const generationOperationCancellations = writable<GenerationOperationCancellation[]>([])
+
+interface GenerationOperationCancellationRuntime {
+  handle?: PendingMutationHandle
+  intent?: DurableMutationIntent & { kind: 'generation-operation-cancel' }
+  inFlight?: Promise<GenerationOperationCancellationResult>
+  rollbackOptimisticAppend?: () => void
+  viewerDetachers: Set<() => void>
+  reconcileAttempt: number
+  reconcileTimer?: ReturnType<typeof setTimeout>
+}
+
+const cancellationRuntimeByOperationId = new Map<string, GenerationOperationCancellationRuntime>()
+let cancellationWakeListenersInstalled = false
 
 let generationOperationProtocolVersion = 0
 let generationOperationProjectionEpoch = 0
@@ -113,6 +174,11 @@ export function configureGenerationOperationProtocol(
     generationOperationDatabaseLineage = databaseLineage
     generationOperationProjectionEpoch = 0
     generationOperationProjections.set([])
+    for (const runtime of cancellationRuntimeByOperationId.values()) {
+      if (runtime.reconcileTimer !== undefined) clearTimeout(runtime.reconcileTimer)
+    }
+    cancellationRuntimeByOperationId.clear()
+    generationOperationCancellations.set([])
     clearAcceptedSendRecoveryProjection()
   }
 }
@@ -126,6 +192,11 @@ export function resetGenerationOperationClientForTests(): void {
   generationOperationProjectionEpoch = 0
   generationOperationDatabaseLineage = null
   generationOperationProjections.set([])
+  for (const runtime of cancellationRuntimeByOperationId.values()) {
+    if (runtime.reconcileTimer !== undefined) clearTimeout(runtime.reconcileTimer)
+  }
+  cancellationRuntimeByOperationId.clear()
+  generationOperationCancellations.set([])
   clearAcceptedSendRecoveryProjection()
 }
 
@@ -137,6 +208,137 @@ function createProtocolUuid(): string {
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+function targetMatches(left: ActiveChatTarget | undefined, right: ActiveChatTarget | null | undefined): boolean {
+  if (!left || !right) return false
+  if (left.chatId && right.chatId) return left.chatId === right.chatId
+  if (left.characterId && right.characterId && left.characterId !== right.characterId) return false
+  return left.selectedCharID === right.selectedCharID && left.chatPage === right.chatPage
+}
+
+function cancellationRuntime(operationId: string): GenerationOperationCancellationRuntime {
+  let runtime = cancellationRuntimeByOperationId.get(operationId)
+  if (!runtime) {
+    runtime = { viewerDetachers: new Set(), reconcileAttempt: 0 }
+    cancellationRuntimeByOperationId.set(operationId, runtime)
+  }
+  return runtime
+}
+
+function cancellationByOperationId(operationId: string): GenerationOperationCancellation | undefined {
+  return get(generationOperationCancellations).find((candidate) => candidate.operationId === operationId)
+}
+
+function cancellationAuthorityEstablished(control: GenerationOperationCancellation | undefined): boolean {
+  return (
+    control?.operationState === 'cancel_requested' ||
+    control?.operationState === 'stopping' ||
+    control?.operationState === 'finalizing' ||
+    control?.operationState === 'cancelled' ||
+    control?.operationState === 'completed' ||
+    control?.operationState === 'terminal_failed' ||
+    control?.operationState === 'invalidated'
+  )
+}
+
+function updateGenerationOperationCancellation(
+  operationId: string,
+  update: (previous: GenerationOperationCancellation | undefined) => GenerationOperationCancellation | null,
+): void {
+  generationOperationCancellations.update((controls) => {
+    const previous = controls.find((candidate) => candidate.operationId === operationId)
+    const next = update(previous)
+    const retained = controls.filter((candidate) => candidate.operationId !== operationId)
+    if (!next) return retained
+    const updated = [...retained, next]
+    if (updated.length <= 256) return updated
+    return updated.slice(updated.length - 256)
+  })
+}
+
+function trackLocalGenerationOperation(
+  operationId: string,
+  target: ActiveChatTarget,
+  rollbackOptimisticAppend: () => void,
+): void {
+  cancellationRuntime(operationId).rollbackOptimisticAppend = rollbackOptimisticAppend
+  updateGenerationOperationCancellation(operationId, (previous) => ({
+    operationId,
+    target: { ...target },
+    state: previous?.state ?? 'none',
+    ...(previous?.disposition ? { disposition: previous.disposition } : {}),
+    ...(previous?.operationState ? { operationState: previous.operationState } : {}),
+    ...(previous?.stateVersion !== undefined ? { stateVersion: previous.stateVersion } : {}),
+    ...(previous?.projectionEpoch !== undefined ? { projectionEpoch: previous.projectionEpoch } : {}),
+    ...(previous?.attemptNo !== undefined ? { attemptNo: previous.attemptNo } : {}),
+    ...(previous?.jobId ? { jobId: previous.jobId } : {}),
+    ...(previous?.error ? { error: previous.error } : {}),
+    ...(previous?.code ? { code: previous.code } : {}),
+    ...(previous?.knownAttemptMatched !== undefined ? { knownAttemptMatched: previous.knownAttemptMatched } : {}),
+  }))
+}
+
+export function findGenerationOperationIdForTarget(target: ActiveChatTarget | null | undefined): string | undefined {
+  if (!target) return undefined
+  const local = get(generationOperationCancellations)
+    .filter(
+      (control) =>
+        targetMatches(control.target, target) &&
+        (control.state === 'none' ||
+          control.state === 'stop_staging' ||
+          control.state === 'stop_sending' ||
+          control.state === 'stop_waiting' ||
+          control.state === 'stop_failed'),
+    )
+    .at(-1)
+  if (local) return local.operationId
+  return get(generationOperationProjections)
+    .filter(
+      (operation) =>
+        operation.protocolVersion === 1 &&
+        operation.chatId === target.chatId &&
+        (operation.state === 'accepted' ||
+          operation.state === 'launching' ||
+          operation.state === 'owned_by_job' ||
+          operation.state === 'stopping'),
+    )
+    .sort(
+      (left, right) =>
+        left.projectionEpoch - right.projectionEpoch ||
+        left.stateVersion - right.stateVersion ||
+        left.operationId.localeCompare(right.operationId),
+    )
+    .at(-1)?.operationId
+}
+
+export function registerGenerationOperationViewer(operationId: string, detach: () => void): () => void {
+  const runtime = cancellationRuntime(operationId)
+  runtime.viewerDetachers.add(detach)
+  const state = cancellationByOperationId(operationId)?.state
+  if (
+    state === 'stop_sending' ||
+    state === 'stop_waiting' ||
+    state === 'stopped_finalizing' ||
+    state === 'settled_cancelled' ||
+    state === 'settled_completed' ||
+    state === 'settled_nonrunning'
+  ) {
+    queueMicrotask(detach)
+  }
+  return () => runtime.viewerDetachers.delete(detach)
+}
+
+function detachGenerationOperationViewers(operationId: string): void {
+  const runtime = cancellationRuntime(operationId)
+  for (const detach of [...runtime.viewerDetachers]) {
+    try {
+      detach()
+    } catch (error) {
+      console.error(error)
+    }
+  }
+  runtime.viewerDetachers.clear()
 }
 
 function operationIntentForSubmit(request: GenerationOperationSubmitRequest): DurableMutationIntent & {
@@ -162,6 +364,28 @@ function operationIntentForRetry(
         method: 'POST',
         path: `/generation-operations/${encodeURIComponent(operationId)}/retries`,
         body: { retryRequestId, expectedStateVersion },
+      },
+    ],
+  }
+}
+
+function operationIntentForCancellation(
+  operationId: string,
+  advisory: Pick<GenerationOperationCancellation, 'stateVersion' | 'attemptNo' | 'jobId'> = {},
+): DurableMutationIntent & { kind: 'generation-operation-cancel' } {
+  return {
+    version: 1,
+    kind: 'generation-operation-cancel',
+    requests: [
+      {
+        method: 'PUT',
+        path: `/generation-operations/${encodeURIComponent(operationId)}/cancellation`,
+        body: {
+          reason: 'user_stop',
+          ...(advisory.stateVersion !== undefined ? { knownStateVersion: advisory.stateVersion } : {}),
+          ...(advisory.attemptNo !== undefined ? { knownAttemptNo: advisory.attemptNo } : {}),
+          ...(advisory.jobId ? { knownJobId: advisory.jobId } : {}),
+        },
       },
     ],
   }
@@ -209,6 +433,7 @@ export async function stageAcceptedSendGenerationOperation(input: {
     await discardPendingMutation(handle)
     return optimistic
   }
+  trackLocalGenerationOperation(operationId, input.target, optimistic.rollback)
   return {
     target: { ...input.target },
     request,
@@ -298,11 +523,135 @@ export function generationOperationStreamDescriptor(
   }
 }
 
+function clearCancellationReconcileTimer(operationId: string): void {
+  const runtime = cancellationRuntimeByOperationId.get(operationId)
+  if (!runtime || runtime.reconcileTimer === undefined) return
+  clearTimeout(runtime.reconcileTimer)
+  runtime.reconcileTimer = undefined
+}
+
+function retireCancellationIntent(operationId: string): void {
+  const runtime = cancellationRuntimeByOperationId.get(operationId)
+  clearCancellationReconcileTimer(operationId)
+  if (!runtime?.handle) return
+  const handle = runtime.handle
+  void discardPendingMutation(handle).then((outcome) => {
+    if (outcome === 'deleted' || outcome === 'superseded') {
+      const current = cancellationRuntimeByOperationId.get(operationId)
+      if (current?.handle === handle) {
+        current.handle = undefined
+        current.intent = undefined
+      }
+    }
+  })
+}
+
+function forgetTerminalCancellationJob(
+  operation: GenerationOperationProjection,
+  outcome?: 'cancelled' | 'completed',
+): void {
+  const jobId = operation.currentAttempt?.jobId
+  if (!jobId) return
+  void import('../process/reattach')
+    .then(({ forgetActiveGenerationJob }) => forgetActiveGenerationJob(jobId, outcome))
+    .catch((error) => console.error(error))
+}
+
+function cancellationTargetFromOperation(
+  operation: GenerationOperationProjection,
+  previous?: GenerationOperationCancellation,
+): ActiveChatTarget | undefined {
+  if (previous.target) return previous.target
+  if (!operation.chatId && !operation.characterId) return undefined
+  return {
+    selectedCharID: -1,
+    chatPage: -1,
+    characterId: operation.characterId,
+    chatId: operation.chatId,
+  }
+}
+
+function cancellationTargetForOperationId(
+  operationId: string,
+  previous?: GenerationOperationCancellation,
+): ActiveChatTarget | undefined {
+  if (previous?.target) return previous.target
+  const operation = get(generationOperationProjections).find((candidate) => candidate.operationId === operationId)
+  return operation ? cancellationTargetFromOperation(operation, previous) : undefined
+}
+
+function syncGenerationOperationCancellationProjection(operation: GenerationOperationProjection): void {
+  const previous = cancellationByOperationId(operation.operationId)
+  if (!previous) return
+  let state = previous.state
+  let disposition = previous.disposition
+  if (previous.state !== 'none') {
+    if (operation.state === 'cancel_requested') {
+      state = 'settled_cancelled'
+      disposition = 'cancelled_before_acceptance'
+      retireCancellationIntent(operation.operationId)
+    } else if (operation.state === 'cancelled') {
+      state = 'settled_cancelled'
+      disposition = 'already_cancelled'
+      forgetTerminalCancellationJob(operation, 'cancelled')
+      retireCancellationIntent(operation.operationId)
+    } else if (operation.state === 'completed') {
+      state = 'settled_completed'
+      disposition = 'already_completed'
+      forgetTerminalCancellationJob(operation, 'completed')
+      retireCancellationIntent(operation.operationId)
+    } else if (operation.state === 'finalizing' && operation.desiredTerminalOutcome === 'cancelled') {
+      state = 'stopped_finalizing'
+      disposition = 'cancelled_finalizing'
+    } else if (operation.state === 'finalizing' && operation.desiredTerminalOutcome === 'completed') {
+      state = 'stop_waiting'
+      disposition = 'completion_finalizing'
+    } else if (operation.state === 'stopping') {
+      state = 'stop_waiting'
+      disposition = 'cancelling'
+    } else if (operation.state === 'terminal_failed' || operation.state === 'invalidated') {
+      forgetTerminalCancellationJob(operation)
+      retireCancellationIntent(operation.operationId)
+      state = 'settled_nonrunning'
+      disposition = 'terminal_nonrunning'
+    }
+  } else if (
+    operation.state === 'completed' ||
+    operation.state === 'cancelled' ||
+    operation.state === 'terminal_failed' ||
+    operation.state === 'invalidated' ||
+    operation.state === 'retryable' ||
+    operation.state === 'abandoned'
+  ) {
+    updateGenerationOperationCancellation(operation.operationId, () => null)
+    return
+  }
+  updateGenerationOperationCancellation(operation.operationId, (current) => ({
+    operationId: operation.operationId,
+    target: cancellationTargetFromOperation(operation, current ?? previous),
+    state,
+    ...(disposition ? { disposition } : {}),
+    operationState: operation.state,
+    stateVersion: operation.stateVersion,
+    projectionEpoch: operation.projectionEpoch,
+    ...(operation.currentAttempt
+      ? { attemptNo: operation.currentAttempt.attemptNo, jobId: operation.currentAttempt.jobId }
+      : {}),
+    ...(current?.error ? { error: current.error } : {}),
+    ...(current?.code ? { code: current.code } : {}),
+    ...(current?.knownAttemptMatched !== undefined ? { knownAttemptMatched: current.knownAttemptMatched } : {}),
+  }))
+  if (state === 'stop_waiting' || state === 'stopped_finalizing') {
+    scheduleGenerationOperationCancellationReconcile(operation.operationId)
+  }
+}
+
 export function applyGenerationOperationProjection(
   operation: GenerationOperationProjection,
   capturedTarget?: ActiveChatTarget,
 ): void {
   generationOperationProjectionEpoch = Math.max(generationOperationProjectionEpoch, operation.projectionEpoch)
+  let accepted = true
   generationOperationProjections.update((operations) => {
     const previous = operations.find((candidate) => candidate.operationId === operation.operationId)
     if (
@@ -310,6 +659,7 @@ export function applyGenerationOperationProjection(
       (previous.projectionEpoch > operation.projectionEpoch ||
         (previous.projectionEpoch === operation.projectionEpoch && previous.stateVersion > operation.stateVersion))
     ) {
+      accepted = false
       return operations
     }
     return [...operations.filter((candidate) => candidate.operationId !== operation.operationId), operation].sort(
@@ -317,7 +667,9 @@ export function applyGenerationOperationProjection(
         left.projectionEpoch - right.projectionEpoch || left.operationId.localeCompare(right.operationId),
     )
   })
+  if (!accepted) return
   applyAcceptedSendOperationProjection(operation, capturedTarget)
+  syncGenerationOperationCancellationProjection(operation)
 }
 
 export function applyGenerationOperationBootstrap(runtime: ServerBootstrapRuntime): void {
@@ -331,6 +683,7 @@ export function applyGenerationOperationBootstrap(runtime: ServerBootstrapRuntim
   const operations = runtime.generationOperations ?? []
   generationOperationProjections.set([...operations])
   applyAcceptedSendBootstrapProjection(operations, runtime.activeGenerationJobs ?? [], epoch)
+  for (const operation of operations) syncGenerationOperationCancellationProjection(operation)
 }
 
 /** Update a known operation from additive lineage carried by every protocol-v1 SSE frame. */
@@ -372,6 +725,384 @@ export function applyGenerationOperationSseEvent(data: Record<string, unknown>):
   applyGenerationOperationProjection(operation)
 }
 
+function cancellationResponseFromBody(body: unknown):
+  | {
+      disposition: GenerationOperationCancellationDisposition
+      operation: GenerationOperationProjection
+      knownAttemptMatched: boolean
+    }
+  | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  const record = body as Record<string, unknown>
+  const allowed: readonly GenerationOperationCancellationDisposition[] = [
+    'cancelled_before_acceptance',
+    'cancelling',
+    'cancelled',
+    'cancelled_finalizing',
+    'completion_finalizing',
+    'already_cancelled',
+    'already_completed',
+    'terminal_nonrunning',
+  ]
+  if (!allowed.includes(record.disposition as GenerationOperationCancellationDisposition)) return undefined
+  const operation = operationFromBody(body)
+  if (!operation || typeof record.knownAttemptMatched !== 'boolean') return undefined
+  return {
+    disposition: record.disposition as GenerationOperationCancellationDisposition,
+    operation,
+    knownAttemptMatched: record.knownAttemptMatched,
+  }
+}
+
+function cancellationStateForDisposition(
+  disposition: GenerationOperationCancellationDisposition,
+): GenerationOperationCancellationState {
+  if (
+    disposition === 'cancelled_before_acceptance' ||
+    disposition === 'cancelled' ||
+    disposition === 'already_cancelled'
+  ) {
+    return 'settled_cancelled'
+  }
+  if (disposition === 'already_completed') return 'settled_completed'
+  if (disposition === 'terminal_nonrunning') return 'settled_nonrunning'
+  if (disposition === 'cancelled_finalizing') return 'stopped_finalizing'
+  return 'stop_waiting'
+}
+
+function cancellationDispositionIsTerminal(disposition: GenerationOperationCancellationDisposition): boolean {
+  return (
+    disposition === 'cancelled_before_acceptance' ||
+    disposition === 'cancelled' ||
+    disposition === 'already_cancelled' ||
+    disposition === 'already_completed' ||
+    disposition === 'terminal_nonrunning'
+  )
+}
+
+function scheduleGenerationOperationCancellationReconcile(operationId: string): void {
+  installGenerationOperationCancellationWakeListeners()
+  const control = cancellationByOperationId(operationId)
+  if (
+    !control ||
+    (control.state !== 'stop_waiting' && control.state !== 'stopped_finalizing') ||
+    cancellationRuntime(operationId).reconcileTimer !== undefined
+  ) {
+    return
+  }
+  const runtime = cancellationRuntime(operationId)
+  const delay =
+    CANCELLATION_RECONCILE_DELAYS_MS[Math.min(runtime.reconcileAttempt, CANCELLATION_RECONCILE_DELAYS_MS.length - 1)]
+  runtime.reconcileAttempt += 1
+  runtime.reconcileTimer = setTimeout(() => {
+    runtime.reconcileTimer = undefined
+    void refreshGenerationOperationCancellation(operationId)
+  }, delay)
+}
+
+function wakeGenerationOperationCancellationReconciliation(): void {
+  for (const control of get(generationOperationCancellations)) {
+    if (control.state === 'stop_waiting' || control.state === 'stopped_finalizing') {
+      clearCancellationReconcileTimer(control.operationId)
+      void refreshGenerationOperationCancellation(control.operationId)
+    }
+  }
+}
+
+function installGenerationOperationCancellationWakeListeners(): void {
+  if (cancellationWakeListenersInstalled || typeof window === 'undefined' || typeof document === 'undefined') return
+  cancellationWakeListenersInstalled = true
+  window.addEventListener('online', wakeGenerationOperationCancellationReconciliation)
+  window.addEventListener('pageshow', wakeGenerationOperationCancellationReconciliation)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') wakeGenerationOperationCancellationReconciliation()
+  })
+}
+
+function applyCancellationAcknowledgement(
+  response: NonNullable<ReturnType<typeof cancellationResponseFromBody>>,
+): GenerationOperationCancellationResult {
+  applyGenerationOperationProjection(response.operation)
+  const state = cancellationStateForDisposition(response.disposition)
+  updateGenerationOperationCancellation(response.operation.operationId, (previous) => ({
+    operationId: response.operation.operationId,
+    target: previous?.target,
+    state,
+    disposition: response.disposition,
+    operationState: response.operation.state,
+    stateVersion: response.operation.stateVersion,
+    projectionEpoch: response.operation.projectionEpoch,
+    ...(response.operation.currentAttempt
+      ? {
+          attemptNo: response.operation.currentAttempt.attemptNo,
+          jobId: response.operation.currentAttempt.jobId,
+        }
+      : {}),
+    knownAttemptMatched: response.knownAttemptMatched,
+  }))
+  if (
+    response.disposition === 'cancelled_before_acceptance' ||
+    (response.operation.state === 'cancelled' && response.operation.acceptedRevision === undefined)
+  ) {
+    const runtime = cancellationRuntimeByOperationId.get(response.operation.operationId)
+    runtime?.rollbackOptimisticAppend?.()
+    if (runtime) runtime.rollbackOptimisticAppend = undefined
+  }
+  if (cancellationDispositionIsTerminal(response.disposition)) {
+    retireCancellationIntent(response.operation.operationId)
+  } else {
+    scheduleGenerationOperationCancellationReconcile(response.operation.operationId)
+  }
+  return {
+    status: 'acknowledged',
+    disposition: response.disposition,
+    operation: response.operation,
+    knownAttemptMatched: response.knownAttemptMatched,
+  }
+}
+
+async function dispatchGenerationOperationCancellation(
+  handle: PendingMutationHandle,
+  intent: DurableMutationIntent & { kind: 'generation-operation-cancel' },
+): Promise<GenerationOperationCancellationResult> {
+  if (!handle.databaseLineage) return { status: 'failed', error: 'The Stop intent has no database lineage.' }
+  const persistence = await beginPendingMutationDispatch(handle)
+  if (persistence !== 'persisted') return { status: 'failed', error: 'The Stop intent is not durably staged.' }
+  const request = intent.requests[0]
+  let auth: string
+  try {
+    auth = await getNodeServerProxyAuth()
+  } catch (error) {
+    return {
+      status: 'failed',
+      error:
+        error instanceof Error
+          ? `Unable to prepare Stop: ${error.message}`
+          : `Unable to prepare Stop: ${String(error)}`,
+    }
+  }
+  const controller = new AbortController()
+  const deadline = setTimeout(() => controller.abort(), CANCELLATION_STATUS_TIMEOUT_MS)
+  let response: Response
+  try {
+    response = await fetch(`/api/v1${request.path}`, {
+      method: request.method,
+      headers: {
+        'content-type': 'application/json',
+        'risu-auth': auth,
+        [SERVER_DATABASE_LINEAGE_HEADER]: handle.databaseLineage,
+        ...activeWriterSessionHeader(),
+      },
+      body: JSON.stringify(request.body),
+      signal: controller.signal,
+    })
+  } catch (error) {
+    return {
+      status: 'failed',
+      error: controller.signal.aborted
+        ? 'Stop acknowledgement timed out.'
+        : error instanceof Error
+          ? `Network error: ${error.message}`
+          : `Network error: ${String(error)}`,
+    }
+  } finally {
+    clearTimeout(deadline)
+  }
+  let body: unknown = null
+  try {
+    body = await response.json()
+  } catch {
+    // A malformed success cannot acknowledge durable cancellation authority.
+  }
+  if (!response.ok) {
+    handleActiveWriterStaleResponse(response, body)
+    return {
+      status: 'failed',
+      error: errorMessage(body, response),
+      ...(errorCode(body) ? { code: errorCode(body) } : {}),
+    }
+  }
+  const parsed = cancellationResponseFromBody(body)
+  if (!parsed) return { status: 'failed', error: 'Invalid generation cancellation response.' }
+  return applyCancellationAcknowledgement(parsed)
+}
+
+function cancellationAdvisory(
+  operationId: string,
+): Pick<GenerationOperationCancellation, 'stateVersion' | 'attemptNo' | 'jobId'> {
+  const operation = get(generationOperationProjections).find((candidate) => candidate.operationId === operationId)
+  const control = cancellationByOperationId(operationId)
+  return {
+    stateVersion: operation?.stateVersion ?? control?.stateVersion,
+    attemptNo: operation?.currentAttempt?.attemptNo ?? control?.attemptNo,
+    jobId: operation?.currentAttempt?.jobId ?? control?.jobId,
+  }
+}
+
+async function sendGenerationOperationCancellation(
+  operationId: string,
+  existing?: {
+    handle: PendingMutationHandle
+    intent: DurableMutationIntent & { kind: 'generation-operation-cancel' }
+  },
+): Promise<GenerationOperationCancellationResult> {
+  const runtime = cancellationRuntime(operationId)
+  if (runtime.inFlight) return runtime.inFlight
+  const dispatch = (async (): Promise<GenerationOperationCancellationResult> => {
+    let handle = existing?.handle ?? runtime.handle
+    let intent = existing?.intent ?? runtime.intent
+    if (!handle || !intent) {
+      intent = operationIntentForCancellation(operationId, cancellationAdvisory(operationId))
+      updateGenerationOperationCancellation(operationId, (previous) => ({
+        operationId,
+        target: cancellationTargetForOperationId(operationId, previous),
+        state: 'stop_staging',
+        ...(previous?.operationState ? { operationState: previous.operationState } : {}),
+        ...(previous?.stateVersion !== undefined ? { stateVersion: previous.stateVersion } : {}),
+        ...(previous?.projectionEpoch !== undefined ? { projectionEpoch: previous.projectionEpoch } : {}),
+        ...(previous?.attemptNo !== undefined ? { attemptNo: previous.attemptNo } : {}),
+        ...(previous?.jobId ? { jobId: previous.jobId } : {}),
+      }))
+      let staged: Awaited<PendingMutationHandle['ready']>
+      try {
+        handle = stagePendingMutation(`generation-operation-cancel:${operationId}`, intent)
+        staged = await handle.ready
+      } catch (error) {
+        const failed = {
+          status: 'failed' as const,
+          error: error instanceof Error ? error.message : String(error),
+        }
+        updateGenerationOperationCancellation(operationId, (previous) => ({
+          ...(cancellationAuthorityEstablished(previous)
+            ? previous!
+            : {
+                operationId,
+                target: previous?.target,
+                state: 'stop_failed' as const,
+                error: failed.error,
+              }),
+        }))
+        return failed
+      }
+      if (staged !== 'persisted') {
+        const failed = { status: 'failed' as const, error: 'The Stop intent could not be staged durably.' }
+        updateGenerationOperationCancellation(operationId, (previous) => ({
+          ...(cancellationAuthorityEstablished(previous)
+            ? previous!
+            : {
+                operationId,
+                target: previous?.target,
+                state: 'stop_failed' as const,
+                error: failed.error,
+              }),
+        }))
+        return failed
+      }
+      runtime.handle = handle
+      runtime.intent = intent
+    }
+    updateGenerationOperationCancellation(operationId, (previous) => ({
+      operationId,
+      target: previous?.target,
+      state: 'stop_sending',
+      ...(previous?.operationState ? { operationState: previous.operationState } : {}),
+      ...(previous?.stateVersion !== undefined ? { stateVersion: previous.stateVersion } : {}),
+      ...(previous?.projectionEpoch !== undefined ? { projectionEpoch: previous.projectionEpoch } : {}),
+      ...(previous?.attemptNo !== undefined ? { attemptNo: previous.attemptNo } : {}),
+      ...(previous?.jobId ? { jobId: previous.jobId } : {}),
+    }))
+    detachGenerationOperationViewers(operationId)
+    let result: GenerationOperationCancellationResult
+    try {
+      result = await dispatchGenerationOperationCancellation(handle, intent)
+    } catch (error) {
+      result = {
+        status: 'failed',
+        error: error instanceof Error ? error.message : String(error),
+      }
+    }
+    if (result.status === 'failed') {
+      updateGenerationOperationCancellation(operationId, (previous) =>
+        cancellationAuthorityEstablished(previous)
+          ? previous!
+          : {
+              operationId,
+              target: previous?.target,
+              state: 'stop_failed',
+              ...(previous?.disposition ? { disposition: previous.disposition } : {}),
+              ...(previous?.operationState ? { operationState: previous.operationState } : {}),
+              ...(previous?.stateVersion !== undefined ? { stateVersion: previous.stateVersion } : {}),
+              ...(previous?.projectionEpoch !== undefined ? { projectionEpoch: previous.projectionEpoch } : {}),
+              ...(previous?.attemptNo !== undefined ? { attemptNo: previous.attemptNo } : {}),
+              ...(previous?.jobId ? { jobId: previous.jobId } : {}),
+              error: result.error,
+              ...(result.code ? { code: result.code } : {}),
+            },
+      )
+    }
+    return result
+  })()
+  runtime.inFlight = dispatch
+  return dispatch.finally(() => {
+    if (runtime.inFlight === dispatch) runtime.inFlight = undefined
+  })
+}
+
+export function stopGenerationOperation(operationId: string): Promise<GenerationOperationCancellationResult> {
+  return sendGenerationOperationCancellation(operationId)
+}
+
+export async function refreshGenerationOperationCancellation(
+  operationId: string,
+): Promise<GenerationOperationCancellationResult | GenerationOperationDispatchResult> {
+  clearCancellationReconcileTimer(operationId)
+  const controller = new AbortController()
+  const deadline = setTimeout(() => controller.abort(), CANCELLATION_STATUS_TIMEOUT_MS)
+  let status: GenerationOperationDispatchResult
+  try {
+    status = await readGenerationOperationStatus(operationId, controller.signal)
+  } catch (error) {
+    status = {
+      status: 'retained',
+      error: error instanceof Error ? error.message : String(error),
+    }
+  } finally {
+    clearTimeout(deadline)
+  }
+  if (status.status !== 'accepted') {
+    updateGenerationOperationCancellation(operationId, (previous) => ({
+      operationId,
+      target: previous?.target,
+      state: 'stop_failed',
+      error: status.error,
+      ...(status.code ? { code: status.code } : {}),
+    }))
+    return status
+  }
+  const operation = status.response.operation
+  if (
+    operation.state === 'accepted' ||
+    operation.state === 'launching' ||
+    operation.state === 'owned_by_job' ||
+    operation.state === 'retryable' ||
+    operation.state === 'abandoned'
+  ) {
+    const failed = { status: 'failed' as const, error: 'Stop has not been acknowledged by the server.' }
+    updateGenerationOperationCancellation(operationId, (previous) => ({
+      operationId,
+      target: previous?.target,
+      state: 'stop_failed',
+      operationState: operation.state,
+      stateVersion: operation.stateVersion,
+      projectionEpoch: operation.projectionEpoch,
+      error: failed.error,
+    }))
+    return failed
+  }
+  scheduleGenerationOperationCancellationReconcile(operationId)
+  return status
+}
+
 function shouldDiscardOperationFailure(code: string | undefined, status: number): boolean {
   return (
     status === 400 ||
@@ -392,7 +1123,11 @@ async function dispatchPendingGenerationOperation(
   handle: PendingMutationHandle,
   intent: DurableMutationIntent,
 ): Promise<GenerationOperationDispatchResult> {
-  if (!isGenerationOperationPendingIntent(intent) || !handle.databaseLineage) {
+  if (
+    !isGenerationOperationPendingIntent(intent) ||
+    intent.kind === 'generation-operation-cancel' ||
+    !handle.databaseLineage
+  ) {
     return { status: 'rejected', error: 'Invalid generation operation outbox intent.' }
   }
   const persistence = await beginPendingMutationDispatch(handle)
@@ -476,6 +1211,8 @@ export async function submitStagedAcceptedSendOperation(
     else if (staged.target.chatId) acknowledgeMessageMutationLocalEffect(staged.target.chatId)
   } else if (result.status === 'rejected') {
     staged.rollbackOptimisticAppend()
+    updateGenerationOperationCancellation(staged.request.operationId, () => null)
+    cancellationRuntimeByOperationId.delete(staged.request.operationId)
   }
   return result
 }
@@ -529,6 +1266,44 @@ export async function dispatchGenerationOperationPendingReplay(
   handle: PendingMutationHandle,
   intent: DurableMutationIntent,
 ): Promise<GenerationOperationPendingReplayOutcome> {
+  if (intent.kind === 'generation-operation-cancel') {
+    const cancellationIntent = intent as DurableMutationIntent & { kind: 'generation-operation-cancel' }
+    const operationId = (() => {
+      const match = /^\/generation-operations\/([^/?#]+)\/cancellation$/.exec(intent.requests[0]?.path ?? '')
+      if (!match) return undefined
+      try {
+        return decodeURIComponent(match[1]!)
+      } catch {
+        return match[1]
+      }
+    })()
+    if (!operationId) {
+      await discardPendingMutation(handle)
+      return {
+        disposition: 'discarded',
+        result: { status: 'failed', error: 'Invalid generation cancellation outbox intent.' },
+      }
+    }
+    const runtime = cancellationRuntime(operationId)
+    runtime.handle = handle
+    runtime.intent = cancellationIntent
+    updateGenerationOperationCancellation(operationId, (previous) => ({
+      operationId,
+      target: previous?.target,
+      state: 'stop_sending',
+      ...(previous?.operationState ? { operationState: previous.operationState } : {}),
+      ...(previous?.stateVersion !== undefined ? { stateVersion: previous.stateVersion } : {}),
+      ...(previous?.projectionEpoch !== undefined ? { projectionEpoch: previous.projectionEpoch } : {}),
+      ...(previous?.attemptNo !== undefined ? { attemptNo: previous.attemptNo } : {}),
+      ...(previous?.jobId ? { jobId: previous.jobId } : {}),
+    }))
+    const result = await sendGenerationOperationCancellation(operationId, { handle, intent: cancellationIntent })
+    if (result.status === 'failed') return { disposition: 'retained', result }
+    return {
+      disposition: cancellationDispositionIsTerminal(result.disposition) ? 'succeeded' : 'retained',
+      result,
+    }
+  }
   const result = await dispatchPendingGenerationOperation(handle, intent)
   if (result.status === 'accepted') return { disposition: 'succeeded', result }
   if (result.status === 'rejected') return { disposition: 'discarded', result }

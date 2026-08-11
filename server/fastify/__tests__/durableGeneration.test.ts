@@ -636,7 +636,8 @@ async function cancelJob(jobId: string): Promise<void> {
     method: 'DELETE',
     headers: authHeaders(),
   })
-  expect(del.status).toBe(200)
+  expect(del.status).toBe(202)
+  expect(await del.json()).toMatchObject({ disposition: 'cancelling', jobId })
 }
 
 function generationFinalizationRetryRows(): GenerationFinalizationRetryTestRow[] {
@@ -1088,6 +1089,47 @@ describe('Durable generation (Milestone 1)', () => {
     }
   })
 
+  it('converges a submit/cancel arrival race on the same operation without an escaping runner', async () => {
+    const gated = makeGatedProvider({ before: 'racing partial' })
+    let providerCalls = 0
+    providerImpl = (context) => {
+      providerCalls += 1
+      return gated.dispatchProvider(context)
+    }
+    const authority = await operationAuthority()
+    const operationId = randomUUID()
+    const acceptedMessageId = randomUUID()
+    const submitPromise = postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({ operationId, acceptedMessageId, baseRevision: authority.revision }),
+    )
+    const cancellationPromise = fetch(
+      `${harness.baseUrl}/api/v1/generation-operations/${encodeURIComponent(operationId)}/cancellation`,
+      {
+        method: 'PUT',
+        headers: authHeaders({
+          'content-type': 'application/json',
+          'risu-database-lineage': authority.databaseLineage,
+          'risu-writer-session': 'writer-a',
+        }),
+        body: JSON.stringify({ reason: 'user_stop' }),
+      },
+    )
+    const [submit, cancellation] = await Promise.all([submitPromise, cancellationPromise])
+    expect([200, 201]).toContain(submit.status)
+    expect([200, 202]).toContain(cancellation.status)
+    expect(await cancellation.json()).toMatchObject({
+      disposition: expect.stringMatching(/^(cancelled_before_acceptance|cancelled|cancelling)$/),
+      operation: { operationId },
+    })
+    const terminal = await waitFor(async () => {
+      const status = await operationStatus(operationId)
+      return status.operation.state === 'cancelled' ? status : undefined
+    })
+    expect(terminal.operation.currentAttempt).toBeUndefined()
+    expect(providerCalls).toBeLessThanOrEqual(1)
+  })
+
   it('rejects synchronous generation-settings readiness before append or intent commit', async () => {
     await seedDatabase({
       ...fixtureDatabase,
@@ -1286,6 +1328,45 @@ describe('Durable generation (Milestone 1)', () => {
     )
     expect(replay.status).toBe(200)
     expect(await replay.json()).toMatchObject({ disposition: 'already_cancelled' })
+  })
+
+  it('reports an already-completed operation without rewriting its terminal outcome', async () => {
+    providerImpl = () =>
+      (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'completed before stop' }
+        yield { kind: 'done', finishReason: 'stop' }
+      })()
+    const authority = await operationAuthority()
+    const operationId = randomUUID()
+    const acceptedMessageId = randomUUID()
+    const submit = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({ operationId, acceptedMessageId, baseRevision: authority.revision }),
+    )
+    expect(submit.status).toBe(201)
+    await waitFor(async () => {
+      const status = await operationStatus(operationId)
+      return status.operation.state === 'completed' ? status : undefined
+    })
+
+    const cancellation = await fetch(
+      `${harness.baseUrl}/api/v1/generation-operations/${encodeURIComponent(operationId)}/cancellation`,
+      {
+        method: 'PUT',
+        headers: authHeaders({
+          'content-type': 'application/json',
+          'risu-database-lineage': authority.databaseLineage,
+          'risu-writer-session': 'writer-a',
+        }),
+        body: JSON.stringify({ reason: 'user_stop' }),
+      },
+    )
+    expect(cancellation.status).toBe(200)
+    expect(await cancellation.json()).toMatchObject({
+      disposition: 'already_completed',
+      operation: { operationId, state: 'completed', resultMessageId: expect.any(String) },
+      result: { messageId: expect.any(String), revision: expect.any(Number) },
+    })
   })
 
   it('replays one explicit retry attempt without retargeting or redispatching', async () => {
@@ -2237,7 +2318,7 @@ describe('Durable generation (Milestone 1)', () => {
       method: 'DELETE',
       headers: authHeaders(),
     })
-    expect(del.status).toBe(200)
+    expect(del.status).toBe(202)
 
     controllerA.abort()
     const persisted = await waitForAssistantMessage()
@@ -2383,8 +2464,8 @@ describe('Durable generation (Milestone 1)', () => {
       method: 'DELETE',
       headers: authHeaders(),
     })
-    expect(del.status).toBe(200)
-    expect((await del.json()).success).toBe(true)
+    expect(del.status).toBe(202)
+    expect(await del.json()).toMatchObject({ disposition: 'cancelling', jobId })
 
     const message = await waitForAssistantMessage()
     expect(message.data).toBe('partial reply')
@@ -2503,7 +2584,7 @@ describe('Durable generation (Milestone 1)', () => {
       method: 'DELETE',
       headers: authHeaders({ 'risu-writer-session': 'writer-b' }),
     })
-    expect(del.status).toBe(200)
+    expect(del.status).toBe(202)
 
     // After cancel the chat accepts a new generation (the slot is free).
     await waitFor(async () => {
@@ -3145,6 +3226,7 @@ describe('Durable generation (Milestone 1)', () => {
       headers: authHeaders(),
     })
     expect(del.status).toBe(404)
+    expect(await del.json()).toMatchObject({ disposition: 'not_found', error: 'generation_job_not_found' })
   })
 
   // A non-durable send (no durable flag) keeps the inline connection-scoped flow and

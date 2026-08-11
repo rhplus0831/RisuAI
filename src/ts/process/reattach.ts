@@ -431,12 +431,16 @@ export async function refreshGenerationJobFromBootstrap(jobId: string): Promise<
   return { status: 'active' }
 }
 
-/** Stop only the requested job; AV-01 owns acknowledged cancellation probing. */
-export async function stopGenerationJob(jobId: string): Promise<void> {
+/** Stop only the requested job, preferring its durable operation identity when available. */
+export async function stopGenerationJob(jobId: string) {
   const job = get(activeGenerationJobs).find((entry) => entry.jobId === jobId)
   if (!job) return
+  if (job.operationId) {
+    const { stopGenerationOperation } = await import('../server/generationOperations')
+    return stopGenerationOperation(job.operationId)
+  }
   const { cancelServerChatGeneration } = await import('./request/serverChat')
-  await cancelServerChatGeneration(job.jobId)
+  return cancelServerChatGeneration(job.jobId)
 }
 
 let wired = false
