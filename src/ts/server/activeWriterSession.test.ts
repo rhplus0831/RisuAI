@@ -7,6 +7,7 @@ const takeoverMocks = vi.hoisted(() => ({
   stopEvents: vi.fn(),
   stopTranslations: vi.fn(),
   stopReattach: vi.fn(),
+  stopPersistenceRefresh: vi.fn(),
   stopHydration: vi.fn(),
 }))
 
@@ -38,6 +39,9 @@ vi.mock('./greetingTranslations.svelte', () => ({
   stopActiveGreetingTranslationRefresh: vi.fn(),
 }))
 vi.mock('../process/reattach', () => ({ stopActiveGenerationReattach: takeoverMocks.stopReattach }))
+vi.mock('../process/generationPersistenceState', () => ({
+  stopGenerationFinalizationPersistenceRefresh: takeoverMocks.stopPersistenceRefresh,
+}))
 vi.mock('./chatMessageHydration.svelte', () => ({ stopChatMessageHydration: takeoverMocks.stopHydration }))
 
 function stubSessionStorage(initial: Record<string, string> = {}) {
