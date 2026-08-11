@@ -235,6 +235,12 @@ export interface WarningEvent {
 
 export type ServerChatWarning = Omit<WarningEvent, 'type'>
 
+export type ServerChatGenerationPersistenceDisposition =
+  | 'queued'
+  | 'rejected'
+  | 'unconfirmed'
+  | 'committed_cleanup_pending'
+
 export interface ErrorEvent {
   type: 'error'
   error: string
@@ -243,7 +249,7 @@ export interface ErrorEvent {
   statusText?: string
   code?: string
   restoration?: ServerChatRestoration
-  persistenceDisposition?: 'queued' | 'rejected'
+  persistenceDisposition?: Exclude<ServerChatGenerationPersistenceDisposition, 'committed_cleanup_pending'>
   generationProjection?: ServerChatGenerationProjection
 }
 
@@ -310,6 +316,7 @@ export interface DoneEvent {
   generationInfo?: Record<string, unknown>
   /** Server terminal message reconciliation. See {@link ServerChatPostGeneration}. */
   postGeneration?: ServerChatPostGeneration
+  persistenceDisposition?: 'committed_cleanup_pending'
 }
 
 export type PromptChatEvent =

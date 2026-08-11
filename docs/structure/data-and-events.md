@@ -234,10 +234,14 @@ not ordinary browser `/commands/*` resource endpoints:
   only the target `chats` row alongside any affected `messages`, rather than
   rewriting unrelated database tables. Durable finalization attempts are queued
   in SQLite for retry with target snapshots, pending/terminal status, and
-  retained terminal errors that the app prunes on later sweeps. Active durable
-  jobs themselves are process-local reattach state. Cancel can persist
-  streamed-so-far text through the raw cancel path. Prompt and hook execution is
-  owned by
+  retained terminal errors that the app prunes on later sweeps. Journal insert,
+  authoritative commit, failure bookkeeping, and cleanup are separate phases:
+  only a confirmed replayable row is reported as `queued`, while a committed
+  message remains a successful result if cleanup needs a later sweep. Historical
+  targeted rows with no snapshot are terminalized as `stalled_legacy`, retained,
+  and never replayed. Active durable jobs themselves are process-local reattach
+  state. Cancel uses the same phase-aware boundary when persisting
+  streamed-so-far text. Prompt and hook execution is owned by
   [Prompt Assembly And Scripting](prompt-assembly-and-scripting.md).
 - Raw message translation uses
   `POST /api/v1/commands/messages/:messageId/translate`: the server detaches the

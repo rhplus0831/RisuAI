@@ -140,6 +140,46 @@ describe('emitProviderChunks', () => {
     })
   })
 
+  it('does not append a done frame after post-generation already emitted a terminal error', async () => {
+    const events: PromptChatEvent[] = []
+
+    const result = await emitProviderChunks(
+      frames([
+        { kind: 'token', content: 'generated text' },
+        { kind: 'done', finishReason: 'stop' },
+      ]),
+      (event) => events.push(event),
+      undefined,
+      {
+        postGeneration: async () => {
+          events.push({ type: 'error', error: 'journal failed', persistenceDisposition: 'unconfirmed' })
+          return { terminalStatus: 'error' }
+        },
+        sideEffects: () => [{ type: 'side_effect', kind: 'tts', payload: { text: 'must not run' } }],
+      },
+    )
+
+    expect(events).toEqual([
+      { type: 'token', content: 'generated text' },
+      { type: 'error', error: 'journal failed', persistenceDisposition: 'unconfirmed' },
+    ])
+    expect(result).toEqual({ status: 'error', result: 'generated text', finishReason: 'stop' })
+  })
+
+  it('carries cleanup-pending as a successful done disposition', async () => {
+    const events: PromptChatEvent[] = []
+
+    const result = await emitProviderChunks(
+      frames([{ kind: 'done', finishReason: 'stop' }]),
+      (event) => events.push(event),
+      undefined,
+      { postGeneration: async () => ({ persistenceDisposition: 'committed_cleanup_pending' }) },
+    )
+
+    expect(events).toEqual([{ type: 'done', result: '', persistenceDisposition: 'committed_cleanup_pending' }])
+    expect(result.status).toBe('done')
+  })
+
   it('emits a terminal done when a provider source ends without an explicit done frame', async () => {
     const events: PromptChatEvent[] = []
 

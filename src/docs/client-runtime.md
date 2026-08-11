@@ -334,12 +334,15 @@ gateway-batched chunks, with frame counting as the older server fallback. The
 buffered text is enqueued once on `done`.
 
 Generation persistence failures also carry a browser reconciliation contract.
-A terminal `persistenceDisposition: rejected` clears the provisional
-persistence marker, removes or restores only the still-owned streamed
-projection, and force-hydrates the chat. A retryable `queued` disposition keeps
-the provisional generation marked until an authoritative chat hydration
-contains it. Conflicting post-generation script mutations arrive as warning
-frames but do not erase successfully persisted generated message text.
+A terminal `persistenceDisposition: rejected` or `unconfirmed` clears the
+provisional persistence marker, removes or restores only the still-owned
+streamed projection, and force-hydrates the chat. A retryable `queued`
+disposition is accepted only for a confirmed replayable server journal row and
+keeps the provisional generation marked until an authoritative chat hydration
+contains it. `committed_cleanup_pending` arrives on a successful `done` frame:
+the authoritative message already exists and only retry-journal cleanup remains.
+Conflicting post-generation script mutations arrive as warning frames but do
+not erase successfully persisted generated message text.
 
 Provider/profile resolution is canonical in
 [Providers And Models](../../docs/structure/providers-and-models.md), prompt

@@ -8,6 +8,12 @@ import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { CURRENT_SCHEMA_VERSION } from '../src/db.js'
 import {
+  GENERATION_FINALIZATION_LEGACY_SNAPSHOT_ERROR,
+  pruneTerminalGenerationFinalizationRetries,
+} from '../src/generationFinalizationRetry.js'
+import { MessageTranslationJobRegistry } from '../src/messageTranslationJobs.js'
+import { retryQueuedGenerationFinalizations } from '../src/routes/generationChat.js'
+import {
   SQLITE_BACKUP_EXCLUDED_TABLES,
   SQLITE_BACKUP_TABLES,
   assetsDir,
@@ -787,6 +793,159 @@ describe('Phase 2D backups', () => {
       ])
     } finally {
       verify.close()
+    }
+  })
+
+  it('quarantines a restored unfenced continue retry after the target is edited without replaying or pruning it', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, {
+      currentChar: 0,
+      characters: [
+        {
+          type: 'character',
+          chaId: 'legacy-character',
+          name: 'Legacy Character',
+          chatPage: 0,
+          chats: [
+            {
+              id: 'legacy-chat',
+              name: 'Legacy Chat',
+              note: '',
+              localLore: [],
+              message: [
+                { role: 'user', data: 'story', chatId: 'legacy-user' },
+                { role: 'char', data: 'original target', chatId: 'legacy-target' },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'legacy unfenced continue retry' },
+    })
+    expect(backup.statusCode).toBe(201)
+
+    const backupDb = new DatabaseSync(path.join(harness.dataDir, 'backups', backup.json().id, 'risu.db'))
+    try {
+      backupDb.exec(`
+        DROP TABLE generation_finalization_retries;
+        CREATE TABLE generation_finalization_retries (
+          generation_id TEXT PRIMARY KEY,
+          chat_id TEXT NOT NULL,
+          mode TEXT NOT NULL,
+          target_message_id TEXT,
+          message_json TEXT NOT NULL,
+          chat_var_mutations_json TEXT NOT NULL,
+          failure_count INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          terminal_error TEXT,
+          status TEXT NOT NULL DEFAULT 'pending',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO generation_finalization_retries (
+          generation_id,
+          chat_id,
+          mode,
+          target_message_id,
+          message_json,
+          chat_var_mutations_json,
+          status,
+          created_at,
+          updated_at
+        ) VALUES (
+          'legacy-continue-generation',
+          'legacy-chat',
+          'continue',
+          'legacy-target',
+          '{"role":"char","data":"unsafe restored replacement","chatId":"legacy-target"}',
+          '[]',
+          'pending',
+          '2026-07-20T00:00:00.000Z',
+          '2026-07-20T00:00:01.000Z'
+        );
+      `)
+    } finally {
+      backupDb.close()
+    }
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    const edited = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/messages/legacy-target',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: bootstrap.json().revision,
+        patch: { data: 'newer edit after restore' },
+      },
+    })
+    expect(edited.statusCode).toBe(200)
+
+    const liveDbPath = path.join(harness.dataDir, 'risu.db')
+    const liveDb = new DatabaseSync(liveDbPath)
+    try {
+      expect(
+        retryQueuedGenerationFinalizations({
+          db: liveDb,
+          dataDir: harness.dataDir,
+          eventSink: harness.commandEvents,
+          messageTranslationJobs: new MessageTranslationJobRegistry(),
+        }),
+      ).toEqual({ attempted: 1, persisted: 0, terminal: 1, retryable: 0 })
+
+      expect(
+        liveDb
+          .prepare(
+            `SELECT status, failure_count, last_error, terminal_error, target_snapshot_json
+             FROM generation_finalization_retries
+             WHERE generation_id = 'legacy-continue-generation'`,
+          )
+          .get(),
+      ).toEqual({
+        status: 'terminal',
+        failure_count: 1,
+        last_error: GENERATION_FINALIZATION_LEGACY_SNAPSHOT_ERROR,
+        terminal_error: GENERATION_FINALIZATION_LEGACY_SNAPSHOT_ERROR,
+        target_snapshot_json: null,
+      })
+      expect(liveDb.prepare("SELECT data FROM messages WHERE uid = 'legacy-target'").get()).toEqual({
+        data: 'newer edit after restore',
+      })
+      expect(
+        liveDb.prepare("SELECT COUNT(*) AS count FROM messages WHERE data = 'unsafe restored replacement'").get(),
+      ).toEqual({ count: 0 })
+
+      expect(
+        pruneTerminalGenerationFinalizationRetries(liveDb, {
+          now: '2036-08-11T00:00:00.000Z',
+          retentionMs: 0,
+        }),
+      ).toBe(0)
+      expect(
+        liveDb
+          .prepare(
+            "SELECT generation_id FROM generation_finalization_retries WHERE generation_id = 'legacy-continue-generation'",
+          )
+          .get(),
+      ).toEqual({ generation_id: 'legacy-continue-generation' })
+    } finally {
+      liveDb.close()
     }
   })
 

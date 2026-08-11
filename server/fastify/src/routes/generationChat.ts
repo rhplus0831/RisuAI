@@ -102,6 +102,7 @@ import {
 import { PostGenerationLuaTraceCollector } from '../prompt/luaPostGenerationTrace.js'
 import { PostGenerationLuaProgressTracker } from '../prompt/luaPostGenerationProgress.js'
 import {
+  GENERATION_FINALIZATION_LEGACY_SNAPSHOT_ERROR,
   deleteGenerationFinalizationRetry,
   enqueueGenerationFinalizationRetry,
   listPendingGenerationFinalizationRetries,
@@ -2839,6 +2840,7 @@ interface AppliedGenerationScriptMutations {
 interface GenerationFinalizationPersistenceResult extends AppliedGenerationScriptMutations {
   revision: number
   droppedScriptMutations: GenerationScriptMutationConflict[]
+  bookkeepingErrors: Array<{ phase: 'event_emission'; error: string }>
 }
 
 function applyGenerationChatVarMutationsDroppingConflicts(args: {
@@ -3020,16 +3022,33 @@ function persistServerGenerationResult(args: {
         chatVarMutations: [],
         characterFieldMutations: [],
         droppedScriptMutations: [],
+        bookkeepingErrors: [],
       }
     }
   }
   const { revision: baseRevision } = getSchemaState(args.db)
+  const bookkeepingErrors: GenerationFinalizationPersistenceResult['bookkeepingErrors'] = []
+  const finalizationEventSink: CommandEventSink = {
+    emit(event) {
+      try {
+        args.eventSink.emit(event)
+      } catch (err) {
+        bookkeepingErrors.push({
+          phase: 'event_emission',
+          error: errorMessage(err, 'failed to emit the committed generation event'),
+        })
+      }
+    },
+    list: () => args.eventSink.list(),
+    clear: () => args.eventSink.clear(),
+    subscribe: (listener) => args.eventSink.subscribe(listener),
+  }
   try {
     const result = applyTargetedCommandMutation<GenerationFinalizationMutationExtra>({
       db: args.db,
       dataDir: args.dataDir,
       baseRevision,
-      eventSink: args.eventSink,
+      eventSink: finalizationEventSink,
       mutationPath: 'targeted-generation',
       chatScopedRead: { chatId: args.chatId, exactChatRow: args.localLoreMutation !== undefined },
       mutate(database, targetDb) {
@@ -3158,6 +3177,7 @@ function persistServerGenerationResult(args: {
       characterFieldMutations: result.extra.characterFieldMutations,
       ...(result.extra.localLoreMutation ? { localLoreMutation: result.extra.localLoreMutation } : {}),
       droppedScriptMutations: result.extra.droppedScriptMutations,
+      bookkeepingErrors,
     }
     if (persistence.droppedScriptMutations.length > 0) {
       emitProtocolMetric('generation_script_mutation_conflict', {
@@ -3176,6 +3196,7 @@ function persistServerGenerationResult(args: {
         chatVarMutations: [],
         characterFieldMutations: [],
         droppedScriptMutations: [],
+        bookkeepingErrors: [],
       }
     }
     throw err
@@ -3212,17 +3233,108 @@ function persistGenerationFinalizationAttempt(args: {
   })
 }
 
-function markQueuedGenerationFinalizationFailure(args: {
+type GenerationFinalizationOutcome =
+  | {
+      kind: 'persisted'
+      persistence: GenerationFinalizationPersistenceResult
+      journalConfirmed: true
+      authoritativeCommitted: true
+      cleanupComplete: true
+    }
+  | {
+      kind: 'committed_cleanup_pending'
+      persistence: GenerationFinalizationPersistenceResult
+      cleanupError: unknown
+      journalConfirmed: true
+      authoritativeCommitted: true
+      cleanupComplete: false
+    }
+  | {
+      kind: 'queued'
+      error: unknown
+      bookkeepingError?: unknown
+      journalConfirmed: true
+      authoritativeCommitted: false
+      cleanupComplete: false
+    }
+  | {
+      kind: 'rejected'
+      error: unknown
+      bookkeepingError?: unknown
+      journalConfirmed: true
+      authoritativeCommitted: false
+      cleanupComplete: false
+    }
+  | {
+      kind: 'unconfirmed'
+      error: unknown
+      journalConfirmed: false
+      authoritativeCommitted: false
+      cleanupComplete: false
+    }
+
+function recordConfirmedGenerationFinalizationFailure(args: {
   db: DatabaseSync
   attempt: GenerationFinalizationAttempt
   err: unknown
-}): void {
-  markGenerationFinalizationRetryFailure(
-    args.db,
-    args.attempt.generationId,
-    errorMessage(args.err, 'failed to persist the generation result'),
-    isTerminalGenerationFinalizationError(args.err),
-  )
+}): unknown | undefined {
+  try {
+    markGenerationFinalizationRetryFailure(
+      args.db,
+      args.attempt.generationId,
+      errorMessage(args.err, 'failed to persist the generation result'),
+      isTerminalGenerationFinalizationError(args.err),
+    )
+    return undefined
+  } catch (bookkeepingError) {
+    return bookkeepingError
+  }
+}
+
+function persistConfirmedGenerationFinalization(args: {
+  db: DatabaseSync
+  dataDir: string
+  eventSink: CommandEventSink
+  attempt: GenerationFinalizationAttempt
+}): Exclude<GenerationFinalizationOutcome, { kind: 'unconfirmed' }> {
+  let persistence: GenerationFinalizationPersistenceResult
+  try {
+    persistence = persistGenerationFinalizationAttempt(args)
+  } catch (err) {
+    const bookkeepingError = recordConfirmedGenerationFinalizationFailure({
+      db: args.db,
+      attempt: args.attempt,
+      err,
+    })
+    return {
+      kind: isTerminalGenerationFinalizationError(err) ? 'rejected' : 'queued',
+      error: err,
+      ...(bookkeepingError ? { bookkeepingError } : {}),
+      journalConfirmed: true,
+      authoritativeCommitted: false,
+      cleanupComplete: false,
+    }
+  }
+
+  try {
+    deleteGenerationFinalizationRetry(args.db, args.attempt.generationId)
+  } catch (cleanupError) {
+    return {
+      kind: 'committed_cleanup_pending',
+      persistence,
+      cleanupError,
+      journalConfirmed: true,
+      authoritativeCommitted: true,
+      cleanupComplete: false,
+    }
+  }
+  return {
+    kind: 'persisted',
+    persistence,
+    journalConfirmed: true,
+    authoritativeCommitted: true,
+    cleanupComplete: true,
+  }
 }
 
 function queueAndPersistGenerationFinalization(args: {
@@ -3230,23 +3342,26 @@ function queueAndPersistGenerationFinalization(args: {
   dataDir: string
   eventSink: CommandEventSink
   attempt: GenerationFinalizationAttempt
-}): GenerationFinalizationPersistenceResult {
-  // Shutdown guard an aborted runner's cancel-persist can land
-  // after `onClose` closed the SQLite handle (the runner-settle wait covers
-  // tracked runners; this covers any straggler). Fail with a clear error
-  // instead of touching a closed database.
-  if (!args.db.isOpen) {
-    throw new Error('database is closed; generation finalization skipped (server shutting down)')
-  }
-  enqueueGenerationFinalizationRetry(args.db, args.attempt)
+}): GenerationFinalizationOutcome {
   try {
-    const persistence = persistGenerationFinalizationAttempt(args)
-    deleteGenerationFinalizationRetry(args.db, args.attempt.generationId)
-    return persistence
+    // Shutdown guard an aborted runner's cancel-persist can land
+    // after `onClose` closed the SQLite handle (the runner-settle wait covers
+    // tracked runners; this covers any straggler). Fail with a clear error
+    // instead of touching a closed database.
+    if (!args.db.isOpen) {
+      throw new Error('database is closed; generation finalization skipped (server shutting down)')
+    }
+    enqueueGenerationFinalizationRetry(args.db, args.attempt)
   } catch (err) {
-    markQueuedGenerationFinalizationFailure({ db: args.db, attempt: args.attempt, err })
-    throw err
+    return {
+      kind: 'unconfirmed',
+      error: err,
+      journalConfirmed: false,
+      authoritativeCommitted: false,
+      cleanupComplete: false,
+    }
   }
+  return persistConfirmedGenerationFinalization(args)
 }
 
 export function retryQueuedGenerationFinalizations(args: {
@@ -3264,20 +3379,69 @@ export function retryQueuedGenerationFinalizations(args: {
   if (!args.db.isOpen) {
     return { attempted: 0, persisted: 0, terminal: 0, retryable: 0 }
   }
-  const attempts = listPendingGenerationFinalizationRetries(args.db, args.maxPerSweep ?? 25)
+  const retries = listPendingGenerationFinalizationRetries(args.db, args.maxPerSweep ?? 25)
   let persisted = 0
   let terminal = 0
   let retryable = 0
-  for (const attempt of attempts) {
+  for (const retry of retries) {
+    const { attempt } = retry
     const startedAt = protocolNowMs()
-    try {
-      const persistence = persistGenerationFinalizationAttempt({
-        db: args.db,
-        dataDir: args.dataDir,
-        eventSink: args.eventSink,
-        attempt,
-      })
-      deleteGenerationFinalizationRetry(args.db, attempt.generationId)
+    if (retry.replayability === 'legacy_snapshot_missing') {
+      try {
+        markGenerationFinalizationRetryFailure(
+          args.db,
+          attempt.generationId,
+          GENERATION_FINALIZATION_LEGACY_SNAPSHOT_ERROR,
+          true,
+        )
+        terminal += 1
+        args.logger?.warn(
+          {
+            generationId: attempt.generationId,
+            chatId: attempt.chatId,
+            mode: attempt.mode,
+            phase: 'replay_fence',
+          },
+          'legacy generation finalization retry quarantined without replay',
+        )
+        emitProtocolMetric('generation_persistence_retry', {
+          status: GENERATION_FINALIZATION_LEGACY_SNAPSHOT_ERROR,
+          generationId: attempt.generationId,
+          chatId: attempt.chatId,
+          mode: attempt.mode,
+          phase: 'replay_fence',
+          journalConfirmed: true,
+          authoritativeCommitted: false,
+          durationMs: protocolDurationMs(startedAt),
+        })
+      } catch (err) {
+        retryable += 1
+        args.logger?.error(
+          { err, generationId: attempt.generationId, chatId: attempt.chatId, phase: 'bookkeeping' },
+          'failed to quarantine a legacy generation finalization retry',
+        )
+        emitProtocolMetric('generation_persistence_retry', {
+          status: 'bookkeeping_error',
+          generationId: attempt.generationId,
+          chatId: attempt.chatId,
+          phase: 'bookkeeping',
+          journalConfirmed: true,
+          authoritativeCommitted: false,
+          durationMs: protocolDurationMs(startedAt),
+          error: errorMessage(err, 'failed to quarantine a legacy generation finalization retry'),
+        })
+      }
+      continue
+    }
+
+    const outcome = persistConfirmedGenerationFinalization({
+      db: args.db,
+      dataDir: args.dataDir,
+      eventSink: args.eventSink,
+      attempt,
+    })
+    if (outcome.kind === 'persisted' || outcome.kind === 'committed_cleanup_pending') {
+      const { persistence } = outcome
       persisted += 1
       void handlePersistedGenerationCompletion({
         db: args.db,
@@ -3294,11 +3458,29 @@ export function retryQueuedGenerationFinalizations(args: {
         // Persistence already succeeded; follow-up translation/notification is best-effort.
       })
       emitProtocolMetric('generation_persistence_retry', {
-        status: 'ok',
+        status:
+          outcome.kind === 'committed_cleanup_pending'
+            ? 'cleanup_pending'
+            : persistence.bookkeepingErrors.length > 0
+              ? 'bookkeeping_error'
+              : 'persisted',
         generationId: attempt.generationId,
         chatId: attempt.chatId,
         revision: persistence.revision,
+        phase:
+          outcome.kind === 'committed_cleanup_pending'
+            ? 'cleanup'
+            : persistence.bookkeepingErrors.length > 0
+              ? 'bookkeeping'
+              : 'complete',
+        journalConfirmed: true,
+        authoritativeCommitted: true,
+        cleanupComplete: outcome.cleanupComplete,
         durationMs: protocolDurationMs(startedAt),
+        ...(outcome.kind === 'committed_cleanup_pending'
+          ? { cleanupError: errorMessage(outcome.cleanupError, 'failed to clean up the finalization journal') }
+          : {}),
+        ...(persistence.bookkeepingErrors.length > 0 ? { bookkeepingErrors: persistence.bookkeepingErrors } : {}),
         ...droppedGenerationScriptMutationMetricFields(persistence),
       })
       if (persistence.droppedScriptMutations.length > 0) {
@@ -3311,21 +3493,26 @@ export function retryQueuedGenerationFinalizations(args: {
           'generation finalization retry dropped stale script mutations',
         )
       }
-    } catch (err) {
-      const isTerminal = isTerminalGenerationFinalizationError(err)
-      markGenerationFinalizationRetryFailure(
-        args.db,
-        attempt.generationId,
-        errorMessage(err, 'failed to persist the generation result'),
-        isTerminal,
-      )
-      if (isTerminal) {
+      if (outcome.kind === 'committed_cleanup_pending') {
+        args.logger?.warn(
+          {
+            err: outcome.cleanupError,
+            generationId: attempt.generationId,
+            chatId: attempt.chatId,
+            phase: 'cleanup',
+          },
+          'generation finalization committed but journal cleanup remains pending',
+        )
+      }
+    } else {
+      if (outcome.kind === 'rejected') {
         terminal += 1
         args.logger?.warn(
           {
-            err,
+            err: outcome.error,
             generationId: attempt.generationId,
             chatId: attempt.chatId,
+            ...(outcome.bookkeepingError ? { bookkeepingError: outcome.bookkeepingError } : {}),
           },
           'generation finalization retry reached a terminal failure',
         )
@@ -3333,23 +3520,31 @@ export function retryQueuedGenerationFinalizations(args: {
         retryable += 1
         args.logger?.warn(
           {
-            err,
+            err: outcome.error,
             generationId: attempt.generationId,
             chatId: attempt.chatId,
+            ...(outcome.bookkeepingError ? { bookkeepingError: outcome.bookkeepingError } : {}),
           },
           'generation finalization retry failed; it remains queued',
         )
       }
       emitProtocolMetric('generation_persistence_retry', {
-        status: isTerminal ? 'terminal_error' : 'retryable_error',
+        status: outcome.kind === 'rejected' ? 'terminal_error' : 'retryable_error',
         generationId: attempt.generationId,
         chatId: attempt.chatId,
+        phase: outcome.bookkeepingError ? 'bookkeeping' : 'authoritative_commit',
+        journalConfirmed: true,
+        authoritativeCommitted: false,
+        cleanupComplete: false,
         durationMs: protocolDurationMs(startedAt),
-        error: errorMessage(err, 'failed to persist the generation result'),
+        error: errorMessage(outcome.error, 'failed to persist the generation result'),
+        ...(outcome.bookkeepingError
+          ? { bookkeepingError: errorMessage(outcome.bookkeepingError, 'failed to update finalization retry state') }
+          : {}),
       })
     }
   }
-  return { attempted: attempts.length, persisted, terminal, retryable }
+  return { attempted: retries.length, persisted, terminal, retryable }
 }
 
 /**
@@ -3364,8 +3559,10 @@ export function retryQueuedGenerationFinalizations(args: {
  * Failure policy (the only divergence from the inline `buildPostGenerationFrame`):
  *  - **derivation throws**: the client may be gone, so persist the raw provider
  *    text and emit a `warning`.
- *  - **persist throws**: record a job `error` the reattaching client sees; do not
- *    force-write.
+ *  - **finalization is queued/rejected/unconfirmed**: record one terminal job
+ *    `error` with the exact durability disposition the reattaching client sees.
+ *  - **commit succeeds but cleanup fails**: finish with `done` and identify the
+ *    remaining cleanup work without describing the committed message as failed.
  */
 async function buildDurablePostGeneration(args: {
   emit: (event: PromptChatEvent) => void
@@ -3417,38 +3614,62 @@ async function buildDurablePostGeneration(args: {
   })
 
   let persistence: GenerationFinalizationPersistenceResult
+  let persistenceDisposition: 'committed_cleanup_pending' | undefined
   const persistStartedAt = protocolNowMs()
-  try {
-    persistence = queueAndPersistGenerationFinalization({
-      db: args.db,
-      dataDir: args.dataDir,
-      eventSink: args.eventSink,
-      attempt: {
-        generationId: args.generationId,
-        chatId: args.input.chatId,
-        mode: finalizationModeFromInput(args.input),
-        message,
-        alternateMessages,
-        chatVarMutations,
-        characterFieldMutations,
-        localLoreMutation,
-        ...(targetMessageId ? { targetMessageId } : {}),
-        ...(targetSnapshot ? { targetSnapshot } : {}),
-      },
-    })
-  } catch (err) {
-    emitProtocolMetric('generation_persistence', {
-      status: isTerminalGenerationFinalizationError(err) ? 'terminal_error' : 'retry_queued',
+  const finalization = queueAndPersistGenerationFinalization({
+    db: args.db,
+    dataDir: args.dataDir,
+    eventSink: args.eventSink,
+    attempt: {
       generationId: args.generationId,
       chatId: args.input.chatId,
+      mode: finalizationModeFromInput(args.input),
+      message,
+      alternateMessages,
+      chatVarMutations,
+      characterFieldMutations,
+      localLoreMutation,
+      ...(targetMessageId ? { targetMessageId } : {}),
+      ...(targetSnapshot ? { targetSnapshot } : {}),
+    },
+  })
+  if (finalization.kind === 'unconfirmed' || finalization.kind === 'queued' || finalization.kind === 'rejected') {
+    const disposition = finalization.kind
+    const metricStatus =
+      finalization.kind === 'unconfirmed'
+        ? 'journal_error'
+        : finalization.kind === 'queued'
+          ? 'retry_queued'
+          : 'terminal_error'
+    emitProtocolMetric('generation_persistence', {
+      status: metricStatus,
+      generationId: args.generationId,
+      chatId: args.input.chatId,
+      phase:
+        finalization.kind === 'unconfirmed'
+          ? 'journal'
+          : finalization.bookkeepingError
+            ? 'bookkeeping'
+            : 'authoritative_commit',
+      journalConfirmed: finalization.journalConfirmed,
+      authoritativeCommitted: finalization.authoritativeCommitted,
+      cleanupComplete: finalization.cleanupComplete,
       durationMs: protocolDurationMs(persistStartedAt),
-      error: errorMessage(err, 'failed to persist the generation result'),
+      error: errorMessage(finalization.error, 'failed to persist the generation result'),
+      ...('bookkeepingError' in finalization && finalization.bookkeepingError
+        ? {
+            bookkeepingError: errorMessage(
+              finalization.bookkeepingError,
+              'failed to update generation finalization retry state',
+            ),
+          }
+        : {}),
     })
     args.emit({
       type: 'error',
-      error: errorMessage(err, 'failed to persist the generation result'),
+      error: errorMessage(finalization.error, 'failed to persist the generation result'),
       reason: 'generation_persistence_failed',
-      persistenceDisposition: isTerminalGenerationFinalizationError(err) ? 'rejected' : 'queued',
+      persistenceDisposition: disposition,
       generationProjection: {
         characterId: args.input.characterId,
         chatId: args.input.chatId,
@@ -3457,19 +3678,41 @@ async function buildDurablePostGeneration(args: {
         ...(targetMessageId ? { targetMessageId } : {}),
       },
     })
-    return { primary: message.data, alternates: alternateTexts }
+    return { primary: message.data, alternates: alternateTexts, terminalStatus: 'error' }
+  }
+  persistence = finalization.persistence
+  if (finalization.kind === 'committed_cleanup_pending') {
+    persistenceDisposition = 'committed_cleanup_pending'
   }
 
   // `postGen === undefined` means the derivation threw: the client may be gone, so
   // warn rather than silently keep an optimistic copy (the inline path's choice).
   if (!postGen) {
     emitProtocolMetric('generation_persistence', {
-      status: 'raw_fallback',
+      status:
+        finalization.kind === 'committed_cleanup_pending'
+          ? 'cleanup_pending'
+          : persistence.bookkeepingErrors.length > 0
+            ? 'bookkeeping_error'
+            : 'persisted',
       generationId: args.generationId,
       chatId: args.input.chatId,
       revision: persistence.revision,
+      phase:
+        finalization.kind === 'committed_cleanup_pending'
+          ? 'cleanup'
+          : persistence.bookkeepingErrors.length > 0
+            ? 'bookkeeping'
+            : 'complete',
+      journalConfirmed: true,
+      authoritativeCommitted: true,
+      cleanupComplete: finalization.cleanupComplete,
       durationMs: protocolDurationMs(persistStartedAt),
       ...(postGenMetricError ? { error: postGenMetricError } : {}),
+      ...(finalization.kind === 'committed_cleanup_pending'
+        ? { cleanupError: errorMessage(finalization.cleanupError, 'failed to clean up the finalization journal') }
+        : {}),
+      ...(persistence.bookkeepingErrors.length > 0 ? { bookkeepingErrors: persistence.bookkeepingErrors } : {}),
       ...droppedGenerationScriptMutationMetricFields(persistence),
     })
     emitDroppedGenerationScriptMutationWarning(args.emit, persistence.droppedScriptMutations)
@@ -3503,15 +3746,34 @@ async function buildDurablePostGeneration(args: {
       ),
       primary: message.data,
       alternates: alternateTexts,
+      ...(persistenceDisposition ? { persistenceDisposition } : {}),
     }
   }
 
   emitProtocolMetric('generation_persistence', {
-    status: 'ok',
+    status:
+      finalization.kind === 'committed_cleanup_pending'
+        ? 'cleanup_pending'
+        : persistence.bookkeepingErrors.length > 0
+          ? 'bookkeeping_error'
+          : 'persisted',
     generationId: args.generationId,
     chatId: args.input.chatId,
     revision: persistence.revision,
+    phase:
+      finalization.kind === 'committed_cleanup_pending'
+        ? 'cleanup'
+        : persistence.bookkeepingErrors.length > 0
+          ? 'bookkeeping'
+          : 'complete',
+    journalConfirmed: true,
+    authoritativeCommitted: true,
+    cleanupComplete: finalization.cleanupComplete,
     durationMs: protocolDurationMs(persistStartedAt),
+    ...(finalization.kind === 'committed_cleanup_pending'
+      ? { cleanupError: errorMessage(finalization.cleanupError, 'failed to clean up the finalization journal') }
+      : {}),
+    ...(persistence.bookkeepingErrors.length > 0 ? { bookkeepingErrors: persistence.bookkeepingErrors } : {}),
     ...droppedGenerationScriptMutationMetricFields(persistence),
   })
   emitDroppedGenerationScriptMutationWarning(args.emit, persistence.droppedScriptMutations)
@@ -3540,6 +3802,7 @@ async function buildDurablePostGeneration(args: {
     ),
     primary: message.data,
     alternates: alternateTexts,
+    ...(persistenceDisposition ? { persistenceDisposition } : {}),
   }
 }
 
@@ -3547,8 +3810,9 @@ async function buildDurablePostGeneration(args: {
  * On a **streaming** cancel, persist accumulated-so-far provider text **raw**:
  * no post-gen pass over a truncated turn, mode-aware via `buildRawModeMessage`,
  * and idempotent on `generationId`. A non-streaming cancel persists nothing.
- * A chat-changed failure during a cancel is swallowed (the job is aborted and there
- * is no connected client to notify).
+ * The phase-aware result controls the terminal frame for any attached or later
+ * reattached observer; a partial result is never reported as saved without either
+ * a committed message or a confirmed replayable journal row.
  */
 function persistRawCancelledResult(args: {
   db: DatabaseSync
@@ -3560,7 +3824,7 @@ function persistRawCancelledResult(args: {
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
   text: string
-}): PostGenerationFrame | undefined {
+}): { outcome: GenerationFinalizationOutcome; messageId: string | undefined } {
   const targetSnapshot = captureGenerationFinalizationTargetSnapshot(args.input, args.state)
   const continueRow = args.input.mode === 'continue' ? findContinueRow(args.state) : undefined
   const raw = buildRawModeMessage({
@@ -3573,27 +3837,21 @@ function persistRawCancelledResult(args: {
     promptInfo: args.promptInfo,
     removeIncompleteResponse: args.state.database.removeIncompleteResponse,
   })
-  try {
-    const persistence = queueAndPersistGenerationFinalization({
-      db: args.db,
-      dataDir: args.dataDir,
-      eventSink: args.eventSink,
-      attempt: {
-        generationId: args.generationId,
-        chatId: args.input.chatId,
-        mode: finalizationModeFromInput(args.input),
-        message: raw.message,
-        chatVarMutations: [],
-        ...(raw.targetMessageId ? { targetMessageId: raw.targetMessageId } : {}),
-        ...(targetSnapshot ? { targetSnapshot } : {}),
-      },
-    })
-    return buildPostGenerationFrameBody(persistence.revision, undefined, raw.targetMessageId ?? raw.message.chatId)
-  } catch {
-    // Chat gone / changed during a cancel: nothing to persist; the cancelled
-    // terminal disposition is still emitted to any current or later viewer.
-    return undefined
-  }
+  const outcome = queueAndPersistGenerationFinalization({
+    db: args.db,
+    dataDir: args.dataDir,
+    eventSink: args.eventSink,
+    attempt: {
+      generationId: args.generationId,
+      chatId: args.input.chatId,
+      mode: finalizationModeFromInput(args.input),
+      message: raw.message,
+      chatVarMutations: [],
+      ...(raw.targetMessageId ? { targetMessageId: raw.targetMessageId } : {}),
+      ...(targetSnapshot ? { targetSnapshot } : {}),
+    },
+  })
+  return { outcome, messageId: raw.targetMessageId ?? raw.message.chatId }
 }
 
 /**
@@ -3816,9 +4074,17 @@ async function runGenerationJob(args: {
             terminalDoneEmitted = transportResult.status !== 'aborted'
             if (transportResult.status === 'aborted') {
               // A streaming cancel persists the accumulated-so-far text.
-              let postGeneration: PostGenerationFrame | undefined
+              let cancelFinalization: GenerationFinalizationOutcome | undefined
+              let cancelTargetMessageId: string | undefined
+              let cancelPersistedMessageId: string | undefined
               if (transportResult.result.length > 0 && successfulResult.state) {
-                postGeneration = persistRawCancelledResult({
+                cancelTargetMessageId =
+                  input.mode === 'regenerate'
+                    ? input.regenerateMessageId
+                    : input.mode === 'continue'
+                      ? findContinueRow(successfulResult.state)?.chatId
+                      : undefined
+                const cancelPersisted = persistRawCancelledResult({
                   db,
                   dataDir,
                   eventSink,
@@ -3829,19 +4095,112 @@ async function runGenerationJob(args: {
                   promptInfo: successfulResult.prompt.promptInfo,
                   text: transportResult.result,
                 })
+                cancelFinalization = cancelPersisted.outcome
+                cancelPersistedMessageId = cancelPersisted.messageId
               }
-              // Emit a terminal frame so a *reattached* observer's stream ends cleanly
-              // (the canceller already aborted its own reader). `emitProviderChunks`
-              // emits nothing on abort, so without this a viewer sees the stream cut
-              // with no done/error and reports a spurious "stream ended" error.
-              emit({
-                type: 'done',
-                outcome: 'cancelled',
-                result: transportResult.result,
-                generationId,
-                generationInfo,
-                ...(postGeneration ? { postGeneration } : {}),
-              })
+              if (
+                cancelFinalization?.kind === 'unconfirmed' ||
+                cancelFinalization?.kind === 'queued' ||
+                cancelFinalization?.kind === 'rejected'
+              ) {
+                const metricStatus =
+                  cancelFinalization.kind === 'unconfirmed'
+                    ? 'journal_error'
+                    : cancelFinalization.kind === 'queued'
+                      ? 'retry_queued'
+                      : 'terminal_error'
+                emitProtocolMetric('generation_cancel_persistence', {
+                  status: metricStatus,
+                  generationId,
+                  chatId: input.chatId,
+                  phase:
+                    cancelFinalization.kind === 'unconfirmed'
+                      ? 'journal'
+                      : cancelFinalization.bookkeepingError
+                        ? 'bookkeeping'
+                        : 'authoritative_commit',
+                  journalConfirmed: cancelFinalization.journalConfirmed,
+                  authoritativeCommitted: cancelFinalization.authoritativeCommitted,
+                  cleanupComplete: cancelFinalization.cleanupComplete,
+                  error: errorMessage(cancelFinalization.error, 'failed to persist the cancelled generation result'),
+                  ...('bookkeepingError' in cancelFinalization && cancelFinalization.bookkeepingError
+                    ? {
+                        bookkeepingError: errorMessage(
+                          cancelFinalization.bookkeepingError,
+                          'failed to update generation finalization retry state',
+                        ),
+                      }
+                    : {}),
+                })
+                emit({
+                  type: 'error',
+                  error: errorMessage(cancelFinalization.error, 'failed to persist the cancelled generation result'),
+                  reason: 'generation_cancel_persistence_failed',
+                  persistenceDisposition: cancelFinalization.kind,
+                  generationProjection: {
+                    characterId: input.characterId,
+                    chatId: input.chatId,
+                    generationId,
+                    mode: finalizationModeFromInput(input),
+                    ...(cancelTargetMessageId ? { targetMessageId: cancelTargetMessageId } : {}),
+                  },
+                })
+              } else {
+                const cleanupPending = cancelFinalization?.kind === 'committed_cleanup_pending'
+                const bookkeepingErrors =
+                  cancelFinalization?.kind === 'persisted' || cancelFinalization?.kind === 'committed_cleanup_pending'
+                    ? cancelFinalization.persistence.bookkeepingErrors
+                    : []
+                if (cancelFinalization) {
+                  emitProtocolMetric('generation_cancel_persistence', {
+                    status: cleanupPending
+                      ? 'cleanup_pending'
+                      : bookkeepingErrors.length > 0
+                        ? 'bookkeeping_error'
+                        : 'persisted',
+                    generationId,
+                    chatId: input.chatId,
+                    phase: cleanupPending ? 'cleanup' : bookkeepingErrors.length > 0 ? 'bookkeeping' : 'complete',
+                    journalConfirmed: cancelFinalization.journalConfirmed,
+                    authoritativeCommitted: cancelFinalization.authoritativeCommitted,
+                    cleanupComplete: cancelFinalization.cleanupComplete,
+                    ...(cancelFinalization.kind === 'committed_cleanup_pending'
+                      ? {
+                          cleanupError: errorMessage(
+                            cancelFinalization.cleanupError,
+                            'failed to clean up the finalization journal',
+                          ),
+                        }
+                      : {}),
+                    ...(bookkeepingErrors.length > 0 ? { bookkeepingErrors } : {}),
+                  })
+                }
+                const persistedRevision =
+                  cancelFinalization?.kind === 'persisted' || cancelFinalization?.kind === 'committed_cleanup_pending'
+                    ? cancelFinalization.persistence.revision
+                    : undefined
+                // Emit a terminal frame so a *reattached* observer's stream ends cleanly
+                // (the canceller already aborted its own reader). `emitProviderChunks`
+                // emits nothing on abort, so without this a viewer sees the stream cut
+                // with no done/error and reports a spurious "stream ended" error.
+                emit({
+                  type: 'done',
+                  outcome: 'cancelled',
+                  result: transportResult.result,
+                  generationId,
+                  generationInfo,
+                  ...(persistedRevision !== undefined
+                    ? {
+                        postGeneration: buildPostGenerationFrameBody(
+                          persistedRevision,
+                          undefined,
+                          cancelPersistedMessageId,
+                        ),
+                      }
+                    : {}),
+                  ...(cleanupPending ? { persistenceDisposition: 'committed_cleanup_pending' as const } : {}),
+                })
+              }
               terminalDoneEmitted = true
             }
           }

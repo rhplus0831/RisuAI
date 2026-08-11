@@ -717,7 +717,7 @@ export async function applyServerBackedTerminal(args: {
         }
       })
     }
-    if (args.terminal.persistenceDisposition === 'rejected') {
+    if (args.terminal.persistenceDisposition === 'rejected' || args.terminal.persistenceDisposition === 'unconfirmed') {
       const generationId =
         args.terminal.generationProjection?.generationId ??
         args.streamProjection?.generationId ??

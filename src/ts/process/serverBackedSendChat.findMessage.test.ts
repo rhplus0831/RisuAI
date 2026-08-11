@@ -838,6 +838,95 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     expect(hydrationMock.hydrate).toHaveBeenCalledWith('chat-target', { force: true, strict: true })
   })
 
+  it('removes an appended optimistic reply and creates no queued marker when journaling is unconfirmed', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    target.message = [terminalMessage('streamed without a journal')]
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'error',
+        error: 'Generation finalization journal was not confirmed',
+        persistenceDisposition: 'unconfirmed',
+        generationProjection: {
+          characterId: 'char-stable',
+          chatId: 'chat-target',
+          generationId: 'gen-stable',
+          mode: 'send',
+        },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+      streamProjection: {
+        chatId: 'chat-target',
+        messageId: 'gen-stable',
+        generationId: 'gen-stable',
+        previousData: '',
+        ownedData: 'streamed without a journal',
+        appended: true,
+      },
+    })
+
+    expect(result.status).toBe('failed')
+    expect(target.message).toEqual([])
+    expect(get(queuedGenerationPersistences)).toEqual([])
+    expect(hydrationMock.hydrate).toHaveBeenCalledWith('chat-target', { force: true, strict: true })
+  })
+
+  it.each(['continue', 'regenerate'] as const)(
+    'restores the prior %s text when the still-owned projection has no confirmed journal',
+    async (mode) => {
+      const { char, target } = seedReorderedTerminalChats()
+      target.message = [
+        {
+          role: 'char',
+          data: 'prior text plus streamed text',
+          chatId: 'target-message',
+          generationInfo: { generationId: 'gen-stable' },
+        },
+      ]
+
+      await applyServerBackedTerminal({
+        terminal: {
+          status: 'error',
+          error: 'Generation finalization journal was not confirmed',
+          persistenceDisposition: 'unconfirmed',
+          generationProjection: {
+            characterId: 'char-stable',
+            chatId: 'chat-target',
+            generationId: 'gen-stable',
+            mode,
+            targetMessageId: 'target-message',
+          },
+        },
+        currentChar: char,
+        currentChat: target,
+        selectedChar: 0,
+        selectedChat: 0,
+        targetCharacterId: 'char-stable',
+        targetChatId: 'chat-target',
+        targetMessageId: 'target-message',
+        generationInfo: { generationId: 'gen-stable' },
+        streamProjection: {
+          chatId: 'chat-target',
+          messageId: 'target-message',
+          generationId: 'gen-stable',
+          previousData: 'prior text',
+          ownedData: 'prior text plus streamed text',
+          appended: false,
+        },
+      })
+
+      expect(target.message).toEqual([expect.objectContaining({ chatId: 'target-message', data: 'prior text' })])
+      expect(get(queuedGenerationPersistences)).toEqual([])
+      expect(hydrationMock.hydrate).toHaveBeenCalledWith('chat-target', { force: true, strict: true })
+    },
+  )
+
   it('keeps a retry-queued reply visibly provisional until authoritative persistence', async () => {
     const { char, target } = seedReorderedTerminalChats()
     target.message = [terminalMessage('streamed and queued')]
@@ -904,15 +993,15 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     expect(get(queuedGenerationPersistences)).toEqual([])
   })
 
-  it('does not remove a newer edit of an optimistic reply after persistence rejection', async () => {
+  it('does not remove a newer edit while reconciling an unconfirmed journal', async () => {
     const { char, target } = seedReorderedTerminalChats()
     target.message = [terminalMessage('newer user edit')]
 
     await applyServerBackedTerminal({
       terminal: {
         status: 'error',
-        error: 'Generation finalization target is stale',
-        persistenceDisposition: 'rejected',
+        error: 'Generation finalization journal was not confirmed',
+        persistenceDisposition: 'unconfirmed',
         generationProjection: {
           characterId: 'char-stable',
           chatId: 'chat-target',
@@ -938,6 +1027,7 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     })
 
     expect(target.message[0].data).toBe('newer user edit')
+    expect(get(queuedGenerationPersistences)).toEqual([])
     expect(hydrationMock.hydrate).toHaveBeenCalledWith('chat-target', { force: true, strict: true })
   })
 })

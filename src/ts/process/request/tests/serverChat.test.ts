@@ -1455,6 +1455,62 @@ describe('requestServerChat', () => {
     })
   })
 
+  it('parses an unconfirmed generation-persistence disposition without converting it to queued', async () => {
+    const controlled = controlledGenerationStream()
+    vi.stubGlobal('fetch', async () => controlled.response)
+
+    const pending = requestServerChatGeneration(baseInput, null)
+    sendGenerationReadyFrames(controlled, 'unconfirmed-generation')
+    const result = await pending
+    expect(result.status).toBe('ok')
+    if (result.status !== 'ok') return
+
+    controlled.send('token', { content: 'optimistic text' })
+    controlled.send('error', {
+      error: 'generation journal insert failed',
+      reason: 'generation_persistence_failed',
+      persistenceDisposition: 'unconfirmed',
+      generationProjection: {
+        characterId: 'char-1',
+        chatId: 'chat-1',
+        generationId: 'unconfirmed-generation',
+        mode: 'send',
+      },
+    })
+    controlled.close()
+
+    await expect(result.terminal).resolves.toMatchObject({
+      status: 'error',
+      error: 'generation journal insert failed',
+      persistenceDisposition: 'unconfirmed',
+      generationProjection: { generationId: 'unconfirmed-generation' },
+    })
+  })
+
+  it('preserves committed-cleanup-pending on a successful done frame', async () => {
+    const controlled = controlledGenerationStream()
+    vi.stubGlobal('fetch', async () => controlled.response)
+
+    const pending = requestServerChatGeneration(baseInput, null)
+    sendGenerationReadyFrames(controlled, 'committed-generation')
+    const result = await pending
+    expect(result.status).toBe('ok')
+    if (result.status !== 'ok') return
+
+    controlled.send('token', { content: 'committed text' })
+    controlled.send('done', {
+      result: 'committed text',
+      generationId: 'committed-generation',
+      persistenceDisposition: 'committed_cleanup_pending',
+    })
+    controlled.close()
+
+    await expect(result.terminal).resolves.toMatchObject({
+      status: 'done',
+      done: { persistenceDisposition: 'committed_cleanup_pending' },
+    })
+  })
+
   it('adds provider status and code details to terminal dispatch errors', async () => {
     const restoration = {
       chatId: 'chat-1',

@@ -60,9 +60,12 @@ function newController(): AbortController {
   return controller
 }
 
-async function startHarness(generationChatOverrides: Record<string, unknown> = {}): Promise<Harness> {
+async function startHarness(
+  generationChatOverrides: Record<string, unknown> = {},
+  existingDataDir?: string,
+): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
-  const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-durable-'))
+  const dataDir = existingDataDir ?? mkdtempSync(path.join(tmpdir(), 'risu-durable-'))
   const commandEvents = createRetryTestCommandSink()
   const { app } = await buildApp({
     config: {
@@ -212,6 +215,20 @@ afterEach(async () => {
 
 async function seedDatabase(database: unknown): Promise<void> {
   await seedDatabaseForHarness(harness, assertion, database)
+}
+
+async function resetHarness(generationChatOverrides: Record<string, unknown> = {}): Promise<void> {
+  await harness.app.close()
+  rmSync(harness.dataDir, { recursive: true, force: true })
+  harness = await startHarness(generationChatOverrides)
+  ;({ assertion } = await setupAuthedClient(harness.app))
+  await seedDatabase(fixtureDatabase)
+}
+
+async function restartHarness(generationChatOverrides: Record<string, unknown> = {}): Promise<void> {
+  const dataDir = harness.dataDir
+  await harness.app.close()
+  harness = await startHarness(generationChatOverrides, dataDir)
 }
 
 async function seedDatabaseForHarness(target: Harness, targetAssertion: string, database: unknown): Promise<number> {
@@ -555,6 +572,38 @@ function generationFinalizationRetryRows(): GenerationFinalizationRetryTestRow[]
   }
 }
 
+function executeDatabase(sql: string): void {
+  const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+  try {
+    db.exec(sql)
+  } finally {
+    db.close()
+  }
+}
+
+async function captureProtocolMetrics<T>(run: () => Promise<T>): Promise<{
+  result: T
+  metrics: Array<Record<string, unknown>>
+}> {
+  const previous = process.env.RISU_PROTOCOL_METRICS
+  process.env.RISU_PROTOCOL_METRICS = '1'
+  const metrics: Array<Record<string, unknown>> = []
+  const infoSpy = vi.spyOn(console, 'info').mockImplementation((message: unknown) => {
+    if (typeof message !== 'string' || !message.startsWith('[protocol-metric] ')) return
+    metrics.push(JSON.parse(message.slice('[protocol-metric] '.length)) as Record<string, unknown>)
+  })
+  try {
+    return { result: await run(), metrics }
+  } finally {
+    infoSpy.mockRestore()
+    if (previous === undefined) {
+      delete process.env.RISU_PROTOCOL_METRICS
+    } else {
+      process.env.RISU_PROTOCOL_METRICS = previous
+    }
+  }
+}
+
 function commandEventTypeCount(type: string): number {
   const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
   try {
@@ -814,7 +863,7 @@ describe('Durable generation (Milestone 1)', () => {
     expect(generationFinalizationRetryRows()).toEqual([])
   })
 
-  it('retries a transient finalization failure without duplicating the assistant row', async () => {
+  it('reports committed success when live event bookkeeping fails after the authoritative commit', async () => {
     failNextGenerationPersistEvent = true
     providerImpl = () => {
       async function* g(): AsyncGenerator<CompletionStreamFrame> {
@@ -825,20 +874,253 @@ describe('Durable generation (Milestone 1)', () => {
     }
 
     const controller = newController()
-    const res = await postDurable({}, { signal: controller.signal })
-    const events = await readSse(res, (ev) => ev.type === 'error' || ev.type === 'done')
-    expect(events.some((e) => e.type === 'error')).toBe(true)
-
-    await waitFor(async () => {
-      const rows = generationFinalizationRetryRows()
-      return rows.length === 0 ? true : undefined
+    const { result: events, metrics } = await captureProtocolMetrics(async () => {
+      const res = await postDurable({}, { signal: controller.signal })
+      return readSse(res, () => false)
     })
+    expect(events.some((event) => event.type === 'error')).toBe(false)
+    expect(events.at(-1)?.type).toBe('done')
+    expect(generationFinalizationRetryRows()).toEqual([])
     const hydration = await chatHydration(await bootstrap())
     const assistantMessages = hydration.message.filter((m) => m.role === 'char')
     expect(assistantMessages).toHaveLength(1)
     expect(assistantMessages[0].data).toBe('retry me')
     expect(hydration.alternates.map((message) => message.data).sort()).toEqual(['retry alternate', 'retry me'])
+    expect(metrics.find((metric) => metric.metric === 'generation_persistence')).toMatchObject({
+      status: 'bookkeeping_error',
+      phase: 'bookkeeping',
+      journalConfirmed: true,
+      authoritativeCommitted: true,
+      cleanupComplete: true,
+    })
     controller.abort()
+  })
+
+  it('reports an unconfirmed disposition when finalization journal insertion fails', async () => {
+    await resetHarness({ finalizationRetry: false })
+    await seedDatabase({
+      ...fixtureDatabase,
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          triggerscript: [
+            {
+              comment: '',
+              type: 'output',
+              conditions: [],
+              effect: [{ type: 'setvar', operator: '=', var: 'journalMutation', value: 'must-not-commit' }],
+            },
+          ],
+        },
+      ],
+    })
+    const gated = makeGatedProvider({ before: 'unjournaled', after: ' result' })
+    providerImpl = gated.dispatchProvider
+
+    const controller = newController()
+    const response = await postDurable({}, { signal: controller.signal })
+    const initialEvents = await readSse(response, (event) => event.type === 'token')
+    const jobId = jobIdFromEvents(initialEvents)
+    const replay = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+      headers: authHeaders(),
+    })
+    executeDatabase(`
+      CREATE TRIGGER fail_generation_retry_insert
+      BEFORE INSERT ON generation_finalization_retries
+      BEGIN
+        SELECT RAISE(FAIL, 'injected generation journal failure');
+      END;
+    `)
+
+    const { result: events, metrics } = await captureProtocolMetrics(async () => {
+      gated.release()
+      return readSse(replay, () => false)
+    })
+
+    expect(events.filter((event) => event.type === 'error')).toHaveLength(1)
+    expect(events.some((event) => event.type === 'done')).toBe(false)
+    expect(events.find((event) => event.type === 'error')?.data).toMatchObject({
+      reason: 'generation_persistence_failed',
+      persistenceDisposition: 'unconfirmed',
+      generationProjection: {
+        characterId: 'char-1',
+        chatId: 'chat-1',
+        generationId: jobId,
+        mode: 'send',
+      },
+    })
+    expect(generationFinalizationRetryRows()).toEqual([])
+    const failedBootstrap = await bootstrap()
+    const hydration = await chatHydration(failedBootstrap)
+    expect(hydration.message.some((message) => message.role === 'char')).toBe(false)
+    expect(hydration.alternates).toEqual([])
+    expect(failedBootstrap.database.characters[0].chats[0].scriptstate).toBeUndefined()
+    expect(metrics.find((metric) => metric.metric === 'generation_persistence')).toMatchObject({
+      status: 'journal_error',
+      phase: 'journal',
+      journalConfirmed: false,
+      authoritativeCommitted: false,
+      cleanupComplete: false,
+    })
+    expect(
+      metrics.some((metric) => metric.metric === 'generation_persistence' && metric.status === 'retry_queued'),
+    ).toBe(false)
+    controller.abort()
+    executeDatabase('DROP TRIGGER fail_generation_retry_insert')
+    await restartHarness()
+    expect(generationFinalizationRetryRows()).toEqual([])
+    expect((await chatMessages(await bootstrap())).some((message) => message.role === 'char')).toBe(false)
+  })
+
+  it('does not claim queued when SQLite is busy at journal insertion', async () => {
+    await resetHarness({ finalizationRetry: false })
+    const gated = makeGatedProvider({ before: 'locked', after: ' result' })
+    providerImpl = gated.dispatchProvider
+
+    const controller = newController()
+    const response = await postDurable({}, { signal: controller.signal })
+    const initialEvents = await readSse(response, (event) => event.type === 'token')
+    const jobId = jobIdFromEvents(initialEvents)
+    const replay = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+      headers: authHeaders(),
+    })
+    const locker = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      locker.exec('BEGIN IMMEDIATE')
+      gated.release()
+      const events = await readSse(replay, () => false)
+      expect(events.find((event) => event.type === 'error')?.data.persistenceDisposition).toBe('unconfirmed')
+      expect(events.some((event) => event.type === 'done')).toBe(false)
+    } finally {
+      locker.exec('ROLLBACK')
+      locker.close()
+    }
+    expect(generationFinalizationRetryRows()).toEqual([])
+    expect((await chatMessages(await bootstrap())).some((message) => message.role === 'char')).toBe(false)
+    controller.abort()
+  })
+
+  it('confirms the exact pending journal row before reporting a retryable persistence failure as queued', async () => {
+    await resetHarness({ finalizationRetry: false })
+    const gated = makeGatedProvider({ before: 'queued', after: ' result' })
+    providerImpl = gated.dispatchProvider
+
+    const controller = newController()
+    const response = await postDurable({}, { signal: controller.signal })
+    const initialEvents = await readSse(response, (event) => event.type === 'token')
+    const jobId = jobIdFromEvents(initialEvents)
+    const replay = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+      headers: authHeaders(),
+    })
+    executeDatabase(`
+      CREATE TRIGGER fail_generation_message_insert
+      BEFORE INSERT ON messages
+      WHEN NEW.role = 'char'
+      BEGIN
+        SELECT RAISE(FAIL, 'injected authoritative persistence failure');
+      END;
+    `)
+
+    const { result: events, metrics } = await captureProtocolMetrics(async () => {
+      gated.release()
+      return readSse(replay, () => false)
+    })
+    expect(events.find((event) => event.type === 'error')?.data.persistenceDisposition).toBe('queued')
+    expect(events.some((event) => event.type === 'done')).toBe(false)
+    expect(generationFinalizationRetryRows()).toEqual([
+      expect.objectContaining({ generation_id: jobId, status: 'pending', failure_count: 1 }),
+    ])
+    expect((await chatMessages(await bootstrap())).some((message) => message.role === 'char')).toBe(false)
+    expect(metrics.find((metric) => metric.metric === 'generation_persistence')).toMatchObject({
+      status: 'retry_queued',
+      phase: 'authoritative_commit',
+      journalConfirmed: true,
+      authoritativeCommitted: false,
+    })
+
+    controller.abort()
+    executeDatabase('DROP TRIGGER fail_generation_message_insert')
+    await restartHarness()
+    expect(generationFinalizationRetryRows()).toEqual([])
+    const messages = await chatMessages(await bootstrap())
+    expect(messages.filter((message) => message.role === 'char')).toHaveLength(1)
+    expect(messages.find((message) => message.role === 'char')?.data).toBe('queued result')
+    expect(commandEventTypeCount('generation.persisted')).toBe(1)
+  })
+
+  it('preserves the confirmed queue and original persistence error when retry bookkeeping fails', async () => {
+    await resetHarness({ finalizationRetry: false })
+    const gated = makeGatedProvider({ before: 'bookkeeping', after: ' result' })
+    providerImpl = gated.dispatchProvider
+
+    const controller = newController()
+    const response = await postDurable({}, { signal: controller.signal })
+    const initialEvents = await readSse(response, (event) => event.type === 'token')
+    const jobId = jobIdFromEvents(initialEvents)
+    const replay = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+      headers: authHeaders(),
+    })
+    executeDatabase(`
+      CREATE TRIGGER fail_generation_message_insert
+      BEFORE INSERT ON messages
+      WHEN NEW.role = 'char'
+      BEGIN
+        SELECT RAISE(FAIL, 'original authoritative failure');
+      END;
+      CREATE TRIGGER fail_generation_retry_update
+      BEFORE UPDATE ON generation_finalization_retries
+      BEGIN
+        SELECT RAISE(FAIL, 'injected retry bookkeeping failure');
+      END;
+    `)
+
+    const { result: events, metrics } = await captureProtocolMetrics(async () => {
+      gated.release()
+      return readSse(replay, () => false)
+    })
+    const error = events.find((event) => event.type === 'error')?.data
+    expect(error).toMatchObject({ persistenceDisposition: 'queued' })
+    expect(String(error?.error)).toContain('original authoritative failure')
+    expect(generationFinalizationRetryRows()).toEqual([
+      expect.objectContaining({ generation_id: jobId, status: 'pending', failure_count: 0 }),
+    ])
+    expect(metrics.find((metric) => metric.metric === 'generation_persistence')).toMatchObject({
+      status: 'retry_queued',
+      phase: 'bookkeeping',
+      journalConfirmed: true,
+      authoritativeCommitted: false,
+      bookkeepingError: expect.stringContaining('injected retry bookkeeping failure'),
+    })
+    controller.abort()
+  })
+
+  it('rejects a serialization failure before persistence and leaves no journal row', () => {
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      const circularMessage: Record<string, unknown> = {
+        role: 'char',
+        data: 'cannot serialize',
+        chatId: 'serialization-generation',
+      }
+      circularMessage.circular = circularMessage
+      expect(() =>
+        enqueueGenerationFinalizationRetry(db, {
+          generationId: 'serialization-generation',
+          chatId: 'chat-1',
+          mode: 'send',
+          message: circularMessage as never,
+          chatVarMutations: [],
+        }),
+      ).toThrow(/circular/i)
+      expect(
+        db
+          .prepare('SELECT generation_id FROM generation_finalization_retries WHERE generation_id = ?')
+          .get('serialization-generation'),
+      ).toBeUndefined()
+      expect(db.prepare("SELECT COUNT(*) AS count FROM messages WHERE role = 'char'").get()).toEqual({ count: 0 })
+    } finally {
+      db.close()
+    }
   })
 
   it('replays an already-persisted chat-var finalization retry as a no-op', async () => {
@@ -846,7 +1128,6 @@ describe('Durable generation (Milestone 1)', () => {
     rmSync(harness.dataDir, { recursive: true, force: true })
     harness = await startHarness({ finalizationRetry: false })
     ;({ assertion } = await setupAuthedClient(harness.app))
-    failNextGenerationPersistEvent = true
     providerImpl = () => {
       async function* g(): AsyncGenerator<CompletionStreamFrame> {
         yield { kind: 'token', content: 'reply text' }
@@ -870,11 +1151,29 @@ describe('Durable generation (Milestone 1)', () => {
         },
       ],
     })
+    executeDatabase(`
+      CREATE TRIGGER fail_generation_retry_cleanup
+      BEFORE DELETE ON generation_finalization_retries
+      BEGIN
+        SELECT RAISE(FAIL, 'injected generation retry cleanup failure');
+      END;
+    `)
 
     const controller = newController()
-    const res = await postDurable({}, { signal: controller.signal })
-    const events = await readSse(res, (ev) => ev.type === 'error' || ev.type === 'done')
-    expect(events.some((event) => event.type === 'error')).toBe(true)
+    const { result: events, metrics } = await captureProtocolMetrics(async () => {
+      const res = await postDurable({}, { signal: controller.signal })
+      return readSse(res, (ev) => ev.type === 'error' || ev.type === 'done')
+    })
+    expect(events.some((event) => event.type === 'error')).toBe(false)
+    expect(events.find((event) => event.type === 'done')?.data.persistenceDisposition).toBe('committed_cleanup_pending')
+    expect(metrics.find((metric) => metric.metric === 'generation_persistence')).toMatchObject({
+      status: 'cleanup_pending',
+      phase: 'cleanup',
+      journalConfirmed: true,
+      authoritativeCommitted: true,
+      cleanupComplete: false,
+      cleanupError: expect.stringContaining('injected generation retry cleanup failure'),
+    })
     const jobId = jobIdFromEvents(events)
 
     await waitFor(async () => {
@@ -891,6 +1190,7 @@ describe('Durable generation (Milestone 1)', () => {
     const revisionBeforeRetry = editedBoot.revision
     expect(editedBoot.database.characters[0].chats[0].scriptstate).toEqual({ $mood: 'user-edited' })
 
+    executeDatabase('DROP TRIGGER fail_generation_retry_cleanup')
     expect(retryQueuedFinalizationsOnce()).toEqual({
       attempted: 1,
       persisted: 1,
@@ -973,7 +1273,7 @@ describe('Durable generation (Milestone 1)', () => {
       droppedMutations: [{ scope: 'chat_variable', key: '$mood' }],
     })
     expect(metrics.find((metric) => metric.metric === 'generation_persistence_retry')).toMatchObject({
-      status: 'ok',
+      status: 'persisted',
       droppedScriptMutationCount: 1,
       droppedScriptMutations: [{ scope: 'chat_variable', key: '$mood' }],
     })
@@ -1373,6 +1673,94 @@ describe('Durable generation (Milestone 1)', () => {
 
     const message = await waitForAssistantMessage()
     expect(message.data).toBe('partial reply')
+    controller.abort()
+  })
+
+  it('reports an unconfirmed cancelled partial when its journal insert fails', async () => {
+    await resetHarness({ finalizationRetry: false })
+    const gated = makeGatedProvider({ before: 'unsaved cancelled partial' })
+    providerImpl = gated.dispatchProvider
+
+    const controller = newController()
+    const response = await postDurable({}, { signal: controller.signal })
+    const initialEvents = await readSse(response, (event) => event.type === 'token')
+    const jobId = jobIdFromEvents(initialEvents)
+    const observer = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+      headers: authHeaders(),
+    })
+    const observerEvents = readSse(observer, () => false)
+    executeDatabase(`
+      CREATE TRIGGER fail_cancel_retry_insert
+      BEFORE INSERT ON generation_finalization_retries
+      BEGIN
+        SELECT RAISE(FAIL, 'injected cancelled-result journal failure');
+      END;
+    `)
+
+    const { result: events, metrics } = await captureProtocolMetrics(async () => {
+      await cancelJob(jobId)
+      return observerEvents
+    })
+    expect(events.filter((event) => event.type === 'error')).toHaveLength(1)
+    expect(events.some((event) => event.type === 'done')).toBe(false)
+    expect(events.find((event) => event.type === 'error')?.data).toMatchObject({
+      reason: 'generation_cancel_persistence_failed',
+      persistenceDisposition: 'unconfirmed',
+      generationProjection: {
+        characterId: 'char-1',
+        chatId: 'chat-1',
+        generationId: jobId,
+        mode: 'send',
+      },
+    })
+    expect(generationFinalizationRetryRows()).toEqual([])
+    expect((await chatMessages(await bootstrap())).some((message) => message.role === 'char')).toBe(false)
+    expect(metrics.find((metric) => metric.metric === 'generation_cancel_persistence')).toMatchObject({
+      status: 'journal_error',
+      phase: 'journal',
+      journalConfirmed: false,
+      authoritativeCommitted: false,
+    })
+    controller.abort()
+  })
+
+  it('reports a cancelled partial as queued only when its retry row is replayable', async () => {
+    await resetHarness({ finalizationRetry: false })
+    const gated = makeGatedProvider({ before: 'queued cancelled partial' })
+    providerImpl = gated.dispatchProvider
+
+    const controller = newController()
+    const response = await postDurable({}, { signal: controller.signal })
+    const initialEvents = await readSse(response, (event) => event.type === 'token')
+    const jobId = jobIdFromEvents(initialEvents)
+    const observer = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+      headers: authHeaders(),
+    })
+    const observerEvents = readSse(observer, () => false)
+    executeDatabase(`
+      CREATE TRIGGER fail_cancel_message_insert
+      BEFORE INSERT ON messages
+      WHEN NEW.role = 'char'
+      BEGIN
+        SELECT RAISE(FAIL, 'injected cancelled-result persistence failure');
+      END;
+    `)
+
+    await cancelJob(jobId)
+    const events = await observerEvents
+    expect(events.find((event) => event.type === 'error')?.data.persistenceDisposition).toBe('queued')
+    expect(events.some((event) => event.type === 'done')).toBe(false)
+    expect(generationFinalizationRetryRows()).toEqual([
+      expect.objectContaining({ generation_id: jobId, status: 'pending', failure_count: 1 }),
+    ])
+    expect((await chatMessages(await bootstrap())).some((message) => message.role === 'char')).toBe(false)
+
+    executeDatabase('DROP TRIGGER fail_cancel_message_insert')
+    expect(retryQueuedFinalizationsOnce()).toEqual({ attempted: 1, persisted: 1, terminal: 0, retryable: 0 })
+    expect(generationFinalizationRetryRows()).toEqual([])
+    expect((await chatMessages(await bootstrap())).find((message) => message.role === 'char')?.data).toBe(
+      'queued cancelled partial',
+    )
     controller.abort()
   })
 

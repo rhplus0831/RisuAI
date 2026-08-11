@@ -46,6 +46,7 @@ import type {
   PostGenerationProgressEvent,
   PromptEvent,
   ServerChatGenerationProjection,
+  ServerChatGenerationPersistenceDisposition,
   ServerChatMessagePatch,
   ServerChatRestoration,
   ServerChatSideEffect,
@@ -140,7 +141,7 @@ export interface ServerChatTerminal {
   error?: string
   reattachOutcome?: GenerationReattachOutcomeStatus
   restoration?: ServerChatRestoration
-  persistenceDisposition?: 'queued' | 'rejected'
+  persistenceDisposition?: Exclude<ServerChatGenerationPersistenceDisposition, 'committed_cleanup_pending'>
   generationProjection?: ServerChatGenerationProjection
   sideEffects?: ServerChatSideEffect[]
   warnings?: ServerChatWarning[]
@@ -867,8 +868,10 @@ export async function requestServerChatGeneration(
                       ? (data.restoration as unknown as ServerChatRestoration)
                       : undefined
                   const code = truncationConfirmationCode(data.code) ?? truncationConfirmationCode(data.reason)
-                  const persistenceDisposition =
-                    data.persistenceDisposition === 'queued' || data.persistenceDisposition === 'rejected'
+                  const persistenceDisposition: ServerChatGenerationPersistenceDisposition | undefined =
+                    data.persistenceDisposition === 'queued' ||
+                    data.persistenceDisposition === 'rejected' ||
+                    data.persistenceDisposition === 'unconfirmed'
                       ? data.persistenceDisposition
                       : undefined
                   const generationProjection =

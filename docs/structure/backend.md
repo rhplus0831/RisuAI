@@ -252,7 +252,13 @@ than overwriting newer chat state. Script-side chat-variable, character-field,
 and local-lore mutations carry their own before-values: conflicting mutations
 are dropped and reported by a warning frame while the generated message text is
 still persisted. `generationFinalizationRetry.ts` records the same target
-snapshot and mutations for retry, preserving the fence across restarts.
+snapshot and mutations for retry, preserving the fence across restarts. A
+`queued` wire disposition is permitted only after that complete SQLite journal
+row is confirmed. Journal insertion failure is `unconfirmed`; terminal target
+failure is `rejected`; and a result that committed before journal cleanup failed
+finishes successfully with `committed_cleanup_pending`. Retry sweeps quarantine
+restored continue/regenerate rows that lack an assembly snapshot as retained
+`stalled_legacy` terminal history instead of replaying them.
 
 Half-streaming is also a route/SSE contract. An `info` frame marks
 `halfStreaming: true`; token frames keep their normal text delta and add

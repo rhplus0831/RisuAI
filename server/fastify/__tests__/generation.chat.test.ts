@@ -2333,7 +2333,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         mode: 'send',
       })
       expect(durable.find((entry) => entry.metric === 'generation_persistence')).toMatchObject({
-        status: 'ok',
+        status: 'persisted',
       })
       const durablePersistMetric = durable.find(
         (entry) => entry.metric === 'command_mutation' && entry.type === 'generation.persisted',

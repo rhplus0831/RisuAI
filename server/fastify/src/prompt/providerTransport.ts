@@ -27,6 +27,10 @@ export interface ProviderPostGenerationResult {
   primary?: string
   /** Final per-choice text to expose on the terminal done event. */
   alternates?: readonly string[]
+  /** The post-generation callback already emitted a terminal error. */
+  terminalStatus?: 'error'
+  /** Successful commit with deferred retry-journal cleanup. */
+  persistenceDisposition?: DoneEvent['persistenceDisposition']
 }
 
 export interface ProviderChunkTransportOptions {
@@ -62,7 +66,9 @@ function isProviderPostGenerationResult(
   return (
     Object.prototype.hasOwnProperty.call(value, 'frame') ||
     Object.prototype.hasOwnProperty.call(value, 'primary') ||
-    Object.prototype.hasOwnProperty.call(value, 'alternates')
+    Object.prototype.hasOwnProperty.call(value, 'alternates') ||
+    Object.prototype.hasOwnProperty.call(value, 'terminalStatus') ||
+    Object.prototype.hasOwnProperty.call(value, 'persistenceDisposition')
   )
 }
 
@@ -98,22 +104,27 @@ export async function emitProviderChunks(
   }
   // Run the post-generation pass before the terminal `done`; thrown errors are
   // handled by the streaming route's provider-error path.
-  const emitSuccessDone = async (): Promise<void> => {
+  const emitSuccessDone = async (): Promise<'done' | 'error'> => {
     const postGenerationResult = normalizedOptions.postGeneration
       ? await normalizedOptions.postGeneration(result, alternates)
       : undefined
     let postGeneration: PostGenerationFrame | undefined
     let primary = result
+    let terminalStatus: ProviderPostGenerationResult['terminalStatus']
+    let persistenceDisposition: ProviderPostGenerationResult['persistenceDisposition']
     if (postGenerationResult) {
       if (isProviderPostGenerationResult(postGenerationResult)) {
         postGeneration = postGenerationResult.frame
         primary = postGenerationResult.primary ?? postGeneration?.finalText ?? result
         alternates = [...(postGenerationResult.alternates ?? alternates)]
+        terminalStatus = postGenerationResult.terminalStatus
+        persistenceDisposition = postGenerationResult.persistenceDisposition
       } else {
         postGeneration = postGenerationResult as PostGenerationFrame
         primary = postGeneration.finalText ?? result
       }
     }
+    if (terminalStatus === 'error') return 'error'
     emitSideEffects([primary, ...alternates])
     const omitStreamedResult = normalizedOptions.omitResultWhenStreamed === true && result.length > 0
     emit({
@@ -122,7 +133,9 @@ export async function emitProviderChunks(
       ...(normalizedOptions.doneMetadata?.(result) ?? {}),
       ...(alternates.length > 0 ? { alternates } : {}),
       ...(postGeneration ? { postGeneration } : {}),
+      ...(persistenceDisposition ? { persistenceDisposition } : {}),
     })
+    return 'done'
   }
 
   if (signal?.aborted) {
@@ -182,9 +195,9 @@ export async function emitProviderChunks(
       }
 
       alternates = Array.isArray(frame.alternates) ? [...frame.alternates] : []
-      await emitSuccessDone()
+      const terminalStatus = await emitSuccessDone()
       return {
-        status: 'done',
+        status: terminalStatus,
         result,
         finishReason: frame.finishReason,
         ...(alternates.length > 0 ? { alternates } : {}),
@@ -208,6 +221,6 @@ export async function emitProviderChunks(
     return { status: 'aborted', result }
   }
 
-  await emitSuccessDone()
-  return { status: 'done', result }
+  const terminalStatus = await emitSuccessDone()
+  return { status: terminalStatus, result }
 }

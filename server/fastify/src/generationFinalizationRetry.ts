@@ -9,6 +9,7 @@ const DAY_MS = 24 * 60 * 60 * 1000
 
 export const GENERATION_FINALIZATION_TERMINAL_RETRY_RETENTION_MS = 7 * DAY_MS
 export const GENERATION_FINALIZATION_TERMINAL_RETRY_SWEEP_LIMIT = 1000
+export const GENERATION_FINALIZATION_LEGACY_SNAPSHOT_ERROR = 'stalled_legacy'
 
 export interface GenerationFinalizationAttempt {
   generationId: string
@@ -42,6 +43,15 @@ export interface PruneTerminalGenerationFinalizationRetriesOptions {
   now?: string | Date
   retentionMs?: number
   maxPerSweep?: number
+}
+
+export interface GenerationFinalizationRetryReceipt {
+  generationId: string
+}
+
+export interface PendingGenerationFinalizationRetry {
+  attempt: GenerationFinalizationAttempt
+  replayability: 'replayable' | 'legacy_snapshot_missing'
 }
 
 interface GenerationFinalizationMutationEnvelope {
@@ -124,9 +134,16 @@ export function createGenerationFinalizationRetryTable(db: DatabaseSync): void {
   `)
 }
 
-export function enqueueGenerationFinalizationRetry(db: DatabaseSync, attempt: GenerationFinalizationAttempt): void {
-  db.prepare(
-    `
+export function enqueueGenerationFinalizationRetry(
+  db: DatabaseSync,
+  attempt: GenerationFinalizationAttempt,
+): GenerationFinalizationRetryReceipt {
+  if ((attempt.mode === 'continue' || attempt.mode === 'regenerate') && !attempt.targetSnapshot) {
+    throw new Error(`Generation finalization ${attempt.mode} attempts require a target snapshot`)
+  }
+  const result = db
+    .prepare(
+      `
       INSERT INTO generation_finalization_retries (
         generation_id,
         chat_id,
@@ -155,20 +172,32 @@ export function enqueueGenerationFinalizationRetry(db: DatabaseSync, attempt: Ge
         terminal_error = NULL,
         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
     `,
-  ).run(
-    attempt.generationId,
-    attempt.chatId,
-    attempt.mode,
-    attempt.targetMessageId ?? null,
-    JSON.stringify(attempt.message),
-    JSON.stringify(attempt.alternateMessages ?? []),
-    serializeGenerationFinalizationMutations(attempt),
-    attempt.targetSnapshot ? JSON.stringify(attempt.targetSnapshot) : null,
-  )
+    )
+    .run(
+      attempt.generationId,
+      attempt.chatId,
+      attempt.mode,
+      attempt.targetMessageId ?? null,
+      JSON.stringify(attempt.message),
+      JSON.stringify(attempt.alternateMessages ?? []),
+      serializeGenerationFinalizationMutations(attempt),
+      attempt.targetSnapshot ? JSON.stringify(attempt.targetSnapshot) : null,
+    )
+  if (result.changes !== 1) {
+    throw new Error(`Generation finalization journal write was not confirmed for ${attempt.generationId}`)
+  }
+  return { generationId: attempt.generationId }
 }
 
-export function deleteGenerationFinalizationRetry(db: DatabaseSync, generationId: string): void {
-  db.prepare('DELETE FROM generation_finalization_retries WHERE generation_id = ?').run(generationId)
+export function deleteGenerationFinalizationRetry(
+  db: DatabaseSync,
+  generationId: string,
+): GenerationFinalizationRetryReceipt {
+  const result = db.prepare('DELETE FROM generation_finalization_retries WHERE generation_id = ?').run(generationId)
+  if (result.changes !== 1) {
+    throw new Error(`Generation finalization journal cleanup was not confirmed for ${generationId}`)
+  }
+  return { generationId }
 }
 
 export function pruneTerminalGenerationFinalizationRetries(
@@ -194,6 +223,7 @@ export function pruneTerminalGenerationFinalizationRetries(
           SELECT generation_id
           FROM generation_finalization_retries
           WHERE status = 'terminal'
+            AND terminal_error IS NOT '${GENERATION_FINALIZATION_LEGACY_SNAPSHOT_ERROR}'
             AND updated_at < ?
           ORDER BY updated_at ASC, generation_id ASC
           LIMIT ?
@@ -209,9 +239,10 @@ export function markGenerationFinalizationRetryFailure(
   generationId: string,
   error: string,
   terminal: boolean,
-): void {
-  db.prepare(
-    `
+): GenerationFinalizationRetryReceipt {
+  const result = db
+    .prepare(
+      `
       UPDATE generation_finalization_retries
       SET
         failure_count = failure_count + 1,
@@ -221,13 +252,18 @@ export function markGenerationFinalizationRetryFailure(
         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
       WHERE generation_id = ?
     `,
-  ).run(error, terminal ? 1 : 0, terminal ? error : null, terminal ? 1 : 0, generationId)
+    )
+    .run(error, terminal ? 1 : 0, terminal ? error : null, terminal ? 1 : 0, generationId)
+  if (result.changes !== 1) {
+    throw new Error(`Generation finalization retry bookkeeping was not confirmed for ${generationId}`)
+  }
+  return { generationId }
 }
 
 export function listPendingGenerationFinalizationRetries(
   db: DatabaseSync,
   limit = 25,
-): GenerationFinalizationAttempt[] {
+): PendingGenerationFinalizationRetry[] {
   const boundedLimit = Number.isSafeInteger(limit) && limit > 0 ? limit : 25
   const rows = db
     .prepare(
@@ -256,21 +292,26 @@ export function listPendingGenerationFinalizationRetries(
   return rows.map((row) => {
     const alternateMessages = JSON.parse(row.alternate_messages_json) as Message[]
     const mutations = parseGenerationFinalizationMutations(row.chat_var_mutations_json)
+    const legacySnapshotMissing =
+      (row.mode === 'continue' || row.mode === 'regenerate') && row.target_snapshot_json === null
     return {
-      generationId: row.generation_id,
-      chatId: row.chat_id,
-      mode: row.mode,
-      ...(row.target_message_id !== null ? { targetMessageId: row.target_message_id } : {}),
-      message: JSON.parse(row.message_json) as Message,
-      ...(alternateMessages.length > 0 ? { alternateMessages } : {}),
-      chatVarMutations: mutations.chatVarMutations,
-      ...(mutations.characterFieldMutations?.length
-        ? { characterFieldMutations: mutations.characterFieldMutations }
-        : {}),
-      ...(mutations.localLoreMutation ? { localLoreMutation: mutations.localLoreMutation } : {}),
-      ...(row.target_snapshot_json !== null
-        ? { targetSnapshot: JSON.parse(row.target_snapshot_json) as GenerationFinalizationTargetSnapshot }
-        : {}),
+      attempt: {
+        generationId: row.generation_id,
+        chatId: row.chat_id,
+        mode: row.mode,
+        ...(row.target_message_id !== null ? { targetMessageId: row.target_message_id } : {}),
+        message: JSON.parse(row.message_json) as Message,
+        ...(alternateMessages.length > 0 ? { alternateMessages } : {}),
+        chatVarMutations: mutations.chatVarMutations,
+        ...(mutations.characterFieldMutations?.length
+          ? { characterFieldMutations: mutations.characterFieldMutations }
+          : {}),
+        ...(mutations.localLoreMutation ? { localLoreMutation: mutations.localLoreMutation } : {}),
+        ...(row.target_snapshot_json !== null
+          ? { targetSnapshot: JSON.parse(row.target_snapshot_json) as GenerationFinalizationTargetSnapshot }
+          : {}),
+      },
+      replayability: legacySnapshotMissing ? 'legacy_snapshot_missing' : 'replayable',
     }
   })
 }
