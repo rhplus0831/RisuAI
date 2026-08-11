@@ -7,7 +7,7 @@ recorded **10 primary findings**; the validation reports added concrete
 consequences and adjacent findings, while the contextual review added seven
 contextual observations, one explicit server-restart limitation, and two
 destructive-operation concurrency questions. After de-duplicating shared root
-causes, this index contains **10 active work items**, **26 resolved items**,
+causes, this index contains **9 active work items**, **27 resolved items**,
 and **0 deferred items**.
 
 The consolidated audit was recorded at `9afde4658ea5b277493e9d7f6ef7aaf387544165`.
@@ -79,7 +79,7 @@ not confirmed.
 | Work item | Findings | Status | Impact | Risk / dependencies |
 | --- | --- | --- | --- | --- |
 | Reconcile accepted-send recovery with the exact discovered job | [MS-07](validate/ms-07-recovered-job-warning-coexistence.md) | Ready | Foreground/online/page-show recovery can show “reply could not be started” and Retry beside the matching visibly running job. | Depends on Tier 0 lineage. Model `retryable -> owned_by_job -> completed`; suppress Retry only for an exact match and preserve warnings for unrelated same-chat locks. Design complete: [protocol design](plans/accepted-send-protocol.md) wave 3. |
-| Enforce hard durable replay budgets and an explicit gap/snapshot contract | [MS-03 additional issue B](validate/ms-03-bounded-replay-terminal-reconciliation.md) | Needs design | Protected frames can exceed advertised per-job limits, allowing detached jobs to create avoidable process-memory pressure; in-flight reconnect has no explicit gap signal. | Keep the Tier 0 terminal replacement as the immediate correctness fix. Separately compact replaceable frames, store/fetch oversized terminal snapshots, and enforce per-job plus aggregate bounds. |
+| Enforce hard durable replay budgets and an explicit gap/snapshot contract | [MS-03 additional issue B](validate/ms-03-bounded-replay-terminal-reconciliation.md) | Resolved | Protected frames could exceed advertised per-job limits, letting detached jobs create avoidable process-memory pressure, and in-flight reconnect had no explicit gap signal. | Fixed in `5a839b38a`: hard per-job (512 events/2 MiB) and aggregate (16 MiB) budgets with exact accounting, token batch-compaction and latest-state snapshot replacement, oversized terminals staged to an authenticated side-channel with retention, an additive typed `replay_gap` frame, and client gap-truncation handling that defers to the canonical terminal snapshot. Regression: `server/fastify/__tests__/streamJobs.test.ts`, `server/fastify/__tests__/streamJobsRoutes.test.ts`, `server/fastify/__tests__/durableGeneration.test.ts`, `src/ts/process/request/tests/serverChat.test.ts`, `src/ts/process/__tests__/streamResponse.test.ts`. |
 | Build the production-stack desktop/mobile lifecycle matrix | [Browser/mobile coverage gap](fastify-multichat-mobile-stability-audit-2026-08-11.md#browsermobile-coverage-gap) | Ready | Existing tests do not exercise the process-loss, transport, concurrency, reattach, journal, and multi-job interleavings behind the findings. | Add deterministic fault seams and assert visible UI, resident projection, authoritative transcript, and remaining job/recovery/outbox state. Cover desktop, a mobile profile, fresh runtimes/process loss, and a physical-device pass before closing the workstream. |
 
 ## Tier 3 — Remaining feature correctness and compatibility
