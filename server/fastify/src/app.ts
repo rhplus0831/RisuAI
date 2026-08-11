@@ -31,7 +31,6 @@ import {
   retryQueuedGenerationFinalizations,
   type GenerationChatRouteOptions,
 } from './routes/generationChat.js'
-import { pruneTerminalGenerationFinalizationRetries } from './generationFinalizationRetry.js'
 import { bootPromptVariables } from './prompt/promptVariablesBoot.js'
 import { registerHealthRoutes } from './routes/health.js'
 import { registerHubRoutes } from './routes/hub.js'
@@ -361,21 +360,14 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
         eventSink: commandEventSink,
         logger: app.log,
         maxPerSweep: finalizationRetryOptions !== false ? finalizationRetryOptions.maxPerSweep : undefined,
+        baseDelayMs: finalizationRetryOptions !== false ? finalizationRetryOptions.baseDelayMs : undefined,
+        maxDelayMs: finalizationRetryOptions !== false ? finalizationRetryOptions.maxDelayMs : undefined,
         pushNotifications,
         messageTranslationJobs: messageTranslationJobRegistry,
         runMessageTranslation: opts.generationChat?.runMessageTranslation,
       })
     } catch (err) {
       app.log.error({ err }, 'generation finalization retry sweep failed')
-    }
-    try {
-      pruneTerminalGenerationFinalizationRetries(db, {
-        retentionMs: finalizationRetryOptions !== false ? finalizationRetryOptions.terminalRetentionMs : undefined,
-        maxPerSweep:
-          finalizationRetryOptions !== false ? finalizationRetryOptions.terminalRetentionMaxPerSweep : undefined,
-      })
-    } catch (err) {
-      app.log.error({ err }, 'generation finalization retry retention sweep failed')
     }
   }
   if (finalizationRetryOptions !== false) {

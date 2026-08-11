@@ -1,4 +1,11 @@
 export const languageSpanish = {
+  generationPersistenceQueued: 'Esta respuesta está esperando a guardarse y sigue siendo provisional.',
+  generationPersistenceStalled:
+    'El guardado de esta respuesta provisional sigue fallando. Permanece en cola y se reintentará automáticamente.',
+  generationPersistenceTerminal:
+    'Esta respuesta provisional no pudo guardarse de forma segura y no volverá a intentarse automáticamente. Su registro de diario se ha conservado.',
+  generationPersistenceStalledLegacy:
+    'Esta respuesta provisional restaurada no puede reintentarse de forma segura porque su registro de recuperación antiguo no contiene una instantánea de la conversación.',
   unknownInteractionTime: 'Desconocido',
   generationReattachFailure: {
     message: 'Es posible que esta respuesta siga generándose, pero este dispositivo no pudo volver a conectarse.',

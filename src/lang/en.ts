@@ -67,6 +67,12 @@ export const languageEnglish = {
   chatGenerationSettingsSaveFailed: (detail: string) =>
     `Chat generation settings could not be saved.${detail ? ` ${detail}` : ''}`,
   generationPersistenceQueued: 'This reply is waiting to be saved and remains provisional.',
+  generationPersistenceStalled:
+    'Saving this provisional reply keeps failing. It remains queued and will retry automatically.',
+  generationPersistenceTerminal:
+    'This provisional reply could not be saved safely and will not retry automatically. Its journal record has been retained.',
+  generationPersistenceStalledLegacy:
+    'This restored provisional reply cannot be retried safely because its legacy recovery record has no transcript snapshot.',
   composerFileResultDiscarded:
     'The uploaded file could not be attached because the active composer changed. Please attach it again.',
   composerDraftRecovery: {

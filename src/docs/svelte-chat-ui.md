@@ -68,6 +68,11 @@ parser/LLM-detection memoization and dependency signatures for character, chat,
 modules, settings, CBS state, and reload epochs. Stale HTML or unexpectedly
 expensive rerenders often start at that memo boundary.
 
+`Chats.svelte` matches writer-scoped generation-finalization state by stable chat,
+message, and generation ids. `Chat.svelte` renders queued, transiently stalled,
+terminal, and quarantined legacy indicators on that exact row; committed rows
+whose journal cleanup remains pending are not described as provisional.
+
 Message HTML crosses parser output, translation, custom HTML templates, inlays,
 additional/module assets, and optional partial edit. Parser code lives under
 `src/ts/parser/`, while file and inlay processing lives under

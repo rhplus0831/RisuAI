@@ -4,6 +4,7 @@ import type { ActiveGenerationJob } from '../server/bootstrap'
 import { getDatabase } from '../storage/database.svelte'
 import type { ActiveChatTarget } from '../chatCommands'
 import type { GenerationReattachOutcome } from './generationReattachOutcome'
+import { setGenerationFinalizationPersistences } from './generationPersistenceState'
 import {
   activeChatGenerations,
   findChatGenerationActivity,
@@ -405,6 +406,9 @@ export async function refreshGenerationJobFromBootstrap(jobId: string): Promise<
   }
 
   const jobs = runtime.bootstrap.activeGenerationJobs ?? []
+  if (runtime.bootstrap.generationFinalizations) {
+    setGenerationFinalizationPersistences(runtime.bootstrap.generationFinalizations)
+  }
   const authoritativeJob = jobs.find((job) => job.jobId === requestedJob.jobId && job.chatId === requestedJob.chatId)
   setActiveGenerationJobs(jobs)
   if (!authoritativeJob) {
@@ -475,6 +479,9 @@ export async function refreshActiveGenerationJobsFromBootstrap(signal?: AbortSig
           (lifecycle) => !isTerminalLifecycle(lifecycle.status),
         )
         const jobs = runtime.bootstrap.activeGenerationJobs ?? []
+        if (runtime.bootstrap.generationFinalizations) {
+          setGenerationFinalizationPersistences(runtime.bootstrap.generationFinalizations)
+        }
         const activeJobIds = new Set(jobs.map((job) => job.jobId))
         setActiveGenerationJobs(jobs)
         await hydrateReconciledChats(previousJobs.filter((job) => !activeJobIds.has(job.jobId)))

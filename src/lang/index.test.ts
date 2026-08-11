@@ -24,6 +24,9 @@ async function loadLanguageModule() {
   const langModule = await import('./index')
   const { languageEnglish } = await import('./en')
   const { languageKorean } = await import('./ko')
+  const { languageGerman } = await import('./de')
+  const { languageChinese } = await import('./cn')
+  const { languageChineseTraditional } = await import('./zh-Hant')
   const { languageSpanish } = await import('./es')
   const { languageVietnamese } = await import('./vi')
 
@@ -31,6 +34,9 @@ async function loadLanguageModule() {
     cloneSpy,
     langModule,
     languageEnglish,
+    languageGerman,
+    languageChinese,
+    languageChineseTraditional,
     languageKorean,
     languageSpanish,
     languageVietnamese,
@@ -175,6 +181,36 @@ describe('changeLanguage same-code cache', () => {
     const koreanPaths = new Set(leafPaths(languageKorean))
 
     expect(leafPaths(languageEnglish).filter((path) => !koreanPaths.has(path))).toEqual([])
+  })
+
+  it('defines every generation finalization state in every language pack', async () => {
+    const {
+      languageChinese,
+      languageChineseTraditional,
+      languageEnglish,
+      languageGerman,
+      languageKorean,
+      languageSpanish,
+      languageVietnamese,
+    } = await loadLanguageModule()
+    const keys = [
+      'generationPersistenceQueued',
+      'generationPersistenceStalled',
+      'generationPersistenceTerminal',
+      'generationPersistenceStalledLegacy',
+    ] as const
+
+    for (const pack of [
+      languageEnglish,
+      languageGerman,
+      languageSpanish,
+      languageVietnamese,
+      languageChinese,
+      languageChineseTraditional,
+      languageKorean,
+    ]) {
+      for (const key of keys) expect(pack[key]).toEqual(expect.any(String))
+    }
   })
 
   it('renders Vietnamese inlay counts without a stray template-literal dollar sign', async () => {

@@ -72,6 +72,10 @@ import {
   startActiveGenerationReattach,
   triggerOpenChatGenerationReattach,
 } from './process/reattach'
+import {
+  setGenerationFinalizationPersistences,
+  startGenerationFinalizationPersistenceRefresh,
+} from './process/generationPersistenceState'
 import { setActiveMessageTranslations, startActiveMessageTranslationRefresh } from './server/messageTranslationJobs'
 import {
   setActiveGreetingTranslations,
@@ -337,6 +341,8 @@ export async function loadWebInitialDatabase() {
   setServerCommandConflictGapHandler(handleServerCommandConflictGap)
   setResourceWriteGuardEnabled(true)
   setActiveGenerationJobs(runtime.activeGenerationJobs ?? [])
+  setGenerationFinalizationPersistences(runtime.generationFinalizations ?? [])
+  startGenerationFinalizationPersistenceRefresh()
   setActiveMessageTranslations(runtime.activeMessageTranslations ?? [])
   setActiveGreetingTranslations(runtime.activeGreetingTranslations ?? [])
   startActiveMessageTranslationRefresh()

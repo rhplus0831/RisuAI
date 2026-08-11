@@ -1,4 +1,8 @@
 export const languageChineseTraditional = {
+  generationPersistenceQueued: '此回覆正在等待儲存，仍處於暫存狀態。',
+  generationPersistenceStalled: '此暫存回覆持續儲存失敗。它仍保留在佇列中，並會自動重試。',
+  generationPersistenceTerminal: '無法安全儲存此暫存回覆，系統不會再自動重試。其日誌記錄已保留。',
+  generationPersistenceStalledLegacy: '此復原的暫存回覆無法安全重試，因為舊版復原記錄缺少對話快照。',
   unknownInteractionTime: '未知',
   generationReattachFailure: {
     message: '此回覆可能仍在產生，但此裝置無法重新連線。',

@@ -1,4 +1,8 @@
 export const languageChinese = {
+  generationPersistenceQueued: '此回复正在等待保存，仍处于临时状态。',
+  generationPersistenceStalled: '此临时回复持续保存失败。它仍保留在队列中，并会自动重试。',
+  generationPersistenceTerminal: '无法安全保存此临时回复，系统不会再自动重试。其日志记录已保留。',
+  generationPersistenceStalledLegacy: '此恢复的临时回复无法安全重试，因为旧版恢复记录缺少对话快照。',
   unknownInteractionTime: '未知',
   generationReattachFailure: {
     message: '此回复可能仍在生成，但此设备无法重新连接。',

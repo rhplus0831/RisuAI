@@ -60,6 +60,8 @@ const promptTemplateApi = vi.hoisted(() => ({
 
 const runtimeApi = vi.hoisted(() => ({
   setActiveGenerationJobs: vi.fn(),
+  setGenerationFinalizationPersistences: vi.fn(),
+  startGenerationFinalizationPersistenceRefresh: vi.fn(),
   startActiveGenerationReattach: vi.fn(),
   triggerOpenChatGenerationReattach: vi.fn(),
   setActiveMessageTranslations: vi.fn(),
@@ -170,6 +172,10 @@ vi.mock('./process/reattach', () => ({
   setActiveGenerationJobs: runtimeApi.setActiveGenerationJobs,
   startActiveGenerationReattach: runtimeApi.startActiveGenerationReattach,
   triggerOpenChatGenerationReattach: runtimeApi.triggerOpenChatGenerationReattach,
+}))
+vi.mock('./process/generationPersistenceState', () => ({
+  setGenerationFinalizationPersistences: runtimeApi.setGenerationFinalizationPersistences,
+  startGenerationFinalizationPersistenceRefresh: runtimeApi.startGenerationFinalizationPersistenceRefresh,
 }))
 vi.mock('./server/messageTranslationJobs', () => ({
   setActiveMessageTranslations: runtimeApi.setActiveMessageTranslations,
@@ -288,6 +294,16 @@ function runtimeBootstrap(overrides: Record<string, unknown> = {}) {
       requestedWriterWasActive: true,
       writerEpoch: 1,
       activeGenerationJobs: [{ chatId: 'chat-a', jobId: 'job-a' }],
+      generationFinalizations: [
+        {
+          generationId: 'generation-a',
+          chatId: 'chat-a',
+          messageId: 'generation-a',
+          mode: 'send',
+          state: 'queued',
+          failureCount: 1,
+        },
+      ],
       activeMessageTranslations: [{ chatId: 'chat-a', messageId: 'message-a' }],
       activeGreetingTranslations: [
         { characterId: 'char-a', greetingIndex: -1, settingsHash: 'settings-a', jobId: 'greeting-job-a' },
@@ -547,6 +563,9 @@ describe('API-backed client bootstrap', () => {
       resourceApi.loadInitial.mock.invocationCallOrder[0],
     )
     expect(resourceApi.loadInitial).toHaveBeenCalledWith({ hooks: resourceApi.hooks })
+    expect(runtimeApi.setGenerationFinalizationPersistences).toHaveBeenCalledWith([
+      expect.objectContaining({ generationId: 'generation-a', state: 'queued' }),
+    ])
     expect(peekCachedServerCommandRevision()).toBe(5)
     expect(peekAppliedServerResourceRevision()).toBe(5)
     expect(get(selectedCharID)).toBe(1)

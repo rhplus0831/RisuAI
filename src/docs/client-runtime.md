@@ -75,9 +75,9 @@ initializes hotkeys, and removes the preloading element.
    already-resident lorebook coverage, and hydrate the selected prompt-template
    owner before caching the common resource revision.
 6. Enable guarded resource writes and command-event reconciliation.
-7. Seed active generation jobs and separate message/greeting translation
-   recovery state, then start both translation refreshers and durable generation
-   reattach.
+7. Seed active generation jobs, writer-scoped generation-finalization journal
+   state, and separate message/greeting translation recovery state; then start
+   their refreshers and durable generation reattach.
 8. Start chat-message hydration, fetch the active chat body, start bridge patch
    lifecycle flushing, and subscribe to server events.
 9. Initialize the push coordinator and reconcile both enabled and disabled
@@ -346,6 +346,10 @@ disposition is accepted only for a confirmed replayable server journal row and
 keeps the provisional generation marked until an authoritative chat hydration
 contains it. `committed_cleanup_pending` arrives on a successful `done` frame:
 the authoritative message already exists and only retry-journal cleanup remains.
+Bootstrap reconstructs pending and retained terminal journal state after reload.
+Snapshot-safe provisional messages are reapplied after authoritative hydration;
+repeated transient failures advance to a stalled marker while continuing capped
+backoff retries, and `stalled_legacy` is shown as a distinct non-retrying state.
 Conflicting post-generation script mutations arrive as warning frames but do
 not erase successfully persisted generated message text.
 

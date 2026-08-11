@@ -1,15 +1,16 @@
 import type { DatabaseSync } from 'node:sqlite'
+import { isDeepStrictEqual } from 'node:util'
 import type { Message } from '../../../src/ts/storage/database.svelte'
+import { getChatMessages } from './messageStore.js'
 import type { AssembleMutationPayload } from './prompt/assemble.js'
 import type { GenerationFinalizationTargetSnapshot } from './routes/generationChat.js'
 
 export type GenerationFinalizationMode = 'send' | 'continue' | 'regenerate'
 
-const DAY_MS = 24 * 60 * 60 * 1000
-
-export const GENERATION_FINALIZATION_TERMINAL_RETRY_RETENTION_MS = 7 * DAY_MS
-export const GENERATION_FINALIZATION_TERMINAL_RETRY_SWEEP_LIMIT = 1000
 export const GENERATION_FINALIZATION_LEGACY_SNAPSHOT_ERROR = 'stalled_legacy'
+export const GENERATION_FINALIZATION_RETRY_BASE_DELAY_MS = 5_000
+export const GENERATION_FINALIZATION_RETRY_MAX_DELAY_MS = 5 * 60_000
+export const GENERATION_FINALIZATION_STALLED_FAILURE_THRESHOLD = 3
 
 export interface GenerationFinalizationAttempt {
   generationId: string
@@ -51,12 +52,8 @@ interface GenerationFinalizationRetryRow {
   last_error: string | null
   terminal_error: string | null
   status: 'pending' | 'terminal'
-}
-
-export interface PruneTerminalGenerationFinalizationRetriesOptions {
-  now?: string | Date
-  retentionMs?: number
-  maxPerSweep?: number
+  created_at: string
+  updated_at: string
 }
 
 export interface GenerationFinalizationRetryReceipt {
@@ -66,6 +63,34 @@ export interface GenerationFinalizationRetryReceipt {
 export interface PendingGenerationFinalizationRetry {
   attempt: GenerationFinalizationAttempt
   replayability: 'replayable' | 'legacy_snapshot_missing'
+  failureCount: number
+  nextAttemptAt: string
+}
+
+export type GenerationFinalizationProjectionState =
+  | 'queued'
+  | 'stalled'
+  | 'terminal'
+  | 'stalled_legacy'
+  | 'committed_cleanup_pending'
+
+export interface GenerationFinalizationRetryProjection {
+  generationId: string
+  chatId: string
+  messageId: string
+  mode: GenerationFinalizationMode
+  state: GenerationFinalizationProjectionState
+  failureCount: number
+  nextAttemptAt?: string
+  provisionalMessage?: Message
+  projectionFence?: GenerationFinalizationTargetSnapshot
+}
+
+export interface ListPendingGenerationFinalizationRetriesOptions {
+  limit?: number
+  now?: string | Date
+  baseDelayMs?: number
+  maxDelayMs?: number
 }
 
 interface GenerationFinalizationMutationEnvelope {
@@ -122,6 +147,33 @@ function normalizePositiveInteger(value: number | undefined, defaultValue: numbe
     throw new Error(`${name} must be a positive integer`)
   }
   return value
+}
+
+export function generationFinalizationRetryBackoffMs(
+  failureCount: number,
+  options: { baseDelayMs?: number; maxDelayMs?: number } = {},
+): number {
+  const normalizedFailureCount = normalizeNonNegativeInteger(failureCount, 0, 'failureCount')
+  if (normalizedFailureCount === 0) return 0
+  const baseDelayMs = normalizePositiveInteger(
+    options.baseDelayMs,
+    GENERATION_FINALIZATION_RETRY_BASE_DELAY_MS,
+    'baseDelayMs',
+  )
+  const maxDelayMs = normalizePositiveInteger(
+    options.maxDelayMs,
+    GENERATION_FINALIZATION_RETRY_MAX_DELAY_MS,
+    'maxDelayMs',
+  )
+  return Math.min(maxDelayMs, baseDelayMs * 2 ** Math.min(30, normalizedFailureCount - 1))
+}
+
+function retryNextAttemptAt(
+  updatedAt: string,
+  failureCount: number,
+  options: { baseDelayMs?: number; maxDelayMs?: number } = {},
+): string {
+  return new Date(Date.parse(updatedAt) + generationFinalizationRetryBackoffMs(failureCount, options)).toISOString()
 }
 
 export function createGenerationFinalizationRetryTable(db: DatabaseSync): void {
@@ -258,40 +310,6 @@ export function deleteGenerationFinalizationRetry(
   return { generationId }
 }
 
-export function pruneTerminalGenerationFinalizationRetries(
-  db: DatabaseSync,
-  options: PruneTerminalGenerationFinalizationRetriesOptions = {},
-): number {
-  const retentionMs = normalizeNonNegativeInteger(
-    options.retentionMs,
-    GENERATION_FINALIZATION_TERMINAL_RETRY_RETENTION_MS,
-    'retentionMs',
-  )
-  const maxPerSweep = normalizePositiveInteger(
-    options.maxPerSweep,
-    GENERATION_FINALIZATION_TERMINAL_RETRY_SWEEP_LIMIT,
-    'maxPerSweep',
-  )
-  const cutoff = new Date(Date.parse(normalizeTimestamp(options.now)) - retentionMs).toISOString()
-  const result = db
-    .prepare(
-      `
-        DELETE FROM generation_finalization_retries
-        WHERE generation_id IN (
-          SELECT generation_id
-          FROM generation_finalization_retries
-          WHERE status = 'terminal'
-            AND terminal_error IS NOT '${GENERATION_FINALIZATION_LEGACY_SNAPSHOT_ERROR}'
-            AND updated_at < ?
-          ORDER BY updated_at ASC, generation_id ASC
-          LIMIT ?
-        )
-      `,
-    )
-    .run(cutoff, maxPerSweep)
-  return Number(result.changes)
-}
-
 export function markGenerationFinalizationRetryFailure(
   db: DatabaseSync,
   generationId: string,
@@ -320,9 +338,10 @@ export function markGenerationFinalizationRetryFailure(
 
 export function listPendingGenerationFinalizationRetries(
   db: DatabaseSync,
-  limit = 25,
+  options: ListPendingGenerationFinalizationRetriesOptions = {},
 ): PendingGenerationFinalizationRetry[] {
-  const boundedLimit = Number.isSafeInteger(limit) && limit > 0 ? limit : 25
+  const boundedLimit = normalizePositiveInteger(options.limit, 25, 'limit')
+  const nowMs = Date.parse(normalizeTimestamp(options.now))
   const rows = db
     .prepare(
       `
@@ -345,45 +364,183 @@ export function listPendingGenerationFinalizationRetries(
           failure_count,
           last_error,
           terminal_error,
-          status
+          status,
+          created_at,
+          updated_at
         FROM generation_finalization_retries
         WHERE status = 'pending'
         ORDER BY updated_at ASC, created_at ASC
-        LIMIT ?
       `,
     )
-    .all(boundedLimit) as unknown as GenerationFinalizationRetryRow[]
+    .all() as unknown as GenerationFinalizationRetryRow[]
 
-  return rows.map((row) => {
-    const alternateMessages = JSON.parse(row.alternate_messages_json) as Message[]
-    const mutations = parseGenerationFinalizationMutations(row.chat_var_mutations_json)
-    const legacySnapshotMissing =
-      (row.mode === 'continue' || row.mode === 'regenerate') && row.target_snapshot_json === null
+  return rows
+    .flatMap((row) => {
+      const nextAttemptAt = retryNextAttemptAt(row.updated_at, row.failure_count, options)
+      if (Date.parse(nextAttemptAt) > nowMs) return []
+      const alternateMessages = JSON.parse(row.alternate_messages_json) as Message[]
+      const mutations = parseGenerationFinalizationMutations(row.chat_var_mutations_json)
+      const legacySnapshotMissing =
+        (row.mode === 'continue' || row.mode === 'regenerate') && row.target_snapshot_json === null
+      return {
+        attempt: {
+          generationId: row.generation_id,
+          ...(row.database_lineage !== null ? { databaseLineage: row.database_lineage } : {}),
+          ...(row.operation_id !== null ? { operationId: row.operation_id } : {}),
+          ...(row.operation_attempt_no !== null ? { operationAttemptNo: row.operation_attempt_no } : {}),
+          ...(row.actor_writer_session_id !== null ? { actorWriterSessionId: row.actor_writer_session_id } : {}),
+          ...(row.actor_writer_epoch !== null ? { actorWriterEpoch: row.actor_writer_epoch } : {}),
+          ...(row.accepted_message_id !== null ? { acceptedMessageId: row.accepted_message_id } : {}),
+          ...(row.terminal_outcome !== null ? { terminalOutcome: row.terminal_outcome } : {}),
+          chatId: row.chat_id,
+          mode: row.mode,
+          ...(row.target_message_id !== null ? { targetMessageId: row.target_message_id } : {}),
+          message: JSON.parse(row.message_json) as Message,
+          ...(alternateMessages.length > 0 ? { alternateMessages } : {}),
+          chatVarMutations: mutations.chatVarMutations,
+          ...(mutations.characterFieldMutations?.length
+            ? { characterFieldMutations: mutations.characterFieldMutations }
+            : {}),
+          ...(mutations.localLoreMutation ? { localLoreMutation: mutations.localLoreMutation } : {}),
+          ...(row.target_snapshot_json !== null
+            ? { targetSnapshot: JSON.parse(row.target_snapshot_json) as GenerationFinalizationTargetSnapshot }
+            : {}),
+        },
+        replayability: legacySnapshotMissing ? ('legacy_snapshot_missing' as const) : ('replayable' as const),
+        failureCount: row.failure_count,
+        nextAttemptAt,
+      }
+    })
+    .slice(0, boundedLimit)
+}
+
+function listGenerationFinalizationRetryRows(db: DatabaseSync): GenerationFinalizationRetryRow[] {
+  return db
+    .prepare(
+      `
+        SELECT
+          generation_id,
+          chat_id,
+          mode,
+          target_message_id,
+          message_json,
+          alternate_messages_json,
+          chat_var_mutations_json,
+          target_snapshot_json,
+          failure_count,
+          last_error,
+          terminal_error,
+          status,
+          created_at,
+          updated_at
+        FROM generation_finalization_retries
+        ORDER BY created_at ASC, generation_id ASC
+      `,
+    )
+    .all() as unknown as GenerationFinalizationRetryRow[]
+}
+
+function parseGenerationFinalizationAttempt(row: GenerationFinalizationRetryRow): GenerationFinalizationAttempt {
+  const alternateMessages = JSON.parse(row.alternate_messages_json) as Message[]
+  const mutations = parseGenerationFinalizationMutations(row.chat_var_mutations_json)
+  return {
+    generationId: row.generation_id,
+    chatId: row.chat_id,
+    mode: row.mode,
+    ...(row.target_message_id !== null ? { targetMessageId: row.target_message_id } : {}),
+    message: JSON.parse(row.message_json) as Message,
+    ...(alternateMessages.length > 0 ? { alternateMessages } : {}),
+    chatVarMutations: mutations.chatVarMutations,
+    ...(mutations.characterFieldMutations?.length
+      ? { characterFieldMutations: mutations.characterFieldMutations }
+      : {}),
+    ...(mutations.localLoreMutation ? { localLoreMutation: mutations.localLoreMutation } : {}),
+    ...(row.target_snapshot_json !== null
+      ? { targetSnapshot: JSON.parse(row.target_snapshot_json) as GenerationFinalizationTargetSnapshot }
+      : {}),
+  }
+}
+
+function rowMatchesMessage(row: unknown, message: Message): boolean {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return false
+  const record = row as Record<string, unknown>
+  if (record.role !== message.role || record.data !== message.data) return false
+  return message.chatId === undefined || record.chatId === message.chatId
+}
+
+function finalizationAlreadyCommitted(rows: readonly Message[], attempt: GenerationFinalizationAttempt): boolean {
+  const snapshot = attempt.targetSnapshot
+  if (!snapshot) {
+    return rows.some(
+      (row) =>
+        row.generationInfo?.generationId === attempt.generationId ||
+        (attempt.message.chatId !== undefined &&
+          row.chatId === attempt.message.chatId &&
+          rowMatchesMessage(row, attempt.message)),
+    )
+  }
+  if (snapshot.kind === 'target-tail') {
+    return (
+      rows.length >= snapshot.transcriptLength &&
+      rowMatchesMessage(rows[snapshot.transcriptLength - 1], attempt.message)
+    )
+  }
+  return rows.length > snapshot.transcriptLength
+    ? rowMatchesMessage(rows[snapshot.transcriptLength], attempt.message)
+    : false
+}
+
+function finalizationTargetIsFresh(rows: readonly Message[], attempt: GenerationFinalizationAttempt): boolean {
+  const snapshot = attempt.targetSnapshot
+  if (!snapshot) return false
+  if (rows.length !== snapshot.transcriptLength) return false
+  const liveTail = rows.at(-1)
+  if (snapshot.kind === 'target-tail') {
+    return isDeepStrictEqual(liveTail, snapshot.target.message)
+  }
+  if (snapshot.tail) return isDeepStrictEqual(liveTail, snapshot.tail.message)
+  return liveTail === undefined
+}
+
+/**
+ * Authenticated runtime projection of retained journal state. Message content is
+ * included only when replaying it over the authoritative transcript is still
+ * protected by the same assembly-time snapshot fence used by persistence.
+ */
+export function listGenerationFinalizationRetryProjections(db: DatabaseSync): GenerationFinalizationRetryProjection[] {
+  const rowsByChat = new Map<string, Message[]>()
+  return listGenerationFinalizationRetryRows(db).map((row) => {
+    const attempt = parseGenerationFinalizationAttempt(row)
+    let chatRows = rowsByChat.get(attempt.chatId)
+    if (!chatRows) {
+      chatRows = getChatMessages(db, attempt.chatId) as unknown as Message[]
+      rowsByChat.set(attempt.chatId, chatRows)
+    }
+    const committed = finalizationAlreadyCommitted(chatRows, attempt)
+    const state: GenerationFinalizationProjectionState = committed
+      ? 'committed_cleanup_pending'
+      : row.status === 'terminal'
+        ? row.terminal_error === GENERATION_FINALIZATION_LEGACY_SNAPSHOT_ERROR
+          ? 'stalled_legacy'
+          : 'terminal'
+        : row.failure_count >= GENERATION_FINALIZATION_STALLED_FAILURE_THRESHOLD
+          ? 'stalled'
+          : 'queued'
+    const messageId = attempt.targetMessageId ?? attempt.message.chatId ?? attempt.generationId
     return {
-      attempt: {
-        generationId: row.generation_id,
-        ...(row.database_lineage !== null ? { databaseLineage: row.database_lineage } : {}),
-        ...(row.operation_id !== null ? { operationId: row.operation_id } : {}),
-        ...(row.operation_attempt_no !== null ? { operationAttemptNo: row.operation_attempt_no } : {}),
-        ...(row.actor_writer_session_id !== null ? { actorWriterSessionId: row.actor_writer_session_id } : {}),
-        ...(row.actor_writer_epoch !== null ? { actorWriterEpoch: row.actor_writer_epoch } : {}),
-        ...(row.accepted_message_id !== null ? { acceptedMessageId: row.accepted_message_id } : {}),
-        ...(row.terminal_outcome !== null ? { terminalOutcome: row.terminal_outcome } : {}),
-        chatId: row.chat_id,
-        mode: row.mode,
-        ...(row.target_message_id !== null ? { targetMessageId: row.target_message_id } : {}),
-        message: JSON.parse(row.message_json) as Message,
-        ...(alternateMessages.length > 0 ? { alternateMessages } : {}),
-        chatVarMutations: mutations.chatVarMutations,
-        ...(mutations.characterFieldMutations?.length
-          ? { characterFieldMutations: mutations.characterFieldMutations }
-          : {}),
-        ...(mutations.localLoreMutation ? { localLoreMutation: mutations.localLoreMutation } : {}),
-        ...(row.target_snapshot_json !== null
-          ? { targetSnapshot: JSON.parse(row.target_snapshot_json) as GenerationFinalizationTargetSnapshot }
-          : {}),
-      },
-      replayability: legacySnapshotMissing ? 'legacy_snapshot_missing' : 'replayable',
+      generationId: attempt.generationId,
+      chatId: attempt.chatId,
+      messageId,
+      mode: attempt.mode,
+      state,
+      failureCount: row.failure_count,
+      ...(row.status === 'pending' ? { nextAttemptAt: retryNextAttemptAt(row.updated_at, row.failure_count) } : {}),
+      ...(!committed && finalizationTargetIsFresh(chatRows, attempt)
+        ? {
+            provisionalMessage: structuredClone(attempt.message),
+            projectionFence: structuredClone(attempt.targetSnapshot),
+          }
+        : {}),
     }
   })
 }

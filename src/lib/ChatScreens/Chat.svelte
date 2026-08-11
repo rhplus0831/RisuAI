@@ -154,6 +154,7 @@
   import { hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
   import { rekeyClonedChat } from 'src/ts/chatFork'
   import { bilingualInterleave } from 'src/ts/translator/bilingualInterleave'
+  import type { GenerationPersistenceIndicatorState } from 'src/ts/process/generationPersistenceState'
 
   let translating = $state(false)
   let editMode = $state(false)
@@ -192,7 +193,7 @@
     isGenerationLoading?: boolean
     isChatGenerating?: boolean
     halfStreamingTokensPerSecond?: number
-    isGenerationPersistenceQueued?: boolean
+    generationPersistenceState?: GenerationPersistenceIndicatorState | null
     generationStage?: number
     disabled?: boolean | 'allBefore'
     autoTranslateOnReady?: boolean
@@ -258,7 +259,7 @@
     isGenerationLoading = false,
     isChatGenerating = false,
     halfStreamingTokensPerSecond = undefined,
-    isGenerationPersistenceQueued = false,
+    generationPersistenceState = null,
     generationStage = 0,
     disabled = false,
     autoTranslateOnReady = false,
@@ -1484,6 +1485,20 @@
       ? undefined
       : language.halfStreamingTokensPerSecond(halfStreamingTokensPerSecond),
   )
+  let generationPersistenceStatusText = $derived.by(() => {
+    switch (generationPersistenceState) {
+      case 'queued':
+        return language.generationPersistenceQueued
+      case 'stalled':
+        return language.generationPersistenceStalled
+      case 'terminal':
+        return language.generationPersistenceTerminal
+      case 'stalled_legacy':
+        return language.generationPersistenceStalledLegacy
+      default:
+        return ''
+    }
+  })
 
   function ownsSucceededServerTranslation(
     jobId: string,
@@ -3189,6 +3204,16 @@
         {@render textBox()}
       </span>
     {/if}
+    {#if generationPersistenceState && generationPersistenceStatusText}
+      <div
+        class="generation-persistence-indicator"
+        class:generation-persistence-indicator-stalled={generationPersistenceState !== 'queued'}
+        data-generation-persistence-state={generationPersistenceState}
+        role="status"
+        aria-live="polite">
+        {generationPersistenceStatusText}
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -3203,6 +3228,24 @@
 {/if}
 
 <style>
+  .generation-persistence-indicator {
+    align-self: center;
+    max-width: min(42rem, 100%);
+    margin: 0.5rem 1rem;
+    padding: 0.35rem 0.6rem;
+    border: 1px solid color-mix(in srgb, var(--risu-theme-borderc) 65%, transparent);
+    border-radius: 0.5rem;
+    color: var(--risu-theme-textcolor2);
+    background: color-mix(in srgb, var(--risu-theme-darkbg) 82%, transparent);
+    font-size: 0.75rem;
+    line-height: 1rem;
+  }
+
+  .generation-persistence-indicator-stalled {
+    border-color: color-mix(in srgb, #f59e0b 70%, transparent);
+    color: color-mix(in srgb, #f59e0b 78%, var(--risu-theme-textcolor));
+  }
+
   .chat-generation-loading {
     color: var(--risu-theme-textcolor2);
   }

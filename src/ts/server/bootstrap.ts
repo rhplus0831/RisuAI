@@ -1,8 +1,10 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
+import type { Message } from '../storage/database.svelte'
 import { activeWriterSessionHeader } from './activeWriterSession'
 import { setCachedServerCommandRevision } from './commands'
 
 const BOOTSTRAP_ENDPOINT = '/api/v1/bootstrap'
+const WRITER_OBSERVER_SESSION_HEADER = 'risu-writer-observer-session'
 
 export interface ActiveGenerationJob {
   chatId: string
@@ -109,6 +111,39 @@ export interface GenerationOperationProjection {
   recoveryDisposition?: 'retryable'
 }
 
+export type GenerationFinalizationState =
+  | 'queued'
+  | 'stalled'
+  | 'terminal'
+  | 'stalled_legacy'
+  | 'committed_cleanup_pending'
+
+export type GenerationFinalizationProjectionFence =
+  | {
+      mode: 'send' | 'continue' | 'regenerate'
+      kind: 'tail'
+      transcriptLength: number
+      tail?: { message: Message }
+    }
+  | {
+      mode: 'send' | 'continue' | 'regenerate'
+      kind: 'target-tail'
+      transcriptLength: number
+      target: { message: Message }
+    }
+
+export interface GenerationFinalizationProjection {
+  generationId: string
+  chatId: string
+  messageId: string
+  mode: 'send' | 'continue' | 'regenerate'
+  state: GenerationFinalizationState
+  failureCount: number
+  nextAttemptAt?: string
+  provisionalMessage?: Message
+  projectionFence?: GenerationFinalizationProjectionFence
+}
+
 export interface ServerBootstrapRuntime {
   initialized: boolean
   revision: number
@@ -129,6 +164,8 @@ export interface ServerBootstrapRuntime {
    * lands. Empty when none.
    */
   activeGenerationJobs?: ActiveGenerationJob[]
+  /** Active-writer-scoped SQLite finalization work, including retained terminal rows. */
+  generationFinalizations?: GenerationFinalizationProjection[]
   /**
    * Message translations still running server-side after a detached request.
    * Used to keep row-level translation spinners and mutation controls stable
@@ -181,7 +218,9 @@ async function fetchServerBootstrapWithMode(input: {
       signal: input.signal ?? undefined,
       headers: {
         'risu-auth': auth,
-        ...(input.registerActiveWriter ? activeWriterSessionHeader() : {}),
+        ...(input.registerActiveWriter
+          ? activeWriterSessionHeader()
+          : { [WRITER_OBSERVER_SESSION_HEADER]: activeWriterSessionHeader()['risu-writer-session'] }),
       },
     })
   } catch (err) {
@@ -235,6 +274,9 @@ async function fetchServerBootstrapWithMode(input: {
       : undefined,
     generationOperations: parseGenerationOperations(record.generationOperations),
     activeGenerationJobs: parseActiveGenerationJobs(record.activeGenerationJobs),
+    ...(Array.isArray(record.generationFinalizations)
+      ? { generationFinalizations: parseGenerationFinalizations(record.generationFinalizations) }
+      : {}),
     activeMessageTranslations: parseActiveMessageTranslations(record.activeMessageTranslations),
     activeGreetingTranslations: parseActiveGreetingTranslations(record.activeGreetingTranslations),
   }
@@ -401,6 +443,92 @@ function isNonNegativeSafeInteger(value: unknown): value is number {
 
 function isPositiveSafeInteger(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) > 0
+}
+
+function parseGenerationFinalizations(value: unknown): GenerationFinalizationProjection[] {
+  if (!Array.isArray(value)) return []
+  const finalizations: GenerationFinalizationProjection[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+    const record = entry as Record<string, unknown>
+    if (
+      typeof record.generationId !== 'string' ||
+      record.generationId.length === 0 ||
+      typeof record.chatId !== 'string' ||
+      record.chatId.length === 0 ||
+      typeof record.messageId !== 'string' ||
+      record.messageId.length === 0 ||
+      (record.mode !== 'send' && record.mode !== 'continue' && record.mode !== 'regenerate') ||
+      (record.state !== 'queued' &&
+        record.state !== 'stalled' &&
+        record.state !== 'terminal' &&
+        record.state !== 'stalled_legacy' &&
+        record.state !== 'committed_cleanup_pending') ||
+      !Number.isSafeInteger(record.failureCount) ||
+      (record.failureCount as number) < 0
+    ) {
+      continue
+    }
+    finalizations.push({
+      generationId: record.generationId,
+      chatId: record.chatId,
+      messageId: record.messageId,
+      mode: record.mode,
+      state: record.state,
+      failureCount: record.failureCount as number,
+      ...(typeof record.nextAttemptAt === 'string' && !Number.isNaN(Date.parse(record.nextAttemptAt))
+        ? { nextAttemptAt: record.nextAttemptAt }
+        : {}),
+      ...(record.provisionalMessage &&
+      typeof record.provisionalMessage === 'object' &&
+      !Array.isArray(record.provisionalMessage)
+        ? { provisionalMessage: record.provisionalMessage as Message }
+        : {}),
+      ...(parseGenerationFinalizationProjectionFence(record.projectionFence)
+        ? { projectionFence: parseGenerationFinalizationProjectionFence(record.projectionFence)! }
+        : {}),
+    })
+  }
+  return finalizations
+}
+
+function parseGenerationFinalizationProjectionFence(value: unknown): GenerationFinalizationProjectionFence | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  if (
+    (record.mode !== 'send' && record.mode !== 'continue' && record.mode !== 'regenerate') ||
+    !Number.isSafeInteger(record.transcriptLength) ||
+    (record.transcriptLength as number) < 0
+  ) {
+    return undefined
+  }
+  if (record.kind === 'tail') {
+    const tail = parseGenerationFinalizationSnapshotRow(record.tail)
+    return {
+      mode: record.mode,
+      kind: 'tail',
+      transcriptLength: record.transcriptLength as number,
+      ...(tail ? { tail } : {}),
+    }
+  }
+  if (record.kind === 'target-tail') {
+    const target = parseGenerationFinalizationSnapshotRow(record.target)
+    if (!target) return undefined
+    return {
+      mode: record.mode,
+      kind: 'target-tail',
+      transcriptLength: record.transcriptLength as number,
+      target,
+    }
+  }
+  return undefined
+}
+
+function parseGenerationFinalizationSnapshotRow(value: unknown): { message: Message } | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const message = (value as Record<string, unknown>).message
+  if (!message || typeof message !== 'object' || Array.isArray(message)) return undefined
+  return { message: message as Message }
 }
 
 function parseActiveGreetingTranslations(value: unknown): ActiveGreetingTranslation[] {

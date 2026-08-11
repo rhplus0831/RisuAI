@@ -211,8 +211,8 @@ export interface GenerationChatRouteOptions {
     | {
         intervalMs?: number
         maxPerSweep?: number
-        terminalRetentionMs?: number
-        terminalRetentionMaxPerSweep?: number
+        baseDelayMs?: number
+        maxDelayMs?: number
       }
   /**
    * Cadence of the durable viewer's SSE comment heartbeat.
@@ -3400,6 +3400,9 @@ export function retryQueuedGenerationFinalizations(args: {
   eventSink: CommandEventSink
   logger?: GenerationFinalizationRetryLogger
   maxPerSweep?: number
+  now?: string | Date
+  baseDelayMs?: number
+  maxDelayMs?: number
   pushNotifications?: false | PushNotificationService
   messageTranslationJobs: MessageTranslationJobRegistry
   runMessageTranslation?: ServerMessageTranslationRunner
@@ -3409,7 +3412,12 @@ export function retryQueuedGenerationFinalizations(args: {
   if (!args.db.isOpen) {
     return { attempted: 0, persisted: 0, terminal: 0, retryable: 0 }
   }
-  const retries = listPendingGenerationFinalizationRetries(args.db, args.maxPerSweep ?? 25)
+  const retries = listPendingGenerationFinalizationRetries(args.db, {
+    limit: args.maxPerSweep,
+    now: args.now,
+    baseDelayMs: args.baseDelayMs,
+    maxDelayMs: args.maxDelayMs,
+  })
   let persisted = 0
   let terminal = 0
   let retryable = 0

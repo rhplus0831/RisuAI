@@ -1,4 +1,11 @@
 export const languageVietnamese = {
+  generationPersistenceQueued: 'Phản hồi này đang chờ được lưu và vẫn là dữ liệu tạm thời.',
+  generationPersistenceStalled:
+    'Việc lưu phản hồi tạm thời này liên tục thất bại. Phản hồi vẫn nằm trong hàng đợi và sẽ tự động thử lại.',
+  generationPersistenceTerminal:
+    'Không thể lưu phản hồi tạm thời này một cách an toàn và hệ thống sẽ không tự động thử lại. Bản ghi nhật ký vẫn được giữ lại.',
+  generationPersistenceStalledLegacy:
+    'Không thể thử lại an toàn phản hồi tạm thời đã khôi phục này vì bản ghi khôi phục cũ không có ảnh chụp hội thoại.',
   unknownInteractionTime: 'Không rõ',
   generationReattachFailure: {
     message: 'Phản hồi này có thể vẫn đang được tạo, nhưng thiết bị này không thể kết nối lại.',

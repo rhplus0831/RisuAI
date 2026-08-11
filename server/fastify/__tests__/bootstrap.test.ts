@@ -11,6 +11,10 @@ import { createAuthState } from '../src/auth.js'
 import { CURRENT_SCHEMA_VERSION, openDatabase } from '../src/db.js'
 import { GenerationJobRegistry } from '../src/generationJobs.js'
 import { registerBootstrapRoutes } from '../src/routes/bootstrap.js'
+import {
+  enqueueGenerationFinalizationRetry,
+  markGenerationFinalizationRetryFailure,
+} from '../src/generationFinalizationRetry.js'
 
 const subtle = webcrypto.subtle
 
@@ -169,6 +173,104 @@ describe('bootstrap runtime metadata', () => {
       activeMessageTranslations: [],
       activeGreetingTranslations: [],
     })
+  })
+
+  it('reconstructs writer-scoped pending and terminal finalization state after an app restart', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await harness.app.close()
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      enqueueGenerationFinalizationRetry(db, {
+        generationId: 'generation-pending',
+        chatId: 'chat-a',
+        mode: 'send',
+        message: {
+          role: 'char',
+          data: 'pending reply',
+          chatId: 'generation-pending',
+          generationInfo: { generationId: 'generation-pending' },
+        },
+        chatVarMutations: [],
+        targetSnapshot: { mode: 'send', kind: 'tail', transcriptLength: 0 },
+      })
+      markGenerationFinalizationRetryFailure(db, 'generation-pending', 'temporary failure', false)
+
+      enqueueGenerationFinalizationRetry(db, {
+        generationId: 'generation-terminal',
+        chatId: 'chat-a',
+        mode: 'send',
+        message: { role: 'char', data: 'terminal reply', chatId: 'generation-terminal' },
+        chatVarMutations: [],
+        targetSnapshot: { mode: 'send', kind: 'tail', transcriptLength: 0 },
+      })
+      markGenerationFinalizationRetryFailure(db, 'generation-terminal', 'unsafe target', true)
+
+      enqueueGenerationFinalizationRetry(db, {
+        generationId: 'generation-legacy',
+        chatId: 'chat-a',
+        mode: 'send',
+        message: { role: 'char', data: 'legacy reply', chatId: 'generation-legacy' },
+        chatVarMutations: [],
+      })
+      db.prepare(
+        `
+          UPDATE generation_finalization_retries
+          SET mode = 'continue', target_message_id = 'message-a'
+          WHERE generation_id = 'generation-legacy'
+        `,
+      ).run()
+      markGenerationFinalizationRetryFailure(db, 'generation-legacy', 'stalled_legacy', true)
+    } finally {
+      db.close()
+    }
+
+    const rebuilt = await buildApp({
+      config: {
+        host: '127.0.0.1',
+        port: 0,
+        dataDir: harness.dataDir,
+        bodyLimit: 1024 * 1024,
+        importMaxBytes: Infinity,
+        trustProxy: false,
+        hubUrl: 'https://sv.risuai.xyz',
+      },
+      generationChat: { finalizationRetry: false },
+    })
+    harness.app = rebuilt.app
+
+    const response = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+    })
+
+    expect(response.statusCode).toBe(200)
+    const finalizations = response.json().generationFinalizations
+    expect(finalizations).toHaveLength(3)
+    expect(finalizations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          generationId: 'generation-pending',
+          state: 'queued',
+          failureCount: 1,
+          provisionalMessage: expect.objectContaining({ data: 'pending reply' }),
+        }),
+        expect.objectContaining({ generationId: 'generation-terminal', state: 'terminal' }),
+        expect.objectContaining({
+          generationId: 'generation-legacy',
+          messageId: 'message-a',
+          state: 'stalled_legacy',
+        }),
+      ]),
+    )
+
+    const observer = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion, 'risu-writer-observer-session': 'different-writer' },
+    })
+    expect(observer.json().generationFinalizations).toBeUndefined()
   })
 
   it('L19: gzip-compresses large bootstrap JSON without changing the body', async () => {

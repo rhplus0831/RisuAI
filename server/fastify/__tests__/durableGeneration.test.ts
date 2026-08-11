@@ -11,9 +11,9 @@ import { openDatabase } from '../src/db.js'
 import { MessageTranslationJobRegistry } from '../src/messageTranslationJobs.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
 import {
+  GENERATION_FINALIZATION_RETRY_MAX_DELAY_MS,
   enqueueGenerationFinalizationRetry,
   markGenerationFinalizationRetryFailure,
-  pruneTerminalGenerationFinalizationRetries,
 } from '../src/generationFinalizationRetry.js'
 import {
   retryQueuedGenerationFinalizations,
@@ -84,7 +84,7 @@ async function startHarness(
     },
     generationChat: {
       dispatchProvider: (ctx) => providerImpl(ctx),
-      finalizationRetry: { intervalMs: 10 },
+      finalizationRetry: { intervalMs: 10, baseDelayMs: 10, maxDelayMs: 40 },
       onDurableLifecycleTransition: (transition, job) => durableLifecycleHook?.(transition, job),
       ...generationChatOverrides,
     },
@@ -636,6 +636,7 @@ function retryQueuedFinalizationsOnce(logger?: {
       eventSink: createCommandEventSink(),
       logger,
       maxPerSweep: 10,
+      now: new Date(Date.now() + GENERATION_FINALIZATION_RETRY_MAX_DELAY_MS + 1_000),
       messageTranslationJobs: new MessageTranslationJobRegistry(),
     })
   } finally {
@@ -1335,7 +1336,7 @@ describe('Durable generation (Milestone 1)', () => {
     )
   })
 
-  it('L2: prunes only terminal finalization retries older than retention', () => {
+  it('L2: replay selection never silently deletes retained terminal finalization history', () => {
     const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-generation-retention-'))
     const db = openDatabase(dataDir)
     try {
@@ -1343,12 +1344,14 @@ describe('Durable generation (Milestone 1)', () => {
       seedGenerationFinalizationRetryRow(db, 'terminal-recent', 'terminal', '2026-06-05T12:00:00.000Z')
       seedGenerationFinalizationRetryRow(db, 'pending-old', 'pending', '2026-06-01T00:00:00.000Z')
 
-      expect(
-        pruneTerminalGenerationFinalizationRetries(db, {
-          now: '2026-06-06T00:00:00.000Z',
-          retentionMs: 24 * 60 * 60 * 1000,
-        }),
-      ).toBe(1)
+      const replay = retryQueuedGenerationFinalizations({
+        db,
+        dataDir,
+        eventSink: createCommandEventSink(),
+        now: '2026-06-06T00:00:00.000Z',
+        messageTranslationJobs: new MessageTranslationJobRegistry(),
+      })
+      expect(replay.attempted).toBe(1)
 
       expect(
         (
@@ -1362,28 +1365,35 @@ describe('Durable generation (Milestone 1)', () => {
             )
             .all() as Array<{ generation_id: string }>
         ).map((row) => row.generation_id),
-      ).toEqual(['pending-old', 'terminal-recent'])
+      ).toEqual(['pending-old', 'terminal-old', 'terminal-recent'])
+      expect(
+        db.prepare('SELECT status FROM generation_finalization_retries WHERE generation_id = ?').get('pending-old'),
+      ).toEqual({ status: 'terminal' })
     } finally {
       db.close()
       rmSync(dataDir, { recursive: true, force: true })
     }
   })
 
-  it('L2: app finalization retry sweep also removes retained terminal history', async () => {
+  it('L2: app retry sweeps retain terminal history after processing due work', async () => {
     const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
     try {
       seedGenerationFinalizationRetryRow(db, 'terminal-app-old', 'terminal', '2020-01-01T00:00:00.000Z')
       seedGenerationFinalizationRetryRow(db, 'terminal-app-recent', 'terminal', new Date().toISOString())
+      seedGenerationFinalizationRetryRow(db, 'pending-sweep-barrier', 'pending', '2020-01-01T00:00:00.000Z')
     } finally {
       db.close()
     }
 
     await waitFor(async () => {
       const rows = generationFinalizationRetryRows()
-      return rows.some((row) => row.generation_id === 'terminal-app-old') ? undefined : rows
+      return rows.some((row) => row.generation_id === 'pending-sweep-barrier') ? undefined : rows
     })
 
-    expect(generationFinalizationRetryRows().map((row) => row.generation_id)).toEqual(['terminal-app-recent'])
+    expect(generationFinalizationRetryRows().map((row) => row.generation_id)).toEqual([
+      'terminal-app-old',
+      'terminal-app-recent',
+    ])
   })
 
   // Drop the initial connection after it received prompt/info, reattach to the

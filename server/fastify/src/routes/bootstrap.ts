@@ -1,7 +1,7 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import type { ActiveWriterState } from '../activeWriter.js'
-import { registerActiveWriterSession, requestedWriterWasActive } from '../activeWriter.js'
+import { readActiveWriterSessionId, registerActiveWriterSession, requestedWriterWasActive } from '../activeWriter.js'
 import type { AuthState } from '../auth.js'
 import type { GenerationJobRegistry } from '../generationJobs.js'
 import { requireAuth } from '../http.js'
@@ -16,8 +16,18 @@ import {
   getGenerationOperationProjectionEpoch,
   listGenerationOperationProjections,
 } from '../generationOperations.js'
+import { listGenerationFinalizationRetryProjections } from '../generationFinalizationRetry.js'
 
 export const ASSET_BASE_URL = '/api/v1/assets'
+export const WRITER_OBSERVER_SESSION_HEADER = 'risu-writer-observer-session'
+
+function readWriterObserverSessionId(req: FastifyRequest): string | null {
+  const raw = req.headers[WRITER_OBSERVER_SESSION_HEADER]
+  const value = Array.isArray(raw) ? raw[0] : raw
+  if (typeof value !== 'string') return null
+  const sessionId = value.trim()
+  return sessionId.length > 0 && sessionId.length <= 128 ? sessionId : null
+}
 
 export function registerBootstrapRoutes(
   app: FastifyInstance,
@@ -35,6 +45,13 @@ export function registerBootstrapRoutes(
     if (activeWriterState) {
       registerActiveWriterSession(activeWriterState, req)
     }
+    const requestedWriterSessionId = readActiveWriterSessionId(req)
+    const observerWriterSessionId = readWriterObserverSessionId(req)
+    const writerScopedSessionId = requestedWriterSessionId ?? observerWriterSessionId
+    const ownsWriterScope =
+      activeWriterState !== undefined &&
+      writerScopedSessionId !== null &&
+      writerScopedSessionId === activeWriterState.sessionId
     const { version, revision } = getSchemaState(db)
     const generationOperationProjectionEpoch = getGenerationOperationProjectionEpoch(db)
     const generationOperations = listGenerationOperationProjections(db)
@@ -55,6 +72,9 @@ export function registerBootstrapRoutes(
       // Transient running generations so a returning client, even after a full
       // reload, can discover and reattach. Server-memory only.
       activeGenerationJobs: generationJobs?.activeJobs() ?? [],
+      // SQLite-backed finalization work is projected only to the active writer.
+      // Unlike process-local jobs, these rows survive browser and server restarts.
+      ...(ownsWriterScope ? { generationFinalizations: listGenerationFinalizationRetryProjections(db) } : {}),
       // Detached message translations and their short-lived terminal outcomes.
       // This lets a returning browser preserve busy controls, report failures,
       // and rehydrate successful translations after reload.
@@ -69,6 +89,8 @@ export function registerBootstrapRoutes(
         activeGenerationJobCount: response.activeGenerationJobs.length,
         generationOperationCount: generationOperations.length,
         generationOperationProjectionEpoch,
+        generationFinalizationCount:
+          'generationFinalizations' in response ? (response.generationFinalizations?.length ?? 0) : 0,
         activeMessageTranslationCount: response.activeMessageTranslations.length,
         activeGreetingTranslationCount: response.activeGreetingTranslations.length,
       }),

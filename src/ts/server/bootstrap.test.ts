@@ -81,6 +81,24 @@ describe('server runtime bootstrap helper', () => {
         },
       ],
       activeGenerationJobs: [{ chatId: 'chat-a', jobId: 'job-a', mode: 'continue' }],
+      generationFinalizations: [
+        {
+          generationId: 'generation-a',
+          chatId: 'chat-a',
+          messageId: 'message-a',
+          mode: 'continue',
+          state: 'stalled',
+          failureCount: 3,
+          nextAttemptAt: '2026-08-11T00:00:30.000Z',
+          provisionalMessage: { role: 'char', data: 'provisional', chatId: 'message-a' },
+          projectionFence: {
+            mode: 'continue',
+            kind: 'target-tail',
+            transcriptLength: 1,
+            target: { message: { role: 'char', data: 'before', chatId: 'message-a' } },
+          },
+        },
+      ],
       activeMessageTranslations: [
         { chatId: 'chat-a', messageId: 'message-a', jobId: 'translation-a', status: 'running' },
       ],
@@ -118,6 +136,24 @@ describe('server runtime bootstrap helper', () => {
           },
         ],
         activeGenerationJobs: [{ chatId: 'chat-a', jobId: 'job-a', mode: 'continue' }],
+        generationFinalizations: [
+          {
+            generationId: 'generation-a',
+            chatId: 'chat-a',
+            messageId: 'message-a',
+            mode: 'continue',
+            state: 'stalled',
+            failureCount: 3,
+            nextAttemptAt: '2026-08-11T00:00:30.000Z',
+            provisionalMessage: { role: 'char', data: 'provisional', chatId: 'message-a' },
+            projectionFence: {
+              mode: 'continue',
+              kind: 'target-tail',
+              transcriptLength: 1,
+              target: { message: { role: 'char', data: 'before', chatId: 'message-a' } },
+            },
+          },
+        ],
         activeGreetingTranslations: [],
         activeMessageTranslations: [
           { chatId: 'chat-a', messageId: 'message-a', jobId: 'translation-a', status: 'running' },

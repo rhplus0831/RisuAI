@@ -1907,6 +1907,12 @@ export const languageKorean = {
   chatGenerationSettingsSaveFailed: (detail: string) =>
     `채팅 생성 설정을 저장할 수 없습니다.${detail ? ` ${detail}` : ''}`,
   generationPersistenceQueued: '이 답변은 저장 대기 중이며 아직 임시 상태입니다.',
+  generationPersistenceStalled:
+    '이 임시 답변을 계속 저장하지 못하고 있습니다. 대기열에 유지되며 자동으로 다시 시도합니다.',
+  generationPersistenceTerminal:
+    '이 임시 답변을 안전하게 저장할 수 없어 자동 재시도를 중단했습니다. 저널 기록은 보존되어 있습니다.',
+  generationPersistenceStalledLegacy:
+    '복원된 이 임시 답변은 이전 형식의 복구 기록에 대화 스냅샷이 없어 안전하게 다시 시도할 수 없습니다.',
   composerFileResultDiscarded:
     '활성 메시지 입력창이 변경되어 업로드한 파일을 첨부할 수 없습니다. 파일을 다시 첨부하세요.',
   composerDraftRecovery: {

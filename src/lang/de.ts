@@ -1,4 +1,11 @@
 export const languageGerman = {
+  generationPersistenceQueued: 'Diese Antwort wartet auf das Speichern und bleibt vorläufig.',
+  generationPersistenceStalled:
+    'Das Speichern dieser vorläufigen Antwort schlägt weiterhin fehl. Sie bleibt in der Warteschlange und wird automatisch erneut versucht.',
+  generationPersistenceTerminal:
+    'Diese vorläufige Antwort konnte nicht sicher gespeichert werden und wird nicht automatisch erneut versucht. Ihr Journaleintrag bleibt erhalten.',
+  generationPersistenceStalledLegacy:
+    'Diese wiederhergestellte vorläufige Antwort kann nicht sicher erneut versucht werden, weil ihrem alten Wiederherstellungseintrag ein Gesprächsschnappschuss fehlt.',
   unknownInteractionTime: 'Unbekannt',
   generationReattachFailure: {
     message:

@@ -543,6 +543,7 @@ function mountCustomHtmlRows(
     autoTranslateOnReady: boolean
     onAutoTranslationEligibilityConsumed: () => void
     isChatGenerating: boolean
+    generationPersistenceState: 'queued' | 'stalled' | 'terminal' | 'stalled_legacy' | null
   }> = {},
   startIndex = 0,
 ) {
@@ -738,6 +739,22 @@ describe('empty synthetic greeting identity', () => {
     expect(greeting?.textContent).toContain('Template Bot')
     expect(greeting?.querySelector<HTMLElement>('.shadow-lg.bg-textcolor2')?.style.backgroundImage).toContain(
       'character-icon.png',
+    )
+  })
+})
+
+describe('generation finalization row indicator', () => {
+  it('renders a terminal legacy warning only on the exact affected message row', async () => {
+    seedDatabase(2, null as unknown as string)
+    mountCustomHtmlRows(1, 'char', {}, 0)
+    mountCustomHtmlRows(1, 'char', { generationPersistenceState: 'stalled_legacy' }, 1)
+    await settle()
+
+    const unaffected = target.querySelector<HTMLElement>('.risu-chat[data-chat-id="message-0"]')
+    const affected = target.querySelector<HTMLElement>('.risu-chat[data-chat-id="message-1"]')
+    expect(unaffected?.querySelector('[data-generation-persistence-state]')).toBeNull()
+    expect(affected?.querySelector('[data-generation-persistence-state="stalled_legacy"]')?.textContent).toContain(
+      'generationPersistenceStalledLegacy',
     )
   })
 })

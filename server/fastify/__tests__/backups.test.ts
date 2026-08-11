@@ -8,10 +8,7 @@ import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { CURRENT_SCHEMA_VERSION } from '../src/db.js'
 import { getDatabaseLineage } from '../src/databaseLineage.js'
-import {
-  GENERATION_FINALIZATION_LEGACY_SNAPSHOT_ERROR,
-  pruneTerminalGenerationFinalizationRetries,
-} from '../src/generationFinalizationRetry.js'
+import { GENERATION_FINALIZATION_LEGACY_SNAPSHOT_ERROR } from '../src/generationFinalizationRetry.js'
 import { MessageTranslationJobRegistry } from '../src/messageTranslationJobs.js'
 import { retryQueuedGenerationFinalizations } from '../src/routes/generationChat.js'
 import {
@@ -1238,12 +1235,6 @@ describe('Phase 2D backups', () => {
         liveDb.prepare("SELECT COUNT(*) AS count FROM messages WHERE data = 'unsafe restored replacement'").get(),
       ).toEqual({ count: 0 })
 
-      expect(
-        pruneTerminalGenerationFinalizationRetries(liveDb, {
-          now: '2036-08-11T00:00:00.000Z',
-          retentionMs: 0,
-        }),
-      ).toBe(0)
       expect(
         liveDb
           .prepare(

@@ -271,7 +271,10 @@ in [Client Runtime](../../src/docs/client-runtime.md#generation-client).
 durable generations, message translations, and greeting translations. The
 proxy/generation registry GC interval is shared, while asset GC has its own
 optional interval. SQLite-backed generation finalization retries sweep once at
-startup and then every 5 seconds by default, also pruning terminal retry rows.
+startup and then every 5 seconds by default. Retry selection uses capped
+exponential backoff; repeated transient failures remain retryable and become a
+visible stalled state. Terminal rows, including quarantined `stalled_legacy`
+history, are retained instead of being age-pruned.
 `MemoryWorker.start()` recovers interrupted running jobs, performs an immediate
 terminal-retention sweep, polls on a 1-second default idle interval, and later
 sweeps terminal retention hourly by default. Shutdown stops the memory worker

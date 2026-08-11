@@ -12,7 +12,11 @@
   import { didChatOwnerChange } from './ChatsUnread'
   import { scrollElementToContainerStart } from './chatScroll'
   import { isMemoryLimitMessage } from './memoryLimitMarker'
-  import { queuedGenerationPersistences } from 'src/ts/process/generationPersistenceState'
+  import {
+    generationFinalizationPersistences,
+    generationPersistenceStateForMessage,
+    type GenerationPersistenceIndicatorState,
+  } from 'src/ts/process/generationPersistenceState'
   import { halfStreamingProgress } from 'src/ts/process/halfStreamingProgress'
   import {
     automaticTranslationMessageIds,
@@ -100,7 +104,7 @@
       name: string
       character: ReturnType<typeof createSimpleCharacter>
       isLastMemory: boolean
-      isGenerationPersistenceQueued: boolean
+      generationPersistenceState: GenerationPersistenceIndicatorState | null
     }[] = []
 
     for (let i = loadStart; i >= loadEnd; i--) {
@@ -117,13 +121,11 @@
         largePortrait: messageLargePortrait,
         name: message.role === 'user' ? currentUsername : getCharacterDisplayName(currentCharacter),
         character: simpleChar,
-        isGenerationPersistenceQueued:
-          !!currentChatId &&
-          $queuedGenerationPersistences.some(
-            (entry) =>
-              entry.chatId === currentChatId &&
-              (entry.messageId === message.chatId || entry.generationId === message.generationInfo?.generationId),
-          ),
+        generationPersistenceState: generationPersistenceStateForMessage(
+          $generationFinalizationPersistences,
+          currentChatId,
+          message,
+        ),
         isLastMemory: isMemoryLimitMessage(database.showMemoryLimit, lastMemoryId, message.chatId),
       })
     }
@@ -249,7 +251,7 @@
           $automaticTranslationMessageIds.includes(row.message.chatId) &&
           !$serverOwnedGeneratedMessageIds.has(row.message.chatId)}
         onAutoTranslationEligibilityConsumed={() => consumeAutomaticTranslationEligibility(row.message.chatId ?? '')}
-        isGenerationPersistenceQueued={row.isGenerationPersistenceQueued}
+        generationPersistenceState={row.generationPersistenceState}
         {generationStage}
         disabled={row.message.disabled ?? false} />
     </div>

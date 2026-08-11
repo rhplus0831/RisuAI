@@ -157,6 +157,7 @@ async function runWriterTakeoverFlow(): Promise<void> {
     messageTranslations,
     greetingTranslations,
     generationReattach,
+    generationPersistence,
     chatHydration,
     { language },
     { alertError, alertRequiredSelect },
@@ -165,6 +166,7 @@ async function runWriterTakeoverFlow(): Promise<void> {
     import('./messageTranslationJobs'),
     import('./greetingTranslations.svelte'),
     import('../process/reattach'),
+    import('../process/generationPersistenceState'),
     import('./chatMessageHydration.svelte'),
     import('../../lang'),
     import('../alert'),
@@ -174,6 +176,7 @@ async function runWriterTakeoverFlow(): Promise<void> {
   messageTranslations.stopActiveMessageTranslationRefresh()
   greetingTranslations.stopActiveGreetingTranslationRefresh()
   generationReattach.stopActiveGenerationReattach()
+  generationPersistence.stopGenerationFinalizationPersistenceRefresh()
   chatHydration.stopChatMessageHydration()
 
   writerAccessLostMutationNotifier = () => alertError(language.writerAccessLostMutation)
