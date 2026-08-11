@@ -723,6 +723,123 @@ describe('requestServerChat', () => {
     expect(get(activeGenerationJobs)).toEqual([])
   })
 
+  it.each([
+    { mode: 'send' as const, changed: false },
+    { mode: 'send' as const, changed: true },
+    { mode: 'continue' as const, changed: false },
+    { mode: 'continue' as const, changed: true },
+    { mode: 'regenerate' as const, changed: false },
+    { mode: 'regenerate' as const, changed: true },
+  ])(
+    'replaces a retained $mode replay suffix before closing (post-generation changed: $changed)',
+    async ({ mode, changed }) => {
+      const controlled = controlledGenerationStream()
+      vi.stubGlobal('fetch', async () => controlled.response)
+
+      const pending = requestServerChatGeneration({ ...baseInput, mode }, null, 'job-gap')
+      sendGenerationReadyFrames(controlled, 'job-gap')
+      const served = await pending
+      expect(served.status).toBe('ok')
+      if (served.status !== 'ok' || served.req.type !== 'streaming') return
+
+      const reader = served.req.result.getReader()
+      controlled.send('token', { content: 'retained suffix' })
+      controlled.send('done', {
+        result: 'evicted prefix retained suffix',
+        generationId: 'job-gap',
+        generationInfo: { generationId: 'job-gap' },
+        ...(changed ? { postGeneration: { finalText: 'derived complete whole-row text' } } : {}),
+      })
+      controlled.close()
+
+      await expect(reader.read()).resolves.toEqual({
+        done: false,
+        value: { 'job-gap': 'retained suffix' },
+      })
+      await expect(reader.read()).resolves.toEqual({
+        done: false,
+        value: { 'job-gap': 'evicted prefix retained suffix' },
+      })
+      await expect(reader.read()).resolves.toEqual({ done: true, value: undefined })
+      await expect(served.terminal).resolves.toMatchObject({
+        status: 'done',
+        reattachOutcome: 'completed',
+        done: {
+          result: 'evicted prefix retained suffix',
+          ...(changed ? { postGeneration: { finalText: 'derived complete whole-row text' } } : {}),
+        },
+      })
+    },
+  )
+
+  it('emits exactly one complete terminal snapshot for half-streaming after a replay gap', async () => {
+    const controlled = controlledGenerationStream()
+    vi.stubGlobal('fetch', async () => controlled.response)
+
+    const pending = requestServerChatGeneration({ ...baseInput, durable: true }, null)
+    controlled.send('prompt', { messages: [{ role: 'user', content: 'hi' }] })
+    controlled.send('info', {
+      halfStreaming: true,
+      generationId: 'half-gap',
+      generationInfo: { generationId: 'half-gap', model: 'm' },
+    })
+    const served = await pending
+    expect(served.status).toBe('ok')
+    if (served.status !== 'ok' || served.req.type !== 'streaming') return
+
+    const reader = served.req.result.getReader()
+    controlled.send('token', { content: 'retained suffix' })
+    controlled.send('done', {
+      result: 'evicted prefix retained suffix',
+      generationId: 'half-gap',
+      generationInfo: { generationId: 'half-gap' },
+    })
+    controlled.close()
+
+    await expect(reader.read()).resolves.toEqual({
+      done: false,
+      value: { 'half-gap': 'evicted prefix retained suffix' },
+    })
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined })
+  })
+
+  it('reports a reattached cancelled terminal without losing its persisted partial snapshot', async () => {
+    const controlled = controlledGenerationStream()
+    vi.stubGlobal('fetch', async () => controlled.response)
+
+    const pending = requestServerChatGeneration(baseInput, null, 'job-cancelled')
+    sendGenerationReadyFrames(controlled, 'job-cancelled')
+    const served = await pending
+    expect(served.status).toBe('ok')
+    if (served.status !== 'ok' || served.req.type !== 'streaming') return
+
+    const reader = served.req.result.getReader()
+    controlled.send('token', { content: 'partial suffix' })
+    controlled.send('done', {
+      outcome: 'cancelled',
+      result: 'complete partial suffix',
+      generationId: 'job-cancelled',
+      generationInfo: { generationId: 'job-cancelled' },
+      postGeneration: { messageId: 'job-cancelled', revision: 3 },
+    })
+    controlled.close()
+
+    await expect(reader.read()).resolves.toEqual({
+      done: false,
+      value: { 'job-cancelled': 'partial suffix' },
+    })
+    await expect(reader.read()).resolves.toEqual({
+      done: false,
+      value: { 'job-cancelled': 'complete partial suffix' },
+    })
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined })
+    await expect(served.terminal).resolves.toMatchObject({
+      status: 'cancelled',
+      reattachOutcome: 'cancelled',
+      done: { outcome: 'cancelled', result: 'complete partial suffix' },
+    })
+  })
+
   it('reconstructs the full result when compact done omits the streamed duplicate', async () => {
     vi.stubGlobal('fetch', async () => {
       const enc = new TextEncoder()
@@ -767,6 +884,36 @@ describe('requestServerChat', () => {
     expect(terminal.status).toBe('done')
     expect(terminal.done).toMatchObject({ generationId: 'gen-compact' })
     expect(Object.hasOwn(terminal.done ?? {}, 'result')).toBe(false)
+  })
+
+  it('keeps delivered token text authoritative for an inline stream with a different done fallback', async () => {
+    const controlled = controlledGenerationStream()
+    vi.stubGlobal('fetch', async () => controlled.response)
+
+    const pending = requestServerChatGeneration(baseInput, null)
+    sendGenerationReadyFrames(controlled, 'inline-generation')
+    const served = await pending
+    expect(served.status).toBe('ok')
+    if (served.status !== 'ok' || served.req.type !== 'streaming') return
+
+    const reader = served.req.result.getReader()
+    controlled.send('token', { content: 'inline token text' })
+    controlled.send('done', {
+      result: 'unused inline fallback',
+      generationId: 'inline-generation',
+      generationInfo: { generationId: 'inline-generation' },
+    })
+    controlled.close()
+
+    await expect(reader.read()).resolves.toEqual({
+      done: false,
+      value: { 'inline-generation': 'inline token text' },
+    })
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined })
+    await expect(served.terminal).resolves.toMatchObject({
+      status: 'done',
+      done: { result: 'unused inline fallback' },
+    })
   })
 
   it('parses a running translation frame and consumes generated-row client eligibility', async () => {

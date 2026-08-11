@@ -412,6 +412,25 @@ function makeGatedProvider(opts: { before: string; after?: string }): {
   return { dispatchProvider, release }
 }
 
+function makeReplayCapProvider(tokens: readonly string[]): {
+  dispatchProvider: ChatProviderDispatcher
+  release: () => void
+} {
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const dispatchProvider: ChatProviderDispatcher = () => {
+    async function* gen(): AsyncGenerator<CompletionStreamFrame> {
+      await gate
+      for (const content of tokens) yield { kind: 'token', content }
+      yield { kind: 'done', finishReason: 'stop' }
+    }
+    return gen()
+  }
+  return { dispatchProvider, release }
+}
+
 async function bootstrap(): Promise<{
   activeGenerationJobs: Array<{
     chatId: string
@@ -1064,6 +1083,57 @@ describe('Durable generation (Milestone 1)', () => {
     expect(message.data).toBe('Hello')
   })
 
+  it.each([
+    {
+      cap: 'event',
+      tokens: Array.from({ length: 600 }, (_, index) => `[${index}]`),
+    },
+    {
+      cap: 'byte',
+      tokens: Array.from({ length: 256 }, (_, index) => `${index}:${'한'.repeat(2_048)}`),
+    },
+  ])(
+    'retains a replay suffix and complete terminal result after the durable $cap cap',
+    async ({ tokens }) => {
+      const provider = makeReplayCapProvider(tokens)
+      providerImpl = provider.dispatchProvider
+      const fullResult = tokens.join('')
+
+      const controller = newController()
+      const response = await postDurable({}, { signal: controller.signal })
+      const jobId = response.headers.get('x-risu-generation-job-id') ?? ''
+      expect(jobId).not.toBe('')
+
+      // Detach before any token frames are emitted, then let the durable runner
+      // overflow its replay window and finish without a viewer.
+      controller.abort()
+      provider.release()
+      const persisted = await waitForAssistantMessage()
+      expect(persisted.data).toBe(fullResult)
+
+      const replayController = newController()
+      const replay = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+        headers: authHeaders(),
+        signal: replayController.signal,
+      })
+      expect(replay.status).toBe(200)
+      const events = await readSse(replay, (event) => event.type === 'done')
+      const replayedTokens = events
+        .filter((event) => event.type === 'token')
+        .map((event) => (typeof event.data.content === 'string' ? event.data.content : ''))
+        .join('')
+      const done = events.find((event) => event.type === 'done')
+
+      expect(replayedTokens.length).toBeGreaterThan(0)
+      expect(replayedTokens.length).toBeLessThan(fullResult.length)
+      expect(fullResult.endsWith(replayedTokens)).toBe(true)
+      expect(done?.data.result).toBe(fullResult)
+      expect((await waitForAssistantMessage()).data).toBe(fullResult)
+      replayController.abort()
+    },
+    15_000,
+  )
+
   // Resume-after-reload: a fresh client (no in-memory jobId) discovers the running
   // job from bootstrap `activeGenerationJobs` and reattaches.
   it('surfaces a running generation in bootstrap activeGenerationJobs and frees it at completion', async () => {
@@ -1134,9 +1204,9 @@ describe('Durable generation (Milestone 1)', () => {
     reController.abort()
   }, 8000)
 
-  // Explicit cancel must push a terminal frame so a reattached observer's stream
-  // ends cleanly.
-  it('emits a terminal done to a reattached observer when the job is cancelled', async () => {
+  // Explicit cancel must leave a truthful protected terminal frame so the same
+  // writer can suspend/reload and reconcile the persisted partial row.
+  it('reattaches to a cancelled job with a non-success terminal disposition', async () => {
     const gated = makeGatedProvider({ before: 'partial' }) // never released
     providerImpl = gated.dispatchProvider
 
@@ -1148,21 +1218,31 @@ describe('Durable generation (Milestone 1)', () => {
       return ev.type === 'token'
     })
 
-    const obsController = newController()
-    const obs = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
-      headers: authHeaders(),
-      signal: obsController.signal,
-    })
-    const obsEventsPromise = readSse(obs, (ev) => ev.type === 'done')
-
     const del = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`, {
       method: 'DELETE',
       headers: authHeaders(),
     })
     expect(del.status).toBe(200)
 
-    const obsEvents = await obsEventsPromise
-    expect(obsEvents.at(-1)?.type).toBe('done')
+    controllerA.abort()
+    const persisted = await waitForAssistantMessage()
+    expect(persisted.data).toBe('partial')
+
+    const obsController = newController()
+    const obs = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+      headers: authHeaders(),
+      signal: obsController.signal,
+    })
+    const obsEvents = await readSse(obs, (ev) => ev.type === 'done')
+    expect(obsEvents.at(-1)).toMatchObject({
+      type: 'done',
+      data: {
+        outcome: 'cancelled',
+        result: 'partial',
+        generationId: jobId,
+        postGeneration: { messageId: jobId, revision: expect.any(Number) },
+      },
+    })
     controllerA.abort()
     obsController.abort()
   }, 8000)

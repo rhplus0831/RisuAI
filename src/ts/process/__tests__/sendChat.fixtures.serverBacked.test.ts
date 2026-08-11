@@ -31,6 +31,25 @@ vi.mock('../prereroll', () => import('../__fixtures__/mocks/prereroll'))
 vi.mock('../files/inlays', () => import('../__fixtures__/mocks/inlays'))
 vi.mock('../request/request', () => import('../__fixtures__/mocks/request'))
 
+const terminalEffectMocks = vi.hoisted(() => ({
+  notify: vi.fn(async () => {}),
+  embedding: vi.fn(async () => {}),
+  completionSound: vi.fn(),
+}))
+
+vi.mock('../postGeneration/notification', async (importActual) => {
+  const actual = await importActual<typeof import('../postGeneration/notification')>()
+  return { ...actual, fireDesktopNotification: terminalEffectMocks.notify }
+})
+
+vi.mock('../postGeneration/emotionFallbackEmbedding', () => ({
+  runEmotionEmbeddingFallback: terminalEffectMocks.embedding,
+}))
+
+vi.mock('../messageCompletionSound', () => ({
+  playMessageCompletionSoundIfEnabled: terminalEffectMocks.completionSound,
+}))
+
 vi.mock('../memory/hypav3', async (importActual) => {
   const actual = await importActual<typeof import('../memory/hypav3')>()
   const fake = await import('../__fixtures__/mocks/hypav3')
@@ -109,6 +128,7 @@ import type { Chat } from '../../storage/database.svelte'
 import { setResourceWriteGuardEnabled } from '../../server/resourceWriteGuard.svelte'
 import { defaultMainPrompt } from '../../storage/defaultPrompts'
 import { abortChat, chatProcessStage, doingChat, previewBody, previewFormated, sendChat } from '../index.svelte'
+import { addChatOutputListener, chatOutputListeners } from '../../plugins/chatOutputListeners'
 import { buildApp } from '../../../../server/fastify/src/app'
 import { setupAuthedClient } from '../../../../server/fastify/__tests__/helpers/auth'
 import type {
@@ -1068,11 +1088,16 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     uuidState.counter = 0
     contextCommandRevision = 1
     setResourceWriteGuardEnabled(false)
+    chatOutputListeners.clear()
+    terminalEffectMocks.notify.mockClear()
+    terminalEffectMocks.embedding.mockClear()
+    terminalEffectMocks.completionSound.mockClear()
   })
 
   let cleanups: (() => void)[] = []
   afterEach(() => {
     setResourceWriteGuardEnabled(false)
+    chatOutputListeners.clear()
     while (cleanups.length > 0) cleanups.pop()!()
   })
 
@@ -1240,6 +1265,174 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
       userMessage: '*says nothing*',
       syntheticSayNothing: true,
     })
+  })
+
+  it.each([
+    { changed: false, finalText: 'evicted prefix retained suffix' },
+    { changed: true, finalText: 'server-derived complete reply' },
+  ])(
+    'settles every terminal consumer from the complete replay result (post-generation changed: $changed)',
+    async ({ changed, finalText }) => {
+      const loaded = await loadFixture('simple-send')
+      cleanups.push(loaded.cleanup)
+      testDatabaseState.db.characters[0].chats[0].id = 'chat-canonical-replay'
+      markFixtureActiveChatGenerationSettingsReady()
+      testDatabaseState.db.notification = true
+      testDatabaseState.db.emotionProcesser = 'embedding'
+      testDatabaseState.db.igpPrompt = '<|im_start|>system<|im_sep|>Append a marker.<|im_end|>'
+      const currentChar = testDatabaseState.db.characters[0]
+      currentChar.viewScreen = 'emotion'
+      currentChar.emotionImages = [['happy', 'happy.png']]
+      installProviderScript([{ type: 'success', result: '::IGP' }])
+
+      const listener = vi.fn()
+      addChatOutputListener('output', listener)
+      setServerChatDispatchResult('evicted prefix retained suffix', { model: 'gpt-4o' }, 'uuid-0', {
+        streamedResult: 'retained suffix',
+        ...(changed ? { postGeneration: { finalText } } : {}),
+      })
+
+      setResourceWriteGuardEnabled(true)
+      const result = await sendChat(-1, {})
+
+      expect(result).toBe(true)
+      expect(listener).toHaveBeenCalledOnce()
+      const listenerChat = listener.mock.calls[0]?.[0].chat as Chat
+      expect(listenerChat.message.find((message) => message.role === 'char')?.data).toBe(finalText)
+      expect(getProviderCalls()).toHaveLength(1)
+      const assistant = testDatabaseState.db.characters[0].chats[0].message.find((message) => message.role === 'char')
+      expect(assistant?.data).toBe(`${finalText}::IGP`)
+      expect(terminalEffectMocks.notify).toHaveBeenCalledWith(
+        expect.objectContaining({ body: 'evicted prefix retained suffix' }),
+      )
+      expect(terminalEffectMocks.embedding).toHaveBeenCalledWith(
+        expect.objectContaining({ result: 'evicted prefix retained suffix' }),
+      )
+      expect(terminalEffectMocks.completionSound).toHaveBeenCalledOnce()
+    },
+  )
+
+  it.each([
+    {
+      fixture: 'simple-send' as const,
+      args: {},
+      rawResult: 'complete send reply',
+      suffix: 'send reply',
+      changed: false,
+      expected: 'complete send reply',
+    },
+    {
+      fixture: 'simple-send' as const,
+      args: {},
+      rawResult: 'complete send reply',
+      suffix: 'send reply',
+      changed: true,
+      expected: 'derived complete send reply',
+    },
+    {
+      fixture: 'continue' as const,
+      args: { continue: true },
+      rawResult: ' and then complete',
+      suffix: ' complete',
+      changed: false,
+      expected: 'Once upon a time and then complete',
+    },
+    {
+      fixture: 'continue' as const,
+      args: { continue: true },
+      rawResult: ' and then complete',
+      suffix: ' complete',
+      changed: true,
+      expected: 'Derived complete continued row.',
+    },
+    {
+      fixture: 'regenerate' as const,
+      args: { regenerateMessageId: 'msg-char-1' },
+      rawResult: 'complete regenerated reply',
+      suffix: 'regenerated reply',
+      changed: false,
+      expected: 'complete regenerated reply',
+    },
+    {
+      fixture: 'regenerate' as const,
+      args: { regenerateMessageId: 'msg-char-1' },
+      rawResult: 'complete regenerated reply',
+      suffix: 'regenerated reply',
+      changed: true,
+      expected: 'derived complete regenerated reply',
+    },
+  ])(
+    'projects the complete $fixture terminal onto the owned row (post-generation changed: $changed)',
+    async ({ fixture, args, rawResult, suffix, changed, expected }) => {
+      const loaded = await loadFixture(fixture)
+      cleanups.push(loaded.cleanup)
+      prepareRouteBackedFixture(fixture)
+      setServerChatDispatchResult(rawResult, { model: 'gpt-4o' }, 'uuid-0', {
+        streamedResult: suffix,
+        ...(changed
+          ? {
+              postGeneration: {
+                messageId: fixture === 'simple-send' ? 'uuid-0' : 'msg-char-1',
+                finalText: expected,
+              },
+            }
+          : {}),
+      })
+
+      setResourceWriteGuardEnabled(true)
+      const result = await sendChat(-1, args)
+
+      expect(result).toBe(true)
+      const messages = testDatabaseState.db.characters[0].chats[0].message
+      const assistants = messages.filter((message) => message.role === 'char')
+      if (fixture !== 'regenerate') expect(assistants).toHaveLength(1)
+      expect(assistants.at(-1)?.data).toBe(expected)
+    },
+  )
+
+  it('keeps a cancelled partial row but suppresses every success-only terminal consumer', async () => {
+    const loaded = await loadFixture('simple-send')
+    cleanups.push(loaded.cleanup)
+    testDatabaseState.db.characters[0].chats[0].id = 'chat-cancelled-replay'
+    markFixtureActiveChatGenerationSettingsReady()
+    testDatabaseState.db.notification = true
+    testDatabaseState.db.emotionProcesser = 'embedding'
+    testDatabaseState.db.igpPrompt = '<|im_start|>system<|im_sep|>Must not run.<|im_end|>'
+    const currentChar = testDatabaseState.db.characters[0]
+    currentChar.viewScreen = 'emotion'
+    currentChar.emotionImages = [['happy', 'happy.png']]
+    installProviderScript([{ type: 'success', result: '::MUST-NOT-RUN' }])
+
+    const listener = vi.fn()
+    addChatOutputListener('output', listener)
+    setServerChatDispatchResult('complete partial reply', { model: 'gpt-4o' }, 'uuid-0', {
+      streamedResult: 'partial reply',
+      outcome: 'cancelled',
+      emitTtsSideEffect: true,
+      alternates: ['must not become a reroll'],
+      postGeneration: {
+        messageId: 'uuid-0',
+        revision: 3,
+        finalText: 'must not replace the cancelled raw row',
+      },
+    })
+
+    setResourceWriteGuardEnabled(true)
+    const onReattachOutcome = vi.fn()
+    const result = await sendChat(-1, { reattachJobId: 'job-cancelled', onReattachOutcome })
+
+    expect(result).toBe(false)
+    expect(onReattachOutcome).toHaveBeenCalledWith({ status: 'cancelled' })
+    const assistant = testDatabaseState.db.characters[0].chats[0].message.find((message) => message.role === 'char')
+    expect(assistant?.data).toBe('complete partial reply')
+    expect(listener).not.toHaveBeenCalled()
+    expect(getProviderCalls()).toEqual([])
+    expect(terminalEffectMocks.notify).not.toHaveBeenCalled()
+    expect(terminalEffectMocks.embedding).not.toHaveBeenCalled()
+    expect(terminalEffectMocks.completionSound).not.toHaveBeenCalled()
+    expect(getSideEffectCalls().filter((call) => ['addRerolls', 'runInlayScreen', 'sayTTS'].includes(call.fn))).toEqual(
+      [],
+    )
   })
 
   it('evaluates IGP once after a reattached stream applies its terminal derived text (OR-1)', async () => {

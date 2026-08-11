@@ -324,6 +324,53 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     expect(char.name).toBe('Stable Character')
   })
 
+  it('reconciles a cancelled terminal without running success-only terminal effects', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    target.message[0].data = 'persisted partial reply'
+    const listener = vi.fn()
+    addChatOutputListener('output', listener)
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'cancelled',
+        reattachOutcome: 'cancelled',
+        sideEffects: [{ kind: 'tts', payload: { text: 'must not speak' } }],
+        done: {
+          outcome: 'cancelled',
+          result: 'persisted partial reply',
+          alternates: ['must not become an alternate'],
+          postGeneration: {
+            finalText: 'must not replace the cancelled partial',
+            messagePatch: makePostGenerationPatch('chat-target', 'must not patch'),
+          },
+        },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+      streamProjection: {
+        chatId: 'chat-target',
+        messageId: 'gen-stable',
+        generationId: 'gen-stable',
+        previousData: '',
+        ownedData: 'persisted partial reply',
+        appended: true,
+      },
+    })
+
+    expect(result).toMatchObject({ status: 'cancelled', reattachOutcome: 'cancelled', resendChat: false })
+    expect(target.message[0].data).toBe('persisted partial reply')
+    expect(target.scriptstate).toBeUndefined()
+    expect(listener).not.toHaveBeenCalled()
+    expect(ttsMock.say).not.toHaveBeenCalled()
+    expect(inlayMock.run).not.toHaveBeenCalled()
+    expect(getRerollBuffer()).toEqual([])
+  })
+
   it('discards a late inlay completion after a newer message edit intent', async () => {
     const { char, target } = seedReorderedTerminalChats()
     const completion = deferred<string>()

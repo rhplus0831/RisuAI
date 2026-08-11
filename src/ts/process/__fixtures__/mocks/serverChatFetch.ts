@@ -56,7 +56,9 @@ interface State {
   messagePatch: ServerChatMessagePatch | null
   /** Optional provider result returned as `/chat` token + enriched done events. */
   dispatchResult: string | null
+  dispatchStreamResult: string | null
   dispatchAlternates: string[]
+  dispatchOutcome: 'completed' | 'cancelled' | null
   dispatchError: string | null
   emitTtsSideEffect: boolean
   sideEffects: ServerChatSideEffect[]
@@ -85,7 +87,9 @@ function defaultState(): Omit<State, 'calls'> {
     responseBudget: 50,
     messagePatch: null,
     dispatchResult: null,
+    dispatchStreamResult: null,
     dispatchAlternates: [],
+    dispatchOutcome: null,
     dispatchError: null,
     emitTtsSideEffect: false,
     sideEffects: [],
@@ -168,10 +172,14 @@ export function setServerChatDispatchResult(
     emitTtsSideEffect?: boolean
     postGeneration?: ServerChatPostGeneration
     alternates?: string[]
+    streamedResult?: string
+    outcome?: 'completed' | 'cancelled'
   } = {},
 ): void {
   state.dispatchResult = result
+  state.dispatchStreamResult = opts.streamedResult ?? result
   state.dispatchAlternates = opts.alternates ? [...opts.alternates] : []
+  state.dispatchOutcome = opts.outcome ?? null
   state.dispatchError = null
   state.generationId = generationId
   state.generationInfo = { ...generationInfo, generationId }
@@ -251,7 +259,7 @@ function sseChatResponse(): Response {
           state.dispatchResult !== null || state.dispatchError !== null ? state.generationInfo : undefined,
       })
       if (state.dispatchResult !== null) {
-        push('token', { content: state.dispatchResult })
+        push('token', { content: state.dispatchStreamResult ?? state.dispatchResult })
         if (state.emitTtsSideEffect) {
           push('side_effect', {
             kind: 'tts',
@@ -275,6 +283,7 @@ function sseChatResponse(): Response {
           })
         }
         push('done', {
+          outcome: state.dispatchOutcome ?? undefined,
           result: state.dispatchResult,
           alternates: state.dispatchAlternates.length > 0 ? state.dispatchAlternates : undefined,
           generationId: state.generationId,

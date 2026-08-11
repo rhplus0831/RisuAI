@@ -132,7 +132,9 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
       return { status: 'aborted' }
     }
 
-    addRerolls(generationId, Object.values(stream.lastResponseChunk))
+    if (!serverOwnsPostGeneration) {
+      addRerolls(generationId, Object.values(stream.lastResponseChunk))
+    }
 
     if (serverOwnsPostGeneration) {
       // The server already ran the run-var pass, `'output'` trigger, and

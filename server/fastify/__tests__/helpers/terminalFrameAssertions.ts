@@ -145,7 +145,11 @@ export function expectTerminalErrorThenDone(input: PromptChatFrameInput): Prompt
 }
 
 function isSuccessDone(frame: PromptChatFrame): boolean {
-  return frame.type === 'done' && (Object.hasOwn(frame.data, 'result') || Object.hasOwn(frame.data, 'postGeneration'))
+  return (
+    frame.type === 'done' &&
+    frame.data.outcome !== 'cancelled' &&
+    (Object.hasOwn(frame.data, 'result') || Object.hasOwn(frame.data, 'postGeneration'))
+  )
 }
 
 export function expectNoSuccessDoneAfterAbort(input: PromptChatFrameInput): PromptChatFrame[] {

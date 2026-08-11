@@ -3557,7 +3557,7 @@ function persistRawCancelledResult(args: {
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
   text: string
-}): void {
+}): PostGenerationFrame | undefined {
   const targetSnapshot = captureGenerationFinalizationTargetSnapshot(args.input, args.state)
   const continueRow = args.input.mode === 'continue' ? findContinueRow(args.state) : undefined
   const raw = buildRawModeMessage({
@@ -3571,7 +3571,7 @@ function persistRawCancelledResult(args: {
     removeIncompleteResponse: args.state.database.removeIncompleteResponse,
   })
   try {
-    queueAndPersistGenerationFinalization({
+    const persistence = queueAndPersistGenerationFinalization({
       db: args.db,
       dataDir: args.dataDir,
       eventSink: args.eventSink,
@@ -3585,8 +3585,11 @@ function persistRawCancelledResult(args: {
         ...(targetSnapshot ? { targetSnapshot } : {}),
       },
     })
+    return buildPostGenerationFrameBody(persistence.revision, undefined, raw.targetMessageId ?? raw.message.chatId)
   } catch {
-    // Chat gone / changed during a cancel: nothing to do (job aborted, no client).
+    // Chat gone / changed during a cancel: nothing to persist; the cancelled
+    // terminal disposition is still emitted to any current or later viewer.
+    return undefined
   }
 }
 
@@ -3810,8 +3813,9 @@ async function runGenerationJob(args: {
             terminalDoneEmitted = transportResult.status !== 'aborted'
             if (transportResult.status === 'aborted') {
               // A streaming cancel persists the accumulated-so-far text.
+              let postGeneration: PostGenerationFrame | undefined
               if (transportResult.result.length > 0 && successfulResult.state) {
-                persistRawCancelledResult({
+                postGeneration = persistRawCancelledResult({
                   db,
                   dataDir,
                   eventSink,
@@ -3827,7 +3831,14 @@ async function runGenerationJob(args: {
               // (the canceller already aborted its own reader). `emitProviderChunks`
               // emits nothing on abort, so without this a viewer sees the stream cut
               // with no done/error and reports a spurious "stream ended" error.
-              emit({ type: 'done', result: transportResult.result, generationId, generationInfo })
+              emit({
+                type: 'done',
+                outcome: 'cancelled',
+                result: transportResult.result,
+                generationId,
+                generationInfo,
+                ...(postGeneration ? { postGeneration } : {}),
+              })
               terminalDoneEmitted = true
             }
           }

@@ -276,6 +276,87 @@ describe('JobRegistry buffering and lifecycle', () => {
     )
   })
 
+  it('retains a non-empty token suffix and the complete done result after the durable event cap', () => {
+    const reg = new JobRegistry()
+    const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
+    reg.enableReplay(job)
+    reg.pushRaw(job, 'event: prompt\ndata: {"promptInfo":{}}\n\n')
+    reg.pushRaw(job, 'event: info\ndata: {"generationId":"event-cap"}\n\n')
+
+    const tokens = Array.from({ length: 600 }, (_, index) => `[${index}]`)
+    for (const content of tokens) {
+      reg.pushRaw(job, `event: token\ndata: ${JSON.stringify({ content })}\n\n`)
+    }
+    const fullResult = tokens.join('')
+    reg.pushRaw(job, `event: done\ndata: ${JSON.stringify({ result: fullResult })}\n\n`)
+
+    const replay = job.replayEvents ?? []
+    const retainedTokens = replay
+      .filter((frame) => frame.startsWith('event: token'))
+      .map((frame) => (JSON.parse(frame.split('\n')[1]!.slice('data: '.length)) as { content: string }).content)
+    const done = replay.find((frame) => frame.startsWith('event: done'))
+
+    expect(replay).toHaveLength(PROXY_STREAM_MAX_PENDING_EVENTS)
+    expect(retainedTokens.length).toBeGreaterThan(0)
+    expect(retainedTokens[0]).not.toBe(tokens[0])
+    expect(retainedTokens.at(-1)).toBe(tokens.at(-1))
+    expect(retainedTokens.join('')).not.toBe(fullResult)
+    expect(done).toBeDefined()
+    expect((JSON.parse(done!.split('\n')[1]!.slice('data: '.length)) as { result: string }).result).toBe(fullResult)
+  })
+
+  it('uses UTF-8 byte accounting while retaining a suffix and complete result after the durable byte cap', () => {
+    const reg = new JobRegistry()
+    const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
+    reg.enableReplay(job)
+    reg.pushRaw(job, 'event: prompt\ndata: {"promptInfo":{}}\n\n')
+    reg.pushRaw(job, 'event: info\ndata: {"generationId":"byte-cap"}\n\n')
+
+    const tokens = Array.from({ length: 256 }, (_, index) => `${index}:${'한'.repeat(2_048)}`)
+    for (const content of tokens) {
+      reg.pushRaw(job, `event: token\ndata: ${JSON.stringify({ content })}\n\n`)
+    }
+    const fullResult = tokens.join('')
+    reg.pushRaw(job, `event: done\ndata: ${JSON.stringify({ result: fullResult })}\n\n`)
+
+    const replay = job.replayEvents ?? []
+    const retainedTokens = replay
+      .filter((frame) => frame.startsWith('event: token'))
+      .map((frame) => (JSON.parse(frame.split('\n')[1]!.slice('data: '.length)) as { content: string }).content)
+    const done = replay.find((frame) => frame.startsWith('event: done'))
+
+    expect(job.replayBytes).toBeLessThanOrEqual(PROXY_STREAM_MAX_PENDING_BYTES)
+    expect(retainedTokens.length).toBeGreaterThan(0)
+    expect(retainedTokens.length).toBeLessThan(tokens.length)
+    expect(retainedTokens.at(-1)).toBe(tokens.at(-1))
+    expect(Buffer.byteLength(retainedTokens.join(''))).toBeLessThan(Buffer.byteLength(fullResult))
+    expect((JSON.parse(done!.split('\n')[1]!.slice('data: '.length)) as { result: string }).result).toBe(fullResult)
+  })
+
+  it('keeps an oversized protected terminal result even when it exceeds the soft byte target', () => {
+    const reg = new JobRegistry()
+    const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
+    reg.enableReplay(job)
+    const result = '한'.repeat(Math.ceil(PROXY_STREAM_MAX_PENDING_BYTES / 3) + 100)
+
+    reg.pushRaw(job, `event: done\ndata: ${JSON.stringify({ result })}\n\n`)
+
+    expect(job.replayEvents).toHaveLength(1)
+    expect(job.replayBytes).toBeGreaterThan(PROXY_STREAM_MAX_PENDING_BYTES)
+  })
+
+  it('keeps protected-only replay frames even when they exceed the soft event target', () => {
+    const reg = new JobRegistry()
+    const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
+    reg.enableReplay(job)
+
+    for (let index = 0; index <= PROXY_STREAM_MAX_PENDING_EVENTS; index += 1) {
+      reg.pushRaw(job, `event: warning\ndata: ${JSON.stringify({ message: `warning-${index}` })}\n\n`)
+    }
+
+    expect(job.replayEvents).toHaveLength(PROXY_STREAM_MAX_PENDING_EVENTS + 1)
+  })
+
   it('detaches attached clients that exceed the fanout buffer cap', () => {
     const reg = new JobRegistry()
     const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })

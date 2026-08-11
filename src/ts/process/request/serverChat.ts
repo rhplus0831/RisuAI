@@ -119,7 +119,7 @@ export type ServerChatResult =
   | { status: 'aborted' }
 
 export interface ServerChatTerminal {
-  status: 'done' | 'error'
+  status: 'done' | 'cancelled' | 'error'
   error?: string
   reattachOutcome?: GenerationReattachOutcomeStatus
   restoration?: ServerChatRestoration
@@ -883,27 +883,36 @@ export async function requestServerChatGeneration(
                 }
                 case 'done':
                   donePayload = data as unknown as Omit<DoneEvent, 'type'>
-                  const needsTerminalResult = typeof donePayload.result === 'string' && tokenResult.length === 0
-                  if (needsTerminalResult) {
+                  const previousTokenResult = tokenResult
+                  if (watchesDurableJob && typeof donePayload.result === 'string') {
+                    // Durable replay is a lossy token window. Its protected
+                    // terminal result is the complete raw snapshot and must win
+                    // even when a non-empty replay suffix survived eviction.
+                    tokenResult = donePayload.result
+                  } else if (typeof donePayload.result === 'string' && tokenResult.length === 0) {
+                    // Inline streams retain their negotiated contract: use the
+                    // terminal fallback only when no token text was delivered.
                     tokenResult = donePayload.result
                   }
-                  if (halfStreaming) {
-                    enqueueToken({ [streamKey]: tokenResult })
-                  } else if (needsTerminalResult) {
+                  const terminalSnapshotChanged = tokenResult !== previousTokenResult
+                  if (halfStreaming || terminalSnapshotChanged) {
                     enqueueToken({ [streamKey]: tokenResult })
                   }
+                  const terminalOutcome = donePayload.outcome === 'cancelled' ? 'cancelled' : 'completed'
                   // The post-gen pass may have persisted a scriptstate delta and
                   // bumped the revision; reconcile it so the follow-up command POSTs
                   // the right baseRevision.
                   if (typeof donePayload.postGeneration?.revision === 'number') {
                     setCachedServerCommandRevision(donePayload.postGeneration.revision)
                   }
-                  handleServerGeneratedMessageTranslation(input.chatId, donePayload.postGeneration)
+                  if (terminalOutcome === 'completed') {
+                    handleServerGeneratedMessageTranslation(input.chatId, donePayload.postGeneration)
+                  }
                   maybeResolveReady()
                   if (!readyResolved) {
                     resolveReadyOnce({
                       status: 'error',
-                      ...reattachOutcomeFields('completed'),
+                      ...reattachOutcomeFields(terminalOutcome),
                       error: prompt
                         ? 'server chat dispatch did not return generation metadata'
                         : 'stream ended without a prompt event',
@@ -911,8 +920,8 @@ export async function requestServerChatGeneration(
                   }
                   forgetActiveGenerationJob(durableJobId)
                   resolveTerminalOnce({
-                    status: 'done',
-                    ...reattachOutcomeFields('completed'),
+                    status: terminalOutcome === 'cancelled' ? 'cancelled' : 'done',
+                    ...reattachOutcomeFields(terminalOutcome),
                     done: donePayload,
                     sideEffects,
                     warnings,

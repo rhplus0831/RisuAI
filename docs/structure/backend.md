@@ -243,6 +243,9 @@ greeting, and input-hook translation in
 The chat route supports normal durable send/continue/regenerate jobs and an
 inline non-durable SSE mode for tools and tests. `generationJobs.ts` owns
 process-local detach, reattach, cancellation, replay, and terminal retention.
+Durable cancellation persists any streamed-so-far raw row mode-aware, then
+emits a protected `done` with additive `outcome: 'cancelled'`; older terminal
+frames without an outcome remain completed by default.
 Before writing a result, finalization compares the live transcript with the
 assembly-time target snapshot; a stale append/replace target is rejected rather
 than overwriting newer chat state. Script-side chat-variable, character-field,

@@ -141,7 +141,9 @@ export type PostGenerationTranslationFrame =
   | { status: 'running'; jobId: string }
 
 /**
- * Server post-generation derivation surfaced on the terminal `done` frame.
+ * Server terminal message reconciliation. Completed generations may carry the
+ * post-generation derivation; cancelled generations may carry only the
+ * persisted partial row identity and revision.
  */
 export interface PostGenerationFrame {
   /** Stable id of the persisted generated row (including continue/regenerate targets). */
@@ -179,6 +181,11 @@ export interface PostGenerationFrame {
 export interface DoneEvent {
   type: 'done'
   /**
+   * Additive terminal disposition. Omitted by older servers and ordinary
+   * successful completions, where clients must continue to assume `completed`.
+   */
+  outcome?: 'completed' | 'cancelled'
+  /**
    * Full completion fallback. A negotiated inline stream may omit it when its
    * preceding token events already delivered the same non-empty text. Durable
    * streams retain it so replay and reattach remain self-contained.
@@ -188,7 +195,7 @@ export interface DoneEvent {
   alternates?: string[]
   generationId?: string
   generationInfo?: Record<string, unknown>
-  /** Server post-generation derivation. See {@link PostGenerationFrame}. */
+  /** Server terminal message reconciliation. See {@link PostGenerationFrame}. */
   postGeneration?: PostGenerationFrame
 }
 

@@ -584,6 +584,12 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
         streamProjection: orchestrate.streamProjection,
       })
       currentChat = terminalResult.currentChat
+      if (terminalResult.status === 'cancelled') {
+        if (arg.reattachJobId) {
+          reattachOutcome = { status: terminalResult.reattachOutcome ?? 'cancelled' }
+        }
+        return false
+      }
       if (terminalResult.status === 'failed') {
         if (arg.reattachJobId) {
           reattachOutcome = {

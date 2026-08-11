@@ -3,6 +3,7 @@ export type GenerationReattachOutcomeStatus =
   | 'terminal_failure'
   | 'missing_job'
   | 'aborted'
+  | 'cancelled'
   | 'completed'
 
 export interface GenerationReattachOutcome {

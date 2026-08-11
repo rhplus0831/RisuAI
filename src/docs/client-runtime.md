@@ -308,6 +308,11 @@ allowed. Disconnect detaches from durable jobs; abort/cancel uses the durable
 DELETE path when a job exists. The live adapter retains the accepted job id and
 boundedly reattaches after an unrequested SSE EOF/read failure, rebuilding
 replayed token deltas from zero and deduplicating replayed non-token effects.
+Because that replay window may contain only a token suffix, a durable
+`done.result` replaces the accumulator as the last cumulative raw snapshot
+before stream closure. An additive cancelled outcome still reconciles the
+persisted partial projection, but bypasses output listeners, IGP, notifications,
+emotion work, rerolls, resend, terminal TTS/inlay work, and completion sound.
 Foreground, page-show, and online lifecycle probes refresh bootstrap job
 metadata so a mounted mobile tab can recover even when its original connection
 was discarded before the id reached JavaScript. Terminal `postGeneration` data

@@ -5296,8 +5296,11 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       const observerEvents = await observerEventsPromise
       const doneFrames = observerEvents.filter((event) => event.type === 'done')
       expect(doneFrames).toHaveLength(1)
-      expect(doneFrames[0]?.data.result).toBe('partial reply')
-      expect(Object.hasOwn(doneFrames[0]!.data, 'postGeneration')).toBe(false)
+      expect(doneFrames[0]?.data).toMatchObject({
+        outcome: 'cancelled',
+        result: 'partial reply',
+        postGeneration: { revision: expect.any(Number), messageId: jobId },
+      })
       expect(observerEvents.some((event) => event.type === 'side_effect')).toBe(false)
       expect(providerSawAbort).toBe(true)
 

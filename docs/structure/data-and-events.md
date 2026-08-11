@@ -392,7 +392,11 @@ automatic-translation wait. `done.postGeneration` carries the persisted message
 id and may embed a succeeded, failed, or still-running translation result.
 For a negotiated inline, non-replayable stream, `done.result` may be absent when
 non-empty token frames already delivered the same completion. Successful
-durable streams retain the terminal result so protected replay is self-contained.
+durable streams retain the terminal result so protected replay is self-contained;
+the browser treats that result as the final cumulative raw snapshot after any
+lossy replay window. `done.outcome` is additive: absence means completed for
+older peers, while an explicitly cancelled durable job emits `cancelled` and
+does not enter successful browser post-generation effects.
 
 Other streaming/binary surfaces include optional completion SSE, optional Realm
 progress SSE, proxy stream WebSocket attachment, asset bytes, `.risu`/bundle

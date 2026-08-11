@@ -104,6 +104,12 @@ export type ServerBackedAssemblyResult =
 export type ServerBackedTerminalResult =
   | { status: 'ok'; currentChat: Chat; resendChat: boolean; igpTarget?: IgpMessageTarget }
   | {
+      status: 'cancelled'
+      currentChat: Chat
+      resendChat: false
+      reattachOutcome?: GenerationReattachOutcomeStatus
+    }
+  | {
       status: 'failed'
       error: string
       currentChat: Chat
@@ -740,6 +746,24 @@ export async function applyServerBackedTerminal(args: {
     return {
       status: 'failed',
       error: args.terminal.error ?? 'Server returned an error without details during generation.',
+      currentChat: resolveServerBackedCurrentChat({
+        selectedChar: args.selectedChar,
+        selectedChat: args.selectedChat,
+        characterId: target.characterId,
+        chatId: target.chatId,
+        currentChat: args.currentChat,
+      }),
+      resendChat: false,
+      ...(args.terminal.reattachOutcome ? { reattachOutcome: args.terminal.reattachOutcome } : {}),
+    }
+  }
+
+  if (args.terminal.status === 'cancelled') {
+    const target = targetFromPayloadOrContext(args.terminal.done?.postGeneration?.messagePatch, contextTarget)
+    const generationId = args.generationInfo.generationId ?? ''
+    if (target.chatId && generationId) clearGenerationPersistence(target.chatId, generationId)
+    return {
+      status: 'cancelled',
       currentChat: resolveServerBackedCurrentChat({
         selectedChar: args.selectedChar,
         selectedChat: args.selectedChat,

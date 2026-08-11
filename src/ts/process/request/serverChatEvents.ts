@@ -271,10 +271,10 @@ export interface ServerChatAgentPresetError {
 }
 
 /**
- * Server post-generation derivation, surfaced on the terminal `done` frame.
- * Mirrors `PostGenerationFrame` in the server `sseEvents.ts`. The browser applies
- * `messagePatch`, writes `finalText` onto the just-streamed assistant message,
- * reconciles `revision`, and re-issues on `resendChat`.
+ * Server terminal message reconciliation, mirroring `PostGenerationFrame` in
+ * the server `sseEvents.ts`. Completed generations can carry the derivation
+ * fields; cancelled generations can carry only persisted partial-row identity
+ * and revision. The browser applies success-only fields only on completion.
  */
 export interface ServerChatPostGeneration {
   messageId?: string
@@ -294,6 +294,11 @@ export type ServerChatPostGenerationTranslation =
 export interface DoneEvent {
   type: 'done'
   /**
+   * Additive terminal disposition. Absence is backward-compatible completed
+   * behavior; durable cancellation explicitly reports `cancelled`.
+   */
+  outcome?: 'completed' | 'cancelled'
+  /**
    * Full completion fallback. A negotiated inline stream may omit it after
    * preceding token events delivered the same non-empty text. Durable streams
    * retain it for replay and reattach.
@@ -303,7 +308,7 @@ export interface DoneEvent {
   alternates?: string[]
   generationId?: string
   generationInfo?: Record<string, unknown>
-  /** Server post-generation derivation. See {@link ServerChatPostGeneration}. */
+  /** Server terminal message reconciliation. See {@link ServerChatPostGeneration}. */
   postGeneration?: ServerChatPostGeneration
 }
 

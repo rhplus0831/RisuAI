@@ -50,6 +50,16 @@ describe('terminal frame assertion helpers', () => {
     expectNoSuccessDoneAfterAbort(frames)
   })
 
+  it('accepts a cancelled done snapshot as a non-success terminal', () => {
+    const frames: PromptChatFrame[] = [
+      { type: 'token', data: { content: 'partial' } },
+      { type: 'done', data: { outcome: 'cancelled', result: 'partial', postGeneration: { revision: 3 } } },
+    ]
+
+    expectTerminalDone(frames)
+    expectNoSuccessDoneAfterAbort(frames)
+  })
+
   it('normalizes already-parsed transport event arrays', () => {
     expectTerminalDone([
       { type: 'token', content: 'hello' },
