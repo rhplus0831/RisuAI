@@ -826,6 +826,15 @@ const languageKoreanBase = {
     '이 내보내기 파일에는 API 키 및 기타 비밀 정보가 포함됩니다. 비밀번호처럼 안전하게 취급해야 합니다. 계속하시겠습니까?',
   backupLoadConfirm: '정말로 백업을 불러오시겠습니까? 현재 데이터가 모두 사라집니다!',
   backupLoadConfirm2: '정말로, 정말로 백업을 불러오시겠습니까? 현재 데이터가 모두 사라집니다!',
+  backupImportSuccess: '로컬 백업을 불러왔습니다.',
+  backupImportSuccessWithAssetCaveats: (missingCount: number, orphanedCount: number) => {
+    const caveats: string[] = []
+    if (missingCount > 0) caveats.push(`참조된 에셋 ${missingCount}개가 누락되었습니다.`)
+    if (orphanedCount > 0) {
+      caveats.push(`저장된 에셋 ${orphanedCount}개가 복원된 데이터에서 참조되지 않습니다.`)
+    }
+    return `로컬 백업을 불러왔습니다. 하지만 ${caveats.join(' ')}`
+  },
   pasteAuthCode: '팝업에서 Auth Code를 복사하여 붙여넣기 해 주세요:',
   others: '기타',
   presets: '프리셋',

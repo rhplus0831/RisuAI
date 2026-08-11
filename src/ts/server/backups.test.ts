@@ -120,6 +120,7 @@ const backupManifest = {
   assetCount: 2,
 }
 const replacementOwnership = { databaseLineage: 'database-restored', writerEpoch: 4 }
+const cleanAssetReport = { referencedCount: 1, missingCount: 0, orphanedCount: 0 }
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
@@ -466,7 +467,9 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
   it('uploads a bundle file, restores it, and refreshes API-backed resources', async () => {
     const event = { type: 'state.imported', resource: 'state', revision: 21 }
     const backupFetch = makeBackupFetch((url) => {
-      if (url === '/api/v1/import/bundle') return { revision: 21, event, ...replacementOwnership }
+      if (url === '/api/v1/import/bundle') {
+        return { revision: 21, event, assetReport: cleanAssetReport, ...replacementOwnership }
+      }
       return { revision: 22 }
     })
     vi.stubGlobal('fetch', backupFetch.fetch)
@@ -477,6 +480,7 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
       revision: 21,
       discardedPendingMutations: 0,
       event,
+      assetReport: cleanAssetReport,
     })
     expect(resourceRefreshSpies.forceServerDatabaseReplacementRefresh).toHaveBeenCalledWith('bundle-restore')
     expect(ownershipSpies.preparePendingMutationOutbox).toHaveBeenCalledWith({
@@ -496,6 +500,25 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
       authHeader: 'backup-auth-token',
       contentType: null,
     })
+  })
+
+  it('preserves missing-reference and orphaned-asset counts from the import response', async () => {
+    const assetReport = { referencedCount: 3, missingCount: 1, orphanedCount: 2 }
+    const backupFetch = makeBackupFetch((url) => {
+      if (url === '/api/v1/import/bundle') {
+        return { revision: 21, assetReport, ...replacementOwnership }
+      }
+      return { revision: 22 }
+    })
+    vi.stubGlobal('fetch', backupFetch.fetch)
+
+    await expect(importServerBundle({ file: new Blob([BUNDLE_BYTES]) })).resolves.toEqual({
+      status: 'ok',
+      revision: 21,
+      discardedPendingMutations: 0,
+      assetReport,
+    })
+    expect(resourceRefreshSpies.forceServerDatabaseReplacementRefresh).toHaveBeenCalledWith('bundle-restore')
   })
 
   it('returns the structured unsupported-group report without adopting or refreshing', async () => {
@@ -561,7 +584,7 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
       body: unknown = null
       status = 200
       statusText = 'OK'
-      responseText = JSON.stringify({ revision: 21, event, ...replacementOwnership })
+      responseText = JSON.stringify({ revision: 21, event, assetReport: cleanAssetReport, ...replacementOwnership })
 
       constructor() {
         FakeXMLHttpRequest.instances.push(this)
@@ -616,6 +639,7 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
       revision: 21,
       discardedPendingMutations: 0,
       event,
+      assetReport: cleanAssetReport,
     })
 
     expect(FakeXMLHttpRequest.instances).toHaveLength(1)
@@ -646,6 +670,7 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
         return {
           revision: 21,
           event: { type: 'state.imported', resource: 'state', revision: 21 },
+          assetReport: cleanAssetReport,
           ...replacementOwnership,
         }
       }

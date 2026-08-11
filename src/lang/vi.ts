@@ -770,6 +770,15 @@ export const languageVietnamese = {
   backupConfirm: 'Bạn có thực sự muốn lưu bản sao lưu?',
   backupLoadConfirm: 'Bạn có thực sự muốn tải bản sao lưu? Tất cả dữ liệu sẽ bị mất!',
   backupLoadConfirm2: 'Bạn có thực sự muốn tải bản sao lưu không? Tất cả dữ liệu sẽ bị mất!',
+  backupImportSuccess: 'Đã tải bản sao lưu cục bộ.',
+  backupImportSuccessWithAssetCaveats: (missingCount: number, orphanedCount: number) => {
+    const caveats: string[] = []
+    if (missingCount > 0) caveats.push(`thiếu ${missingCount} tài sản được tham chiếu`)
+    if (orphanedCount > 0) {
+      caveats.push(`${orphanedCount} tài sản đã lưu không được dữ liệu khôi phục tham chiếu`)
+    }
+    return `Đã tải bản sao lưu cục bộ, nhưng ${caveats.join(' và ')}.`
+  },
   pasteAuthCode: 'Vui lòng sao chép mã xác thực từ cửa sổ bật lên và dán vào đây:',
   others: 'Người khác',
   presets: 'cài đặt trước',

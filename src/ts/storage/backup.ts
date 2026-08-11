@@ -88,10 +88,18 @@ export async function loadBackupFromDevice(options: BackupOperationOptions = {})
     onProgress: options.onProgress,
   })
   if (result.status === 'ok') {
+    const hasAssetCaveats = result.assetReport.missingCount > 0 || result.assetReport.orphanedCount > 0
+    const assetResult = hasAssetCaveats
+      ? language.backupImportSuccessWithAssetCaveats(result.assetReport.missingCount, result.assetReport.orphanedCount)
+      : language.backupImportSuccess
     if (result.discardedPendingMutations > 0) {
-      alertError(language.backupQueuedChangesDiscarded)
+      alertError(
+        hasAssetCaveats
+          ? `${assetResult}\n\n${language.backupQueuedChangesDiscarded}`
+          : language.backupQueuedChangesDiscarded,
+      )
     } else {
-      alertNormal('Local backup loaded')
+      alertNormal(assetResult)
     }
     return 'ok'
   } else if (result.status === 'unsupported-chat-blocks') {

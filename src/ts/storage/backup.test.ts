@@ -23,6 +23,16 @@ vi.mock('../server/backups', () => ({
 import { language } from '../../lang'
 import { loadBackupFromDevice, SaveServerBackup } from './backup'
 
+const cleanAssetReport = { referencedCount: 2, missingCount: 0, orphanedCount: 0 }
+
+function selectBackupFile() {
+  const file = new File(['backup'], 'database.risu.zip', { type: 'application/zip' })
+  vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function () {
+    Object.defineProperty(this, 'files', { configurable: true, value: [file] })
+    this.onchange?.(new Event('change'))
+  })
+}
+
 beforeEach(() => {
   serverBackupState.createServerBackup.mockClear()
   serverBackupState.importServerBundle.mockReset()
@@ -44,16 +54,61 @@ describe('Fastify backup storage gates', () => {
     expect(alertState.alertNormal).toHaveBeenCalledWith('Server backup saved')
   })
 
-  it('shows one restore warning when database replacement discards queued changes', async () => {
-    const file = new File(['backup'], 'database.risu.zip', { type: 'application/zip' })
-    vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function () {
-      Object.defineProperty(this, 'files', { configurable: true, value: [file] })
-      this.onchange?.(new Event('change'))
+  it('shows a localized success result for a clean import', async () => {
+    selectBackupFile()
+    serverBackupState.importServerBundle.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      discardedPendingMutations: 0,
+      assetReport: cleanAssetReport,
     })
+
+    await expect(loadBackupFromDevice()).resolves.toBe('ok')
+
+    expect(alertState.alertNormal).toHaveBeenCalledOnce()
+    expect(alertState.alertNormal).toHaveBeenCalledWith(language.backupImportSuccess)
+    expect(alertState.alertError).not.toHaveBeenCalled()
+  })
+
+  it('qualifies a successful import when referenced assets are missing', async () => {
+    selectBackupFile()
+    serverBackupState.importServerBundle.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      discardedPendingMutations: 0,
+      assetReport: { referencedCount: 2, missingCount: 1, orphanedCount: 0 },
+    })
+
+    await expect(loadBackupFromDevice()).resolves.toBe('ok')
+
+    expect(alertState.alertNormal).toHaveBeenCalledOnce()
+    expect(alertState.alertNormal).toHaveBeenCalledWith(language.backupImportSuccessWithAssetCaveats(1, 0))
+    expect(alertState.alertError).not.toHaveBeenCalled()
+  })
+
+  it('qualifies a successful import when stored assets are orphaned', async () => {
+    selectBackupFile()
+    serverBackupState.importServerBundle.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      discardedPendingMutations: 0,
+      assetReport: { referencedCount: 2, missingCount: 0, orphanedCount: 1 },
+    })
+
+    await expect(loadBackupFromDevice()).resolves.toBe('ok')
+
+    expect(alertState.alertNormal).toHaveBeenCalledOnce()
+    expect(alertState.alertNormal).toHaveBeenCalledWith(language.backupImportSuccessWithAssetCaveats(0, 1))
+    expect(alertState.alertError).not.toHaveBeenCalled()
+  })
+
+  it('shows one restore warning when database replacement discards queued changes', async () => {
+    selectBackupFile()
     serverBackupState.importServerBundle.mockResolvedValue({
       status: 'ok',
       revision: 2,
       discardedPendingMutations: 1,
+      assetReport: cleanAssetReport,
     })
 
     await expect(loadBackupFromDevice()).resolves.toBe('ok')
@@ -79,6 +134,24 @@ describe('Fastify backup storage gates', () => {
     expect(alertState.alertError).toHaveBeenCalledOnce()
     expect(alertState.alertError).toHaveBeenCalledWith(language.backupUnsupportedStandaloneChatBlocks)
     expect(alertState.alertError).not.toHaveBeenCalledWith('raw server fallback that the UI must not display')
+    expect(alertState.alertNormal).not.toHaveBeenCalled()
+  })
+
+  it('keeps asset caveats in the warning when queued changes were also discarded', async () => {
+    selectBackupFile()
+    serverBackupState.importServerBundle.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      discardedPendingMutations: 1,
+      assetReport: { referencedCount: 2, missingCount: 1, orphanedCount: 1 },
+    })
+
+    await expect(loadBackupFromDevice()).resolves.toBe('ok')
+
+    expect(alertState.alertError).toHaveBeenCalledOnce()
+    expect(alertState.alertError).toHaveBeenCalledWith(
+      `${language.backupImportSuccessWithAssetCaveats(1, 1)}\n\n${language.backupQueuedChangesDiscarded}`,
+    )
     expect(alertState.alertNormal).not.toHaveBeenCalled()
   })
 })

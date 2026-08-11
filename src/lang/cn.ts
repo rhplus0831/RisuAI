@@ -722,6 +722,13 @@ export const languageChinese = {
   backupConfirm: '你确定要保存备份吗？',
   backupLoadConfirm: '你确定要读取备份吗？所有数据将被覆盖！',
   backupLoadConfirm2: '你**真的、真的**确定要加载备份吗？这将会清除所有数据！',
+  backupImportSuccess: '本地备份已加载。',
+  backupImportSuccessWithAssetCaveats: (missingCount: number, orphanedCount: number) => {
+    const caveats: string[] = []
+    if (missingCount > 0) caveats.push(`${missingCount} 个引用的资源缺失`)
+    if (orphanedCount > 0) caveats.push(`${orphanedCount} 个已存储资源未被恢复的数据引用`)
+    return `本地备份已加载，但${caveats.join('，且')}。`
+  },
   pasteAuthCode: '请从弹出窗口复制鉴别码并贴入：',
   others: '其他',
   presets: '默认设置',

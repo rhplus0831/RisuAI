@@ -47,6 +47,12 @@ export interface UnsupportedStandaloneChatBlocksResult {
   error: string
 }
 
+export interface ServerBackupAssetReport {
+  referencedCount: number
+  missingCount: number
+  orphanedCount: number
+}
+
 export type ServerBackupProgressPhase =
   | 'prepare'
   | 'request'
@@ -308,7 +314,12 @@ export async function importServerBundle(input: {
   signal?: AbortSignal | null
   onProgress?: ServerBackupProgressCallback
 }): Promise<
-  | ServerBackupResult<{ revision: number; event?: CommandEvent; discardedPendingMutations: number }>
+  | ServerBackupResult<{
+      revision: number
+      event?: CommandEvent
+      discardedPendingMutations: number
+      assetReport: ServerBackupAssetReport
+    }>
   | UnsupportedBackupGroupsResult
   | UnsupportedStandaloneChatBlocksResult
 > {
@@ -326,7 +337,12 @@ async function importServerBundleImplementation(input: {
   signal?: AbortSignal | null
   onProgress?: ServerBackupProgressCallback
 }): Promise<
-  | ServerBackupResult<{ revision: number; event?: CommandEvent; discardedPendingMutations: number }>
+  | ServerBackupResult<{
+      revision: number
+      event?: CommandEvent
+      discardedPendingMutations: number
+      assetReport: ServerBackupAssetReport
+    }>
   | UnsupportedBackupGroupsResult
   | UnsupportedStandaloneChatBlocksResult
 > {
@@ -418,6 +434,7 @@ async function importServerBundleImplementation(input: {
     status: 'ok',
     revision: imported.revision,
     discardedPendingMutations,
+    assetReport: imported.assetReport,
     ...(imported.event ? { event: imported.event } : {}),
   }
 }
@@ -639,23 +656,51 @@ function parseXhrHeaders(rawHeaders: string): Headers {
   return headers
 }
 
-function readBundleImportResult(
-  body: unknown,
-): { revision: number; event?: CommandEvent; databaseLineage: string; writerEpoch: number } | null {
+function readBundleImportResult(body: unknown): {
+  revision: number
+  event?: CommandEvent
+  databaseLineage: string
+  writerEpoch: number
+  assetReport: ServerBackupAssetReport
+} | null {
   if (!body || typeof body !== 'object') return null
   const record = body as {
     revision?: unknown
     event?: unknown
     databaseLineage?: unknown
     writerEpoch?: unknown
+    assetReport?: unknown
   }
   if (!Number.isInteger(record.revision) || (record.revision as number) < 0) return null
   const ownership = readDatabaseOwnership(record)
   if (!ownership) return null
+  const assetReport = readServerBackupAssetReport(record.assetReport)
+  if (!assetReport) return null
   return {
     revision: record.revision as number,
     ...(isCommandEvent(record.event) ? { event: record.event } : {}),
     ...ownership,
+    assetReport,
+  }
+}
+
+function readServerBackupAssetReport(value: unknown): ServerBackupAssetReport | null {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<keyof ServerBackupAssetReport, unknown>
+  if (
+    !Number.isSafeInteger(record.referencedCount) ||
+    (record.referencedCount as number) < 0 ||
+    !Number.isSafeInteger(record.missingCount) ||
+    (record.missingCount as number) < 0 ||
+    !Number.isSafeInteger(record.orphanedCount) ||
+    (record.orphanedCount as number) < 0
+  ) {
+    return null
+  }
+  return {
+    referencedCount: record.referencedCount as number,
+    missingCount: record.missingCount as number,
+    orphanedCount: record.orphanedCount as number,
   }
 }
 

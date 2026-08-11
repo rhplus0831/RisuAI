@@ -792,6 +792,23 @@ export const languageGerman = {
   backupLoadConfirm: 'Möchten Sie wirklich das Backup laden? Alle Daten gehen verloren!',
   backupLoadConfirm2:
     'Bitte seien Sie vorsichtig: Sind Sie wirklich sicher, dass Sie das Backup laden möchten? Alle Ihre vorigen Daten gehen dadurch verloren!',
+  backupImportSuccess: 'Das lokale Backup wurde geladen.',
+  backupImportSuccessWithAssetCaveats: (missingCount: number, orphanedCount: number) => {
+    const caveats: string[] = []
+    if (missingCount > 0) {
+      caveats.push(
+        missingCount === 1 ? 'eine referenzierte Ressource fehlt' : `${missingCount} referenzierte Ressourcen fehlen`,
+      )
+    }
+    if (orphanedCount > 0) {
+      caveats.push(
+        orphanedCount === 1
+          ? 'eine gespeicherte Ressource wird von den wiederhergestellten Daten nicht referenziert'
+          : `${orphanedCount} gespeicherte Ressourcen werden von den wiederhergestellten Daten nicht referenziert`,
+      )
+    }
+    return `Das lokale Backup wurde geladen, aber ${caveats.join(' und ')}.`
+  },
   pasteAuthCode: 'Bitte kopieren Sie den Authentifizierungscode aus dem Popup und fügen Sie ihn hier ein:',
   others: 'Andere',
   presets: 'Voreinstellungen',

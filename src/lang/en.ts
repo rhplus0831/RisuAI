@@ -1151,6 +1151,19 @@ export const languageEnglish = {
     'This export contains your API keys and other secrets. Handle the file like a password. Do you want to continue?',
   backupLoadConfirm: 'Do you really want to load backup? All datas will be lost!',
   backupLoadConfirm2: 'Do you really, really want to load backup? All datas will be lost!',
+  backupImportSuccess: 'Local backup loaded.',
+  backupImportSuccessWithAssetCaveats: (missingCount: number, orphanedCount: number) => {
+    const caveats: string[] = []
+    if (missingCount > 0) {
+      caveats.push(`${missingCount} referenced asset${missingCount === 1 ? ' is' : 's are'} missing`)
+    }
+    if (orphanedCount > 0) {
+      caveats.push(
+        `${orphanedCount} stored asset${orphanedCount === 1 ? ' is' : 's are'} not referenced by the restored data`,
+      )
+    }
+    return `Local backup loaded, but ${caveats.join(' and ')}.`
+  },
   pasteAuthCode: 'Please copy the auth code from popup and paste it in here:',
   others: 'Others',
   presets: 'Presets',

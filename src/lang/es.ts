@@ -776,6 +776,23 @@ export const languageSpanish = {
   backupConfirm: '¿Realmente deseas guardar el respaldo?',
   backupLoadConfirm: '¿Realmente deseas cargar el respaldo? ¡Todos los datos se perderán!',
   backupLoadConfirm2: '¿Realmente, realmente deseas cargar el respaldo? ¡Todos los datos se perderán!',
+  backupImportSuccess: 'La copia de seguridad local se cargó.',
+  backupImportSuccessWithAssetCaveats: (missingCount: number, orphanedCount: number) => {
+    const caveats: string[] = []
+    if (missingCount > 0) {
+      caveats.push(
+        missingCount === 1 ? 'falta un recurso referenciado' : `faltan ${missingCount} recursos referenciados`,
+      )
+    }
+    if (orphanedCount > 0) {
+      caveats.push(
+        orphanedCount === 1
+          ? 'un recurso almacenado no está referenciado por los datos restaurados'
+          : `${orphanedCount} recursos almacenados no están referenciados por los datos restaurados`,
+      )
+    }
+    return `La copia de seguridad local se cargó, pero ${caveats.join(' y ')}.`
+  },
   pasteAuthCode: 'Por favor, copia el código de autenticación de la ventana emergente y pégalo aquí:',
   others: 'Otros',
   presets: 'Presets',

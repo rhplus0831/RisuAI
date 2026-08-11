@@ -745,6 +745,13 @@ export const languageChineseTraditional = {
   backupConfirm: '您確定要儲存備份嗎？',
   backupLoadConfirm: '確定要載入備份嗎？目前的資料將會被覆蓋！',
   backupLoadConfirm2: '**最後警告**：確定要載入備份嗎？這將會清除當前所有的資料！',
+  backupImportSuccess: '本機備份已載入。',
+  backupImportSuccessWithAssetCaveats: (missingCount: number, orphanedCount: number) => {
+    const caveats: string[] = []
+    if (missingCount > 0) caveats.push(`${missingCount} 個被引用的資源遺失`)
+    if (orphanedCount > 0) caveats.push(`${orphanedCount} 個已儲存資源未被還原的資料引用`)
+    return `本機備份已載入，但${caveats.join('，且')}。`
+  },
   others: '其他',
   presets: '預設',
   imageGeneration: '圖片生成',
