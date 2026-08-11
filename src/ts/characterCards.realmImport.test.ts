@@ -22,6 +22,10 @@ const characterState = vi.hoisted(() => ({
   changeChar: vi.fn(),
 }))
 
+const characterCommandState = vi.hoisted(() => ({
+  dispatchCreateCharacter: vi.fn(),
+}))
+
 const globalApiState = vi.hoisted(() => ({
   checkCharOrder: vi.fn(),
 }))
@@ -83,6 +87,8 @@ vi.mock('src/lang', () => ({
       wrongPassword: 'Wrong password',
     },
     importedCharacter: 'Imported character',
+    characterImportQueued: 'Imported character queued',
+    characterImportFailed: 'Imported character failed',
     inputCardPassword: 'Card password',
     lowLevelAccessConfirm: 'Low-level access?',
     successExport: 'Exported',
@@ -175,7 +181,7 @@ vi.mock('./characterCommands', () => ({
     characterOrder: [],
     selectedCharID: -1,
   })),
-  dispatchCreateCharacter: vi.fn(),
+  dispatchCreateCharacter: characterCommandState.dispatchCreateCharacter,
 }))
 
 vi.mock('./moduleCommands', () => ({
@@ -266,6 +272,14 @@ beforeEach(() => {
   }
   alertState.alertConfirm.mockResolvedValue(true)
   alertState.alertRealmTerms.mockResolvedValue(true)
+  characterCommandState.dispatchCreateCharacter.mockResolvedValue({
+    status: 'accepted',
+    result: {
+      status: 'ok',
+      revision: 11,
+      event: { type: 'character.created', revision: 11, resource: 'character' },
+    },
+  })
   globalApiState.checkCharOrder.mockImplementation(() => undefined)
   presetImportState.importPreset.mockResolvedValue('applied')
   realmImportState.importRealmCharacterFromServer.mockResolvedValue(okRealmImport('char-imported'))

@@ -1,5 +1,9 @@
 export const languageChinese = {
   unknownInteractionTime: '未知',
+  characterCreationQueued: '新角色已保存在此设备并进入队列。服务器尚未接受该角色，系统将自动重试。',
+  characterCreationFailed: '无法创建角色。临时角色已移除。',
+  characterImportQueued: '导入的角色已保存在此设备并进入队列。服务器尚未接受该角色，系统将自动重试。',
+  characterImportFailed: '无法保存导入的角色。临时角色已移除。',
   secretInput: {
     savedPlaceholder: '已保存的凭据',
     savedStatus: '已保存凭据。',

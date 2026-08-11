@@ -1,6 +1,12 @@
 export const languageEnglish = {
   unknownInteractionTime: 'Unknown',
   preloadError: 'The server has been updated or the network connection has been lost. Please refresh the page.',
+  characterCreationQueued:
+    'The new character is saved on this device and queued. It has not been accepted by the server and will retry automatically.',
+  characterCreationFailed: 'The character could not be created. The provisional character was removed.',
+  characterImportQueued:
+    'The imported character is saved on this device and queued. It has not been accepted by the server and will retry automatically.',
+  characterImportFailed: 'The imported character could not be saved. The provisional character was removed.',
   mutationStatusQueued: 'Queued',
   mutationStatusFailed: 'Save failed',
   messageMutationPending: 'Saving message change…',

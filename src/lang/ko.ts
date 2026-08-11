@@ -1,4 +1,10 @@
 const languageKoreanBase = {
+  characterCreationQueued:
+    '새 캐릭터가 이 기기에 저장되어 대기열에 추가되었습니다. 서버에서 아직 승인되지 않았으며 자동으로 다시 시도합니다.',
+  characterCreationFailed: '캐릭터를 생성할 수 없습니다. 임시 캐릭터를 제거했습니다.',
+  characterImportQueued:
+    '가져온 캐릭터가 이 기기에 저장되어 대기열에 추가되었습니다. 서버에서 아직 승인되지 않았으며 자동으로 다시 시도합니다.',
+  characterImportFailed: '가져온 캐릭터를 저장할 수 없습니다. 임시 캐릭터를 제거했습니다.',
   chatGenerationTogglePresetCaption: '토글 프리셋',
   chatGenerationTogglePresetUnused: '저장된 토글: 사용 안 함',
   chatGenerationTogglePresetUnlinked: '저장된 토글: 연결 끊김',

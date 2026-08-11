@@ -1,5 +1,12 @@
 export const languageGerman = {
   unknownInteractionTime: 'Unbekannt',
+  characterCreationQueued:
+    'Der neue Charakter wurde auf diesem Gerät gespeichert und eingereiht. Der Server hat ihn noch nicht akzeptiert und versucht es automatisch erneut.',
+  characterCreationFailed: 'Der Charakter konnte nicht erstellt werden. Der vorläufige Charakter wurde entfernt.',
+  characterImportQueued:
+    'Der importierte Charakter wurde auf diesem Gerät gespeichert und eingereiht. Der Server hat ihn noch nicht akzeptiert und versucht es automatisch erneut.',
+  characterImportFailed:
+    'Der importierte Charakter konnte nicht gespeichert werden. Der vorläufige Charakter wurde entfernt.',
   secretInput: {
     savedPlaceholder: 'Gespeicherte Zugangsdaten',
     savedStatus: 'Zugangsdaten sind gespeichert.',

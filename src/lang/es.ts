@@ -1,5 +1,11 @@
 export const languageSpanish = {
   unknownInteractionTime: 'Desconocido',
+  characterCreationQueued:
+    'El personaje nuevo se guardó en este dispositivo y está en cola. El servidor aún no lo ha aceptado y se reintentará automáticamente.',
+  characterCreationFailed: 'No se pudo crear el personaje. Se eliminó el personaje provisional.',
+  characterImportQueued:
+    'El personaje importado se guardó en este dispositivo y está en cola. El servidor aún no lo ha aceptado y se reintentará automáticamente.',
+  characterImportFailed: 'No se pudo guardar el personaje importado. Se eliminó el personaje provisional.',
   secretInput: {
     savedPlaceholder: 'Credencial guardada',
     savedStatus: 'Hay una credencial guardada.',

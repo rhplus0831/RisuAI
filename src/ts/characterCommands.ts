@@ -250,7 +250,7 @@ export function applyAttemptedCharacterFieldRollback(input: {
   return rolledBack
 }
 
-function pendingMutationStagingFailure(error: unknown): ServerCommandResult {
+function pendingMutationStagingFailure(error: unknown): Exclude<ServerCommandResult, { status: 'ok' }> {
   return {
     status: 'error',
     error: error instanceof Error ? error.message : 'Unable to stage pending server mutation',
@@ -762,11 +762,17 @@ export function runCharacterCommand<T extends Record<string, unknown>>(
   return runServerCommand({ command, rollback, ...options })
 }
 
-export function dispatchCreateCharacter(character: character, previous: CharacterStateSnapshot): void {
+export function dispatchCreateCharacter(
+  character: character,
+  previous: CharacterStateSnapshot,
+): Promise<CharacterMutationOutcome> {
   recordHydratedCharacterLorebooks([character])
   const rollback = characterCreateRollbackFromState(character, previous, false)
   repairCharacterOrderOptimistically({ dispatchReorder: false })
-  if (!canUseServerCommands()) return
+  if (!canUseServerCommands()) {
+    restoreCreatedCharacterAttempt(rollback)
+    return Promise.resolve({ status: 'failed', result: { status: 'unavailable' } })
+  }
 
   const characterSnapshot = toCharacterSnapshot(character)
   const initialChat = initialCharacterChatSnapshot(character)
@@ -784,14 +790,15 @@ export function dispatchCreateCharacter(character: character, previous: Characte
   let outbox: PendingMutationHandle
   try {
     outbox = stagePendingMutation(characterOwnerMutationKey(character.chaId), intent)
-  } catch {
+  } catch (error) {
     restoreCreatedCharacterAttempt(rollback)
-    return
+    return Promise.resolve({ status: 'failed', result: pendingMutationStagingFailure(error) })
   }
-  void dispatchDurableMutation(
-    outbox,
-    intent,
-    (transport) =>
+  let disposition: 'retain' | 'rollback' = 'rollback'
+  let failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition']
+  const promise = dispatchDurableMutation(outbox, intent, (transport) => {
+    failureRollbackDisposition = transport.failureRollbackDisposition
+    return (
       runCharacterCommand(
         (baseRevision) =>
           createCharacterCommand({
@@ -801,8 +808,19 @@ export function dispatchCreateCharacter(character: character, previous: Characte
           }),
         () => restoreCreatedCharacterAttempt(rollback),
         transport,
-      ) ?? Promise.resolve({ status: 'unavailable' as const }),
+      ) ?? Promise.resolve({ status: 'unavailable' as const })
+    )
+  }).then(
+    (result) => {
+      disposition = result.status === 'ok' ? 'rollback' : (failureRollbackDisposition?.(result) ?? 'rollback')
+      return result
+    },
+    (error) => {
+      disposition = failureRollbackDisposition?.({ status: 'unavailable' }) ?? 'rollback'
+      throw error
+    },
   )
+  return compatibleCharacterMutationOutcome({ promise, disposition: () => disposition })
 }
 
 export function dispatchCreateAndSelectCharacter(
@@ -810,11 +828,14 @@ export function dispatchCreateAndSelectCharacter(
   previous: CharacterStateSnapshot,
   lastInteraction: number,
   options: CreateAndSelectCharacterDispatchOptions = {},
-): Promise<ServerCommandResult> | undefined {
+): Promise<CharacterMutationOutcome> {
   recordHydratedCharacterLorebooks([character])
   const rollback = characterCreateRollbackFromState(character, previous, true)
   repairCharacterOrderOptimistically({ dispatchReorder: false })
-  if (!canUseServerCommands()) return
+  if (!canUseServerCommands()) {
+    restoreCreatedCharacterAttempt(rollback, options)
+    return Promise.resolve({ status: 'failed', result: { status: 'unavailable' } })
+  }
 
   const characterSnapshot = toCharacterSnapshot(character)
   const initialChat = initialCharacterChatSnapshot(character)
@@ -841,12 +862,13 @@ export function dispatchCreateAndSelectCharacter(
     outbox = stagePendingMutation(characterOwnerMutationKey(character.chaId), intent)
   } catch (error) {
     restoreCreatedCharacterAttempt(rollback, options)
-    return Promise.resolve(pendingMutationStagingFailure(error))
+    return Promise.resolve({ status: 'failed', result: pendingMutationStagingFailure(error) })
   }
-  return dispatchDurableMutation(
-    outbox,
-    intent,
-    (transport) =>
+  let disposition: 'retain' | 'rollback' = 'rollback'
+  let failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition']
+  const promise = dispatchDurableMutation(outbox, intent, (transport) => {
+    failureRollbackDisposition = transport.failureRollbackDisposition
+    return (
       runCharacterCommand(
         (baseRevision) =>
           createAndSelectCharacterCommand({
@@ -857,8 +879,19 @@ export function dispatchCreateAndSelectCharacter(
           }),
         () => restoreCreatedCharacterAttempt(rollback, options),
         transport,
-      ) ?? Promise.resolve({ status: 'unavailable' as const }),
+      ) ?? Promise.resolve({ status: 'unavailable' as const })
+    )
+  }).then(
+    (result) => {
+      disposition = result.status === 'ok' ? 'rollback' : (failureRollbackDisposition?.(result) ?? 'rollback')
+      return result
+    },
+    (error) => {
+      disposition = failureRollbackDisposition?.({ status: 'unavailable' }) ?? 'rollback'
+      throw error
+    },
   )
+  return compatibleCharacterMutationOutcome({ promise, disposition: () => disposition })
 }
 
 function characterCreateDurableBody(

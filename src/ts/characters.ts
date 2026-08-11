@@ -96,6 +96,13 @@ interface ChangeCharOptions {
   isFresh?: () => boolean
 }
 
+export type CharacterCreationOutcome =
+  | (Extract<CharacterMutationOutcome, { status: 'accepted' }> & {
+      characterId: string
+      index: number
+    })
+  | Exclude<CharacterMutationOutcome, { status: 'accepted' }>
+
 function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
   return JSON.parse(JSON.stringify(value)) as T
@@ -130,11 +137,12 @@ function isCurrentCharacterAvatarUpload(input: {
   )
 }
 
-export function createNewCharacter(
+export async function createNewCharacter(
   options: {
     select?: boolean
   } = {},
-) {
+): Promise<CharacterCreationOutcome> {
+  const navigationScope = captureCharacterNavigationScope()
   const previous = currentCharacterStateSnapshot()
   const character = characterFormatUpdate(createBlankChar())
   const select = options.select ?? false
@@ -145,17 +153,24 @@ export function createNewCharacter(
     index = getDatabase().characters.length - 1
     if (select) {
       character.lastInteraction = lastInteraction
-      ;(getDatabase() as unknown as { currentChar?: number }).currentChar = index
-      selectedCharID.set(index)
     }
   })
   repairCharacterOrderOptimistically({ dispatchReorder: false })
-  if (select) {
-    dispatchCreateAndSelectCharacter(character, previous, lastInteraction)
-  } else {
-    dispatchCreateCharacter(character, previous)
+  const outcome = select
+    ? await dispatchCreateAndSelectCharacter(character, previous, lastInteraction)
+    : await dispatchCreateCharacter(character, previous)
+  if (outcome.status !== 'accepted') {
+    return outcome
   }
-  return index
+
+  index = findLiveCharacterIndex(character.chaId)
+  if (select && index !== -1 && characterNavigationScopeMatches(navigationScope)) {
+    withTrustedResourceWrite(() => {
+      ;(getDatabase() as unknown as { currentChar?: number }).currentChar = index
+      selectedCharID.set(index)
+    })
+  }
+  return { ...outcome, characterId: character.chaId, index }
 }
 
 export interface CharacterAvatarImageSelection {
@@ -1319,16 +1334,23 @@ export async function addCharacter(
   reseter()
   switch (r) {
     case 'createfromScratch':
-      createNewCharacter({ select: true })
+      {
+        const outcome = await createNewCharacter({ select: true })
+        if (outcome.status === 'queued') {
+          alertNormal(language.characterCreationQueued)
+        } else if (outcome.status === 'failed') {
+          alertError(language.characterCreationFailed)
+        }
+      }
       break
     case 'importCharacter':
       {
         const navigationScope = captureCharacterNavigationScope()
         const navigationToken = characterImportNavigationGuard.issue(CHARACTER_IMPORT_NAVIGATION_TARGET)
         try {
-          const importedCharacterId = await importCharacter()
-          if (importedCharacterId && isFreshCharacterImportNavigation(navigationToken, navigationScope)) {
-            const index = findLiveCharacterIndex(importedCharacterId)
+          const imported = await importCharacter()
+          if (imported?.status === 'accepted' && isFreshCharacterImportNavigation(navigationToken, navigationScope)) {
+            const index = findLiveCharacterIndex(imported.characterId)
             if (index !== -1) {
               await changeChar(index, {
                 isFresh: () =>

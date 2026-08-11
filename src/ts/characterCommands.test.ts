@@ -361,7 +361,7 @@ describe('character create command payloads', () => {
     } as any
 
     try {
-      dispatchCreateCharacter(character, previous)
+      const settlement = dispatchCreateCharacter(character, previous)
       await waitForCallCount(calls, 2)
 
       expect(calls[1]).toMatchObject({
@@ -379,6 +379,7 @@ describe('character create command payloads', () => {
       })
       expect(calls[1].body).not.toHaveProperty('character.chats')
       expect(character.chats).toEqual([starterChat])
+      await expect(settlement).resolves.toMatchObject({ status: 'accepted' })
       expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('Character create would drop 1 chat'), {
         characterId: 'char-created',
       })
@@ -596,7 +597,10 @@ describe('character list create/delete rollback', () => {
     })
     response.resolve(jsonResponse({ error: 'invalid create' }, 400))
 
-    await expect(pending).resolves.toMatchObject({ status: 'error', reason: 'invalid-request' })
+    await expect(pending).resolves.toMatchObject({
+      status: 'failed',
+      result: { status: 'error', reason: 'invalid-request' },
+    })
     expect(testDatabaseState.db.characters.map((character) => character.chaId)).toEqual(['char-a', 'char-later'])
     expect((testDatabaseState.db as any).currentChar).toBe(1)
     expect(get(selectedCharID)).toBe(1)
@@ -622,8 +626,8 @@ describe('character list create/delete rollback', () => {
 
     try {
       await expect(dispatchCreateAndSelectCharacter(attempted, previous, 1234)).resolves.toMatchObject({
-        status: 'error',
-        reason: 'invalid-request',
+        status: 'failed',
+        result: { status: 'error', reason: 'invalid-request' },
       })
       expect(testDatabaseState.db.characters.map((character) => character.chaId)).toEqual(['char-a'])
       expect((testDatabaseState.db as any).currentChar).toBe(0)
@@ -934,7 +938,7 @@ describe('character list create/delete rollback', () => {
     )
 
     try {
-      dispatchCreateAndSelectCharacter(created, previous, 2_000)
+      const createSettlement = dispatchCreateAndSelectCharacter(created, previous, 2_000)
       await vi.waitFor(() => expect(commands).toHaveLength(1))
 
       const previousB = currentCharacterSelectionSnapshot('char-b')
@@ -946,6 +950,10 @@ describe('character list create/delete rollback', () => {
       dispatchSelectCharacter('char-b', previousB, 3_000)
       firstCreate.resolve(jsonResponse({ error: 'temporarily unavailable' }, 500))
 
+      await expect(createSettlement).resolves.toMatchObject({
+        status: 'queued',
+        result: { status: 'error', error: 'temporarily unavailable' },
+      })
       await vi.waitFor(() => expect(commands).toHaveLength(2))
       expect(commands.map(({ url }) => url)).toEqual([
         '/api/v1/commands/characters/create-and-select',

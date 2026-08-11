@@ -153,6 +153,8 @@ vi.mock('src/lang', () => ({
       wrongPassword: 'Wrong password',
     },
     importedCharacter: 'Imported character',
+    characterImportQueued: 'Imported character queued',
+    characterImportFailed: 'Imported character failed',
     inputCardPassword: 'Card password',
     lowLevelAccessConfirm: 'Low-level access?',
     successExport: 'Exported',
@@ -276,7 +278,15 @@ beforeEach(() => {
   clientIdentityState.nextId = 0
   charxState.module = undefined
   filePickerState.selectFileByDom.mockReset()
-  characterCommandState.dispatchCreateCharacter.mockClear()
+  characterCommandState.dispatchCreateCharacter.mockReset()
+  characterCommandState.dispatchCreateCharacter.mockResolvedValue({
+    status: 'accepted',
+    result: {
+      status: 'ok',
+      revision: 11,
+      event: { type: 'character.created', revision: 11, resource: 'character' },
+    },
+  })
   alertState.alertStoreSet.mockClear()
   alertState.alertClear.mockClear()
   alertState.alertConfirm.mockClear()
@@ -328,7 +338,7 @@ describe('PNG character card import', () => {
   it('L51: preserves multi-asset PNG import output and progress order', async () => {
     const fixture = await createPngCardFixture()
 
-    const importedCharacterId = await importCharacterProcess({
+    const imported = await importCharacterProcess({
       name: 'multi-asset.png',
       data: fixture.png,
     })
@@ -339,7 +349,7 @@ describe('PNG character card import', () => {
       fixture.assetPayloads.map((asset) => Array.from(asset)),
     )
     expect(dbState.db.characters).toHaveLength(1)
-    expect(importedCharacterId).toBe(dbState.db.characters[0].chaId)
+    expect(imported).toMatchObject({ status: 'accepted', characterId: dbState.db.characters[0].chaId })
     expect(dbState.db.characters[0]).toMatchObject({
       name: 'PNG Multi Asset',
       image: 'primary-image',
@@ -366,6 +376,45 @@ describe('PNG character card import', () => {
       ['Loading... (Assets)', '100.00'],
     ])
     expect(alertState.alertNormal).toHaveBeenCalledWith('Imported character')
+  })
+
+  it('returns failed without a phantom character id when durable import creation rolls back', async () => {
+    characterCommandState.dispatchCreateCharacter.mockImplementationOnce(async (character: { chaId: string }) => {
+      dbState.db.characters = dbState.db.characters.filter((candidate) => candidate.chaId !== character.chaId)
+      return {
+        status: 'failed',
+        result: { status: 'error', error: 'rejected import', reason: 'invalid-request' },
+      }
+    })
+
+    const outcome = await importCharacterProcess({
+      name: 'rejected.json',
+      data: Buffer.from(JSON.stringify(characterCardFixture('Rejected'))),
+    })
+
+    expect(outcome).toMatchObject({ status: 'failed' })
+    expect(outcome).not.toHaveProperty('characterId')
+    expect(dbState.db.characters).toEqual([])
+    expect(alertState.alertNormal).not.toHaveBeenCalledWith('Imported character')
+    expect(alertState.alertError).toHaveBeenCalledWith('Imported character failed\nrejected import')
+  })
+
+  it('returns queued without a character id and reports that the import is not yet accepted', async () => {
+    characterCommandState.dispatchCreateCharacter.mockResolvedValueOnce({
+      status: 'queued',
+      result: { status: 'unavailable' },
+    })
+
+    const outcome = await importCharacterProcess({
+      name: 'queued.json',
+      data: Buffer.from(JSON.stringify(characterCardFixture('Queued'))),
+    })
+
+    expect(outcome).toEqual({ status: 'queued', result: { status: 'unavailable' } })
+    expect(outcome).not.toHaveProperty('characterId')
+    expect(dbState.db.characters).toHaveLength(1)
+    expect(alertState.alertNormal).toHaveBeenCalledWith('Imported character queued')
+    expect(alertState.alertNormal).not.toHaveBeenCalledWith('Imported character')
   })
 
   it('creates PNG card starter chats without generationSettings', async () => {
@@ -633,9 +682,9 @@ describe('PNG character card import', () => {
       'assets/smile.png': new Uint8Array([1, 2, 3]),
     })
 
-    const importedCharacterId = await importCharacterProcess({ name: 'complete.charx', data: archive })
+    const imported = await importCharacterProcess({ name: 'complete.charx', data: archive })
 
-    expect(importedCharacterId).toBe(dbState.db.characters[0].chaId)
+    expect(imported).toMatchObject({ status: 'accepted', characterId: dbState.db.characters[0].chaId })
     expect(dbState.db.characters[0].emotionImages).toEqual([['smile', 'asset-0-010203']])
     expect(characterCommandState.dispatchCreateCharacter).toHaveBeenCalledOnce()
     expect(alertState.alertError).not.toHaveBeenCalled()
@@ -678,7 +727,7 @@ describe('PNG character card import', () => {
     const selectedFile = Object.assign(archive, { name: 'oversized-module.charx' })
     filePickerState.selectFileByDom.mockResolvedValueOnce([selectedFile])
 
-    await expect(importCharacter()).resolves.toBeNull()
+    await expect(importCharacter()).resolves.toMatchObject({ status: 'failed' })
 
     expect(alertState.alertError).toHaveBeenCalledOnce()
     const surfacedError = alertState.alertError.mock.calls[0][0] as Error

@@ -11,12 +11,15 @@ import {
   restoreCharacterState,
 } from './characterCommands'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
-import { canUseServerCommands, type ServerCommandResult } from './server/commands'
+import { canUseServerCommands } from './server/commands'
+import type { CharacterMutationOutcome } from './characterCommands'
+import { alertNormal } from './alert'
+import { language } from '../lang'
 
 export const PLAYGROUND_CHARACTER_ID = '§playground'
 
 interface InFlightPlaygroundCreate {
-  completion: Promise<ServerCommandResult>
+  completion: Promise<CharacterMutationOutcome>
   freshnessChecks: Set<() => boolean>
   previousPlaygroundMode: number
 }
@@ -72,7 +75,7 @@ export async function openPlaygroundChat(options: { isFresh?: () => boolean } = 
       selectedCharID.set(index)
     })
 
-    let pending: Promise<ServerCommandResult> | undefined
+    let pending: Promise<CharacterMutationOutcome> | undefined
     try {
       pending = dispatchCreateAndSelectCharacter(formattedChar, previous, lastInteraction, {
         shouldRestoreSelection: () => hasFreshPlaygroundCreateRoute(freshnessChecks),
@@ -119,9 +122,12 @@ async function settlePlaygroundCreateForRoute(
   try {
     const result = await attempt.completion
     if (!isFresh()) return
-    if (activateExistingPlaygroundProjection()) return
+    if (result.status !== 'failed' && activateExistingPlaygroundProjection()) {
+      if (result.status === 'queued') alertNormal(language.characterCreationQueued)
+      return
+    }
     PlaygroundStore.set(attempt.previousPlaygroundMode)
-    if (result.status !== 'ok') console.warn('Unable to create playground character', result)
+    console.warn('Unable to create playground character', result)
   } finally {
     attempt.freshnessChecks.delete(isFresh)
     if (inFlightPlaygroundCreate === attempt && attempt.freshnessChecks.size === 0) {

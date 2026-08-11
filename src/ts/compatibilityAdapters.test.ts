@@ -401,9 +401,9 @@ describe('Phase 9-3f compatibility adapters', () => {
       testDatabaseState.db.characters.push({ chaId: 'direct', name: 'Direct', chats: [] } as any)
     }).toThrow()
 
-    const index = createNewCharacter()
+    const outcome = await createNewCharacter()
 
-    expect(index).toBe(1)
+    expect(outcome).toMatchObject({ status: 'accepted', index: 1 })
     expect(testDatabaseState.db.characters[1].name).toBe('')
     expect(isCharacterLorebookMutationReady(testDatabaseState.db.characters[1].chaId)).toBe(true)
     expect(() => {
@@ -428,9 +428,9 @@ describe('Phase 9-3f compatibility adapters', () => {
     const calls = stubCommandFetch()
     setResourceWriteGuardEnabled(true)
 
-    const index = createNewCharacter({ select: true })
+    const outcome = await createNewCharacter({ select: true })
 
-    expect(index).toBe(1)
+    expect(outcome).toMatchObject({ status: 'accepted', index: 1 })
     expect(get(selectedCharID)).toBe(1)
     expect(testDatabaseState.db.characters[1].lastInteraction).toEqual(expect.any(Number))
     expect(() => {
@@ -457,6 +457,75 @@ describe('Phase 9-3f compatibility adapters', () => {
         lastInteraction: testDatabaseState.db.characters[1].lastInteraction,
       },
     })
+  })
+
+  it('waits for durable scratch-character acceptance before navigating to it', async () => {
+    let resolveCreate!: (response: Response) => void
+    const createResponse = new Promise<Response>((resolve) => {
+      resolveCreate = resolve
+    })
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+        calls.push({ url, method: init.method ?? 'GET', body })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/characters/create-and-select') return createResponse
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    setResourceWriteGuardEnabled(true)
+
+    const creating = createNewCharacter({ select: true })
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters/create-and-select')).toBe(true)
+    })
+
+    expect(testDatabaseState.db.characters).toHaveLength(2)
+    expect(get(selectedCharID)).toBe(0)
+    expect((testDatabaseState.db as { currentChar?: number }).currentChar).toBe(0)
+
+    const characterId = testDatabaseState.db.characters[1].chaId
+    resolveCreate(
+      jsonResponse({
+        revision: 11,
+        event: { type: 'character.createdAndSelected', revision: 11, resource: 'character' },
+        characterId,
+      }),
+    )
+
+    await expect(creating).resolves.toMatchObject({ status: 'accepted', characterId, index: 1 })
+    expect(get(selectedCharID)).toBe(1)
+    expect((testDatabaseState.db as { currentChar?: number }).currentChar).toBe(1)
+  })
+
+  it('returns failed without an index and removes the provisional scratch character after rejection', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/characters/create-and-select') {
+          return jsonResponse({ error: 'scratch create rejected' }, 400)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    setResourceWriteGuardEnabled(true)
+
+    const outcome = await createNewCharacter({ select: true })
+
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      result: { status: 'error', reason: 'invalid-request' },
+    })
+    expect(outcome).not.toHaveProperty('characterId')
+    expect(outcome).not.toHaveProperty('index')
+    expect(testDatabaseState.db.characters.map((character) => character.chaId)).toEqual(['char-a'])
+    expect(get(selectedCharID)).toBe(0)
+    expect((testDatabaseState.db as { currentChar?: number }).currentChar).toBe(0)
   })
 
   it('selects characters without formatting the guarded server projection', async () => {

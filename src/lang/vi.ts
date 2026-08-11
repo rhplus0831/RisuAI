@@ -1,5 +1,11 @@
 export const languageVietnamese = {
   unknownInteractionTime: 'Không rõ',
+  characterCreationQueued:
+    'Nhân vật mới đã được lưu trên thiết bị này và đưa vào hàng đợi. Máy chủ chưa chấp nhận và sẽ tự động thử lại.',
+  characterCreationFailed: 'Không thể tạo nhân vật. Nhân vật tạm thời đã bị xóa.',
+  characterImportQueued:
+    'Nhân vật đã nhập được lưu trên thiết bị này và đưa vào hàng đợi. Máy chủ chưa chấp nhận và sẽ tự động thử lại.',
+  characterImportFailed: 'Không thể lưu nhân vật đã nhập. Nhân vật tạm thời đã bị xóa.',
   secretInput: {
     savedPlaceholder: 'Thông tin xác thực đã lưu',
     savedStatus: 'Đã lưu thông tin xác thực.',

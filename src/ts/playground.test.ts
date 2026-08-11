@@ -10,8 +10,17 @@ const playgroundState = vi.hoisted(() => ({
 }))
 
 const playgroundMocks = vi.hoisted(() => ({
+  alertNormal: vi.fn(),
   dispatchCreateAndSelectCharacter: vi.fn(),
   dispatchSelectCharacter: vi.fn(),
+}))
+
+vi.mock('./alert', () => ({
+  alertNormal: playgroundMocks.alertNormal,
+}))
+
+vi.mock('../lang', () => ({
+  language: { characterCreationQueued: 'Character creation queued' },
 }))
 
 vi.mock('./characterState', () => ({
@@ -94,10 +103,13 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 
 function successfulCreateResult() {
   return {
-    status: 'ok' as const,
-    revision: 11,
-    event: { type: 'character.createdAndSelected', revision: 11, resource: 'character' },
-    characterId: PLAYGROUND_CHARACTER_ID,
+    status: 'accepted' as const,
+    result: {
+      status: 'ok' as const,
+      revision: 11,
+      event: { type: 'character.createdAndSelected', revision: 11, resource: 'character' },
+      characterId: PLAYGROUND_CHARACTER_ID,
+    },
   }
 }
 
@@ -154,8 +166,8 @@ describe('openPlaygroundChat', () => {
 
   it('keeps a transiently retained playground projection usable instead of stranding the mode', async () => {
     playgroundMocks.dispatchCreateAndSelectCharacter.mockResolvedValueOnce({
-      status: 'error',
-      error: 'temporarily unavailable',
+      status: 'queued',
+      result: { status: 'unavailable' },
     })
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 
@@ -164,6 +176,7 @@ describe('openPlaygroundChat', () => {
     expect(playgroundState.database.characters[0]?.chaId).toBe(PLAYGROUND_CHARACTER_ID)
     expect(get(selectedCharID)).toBe(0)
     expect(get(PlaygroundStore)).toBe(2)
+    expect(playgroundMocks.alertNormal).toHaveBeenCalledWith('Character creation queued')
     expect(warn).not.toHaveBeenCalled()
   })
 
@@ -189,7 +202,10 @@ describe('openPlaygroundChat', () => {
         playgroundState.database.characterOrder = structuredClone(previous.characterOrder)
         playgroundState.database.currentChar = previous.currentChar
         if (options.shouldRestoreSelection()) selectedCharID.set(previous.selectedCharID)
-        return { status: 'error', error: 'invalid create', reason: 'invalid-request' }
+        return {
+          status: 'failed',
+          result: { status: 'error', error: 'invalid create', reason: 'invalid-request' },
+        }
       },
     )
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
@@ -202,7 +218,10 @@ describe('openPlaygroundChat', () => {
     expect(get(PlaygroundStore)).toBe(4)
     expect(warn).toHaveBeenCalledWith(
       'Unable to create playground character',
-      expect.objectContaining({ status: 'error', reason: 'invalid-request' }),
+      expect.objectContaining({
+        status: 'failed',
+        result: expect.objectContaining({ status: 'error', reason: 'invalid-request' }),
+      }),
     )
   })
 
@@ -213,7 +232,7 @@ describe('openPlaygroundChat', () => {
       playgroundState.database.characters = []
       playgroundState.database.currentChar = -1
       selectedCharID.set(-1)
-      return { status: 'unavailable' }
+      return { status: 'failed', result: { status: 'unavailable' } }
     })
 
     await openPlaygroundChat()
@@ -242,7 +261,7 @@ describe('openPlaygroundChat', () => {
   })
 
   it('does not submit a duplicate create when the playground route remounts while creation is queued', async () => {
-    const queued = deferred<{ status: 'error'; error: string }>()
+    const queued = deferred<{ status: 'queued'; result: { status: 'unavailable' } }>()
     playgroundMocks.dispatchCreateAndSelectCharacter.mockReturnValueOnce(queued.promise)
 
     const firstOpening = openPlaygroundChat()
@@ -255,10 +274,11 @@ describe('openPlaygroundChat', () => {
       playgroundState.database.characters.filter((character) => character.chaId === PLAYGROUND_CHARACTER_ID),
     ).toHaveLength(1)
 
-    queued.resolve({ status: 'error', error: 'temporarily unavailable' })
+    queued.resolve({ status: 'queued', result: { status: 'unavailable' } })
     await Promise.all([firstOpening, secondOpening])
     expect(get(selectedCharID)).toBe(0)
     expect(get(PlaygroundStore)).toBe(2)
+    expect(playgroundMocks.alertNormal).toHaveBeenCalledWith('Character creation queued')
   })
 
   it('restores the original mode when a fresh reopen shares a create that later fails terminally', async () => {
@@ -287,7 +307,10 @@ describe('openPlaygroundChat', () => {
         playgroundState.database.characterOrder = structuredClone(previous.characterOrder)
         playgroundState.database.currentChar = previous.currentChar
         if (options.shouldRestoreSelection()) selectedCharID.set(previous.selectedCharID)
-        return { status: 'error', error: 'invalid create', reason: 'invalid-request' }
+        return {
+          status: 'failed',
+          result: { status: 'error', error: 'invalid create', reason: 'invalid-request' },
+        }
       },
     )
     vi.spyOn(console, 'warn').mockImplementation(() => undefined)
@@ -321,7 +344,10 @@ describe('openPlaygroundChat', () => {
         playgroundState.database.characters = []
         playgroundState.database.currentChar = -1
         if (options.shouldRestoreSelection()) selectedCharID.set(0)
-        return { status: 'error', error: 'invalid create', reason: 'invalid-request' }
+        return {
+          status: 'failed',
+          result: { status: 'error', error: 'invalid create', reason: 'invalid-request' },
+        }
       },
     )
 
