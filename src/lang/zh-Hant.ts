@@ -1,5 +1,13 @@
 export const languageChineseTraditional = {
   unknownInteractionTime: '未知',
+  generationReattachFailure: {
+    message: '此回覆可能仍在產生，但此裝置無法重新連線。',
+    lastError: (error: string) => `上次連線錯誤：${error}`,
+    retry: '重試',
+    refresh: '重新整理',
+    stop: '停止',
+    sidebarWarning: (name: string) => `連線已中斷：${name}`,
+  },
   backupUnsupportedStandaloneChatBlocks:
     '此備份使用獨立的 CHAT 區塊格式儲存聊天，此版本的 RisuAI 無法匯入。未匯入任何內容，現有資料未被變更。',
   characterCreationQueued: '新角色已儲存在此裝置並排入佇列。伺服器尚未接受，系統將自動重試。',

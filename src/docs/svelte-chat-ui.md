@@ -165,6 +165,11 @@ chat-scoped. Agent execution and completeness belong to
 send, cancellation, and reattach belong to [Client Runtime](client-runtime.md).
 Visible generation starts in `DefaultChatScreen.svelte`, while durable send and
 reattach live under `src/ts/process/`.
+When the outer reattach budget is exhausted, the composer replaces its healthy
+pulse with a warning and renders a separate accessible alert. Its Retry,
+Refresh, and Stop controls pass the failed job ID rather than selecting work by
+chat, and the accepted-send recovery alert remains an independent state
+machine.
 `src/ts/process/rerollNavigation.svelte.ts` owns reroll operation fencing and
 failed-regenerate rollback, including restoring a displaced assistant tail only
 when newer transcript work has not superseded it.

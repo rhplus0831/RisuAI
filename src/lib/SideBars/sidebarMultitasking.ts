@@ -14,12 +14,23 @@ export interface PinnedChatItem {
 export function collectGeneratingChatIds(
   jobs: readonly { chatId: string }[],
   activities: readonly { chatId?: string; kind: 'message' | 'preview' }[],
+  exhaustedChatIds: ReadonlySet<string> = new Set(),
 ): Set<string> {
-  const ids = new Set(jobs.map((job) => job.chatId))
+  const ids = new Set(jobs.map((job) => job.chatId).filter((chatId) => !exhaustedChatIds.has(chatId)))
   for (const activity of activities) {
     if (activity.kind === 'message' && activity.chatId) ids.add(activity.chatId)
   }
   return ids
+}
+
+export function collectExhaustedGenerationChatIds(
+  lifecycles: Readonly<Record<string, { chatId: string; status: string }>>,
+): Set<string> {
+  return new Set(
+    Object.values(lifecycles)
+      .filter((lifecycle) => lifecycle.status === 'exhausted-dead')
+      .map((lifecycle) => lifecycle.chatId),
+  )
 }
 
 type SidebarCharacter = Pick<character, 'chaId' | 'name' | 'displayName' | 'image' | 'chats'>

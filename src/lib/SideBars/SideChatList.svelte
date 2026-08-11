@@ -66,6 +66,9 @@
   import { groupChatsByFolderId } from './chatFolderGrouping'
   import { characterRoutePath, currentRoute, navigate } from 'src/ts/router'
   import { rekeyClonedChat } from 'src/ts/chatFork'
+  import { generationJobLifecycles } from 'src/ts/process/reattach'
+  import { collectExhaustedGenerationChatIds } from './sidebarMultitasking'
+  import GenerationIndicator from './GenerationIndicator.svelte'
 
   interface Props {
     chara: character
@@ -107,6 +110,7 @@
   let validChatFolderIds = $derived(new Set((chara.chatFolders ?? []).map((folder) => folder.id)))
   let chatsByFolderId = $derived(groupChatsByFolderId(chara.chats, validChatFolderIds))
   let organizerIdsStable = $derived(hasStableOrganizationIds())
+  let reattachWarningChatIds = $derived(collectExhaustedGenerationChatIds($generationJobLifecycles))
 
   let chatRouteOpen = $derived(
     $currentRoute.kind === 'character' &&
@@ -1539,9 +1543,14 @@
                       data-risu-chat-folder-id={chat.folderId ?? ''}
                       data-risu-chat-selected={index === chara.chatPage ? 'true' : 'false'}
                       data-risu-chat-mutation-status={structureMutationForTarget('chat', chat.id)?.status ?? ''}
+                      data-risu-chat-reattach-warning={chat.id && reattachWarningChatIds.has(chat.id)
+                        ? 'true'
+                        : undefined}
                       aria-busy={isChatStructurePending(chat.id)}
-                      class="risu-chats flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
+                      class="risu-chats relative flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
                       class:bg-selected={index === chara.chatPage}
+                      class:ring-1={chat.id && reattachWarningChatIds.has(chat.id)}
+                      class:ring-yellow-500={chat.id && reattachWarningChatIds.has(chat.id)}
                       onclick={() => activateChatRow(index)}>
                       {#if editMode}
                         <TextInput
@@ -1562,6 +1571,12 @@
                           }}>
                           <span>{chat.name}</span>
                         </button>
+                      {/if}
+                      {#if chat.id && reattachWarningChatIds.has(chat.id)}
+                        <GenerationIndicator
+                          state="warning"
+                          label={language.generationReattachFailure.sidebarWarning(chat.name)}
+                          onActivate={() => activateChatRow(index)} />
                       {/if}
                       <div class="ml-auto flex shrink-0 justify-end">
                         {#if editMode && chat.id && organizerIdsStable}
@@ -1663,9 +1678,12 @@
               data-risu-chat-folder-id={chat.folderId ?? ''}
               data-risu-chat-selected={index === chara.chatPage ? 'true' : 'false'}
               data-risu-chat-mutation-status={structureMutationForTarget('chat', chat.id)?.status ?? ''}
+              data-risu-chat-reattach-warning={chat.id && reattachWarningChatIds.has(chat.id) ? 'true' : undefined}
               aria-busy={isChatStructurePending(chat.id)}
-              class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
+              class="relative flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
               class:bg-selected={index === chara.chatPage}
+              class:ring-1={chat.id && reattachWarningChatIds.has(chat.id)}
+              class:ring-yellow-500={chat.id && reattachWarningChatIds.has(chat.id)}
               onclick={() => activateChatRow(index)}>
               {#if editMode}
                 <TextInput
@@ -1686,6 +1704,12 @@
                   }}>
                   <span>{chat.name}</span>
                 </button>
+              {/if}
+              {#if chat.id && reattachWarningChatIds.has(chat.id)}
+                <GenerationIndicator
+                  state="warning"
+                  label={language.generationReattachFailure.sidebarWarning(chat.name)}
+                  onActivate={() => activateChatRow(index)} />
               {/if}
               <div class="ml-auto flex shrink-0 justify-end">
                 {#if editMode && chat.id && organizerIdsStable}

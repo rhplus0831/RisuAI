@@ -9,12 +9,13 @@
   interface Props {
     items: readonly PinnedChatItem[]
     generatingChatIds: ReadonlySet<string>
+    warningChatIds?: ReadonlySet<string>
     rounded: boolean
     onOpen: (item: PinnedChatItem) => void
     isInert?: boolean
   }
 
-  let { items, generatingChatIds, rounded, onOpen, isInert = false }: Props = $props()
+  let { items, generatingChatIds, warningChatIds = new Set(), rounded, onOpen, isInert = false }: Props = $props()
 </script>
 
 {#if items.length > 0}
@@ -43,7 +44,12 @@
         <span class="mt-0.5 w-16 truncate text-center text-[10px] leading-tight text-textcolor2">
           {item.chatName}
         </span>
-        {#if generatingChatIds.has(item.chatId)}
+        {#if warningChatIds.has(item.chatId)}
+          <GenerationIndicator
+            state="warning"
+            label={language.generationReattachFailure.sidebarWarning(item.chatName)}
+            onActivate={() => onOpen(item)} />
+        {:else if generatingChatIds.has(item.chatId)}
           <GenerationIndicator
             label={`${language.generatingMessage}: ${item.chatName}`}
             onActivate={() => onOpen(item)} />

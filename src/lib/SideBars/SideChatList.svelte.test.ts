@@ -339,6 +339,9 @@ vi.mock('src/lang', () => ({
     edit: 'Edit',
     export: 'Export',
     goback: 'Back',
+    generationReattachFailure: {
+      sidebarWarning: (name: string) => `Connection lost: ${name}`,
+    },
     authorNote: "Author's Note",
     help: { chatNote: 'Chat note help' },
     hotkeyDesc: { popupEditor: 'Open popup editor' },
@@ -471,6 +474,7 @@ import {
 import type { Chat, ChatFolder, character } from 'src/ts/storage/database.svelte'
 import { restoreChatRowMetadata } from 'src/ts/chatCommands'
 import { language } from 'src/lang'
+import { generationJobLifecycles } from 'src/ts/process/reattach'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -699,6 +703,7 @@ describe('SideChatList DOM contract harness', () => {
     document.body.appendChild(target)
     sidebarMocks.resetCommandHarness()
     vi.clearAllMocks()
+    generationJobLifecycles.set({})
   })
 
   afterEach(() => {
@@ -711,6 +716,7 @@ describe('SideChatList DOM contract harness', () => {
     document.body.innerHTML = ''
     selectedCharID.set(-1)
     setDatabaseLite({} as never)
+    generationJobLifecycles.set({})
   })
 
   it('renders seeded root and folder chat rows with selected and folder selectors', async () => {
@@ -731,6 +737,32 @@ describe('SideChatList DOM contract harness', () => {
     expect(sidebarRoot().dataset.risuChatOpen).toBe('false')
     expect(target.querySelector('[data-testid="side-chat-list-toggles-stub"]')).toBeNull()
     expect(sidebarMocks.watchServerBackedChatMetadata).toHaveBeenCalledOnce()
+  })
+
+  it('marks only the exact chat whose observer is exhausted with an accessible warning', async () => {
+    seedSidebarDatabase()
+    generationJobLifecycles.set({
+      'job-foldered': {
+        chatId: 'chat-foldered',
+        jobId: 'job-foldered',
+        status: 'exhausted-dead',
+        reattachAttempts: 4,
+        lastError: 'offline',
+        updatedAt: 1,
+      },
+    })
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    const warningRow = rowByChatId('chat-foldered')
+    const warning = warningRow.querySelector<HTMLElement>('[data-risu-generation-indicator="warning"]')
+    expect(warningRow.dataset.risuChatReattachWarning).toBe('true')
+    expect(warningRow.classList).toContain('ring-yellow-500')
+    expect(warning?.getAttribute('role')).toBe('status')
+    expect(warning?.getAttribute('aria-label')).toBe('Connection lost: Foldered Chat')
+    expect(rowByChatId('chat-root-a').dataset.risuChatReattachWarning).toBeUndefined()
+    expect(rowByChatId('chat-root-a').querySelector('[data-risu-generation-indicator]')).toBeNull()
   })
 
   it('renders a chat with an orphaned folder reference in the root list', async () => {

@@ -69,12 +69,13 @@
   import {
     characterFolderHasGeneratingChat,
     characterHasGeneratingChat,
+    collectExhaustedGenerationChatIds,
     collectGeneratingChatIds,
     collectPinnedChats,
     type PinnedChatItem,
   } from './sidebarMultitasking'
   import { activeChatGenerations } from 'src/ts/process/generationActivity.svelte'
-  import { activeGenerationJobs } from 'src/ts/process/reattach'
+  import { activeGenerationJobs, generationJobLifecycles } from 'src/ts/process/reattach'
   let sideBarMode = $state(0)
   let editMode = $state(false)
   let menuMode = $state(0)
@@ -360,7 +361,10 @@
     () => getSidebarCharacterList(getDatabase().characterOrder, getDatabase().characters).items,
   )
   let IconRounded = $derived(getDatabase().roundIcons)
-  let generatingChatIds = $derived(collectGeneratingChatIds($activeGenerationJobs, $activeChatGenerations))
+  let warningChatIds = $derived(collectExhaustedGenerationChatIds($generationJobLifecycles))
+  let generatingChatIds = $derived(
+    collectGeneratingChatIds($activeGenerationJobs, $activeChatGenerations, warningChatIds),
+  )
   let pinnedChats = $derived(collectPinnedChats(getDatabase().characters, getDatabase().characterOrder))
   let openFolders: string[] = $state([])
   const sidebarCharacterDrag = createSidebarCharacterDragController()
@@ -407,6 +411,14 @@
 
   function characterFolderIsGenerating(indexes: readonly number[]): boolean {
     return characterFolderHasGeneratingChat(indexes, getDatabase().characters, generatingChatIds)
+  }
+
+  function characterHasReattachWarning(index: number): boolean {
+    return characterHasGeneratingChat(getDatabase().characters?.[index], warningChatIds)
+  }
+
+  function characterFolderHasReattachWarning(indexes: readonly number[]): boolean {
+    return characterFolderHasGeneratingChat(indexes, getDatabase().characters, warningChatIds)
   }
 
   function sidebarItemPosition(item: SidebarCharacterListItem): DragData | null {
@@ -610,7 +622,12 @@
       <ShellIcon />
       <span class="text-xs">{language.playground.playground}</span>
     </button>
-    <PinnedChatsRail items={pinnedChats} {generatingChatIds} rounded={IconRounded} onOpen={openPinnedChat} />
+    <PinnedChatsRail
+      items={pinnedChats}
+      {generatingChatIds}
+      {warningChatIds}
+      rounded={IconRounded}
+      onOpen={openPinnedChat} />
   </div>
 {:else}
   <div
@@ -664,6 +681,7 @@
     <PinnedChatsRail
       items={pinnedChats}
       {generatingChatIds}
+      {warningChatIds}
       rounded={IconRounded}
       onOpen={openNarrowPinnedChat}
       isInert={menuMode === 1} />
@@ -765,7 +783,19 @@
               {/key}
             {/if}
           </div>
-          {#if char.type === 'normal' && characterIsGenerating(char.index)}
+          {#if char.type === 'normal' && characterHasReattachWarning(char.index)}
+            <GenerationIndicator
+              state="warning"
+              label={language.generationReattachFailure.sidebarWarning(char.name)}
+              onActivate={() => openCharacterRoute(char.index)} />
+          {:else if char.type === 'folder' && !openFolders.includes(char.id) && characterFolderHasReattachWarning(char.folder.map((item) => item.index))}
+            <GenerationIndicator
+              state="warning"
+              label={language.generationReattachFailure.sidebarWarning(char.name)}
+              onActivate={() => {
+                if (char.type === 'folder') void toggleCharacterFolder(char)
+              }} />
+          {:else if char.type === 'normal' && characterIsGenerating(char.index)}
             <GenerationIndicator
               label={`${language.generatingMessage}: ${char.name}`}
               onActivate={() => openCharacterRoute(char.index)} />
@@ -840,7 +870,12 @@
                       chaId={getDatabase().characters[char2.index]?.chaId}
                       onClick={() => openCharacterRoute(char2.index)} />
                   </div>
-                  {#if characterIsGenerating(char2.index)}
+                  {#if characterHasReattachWarning(char2.index)}
+                    <GenerationIndicator
+                      state="warning"
+                      label={language.generationReattachFailure.sidebarWarning(char2.name)}
+                      onActivate={() => openCharacterRoute(char2.index)} />
+                  {:else if characterIsGenerating(char2.index)}
                     <GenerationIndicator
                       label={`${language.generatingMessage}: ${char2.name}`}
                       onActivate={() => openCharacterRoute(char2.index)} />

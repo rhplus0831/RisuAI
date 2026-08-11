@@ -24,6 +24,7 @@
     PencilLineIcon,
     PinIcon,
     SparkleIcon,
+    TriangleAlertIcon,
   } from '@lucide/svelte'
   import {
     selectedCharID,
@@ -132,7 +133,13 @@
     findAcceptedSendRecovery,
     retryAcceptedChatSend,
   } from 'src/ts/process/acceptedSendCoordinator.svelte'
-  import { activeGenerationJobs } from 'src/ts/process/reattach'
+  import {
+    activeGenerationJobs,
+    generationJobLifecycles,
+    refreshGenerationJobFromBootstrap,
+    retryGenerationJobReattach,
+    stopGenerationJob,
+  } from 'src/ts/process/reattach'
   import {
     deleteDefaultChatComposerDraft,
     isDefaultChatComposerDraftGenerationCurrent,
@@ -231,6 +238,7 @@
   let scrollToMessageRunId = 0
   let composerMutationVersion = 0
   let composerFileInvalidationVersion = 0
+  let reattachRecoveryAction: { jobId: string; action: 'retry' | 'refresh' | 'stop' } | null = $state(null)
   let messageInputMutationVersion = 0
   let messageInputTranslateMutationVersion = 0
   let activeTranscriptWindowIdentity: string | null = $state(null)
@@ -355,6 +363,12 @@
       (currentChatId && $activeGenerationJobs.some((job) => job.chatId === currentChatId)),
     ),
   )
+  let currentChatDeadGeneration = $derived.by(() => {
+    if (!currentChatId) return undefined
+    return Object.values($generationJobLifecycles).find(
+      (lifecycle) => lifecycle.chatId === currentChatId && lifecycle.status === 'exhausted-dead',
+    )
+  })
   let currentChatGenerationStage = $derived(currentChatGenerationActivity?.stage ?? 0)
   let currentChatPreparationTargetKey = $derived(
     currentCharacter && currentChatRecord
@@ -399,6 +413,20 @@
 
   async function retryActiveChatHydration() {
     await hydrateActiveChat({ force: true })
+  }
+
+  async function runReattachRecoveryAction(jobId: string, action: 'retry' | 'refresh' | 'stop'): Promise<void> {
+    if (reattachRecoveryAction) return
+    reattachRecoveryAction = { jobId, action }
+    try {
+      if (action === 'retry') await retryGenerationJobReattach(jobId)
+      else if (action === 'refresh') await refreshGenerationJobFromBootstrap(jobId)
+      else await stopGenerationJob(jobId)
+    } finally {
+      if (reattachRecoveryAction?.jobId === jobId && reattachRecoveryAction.action === action) {
+        reattachRecoveryAction = null
+      }
+    }
   }
 
   function getChatMenuItems(): HTMLButtonElement[] {
@@ -2231,6 +2259,57 @@
           {composerDraftPersistenceError}
         </div>
       {/if}
+      {#if currentChatDeadGeneration}
+        <div
+          class="chat-screen-content-width mb-2 flex flex-col gap-2 rounded-md border border-yellow-500 bg-yellow-500/10 p-3 text-sm text-textcolor"
+          role="alert"
+          data-testid="generation-reattach-failure"
+          data-generation-job-id={currentChatDeadGeneration.jobId}>
+          <div class="flex items-start gap-2">
+            <TriangleAlertIcon class="mt-0.5 shrink-0 text-yellow-500" size={18} aria-hidden="true" />
+            <div class="min-w-0">
+              <p>{language.generationReattachFailure.message}</p>
+              {#if currentChatDeadGeneration.lastError}
+                <p class="mt-1 break-words text-textcolor2" data-testid="generation-reattach-last-error">
+                  {language.generationReattachFailure.lastError(currentChatDeadGeneration.lastError)}
+                </p>
+              {/if}
+            </div>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button
+              type="button"
+              class="rounded-md border border-yellow-500 px-3 py-1.5 transition-colors hover:bg-yellow-500 hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={reattachRecoveryAction !== null}
+              aria-busy={reattachRecoveryAction?.jobId === currentChatDeadGeneration.jobId &&
+                reattachRecoveryAction.action === 'retry'}
+              data-testid="generation-reattach-retry"
+              onclick={() => void runReattachRecoveryAction(currentChatDeadGeneration!.jobId, 'retry')}>
+              {language.generationReattachFailure.retry}
+            </button>
+            <button
+              type="button"
+              class="rounded-md border border-yellow-500 px-3 py-1.5 transition-colors hover:bg-yellow-500 hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={reattachRecoveryAction !== null}
+              aria-busy={reattachRecoveryAction?.jobId === currentChatDeadGeneration.jobId &&
+                reattachRecoveryAction.action === 'refresh'}
+              data-testid="generation-reattach-refresh"
+              onclick={() => void runReattachRecoveryAction(currentChatDeadGeneration!.jobId, 'refresh')}>
+              {language.generationReattachFailure.refresh}
+            </button>
+            <button
+              type="button"
+              class="rounded-md border border-draculared px-3 py-1.5 text-draculared transition-colors hover:bg-draculared hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={reattachRecoveryAction !== null}
+              aria-busy={reattachRecoveryAction?.jobId === currentChatDeadGeneration.jobId &&
+                reattachRecoveryAction.action === 'stop'}
+              data-testid="generation-reattach-stop"
+              onclick={() => void runReattachRecoveryAction(currentChatDeadGeneration!.jobId, 'stop')}>
+              {language.generationReattachFailure.stop}
+            </button>
+          </div>
+        </div>
+      {/if}
       {#if currentAcceptedSendRecovery}
         <div
           class="chat-screen-content-width mb-2 flex items-center gap-3 rounded-md border border-draculared p-3 text-sm text-draculared"
@@ -2313,7 +2392,18 @@
           }}
           style:height={inputHeight}></textarea>
 
-        {#if currentChatOwnsGeneration || hookRunActive}
+        {#if currentChatDeadGeneration}
+          <button
+            type="button"
+            data-testid="default-chat-cancel-button"
+            aria-label={language.generationReattachFailure.stop}
+            class="peer-focus:border-textcolor flex justify-center border-y border-yellow-500 items-center p-3 text-yellow-500 hover:bg-yellow-500 hover:text-black transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={reattachRecoveryAction !== null}
+            onclick={() => void runReattachRecoveryAction(currentChatDeadGeneration!.jobId, 'stop')}
+            style:height={inputHeight}>
+            <TriangleAlertIcon aria-hidden="true" />
+          </button>
+        {:else if currentChatOwnsGeneration || hookRunActive}
           <button
             data-testid="default-chat-cancel-button"
             aria-label={language.cancelGeneration}

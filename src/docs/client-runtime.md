@@ -294,7 +294,12 @@ Important files:
 - `src/ts/process/reattach.ts` uses bootstrap `activeGenerationJobs`, including
   job mode and regenerate target when present, to reattach open chats to
   durable server jobs. Reattach is keyed by job id, so jobs for different chats
-  can remain attached concurrently as the user navigates.
+  can remain attached concurrently as the user navigates. Its separate
+  `generationJobLifecycles` projection records attached, retrying,
+  exhausted-dead, completed, and cancelled observation state plus the last
+  transport error. Bootstrap reconciliation removes absent jobs and rehydrates
+  their exact transcripts; manual Retry, Refresh, and Stop operations remain
+  job-ID scoped.
 
 Before prompt assembly or provider fetch, `sendChat` awaits the character-owned
 maintenance batch from `sendChatContext.ts`, the pending chat generation-settings

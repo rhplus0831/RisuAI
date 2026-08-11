@@ -5,6 +5,7 @@ import { languageKorean } from 'src/lang/ko'
 import {
   characterFolderHasGeneratingChat,
   characterHasGeneratingChat,
+  collectExhaustedGenerationChatIds,
   collectGeneratingChatIds,
   collectPinnedChats,
 } from './sidebarMultitasking'
@@ -96,5 +97,21 @@ describe('sidebar multitasking projections', () => {
     )
 
     expect([...ids]).toEqual(['server-chat', 'local-chat'])
+  })
+
+  it('separates exhausted observer warnings from healthy generation indicators', () => {
+    const warnings = collectExhaustedGenerationChatIds({
+      'job-dead': { chatId: 'dead-chat', status: 'exhausted-dead' },
+      'job-live': { chatId: 'live-chat', status: 'attached' },
+      'job-retrying': { chatId: 'retrying-chat', status: 'retrying' },
+    })
+    const generating = collectGeneratingChatIds(
+      [{ chatId: 'dead-chat' }, { chatId: 'live-chat' }],
+      [{ chatId: 'local-chat', kind: 'message' }],
+      warnings,
+    )
+
+    expect([...warnings]).toEqual(['dead-chat'])
+    expect([...generating]).toEqual(['live-chat', 'local-chat'])
   })
 })

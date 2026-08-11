@@ -1,5 +1,13 @@
 export const languageChinese = {
   unknownInteractionTime: '未知',
+  generationReattachFailure: {
+    message: '此回复可能仍在生成，但此设备无法重新连接。',
+    lastError: (error: string) => `上次连接错误：${error}`,
+    retry: '重试',
+    refresh: '刷新',
+    stop: '停止',
+    sidebarWarning: (name: string) => `连接已断开：${name}`,
+  },
   characterCreationQueued: '新角色已保存在此设备并进入队列。服务器尚未接受该角色，系统将自动重试。',
   characterCreationFailed: '无法创建角色。临时角色已移除。',
   characterImportQueued: '导入的角色已保存在此设备并进入队列。服务器尚未接受该角色，系统将自动重试。',

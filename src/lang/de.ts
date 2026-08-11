@@ -1,5 +1,14 @@
 export const languageGerman = {
   unknownInteractionTime: 'Unbekannt',
+  generationReattachFailure: {
+    message:
+      'Diese Antwort wird möglicherweise noch erstellt, aber dieses Gerät konnte die Verbindung nicht wiederherstellen.',
+    lastError: (error: string) => `Letzter Verbindungsfehler: ${error}`,
+    retry: 'Erneut versuchen',
+    refresh: 'Aktualisieren',
+    stop: 'Stoppen',
+    sidebarWarning: (name: string) => `Verbindung verloren: ${name}`,
+  },
   characterCreationQueued:
     'Der neue Charakter wurde auf diesem Gerät gespeichert und eingereiht. Der Server hat ihn noch nicht akzeptiert und versucht es automatisch erneut.',
   characterCreationFailed: 'Der Charakter konnte nicht erstellt werden. Der vorläufige Charakter wurde entfernt.',

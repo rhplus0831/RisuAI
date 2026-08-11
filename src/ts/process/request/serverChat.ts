@@ -940,7 +940,7 @@ export async function requestServerChatGeneration(
                         : 'stream ended without a prompt event',
                     })
                   }
-                  forgetActiveGenerationJob(durableJobId)
+                  forgetActiveGenerationJob(durableJobId, terminalOutcome)
                   resolveTerminalOnce({
                     status: terminalOutcome === 'cancelled' ? 'cancelled' : 'done',
                     ...reattachOutcomeFields(terminalOutcome),

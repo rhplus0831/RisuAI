@@ -125,4 +125,31 @@ describe('PinnedChatsRail current route', () => {
     await tick()
     expectCurrentPinnedChat(null)
   })
+
+  it('renders a warning treatment instead of a healthy spinner for an exhausted chat', async () => {
+    const onOpen = vi.fn()
+    component = mount(PinnedChatsRail, {
+      target,
+      props: {
+        items: pinnedChats,
+        generatingChatIds: new Set(['chat-a', 'chat-b']),
+        warningChatIds: new Set(['chat-a']),
+        rounded: false,
+        onOpen,
+      },
+    })
+    await tick()
+
+    const warning = pinnedRow('chat-a').querySelector<HTMLElement>('[data-risu-generation-indicator="warning"]')
+    const healthy = pinnedRow('chat-b').querySelector<HTMLElement>('[data-risu-generation-indicator="generating"]')
+    expect(warning).toBeTruthy()
+    expect(warning?.getAttribute('role')).toBe('status')
+    expect(warning?.getAttribute('aria-label')).toContain('Alpha Chat')
+    expect(warning?.querySelector('.animate-spin')).toBeNull()
+    expect(healthy).toBeTruthy()
+    expect(healthy?.querySelector('.animate-spin')).toBeTruthy()
+
+    warning!.click()
+    expect(onOpen).toHaveBeenCalledWith(pinnedChats[0])
+  })
 })

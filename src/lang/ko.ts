@@ -1851,6 +1851,14 @@ const languageKoreanBase = {
 
 export const languageKorean = {
   ...languageKoreanBase,
+  generationReattachFailure: {
+    message: '이 답장은 아직 생성 중일 수 있지만 이 기기에서 다시 연결하지 못했습니다.',
+    lastError: (error: string) => `마지막 연결 오류: ${error}`,
+    retry: '재시도',
+    refresh: '새로고침',
+    stop: '중지',
+    sidebarWarning: (name: string) => `연결 끊김: ${name}`,
+  },
   mutationStatusQueued: '대기열에 추가됨',
   mutationStatusFailed: '저장 실패',
   messageMutationPending: '메시지 변경 사항을 저장하는 중…',

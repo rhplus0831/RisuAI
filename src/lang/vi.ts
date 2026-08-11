@@ -1,5 +1,13 @@
 export const languageVietnamese = {
   unknownInteractionTime: 'Không rõ',
+  generationReattachFailure: {
+    message: 'Phản hồi này có thể vẫn đang được tạo, nhưng thiết bị này không thể kết nối lại.',
+    lastError: (error: string) => `Lỗi kết nối gần nhất: ${error}`,
+    retry: 'Thử lại',
+    refresh: 'Làm mới',
+    stop: 'Dừng',
+    sidebarWarning: (name: string) => `Mất kết nối: ${name}`,
+  },
   characterCreationQueued:
     'Nhân vật mới đã được lưu trên thiết bị này và đưa vào hàng đợi. Máy chủ chưa chấp nhận và sẽ tự động thử lại.',
   characterCreationFailed: 'Không thể tạo nhân vật. Nhân vật tạm thời đã bị xóa.',

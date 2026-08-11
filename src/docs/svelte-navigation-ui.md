@@ -32,7 +32,9 @@ aggregates local plus bootstrap-discovered generation activity by stable chat
 id. A bot avatar shows one generation indicator when any owned chat is active;
 a collapsed character folder shows one aggregate indicator regardless of how
 many contained bots are active. Route navigation remains available while those
-generations continue in the background.
+generations continue in the background. Exhausted observers take priority over
+the healthy spinner and use a warning treatment on pinned chats, character and
+collapsed-folder aggregates, and the exact row in `SideChatList.svelte`.
 
 On wide layouts `src/App.svelte` mounts the sidebar beside chat. On responsive
 layouts the app mounts it as a focus-trapped dialog when `sideBarStore` is open;

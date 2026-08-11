@@ -1,5 +1,13 @@
 export const languageEnglish = {
   unknownInteractionTime: 'Unknown',
+  generationReattachFailure: {
+    message: 'This reply may still be running, but this device could not reconnect.',
+    lastError: (error: string) => `Last connection error: ${error}`,
+    retry: 'Retry',
+    refresh: 'Refresh',
+    stop: 'Stop',
+    sidebarWarning: (name: string) => `Connection lost: ${name}`,
+  },
   preloadError: 'The server has been updated or the network connection has been lost. Please refresh the page.',
   characterCreationQueued:
     'The new character is saved on this device and queued. It has not been accepted by the server and will retry automatically.',

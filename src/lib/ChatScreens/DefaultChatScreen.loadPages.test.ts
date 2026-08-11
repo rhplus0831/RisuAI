@@ -31,6 +31,9 @@ const loadPageMocks = vi.hoisted(() => ({
   preflightChatSendBeforeMutation: vi.fn(() => ({ type: 'server' as const })),
   processMultiCommand: vi.fn(async () => false),
   refreshActiveGenerationJobsFromBootstrap: vi.fn(async () => undefined),
+  refreshGenerationJobFromBootstrap: vi.fn(async () => ({ status: 'active' as const })),
+  retryGenerationJobReattach: vi.fn(async () => undefined),
+  stopGenerationJob: vi.fn(async () => undefined),
   sendChat: vi.fn(async (_index?: number, _args?: unknown) => true),
   sleep: vi.fn(async () => undefined),
   stopTTS: vi.fn(),
@@ -87,23 +90,32 @@ vi.mock('../../lang', () => ({
                   retry: 'acceptedSendRetry',
                   retrying: 'acceptedSendRetrying',
                 }
-              : property === 'agentPresets'
+              : property === 'generationReattachFailure'
                 ? {
-                    progressBeforeMain: 'beforeMain',
-                    progressAfterMain: 'afterMain',
-                    progressLabel: (name: string) => name,
-                    progressActiveSteps: (names: string) => names,
-                    progressWaiting: 'waiting',
+                    message: 'generationReattachMessage',
+                    lastError: (error: string) => `generationReattachLastError:${error}`,
+                    retry: 'Retry',
+                    refresh: 'Refresh',
+                    stop: 'Stop',
+                    sidebarWarning: (name: string) => `generationReattachWarning:${name}`,
                   }
-                : property === 'chatPostGenerationProgressModuleScript'
-                  ? (name: string) => name
-                  : property === 'chatPostGenerationProgressCharacterScript'
+                : property === 'agentPresets'
+                  ? {
+                      progressBeforeMain: 'beforeMain',
+                      progressAfterMain: 'afterMain',
+                      progressLabel: (name: string) => name,
+                      progressActiveSteps: (names: string) => names,
+                      progressWaiting: 'waiting',
+                    }
+                  : property === 'chatPostGenerationProgressModuleScript'
                     ? (name: string) => name
-                    : property === 'chatPostGenerationProgressWithComment'
-                      ? (owner: string) => owner
-                      : property === 'chatPostGenerationProgressLabel'
+                    : property === 'chatPostGenerationProgressCharacterScript'
+                      ? (name: string) => name
+                      : property === 'chatPostGenerationProgressWithComment'
                         ? (owner: string) => owner
-                        : String(property),
+                        : property === 'chatPostGenerationProgressLabel'
+                          ? (owner: string) => owner
+                          : String(property),
     },
   ),
 }))
@@ -198,6 +210,9 @@ vi.mock('src/ts/process/reattach', async (importActual) => {
   return {
     ...actual,
     refreshActiveGenerationJobsFromBootstrap: loadPageMocks.refreshActiveGenerationJobsFromBootstrap,
+    refreshGenerationJobFromBootstrap: loadPageMocks.refreshGenerationJobFromBootstrap,
+    retryGenerationJobReattach: loadPageMocks.retryGenerationJobReattach,
+    stopGenerationJob: loadPageMocks.stopGenerationJob,
   }
 })
 
@@ -335,7 +350,7 @@ import {
 import { translate } from '../../ts/translator/translator'
 import { runInputHook } from 'src/ts/process/inputHooks'
 import { resetAcceptedSendCoordinatorForTests } from 'src/ts/process/acceptedSendCoordinator.svelte'
-import { activeGenerationJobs } from 'src/ts/process/reattach'
+import { activeGenerationJobs, generationJobLifecycles } from 'src/ts/process/reattach'
 import {
   abortInputHookActivity,
   activeInputHookActivities,
@@ -645,7 +660,14 @@ beforeEach(() => {
   loadPageMocks.sendChat.mockResolvedValue(true)
   loadPageMocks.refreshActiveGenerationJobsFromBootstrap.mockReset()
   loadPageMocks.refreshActiveGenerationJobsFromBootstrap.mockResolvedValue(undefined)
+  loadPageMocks.refreshGenerationJobFromBootstrap.mockReset()
+  loadPageMocks.refreshGenerationJobFromBootstrap.mockResolvedValue({ status: 'active' })
+  loadPageMocks.retryGenerationJobReattach.mockReset()
+  loadPageMocks.retryGenerationJobReattach.mockResolvedValue(undefined)
+  loadPageMocks.stopGenerationJob.mockReset()
+  loadPageMocks.stopGenerationJob.mockResolvedValue(undefined)
   activeGenerationJobs.set([])
+  generationJobLifecycles.set({})
   loadPageMocks.postChatFile.mockReset()
   loadPageMocks.postChatFile.mockResolvedValue([])
   loadPageMocks.captureActiveChatTarget.mockImplementation(captureActiveChatTargetForTest)
@@ -685,6 +707,7 @@ afterEach(() => {
   clearPostGenerationProgress()
   resetHalfStreamingProgressForTests()
   activeGenerationJobs.set([])
+  generationJobLifecycles.set({})
 })
 
 describe('DefaultChatScreen overflow menu accessibility', () => {
@@ -2743,6 +2766,67 @@ describe('DefaultChatScreen transcript window state', () => {
         row.textContent?.includes('Accepted while another client generates'),
       ),
     ).toHaveLength(1)
+  })
+
+  it('shows an accessible exhausted observer alert and targets Retry, Refresh, and Stop to its exact job', async () => {
+    seedDatabase([2, 2])
+    activeGenerationJobs.set([
+      { chatId: 'chat-0', jobId: 'job-dead' },
+      { chatId: 'chat-1', jobId: 'job-other' },
+    ])
+    generationJobLifecycles.set({
+      'job-dead': {
+        chatId: 'chat-0',
+        jobId: 'job-dead',
+        status: 'exhausted-dead',
+        reattachAttempts: 4,
+        lastError: 'mobile connection lost',
+        updatedAt: 1,
+      },
+      'job-other': {
+        chatId: 'chat-1',
+        jobId: 'job-other',
+        status: 'exhausted-dead',
+        reattachAttempts: 4,
+        lastError: 'other chat error',
+        updatedAt: 2,
+      },
+    })
+    mountScreen()
+
+    await waitFor(() => {
+      const alert = target.querySelector<HTMLElement>('[data-testid="generation-reattach-failure"]')
+      expect(alert).toBeTruthy()
+      expect(alert?.getAttribute('role')).toBe('alert')
+      expect(alert?.dataset.generationJobId).toBe('job-dead')
+      expect(alert?.textContent).toContain('generationReattachMessage')
+      expect(alert?.textContent).toContain('generationReattachLastError:mobile connection lost')
+    })
+
+    const composerStop = target.querySelector<HTMLElement>('[data-testid="default-chat-cancel-button"]')
+    expect(composerStop?.getAttribute('aria-label')).toBe('Stop')
+    expect(composerStop?.querySelector('.risu-ongoing-pulse')).toBeNull()
+
+    target.querySelector<HTMLButtonElement>('[data-testid="generation-reattach-retry"]')!.click()
+    await waitFor(() => expect(loadPageMocks.retryGenerationJobReattach).toHaveBeenCalledWith('job-dead'))
+    await waitFor(() =>
+      expect(target.querySelector<HTMLButtonElement>('[data-testid="generation-reattach-refresh"]')?.disabled).toBe(
+        false,
+      ),
+    )
+
+    target.querySelector<HTMLButtonElement>('[data-testid="generation-reattach-refresh"]')!.click()
+    await waitFor(() => expect(loadPageMocks.refreshGenerationJobFromBootstrap).toHaveBeenCalledWith('job-dead'))
+    await waitFor(() =>
+      expect(target.querySelector<HTMLButtonElement>('[data-testid="generation-reattach-stop"]')?.disabled).toBe(false),
+    )
+
+    target.querySelector<HTMLButtonElement>('[data-testid="generation-reattach-stop"]')!.click()
+    await waitFor(() => expect(loadPageMocks.stopGenerationJob).toHaveBeenCalledWith('job-dead'))
+
+    expect(loadPageMocks.retryGenerationJobReattach).not.toHaveBeenCalledWith('job-other')
+    expect(loadPageMocks.refreshGenerationJobFromBootstrap).not.toHaveBeenCalledWith('job-other')
+    expect(loadPageMocks.stopGenerationJob).not.toHaveBeenCalledWith('job-other')
   })
 
   it('does not restore old text or files over a newer draft when a delayed append fails', async () => {

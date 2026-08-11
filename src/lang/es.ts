@@ -1,5 +1,13 @@
 export const languageSpanish = {
   unknownInteractionTime: 'Desconocido',
+  generationReattachFailure: {
+    message: 'Es posible que esta respuesta siga generándose, pero este dispositivo no pudo volver a conectarse.',
+    lastError: (error: string) => `Último error de conexión: ${error}`,
+    retry: 'Reintentar',
+    refresh: 'Actualizar',
+    stop: 'Detener',
+    sidebarWarning: (name: string) => `Conexión perdida: ${name}`,
+  },
   characterCreationQueued:
     'El personaje nuevo se guardó en este dispositivo y está en cola. El servidor aún no lo ha aceptado y se reintentará automáticamente.',
   characterCreationFailed: 'No se pudo crear el personaje. Se eliminó el personaje provisional.',
