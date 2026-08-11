@@ -717,6 +717,8 @@ export const languageChinese = {
   savebackup: '备份至 Google',
   loadbackup: '从 Google 读取备份',
   files: '文件',
+  backupUnsupportedStandaloneChatBlocks:
+    '此备份使用独立的 CHAT 块格式存储聊天，此版本的 RisuAI 无法导入。未导入任何内容，现有数据未被更改。',
   backupConfirm: '你确定要保存备份吗？',
   backupLoadConfirm: '你确定要读取备份吗？所有数据将被覆盖！',
   backupLoadConfirm2: '你**真的、真的**确定要加载备份吗？这将会清除所有数据！',

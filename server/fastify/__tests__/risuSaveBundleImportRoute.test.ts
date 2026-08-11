@@ -757,6 +757,48 @@ describe('repository .risu bundle import route', () => {
     }
   })
 
+  it('rejects standalone CHAT blocks with a friendly diagnostic and leaves existing data untouched', async () => {
+    persistLiveDatabase(harness.dataDir)
+    const before = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const databaseBytes = encodeRisuSaveBlockEnvelope([
+      {
+        name: 'root',
+        type: RisuSaveBlockType.ROOT,
+        data: JSON.stringify({ version: 2, __directory: ['standalone-chat'] }),
+      },
+      {
+        name: 'standalone-chat',
+        type: RisuSaveBlockType.CHAT,
+        data: JSON.stringify({ id: 'standalone-chat', name: 'Unsupported Chat', message: [] }),
+      },
+    ])
+    const upload = multipartBundle(buildBundleZip(databaseBytes))
+
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/bundle',
+      headers: { 'content-type': upload.contentType },
+      payload: upload.payload,
+    })
+
+    expect(imported.statusCode).toBe(422)
+    expect(imported.json()).toEqual({
+      code: 'unsupported-standalone-chat-blocks',
+      error:
+        'This save stores chats in standalone CHAT blocks, which this version of RisuAI cannot import. ' +
+        'Nothing was imported, and the active database was not changed.',
+    })
+
+    const after = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(after.json()).toMatchObject({
+      revision: before.json().revision,
+      databaseLineage: before.json().databaseLineage,
+      database: before.json().database,
+    })
+    expect(listBackups(harness.dataDir)).toEqual([])
+    await expectNoImportedAssetSideEffects(harness)
+  })
+
   it('canonicalizes original-backup media references with non-sha256 record names', async () => {
     const legacyRecordName = '550e8400-e29b-41d4-a716-446655440000.png'
     persistDatabaseWithAsset(harness.dataDir, `assets/${legacyRecordName}`)

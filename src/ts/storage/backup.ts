@@ -94,6 +94,9 @@ export async function loadBackupFromDevice(options: BackupOperationOptions = {})
       alertNormal('Local backup loaded')
     }
     return 'ok'
+  } else if (result.status === 'unsupported-chat-blocks') {
+    alertError(language.backupUnsupportedStandaloneChatBlocks)
+    return 'error'
   } else if (result.status === 'unsupported-groups') {
     alertError(
       language.backupUnsupportedGroups(

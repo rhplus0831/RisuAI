@@ -24,6 +24,7 @@ import {
 import { listLegacySummaryTombstones, replaceLegacyHypaV3MemoryRowsInTransaction } from '../memoryLegacyImport.js'
 import {
   UnsupportedGroupCharactersError,
+  UnsupportedStandaloneChatBlocksError,
   decodeRisuSaveImportSnapshot,
   normalizeRisuSaveJsonImportSnapshot,
 } from '../risuSave/importSnapshot.js'
@@ -145,6 +146,10 @@ export function registerSaveRoutes(
       eventSink.emit(event)
       return { revision, event, databaseLineage, writerEpoch, assetReport }
     } catch (err) {
+      if (err instanceof UnsupportedStandaloneChatBlocksError) {
+        reply.code(422)
+        return unsupportedStandaloneChatBlockImportResponse(err)
+      }
       if (err instanceof UnsupportedGroupCharactersError) {
         reply.code(422)
         return unsupportedGroupImportResponse(err)
@@ -239,6 +244,10 @@ export function registerSaveRoutes(
         },
       }
     } catch (err) {
+      if (err instanceof UnsupportedStandaloneChatBlocksError) {
+        reply.code(422)
+        return unsupportedStandaloneChatBlockImportResponse(err)
+      }
       if (err instanceof UnsupportedGroupCharactersError) {
         reply.code(422)
         return unsupportedGroupImportResponse(err)
@@ -399,6 +408,13 @@ function unsupportedGroupImportResponse(error: UnsupportedGroupCharactersError) 
     code: 'unsupported-group-characters',
     unsupportedGroupCount: error.count,
     unsupportedGroups: error.groups,
+  }
+}
+
+function unsupportedStandaloneChatBlockImportResponse(error: UnsupportedStandaloneChatBlocksError) {
+  return {
+    error: error.message,
+    code: 'unsupported-standalone-chat-blocks',
   }
 }
 

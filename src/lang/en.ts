@@ -1144,6 +1144,8 @@ export const languageEnglish = {
     `This backup contains ${count} unsupported group character${count === 1 ? '' : 's'}${
       groups.length > 0 ? ` (${groups.join(', ')})` : ''
     }. Nothing was imported.`,
+  backupUnsupportedStandaloneChatBlocks:
+    'This backup stores chats in standalone CHAT blocks, which this version of RisuAI cannot import. Nothing was imported, and your existing data was not changed.',
   backupConfirm: 'Do you really want to save backup?',
   portableSaveSecretsWarning:
     'This export contains your API keys and other secrets. Handle the file like a password. Do you want to continue?',

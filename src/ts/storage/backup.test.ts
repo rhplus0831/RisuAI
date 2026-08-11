@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const serverBackupState = vi.hoisted(() => ({
   createServerBackup: vi.fn(async () => ({ status: 'ok' as const, backup: { id: 'backup-a' } })),
@@ -31,6 +31,10 @@ beforeEach(() => {
   alertState.alertWait.mockClear()
 })
 
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
 describe('Fastify backup storage gates', () => {
   it('routes manual backup creation through the server backup API', async () => {
     await SaveServerBackup()
@@ -56,6 +60,25 @@ describe('Fastify backup storage gates', () => {
 
     expect(alertState.alertError).toHaveBeenCalledOnce()
     expect(alertState.alertError).toHaveBeenCalledWith(language.backupQueuedChangesDiscarded)
+    expect(alertState.alertNormal).not.toHaveBeenCalled()
+  })
+
+  it('shows the localized standalone-chat compatibility diagnostic', async () => {
+    const file = new File(['backup'], 'database.risu.zip', { type: 'application/zip' })
+    vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function () {
+      Object.defineProperty(this, 'files', { configurable: true, value: [file] })
+      this.onchange?.(new Event('change'))
+    })
+    serverBackupState.importServerBundle.mockResolvedValue({
+      status: 'unsupported-chat-blocks',
+      error: 'raw server fallback that the UI must not display',
+    })
+
+    await expect(loadBackupFromDevice()).resolves.toBe('error')
+
+    expect(alertState.alertError).toHaveBeenCalledOnce()
+    expect(alertState.alertError).toHaveBeenCalledWith(language.backupUnsupportedStandaloneChatBlocks)
+    expect(alertState.alertError).not.toHaveBeenCalledWith('raw server fallback that the UI must not display')
     expect(alertState.alertNormal).not.toHaveBeenCalled()
   })
 })

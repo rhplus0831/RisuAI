@@ -89,6 +89,16 @@ export interface UnsupportedGroupCharacterSummary {
   name: string | null
 }
 
+export class UnsupportedStandaloneChatBlocksError extends ValidationError {
+  constructor() {
+    super(
+      'This save stores chats in standalone CHAT blocks, which this version of RisuAI cannot import. ' +
+        'Nothing was imported, and the active database was not changed.',
+    )
+    this.name = 'UnsupportedStandaloneChatBlocksError'
+  }
+}
+
 export class UnsupportedGroupCharactersError extends ValidationError {
   readonly count: number
   readonly groups: UnsupportedGroupCharacterSummary[]
@@ -196,7 +206,7 @@ function assembleBlockDatabase(blocks: ReturnType<typeof decodeRisuSaveBlockEnve
         database.characters.push(readJsonObject(parsed, `${block.name} block`))
         break
       case RisuSaveBlockType.CHAT:
-        throw new ValidationError(`Standalone chat blocks are not supported yet: ${block.name}`)
+        throw new UnsupportedStandaloneChatBlocksError()
       case RisuSaveBlockType.BOTPRESET:
         database.botPresets = readJsonArray(parsed, `${block.name} block`)
         break

@@ -523,6 +523,27 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
     expect(resourceRefreshSpies.forceServerDatabaseReplacementRefresh).not.toHaveBeenCalled()
   })
 
+  it('returns the standalone-chat compatibility error without adopting or refreshing', async () => {
+    const backupFetch = makeBackupFetch(() =>
+      jsonResponse(
+        {
+          code: 'unsupported-standalone-chat-blocks',
+          error: 'raw server fallback that the UI must not display',
+        },
+        422,
+      ),
+    )
+    vi.stubGlobal('fetch', backupFetch.fetch)
+
+    await expect(importServerBundle({ file: new Blob([BUNDLE_BYTES]) })).resolves.toEqual({
+      status: 'unsupported-chat-blocks',
+      error: 'raw server fallback that the UI must not display',
+    })
+    expect(ownershipSpies.preparePendingMutationOutbox).not.toHaveBeenCalled()
+    expect(bridgeResetSpies.resetRegisteredPendingBridgeOwnershipState).not.toHaveBeenCalled()
+    expect(resourceRefreshSpies.forceServerDatabaseReplacementRefresh).not.toHaveBeenCalled()
+  })
+
   it('reports upload progress when restoring a device backup with progress enabled', async () => {
     const event = { type: 'state.imported', resource: 'state', revision: 21 }
     class FakeXMLHttpRequest {

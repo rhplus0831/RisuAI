@@ -786,6 +786,8 @@ export const languageGerman = {
   savebackup: 'Erstellen und laden Sie ein Backup auf Google hoch',
   loadbackup: 'Laden Sie Ihr Backup von Google herunter',
   files: 'Daten',
+  backupUnsupportedStandaloneChatBlocks:
+    'Dieses Backup speichert Chats in eigenständigen CHAT-Blöcken, die diese RisuAI-Version nicht importieren kann. Es wurde nichts importiert und Ihre vorhandenen Daten wurden nicht geändert.',
   backupConfirm: 'Möchten Sie wirklich die Sicherung speichern?',
   backupLoadConfirm: 'Möchten Sie wirklich das Backup laden? Alle Daten gehen verloren!',
   backupLoadConfirm2:

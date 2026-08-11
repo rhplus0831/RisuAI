@@ -771,6 +771,8 @@ export const languageSpanish = {
   savebackup: 'Guardar Respaldo en Google',
   loadbackup: 'Cargar Respaldo desde Google',
   files: 'Archivos',
+  backupUnsupportedStandaloneChatBlocks:
+    'Esta copia de seguridad guarda chats en bloques CHAT independientes que esta versión de RisuAI no puede importar. No se importó nada y tus datos existentes no se modificaron.',
   backupConfirm: '¿Realmente deseas guardar el respaldo?',
   backupLoadConfirm: '¿Realmente deseas cargar el respaldo? ¡Todos los datos se perderán!',
   backupLoadConfirm2: '¿Realmente, realmente deseas cargar el respaldo? ¡Todos los datos se perderán!',

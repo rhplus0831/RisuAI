@@ -30,6 +30,11 @@ Not present in this fork:
 - Plugin API 2.0/2.1 execution. Only Plugin API 3.0 runs in the browser; Lua scripting and modules remain supported extension paths.
 - Some text-generation backends: NovelAI, NovelList, WebLLM, plugin-provided providers, and the modern Ooba API (the legacy Ooba API still works). Their models are shown as unsupported.
 
+Import compatibility caveat: whole-database saves that store chats in standalone
+`CHAT` blocks cannot be imported. Re-export the chats together with their
+characters before importing. The save is rejected before replacement, so the
+existing database remains unchanged.
+
 ## Features
 
 Inherited from upstream RisuAI and still applicable:

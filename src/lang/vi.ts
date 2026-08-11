@@ -765,6 +765,8 @@ export const languageVietnamese = {
   savebackup: 'Lưu Sao lưu vào google',
   loadbackup: 'Tải bản sao lưu từ google',
   files: 'Các tập tin',
+  backupUnsupportedStandaloneChatBlocks:
+    'Bản sao lưu này lưu cuộc trò chuyện trong các khối CHAT độc lập mà phiên bản RisuAI này không thể nhập. Không có dữ liệu nào được nhập và dữ liệu hiện có của bạn không bị thay đổi.',
   backupConfirm: 'Bạn có thực sự muốn lưu bản sao lưu?',
   backupLoadConfirm: 'Bạn có thực sự muốn tải bản sao lưu? Tất cả dữ liệu sẽ bị mất!',
   backupLoadConfirm2: 'Bạn có thực sự muốn tải bản sao lưu không? Tất cả dữ liệu sẽ bị mất!',

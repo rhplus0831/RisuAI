@@ -158,8 +158,12 @@ before persistence, including custom or fallback non-sha256 media filenames.
 header when present; UI-facing wrappers live in `src/ts/storage/backup.ts`.
 
 Whole-database `.risu`, bundle, and legacy `.bin` imports reject group
-characters atomically with `422 unsupported-group-characters`. Exported
-whole-database saves contain raw credential-bearing settings, including shared
+characters atomically with `422 unsupported-group-characters`. Block-envelope
+saves that contain standalone `CHAT` blocks are also rejected
+atomically with `422 unsupported-standalone-chat-blocks`; the browser maps that
+code to a localized compatibility diagnostic. Import does not convert those
+blocks or replace any live data. Exported whole-database saves contain raw
+credential-bearing settings, including shared
 provider API keys and Vertex private keys; treat these files as secrets. The
 Settings UI requires the localized secret-warning confirmation before requesting
 the ZIP-style local-backup export; this is guarded by

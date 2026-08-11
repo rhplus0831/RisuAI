@@ -42,6 +42,11 @@ export interface UnsupportedBackupGroupsResult {
   error: string
 }
 
+export interface UnsupportedStandaloneChatBlocksResult {
+  status: 'unsupported-chat-blocks'
+  error: string
+}
+
 export type ServerBackupProgressPhase =
   | 'prepare'
   | 'request'
@@ -305,6 +310,7 @@ export async function importServerBundle(input: {
 }): Promise<
   | ServerBackupResult<{ revision: number; event?: CommandEvent; discardedPendingMutations: number }>
   | UnsupportedBackupGroupsResult
+  | UnsupportedStandaloneChatBlocksResult
 > {
   const finishReplacement = beginLocalReplacementDatabaseOperation()
   try {
@@ -322,6 +328,7 @@ async function importServerBundleImplementation(input: {
 }): Promise<
   | ServerBackupResult<{ revision: number; event?: CommandEvent; discardedPendingMutations: number }>
   | UnsupportedBackupGroupsResult
+  | UnsupportedStandaloneChatBlocksResult
 > {
   if (!canUseServerBackups()) return { status: 'unavailable' }
 
@@ -373,6 +380,8 @@ async function importServerBundleImplementation(input: {
 
   if (!response.ok) {
     handleActiveWriterStaleResponse(response, body)
+    const unsupportedStandaloneChatBlocks = readUnsupportedStandaloneChatBlocks(body)
+    if (unsupportedStandaloneChatBlocks) return unsupportedStandaloneChatBlocks
     const unsupportedGroups = readUnsupportedBackupGroups(body)
     if (unsupportedGroups) return unsupportedGroups
     return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
@@ -410,6 +419,16 @@ async function importServerBundleImplementation(input: {
     revision: imported.revision,
     discardedPendingMutations,
     ...(imported.event ? { event: imported.event } : {}),
+  }
+}
+
+function readUnsupportedStandaloneChatBlocks(body: unknown): UnsupportedStandaloneChatBlocksResult | null {
+  if (!body || typeof body !== 'object') return null
+  const record = body as { code?: unknown; error?: unknown }
+  if (record.code !== 'unsupported-standalone-chat-blocks' || typeof record.error !== 'string') return null
+  return {
+    status: 'unsupported-chat-blocks',
+    error: record.error,
   }
 }
 

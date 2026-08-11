@@ -1120,6 +1120,59 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(imported.json().importReport).not.toHaveProperty('unsupportedReferences')
   })
 
+  it('rejects standalone CHAT blocks before replacing the live database', async () => {
+    const seeded = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: {
+        database: {
+          version: 1,
+          tag: 'preserve-before-standalone-chat-import',
+          characters: [{ chaId: 'live-char', name: 'Live Character', chats: [] }],
+        },
+      },
+    })
+    expect(seeded.statusCode).toBe(200)
+    const before = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const upload = multipartRisuSave(
+      encodeRisuSaveBlockEnvelope([
+        {
+          name: 'root',
+          type: RisuSaveBlockType.ROOT,
+          data: JSON.stringify({ version: 2, __directory: ['standalone-chat'] }),
+        },
+        {
+          name: 'standalone-chat',
+          type: RisuSaveBlockType.CHAT,
+          data: JSON.stringify({ id: 'standalone-chat', name: 'Unsupported Chat', message: [] }),
+        },
+      ]),
+    )
+
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'content-type': upload.contentType },
+      payload: upload.payload,
+    })
+
+    expect(imported.statusCode).toBe(422)
+    expect(imported.json()).toEqual({
+      code: 'unsupported-standalone-chat-blocks',
+      error:
+        'This save stores chats in standalone CHAT blocks, which this version of RisuAI cannot import. ' +
+        'Nothing was imported, and the active database was not changed.',
+    })
+    const after = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(after.json()).toMatchObject({
+      revision: before.json().revision,
+      databaseLineage: before.json().databaseLineage,
+      database: before.json().database,
+    })
+    expect(listBackups(harness.dataDir)).toEqual([])
+    expect(harness.commandEvents.list()).toEqual([seeded.json().event])
+  })
+
   it('rejects a block upload truncated exactly after a complete block before taking a snapshot', async () => {
     const seeded = await authedInject({
       method: 'POST',
