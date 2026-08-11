@@ -3622,9 +3622,7 @@ export function hydrateServerChatMessages(
           const existingMessages = Array.isArray(chat.message) ? chat.message : []
           const canPreserveExisting =
             existingMessages.length === total ||
-            (range.preserveExistingOnGrowth === true &&
-              total > existingMessages.length &&
-              start >= existingMessages.length)
+            (range.preserveExistingOnGrowth === true && total > existingMessages.length)
           const next =
             canPreserveExisting && existingMessages.length === total
               ? existingMessages.slice()

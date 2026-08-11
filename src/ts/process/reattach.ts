@@ -241,23 +241,42 @@ const handleGenerationOnline = (): void => {
   if (!reattachDisabled) void refreshRuntimeJobsAndTriggerReattach()
 }
 
-export async function refreshActiveGenerationJobsFromBootstrap(): Promise<void> {
+function waitForRuntimeJobRefresh(promise: Promise<void>, signal: AbortSignal | null | undefined): Promise<void> {
+  if (!signal) return promise
+  if (signal.aborted) return Promise.resolve()
+  return new Promise((resolve) => {
+    const settle = () => {
+      signal.removeEventListener('abort', settle)
+      resolve()
+    }
+    signal.addEventListener('abort', settle, { once: true })
+    void promise.then(settle, settle)
+  })
+}
+
+export async function refreshActiveGenerationJobsFromBootstrap(signal?: AbortSignal | null): Promise<void> {
   if (reattachDisabled) return
-  if (runtimeJobRefresh) return runtimeJobRefresh
-  runtimeJobRefresh = (async () => {
+  if (runtimeJobRefresh) return waitForRuntimeJobRefresh(runtimeJobRefresh, signal)
+  let request: Promise<void>
+  request = (async () => {
     try {
       const { fetchServerBootstrapReadOnly } = await import('../server/bootstrap')
-      const runtime = await fetchServerBootstrapReadOnly(null, { cacheRevision: false })
-      if (!reattachDisabled && runtime.status === 'ok') {
+      const runtime = await fetchServerBootstrapReadOnly(signal ?? null, { cacheRevision: false })
+      if (!reattachDisabled && !signal?.aborted && runtime.status === 'ok') {
         setActiveGenerationJobs(runtime.bootstrap.activeGenerationJobs ?? [])
       }
     } catch {
       // Keep the locally remembered job; a later lifecycle event can retry.
     } finally {
-      runtimeJobRefresh = null
+      if (runtimeJobRefresh === request) runtimeJobRefresh = null
     }
   })()
-  return runtimeJobRefresh
+  runtimeJobRefresh = request
+  await waitForRuntimeJobRefresh(request, signal)
+  // An auth/provider mock can ignore AbortSignal. Release only the request this
+  // bounded caller started so a later lifecycle probe can make fresh progress;
+  // the identity-checked finally above cannot clear that newer request.
+  if (signal?.aborted && runtimeJobRefresh === request) runtimeJobRefresh = null
 }
 
 async function refreshRuntimeJobsAndTriggerReattach(): Promise<void> {

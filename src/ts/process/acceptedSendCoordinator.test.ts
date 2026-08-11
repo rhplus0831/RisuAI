@@ -1,12 +1,12 @@
 import { get } from 'svelte/store'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ActiveChatTarget, ChatMutationFinalOutcome } from '../chatCommands'
 
 const coordinatorMocks = vi.hoisted(() => ({
   clearController: vi.fn(),
   controller: new AbortController(),
   createController: vi.fn(),
-  fetchServerGenerationChatMessages: vi.fn(),
+  reconcileAcceptedSendCompletion: vi.fn(),
   refreshActiveGenerationJobsFromBootstrap: vi.fn(),
   sendChat: vi.fn(),
   sleep: vi.fn(),
@@ -26,11 +26,12 @@ vi.mock('./reattach', () => ({
   refreshActiveGenerationJobsFromBootstrap: coordinatorMocks.refreshActiveGenerationJobsFromBootstrap,
 }))
 
-vi.mock('../server/hydrationReads', () => ({
-  fetchServerGenerationChatMessages: coordinatorMocks.fetchServerGenerationChatMessages,
+vi.mock('../server/chatMessageHydration.svelte', () => ({
+  reconcileAcceptedSendCompletion: coordinatorMocks.reconcileAcceptedSendCompletion,
 }))
 
 import {
+  ACCEPTED_SEND_AUTHORITY_PROBE_TIMEOUT_MS,
   acceptedSendRecoveries,
   coordinateAcceptedChatSend,
   resetAcceptedSendCoordinatorForTests,
@@ -59,11 +60,22 @@ beforeEach(() => {
   coordinatorMocks.controller = new AbortController()
   coordinatorMocks.createController.mockReturnValue(coordinatorMocks.controller)
   coordinatorMocks.sendChat.mockResolvedValue(true)
-  coordinatorMocks.fetchServerGenerationChatMessages.mockResolvedValue({ status: 'unavailable' })
+  coordinatorMocks.reconcileAcceptedSendCompletion.mockResolvedValue({
+    status: 'not_reconciled',
+    reason: 'authority_unavailable',
+  })
   coordinatorMocks.refreshActiveGenerationJobsFromBootstrap.mockResolvedValue(undefined)
   coordinatorMocks.sleep.mockResolvedValue(undefined)
   resetAcceptedSendCoordinatorForTests()
 })
+
+afterEach(() => {
+  vi.useRealTimers()
+})
+
+async function flushMicrotasks(): Promise<void> {
+  for (let index = 0; index < 20; index += 1) await Promise.resolve()
+}
 
 describe('accepted send coordinator', () => {
   it('starts one captured-target generation after a queued append is accepted', async () => {
@@ -151,15 +163,9 @@ describe('accepted send coordinator', () => {
 
   it('does not record a failure when the accepted reply was persisted after a mobile stream drop', async () => {
     coordinatorMocks.sendChat.mockResolvedValueOnce(false)
-    coordinatorMocks.fetchServerGenerationChatMessages.mockResolvedValueOnce({
-      status: 'ok',
-      revision: 7,
-      chatId: 'chat-a',
-      message: [
-        { role: 'user', data: 'hello', chatId: 'message-a' },
-        { role: 'char', data: 'completed while backgrounded', chatId: 'generation-a' },
-      ],
-      alternates: [],
+    coordinatorMocks.reconcileAcceptedSendCompletion.mockResolvedValueOnce({
+      status: 'reconciled',
+      source: 'applied',
     })
 
     await expect(
@@ -170,7 +176,9 @@ describe('accepted send coordinator', () => {
     ).resolves.toEqual({ status: 'generated' })
 
     expect(coordinatorMocks.refreshActiveGenerationJobsFromBootstrap).toHaveBeenCalledTimes(1)
-    expect(coordinatorMocks.fetchServerGenerationChatMessages).toHaveBeenCalledWith('chat-a', 'message-a')
+    expect(coordinatorMocks.reconcileAcceptedSendCompletion).toHaveBeenCalledWith(target(), 'message-a', {
+      signal: expect.any(AbortSignal),
+    })
     expect(get(acceptedSendRecoveries)).toEqual([])
   })
 
@@ -185,7 +193,9 @@ describe('accepted send coordinator', () => {
     ).resolves.toEqual({ status: 'generation_failed', cause: 'generation_failed' })
 
     expect(coordinatorMocks.refreshActiveGenerationJobsFromBootstrap).toHaveBeenCalledTimes(1)
-    expect(coordinatorMocks.fetchServerGenerationChatMessages).toHaveBeenCalledWith('chat-a', 'message-a')
+    expect(coordinatorMocks.reconcileAcceptedSendCompletion).toHaveBeenCalledWith(target(), 'message-a', {
+      signal: expect.any(AbortSignal),
+    })
     expect(get(acceptedSendRecoveries)).toEqual([
       expect.objectContaining({ target: target(), messageId: 'message-a', cause: 'generation_failed' }),
     ])
@@ -227,5 +237,75 @@ describe('accepted send coordinator', () => {
     await expect(retryAcceptedChatSend(recovery.id)).resolves.toBe(true)
     expect(coordinatorMocks.sendChat).toHaveBeenCalledTimes(3)
     expect(get(acceptedSendRecoveries)).toEqual([])
+  })
+
+  it('does not report generated until the completion barrier settles', async () => {
+    coordinatorMocks.sendChat.mockResolvedValueOnce(false)
+    const barrier = deferred<{ status: 'reconciled'; source: 'applied' }>()
+    coordinatorMocks.reconcileAcceptedSendCompletion.mockReturnValueOnce(barrier.promise)
+    let observedResult: unknown
+
+    const operation = coordinateAcceptedChatSend({
+      target: target(),
+      append: { status: 'ok', messageId: 'message-a' },
+    }).then((result) => {
+      observedResult = result
+      return result
+    })
+    await flushMicrotasks()
+
+    expect(coordinatorMocks.reconcileAcceptedSendCompletion).toHaveBeenCalledTimes(1)
+    expect(observedResult).toBeUndefined()
+    barrier.resolve({ status: 'reconciled', source: 'applied' })
+
+    await expect(operation).resolves.toEqual({ status: 'generated' })
+  })
+
+  it('bounds a never-settling bootstrap refresh and creates a retryable recovery warning', async () => {
+    vi.useFakeTimers()
+    coordinatorMocks.sendChat.mockResolvedValueOnce(false)
+    coordinatorMocks.refreshActiveGenerationJobsFromBootstrap.mockReturnValueOnce(new Promise(() => {}))
+
+    const operation = coordinateAcceptedChatSend({
+      target: target(),
+      append: { status: 'ok', messageId: 'message-a' },
+    })
+    await flushMicrotasks()
+
+    expect(get(acceptedSendRecoveries)).toEqual([])
+    expect(coordinatorMocks.reconcileAcceptedSendCompletion).not.toHaveBeenCalled()
+    const signal = coordinatorMocks.refreshActiveGenerationJobsFromBootstrap.mock.calls[0]?.[0] as AbortSignal
+    expect(signal.aborted).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(ACCEPTED_SEND_AUTHORITY_PROBE_TIMEOUT_MS)
+    await expect(operation).resolves.toEqual({ status: 'generation_failed', cause: 'generation_failed' })
+    expect(signal.aborted).toBe(true)
+    expect(get(acceptedSendRecoveries)).toEqual([expect.objectContaining({ messageId: 'message-a', retrying: false })])
+  })
+
+  it('bounds a never-settling transcript read and always re-enables Retry', async () => {
+    coordinatorMocks.sendChat.mockResolvedValueOnce(false)
+    await coordinateAcceptedChatSend({
+      target: target(),
+      append: { status: 'ok', messageId: 'message-a' },
+    })
+    const [recovery] = get(acceptedSendRecoveries)
+
+    vi.useFakeTimers()
+    coordinatorMocks.sendChat.mockResolvedValueOnce(false)
+    coordinatorMocks.reconcileAcceptedSendCompletion.mockReturnValueOnce(new Promise(() => {}))
+    const retry = retryAcceptedChatSend(recovery.id)
+    await flushMicrotasks()
+
+    expect(get(acceptedSendRecoveries)).toEqual([expect.objectContaining({ id: recovery.id, retrying: true })])
+    const bootstrapSignal = coordinatorMocks.refreshActiveGenerationJobsFromBootstrap.mock.calls.at(-1)?.[0]
+    const transcriptSignal = coordinatorMocks.reconcileAcceptedSendCompletion.mock.calls.at(-1)?.[2]?.signal
+    expect(transcriptSignal).toBe(bootstrapSignal)
+    expect(transcriptSignal.aborted).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(ACCEPTED_SEND_AUTHORITY_PROBE_TIMEOUT_MS)
+    await expect(retry).resolves.toBe(false)
+    expect(transcriptSignal.aborted).toBe(true)
+    expect(get(acceptedSendRecoveries)).toEqual([expect.objectContaining({ id: recovery.id, retrying: false })])
   })
 })

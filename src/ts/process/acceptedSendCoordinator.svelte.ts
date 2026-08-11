@@ -1,6 +1,6 @@
 import { get } from 'svelte/store'
 import type { ActiveChatTarget, AppendCurrentChatUserMessageResult, ChatMutationFinalOutcome } from '../chatCommands'
-import { fetchServerGenerationChatMessages } from '../server/hydrationReads'
+import { reconcileAcceptedSendCompletion } from '../server/chatMessageHydration.svelte'
 import { sleep } from '../util'
 import { clearActiveGenerationAbortController, createActiveGenerationAbortController, sendChat } from './index.svelte'
 import { chatGenerationTargetKey } from './generationActivity.svelte'
@@ -9,7 +9,6 @@ import {
   recordAcceptedSendRecovery,
   removeAcceptedSendRecovery,
   setAcceptedSendRecoveryRetrying,
-  transcriptHasReplyForAcceptedSend,
   type AcceptedSendRecovery,
   type AcceptedSendRecoveryCause,
 } from './acceptedSendRecoveryState'
@@ -49,6 +48,7 @@ interface CoordinatedOperation {
 }
 
 const MAX_REMEMBERED_OPERATIONS = 256
+export const ACCEPTED_SEND_AUTHORITY_PROBE_TIMEOUT_MS = 10_000
 const coordinatedOperations = new Map<string, CoordinatedOperation>()
 
 function acceptedSendOperationId(target: ActiveChatTarget, messageId: string): string {
@@ -143,17 +143,57 @@ async function attemptGeneration(
  * the accepted row already has its durable assistant reply. Chat-level job
  * activity is not proof that the job belongs to this accepted message.
  */
-async function acceptedGenerationReachedServer(request: AcceptedGenerationRequest): Promise<boolean> {
-  const chatId = request.target.chatId
-  if (!chatId) return false
+type AcceptedGenerationAuthorityOutcome = 'reconciled' | 'not_reconciled' | 'authority_unknown'
 
-  await refreshActiveGenerationJobsFromBootstrap()
+async function settleBeforeAbort<T>(
+  promise: Promise<T>,
+  signal: AbortSignal,
+): Promise<{ status: 'settled'; value: T } | { status: 'aborted' }> {
+  if (signal.aborted) return { status: 'aborted' }
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      cleanup()
+      resolve({ status: 'aborted' })
+    }
+    const cleanup = () => signal.removeEventListener('abort', onAbort)
+    signal.addEventListener('abort', onAbort, { once: true })
+    void promise.then(
+      (value) => {
+        cleanup()
+        resolve({ status: 'settled', value })
+      },
+      (error) => {
+        cleanup()
+        reject(error)
+      },
+    )
+  })
+}
 
+async function acceptedGenerationReachedServer(
+  request: AcceptedGenerationRequest,
+): Promise<AcceptedGenerationAuthorityOutcome> {
+  if (!request.target.chatId) return 'not_reconciled'
+
+  const controller = new AbortController()
+  const deadline = setTimeout(() => controller.abort(), ACCEPTED_SEND_AUTHORITY_PROBE_TIMEOUT_MS)
   try {
-    const transcript = await fetchServerGenerationChatMessages(chatId, request.messageId)
-    return transcript.status === 'ok' && transcriptHasReplyForAcceptedSend(transcript.message, request.messageId)
+    const bootstrap = await settleBeforeAbort(
+      refreshActiveGenerationJobsFromBootstrap(controller.signal),
+      controller.signal,
+    )
+    if (bootstrap.status === 'aborted' || controller.signal.aborted) return 'authority_unknown'
+
+    const completion = await settleBeforeAbort(
+      reconcileAcceptedSendCompletion(request.target, request.messageId, { signal: controller.signal }),
+      controller.signal,
+    )
+    if (completion.status === 'aborted' || controller.signal.aborted) return 'authority_unknown'
+    return completion.value.status === 'reconciled' ? 'reconciled' : 'not_reconciled'
   } catch {
-    return false
+    return controller.signal.aborted ? 'authority_unknown' : 'not_reconciled'
+  } finally {
+    clearTimeout(deadline)
   }
 }
 
@@ -164,7 +204,7 @@ async function startAcceptedGeneration(request: AcceptedGenerationRequest): Prom
     return { status: 'generated' }
   }
 
-  if (await acceptedGenerationReachedServer(request)) {
+  if ((await acceptedGenerationReachedServer(request)) === 'reconciled') {
     return { status: 'generated' }
   }
 
@@ -234,20 +274,25 @@ export async function retryAcceptedChatSend(id: string): Promise<boolean> {
     messageId: recovery.messageId,
     syntheticSayNothing: recovery.syntheticSayNothing,
   }
-  const attempt = await attemptGeneration(request, false)
-  if (attempt.generated) {
-    removeAcceptedSendRecovery(id)
-    return true
-  }
+  try {
+    const attempt = await attemptGeneration(request, false)
+    if (attempt.generated) {
+      removeAcceptedSendRecovery(id)
+      return true
+    }
 
-  if (await acceptedGenerationReachedServer(request)) {
-    removeAcceptedSendRecovery(id)
-    return true
+    // Preserve the warning while authority is checked. The shared deadline can
+    // classify a timeout only as unknown, never as generation success/failure.
+    recordRecovery(request, attempt.cause, true)
+    if ((await acceptedGenerationReachedServer(request)) === 'reconciled') {
+      removeAcceptedSendRecovery(id)
+      return true
+    }
+    return false
+  } finally {
+    // A stalled or throwing authority read must never strand the Retry control.
+    setRecoveryRetrying(id, false)
   }
-
-  recordRecovery(request, attempt.cause, true)
-  recordRecovery(request, attempt.cause)
-  return false
 }
 
 export function resetAcceptedSendCoordinatorForTests(): void {

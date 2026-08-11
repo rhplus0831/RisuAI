@@ -24,6 +24,7 @@ import {
   fetchServerBulkChatMessages,
   fetchServerCharacterLorebook,
   fetchServerChatMessages,
+  fetchServerGenerationChatMessages,
 } from './hydrationReads'
 import { canUseServerResourceReads } from './resourceReads'
 import { beginHydrationRequest, recordBulkHydration, recordHydrationStaleDrop } from './protocolDiagnostics'
@@ -31,7 +32,10 @@ import { DEFAULT_CHAT_LOAD_INITIAL_PAGES, getInitialChatLoadPages } from '../cha
 import { setChatStructureHydrationHooks } from './chatStructureHydrationHooks'
 import {
   captureCharacterLorebookBodyProjectionEpoch,
+  captureChatBodyProjectionEpoch,
   hasCharacterLorebookBodyProjectionEpochChanged,
+  hasChatBodyProjectionEpochChanged,
+  hasNewerChatBodyResourceRevision,
   markCharacterLorebookBodyResourceRevision,
   markCharacterLorebookProjectionApplied,
   markChatBodyProjectionApplied,
@@ -39,7 +43,10 @@ import {
 } from './resourceState.svelte'
 import { reapplyRetainedChatBodyProjections } from './chatRetainedProjection'
 import { acknowledgeHydratedGenerationPersistences } from '../process/generationPersistenceState'
-import { acknowledgeHydratedAcceptedSendRecoveries } from '../process/acceptedSendRecoveryState'
+import {
+  acknowledgeHydratedAcceptedSendRecoveries,
+  transcriptHasReplyForAcceptedSend,
+} from '../process/acceptedSendRecoveryState'
 
 export const BULK_HYDRATION_BATCH_SIZE = 32
 export const ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW = DEFAULT_CHAT_LOAD_INITIAL_PAGES
@@ -63,7 +70,7 @@ const attemptedChatIds = new SvelteSet<string>()
 // hydrated chats. The chat screen uses this to offer an explicit retry instead
 // of silently revealing a greeting over missing history.
 const failedChatIds = new SvelteSet<string>()
-const inFlight = new Map<string, Promise<void>>()
+const inFlight = new Map<string, Promise<boolean>>()
 let chatHydrationGeneration = 0
 
 interface ChatHydrationFreshnessToken {
@@ -333,11 +340,11 @@ function unloadedRangesForTail(
   return ranges
 }
 
-async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): Promise<void> {
-  if (!canUseServerResourceReads()) return
+async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): Promise<boolean> {
+  if (!canUseServerResourceReads()) return false
   const force = request.force ?? false
   const wantsFullHydration = !request.range
-  if (!force && hydratedChatIds.has(chatId)) return
+  if (!force && hydratedChatIds.has(chatId)) return true
   const requestKey = chatHydrationRequestKey(chatId, request)
   const currentRequest = inFlight.get(requestKey)
   if (currentRequest) return currentRequest
@@ -354,39 +361,39 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
     trackRerollState: request.seedReroll !== false,
   })
   let shouldMarkAttempted = true
-  let requestPromise: Promise<void>
-  requestPromise = (async () => {
+  let requestPromise: Promise<boolean>
+  requestPromise = (async (): Promise<boolean> => {
     try {
       const endRequest = beginHydrationRequest('chat')
       const result = await fetchServerChatMessages(chatId, request.range ?? {}).finally(endRequest)
       if (generation !== chatHydrationGeneration) {
         shouldMarkAttempted = false
         recordHydrationStaleDrop('chat', 'generation-reset')
-        return
+        return false
       }
       if (result.status !== 'ok') {
         failedChatIds.add(chatId)
         hydrationWarning(`chat ${chatId}`, resultError(result, 'server projection unavailable'))
-        return
+        return false
       }
       if (result.chatId !== chatId) {
         failedChatIds.add(chatId)
         hydrationWarning(`chat ${chatId}`, `response was for chat ${result.chatId}`)
-        return
+        return false
       }
       if (isOlderThanBaselineRevision(result.revision, baselineRevision)) {
         shouldMarkAttempted = false
         recordHydrationStaleDrop('chat', 'older-than-applied-revision')
-        return
+        return false
       }
       const staleReason = chatHydrationStaleReason(chatId, freshness)
       if (staleReason) {
         shouldMarkAttempted = false
         recordHydrationStaleDrop('chat', staleReason)
-        return
+        return false
       }
       if (request.range && !force && hydratedChatIds.has(chatId)) {
-        return
+        return true
       }
 
       const range =
@@ -397,7 +404,7 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
       if (!applied) {
         failedChatIds.add(chatId)
         hydrationWarning(`chat ${chatId}`, 'response could not be applied')
-        return
+        return false
       }
       markChatBodyResourceRevision(chatId, result.revision)
       markChatBodyProjectionApplied(chatId)
@@ -412,14 +419,16 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
         seedRerollBufferFromAlternates(result.message, result.alternates, rerollTargetForChatId(chatId))
       }
       refreshPendingFreshnessAfterHydration(chatId, freshness)
+      return true
     } catch (error) {
       if (generation !== chatHydrationGeneration) {
         shouldMarkAttempted = false
         recordHydrationStaleDrop('chat', 'generation-reset')
-        return
+        return false
       }
       failedChatIds.add(chatId)
       hydrationWarning(`chat ${chatId}`, error instanceof Error ? error.message : String(error))
+      return false
     } finally {
       // Failed requests settle the loading state, but stale responses do not:
       // after an optimistic edit rolls back, the still-stubbed chat must remain
@@ -576,8 +585,11 @@ export async function hydrateActiveChatFully(options: { force?: boolean } = {}):
 /** Hydrate a specific chat's complete transcript by id. */
 export async function hydrateChatMessages(chatId: string, options: BulkHydrationOptions = {}): Promise<void> {
   if (!chatId || !canUseServerResourceReads()) return
-  await hydrateChat(chatId, { force: options.force, seedReroll: activeChatId() === chatId })
-  if (options.strict && !hydratedChatIds.has(chatId)) {
+  const currentRequestApplied = await hydrateChat(chatId, {
+    force: options.force,
+    seedReroll: activeChatId() === chatId,
+  })
+  if (options.strict && !currentRequestApplied) {
     throw new Error(`Chat hydration incomplete for: ${chatId}`)
   }
 }
@@ -613,6 +625,161 @@ export function applyServerChatMessagesResource(
   failedChatIds.delete(chatId)
   seedRerollBufferFromAlternates(message, alternates, rerollTargetForChatId(chatId))
   return true
+}
+
+export type AcceptedSendCompletionReconciliationResult =
+  | { status: 'reconciled'; source: 'applied' | 'newer_resident_projection' }
+  | {
+      status: 'not_reconciled'
+      reason:
+        | 'authority_unavailable'
+        | 'wrong_chat'
+        | 'invalid_range'
+        | 'reply_missing'
+        | 'older_revision'
+        | 'superseded'
+        | 'target_missing'
+        | 'apply_failed'
+        | 'post_apply_verification_failed'
+    }
+
+function residentChatMessagesForTarget(target: ActiveChatTarget): Message[] | null {
+  if (!target.characterId || !target.chatId) return null
+  const matches: Array<{ characterId: string; messages: Message[] }> = []
+  for (const character of getDatabase().characters ?? []) {
+    for (const chat of character.chats ?? []) {
+      if (chat.id === target.chatId) {
+        matches.push({ characterId: character.chaId, messages: chat.message ?? [] })
+      }
+    }
+  }
+  if (matches.length !== 1 || matches[0].characterId !== target.characterId) return null
+  return matches[0].messages
+}
+
+function residentHasAcceptedSendReply(target: ActiveChatTarget, messageId: string): boolean {
+  const messages = residentChatMessagesForTarget(target)
+  return messages !== null && transcriptHasReplyForAcceptedSend(messages, messageId)
+}
+
+async function awaitUntilAborted<T>(
+  promise: Promise<T>,
+  signal: AbortSignal | null | undefined,
+): Promise<{ status: 'settled'; value: T } | { status: 'aborted' }> {
+  if (!signal) return { status: 'settled', value: await promise }
+  if (signal.aborted) return { status: 'aborted' }
+
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      cleanup()
+      resolve({ status: 'aborted' })
+    }
+    const cleanup = () => signal.removeEventListener('abort', onAbort)
+    signal.addEventListener('abort', onAbort, { once: true })
+    void promise.then(
+      (value) => {
+        cleanup()
+        resolve({ status: 'settled', value })
+      },
+      (error) => {
+        cleanup()
+        reject(error)
+      },
+    )
+  })
+}
+
+/**
+ * Fetch and apply one accepted send's authoritative completion as a single
+ * guarded operation. A positive result means the resident transcript, not only
+ * the downloaded body, contains the accepted user row and its adjacent reply.
+ */
+export async function reconcileAcceptedSendCompletion(
+  target: ActiveChatTarget,
+  messageId: string,
+  options: { signal?: AbortSignal | null } = {},
+): Promise<AcceptedSendCompletionReconciliationResult> {
+  const chatId = target.chatId
+  if (!target.characterId || !chatId || !messageId) {
+    return { status: 'not_reconciled', reason: 'target_missing' }
+  }
+
+  const baselineRevision = peekCachedServerCommandRevision()
+  const projectionEpoch = captureChatBodyProjectionEpoch(chatId)
+  const freshness = beginChatHydrationFreshness(chatId, { trackRerollState: true })
+  try {
+    const endRequest = beginHydrationRequest('chat')
+    let fetched: Awaited<ReturnType<typeof fetchServerGenerationChatMessages>>
+    try {
+      const settled = await awaitUntilAborted(
+        fetchServerGenerationChatMessages(chatId, messageId, { signal: options.signal }),
+        options.signal,
+      )
+      if (settled.status === 'aborted') {
+        return { status: 'not_reconciled', reason: 'authority_unavailable' }
+      }
+      fetched = settled.value
+    } finally {
+      endRequest()
+    }
+
+    if (fetched.status !== 'ok') {
+      return { status: 'not_reconciled', reason: 'authority_unavailable' }
+    }
+    if (fetched.chatId !== chatId) {
+      return { status: 'not_reconciled', reason: 'wrong_chat' }
+    }
+
+    const projectionChanged = hasChatBodyProjectionEpochChanged(chatId, projectionEpoch)
+    const staleReason = chatHydrationStaleReason(chatId, freshness)
+    const newerAuthoritativeProjection = hasNewerChatBodyResourceRevision(chatId, fetched.revision)
+    if (projectionChanged || staleReason || newerAuthoritativeProjection) {
+      recordHydrationStaleDrop('chat', staleReason ?? 'newer-targeted-chat-projection')
+      if (newerAuthoritativeProjection && residentHasAcceptedSendReply(target, messageId)) {
+        return { status: 'reconciled', source: 'newer_resident_projection' }
+      }
+      return { status: 'not_reconciled', reason: 'superseded' }
+    }
+    if (isOlderThanBaselineRevision(fetched.revision, baselineRevision)) {
+      recordHydrationStaleDrop('chat', 'older-than-applied-revision')
+      return { status: 'not_reconciled', reason: 'older_revision' }
+    }
+
+    const start = fetched.messageStart
+    const total = fetched.messageTotal
+    if (
+      !Number.isInteger(start) ||
+      (start as number) < 0 ||
+      !Number.isInteger(total) ||
+      (total as number) < 0 ||
+      (start as number) + fetched.message.length !== total
+    ) {
+      return { status: 'not_reconciled', reason: 'invalid_range' }
+    }
+    if (!transcriptHasReplyForAcceptedSend(fetched.message, messageId)) {
+      return { status: 'not_reconciled', reason: 'reply_missing' }
+    }
+    if (residentChatMessagesForTarget(target) === null) {
+      return { status: 'not_reconciled', reason: 'target_missing' }
+    }
+
+    const applied = applyServerChatMessagesResource(chatId, fetched.message, fetched.hypaV3Data, fetched.alternates, {
+      start: start as number,
+      total: total as number,
+    })
+    if (!applied) {
+      return { status: 'not_reconciled', reason: 'apply_failed' }
+    }
+    markChatBodyResourceRevision(chatId, fetched.revision)
+    if (!residentHasAcceptedSendReply(target, messageId)) {
+      return { status: 'not_reconciled', reason: 'post_apply_verification_failed' }
+    }
+    return { status: 'reconciled', source: 'applied' }
+  } catch {
+    return { status: 'not_reconciled', reason: 'authority_unavailable' }
+  } finally {
+    endChatHydrationFreshness(chatId, freshness)
+  }
 }
 
 /**
@@ -1001,7 +1168,7 @@ function isOlderThanBaselineRevision(revision: number, baselineRevision: number 
 export async function ensureAllChatsHydrated(options: BulkHydrationOptions = {}): Promise<void> {
   if (!canUseServerResourceReads()) return
   const ids: string[] = []
-  const pendingRequests: Promise<void>[] = []
+  const pendingRequests: Promise<boolean>[] = []
   for (const character of getDatabase().characters ?? []) {
     for (const chat of character.chats ?? []) {
       if (typeof chat.id !== 'string' || !chat.id || hydratedChatIds.has(chat.id)) {

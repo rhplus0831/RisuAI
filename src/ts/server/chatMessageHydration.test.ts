@@ -5,6 +5,7 @@ import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 const projectionState = vi.hoisted(() => ({
   canUse: vi.fn(() => true),
   fetchChat: vi.fn(),
+  fetchGenerationChat: vi.fn(),
   fetchBulkChat: vi.fn(),
   fetchCharLore: vi.fn(),
   fetchBulkCharLore: vi.fn(),
@@ -14,6 +15,7 @@ vi.mock('./hydrationReads', () => ({
   fetchServerBulkCharacterLorebooks: projectionState.fetchBulkCharLore,
   fetchServerBulkChatMessages: projectionState.fetchBulkChat,
   fetchServerChatMessages: projectionState.fetchChat,
+  fetchServerGenerationChatMessages: projectionState.fetchGenerationChat,
   fetchServerCharacterLorebook: projectionState.fetchCharLore,
 }))
 
@@ -36,6 +38,7 @@ import {
   hydrateActiveChatWindow,
   hydrateActiveChatFully,
   hydrateChatMessages,
+  reconcileAcceptedSendCompletion,
   applyServerChatMessagesResource,
   applyMessageTranslationLocalEffect,
   hasCharacterLorebookHydrationFailed,
@@ -64,6 +67,7 @@ import {
   hasChatBodyProjectionEpochChanged,
   hasNewerCharacterLorebookBodyResourceRevision,
   hasNewerChatBodyResourceRevision,
+  markChatBodyResourceRevision,
   markCharacterLorebookProjectionApplied,
 } from './resourceState.svelte'
 import { clearRetainedChatProjections, registerRetainedChatProjection } from './chatRetainedProjection'
@@ -97,6 +101,42 @@ function okWindowResult(
     messageStart,
     messageTotal,
     alternates: [],
+  }
+}
+
+function acceptedSendTarget() {
+  return {
+    selectedCharID: 0,
+    chatPage: 0,
+    characterId: 'char-1',
+    chatId: 'chat-1',
+  }
+}
+
+function completedGenerationResult(
+  options: {
+    revision?: number
+    chatId?: string
+    message?: Array<Record<string, unknown>>
+    messageStart?: number
+    messageTotal?: number
+    hypaV3Data?: unknown
+    alternates?: unknown[]
+  } = {},
+) {
+  const message = options.message ?? [
+    { role: 'user', data: 'hello', chatId: 'message-a' },
+    { role: 'char', data: 'complete reply', chatId: 'generation-a' },
+  ]
+  return {
+    status: 'ok' as const,
+    revision: options.revision ?? 7,
+    chatId: options.chatId ?? 'chat-1',
+    message,
+    messageStart: options.messageStart ?? 0,
+    messageTotal: options.messageTotal ?? message.length,
+    hypaV3Data: options.hypaV3Data,
+    alternates: options.alternates ?? [],
   }
 }
 
@@ -174,6 +214,7 @@ function seedManyLorebookStubCharacters(count: number) {
 beforeEach(() => {
   projectionState.canUse.mockReturnValue(true)
   projectionState.fetchChat.mockReset()
+  projectionState.fetchGenerationChat.mockReset()
   projectionState.fetchBulkChat.mockReset()
   projectionState.fetchCharLore.mockReset()
   projectionState.fetchBulkCharLore.mockReset()
@@ -282,6 +323,19 @@ describe('chat message hydration bridge', () => {
       'Chat hydration incomplete for: chat-1',
     )
     expect(db().characters[0].chats[0].message).toEqual([])
+  })
+
+  it('rejects a failed forced strict refresh even when an older hydration marker exists', async () => {
+    projectionState.fetchChat.mockResolvedValueOnce(
+      okResult('chat-1', [{ role: 'user', data: 'resident', chatId: 'm-resident' }]),
+    )
+    await hydrateChatMessages('chat-1', { strict: true })
+    projectionState.fetchChat.mockResolvedValueOnce({ status: 'error', error: 'offline' })
+
+    await expect(hydrateChatMessages('chat-1', { force: true, strict: true })).rejects.toThrow(
+      'Chat hydration incomplete for: chat-1',
+    )
+    expect(db().characters[0].chats[0].message).toEqual([{ role: 'user', data: 'resident', chatId: 'm-resident' }])
   })
 
   it('drops an invalidated in-flight response while allowing an immediate replacement request', async () => {
@@ -956,6 +1010,212 @@ describe('chat message hydration bridge', () => {
     await hydrateActiveChat()
 
     expect(db().characters[0].chats[0].message).toEqual([])
+  })
+})
+
+describe('accepted-send authoritative completion barrier', () => {
+  it('applies a generation suffix to a background user-only chat before reporting reconciliation', async () => {
+    const prefix = [
+      { role: 'user', data: 'older user', chatId: 'older-user' },
+      { role: 'char', data: 'older reply', chatId: 'older-reply' },
+    ]
+    const accepted = { role: 'user', data: 'optimistic hello', chatId: 'message-a' }
+    const authoritativeAccepted = { role: 'user', data: 'hello', chatId: 'message-a' }
+    const assistant = { role: 'char', data: 'complete reply', chatId: 'generation-a' }
+    const alternate = { role: 'char', data: 'alternate reply', chatId: 'generation-alt' }
+    db().characters[0].chats[0].message = [...prefix, accepted]
+    db().characters[0].chatPage = 1
+    projectionState.fetchGenerationChat.mockResolvedValueOnce(
+      completedGenerationResult({
+        message: [authoritativeAccepted, assistant],
+        messageStart: 2,
+        messageTotal: 4,
+        hypaV3Data: { source: 'server' },
+        alternates: [assistant, alternate],
+      }),
+    )
+    recordAcceptedSendRecovery(
+      {
+        id: 'chat-1:message:message-a',
+        target: acceptedSendTarget(),
+        messageId: 'message-a',
+        syntheticSayNothing: false,
+      },
+      'generation_failed',
+    )
+
+    await expect(reconcileAcceptedSendCompletion(acceptedSendTarget(), 'message-a')).resolves.toEqual({
+      status: 'reconciled',
+      source: 'applied',
+    })
+
+    expect(projectionState.fetchGenerationChat).toHaveBeenCalledWith('chat-1', 'message-a', {
+      signal: undefined,
+    })
+    expect(db().characters[0].chats[0].message).toEqual([...prefix, authoritativeAccepted, assistant])
+    expect((db().characters[0].chats[0] as { hypaV3Data?: unknown }).hypaV3Data).toEqual({ source: 'server' })
+    expect(
+      getRerollBuffer(acceptedSendTarget())
+        .flat()
+        .map((message) => message.data),
+    ).toEqual(['alternate reply', 'complete reply'])
+    expect(hasNewerChatBodyResourceRevision('chat-1', 6)).toBe(true)
+    expect(get(acceptedSendRecoveries)).toEqual([])
+  })
+
+  it('replaces a partial assistant with the authoritative row without duplicating it', async () => {
+    const accepted = { role: 'user', data: 'hello', chatId: 'message-a' }
+    db().characters[0].chats[0].message = [accepted, { role: 'char', data: 'partial', chatId: 'generation-a' }]
+    projectionState.fetchGenerationChat.mockResolvedValueOnce(
+      completedGenerationResult({
+        message: [accepted, { role: 'char', data: 'complete reply', chatId: 'generation-a' }],
+      }),
+    )
+
+    await expect(reconcileAcceptedSendCompletion(acceptedSendTarget(), 'message-a')).resolves.toEqual({
+      status: 'reconciled',
+      source: 'applied',
+    })
+    expect(db().characters[0].chats[0].message).toEqual([
+      accepted,
+      { role: 'char', data: 'complete reply', chatId: 'generation-a' },
+    ])
+  })
+
+  it.each([
+    {
+      name: 'wrong chat identity',
+      response: completedGenerationResult({ chatId: 'chat-2' }),
+      reason: 'wrong_chat',
+    },
+    {
+      name: 'incomplete suffix range',
+      response: completedGenerationResult({ messageStart: 0, messageTotal: 3 }),
+      reason: 'invalid_range',
+    },
+    {
+      name: 'missing accepted-message adjacency',
+      response: completedGenerationResult({
+        message: [
+          { role: 'user', data: 'other', chatId: 'other-message' },
+          { role: 'char', data: 'other reply', chatId: 'other-generation' },
+        ],
+      }),
+      reason: 'reply_missing',
+    },
+  ])('fails closed for $name', async ({ response, reason }) => {
+    const resident = [{ role: 'user', data: 'hello', chatId: 'message-a' }]
+    db().characters[0].chats[0].message = resident
+    projectionState.fetchGenerationChat.mockResolvedValueOnce(response)
+
+    await expect(reconcileAcceptedSendCompletion(acceptedSendTarget(), 'message-a')).resolves.toEqual({
+      status: 'not_reconciled',
+      reason,
+    })
+    expect(db().characters[0].chats[0].message).toEqual(resident)
+  })
+
+  it('rejects a response older than the revision known when the fetch began', async () => {
+    const resident = [{ role: 'user', data: 'hello', chatId: 'message-a' }]
+    db().characters[0].chats[0].message = resident
+    setCachedServerCommandRevision(8)
+    projectionState.fetchGenerationChat.mockResolvedValueOnce(completedGenerationResult({ revision: 7 }))
+
+    await expect(reconcileAcceptedSendCompletion(acceptedSendTarget(), 'message-a')).resolves.toEqual({
+      status: 'not_reconciled',
+      reason: 'older_revision',
+    })
+    expect(db().characters[0].chats[0].message).toEqual(resident)
+  })
+
+  it('accepts a newer authoritative projection that supersedes the fetched body and proves residency', async () => {
+    const accepted = { role: 'user', data: 'hello', chatId: 'message-a' }
+    const assistant = { role: 'char', data: 'newer reply', chatId: 'generation-newer' }
+    db().characters[0].chats[0].message = [accepted]
+    const response = deferred<ReturnType<typeof completedGenerationResult>>()
+    projectionState.fetchGenerationChat.mockReturnValueOnce(response.promise)
+
+    const reconciliation = reconcileAcceptedSendCompletion(acceptedSendTarget(), 'message-a')
+    expect(
+      applyServerChatMessagesResource('chat-1', [accepted, assistant], undefined, [], { start: 0, total: 2 }),
+    ).toBe(true)
+    markChatBodyResourceRevision('chat-1', 8)
+    response.resolve(completedGenerationResult({ revision: 7 }))
+
+    await expect(reconciliation).resolves.toEqual({
+      status: 'reconciled',
+      source: 'newer_resident_projection',
+    })
+    expect(db().characters[0].chats[0].message).toEqual([accepted, assistant])
+  })
+
+  it('does not mistake a locally superseding partial row for authoritative completion', async () => {
+    const accepted = { role: 'user', data: 'hello', chatId: 'message-a' }
+    db().characters[0].chats[0].message = [accepted]
+    const response = deferred<ReturnType<typeof completedGenerationResult>>()
+    projectionState.fetchGenerationChat.mockReturnValueOnce(response.promise)
+
+    const reconciliation = reconcileAcceptedSendCompletion(acceptedSendTarget(), 'message-a')
+    const partial = { role: 'char', data: 'partial local stream', chatId: 'generation-a' }
+    db().characters[0].chats[0].message.push(partial)
+    expect(acknowledgeMessageMutationLocalEffect('chat-1')).toBe(true)
+    response.resolve(completedGenerationResult())
+
+    await expect(reconciliation).resolves.toEqual({ status: 'not_reconciled', reason: 'superseded' })
+    expect(db().characters[0].chats[0].message).toEqual([accepted, partial])
+  })
+
+  it('fails closed when the stable target no longer exists', async () => {
+    db().characters[0].chats = db().characters[0].chats.filter((chat) => chat.id !== 'chat-1')
+    projectionState.fetchGenerationChat.mockResolvedValueOnce(completedGenerationResult())
+
+    await expect(reconcileAcceptedSendCompletion(acceptedSendTarget(), 'message-a')).resolves.toEqual({
+      status: 'not_reconciled',
+      reason: 'target_missing',
+    })
+  })
+
+  it('requires post-apply adjacency after retained projections are reapplied', async () => {
+    const accepted = { role: 'user', data: 'hello', chatId: 'message-a' }
+    db().characters[0].chats[0].message = [accepted]
+    recordAcceptedSendRecovery(
+      {
+        id: 'chat-1:message:message-a',
+        target: acceptedSendTarget(),
+        messageId: 'message-a',
+        syntheticSayNothing: false,
+      },
+      'generation_failed',
+    )
+    const release = registerRetainedChatProjection({ kind: 'chat-body', chatId: 'chat-1' }, () => {
+      db().characters[0].chats[0].message = [accepted]
+    })
+    projectionState.fetchGenerationChat.mockResolvedValueOnce(completedGenerationResult())
+
+    await expect(reconcileAcceptedSendCompletion(acceptedSendTarget(), 'message-a')).resolves.toEqual({
+      status: 'not_reconciled',
+      reason: 'post_apply_verification_failed',
+    })
+    expect(db().characters[0].chats[0].message).toEqual([accepted])
+    expect(get(acceptedSendRecoveries)).toEqual([expect.objectContaining({ messageId: 'message-a' })])
+    release()
+  })
+
+  it('settles an aborted never-ending transcript fetch as authority unavailable', async () => {
+    const controller = new AbortController()
+    projectionState.fetchGenerationChat.mockReturnValueOnce(new Promise(() => {}))
+
+    const reconciliation = reconcileAcceptedSendCompletion(acceptedSendTarget(), 'message-a', {
+      signal: controller.signal,
+    })
+    const fetchSignal = projectionState.fetchGenerationChat.mock.calls[0]?.[2]?.signal
+    expect(fetchSignal).toBe(controller.signal)
+    controller.abort()
+
+    await expect(reconciliation).resolves.toEqual({
+      status: 'not_reconciled',
+      reason: 'authority_unavailable',
+    })
   })
 })
 

@@ -66,6 +66,7 @@ import {
   forgetActiveGenerationJob,
   maybeReattachOpenChatGeneration,
   rememberActiveGenerationJob,
+  refreshActiveGenerationJobsFromBootstrap,
   setActiveGenerationJobs,
   startActiveGenerationReattach,
   stopActiveGenerationReattach,
@@ -479,6 +480,26 @@ describe('reattach open-chat generation (Phase 4)', () => {
       expect(h.fetchRuntimeJobs).toHaveBeenCalledWith(null, { cacheRevision: false })
       expect(h.sendChat).toHaveBeenCalledWith(-1, expect.objectContaining({ reattachJobId: 'job-online' }))
     })
+  })
+
+  it('settles and releases a never-ending bootstrap refresh when its authority signal aborts', async () => {
+    const controller = new AbortController()
+    h.fetchRuntimeJobs.mockReturnValueOnce(new Promise(() => {}))
+
+    const refresh = refreshActiveGenerationJobsFromBootstrap(controller.signal)
+    await vi.waitFor(() => {
+      expect(h.fetchRuntimeJobs).toHaveBeenCalledWith(controller.signal, { cacheRevision: false })
+    })
+
+    controller.abort()
+    await expect(refresh).resolves.toBeUndefined()
+
+    h.fetchRuntimeJobs.mockResolvedValueOnce({
+      status: 'ok',
+      bootstrap: { activeGenerationJobs: [] },
+    })
+    await expect(refreshActiveGenerationJobsFromBootstrap()).resolves.toBeUndefined()
+    expect(h.fetchRuntimeJobs).toHaveBeenCalledTimes(2)
   })
 
   it('stops lifecycle probes from reconnecting to the server', async () => {
