@@ -43,10 +43,8 @@ import {
 } from './resourceState.svelte'
 import { reapplyRetainedChatBodyProjections } from './chatRetainedProjection'
 import { acknowledgeHydratedGenerationPersistences } from '../process/generationPersistenceState'
-import {
-  acknowledgeHydratedAcceptedSendRecoveries,
-  transcriptHasReplyForAcceptedSend,
-} from '../process/acceptedSendRecoveryState'
+import { transcriptHasReplyForAcceptedSend } from '../process/acceptedSendRecoveryState'
+import { reconcileGenerationOperationTranscriptHydration } from './generationOperations'
 
 export const BULK_HYDRATION_BATCH_SIZE = 32
 export const ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW = DEFAULT_CHAT_LOAD_INITIAL_PAGES
@@ -185,7 +183,7 @@ function acknowledgeHydratedChatGenerationState(chatId: string, fallbackMessages
   const residentMessages = getDatabase()
     .characters?.flatMap((character) => character.chats ?? [])
     .find((chat) => chat.id === chatId)?.message
-  acknowledgeHydratedAcceptedSendRecoveries(chatId, residentMessages ?? fallbackMessages)
+  reconcileGenerationOperationTranscriptHydration(chatId, residentMessages ?? fallbackMessages)
 }
 
 function rerollStateSnapshot(chatId: string): string | null {

@@ -11,7 +11,7 @@ import {
 } from '../pluginCommands'
 import { reapplyPendingPresetProjections } from '../storage/database.svelte'
 import { reapplyPendingPromptTemplateStructuralProjections } from './promptTemplateBridge.svelte'
-import { setActiveGenerationJobs, triggerOpenChatGenerationReattach } from '../process/reattach'
+import { triggerOpenChatGenerationReattach } from '../process/reattach'
 import { applyServerChatMessagesResource, hydrateActiveChat, resetChatHydration } from './chatMessageHydration.svelte'
 import {
   clearAppliedServerResourceRevision,
@@ -252,8 +252,7 @@ function syncSelectedCharacterAfterRefresh(selection: SelectedCharacterRefreshSn
 async function refreshRuntimeJobs(): Promise<void> {
   const runtime = await fetchServerBootstrapReadOnly(null, { cacheRevision: false })
   if (runtime.status !== 'ok') return
-  applyGenerationOperationBootstrap(runtime.bootstrap)
-  setActiveGenerationJobs(runtime.bootstrap.activeGenerationJobs ?? [])
+  applyGenerationOperationBootstrap(runtime.bootstrap, 'full_resource_refresh')
   setActiveMessageTranslations(runtime.bootstrap.activeMessageTranslations ?? [])
   setActiveGreetingTranslations(runtime.bootstrap.activeGreetingTranslations ?? [])
 }

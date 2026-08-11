@@ -897,6 +897,21 @@ describe('Durable generation (Milestone 1)', () => {
       }),
     )
 
+    const staleStream = await fetch(
+      `${harness.baseUrl}/api/v1/generation-operations/${encodeURIComponent(operationId)}/stream` +
+        `?attemptNo=1&jobId=${encodeURIComponent(jobId)}&projectionEpoch=0`,
+      { headers: authHeaders() },
+    )
+    expect(staleStream.status).toBe(409)
+    expect(await staleStream.json()).toMatchObject({
+      error: 'stale_generation_attempt',
+      operation: {
+        operationId,
+        projectionEpoch: active!.projectionEpoch,
+        currentAttempt: { attemptNo: 1, jobId },
+      },
+    })
+
     const streamController = newController()
     const stream = await fetch(
       `${harness.baseUrl}/api/v1/generation-operations/${encodeURIComponent(operationId)}/stream` +

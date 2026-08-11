@@ -198,6 +198,42 @@ describe('accepted send recovery state', () => {
     ])
   })
 
+  it('retains a newer retry authority when an older same-operation projection arrives late', () => {
+    applyAcceptedSendOperationProjection(
+      operation('operation-a', 'message-a', 'owned_by_job', {
+        stateVersion: 6,
+        projectionEpoch: 41,
+        currentAttempt: {
+          attemptNo: 2,
+          retryRequestId: 'retry-current',
+          jobId: 'job-current',
+          status: 'running',
+          serverInstanceId: 'server-a',
+          actorWriterSessionId: 'writer-a',
+          actorWriterEpoch: 1,
+          launchRevision: 2,
+        },
+      }),
+    )
+
+    applyAcceptedSendOperationProjection(
+      operation('operation-a', 'message-a', 'retryable', {
+        stateVersion: 5,
+        projectionEpoch: 40,
+      }),
+    )
+
+    expect(get(acceptedSendRecoveries)).toEqual([
+      expect.objectContaining({
+        operationId: 'operation-a',
+        phase: 'owned_by_job',
+        stateVersion: 6,
+        projectionEpoch: 41,
+        jobId: 'job-current',
+      }),
+    ])
+  })
+
   it('clears only the exact accepted composer generation, never a same-text resend', () => {
     const draft = {
       messageInput: 'duplicate text',

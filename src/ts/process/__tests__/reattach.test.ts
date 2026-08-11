@@ -31,6 +31,13 @@ const h = vi.hoisted(() => {
         _args: {
           signal?: AbortSignal
           reattachJobId?: string
+          generationOperationStream?: {
+            operationId: string
+            attemptNo: number
+            jobId: string
+            projectionEpoch: number
+            href: string
+          }
           onReattachOutcome?: (outcome: {
             status:
               | 'retryable_transport_failure'
@@ -48,6 +55,26 @@ const h = vi.hoisted(() => {
     hydrateChatMessages: vi.fn(async () => undefined),
     cancelServerChatGeneration: vi.fn(async () => undefined),
     applyGenerationOperationBootstrap: vi.fn(),
+    isProtocolGenerationOperationJob: vi.fn((job: { operationId?: string }) => Boolean(job.operationId)),
+    generationOperationStreamForActiveJob: vi.fn(
+      (job: {
+        operationId?: string
+        acceptedMessageId?: string
+        attemptNo?: number
+        jobId: string
+        projectionEpoch?: number
+      }) =>
+        job.operationId
+          ? {
+              operationId: job.operationId,
+              ...(job.acceptedMessageId ? { acceptedMessageId: job.acceptedMessageId } : {}),
+              attemptNo: job.attemptNo ?? 1,
+              jobId: job.jobId,
+              projectionEpoch: job.projectionEpoch ?? 1,
+              href: `/api/v1/generation-operations/${job.operationId}/stream?attemptNo=${job.attemptNo ?? 1}&jobId=${job.jobId}&projectionEpoch=${job.projectionEpoch ?? 1}`,
+            }
+          : undefined,
+    ),
     stopGenerationOperation: vi.fn(async () => ({ status: 'acknowledged' })),
   }
 })
@@ -74,6 +101,8 @@ vi.mock('../request/serverChat', () => ({
 
 vi.mock('../../server/generationOperations', () => ({
   applyGenerationOperationBootstrap: h.applyGenerationOperationBootstrap,
+  generationOperationStreamForActiveJob: h.generationOperationStreamForActiveJob,
+  isProtocolGenerationOperationJob: h.isProtocolGenerationOperationJob,
   stopGenerationOperation: h.stopGenerationOperation,
 }))
 
@@ -141,6 +170,15 @@ beforeEach(() => {
   h.hydrateChatMessages.mockClear()
   h.cancelServerChatGeneration.mockClear()
   h.applyGenerationOperationBootstrap.mockClear()
+  h.applyGenerationOperationBootstrap.mockImplementation((runtime) => {
+    setActiveGenerationJobs(runtime.activeGenerationJobs ?? [], {
+      projectionEpoch: runtime.generationOperationProjectionEpoch ?? 0,
+      operations: runtime.generationOperations ?? [],
+    })
+    return true
+  })
+  h.isProtocolGenerationOperationJob.mockClear()
+  h.generationOperationStreamForActiveJob.mockClear()
   h.stopGenerationOperation.mockClear()
   h.doingChat.set(false)
   resetGenerationJobLifecyclesForTests()
@@ -149,6 +187,164 @@ beforeEach(() => {
 })
 
 describe('reattach open-chat generation (Phase 4)', () => {
+  it('deduplicates malformed same-chat protocol candidates by epoch, version, attempt, and job id', () => {
+    const older = {
+      chatId: 'chat-1',
+      jobId: 'job-z',
+      operationId: 'operation-a',
+      projectionEpoch: 40,
+      operationStateVersion: 8,
+      attemptNo: 2,
+    }
+    const newer = {
+      chatId: 'chat-1',
+      jobId: 'job-a',
+      operationId: 'operation-b',
+      projectionEpoch: 41,
+      operationStateVersion: 1,
+      attemptNo: 1,
+    }
+
+    setActiveGenerationJobs([newer, older], { projectionEpoch: 41 })
+    expect(get(activeGenerationJobs)).toEqual([newer])
+
+    setActiveGenerationJobs([older, newer], { projectionEpoch: 41 })
+    expect(get(activeGenerationJobs)).toEqual([newer])
+  })
+
+  it('reattaches protocol jobs through the exact operation attempt stream', async () => {
+    openChat('chat-1')
+    const job = {
+      chatId: 'chat-1',
+      jobId: 'job-protocol',
+      operationId: 'operation-protocol',
+      operationStateVersion: 5,
+      projectionEpoch: 40,
+      attemptNo: 2,
+      acceptedMessageId: 'message-protocol',
+    }
+    setActiveGenerationJobs([job], { projectionEpoch: 40 })
+
+    await maybeReattachOpenChatGeneration()
+
+    expect(h.sendChat).toHaveBeenCalledWith(
+      -1,
+      expect.objectContaining({
+        generationOperationStream: expect.objectContaining({
+          operationId: 'operation-protocol',
+          attemptNo: 2,
+          jobId: 'job-protocol',
+          projectionEpoch: 40,
+        }),
+      }),
+    )
+  })
+
+  it('drops the pinned stale restoration and resolves reattach Stop to the newer same-chat authority', async () => {
+    openChat('chat-1')
+    const staleJob = {
+      chatId: 'chat-1',
+      jobId: 'job-a',
+      operationId: 'operation-a',
+      operationStateVersion: 3,
+      projectionEpoch: 40,
+      attemptNo: 1,
+      acceptedMessageId: 'message-a',
+    }
+    const newerJob = {
+      chatId: 'chat-1',
+      jobId: 'job-b',
+      operationId: 'operation-b',
+      operationStateVersion: 1,
+      projectionEpoch: 41,
+      attemptNo: 1,
+      acceptedMessageId: 'message-b',
+    }
+    setActiveGenerationJobs([staleJob], { projectionEpoch: 40 })
+    let settleStale!: () => void
+    h.sendChat.mockImplementationOnce(
+      (_chatProcessIndex, args) =>
+        new Promise<boolean>((resolve) => {
+          settleStale = () => {
+            args.onReattachOutcome?.({ status: 'retryable_transport_failure', error: 'stale observer failed' })
+            resolve(false)
+          }
+        }),
+    )
+
+    const staleReattach = maybeReattachOpenChatGeneration()
+    await vi.waitFor(() => expect(h.sendChat).toHaveBeenCalledTimes(1))
+    expect(get(activeGenerationJobs)).toEqual([])
+
+    setActiveGenerationJobs([newerJob], { projectionEpoch: 41 })
+    settleStale()
+    await staleReattach
+
+    expect(get(activeGenerationJobs)).toEqual([newerJob])
+    expect(get(generationJobLifecycles)['job-a']).toBeUndefined()
+
+    await stopGenerationJob('job-a')
+    expect(h.stopGenerationOperation).toHaveBeenCalledOnce()
+    expect(h.stopGenerationOperation).toHaveBeenCalledWith('operation-b')
+  })
+
+  it('resolves stale Retry and Refresh controls to the newer same-chat attempt', async () => {
+    openChat('chat-1')
+    const staleJob = {
+      chatId: 'chat-1',
+      jobId: 'job-stale-control',
+      operationId: 'operation-stale-control',
+      operationStateVersion: 3,
+      projectionEpoch: 40,
+      attemptNo: 1,
+    }
+    const retryJob = {
+      chatId: 'chat-1',
+      jobId: 'job-retry-current',
+      operationId: 'operation-retry-current',
+      operationStateVersion: 4,
+      projectionEpoch: 41,
+      attemptNo: 2,
+    }
+    setActiveGenerationJobs([staleJob], { projectionEpoch: 40 })
+    setActiveGenerationJobs([retryJob], { projectionEpoch: 41 })
+
+    await retryGenerationJobReattach(staleJob.jobId)
+
+    expect(h.sendChat).toHaveBeenLastCalledWith(
+      -1,
+      expect.objectContaining({
+        generationOperationStream: expect.objectContaining({ jobId: retryJob.jobId, attemptNo: 2 }),
+      }),
+    )
+
+    const refreshJob = {
+      chatId: 'chat-1',
+      jobId: 'job-refresh-current',
+      operationId: 'operation-refresh-current',
+      operationStateVersion: 5,
+      projectionEpoch: 42,
+      attemptNo: 3,
+    }
+    setActiveGenerationJobs([staleJob], { projectionEpoch: 41 })
+    setActiveGenerationJobs([refreshJob], { projectionEpoch: 42 })
+    h.fetchRuntimeJobs.mockResolvedValueOnce({
+      status: 'ok',
+      bootstrap: {
+        generationOperationProjectionEpoch: 42,
+        activeGenerationJobs: [refreshJob],
+      },
+    })
+
+    await expect(refreshGenerationJobFromBootstrap(staleJob.jobId)).resolves.toEqual({ status: 'active' })
+    expect(h.sendChat).toHaveBeenLastCalledWith(
+      -1,
+      expect.objectContaining({
+        generationOperationStream: expect.objectContaining({ jobId: refreshJob.jobId, attemptNo: 3 }),
+      }),
+    )
+  })
+
   it('retains and forgets a job learned from the live response', () => {
     setActiveGenerationJobs([
       { chatId: 'chat-1', jobId: 'job-old' },
@@ -664,6 +860,28 @@ describe('reattach open-chat generation (Phase 4)', () => {
       expect(h.fetchRuntimeJobs).toHaveBeenCalledWith(null, { cacheRevision: false })
       expect(h.sendChat).toHaveBeenCalledWith(-1, expect.objectContaining({ reattachJobId: 'job-online' }))
     })
+  })
+
+  it('routes online, pageshow, and visible wakeups through the shared bootstrap reconciler', async () => {
+    startActiveGenerationReattach()
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+
+    const wakeups = [
+      [window, new Event('online')],
+      [window, new Event('pageshow')],
+      [document, new Event('visibilitychange')],
+    ] as const
+    for (const [index, [eventTarget, event]] of wakeups.entries()) {
+      eventTarget.dispatchEvent(event)
+      await vi.waitFor(() => expect(h.applyGenerationOperationBootstrap).toHaveBeenCalledTimes(index + 1))
+      await flushMicrotasks()
+    }
+
+    expect(h.applyGenerationOperationBootstrap.mock.calls.map((call) => call[1])).toEqual([
+      'online',
+      'pageshow',
+      'visibility',
+    ])
   })
 
   it('settles and releases a never-ending bootstrap refresh when its authority signal aborts', async () => {

@@ -1,6 +1,6 @@
 import { get, writable } from 'svelte/store'
 import { selectedCharID } from '../stores.svelte'
-import type { ActiveGenerationJob } from '../server/bootstrap'
+import type { ActiveGenerationJob, GenerationOperationProjection } from '../server/bootstrap'
 import { getDatabase } from '../storage/database.svelte'
 import type { ActiveChatTarget } from '../chatCommands'
 import type { GenerationReattachOutcome } from './generationReattachOutcome'
@@ -18,6 +18,50 @@ import {
  * refreshes. Consumed once reattached.
  */
 export const activeGenerationJobs = writable<ActiveGenerationJob[]>([])
+
+export type GenerationJobProjectionSource =
+  | 'startup'
+  | 'full_resource_refresh'
+  | 'online'
+  | 'visibility'
+  | 'pageshow'
+  | 'status_probe'
+  | 'manual_refresh'
+  | 'bootstrap'
+
+interface GenerationJobProjectionApplication {
+  projectionEpoch?: number
+  operations?: readonly GenerationOperationProjection[]
+  source?: GenerationJobProjectionSource
+}
+
+interface ReattachProjectionCapture {
+  applicationVersion: number
+  projectionEpoch: number
+  chatId: string
+  jobId: string
+  operationId?: string
+  operationStateVersion?: number
+  attemptNo?: number
+  jobProjectionEpoch?: number
+}
+
+const authoritativeGenerationJobsById = new Map<string, ActiveGenerationJob>()
+let authoritativeGenerationJobByChat = new Map<string, ActiveGenerationJob>()
+const supersededGenerationJobChats = new Map<string, string>()
+let activeGenerationProjectionEpoch = 0
+let activeGenerationProjectionApplicationVersion = 0
+const MAX_SUPERSEDED_GENERATION_JOB_CONTEXTS = 128
+
+function rememberSupersededGenerationJob(jobId: string, chatId: string): void {
+  supersededGenerationJobChats.delete(jobId)
+  supersededGenerationJobChats.set(jobId, chatId)
+  while (supersededGenerationJobChats.size > MAX_SUPERSEDED_GENERATION_JOB_CONTEXTS) {
+    const oldest = supersededGenerationJobChats.keys().next().value
+    if (typeof oldest !== 'string') break
+    supersededGenerationJobChats.delete(oldest)
+  }
+}
 
 export type GenerationJobLifecycleStatus = 'attached' | 'retrying' | 'exhausted-dead' | 'completed' | 'cancelled'
 
@@ -96,10 +140,15 @@ function removeNonterminalGenerationJobLifecycle(jobId: string): void {
 }
 
 function knownGenerationJob(jobId: string): ActiveGenerationJob | null {
+  const authoritative = authoritativeGenerationJobsById.get(jobId)
+  if (authoritative) return authoritative
   const active = get(activeGenerationJobs).find((job) => job.jobId === jobId)
   if (active) return active
   const lifecycle = get(generationJobLifecycles)[jobId]
-  if (!lifecycle || isTerminalLifecycle(lifecycle.status)) return null
+  if (!lifecycle || isTerminalLifecycle(lifecycle.status)) {
+    const chatId = supersededGenerationJobChats.get(jobId)
+    return chatId ? { chatId, jobId } : null
+  }
   return { chatId: lifecycle.chatId, jobId: lifecycle.jobId }
 }
 
@@ -113,19 +162,121 @@ function clearAllReattachRetryStates(): void {
   for (const jobId of reattachRetryStates.keys()) clearReattachRetryState(jobId)
 }
 
-export function setActiveGenerationJobs(jobs: readonly ActiveGenerationJob[]): void {
-  const nextJobIds = new Set(jobs.map((job) => job.jobId))
+function isProtocolOperationLive(operation: GenerationOperationProjection): boolean {
+  return operation.state === 'owned_by_job' || operation.state === 'stopping'
+}
+
+function normalizeGenerationJob(
+  job: ActiveGenerationJob,
+  operations: ReadonlyMap<string, GenerationOperationProjection>,
+): ActiveGenerationJob | null {
+  if (!job.operationId) return { ...job }
+  const operation = operations.get(job.operationId)
+  if (!operation || operation.protocolVersion !== 1) return { ...job }
+  const attempt = operation.currentAttempt
+  if (!isProtocolOperationLive(operation) || !attempt || attempt.jobId !== job.jobId) return null
+  return {
+    ...job,
+    chatId: operation.chatId ?? job.chatId,
+    mode: operation.mode ?? job.mode,
+    ...(operation.mode === 'regenerate' && operation.targetMessageId
+      ? { regenerateMessageId: operation.targetMessageId }
+      : {}),
+    operationId: operation.operationId,
+    operationStateVersion: operation.stateVersion,
+    projectionEpoch: operation.projectionEpoch,
+    attemptNo: attempt.attemptNo,
+    ...(operation.acceptedMessageId ? { acceptedMessageId: operation.acceptedMessageId } : {}),
+    ...(operation.targetMessageId ? { targetMessageId: operation.targetMessageId } : {}),
+  }
+}
+
+function hasProtocolOrdering(job: ActiveGenerationJob): boolean {
+  return (
+    typeof job.operationId === 'string' &&
+    Number.isSafeInteger(job.projectionEpoch) &&
+    Number.isSafeInteger(job.operationStateVersion) &&
+    Number.isSafeInteger(job.attemptNo)
+  )
+}
+
+/**
+ * Section 6's total order for malformed/conflicting same-chat projections.
+ * A complete protocol lineage outranks compatibility data; job-id order is
+ * only the final deterministic tie-breaker.
+ */
+export function compareActiveGenerationJobAuthority(left: ActiveGenerationJob, right: ActiveGenerationJob): number {
+  const leftProtocol = hasProtocolOrdering(left)
+  const rightProtocol = hasProtocolOrdering(right)
+  if (leftProtocol !== rightProtocol) return leftProtocol ? 1 : -1
+  if (leftProtocol && rightProtocol) {
+    return (
+      left.projectionEpoch! - right.projectionEpoch! ||
+      left.operationStateVersion! - right.operationStateVersion! ||
+      left.attemptNo! - right.attemptNo! ||
+      left.jobId.localeCompare(right.jobId)
+    )
+  }
+  return left.jobId.localeCompare(right.jobId)
+}
+
+function deduplicateGenerationJobs(
+  jobs: readonly ActiveGenerationJob[],
+  operations: readonly GenerationOperationProjection[] = [],
+): ActiveGenerationJob[] {
+  const operationById = new Map(operations.map((operation) => [operation.operationId, operation]))
+  const byChat = new Map<string, ActiveGenerationJob>()
+  for (const rawJob of jobs) {
+    const job = normalizeGenerationJob(rawJob, operationById)
+    if (!job) continue
+    const previous = byChat.get(job.chatId)
+    if (!previous || compareActiveGenerationJobAuthority(job, previous) > 0) byChat.set(job.chatId, job)
+  }
+  return [...byChat.values()].sort(
+    (left, right) => left.chatId.localeCompare(right.chatId) || compareActiveGenerationJobAuthority(left, right),
+  )
+}
+
+function replaceAuthoritativeGenerationJobs(jobs: readonly ActiveGenerationJob[]): void {
+  authoritativeGenerationJobsById.clear()
+  authoritativeGenerationJobByChat = new Map()
+  for (const job of jobs) {
+    authoritativeGenerationJobsById.set(job.jobId, job)
+    authoritativeGenerationJobByChat.set(job.chatId, job)
+  }
+}
+
+export function authoritativeGenerationJobForChat(chatId: string | null | undefined): ActiveGenerationJob | undefined {
+  return chatId ? authoritativeGenerationJobByChat.get(chatId) : undefined
+}
+
+export function setActiveGenerationJobs(
+  jobs: readonly ActiveGenerationJob[],
+  application: GenerationJobProjectionApplication = {},
+): boolean {
+  const incomingEpoch = application.projectionEpoch
+  if (incomingEpoch !== undefined && incomingEpoch < activeGenerationProjectionEpoch) return false
+  if (incomingEpoch !== undefined) activeGenerationProjectionEpoch = incomingEpoch
+  activeGenerationProjectionApplicationVersion += 1
+  const normalizedJobs = deduplicateGenerationJobs(jobs, application.operations)
+  for (const previous of authoritativeGenerationJobsById.values()) {
+    if (!normalizedJobs.some((job) => job.jobId === previous.jobId)) {
+      rememberSupersededGenerationJob(previous.jobId, previous.chatId)
+    }
+  }
+  replaceAuthoritativeGenerationJobs(normalizedJobs)
+  const nextJobIds = new Set(normalizedJobs.map((job) => job.jobId))
   for (const jobId of reattachRetryStates.keys()) {
     if (!nextJobIds.has(jobId)) clearReattachRetryState(jobId)
   }
-  activeGenerationJobs.set([...jobs])
+  activeGenerationJobs.set(normalizedJobs)
 
   generationJobLifecycles.update((lifecycles) => {
     const updated = { ...lifecycles }
     for (const [jobId, lifecycle] of Object.entries(updated)) {
       if (!nextJobIds.has(jobId) && !isTerminalLifecycle(lifecycle.status)) delete updated[jobId]
     }
-    for (const job of jobs) {
+    for (const job of normalizedJobs) {
       const previous = updated[job.jobId]
       if (previous && previous.chatId === job.chatId && !isTerminalLifecycle(previous.status)) continue
       updated[job.jobId] = {
@@ -138,6 +289,18 @@ export function setActiveGenerationJobs(jobs: readonly ActiveGenerationJob[]): v
     }
     return updated
   })
+  return true
+}
+
+export function clearActiveGenerationJobProjection(): void {
+  clearAllReattachRetryStates()
+  authoritativeGenerationJobsById.clear()
+  authoritativeGenerationJobByChat = new Map()
+  supersededGenerationJobChats.clear()
+  activeGenerationProjectionEpoch = 0
+  activeGenerationProjectionApplicationVersion += 1
+  activeGenerationJobs.set([])
+  generationJobLifecycles.set({})
 }
 
 /**
@@ -146,15 +309,38 @@ export function setActiveGenerationJobs(jobs: readonly ActiveGenerationJob[]): v
  * bootstrap-only projection is not sufficient for a same-page reconnect.
  */
 export function rememberActiveGenerationJob(job: ActiveGenerationJob): void {
-  let replacedJobIds: string[] = []
-  activeGenerationJobs.update((jobs) => {
-    replacedJobIds = jobs
-      .filter((entry) => entry.jobId !== job.jobId && entry.chatId === job.chatId)
-      .map((entry) => entry.jobId)
-    const retained = jobs.filter((entry) => entry.jobId !== job.jobId && entry.chatId !== job.chatId)
-    return [job, ...retained]
-  })
+  if (job.projectionEpoch !== undefined) {
+    activeGenerationProjectionEpoch = Math.max(activeGenerationProjectionEpoch, job.projectionEpoch)
+  }
+  const previous = authoritativeGenerationJobByChat.get(job.chatId)
+  if (
+    previous &&
+    previous.jobId !== job.jobId &&
+    hasProtocolOrdering(previous) &&
+    (!hasProtocolOrdering(job) || compareActiveGenerationJobAuthority(job, previous) <= 0)
+  ) {
+    return
+  }
+  if (previous?.jobId === job.jobId && compareActiveGenerationJobAuthority(job, previous) <= 0) {
+    const remembered = { ...previous, ...job }
+    authoritativeGenerationJobsById.set(job.jobId, remembered)
+    authoritativeGenerationJobByChat.set(job.chatId, remembered)
+    activeGenerationJobs.update((jobs) => jobs.map((entry) => (entry.jobId === job.jobId ? remembered : entry)))
+    updateGenerationJobLifecycle(remembered, 'attached')
+    return
+  }
+  const replacedJobIds = previous && previous.jobId !== job.jobId ? [previous.jobId] : []
+  activeGenerationProjectionApplicationVersion += 1
+  if (previous) authoritativeGenerationJobsById.delete(previous.jobId)
+  const remembered = { ...job }
+  authoritativeGenerationJobsById.set(job.jobId, remembered)
+  authoritativeGenerationJobByChat.set(job.chatId, remembered)
+  activeGenerationJobs.update((jobs) => [
+    remembered,
+    ...jobs.filter((entry) => entry.jobId !== job.jobId && entry.chatId !== job.chatId),
+  ])
   for (const replacedJobId of replacedJobIds) {
+    rememberSupersededGenerationJob(replacedJobId, job.chatId)
     clearReattachRetryState(replacedJobId)
     removeNonterminalGenerationJobLifecycle(replacedJobId)
   }
@@ -166,6 +352,14 @@ export function forgetActiveGenerationJob(jobId: string, terminalStatus?: 'compl
   if (!jobId) return
   const knownJob = knownGenerationJob(jobId)
   clearReattachRetryState(jobId)
+  const authoritative = authoritativeGenerationJobsById.get(jobId)
+  if (authoritative) {
+    authoritativeGenerationJobsById.delete(jobId)
+    if (authoritativeGenerationJobByChat.get(authoritative.chatId)?.jobId === jobId) {
+      authoritativeGenerationJobByChat.delete(authoritative.chatId)
+    }
+    activeGenerationProjectionApplicationVersion += 1
+  }
   activeGenerationJobs.update((jobs) => jobs.filter((entry) => entry.jobId !== jobId))
   if (terminalStatus && knownJob) {
     updateGenerationJobLifecycle(knownJob, terminalStatus)
@@ -214,6 +408,50 @@ function isOpenChatTargetFresh(target: ActiveChatTarget): boolean {
 
 const reattachingJobIds = new Set<string>()
 let reattachQueued = false
+
+function captureReattachProjection(job: ActiveGenerationJob): ReattachProjectionCapture {
+  return {
+    applicationVersion: activeGenerationProjectionApplicationVersion,
+    projectionEpoch: activeGenerationProjectionEpoch,
+    chatId: job.chatId,
+    jobId: job.jobId,
+    ...(job.operationId ? { operationId: job.operationId } : {}),
+    ...(job.operationStateVersion !== undefined ? { operationStateVersion: job.operationStateVersion } : {}),
+    ...(job.attemptNo !== undefined ? { attemptNo: job.attemptNo } : {}),
+    ...(job.projectionEpoch !== undefined ? { jobProjectionEpoch: job.projectionEpoch } : {}),
+  }
+}
+
+function reattachProjectionStillCurrent(capture: ReattachProjectionCapture): boolean {
+  if (
+    capture.applicationVersion !== activeGenerationProjectionApplicationVersion ||
+    capture.projectionEpoch !== activeGenerationProjectionEpoch
+  ) {
+    return false
+  }
+  const current = authoritativeGenerationJobByChat.get(capture.chatId)
+  return (
+    current?.jobId === capture.jobId &&
+    current.operationId === capture.operationId &&
+    current.operationStateVersion === capture.operationStateVersion &&
+    current.attemptNo === capture.attemptNo &&
+    current.projectionEpoch === capture.jobProjectionEpoch
+  )
+}
+
+function consumePresentedGenerationJob(jobId: string): void {
+  activeGenerationJobs.update((jobs) => jobs.filter((entry) => entry.jobId !== jobId))
+}
+
+function restorePresentedGenerationJob(job: ActiveGenerationJob, capture: ReattachProjectionCapture): boolean {
+  if (!reattachProjectionStillCurrent(capture)) return false
+  activeGenerationJobs.update((jobs) => {
+    const sameChat = jobs.find((entry) => entry.chatId === job.chatId)
+    if (sameChat && compareActiveGenerationJobAuthority(sameChat, job) > 0) return jobs
+    return [job, ...jobs.filter((entry) => entry.jobId !== job.jobId && entry.chatId !== job.chatId)]
+  })
+  return true
+}
 
 function isReattachRetryBlocked(jobId: string): boolean {
   const state = reattachRetryStates.get(jobId)
@@ -287,6 +525,7 @@ async function reattachGenerationJob(job: ActiveGenerationJob, target: ActiveCha
   if (reattachingJobIds.has(job.jobId) || isReattachRetryBlocked(job.jobId) || findChatGenerationActivity(target))
     return
 
+  const capture = captureReattachProjection(job)
   reattachingJobIds.add(job.jobId)
   const previousLifecycle = get(generationJobLifecycles)[job.jobId]
   updateGenerationJobLifecycle(job, 'retrying', {
@@ -296,24 +535,25 @@ async function reattachGenerationJob(job: ActiveGenerationJob, target: ActiveCha
   try {
     const { sendChat, createActiveGenerationAbortController, clearActiveGenerationAbortController } =
       await import('./index.svelte')
-    if (!isOpenChatTargetFresh(target)) {
+    const { generationOperationStreamForActiveJob, isProtocolGenerationOperationJob } =
+      await import('../server/generationOperations')
+    if (!isOpenChatTargetFresh(target) || !reattachProjectionStillCurrent(capture)) {
       return
     }
     // Consume the job up front so a re-render / re-selection does not double
     // reattach while this one streams.
-    activeGenerationJobs.update((jobs) => jobs.filter((entry) => entry.jobId !== job.jobId))
+    consumePresentedGenerationJob(job.jobId)
     // Carry the running job's mode so the replayed stream renders on the right
     // row (continue extends the existing row; regenerate targets its slot) rather
     // than as a fresh send. Older servers omit `mode` and are treated as send.
     const controller = createActiveGenerationAbortController()
-    const restoreJob = () => {
-      activeGenerationJobs.update((jobs) => (jobs.some((entry) => entry.jobId === job.jobId) ? jobs : [job, ...jobs]))
-    }
     try {
+      const operationStream = generationOperationStreamForActiveJob(job)
+      if (isProtocolGenerationOperationJob(job) && !operationStream) return
       let outcome: GenerationReattachOutcome | undefined
       const attached = await sendChat(-1, {
         signal: controller.signal,
-        reattachJobId: job.jobId,
+        ...(operationStream ? { generationOperationStream: operationStream } : { reattachJobId: job.jobId }),
         expectedTarget: target,
         continue: job.mode === 'continue' ? true : undefined,
         regenerateMessageId: job.mode === 'regenerate' ? job.regenerateMessageId : undefined,
@@ -329,8 +569,9 @@ async function reattachGenerationJob(job: ActiveGenerationJob, target: ActiveCha
             ? { status: 'completed' }
             : { status: 'terminal_failure' })
       if (settledOutcome.status === 'retryable_transport_failure') {
-        restoreJob()
-        scheduleTransportReattachRetry(job, settledOutcome.error ?? 'The generation stream could not be reached.')
+        if (restorePresentedGenerationJob(job, capture)) {
+          scheduleTransportReattachRetry(job, settledOutcome.error ?? 'The generation stream could not be reached.')
+        }
       } else if (settledOutcome.status === 'completed' || settledOutcome.status === 'cancelled') {
         forgetActiveGenerationJob(job.jobId, settledOutcome.status)
       } else {
@@ -359,12 +600,13 @@ async function reattachGenerationJob(job: ActiveGenerationJob, target: ActiveCha
 /** Reset the retry budget and reattach only the requested durable job. */
 export async function retryGenerationJobReattach(jobId: string): Promise<void> {
   if (reattachDisabled) return
-  const job = get(activeGenerationJobs).find((entry) => entry.jobId === jobId)
+  const requestedJob = knownGenerationJob(jobId)
+  const job = requestedJob ? authoritativeGenerationJobForChat(requestedJob.chatId) : undefined
   const target = openChatTarget()
   if (!job || !target?.chatId || target.chatId !== job.chatId) return
 
-  clearReattachRetryState(jobId)
-  const previousLifecycle = get(generationJobLifecycles)[jobId]
+  clearReattachRetryState(job.jobId)
+  const previousLifecycle = get(generationJobLifecycles)[job.jobId]
   updateGenerationJobLifecycle(job, 'retrying', {
     reattachAttempts: 0,
     lastError: previousLifecycle?.lastError,
@@ -405,21 +647,19 @@ export async function refreshGenerationJobFromBootstrap(jobId: string): Promise<
     return { status: 'error', error }
   }
 
-  const jobs = runtime.bootstrap.activeGenerationJobs ?? []
   const { applyGenerationOperationBootstrap } = await import('../server/generationOperations')
-  applyGenerationOperationBootstrap(runtime.bootstrap)
+  applyGenerationOperationBootstrap(runtime.bootstrap, 'manual_refresh')
   if (runtime.bootstrap.generationFinalizations) {
     setGenerationFinalizationPersistences(runtime.bootstrap.generationFinalizations)
   }
-  const authoritativeJob = jobs.find((job) => job.jobId === requestedJob.jobId && job.chatId === requestedJob.chatId)
-  setActiveGenerationJobs(jobs)
+  const authoritativeJob = authoritativeGenerationJobForChat(requestedJob.chatId)
   if (!authoritativeJob) {
     await hydrateReconciledChats([requestedJob])
     return { status: 'absent' }
   }
 
-  clearReattachRetryState(jobId)
-  const previousLifecycle = get(generationJobLifecycles)[jobId]
+  clearReattachRetryState(authoritativeJob.jobId)
+  const previousLifecycle = get(generationJobLifecycles)[authoritativeJob.jobId]
   updateGenerationJobLifecycle(authoritativeJob, 'retrying', {
     reattachAttempts: 0,
     lastError: previousLifecycle?.lastError,
@@ -433,10 +673,16 @@ export async function refreshGenerationJobFromBootstrap(jobId: string): Promise<
 
 /** Stop only the requested job, preferring its durable operation identity when available. */
 export async function stopGenerationJob(jobId: string) {
-  const job = get(activeGenerationJobs).find((entry) => entry.jobId === jobId)
+  const requestedJob = knownGenerationJob(jobId)
+  if (!requestedJob) return
+  const job = authoritativeGenerationJobForChat(requestedJob.chatId)
   if (!job) return
   if (job.operationId) {
-    const { stopGenerationOperation } = await import('../server/generationOperations')
+    const { isProtocolGenerationOperationJob, stopGenerationOperation } = await import('../server/generationOperations')
+    if (!isProtocolGenerationOperationJob(job)) {
+      const { cancelServerChatGeneration } = await import('./request/serverChat')
+      return cancelServerChatGeneration(job.jobId)
+    }
     return stopGenerationOperation(job.operationId)
   }
   const { cancelServerChatGeneration } = await import('./request/serverChat')
@@ -450,13 +696,15 @@ let stopSelectedCharacterSubscription: (() => void) | null = null
 let stopGenerationActivitySubscription: (() => void) | null = null
 
 const handleGenerationVisibilityChange = (): void => {
-  if (!reattachDisabled && document.visibilityState === 'visible') void refreshRuntimeJobsAndTriggerReattach()
+  if (!reattachDisabled && document.visibilityState === 'visible') {
+    void refreshRuntimeJobsAndTriggerReattach('visibility')
+  }
 }
 const handleGenerationPageShow = (): void => {
-  if (!reattachDisabled) void refreshRuntimeJobsAndTriggerReattach()
+  if (!reattachDisabled) void refreshRuntimeJobsAndTriggerReattach('pageshow')
 }
 const handleGenerationOnline = (): void => {
-  if (!reattachDisabled) void refreshRuntimeJobsAndTriggerReattach()
+  if (!reattachDisabled) void refreshRuntimeJobsAndTriggerReattach('online')
 }
 
 function waitForRuntimeJobRefresh(promise: Promise<void>, signal: AbortSignal | null | undefined): Promise<void> {
@@ -472,7 +720,10 @@ function waitForRuntimeJobRefresh(promise: Promise<void>, signal: AbortSignal | 
   })
 }
 
-export async function refreshActiveGenerationJobsFromBootstrap(signal?: AbortSignal | null): Promise<void> {
+export async function refreshActiveGenerationJobsFromBootstrap(
+  signal?: AbortSignal | null,
+  source: GenerationJobProjectionSource = 'status_probe',
+): Promise<void> {
   if (reattachDisabled) return
   if (runtimeJobRefresh) return waitForRuntimeJobRefresh(runtimeJobRefresh, signal)
   let request: Promise<void>
@@ -484,15 +735,15 @@ export async function refreshActiveGenerationJobsFromBootstrap(signal?: AbortSig
         const previousJobs = Object.values(get(generationJobLifecycles)).filter(
           (lifecycle) => !isTerminalLifecycle(lifecycle.status),
         )
-        const jobs = runtime.bootstrap.activeGenerationJobs ?? []
         const { applyGenerationOperationBootstrap } = await import('../server/generationOperations')
-        applyGenerationOperationBootstrap(runtime.bootstrap)
+        const applied = applyGenerationOperationBootstrap(runtime.bootstrap, source)
         if (runtime.bootstrap.generationFinalizations) {
           setGenerationFinalizationPersistences(runtime.bootstrap.generationFinalizations)
         }
-        const activeJobIds = new Set(jobs.map((job) => job.jobId))
-        setActiveGenerationJobs(jobs)
-        await hydrateReconciledChats(previousJobs.filter((job) => !activeJobIds.has(job.jobId)))
+        if (applied) {
+          const activeJobIds = new Set(authoritativeGenerationJobsById.keys())
+          await hydrateReconciledChats(previousJobs.filter((job) => !activeJobIds.has(job.jobId)))
+        }
       }
     } catch {
       // Keep the locally remembered job; a later lifecycle event can retry.
@@ -508,9 +759,9 @@ export async function refreshActiveGenerationJobsFromBootstrap(signal?: AbortSig
   if (signal?.aborted && runtimeJobRefresh === request) runtimeJobRefresh = null
 }
 
-async function refreshRuntimeJobsAndTriggerReattach(): Promise<void> {
+async function refreshRuntimeJobsAndTriggerReattach(source: GenerationJobProjectionSource): Promise<void> {
   try {
-    await refreshActiveGenerationJobsFromBootstrap()
+    await refreshActiveGenerationJobsFromBootstrap(undefined, source)
   } finally {
     if (!reattachDisabled) triggerOpenChatGenerationReattach()
   }
@@ -564,6 +815,7 @@ export function stopActiveGenerationReattach(): void {
 }
 
 export function resetGenerationJobLifecyclesForTests(): void {
-  clearAllReattachRetryStates()
+  clearActiveGenerationJobProjection()
+  activeGenerationProjectionApplicationVersion = 0
   generationJobLifecycles.set({})
 }

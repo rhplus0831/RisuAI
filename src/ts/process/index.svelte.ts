@@ -577,13 +577,13 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       })
       currentChat = terminalResult.currentChat
       if (terminalResult.status === 'cancelled') {
-        if (arg.reattachJobId) {
+        if (attachesDurableGeneration) {
           reattachOutcome = { status: terminalResult.reattachOutcome ?? 'cancelled' }
         }
         return false
       }
       if (terminalResult.status === 'failed') {
-        if (arg.reattachJobId) {
+        if (attachesDurableGeneration) {
           reattachOutcome = {
             status: terminalResult.reattachOutcome ?? 'terminal_failure',
             error: terminalResult.error,
@@ -664,14 +664,14 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
         ? completedGenerationEffect(undefined)
         : skippedGenerationEffect('not_configured'),
     )
-    if (arg.reattachJobId) reattachOutcome = { status: 'completed' }
+    if (attachesDurableGeneration) reattachOutcome = { status: 'completed' }
     return true
   } finally {
     if (ownsGenerationActivity && generationActivity) {
       finishChatGenerationActivity(generationActivity.id)
       refreshLegacyGenerationProjection()
     }
-    if (arg.reattachJobId) {
+    if (attachesDurableGeneration) {
       const outcome: GenerationReattachOutcome = reattachOutcome ?? {
         status: abortSignal.aborted ? 'aborted' : 'terminal_failure',
       }

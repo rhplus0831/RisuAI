@@ -11,7 +11,7 @@ const sideEffects = vi.hoisted(() => ({
   resetChatHydration: vi.fn(),
   recordLorebooks: vi.fn(),
   resetLorebooks: vi.fn(),
-  setGenerationJobs: vi.fn(),
+  applyGenerationBootstrap: vi.fn(() => true),
   triggerReattach: vi.fn(),
   setTranslations: vi.fn(),
   setGreetingTranslations: vi.fn(),
@@ -58,8 +58,10 @@ vi.mock('../agentPresets', () => ({
   mergePendingAgentPresetCharactersResource: vi.fn((value) => value),
 }))
 vi.mock('../process/reattach', () => ({
-  setActiveGenerationJobs: sideEffects.setGenerationJobs,
   triggerOpenChatGenerationReattach: sideEffects.triggerReattach,
+}))
+vi.mock('./generationOperations', () => ({
+  applyGenerationOperationBootstrap: sideEffects.applyGenerationBootstrap,
 }))
 vi.mock('./messageTranslationJobs', () => ({
   clearActiveMessageTranslation: vi.fn(),
@@ -220,11 +222,14 @@ describe('complete server resource refresh', () => {
     expect(sideEffects.resetChatHydration).toHaveBeenCalledTimes(1)
     expect(sideEffects.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
     expect(sideEffects.hydratePromptTemplate).toHaveBeenCalledWith({ force: true, minimumRevision: 5 })
-    expect(sideEffects.setGenerationJobs).toHaveBeenCalledWith([{ chatId: 'chat-b', jobId: 'job-b' }])
+    expect(sideEffects.applyGenerationBootstrap).toHaveBeenCalledWith(
+      expect.objectContaining({ activeGenerationJobs: [{ chatId: 'chat-b', jobId: 'job-b' }] }),
+      'full_resource_refresh',
+    )
     expect(sideEffects.setTranslations).toHaveBeenCalledWith([
       { chatId: 'chat-b', messageId: 'message-b', jobId: 'translation-b', status: 'running' },
     ])
-    expect(sideEffects.setGenerationJobs.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(sideEffects.applyGenerationBootstrap.mock.invocationCallOrder[0]).toBeLessThan(
       sideEffects.triggerReattach.mock.invocationCallOrder[0],
     )
     expect(sideEffects.recordRefresh).toHaveBeenCalledWith('backup-restore', undefined)

@@ -590,7 +590,7 @@ describe('API-backed client bootstrap', () => {
       resourceApi.loadInitial.mock.invocationCallOrder[0],
     )
     expect(resourceApi.loadInitial).toHaveBeenCalledWith({ hooks: resourceApi.hooks })
-    expect(runtimeApi.applyGenerationOperationBootstrap).toHaveBeenCalledWith(runtimeBootstrap().bootstrap)
+    expect(runtimeApi.applyGenerationOperationBootstrap).toHaveBeenCalledWith(runtimeBootstrap().bootstrap, 'startup')
     expect(pendingMutationApi.replay.mock.invocationCallOrder[0]).toBeLessThan(
       runtimeApi.applyGenerationOperationBootstrap.mock.invocationCallOrder[0],
     )
@@ -603,7 +603,6 @@ describe('API-backed client bootstrap', () => {
     expect(peekCachedServerCommandRevision()).toBe(5)
     expect(peekAppliedServerResourceRevision()).toBe(5)
     expect(get(selectedCharID)).toBe(1)
-    expect(runtimeApi.setActiveGenerationJobs).toHaveBeenCalledWith([{ chatId: 'chat-a', jobId: 'job-a' }])
     expect(runtimeApi.setActiveMessageTranslations).toHaveBeenCalledWith([{ chatId: 'chat-a', messageId: 'message-a' }])
     expect(runtimeApi.setActiveGreetingTranslations).toHaveBeenCalledWith([
       { characterId: 'char-a', greetingIndex: -1, settingsHash: 'settings-a', jobId: 'greeting-job-a' },
@@ -662,7 +661,10 @@ describe('API-backed client bootstrap', () => {
     expect(commandApi.initialize).toHaveBeenCalledTimes(1)
     expect(bootstrapApi.fetchReadOnly).not.toHaveBeenCalled()
     expect(resourceApi.loadInitial).toHaveBeenCalledTimes(1)
-    expect(runtimeApi.setActiveGenerationJobs).toHaveBeenCalledWith([{ chatId: 'chat-a', jobId: 'job-a' }])
+    expect(runtimeApi.applyGenerationOperationBootstrap).toHaveBeenCalledWith(
+      expect.objectContaining({ activeGenerationJobs: [{ chatId: 'chat-a', jobId: 'job-a' }] }),
+      'startup',
+    )
     expect(runtimeApi.setActiveMessageTranslations).toHaveBeenCalledWith([{ chatId: 'chat-a', messageId: 'message-a' }])
     expect(runtimeApi.setActiveGreetingTranslations).toHaveBeenCalledWith([
       { characterId: 'char-a', greetingIndex: -1, settingsHash: 'settings-a', jobId: 'greeting-job-a' },
@@ -685,7 +687,10 @@ describe('API-backed client bootstrap', () => {
     await loadWebInitialDatabase()
 
     expect(bootstrapApi.fetchReadOnly).toHaveBeenCalledTimes(1)
-    expect(runtimeApi.setActiveGenerationJobs).toHaveBeenCalledWith([{ chatId: 'chat-b', jobId: 'job-b' }])
+    expect(runtimeApi.applyGenerationOperationBootstrap).toHaveBeenCalledWith(
+      expect.objectContaining({ activeGenerationJobs: [{ chatId: 'chat-b', jobId: 'job-b' }] }),
+      'startup',
+    )
     expect(runtimeApi.setActiveMessageTranslations).toHaveBeenCalledWith([])
     expect(runtimeApi.setActiveGreetingTranslations).toHaveBeenCalledWith([])
   })

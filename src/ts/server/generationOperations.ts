@@ -7,11 +7,19 @@ import {
 import type { Message } from '../storage/database.svelte'
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import {
-  applyAcceptedSendActiveJobProjection,
+  acknowledgeHydratedAcceptedSendRecoveries,
   applyAcceptedSendBootstrapProjection,
   applyAcceptedSendOperationProjection,
   clearAcceptedSendRecoveryProjection,
 } from '../process/acceptedSendRecoveryState'
+import {
+  authoritativeGenerationJobForChat,
+  clearActiveGenerationJobProjection,
+  forgetActiveGenerationJob,
+  rememberActiveGenerationJob,
+  setActiveGenerationJobs,
+  type GenerationJobProjectionSource,
+} from '../process/reattach'
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
 import {
   getServerCommandBaseRevision,
@@ -19,7 +27,6 @@ import {
   setCachedServerCommandRevision,
   SERVER_DATABASE_LINEAGE_HEADER,
 } from './commands'
-import { acknowledgeMessageMutationLocalEffect } from './chatMessageHydration.svelte'
 import {
   beginPendingMutationDispatch,
   discardPendingMutation,
@@ -28,7 +35,12 @@ import {
   type DurableMutationIntent,
   type PendingMutationHandle,
 } from './pendingMutationOutbox'
-import { parseGenerationOperations, type GenerationOperationProjection, type ServerBootstrapRuntime } from './bootstrap'
+import {
+  parseGenerationOperations,
+  type ActiveGenerationJob,
+  type GenerationOperationProjection,
+  type ServerBootstrapRuntime,
+} from './bootstrap'
 
 const GENERATION_OPERATIONS_ENDPOINT = '/api/v1/generation-operations'
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
@@ -60,7 +72,7 @@ export interface GenerationOperationSubmitRequest extends Record<string, unknown
 
 export interface GenerationOperationStreamDescriptor {
   operationId: string
-  acceptedMessageId: string
+  acceptedMessageId?: string
   attemptNo: number
   jobId: string
   projectionEpoch: number
@@ -180,6 +192,7 @@ export function configureGenerationOperationProtocol(
     cancellationRuntimeByOperationId.clear()
     generationOperationCancellations.set([])
     clearAcceptedSendRecoveryProjection()
+    clearActiveGenerationJobProjection()
   }
 }
 
@@ -198,6 +211,7 @@ export function resetGenerationOperationClientForTests(): void {
   cancellationRuntimeByOperationId.clear()
   generationOperationCancellations.set([])
   clearAcceptedSendRecoveryProjection()
+  clearActiveGenerationJobProjection()
 }
 
 function createProtocolUuid(): string {
@@ -281,19 +295,11 @@ function trackLocalGenerationOperation(
 
 export function findGenerationOperationIdForTarget(target: ActiveChatTarget | null | undefined): string | undefined {
   if (!target) return undefined
-  const local = get(generationOperationCancellations)
-    .filter(
-      (control) =>
-        targetMatches(control.target, target) &&
-        (control.state === 'none' ||
-          control.state === 'stop_staging' ||
-          control.state === 'stop_sending' ||
-          control.state === 'stop_waiting' ||
-          control.state === 'stop_failed'),
-    )
-    .at(-1)
-  if (local) return local.operationId
-  return get(generationOperationProjections)
+  const authoritativeJob = authoritativeGenerationJobForChat(target.chatId)
+  if (authoritativeJob?.operationId && isProtocolGenerationOperationJob(authoritativeJob)) {
+    return authoritativeJob.operationId
+  }
+  const authoritativeOperation = get(generationOperationProjections)
     .filter(
       (operation) =>
         operation.protocolVersion === 1 &&
@@ -307,9 +313,25 @@ export function findGenerationOperationIdForTarget(target: ActiveChatTarget | nu
       (left, right) =>
         left.projectionEpoch - right.projectionEpoch ||
         left.stateVersion - right.stateVersion ||
+        (left.currentAttempt?.attemptNo ?? 0) - (right.currentAttempt?.attemptNo ?? 0) ||
+        (left.currentAttempt?.jobId ?? '').localeCompare(right.currentAttempt?.jobId ?? '') ||
         left.operationId.localeCompare(right.operationId),
     )
-    .at(-1)?.operationId
+    .at(-1)
+  if (authoritativeOperation) return authoritativeOperation.operationId
+  const local = get(generationOperationCancellations)
+    .filter(
+      (control) =>
+        targetMatches(control.target, target) &&
+        (control.state === 'none' ||
+          control.state === 'stop_staging' ||
+          control.state === 'stop_sending' ||
+          control.state === 'stop_waiting' ||
+          control.state === 'stop_failed'),
+    )
+    .at(-1)
+  if (local) return local.operationId
+  return undefined
 }
 
 export function registerGenerationOperationViewer(operationId: string, detach: () => void): () => void {
@@ -510,17 +532,64 @@ export function generationOperationStreamDescriptor(
 ): GenerationOperationStreamDescriptor | undefined {
   const operation = response.operation
   const attempt = operation.currentAttempt
-  if (!operation.acceptedMessageId || !attempt) return undefined
+  if (!attempt) return undefined
   const href = safeOperationStreamHref(operation, response.stream?.href)
   if (!href) return undefined
   return {
     operationId: operation.operationId,
-    acceptedMessageId: operation.acceptedMessageId,
+    ...(operation.acceptedMessageId ? { acceptedMessageId: operation.acceptedMessageId } : {}),
     attemptNo: attempt.attemptNo,
     jobId: attempt.jobId,
     projectionEpoch: operation.projectionEpoch,
     href,
   }
+}
+
+function generationOperationForJob(
+  job: Pick<ActiveGenerationJob, 'operationId'>,
+): GenerationOperationProjection | undefined {
+  if (!job.operationId) return undefined
+  return get(generationOperationProjections).find((operation) => operation.operationId === job.operationId)
+}
+
+export function isProtocolGenerationOperationJob(job: Pick<ActiveGenerationJob, 'operationId'>): boolean {
+  return generationOperationForJob(job)?.protocolVersion === 1
+}
+
+/** Resolve a protocol job only when every captured attempt field is still exact. */
+export function generationOperationStreamForActiveJob(
+  job: ActiveGenerationJob,
+): GenerationOperationStreamDescriptor | undefined {
+  const operation = generationOperationForJob(job)
+  const attempt = operation?.currentAttempt
+  if (
+    !operation ||
+    operation.protocolVersion !== 1 ||
+    (operation.state !== 'owned_by_job' && operation.state !== 'stopping') ||
+    !attempt ||
+    attempt.jobId !== job.jobId ||
+    (job.attemptNo !== undefined && attempt.attemptNo !== job.attemptNo) ||
+    (job.operationStateVersion !== undefined && operation.stateVersion !== job.operationStateVersion) ||
+    (job.projectionEpoch !== undefined && operation.projectionEpoch !== job.projectionEpoch)
+  ) {
+    return undefined
+  }
+  return generationOperationStreamDescriptor({ operation })
+}
+
+/** Apply a typed error-body projection and expose its current exact stream, if any. */
+export function reconcileGenerationOperationErrorBody(body: unknown): {
+  operation?: GenerationOperationProjection
+  stream?: GenerationOperationStreamDescriptor
+} {
+  const operation = operationFromBody(body)
+  if (!operation) return {}
+  applyGenerationOperationProjection(operation, undefined, 'stale_reattach')
+  const stream =
+    operation.state === 'owned_by_job' || operation.state === 'stopping'
+      ? generationOperationStreamDescriptor({ operation })
+      : undefined
+  return { operation, ...(stream ? { stream } : {}) }
 }
 
 function clearCancellationReconcileTimer(operationId: string): void {
@@ -646,10 +715,10 @@ function syncGenerationOperationCancellationProjection(operation: GenerationOper
   }
 }
 
-export function applyGenerationOperationProjection(
+function applyGenerationOperationProjectionState(
   operation: GenerationOperationProjection,
   capturedTarget?: ActiveChatTarget,
-): void {
+): boolean {
   generationOperationProjectionEpoch = Math.max(generationOperationProjectionEpoch, operation.projectionEpoch)
   let accepted = true
   generationOperationProjections.update((operations) => {
@@ -667,36 +736,42 @@ export function applyGenerationOperationProjection(
         left.projectionEpoch - right.projectionEpoch || left.operationId.localeCompare(right.operationId),
     )
   })
-  if (!accepted) return
+  if (!accepted) return false
   applyAcceptedSendOperationProjection(operation, capturedTarget)
   syncGenerationOperationCancellationProjection(operation)
+  return true
 }
 
-export function applyGenerationOperationBootstrap(runtime: ServerBootstrapRuntime): void {
+function applyGenerationOperationBootstrapState(
+  runtime: ServerBootstrapRuntime,
+  source: GenerationJobProjectionSource,
+): boolean {
   configureGenerationOperationProtocol(runtime.generationOperationProtocol, runtime.databaseLineage)
   const epoch = runtime.generationOperationProjectionEpoch ?? 0
-  if (epoch < generationOperationProjectionEpoch) {
-    applyAcceptedSendActiveJobProjection(runtime.activeGenerationJobs ?? [])
-    return
-  }
+  if (epoch < generationOperationProjectionEpoch) return false
   generationOperationProjectionEpoch = epoch
   const operations = runtime.generationOperations ?? []
   generationOperationProjections.set([...operations])
   applyAcceptedSendBootstrapProjection(operations, runtime.activeGenerationJobs ?? [], epoch)
   for (const operation of operations) syncGenerationOperationCancellationProjection(operation)
+  setActiveGenerationJobs(runtime.activeGenerationJobs ?? [], {
+    projectionEpoch: epoch,
+    operations,
+    source,
+  })
+  return true
 }
 
-/** Update a known operation from additive lineage carried by every protocol-v1 SSE frame. */
-export function applyGenerationOperationSseEvent(data: Record<string, unknown>): void {
+function operationFromSseEvent(data: Record<string, unknown>): GenerationOperationProjection | undefined {
   if (
     typeof data.operationId !== 'string' ||
     !Number.isSafeInteger(data.operationStateVersion) ||
     !Number.isSafeInteger(data.projectionEpoch)
   ) {
-    return
+    return undefined
   }
   const previous = get(generationOperationProjections).find((operation) => operation.operationId === data.operationId)
-  if (!previous) return
+  if (!previous) return undefined
   const operation: GenerationOperationProjection = {
     ...previous,
     stateVersion: data.operationStateVersion as number,
@@ -722,7 +797,173 @@ export function applyGenerationOperationSseEvent(data: Record<string, unknown>):
         : undefined
     if (typeof postGeneration?.messageId === 'string') operation.resultMessageId = postGeneration.messageId
   }
-  applyGenerationOperationProjection(operation)
+  return operation
+}
+
+function reconcileActiveJobFromOperation(
+  operation: GenerationOperationProjection,
+  options: { removeNonlive: boolean },
+): void {
+  const attempt = operation.currentAttempt
+  if (
+    operation.protocolVersion === 1 &&
+    operation.chatId &&
+    attempt &&
+    (operation.state === 'owned_by_job' || operation.state === 'stopping')
+  ) {
+    rememberActiveGenerationJob({
+      chatId: operation.chatId,
+      jobId: attempt.jobId,
+      ...(operation.mode ? { mode: operation.mode } : {}),
+      ...(operation.mode === 'regenerate' && operation.targetMessageId
+        ? { regenerateMessageId: operation.targetMessageId }
+        : {}),
+      operationId: operation.operationId,
+      operationStateVersion: operation.stateVersion,
+      projectionEpoch: operation.projectionEpoch,
+      attemptNo: attempt.attemptNo,
+      ...(operation.acceptedMessageId ? { acceptedMessageId: operation.acceptedMessageId } : {}),
+      ...(operation.targetMessageId ? { targetMessageId: operation.targetMessageId } : {}),
+    })
+    return
+  }
+  const current = authoritativeGenerationJobForChat(operation.chatId)
+  if (options.removeNonlive && current?.operationId === operation.operationId) {
+    forgetActiveGenerationJob(current.jobId)
+  }
+}
+
+export type GenerationOperationReconcilerSource =
+  | GenerationJobProjectionSource
+  | 'submit'
+  | 'status'
+  | 'retry'
+  | 'cancellation'
+  | 'job_accepted'
+  | 'terminal_sse'
+  | 'sse'
+  | 'stale_reattach'
+  | 'transcript_hydration'
+
+export type GenerationOperationLifecycleUpdate =
+  | {
+      kind: 'bootstrap'
+      source: GenerationJobProjectionSource
+      runtime: ServerBootstrapRuntime
+    }
+  | {
+      kind: 'operation'
+      source: GenerationOperationReconcilerSource
+      operation: GenerationOperationProjection
+      capturedTarget?: ActiveChatTarget
+    }
+  | {
+      kind: 'sse'
+      source: 'job_accepted' | 'terminal_sse' | 'sse'
+      data: Record<string, unknown>
+      job?: Pick<ActiveGenerationJob, 'chatId' | 'mode' | 'regenerateMessageId'>
+    }
+  | {
+      kind: 'transcript_hydration'
+      source: 'transcript_hydration'
+      chatId: string
+      messages: readonly unknown[]
+    }
+
+/**
+ * The single browser ingress for operation/job authority. Bootstrap refreshes,
+ * lifecycle wakeups, local SSE, and transcript hydration all converge here so
+ * they share one epoch fence and one same-chat selector.
+ */
+export function reconcileGenerationOperationLifecycle(update: GenerationOperationLifecycleUpdate): boolean {
+  if (update.kind === 'bootstrap') {
+    return applyGenerationOperationBootstrapState(update.runtime, update.source)
+  }
+  if (update.kind === 'transcript_hydration') {
+    acknowledgeHydratedAcceptedSendRecoveries(update.chatId, update.messages)
+    return true
+  }
+  if (update.kind === 'operation') {
+    const applied = applyGenerationOperationProjectionState(update.operation, update.capturedTarget)
+    if (applied) reconcileActiveJobFromOperation(update.operation, { removeNonlive: true })
+    return applied
+  }
+
+  const operation = operationFromSseEvent(update.data)
+  if (operation && !applyGenerationOperationProjectionState(operation)) return false
+  if (operation) reconcileActiveJobFromOperation(operation, { removeNonlive: false })
+  const jobId = typeof update.data.jobId === 'string' ? update.data.jobId : undefined
+  if (update.source === 'job_accepted' && jobId && update.job) {
+    rememberActiveGenerationJob({
+      ...update.job,
+      jobId,
+      ...(typeof update.data.databaseLineage === 'string' ? { databaseLineage: update.data.databaseLineage } : {}),
+      ...(typeof update.data.operationId === 'string' ? { operationId: update.data.operationId } : {}),
+      ...(typeof update.data.writerSessionId === 'string' ? { writerSessionId: update.data.writerSessionId } : {}),
+      ...(Number.isSafeInteger(update.data.writerEpoch) ? { writerEpoch: update.data.writerEpoch as number } : {}),
+      ...(Number.isSafeInteger(update.data.operationStateVersion)
+        ? { operationStateVersion: update.data.operationStateVersion as number }
+        : {}),
+      ...(Number.isSafeInteger(update.data.projectionEpoch)
+        ? { projectionEpoch: update.data.projectionEpoch as number }
+        : {}),
+      ...(Number.isSafeInteger(update.data.attemptNo) ? { attemptNo: update.data.attemptNo as number } : {}),
+      ...(typeof update.data.acceptedMessageId === 'string'
+        ? { acceptedMessageId: update.data.acceptedMessageId }
+        : {}),
+      ...(typeof update.data.targetMessageId === 'string' ? { targetMessageId: update.data.targetMessageId } : {}),
+    })
+  } else if (update.source === 'terminal_sse' && jobId) {
+    if (update.data.type === 'done') {
+      const outcome = update.data.outcome === 'cancelled' ? 'cancelled' : 'completed'
+      forgetActiveGenerationJob(jobId, outcome)
+    } else {
+      forgetActiveGenerationJob(jobId)
+    }
+  }
+  return true
+}
+
+export function applyGenerationOperationProjection(
+  operation: GenerationOperationProjection,
+  capturedTarget?: ActiveChatTarget,
+  source: GenerationOperationReconcilerSource = 'status',
+): void {
+  reconcileGenerationOperationLifecycle({ kind: 'operation', source, operation, capturedTarget })
+}
+
+export function applyGenerationOperationBootstrap(
+  runtime: ServerBootstrapRuntime,
+  source: GenerationJobProjectionSource = 'bootstrap',
+): boolean {
+  return reconcileGenerationOperationLifecycle({ kind: 'bootstrap', source, runtime })
+}
+
+/** Update a known operation from additive lineage carried by every protocol-v1 SSE frame. */
+export function applyGenerationOperationSseEvent(
+  data: Record<string, unknown>,
+  job?: Pick<ActiveGenerationJob, 'chatId' | 'mode' | 'regenerateMessageId'>,
+): void {
+  reconcileGenerationOperationLifecycle({
+    kind: 'sse',
+    source:
+      data.type === 'job_accepted'
+        ? 'job_accepted'
+        : data.type === 'done' || data.type === 'error'
+          ? 'terminal_sse'
+          : 'sse',
+    data,
+    ...(job ? { job } : {}),
+  })
+}
+
+export function reconcileGenerationOperationTranscriptHydration(chatId: string, messages: readonly unknown[]): void {
+  reconcileGenerationOperationLifecycle({
+    kind: 'transcript_hydration',
+    source: 'transcript_hydration',
+    chatId,
+    messages,
+  })
 }
 
 function cancellationResponseFromBody(body: unknown):
@@ -1208,7 +1449,10 @@ export async function submitStagedAcceptedSendOperation(
   const result = await dispatchPendingGenerationOperation(staged.handle, staged.intent)
   if (result.status === 'accepted') {
     if (result.response.append?.disposition !== 'accepted') staged.rollbackOptimisticAppend()
-    else if (staged.target.chatId) acknowledgeMessageMutationLocalEffect(staged.target.chatId)
+    else if (staged.target.chatId) {
+      const { acknowledgeMessageMutationLocalEffect } = await import('./chatMessageHydration.svelte')
+      acknowledgeMessageMutationLocalEffect(staged.target.chatId)
+    }
   } else if (result.status === 'rejected') {
     staged.rollbackOptimisticAppend()
     updateGenerationOperationCancellation(staged.request.operationId, () => null)

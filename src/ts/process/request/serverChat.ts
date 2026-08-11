@@ -61,6 +61,7 @@ import { alertToast } from '../../alert'
 import { language } from '../../../lang'
 import {
   applyGenerationOperationSseEvent,
+  reconcileGenerationOperationErrorBody,
   registerGenerationOperationViewer,
   stopGenerationOperation,
 } from '../../server/generationOperations'
@@ -127,7 +128,7 @@ export interface ServerChatInput {
 
 export interface ServerChatOperationStream {
   operationId: string
-  acceptedMessageId: string
+  acceptedMessageId?: string
   attemptNo: number
   jobId: string
   projectionEpoch: number
@@ -215,7 +216,11 @@ function truncationConfirmationCode(value: unknown): string | undefined {
 function httpErrorCode(value: unknown): string | undefined {
   return (
     truncationConfirmationCode(value) ??
-    (value === GENERATION_IN_PROGRESS_FAILURE_CAUSE ? GENERATION_IN_PROGRESS_FAILURE_CAUSE : undefined)
+    (value === GENERATION_IN_PROGRESS_FAILURE_CAUSE
+      ? GENERATION_IN_PROGRESS_FAILURE_CAUSE
+      : value === 'stale_generation_attempt'
+        ? value
+        : undefined)
   )
 }
 
@@ -368,8 +373,9 @@ async function openChatResponse(
   signal: AbortSignal | null,
   reattachJobId?: string,
   operationStream?: ServerChatOperationStream,
+  staleAttemptRedirects = 0,
 ): Promise<
-  | { status: 'ok'; response: Response; requestUid?: string }
+  | { status: 'ok'; response: Response; requestUid?: string; operationStream?: ServerChatOperationStream }
   | {
       status: 'error'
       error: string
@@ -444,6 +450,17 @@ async function openChatResponse(
       // ignore parse failure
     }
     handleActiveWriterStaleResponse(response, body)
+    if (
+      operationStream &&
+      response.status === 409 &&
+      code === 'stale_generation_attempt' &&
+      staleAttemptRedirects < 3
+    ) {
+      const authority = reconcileGenerationOperationErrorBody(body)
+      if (authority.stream?.operationId === operationStream.operationId) {
+        return openChatResponse(input, signal, undefined, authority.stream, staleAttemptRedirects + 1)
+      }
+    }
     debugServerChat('server-chat-response-error', { requestUid, status: response.status, error: reason })
     return {
       status: 'error',
@@ -461,7 +478,7 @@ async function openChatResponse(
     return { status: 'error', error, requestUid, retryable: true }
   }
 
-  return { status: 'ok', response, requestUid }
+  return { status: 'ok', response, requestUid, ...(operationStream ? { operationStream } : {}) }
 }
 
 async function fetchDurableTerminalSnapshot(
@@ -644,6 +661,7 @@ export async function requestServerChatGeneration(
   reattachJobId?: string,
   operationStream?: ServerChatOperationStream,
 ): Promise<ServerChatGenerationResult> {
+  let authoritativeOperationStream = operationStream
   const agentPresetSession = beginAgentPresetProgress(input.chatId)
   const postGenerationSession = beginPostGenerationProgress({
     characterId: input.characterId,
@@ -653,15 +671,15 @@ export async function requestServerChatGeneration(
   // explicit Stop immediately so cancellation owns the whole visible activity,
   // including the pre-response window. Fresh durable sends fill this from the
   // response header (or job_accepted) below.
-  let durableJobId = operationStream?.jobId ?? reattachJobId ?? ''
+  let durableJobId = authoritativeOperationStream?.jobId ?? reattachJobId ?? ''
   const watchesDurableJob = input.durable === true || reattachJobId !== undefined || operationStream !== undefined
   let cancelledDurableJobId = ''
   const viewerAbortController = new AbortController()
   let consumerDetached = false
   let operationStopDetached = false
   let operationCancellationRequested = false
-  const unregisterGenerationOperationViewer = operationStream
-    ? registerGenerationOperationViewer(operationStream.operationId, () => {
+  const unregisterGenerationOperationViewer = authoritativeOperationStream
+    ? registerGenerationOperationViewer(authoritativeOperationStream.operationId, () => {
         operationCancellationRequested = true
         operationStopDetached = true
         viewerAbortController.abort()
@@ -670,10 +688,10 @@ export async function requestServerChatGeneration(
   const cancelDurableOnAbort = (): void => {
     // Protocol-v1 Stop is addressed before a job ID exists and stages its own
     // durable control before detaching this viewer.
-    if (operationStream?.operationId) {
+    if (authoritativeOperationStream?.operationId) {
       if (operationCancellationRequested) return
       operationCancellationRequested = true
-      void stopGenerationOperation(operationStream.operationId)
+      void stopGenerationOperation(authoritativeOperationStream.operationId)
       return
     }
     // Compatibility jobs retain their typed job-ID cancellation boundary.
@@ -683,7 +701,7 @@ export async function requestServerChatGeneration(
   }
   const onOwnerAbort = (): void => {
     cancelDurableOnAbort()
-    if (!operationStream?.operationId) viewerAbortController.abort()
+    if (!authoritativeOperationStream?.operationId) viewerAbortController.abort()
   }
   const stopWatchingAbort = (): void => {
     signal?.removeEventListener('abort', onOwnerAbort)
@@ -695,7 +713,12 @@ export async function requestServerChatGeneration(
     signal?.addEventListener('abort', onOwnerAbort, { once: true })
   }
 
-  const opened = await openChatResponse(input, viewerAbortController.signal, reattachJobId, operationStream)
+  const opened = await openChatResponse(
+    input,
+    viewerAbortController.signal,
+    reattachJobId,
+    authoritativeOperationStream,
+  )
   if (opened.status !== 'ok') {
     stopWatchingAbort()
     if (opened.status === 'aborted' && reattachJobId) forgetActiveGenerationJob(reattachJobId)
@@ -706,10 +729,14 @@ export async function requestServerChatGeneration(
           status: 'error',
           error: opened.error,
           ...(opened.code ? { code: opened.code } : {}),
-          ...(reattachJobId ? { reattachOutcome: classifyReattachOpenError(opened) } : {}),
+          ...(reattachJobId || authoritativeOperationStream
+            ? { reattachOutcome: classifyReattachOpenError(opened) }
+            : {}),
         }
       : opened
   }
+  authoritativeOperationStream = opened.operationStream ?? authoritativeOperationStream
+  durableJobId = authoritativeOperationStream?.jobId ?? durableJobId
 
   let prompt: ServerChatPrompt | null = null
   let info: ServerChatInfo | undefined
@@ -752,8 +779,8 @@ export async function requestServerChatGeneration(
   const reattachOutcomeFields = (
     status: GenerationReattachOutcomeStatus,
   ): { reattachOutcome: GenerationReattachOutcomeStatus } | Record<string, never> =>
-    reattachJobId ? { reattachOutcome: status } : {}
-  let operationLineage: Partial<ServerChatOperationStream> = operationStream ?? {}
+    reattachJobId || authoritativeOperationStream ? { reattachOutcome: status } : {}
+  let operationLineage: Partial<ServerChatOperationStream> = authoritativeOperationStream ?? {}
   const rememberDurableJob = (): void => {
     if (!watchesDurableJob || durableJobId.length === 0) return
     rememberActiveGenerationJob({
@@ -890,10 +917,13 @@ export async function requestServerChatGeneration(
           const next = await openChatResponse(
             input,
             viewerAbortController.signal,
-            operationStream ? undefined : durableJobId,
-            operationStream,
+            authoritativeOperationStream ? undefined : durableJobId,
+            authoritativeOperationStream,
           )
           if (next.status === 'ok') {
+            authoritativeOperationStream = next.operationStream ?? authoritativeOperationStream
+            durableJobId = authoritativeOperationStream?.jobId ?? durableJobId
+            operationLineage = authoritativeOperationStream ?? operationLineage
             // Rebuild from the retained replay window so re-sent deltas do not
             // duplicate text rendered before mobile suspension. A replay_gap
             // frame below makes an incomplete retained window explicit.
@@ -941,8 +971,14 @@ export async function requestServerChatGeneration(
                       ? { projectionEpoch: data.projectionEpoch as number }
                       : {}),
                   }
-                  applyGenerationOperationSseEvent({ ...data, type: 'job_accepted' })
-                  rememberDurableJob()
+                  applyGenerationOperationSseEvent(
+                    { ...data, type: 'job_accepted' },
+                    {
+                      chatId: input.chatId,
+                      mode: input.mode === 'preview' || input.mode === 'preview_prompt' ? undefined : input.mode,
+                      ...(input.regenerateMessageId ? { regenerateMessageId: input.regenerateMessageId } : {}),
+                    },
+                  )
                   // Backward-compatible with servers that predate the response
                   // header: an abort may have won the race with this first frame.
                   if (signal?.aborted) cancelDurableOnAbort()
@@ -1069,7 +1105,7 @@ export async function requestServerChatGeneration(
                     data.generationProjection && typeof data.generationProjection === 'object'
                       ? (data.generationProjection as unknown as ServerChatGenerationProjection)
                       : undefined
-                  forgetActiveGenerationJob(durableJobId)
+                  applyGenerationOperationSseEvent({ ...data, type: 'error', jobId: durableJobId })
                   resolveReadyOnce({
                     status: 'error',
                     error,
@@ -1112,7 +1148,7 @@ export async function requestServerChatGeneration(
                   const terminalClosesReplayGap = replayGapPending
                   replayGapPending = false
                   if (streamingRequest) streamingRequest.replayGapPending = false
-                  applyGenerationOperationSseEvent({ ...data, type: 'done' })
+                  applyGenerationOperationSseEvent({ ...data, type: 'done', jobId: durableJobId })
                   const previousTokenResult = tokenResult
                   if (watchesDurableJob && typeof donePayload.result === 'string') {
                     // Durable replay is a lossy token window. Its protected
@@ -1148,7 +1184,6 @@ export async function requestServerChatGeneration(
                         : 'stream ended without a prompt event',
                     })
                   }
-                  forgetActiveGenerationJob(durableJobId, terminalOutcome)
                   resolveTerminalOnce({
                     status: terminalOutcome === 'cancelled' ? 'cancelled' : 'done',
                     ...reattachOutcomeFields(terminalOutcome),

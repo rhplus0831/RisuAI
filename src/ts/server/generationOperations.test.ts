@@ -4,6 +4,7 @@ import type { GenerationOperationProjection } from './bootstrap'
 
 const operationMocks = vi.hoisted(() => ({
   acknowledgeLocalEffect: vi.fn(),
+  acknowledgeHydratedRecoveries: vi.fn(),
   appendOptimistic: vi.fn(),
   applyAcceptedJobs: vi.fn(),
   applyAcceptedOperation: vi.fn(),
@@ -14,6 +15,7 @@ const operationMocks = vi.hoisted(() => ({
   peekRevision: vi.fn(),
   setRevision: vi.fn(),
   stage: vi.fn(),
+  setActiveJobs: vi.fn(() => true),
 }))
 
 vi.mock('../chatCommands', () => ({
@@ -22,10 +24,18 @@ vi.mock('../chatCommands', () => ({
 }))
 vi.mock('../storage/fastifyStorage', () => ({ getNodeServerProxyAuth: vi.fn(async () => 'auth-a') }))
 vi.mock('../process/acceptedSendRecoveryState', () => ({
+  acknowledgeHydratedAcceptedSendRecoveries: operationMocks.acknowledgeHydratedRecoveries,
   applyAcceptedSendActiveJobProjection: operationMocks.applyAcceptedJobs,
   applyAcceptedSendBootstrapProjection: operationMocks.applyAcceptedBootstrap,
   applyAcceptedSendOperationProjection: operationMocks.applyAcceptedOperation,
   clearAcceptedSendRecoveryProjection: vi.fn(),
+}))
+vi.mock('../process/reattach', () => ({
+  authoritativeGenerationJobForChat: vi.fn(),
+  clearActiveGenerationJobProjection: vi.fn(),
+  forgetActiveGenerationJob: vi.fn(),
+  rememberActiveGenerationJob: vi.fn(),
+  setActiveGenerationJobs: operationMocks.setActiveJobs,
 }))
 vi.mock('./activeWriterSession', () => ({
   activeWriterSessionHeader: () => ({ 'risu-writer-session': 'writer-a' }),
@@ -62,9 +72,12 @@ vi.mock('./bootstrap', () => ({
 }))
 
 import {
+  applyGenerationOperationBootstrap,
   applyGenerationOperationProjection,
   dispatchGenerationOperationPendingReplay,
   generationOperationCancellations,
+  generationOperationProjections,
+  reconcileGenerationOperationTranscriptHydration,
   resetGenerationOperationClientForTests,
   stageAcceptedSendGenerationOperation,
   stopGenerationOperation,
@@ -403,5 +416,85 @@ describe('generation operation client', () => {
         operationState: 'finalizing',
       }),
     ])
+  })
+
+  it('drops a lower-epoch bootstrap atomically, retaining the newer operation and job projection', () => {
+    const newerOperation = {
+      ...responseBody().operation,
+      operationId: '33333333-3333-4333-8333-333333333333',
+      stateVersion: 7,
+      projectionEpoch: 41,
+      currentAttempt: {
+        ...responseBody().operation.currentAttempt!,
+        attemptNo: 2,
+        jobId: 'job-newer',
+      },
+    }
+    const newerJob = {
+      chatId: 'chat-a',
+      jobId: 'job-newer',
+      operationId: newerOperation.operationId,
+      operationStateVersion: 7,
+      projectionEpoch: 41,
+      attemptNo: 2,
+    }
+    const staleOperation = { ...responseBody().operation, projectionEpoch: 40 }
+
+    expect(
+      applyGenerationOperationBootstrap(
+        {
+          initialized: true,
+          revision: 8,
+          databaseLineage: 'database-a',
+          generationOperationProtocol: { version: 1 },
+          generationOperationProjectionEpoch: 41,
+          generationOperations: [newerOperation],
+          activeGenerationJobs: [newerJob],
+        },
+        'pageshow',
+      ),
+    ).toBe(true)
+    expect(
+      applyGenerationOperationBootstrap(
+        {
+          initialized: true,
+          revision: 8,
+          databaseLineage: 'database-a',
+          generationOperationProtocol: { version: 1 },
+          generationOperationProjectionEpoch: 40,
+          generationOperations: [staleOperation],
+          activeGenerationJobs: [
+            {
+              chatId: 'chat-a',
+              jobId: 'job-stale',
+              operationId,
+              operationStateVersion: 2,
+              projectionEpoch: 40,
+              attemptNo: 1,
+            },
+          ],
+        },
+        'visibility',
+      ),
+    ).toBe(false)
+
+    expect(get(generationOperationProjections)).toEqual([newerOperation])
+    expect(operationMocks.setActiveJobs).toHaveBeenCalledTimes(1)
+    expect(operationMocks.setActiveJobs).toHaveBeenCalledWith([newerJob], {
+      projectionEpoch: 41,
+      operations: [newerOperation],
+      source: 'pageshow',
+    })
+  })
+
+  it('routes transcript hydration through the shared lifecycle reconciler', () => {
+    const messages = [
+      { role: 'user', chatId: messageId },
+      { role: 'char', chatId: 'reply-a', generationInfo: { operationId } },
+    ]
+
+    reconcileGenerationOperationTranscriptHydration('chat-a', messages)
+
+    expect(operationMocks.acknowledgeHydratedRecoveries).toHaveBeenCalledWith('chat-a', messages)
   })
 })

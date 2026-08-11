@@ -4,6 +4,7 @@ import { get } from 'svelte/store'
 const alertMocks = vi.hoisted(() => ({ alertToast: vi.fn() }))
 const generationOperationMocks = vi.hoisted(() => ({
   applySseEvent: vi.fn(),
+  reconcileErrorBody: vi.fn(() => ({})),
   registerViewer: vi.fn((_operationId: string, _detach: () => void) => () => undefined),
   stopOperation: vi.fn(async (_operationId: string) => ({ status: 'acknowledged' })),
 }))
@@ -21,6 +22,7 @@ vi.mock('../../../alert', () => alertMocks)
 
 vi.mock('../../../server/generationOperations', () => ({
   applyGenerationOperationSseEvent: generationOperationMocks.applySseEvent,
+  reconcileGenerationOperationErrorBody: generationOperationMocks.reconcileErrorBody,
   registerGenerationOperationViewer: generationOperationMocks.registerViewer,
   stopGenerationOperation: generationOperationMocks.stopOperation,
 }))
@@ -54,7 +56,12 @@ import {
   clearAgentPresetProgress,
   type ActiveAgentPresetProgress,
 } from '../../agentPresetProgress'
-import { activeGenerationJobs } from '../../reattach'
+import {
+  activeGenerationJobs,
+  clearActiveGenerationJobProjection,
+  forgetActiveGenerationJob,
+  rememberActiveGenerationJob,
+} from '../../reattach'
 import {
   isClientAutomaticTranslationEligible,
   replaceAutomaticTranslationMessageIds,
@@ -145,7 +152,7 @@ describe('server chat SSE taxonomy', () => {
 
 beforeEach(() => {
   resetServerChatState()
-  activeGenerationJobs.set([])
+  clearActiveGenerationJobProjection()
   resetAutomaticTranslationEligibilityForTests()
   clearActiveMessageTranslation('message-1')
   setActiveMessageTranslations([])
@@ -153,6 +160,21 @@ beforeEach(() => {
   vi.mocked(handleActiveWriterStaleResponse).mockClear()
   alertMocks.alertToast.mockReset()
   generationOperationMocks.applySseEvent.mockReset()
+  generationOperationMocks.applySseEvent.mockImplementation(
+    (data: Record<string, unknown>, job?: { chatId: string; mode?: 'send' | 'continue' | 'regenerate' }) => {
+      if (data.type === 'job_accepted' && typeof data.jobId === 'string' && job) {
+        rememberActiveGenerationJob({ ...job, jobId: data.jobId })
+      }
+      if ((data.type === 'done' || data.type === 'error') && typeof data.jobId === 'string') {
+        forgetActiveGenerationJob(
+          data.jobId,
+          data.type === 'done' ? (data.outcome === 'cancelled' ? 'cancelled' : 'completed') : undefined,
+        )
+      }
+    },
+  )
+  generationOperationMocks.reconcileErrorBody.mockReset()
+  generationOperationMocks.reconcileErrorBody.mockReturnValue({})
   generationOperationMocks.registerViewer.mockReset()
   generationOperationMocks.registerViewer.mockReturnValue(() => undefined)
   generationOperationMocks.stopOperation.mockReset()
@@ -1937,6 +1959,101 @@ describe('requestServerChatGeneration durable cancel-on-abort', () => {
     expect(get(activeGenerationJobs)).toEqual([
       expect.objectContaining({ jobId: stream.jobId, operationId: stream.operationId }),
     ])
+  })
+
+  it('refreshes typed stale-attempt authority and reattaches the current exact operation attempt', async () => {
+    const operationId = '11111111-1111-4111-8111-111111111111'
+    const staleStream = {
+      operationId,
+      acceptedMessageId: '22222222-2222-4222-8222-222222222222',
+      attemptNo: 1,
+      jobId: 'job-stale',
+      projectionEpoch: 40,
+      href: `/api/v1/generation-operations/${operationId}/stream?attemptNo=1&jobId=job-stale&projectionEpoch=40`,
+    }
+    const currentStream = {
+      ...staleStream,
+      attemptNo: 2,
+      jobId: 'job-current',
+      projectionEpoch: 41,
+      href: `/api/v1/generation-operations/${operationId}/stream?attemptNo=2&jobId=job-current&projectionEpoch=41`,
+    }
+    generationOperationMocks.reconcileErrorBody.mockReturnValueOnce({
+      operation: { operationId, state: 'owned_by_job' },
+      stream: currentStream,
+    })
+    const calls: string[] = []
+    const encoder = new TextEncoder()
+    vi.stubGlobal('fetch', async (url: string) => {
+      calls.push(url)
+      if (calls.length === 1) {
+        return new Response(
+          JSON.stringify({
+            error: 'stale_generation_attempt',
+            operation: { operationId, state: 'owned_by_job' },
+          }),
+          { status: 409, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              encoder.encode(
+                `event: job_accepted\ndata: ${JSON.stringify({
+                  jobId: 'job-current',
+                  operationId,
+                  operationStateVersion: 6,
+                  projectionEpoch: 41,
+                  attemptNo: 2,
+                })}\n\n`,
+              ),
+            )
+            controller.enqueue(encoder.encode('event: prompt\ndata: {"formated":[{"role":"user","content":"hi"}]}\n\n'))
+            controller.enqueue(
+              encoder.encode(
+                'event: info\ndata: {"generationId":"job-current","generationInfo":{"generationId":"job-current","model":"m"}}\n\n',
+              ),
+            )
+            controller.enqueue(
+              encoder.encode(
+                `event: done\ndata: ${JSON.stringify({
+                  result: 'current result',
+                  generationId: 'job-current',
+                  jobId: 'job-current',
+                  operationId,
+                  operationStateVersion: 7,
+                  projectionEpoch: 42,
+                  attemptNo: 2,
+                })}\n\n`,
+              ),
+            )
+            controller.close()
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      )
+    })
+
+    const served = await requestServerChatGeneration(baseInput, null, undefined, staleStream)
+
+    expect(served.status).toBe('ok')
+    if (served.status !== 'ok') return
+    await expect(served.terminal).resolves.toMatchObject({
+      status: 'done',
+      done: { generationId: 'job-current', result: 'current result' },
+    })
+    expect(calls).toEqual([staleStream.href, currentStream.href])
+    expect(generationOperationMocks.reconcileErrorBody).toHaveBeenCalledWith(
+      expect.objectContaining({ error: 'stale_generation_attempt' }),
+    )
+    expect(generationOperationMocks.applySseEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'job_accepted', jobId: 'job-current', operationId }),
+      expect.objectContaining({ chatId: 'chat-1', mode: 'send' }),
+    )
+    expect(generationOperationMocks.applySseEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'done', jobId: 'job-current', operationId }),
+    )
   })
 
   it('does NOT cancel on abort for a non-durable send', async () => {

@@ -68,11 +68,7 @@ import {
   recordHydratedCharacterLorebooks,
   resetLorebookHydration,
 } from './server/lorebookBridge.svelte'
-import {
-  setActiveGenerationJobs,
-  startActiveGenerationReattach,
-  triggerOpenChatGenerationReattach,
-} from './process/reattach'
+import { startActiveGenerationReattach, triggerOpenChatGenerationReattach } from './process/reattach'
 import {
   setGenerationFinalizationPersistences,
   startGenerationFinalizationPersistenceRefresh,
@@ -346,8 +342,7 @@ export async function loadWebInitialDatabase() {
   )
   setServerCommandConflictGapHandler(handleServerCommandConflictGap)
   setResourceWriteGuardEnabled(true)
-  applyGenerationOperationBootstrap(runtime)
-  setActiveGenerationJobs(runtime.activeGenerationJobs ?? [])
+  applyGenerationOperationBootstrap(runtime, 'startup')
   setPendingRecoveredGenerationEffects(runtime.pendingGenerationEffects ?? [])
   setGenerationFinalizationPersistences(runtime.generationFinalizations ?? [])
   startGenerationFinalizationPersistenceRefresh()
