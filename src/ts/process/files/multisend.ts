@@ -1,6 +1,4 @@
-import { selectedCharID } from 'src/ts/stores.svelte'
-import { getDatabase } from 'src/ts/storage/database.svelte'
-import { get } from 'svelte/store'
+import { getDatabase, type Message } from 'src/ts/storage/database.svelte'
 import { sendChat } from '../index.svelte'
 import { downloadFile } from 'src/ts/globalApi.svelte'
 import { HypaProcesser } from '../memory/hypamemory'
@@ -11,7 +9,9 @@ import {
   appendCurrentChatUserMessageForSend,
   captureActiveChatTarget,
   isActiveChatTargetFresh,
+  type ActiveChatTarget,
 } from 'src/ts/chatCommands'
+import { hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
 
 type sendTextFileArg = {
   file: string
@@ -23,6 +23,54 @@ type sendPDFFileArg = {
   query: string
 }
 
+const poExtractedNoteMarker = /^#\. Notes? =/
+
+function messagesForCapturedTarget(target: ActiveChatTarget): Message[] | null {
+  const characters = getDatabase().characters ?? []
+  const character = target.characterId
+    ? characters.find((candidate) => candidate.chaId === target.characterId)
+    : characters[target.selectedCharID]
+  if (!character) return null
+
+  const chat = target.chatId
+    ? character.chats?.find((candidate) => candidate.id === target.chatId)
+    : character.chats?.[target.chatPage]
+  return chat?.message ?? null
+}
+
+function adjacentAssistantResult(messages: readonly Message[], acceptedMessageId: string): Message | null {
+  let acceptedIndex = -1
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index]
+    if (message.chatId !== acceptedMessageId || message.role !== 'user') continue
+    if (acceptedIndex !== -1) return null
+    acceptedIndex = index
+  }
+  if (acceptedIndex < 0) return null
+
+  const assistant = messages[acceptedIndex + 1]
+  return assistant?.role === 'char' ? assistant : null
+}
+
+async function resolveAcceptedAssistantResult(
+  target: ActiveChatTarget,
+  acceptedMessageId: string,
+): Promise<Message | null> {
+  const projected = messagesForCapturedTarget(target)
+  const projectedResult = projected ? adjacentAssistantResult(projected, acceptedMessageId) : null
+  if (projectedResult) return projectedResult
+  if (!target.chatId) return null
+
+  try {
+    await hydrateChatMessages(target.chatId, { force: true, strict: true })
+  } catch {
+    return null
+  }
+
+  const reconciled = messagesForCapturedTarget(target)
+  return reconciled ? adjacentAssistantResult(reconciled, acceptedMessageId) : null
+}
+
 async function sendPofile(arg: sendTextFileArg): Promise<boolean> {
   let result = ''
   let msgId = ''
@@ -31,6 +79,38 @@ async function sendPofile(arg: sendTextFileArg): Promise<boolean> {
   let parseMode = 0
   const target = captureActiveChatTarget()
   if (!isActiveChatTargetFresh(target)) return false
+  const flushEntry = async (): Promise<boolean> => {
+    if (msgId === '') return true
+
+    let text = msgId
+    if (speaker !== '') {
+      text = `Speaker: ${speaker}\n${text}`
+    }
+    if (note !== '') {
+      text = `Note: ${note}\n${text}`
+    }
+    if (!isActiveChatTargetFresh(target)) return false
+    const appendResult = await appendCurrentChatUserMessageForSend(text, { expectedTarget: target })
+    if (appendResult.status !== 'ok') return false
+    if (!isActiveChatTargetFresh(target)) return false
+    const generated = await sendChat(-1)
+    if (!generated) return false
+
+    const assistant = await resolveAcceptedAssistantResult(target, appendResult.messageId)
+    if (!assistant) return false
+    const msgStr = assistant.data
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => `"${line.replaceAll('"', '\\"')}"`)
+      .join('\n')
+    result += `msgstr ""\n${msgStr}\n\n`
+    note = ''
+    speaker = ''
+    msgId = ''
+    parseMode = 0
+    return true
+  }
+
   const lines = arg.file.split('\n')
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
@@ -39,40 +119,11 @@ async function sendPofile(arg: sendTextFileArg): Promise<boolean> {
         result += '\n'
         continue
       }
-      let text = msgId
-      if (speaker !== '') {
-        text = `Speaker: ${speaker}\n${text}`
-      }
-      if (note !== '') {
-        text = `Note: ${note}\n${text}`
-      }
-      if (!isActiveChatTargetFresh(target)) return false
-      const appendResult = await appendCurrentChatUserMessageForSend(text, { expectedTarget: target })
-      if (appendResult.status !== 'ok') return false
-      if (!isActiveChatTargetFresh(target)) return false
-      await sendChat(-1)
-      if (!isActiveChatTargetFresh(target)) return false
-      const currentChar = getDatabase().characters[get(selectedCharID)]
-      const currentChat = currentChar?.chats?.[currentChar.chatPage]
-      if (!currentChat) return false
-      const res = currentChat.message[currentChat.message.length - 1]
-      const msgStr = res.data
-        .split('\n')
-        .filter((a) => {
-          return a !== ''
-        })
-        .map((str) => {
-          return `"${str.replaceAll('"', '\\"')}"`
-        })
-        .join('\n')
-      result += `msgstr ""\n${msgStr}\n\n`
-      note = ''
-      speaker = ''
-      msgId = ''
+      if (!(await flushEntry())) return false
       continue
     }
-    if (line.startsWith('#. Note =')) {
-      note = line.replace('#. Notes =', '').trim()
+    if (poExtractedNoteMarker.test(line)) {
+      note = line.replace(poExtractedNoteMarker, '').trim()
       continue
     }
     if (line.startsWith('#. Speaker =')) {
@@ -107,6 +158,7 @@ async function sendPofile(arg: sendTextFileArg): Promise<boolean> {
     }
     result += line + '\n'
   }
+  if (!(await flushEntry())) return false
   await downloadFile('translated.po', result)
   return true
 }

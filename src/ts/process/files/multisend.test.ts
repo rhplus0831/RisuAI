@@ -24,6 +24,7 @@ const testState = vi.hoisted(() => {
         data: `translated:${latestMessage?.data ?? ''}`,
       })
     })
+    return true
   })
 
   let runTrustedWrite = <T>(callback: () => T): T => callback()
@@ -38,6 +39,7 @@ const testState = vi.hoisted(() => {
     addTextSpy: vi.fn(),
     similaritySearchSpy: vi.fn(),
     getDocumentSpy: vi.fn(),
+    hydrateChatMessagesSpy: vi.fn(async () => {}),
     setRunTrustedWrite(fn: typeof runTrustedWrite) {
       runTrustedWrite = fn
     },
@@ -66,6 +68,10 @@ vi.mock('src/ts/storage/fastifyStorage', () => ({
 
 vi.mock('src/ts/stores.svelte', () => ({
   selectedCharID: testState.selectedCharID,
+}))
+
+vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
+  hydrateChatMessages: testState.hydrateChatMessagesSpy,
 }))
 
 vi.mock('../index.svelte', () => ({
@@ -172,6 +178,24 @@ function makePoFile(entryCount: number): string {
   }).join('\n')
 }
 
+const finalEntrySeparatorFixtures = [
+  {
+    description: 'with a trailing blank separator',
+    source: 'msgid "final with separator"\nmsgstr ""\n\n',
+    expected: 'translated:final with separator',
+  },
+  {
+    description: 'without a trailing separator',
+    source: 'msgid "final without separator"\nmsgstr ""',
+    expected: 'translated:final without separator',
+  },
+] as const
+
+const extractedNoteMarkerFixtures = [
+  { marker: '#. Note =', note: 'singular context' },
+  { marker: '#. Notes =', note: 'plural context' },
+] as const
+
 function resetChatState() {
   testState.databaseState.db = {
     characters: [
@@ -226,6 +250,8 @@ beforeEach(() => {
   testState.similaritySearchSpy.mockReset()
   testState.similaritySearchSpy.mockResolvedValue(['matched segment'])
   testState.getDocumentSpy.mockReset()
+  testState.hydrateChatMessagesSpy.mockReset()
+  testState.hydrateChatMessagesSpy.mockResolvedValue(undefined)
   mockPdfDocument()
   consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 })
@@ -255,6 +281,104 @@ describe('postChatFile file-send handling', () => {
     expect(translatedPo).toContain('msgid "line 124"')
     expect(translatedPo).toContain('"translated:line 124"')
     expect(translatedPo.match(/^msgstr ""$/gm)).toHaveLength(entryCount)
+  })
+
+  it.each(finalEntrySeparatorFixtures)('flushes the final PO entry $description', async ({ source, expected }) => {
+    const results = await postChatFile({
+      name: 'final-entry.po',
+      data: textBytes(source),
+    })
+
+    expect(results).toEqual([{ type: 'void' }])
+    expect(testState.sendChatSpy).toHaveBeenCalledTimes(1)
+    expect(testState.downloadFileSpy).toHaveBeenCalledTimes(1)
+    expect(testState.downloadFileSpy.mock.calls[0][1]).toContain(`"${expected}"`)
+  })
+
+  it.each(extractedNoteMarkerFixtures)(
+    'removes $marker and sends its extracted note value to the model',
+    async ({ marker, note }) => {
+      const results = await postChatFile({
+        name: 'notes.po',
+        data: textBytes(`${marker} ${note}\nmsgid "source text"\nmsgstr ""`),
+      })
+
+      expect(results).toEqual([{ type: 'void' }])
+      const userMessage = testState.databaseState.db.characters[0].chats[0].message.find(
+        (message: any) => message.role === 'user',
+      )
+      expect(userMessage?.data).toBe(`Note: ${note}\nsource text`)
+      expect(userMessage?.data).not.toContain(marker)
+    },
+  )
+
+  it('exports the assistant adjacent to the exact accepted user message instead of the last row', async () => {
+    testState.sendChatSpy.mockImplementationOnce(async () => {
+      const messages = testState.databaseState.db.characters[0].chats[0].message
+      messages.push({ role: 'char', data: 'owned translation' })
+      messages.push({ role: 'user', data: 'unrelated source', chatId: 'unrelated-user' })
+      messages.push({ role: 'char', data: 'unrelated last result', chatId: 'unrelated-assistant' })
+      return true
+    })
+
+    const results = await postChatFile({
+      name: 'exact-result.po',
+      data: textBytes('msgid "source text"\nmsgstr ""'),
+    })
+
+    expect(results).toEqual([{ type: 'void' }])
+    const translatedPo = testState.downloadFileSpy.mock.calls[0][1]
+    expect(translatedPo).toContain('"owned translation"')
+    expect(translatedPo).not.toContain('unrelated last result')
+  })
+
+  it('forces guarded hydration when the accepted assistant projection is missing', async () => {
+    testState.sendChatSpy.mockResolvedValueOnce(true)
+    testState.hydrateChatMessagesSpy.mockImplementationOnce(async () => {
+      const messages = testState.databaseState.db.characters[0].chats[0].message
+      const acceptedIndex = messages.findIndex((message: any) => message.role === 'user')
+      messages.splice(acceptedIndex + 1, 0, { role: 'char', data: 'authoritative translation' })
+    })
+
+    const results = await postChatFile({
+      name: 'reconciled-result.po',
+      data: textBytes('msgid "source text"\nmsgstr ""'),
+    })
+
+    expect(testState.hydrateChatMessagesSpy).toHaveBeenCalledWith('chat-1', { force: true, strict: true })
+    expect(results).toEqual([{ type: 'void' }])
+    expect(testState.downloadFileSpy.mock.calls[0][1]).toContain('"authoritative translation"')
+  })
+
+  it('suppresses success and download when generation resolves false', async () => {
+    testState.sendChatSpy.mockResolvedValueOnce(false)
+
+    const results = await postChatFile({
+      name: 'failed-generation.po',
+      data: textBytes('msgid "source text"\nmsgstr ""'),
+    })
+
+    expect(results).toEqual([])
+    expect(testState.hydrateChatMessagesSpy).not.toHaveBeenCalled()
+    expect(testState.downloadFileSpy).not.toHaveBeenCalled()
+  })
+
+  it('suppresses success and download when no exact adjacent assistant exists after hydration', async () => {
+    testState.sendChatSpy.mockImplementationOnce(async () => {
+      const messages = testState.databaseState.db.characters[0].chats[0].message
+      messages.push({ role: 'user', data: 'intervening source', chatId: 'intervening-user' })
+      messages.push({ role: 'char', data: 'unowned translation', chatId: 'unowned-assistant' })
+      return true
+    })
+
+    const results = await postChatFile({
+      name: 'unowned-result.po',
+      data: textBytes('msgid "source text"\nmsgstr ""'),
+    })
+
+    expect(testState.hydrateChatMessagesSpy).toHaveBeenCalledWith('chat-1', { force: true, strict: true })
+    expect(results).toEqual([])
+    expect(testState.downloadFileSpy).not.toHaveBeenCalled()
   })
 
   it('L52: postChatFile logs nothing for .po, PDF, XML, and text files', async () => {
@@ -374,6 +498,7 @@ describe('postChatFile file-send handling', () => {
         data: `translated:${latestMessage?.data ?? ''}`,
       })
       currentChar.chatPage = 1
+      return true
     })
 
     const results = await postChatFile({
