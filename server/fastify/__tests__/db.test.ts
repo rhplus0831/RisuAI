@@ -74,6 +74,9 @@ describe('schema migrations', () => {
         'command_mutation_receipts',
         'database_metadata',
         'generation_finalization_retries',
+        'generation_operation_attempts',
+        'generation_operation_projection_state',
+        'generation_operations',
         'greeting_translations',
         'hypa_v3_presets',
         'inlay_catalog',
@@ -138,6 +141,94 @@ describe('schema migrations', () => {
       }>
       expect(columns.find((column) => column.name === 'alternate_messages_json')).toMatchObject({
         dflt_value: "'[]'",
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('migrates v28 to the operation ledger and nullable lineage columns without changing revision', () => {
+    const dataDir = makeDataDir()
+    seedSchemaVersion(dataDir, 28, 19)
+    const before = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      before.exec(`
+        CREATE TABLE command_events (
+          revision INTEGER PRIMARY KEY CHECK (revision >= 0),
+          type TEXT NOT NULL,
+          resource TEXT NOT NULL,
+          id TEXT,
+          parent_id TEXT,
+          origin_writer_session_id TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        INSERT INTO command_events (revision, type, resource)
+          VALUES (19, 'settings.updated', 'settings');
+        CREATE TABLE generation_finalization_retries (
+          generation_id TEXT PRIMARY KEY,
+          chat_id TEXT NOT NULL,
+          mode TEXT NOT NULL,
+          target_message_id TEXT,
+          message_json TEXT NOT NULL,
+          alternate_messages_json TEXT NOT NULL DEFAULT '[]',
+          chat_var_mutations_json TEXT NOT NULL,
+          target_snapshot_json TEXT,
+          failure_count INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          terminal_error TEXT,
+          status TEXT NOT NULL DEFAULT 'pending',
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        INSERT INTO generation_finalization_retries (
+          generation_id, chat_id, mode, message_json, chat_var_mutations_json
+        ) VALUES ('legacy-generation', 'chat-a', 'send', '{}', '[]');
+      `)
+    } finally {
+      before.close()
+    }
+
+    const db = openDatabase(dataDir)
+    try {
+      expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 19 })
+      expect(listTables(db)).toEqual(
+        expect.arrayContaining([
+          'generation_operations',
+          'generation_operation_attempts',
+          'generation_operation_projection_state',
+        ]),
+      )
+      expect(db.prepare('SELECT id, epoch FROM generation_operation_projection_state').get()).toEqual({
+        id: 1,
+        epoch: 0,
+      })
+      const eventColumns = (db.prepare('PRAGMA table_info(command_events)').all() as Array<{ name: string }>).map(
+        ({ name }) => name,
+      )
+      expect(eventColumns).toEqual(
+        expect.arrayContaining(['database_lineage', 'operation_id', 'source_message_id', 'job_id']),
+      )
+      const finalizationColumns = (
+        db.prepare('PRAGMA table_info(generation_finalization_retries)').all() as Array<{ name: string }>
+      ).map(({ name }) => name)
+      expect(finalizationColumns).toEqual(
+        expect.arrayContaining([
+          'database_lineage',
+          'operation_id',
+          'operation_attempt_no',
+          'actor_writer_session_id',
+          'actor_writer_epoch',
+          'accepted_message_id',
+          'terminal_outcome',
+        ]),
+      )
+      expect(db.prepare('SELECT database_lineage, operation_id FROM generation_finalization_retries').get()).toEqual({
+        database_lineage: null,
+        operation_id: null,
+      })
+      expect(db.prepare('SELECT database_lineage, operation_id FROM command_events').get()).toEqual({
+        database_lineage: null,
+        operation_id: null,
       })
     } finally {
       db.close()
@@ -419,6 +510,9 @@ describe('schema migrations', () => {
         'command_mutation_receipts',
         'database_metadata',
         'generation_finalization_retries',
+        'generation_operation_attempts',
+        'generation_operation_projection_state',
+        'generation_operations',
         'greeting_translations',
         'hypa_v3_presets',
         'inlay_catalog',

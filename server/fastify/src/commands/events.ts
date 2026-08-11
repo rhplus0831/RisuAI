@@ -7,6 +7,10 @@ export interface CommandEvent {
   resource: string
   id?: string
   parentId?: string
+  databaseLineage?: string
+  operationId?: string
+  sourceMessageId?: string
+  jobId?: string
   origin?: CommandEventOrigin
 }
 
@@ -100,8 +104,11 @@ export function persistCommandEvent(
   // events that never had an origin.
   db.prepare(
     `
-      INSERT INTO command_events (revision, type, resource, id, parent_id, origin_writer_session_id)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO command_events (
+        revision, type, resource, id, parent_id, origin_writer_session_id,
+        database_lineage, operation_id, source_message_id, job_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
   ).run(
     event.revision,
@@ -110,6 +117,10 @@ export function persistCommandEvent(
     event.id ?? null,
     event.parentId ?? null,
     event.origin?.writerSessionId ?? null,
+    event.databaseLineage ?? null,
+    event.operationId ?? null,
+    event.sourceMessageId ?? null,
+    event.jobId ?? null,
   )
   pruneCommandEventHistory(db, historyLimit, event.revision)
 }
@@ -130,7 +141,11 @@ export function listPersistedCommandEventHistory(db: DatabaseSync): readonly Com
     .prepare(
       `
         SELECT revision, type, resource, id, parent_id AS parentId,
-               origin_writer_session_id AS originWriterSessionId
+               origin_writer_session_id AS originWriterSessionId,
+               database_lineage AS databaseLineage,
+               operation_id AS operationId,
+               source_message_id AS sourceMessageId,
+               job_id AS jobId
         FROM command_events
         ORDER BY revision ASC
       `,
@@ -166,6 +181,10 @@ interface PersistedCommandEventRow {
   id: string | null
   parentId: string | null
   originWriterSessionId: string | null
+  databaseLineage: string | null
+  operationId: string | null
+  sourceMessageId: string | null
+  jobId: string | null
 }
 
 function commandEventFromRow(row: PersistedCommandEventRow): CommandEvent {
@@ -175,6 +194,10 @@ function commandEventFromRow(row: PersistedCommandEventRow): CommandEvent {
     resource: row.resource,
     ...(row.id !== null ? { id: row.id } : {}),
     ...(row.parentId !== null ? { parentId: row.parentId } : {}),
+    ...(row.databaseLineage !== null ? { databaseLineage: row.databaseLineage } : {}),
+    ...(row.operationId !== null ? { operationId: row.operationId } : {}),
+    ...(row.sourceMessageId !== null ? { sourceMessageId: row.sourceMessageId } : {}),
+    ...(row.jobId !== null ? { jobId: row.jobId } : {}),
     ...(row.originWriterSessionId !== null ? { origin: { writerSessionId: row.originWriterSessionId } } : {}),
   }
 }

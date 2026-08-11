@@ -11,6 +11,7 @@ import {
 import { createDatabaseMetadataTable } from './databaseLineage.js'
 import { createGreetingTranslationTable } from './translation/greetingTranslationStore.js'
 import { createRequestHistoryTable } from './requestHistory.js'
+import { createGenerationOperationTables } from './generationOperations.js'
 import {
   createAssetMetadataTable,
   createInlayCatalogTable,
@@ -20,7 +21,7 @@ import {
   repairPersistedGlobalLorebookIdsInSqlite,
 } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 28
+export const CURRENT_SCHEMA_VERSION = 29
 
 export interface OpenDatabaseOptions {
   allowMissingDatabase?: boolean
@@ -285,6 +286,71 @@ export const MIGRATIONS: readonly MigrationStep[] = [
       createRequestHistoryTable(db)
     },
   },
+  {
+    version: 29,
+    name: 'generation-operation-ledger',
+    up: (db) => {
+      createGenerationOperationTables(db)
+      createGenerationFinalizationRetryTable(db)
+      ensureColumn(
+        db,
+        'generation_finalization_retries',
+        'database_lineage',
+        'ALTER TABLE generation_finalization_retries ADD COLUMN database_lineage TEXT',
+      )
+      ensureColumn(
+        db,
+        'generation_finalization_retries',
+        'operation_id',
+        'ALTER TABLE generation_finalization_retries ADD COLUMN operation_id TEXT',
+      )
+      ensureColumn(
+        db,
+        'generation_finalization_retries',
+        'operation_attempt_no',
+        'ALTER TABLE generation_finalization_retries ADD COLUMN operation_attempt_no INTEGER CHECK (operation_attempt_no IS NULL OR operation_attempt_no > 0)',
+      )
+      ensureColumn(
+        db,
+        'generation_finalization_retries',
+        'actor_writer_session_id',
+        'ALTER TABLE generation_finalization_retries ADD COLUMN actor_writer_session_id TEXT',
+      )
+      ensureColumn(
+        db,
+        'generation_finalization_retries',
+        'actor_writer_epoch',
+        'ALTER TABLE generation_finalization_retries ADD COLUMN actor_writer_epoch INTEGER CHECK (actor_writer_epoch IS NULL OR actor_writer_epoch >= 0)',
+      )
+      ensureColumn(
+        db,
+        'generation_finalization_retries',
+        'accepted_message_id',
+        'ALTER TABLE generation_finalization_retries ADD COLUMN accepted_message_id TEXT',
+      )
+      ensureColumn(
+        db,
+        'generation_finalization_retries',
+        'terminal_outcome',
+        "ALTER TABLE generation_finalization_retries ADD COLUMN terminal_outcome TEXT CHECK (terminal_outcome IS NULL OR terminal_outcome IN ('completed', 'cancelled'))",
+      )
+      createCommandEventTable(db)
+      ensureColumn(
+        db,
+        'command_events',
+        'database_lineage',
+        'ALTER TABLE command_events ADD COLUMN database_lineage TEXT',
+      )
+      ensureColumn(db, 'command_events', 'operation_id', 'ALTER TABLE command_events ADD COLUMN operation_id TEXT')
+      ensureColumn(
+        db,
+        'command_events',
+        'source_message_id',
+        'ALTER TABLE command_events ADD COLUMN source_message_id TEXT',
+      )
+      ensureColumn(db, 'command_events', 'job_id', 'ALTER TABLE command_events ADD COLUMN job_id TEXT')
+    },
+  },
 ]
 
 /** Whether `table` already has a column named `column` (PRAGMA table_info). */
@@ -353,6 +419,7 @@ export function openDatabase(dataDir: string, options: OpenDatabaseOptions = {})
       createCommandEventTable(db)
       createCommandMutationReceiptTable(db)
       createGenerationFinalizationRetryTable(db)
+      createGenerationOperationTables(db)
       createAssetMetadataTable(db)
       createInlayCatalogTable(db)
       createCharacterTables(db)
@@ -579,6 +646,10 @@ function createCommandEventTable(db: DatabaseSync): void {
       id TEXT,
       parent_id TEXT,
       origin_writer_session_id TEXT,
+      database_lineage TEXT,
+      operation_id TEXT,
+      source_message_id TEXT,
+      job_id TEXT,
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
     );
 

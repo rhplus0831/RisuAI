@@ -10,6 +10,7 @@ import { assessDatabaseInitialization, InitializeConflictError } from './databas
 import { COMMAND_EVENT_CATALOG, persistRevisionedCommandEvent, type CommandEvent } from './commands/events.js'
 import { getDatabaseLineage, getDatabaseWriterMetadata, rotateDatabaseLineage } from './databaseLineage.js'
 import { recordTableWrite } from './protocolMetrics.js'
+import { bumpGenerationOperationProjectionEpoch, createGenerationOperationTables } from './generationOperations.js'
 import {
   GREETING_TRANSLATIONS_PORTABLE_FIELD,
   listGreetingTranslationsForRewrite,
@@ -2404,6 +2405,12 @@ export async function applyImport(
     if (cloneBeforeMessageSplit) {
       options.beforeRevision?.(db)
     }
+    // Portable imports never own the live accepted-send ledger. Remove the
+    // replaced database lifetime's operations before rotating lineage; any
+    // historical assistant metadata remains ordinary transcript metadata.
+    db.exec('DELETE FROM generation_operation_attempts')
+    db.exec('DELETE FROM generation_operations')
+    bumpGenerationOperationProjectionEpoch(db)
     const databaseLineage = rotateDatabaseLineage(db)
     const event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateImported)
     db.exec('COMMIT')
@@ -2756,6 +2763,9 @@ function saveDir(dataDir: string): string {
 export const SQLITE_BACKUP_TABLES = [
   'command_events',
   'generation_finalization_retries',
+  'generation_operation_projection_state',
+  'generation_operations',
+  'generation_operation_attempts',
   'memory_chunks',
   'memory_summaries',
   'memory_legacy_summary_tombstones',
@@ -3354,6 +3364,13 @@ function copyGenerationFinalizationRetriesFromBackup(db: DatabaseSync): void {
   )
   const targetSnapshot = backupColumns.has('target_snapshot_json') ? 'target_snapshot_json' : 'NULL'
   const alternateMessages = backupColumns.has('alternate_messages_json') ? 'alternate_messages_json' : "'[]'"
+  const databaseLineage = backupColumns.has('database_lineage') ? 'database_lineage' : 'NULL'
+  const operationId = backupColumns.has('operation_id') ? 'operation_id' : 'NULL'
+  const operationAttemptNo = backupColumns.has('operation_attempt_no') ? 'operation_attempt_no' : 'NULL'
+  const actorWriterSessionId = backupColumns.has('actor_writer_session_id') ? 'actor_writer_session_id' : 'NULL'
+  const actorWriterEpoch = backupColumns.has('actor_writer_epoch') ? 'actor_writer_epoch' : 'NULL'
+  const acceptedMessageId = backupColumns.has('accepted_message_id') ? 'accepted_message_id' : 'NULL'
+  const terminalOutcome = backupColumns.has('terminal_outcome') ? 'terminal_outcome' : 'NULL'
 
   // Historical queue tables predate target snapshots (schema v18) and
   // alternate messages (v20). Keep the current destination order explicit so
@@ -3361,6 +3378,13 @@ function copyGenerationFinalizationRetriesFromBackup(db: DatabaseSync): void {
   db.exec(`
     INSERT INTO main.generation_finalization_retries (
       generation_id,
+      database_lineage,
+      operation_id,
+      operation_attempt_no,
+      actor_writer_session_id,
+      actor_writer_epoch,
+      accepted_message_id,
+      terminal_outcome,
       chat_id,
       mode,
       target_message_id,
@@ -3377,6 +3401,13 @@ function copyGenerationFinalizationRetriesFromBackup(db: DatabaseSync): void {
     )
     SELECT
       generation_id,
+      ${databaseLineage},
+      ${operationId},
+      ${operationAttemptNo},
+      ${actorWriterSessionId},
+      ${actorWriterEpoch},
+      ${acceptedMessageId},
+      ${terminalOutcome},
       chat_id,
       mode,
       target_message_id,
@@ -3394,6 +3425,68 @@ function copyGenerationFinalizationRetriesFromBackup(db: DatabaseSync): void {
   `)
 }
 
+function copyCommandEventsFromBackup(db: DatabaseSync): void {
+  const backupColumns = new Set(
+    (
+      db.prepare("PRAGMA bak.table_info('command_events')").all() as Array<{
+        name: string
+      }>
+    ).map((column) => column.name),
+  )
+  const columnOrNull = (column: string): string => (backupColumns.has(column) ? column : 'NULL')
+  db.exec(`
+    INSERT INTO main.command_events (
+      revision, type, resource, id, parent_id, origin_writer_session_id,
+      database_lineage, operation_id, source_message_id, job_id, created_at
+    )
+    SELECT
+      revision, type, resource, id, parent_id, ${columnOrNull('origin_writer_session_id')},
+      ${columnOrNull('database_lineage')}, ${columnOrNull('operation_id')},
+      ${columnOrNull('source_message_id')}, ${columnOrNull('job_id')}, created_at
+    FROM bak.command_events
+  `)
+}
+
+function rewriteRestoredGenerationOperationLineage(db: DatabaseSync, databaseLineage: string): void {
+  createGenerationOperationTables(db)
+  const projectionEpoch = bumpGenerationOperationProjectionEpoch(db)
+  db.prepare(
+    `
+      UPDATE generation_operations
+      SET database_lineage = ?, projection_epoch = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    `,
+  ).run(databaseLineage, projectionEpoch)
+  db.prepare('UPDATE generation_operation_attempts SET database_lineage = ?').run(databaseLineage)
+  db.prepare(
+    `
+      UPDATE generation_finalization_retries
+      SET database_lineage = ?
+      WHERE operation_id IS NOT NULL
+    `,
+  ).run(databaseLineage)
+  db.prepare(
+    `
+      UPDATE command_events
+      SET database_lineage = ?
+      WHERE operation_id IS NOT NULL
+    `,
+  ).run(databaseLineage)
+  db.prepare(
+    `
+      UPDATE messages
+      SET json = json_set(json, '$.generationInfo.databaseLineage', ?)
+      WHERE json_valid(json)
+        AND json_type(json, '$.generationInfo.operationId') = 'text'
+        AND EXISTS (
+          SELECT 1
+          FROM generation_operations
+          WHERE database_lineage = ?
+            AND operation_id = json_extract(messages.json, '$.generationInfo.operationId')
+        )
+    `,
+  ).run(databaseLineage, databaseLineage)
+}
+
 function restoreSqliteFromBackup(
   db: DatabaseSync,
   backupDbPath: string | null,
@@ -3408,6 +3501,7 @@ function restoreSqliteFromBackup(
     // any legacy db.json, so rows absent from the snapshot do not survive
     // restore.
     db.exec('BEGIN')
+    db.exec('PRAGMA defer_foreign_keys = ON')
     let databaseLineage: string
     let committed = false
     try {
@@ -3416,6 +3510,7 @@ function restoreSqliteFromBackup(
       }
       db.exec('DELETE FROM request_history')
       databaseLineage = rotateDatabaseLineage(db)
+      rewriteRestoredGenerationOperationLineage(db, databaseLineage)
       hooks.beforeCommit?.(databaseLineage)
       repairPersistedModelProfileInlineSecretsInSqlite(db)
       db.exec('COMMIT')
@@ -3447,6 +3542,7 @@ function restoreSqliteFromBackup(
   let operationError: unknown
   try {
     db.exec('BEGIN')
+    db.exec('PRAGMA defer_foreign_keys = ON')
     try {
       // Keep the live schema version current; only the snapshot's revision is
       // part of the restored durable state.
@@ -3471,6 +3567,8 @@ function restoreSqliteFromBackup(
         if (exists) {
           if (table === 'generation_finalization_retries') {
             copyGenerationFinalizationRetriesFromBackup(db)
+          } else if (table === 'command_events') {
+            copyCommandEventsFromBackup(db)
           } else {
             db.exec(`INSERT INTO main.${table} SELECT * FROM bak.${table}`)
           }
@@ -3479,6 +3577,7 @@ function restoreSqliteFromBackup(
       db.exec('DELETE FROM request_history')
       repairPersistedGlobalLorebookIdsInSqlite(db)
       databaseLineage = rotateDatabaseLineage(db)
+      rewriteRestoredGenerationOperationLineage(db, databaseLineage)
       hooks.beforeCommit?.(databaseLineage)
       repairPersistedModelProfileInlineSecretsInSqlite(db)
       db.exec('COMMIT')

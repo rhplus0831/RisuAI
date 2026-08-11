@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { CURRENT_SCHEMA_VERSION } from '../src/db.js'
+import { getDatabaseLineage } from '../src/databaseLineage.js'
 import {
   GENERATION_FINALIZATION_LEGACY_SNAPSHOT_ERROR,
   pruneTerminalGenerationFinalizationRetries,
@@ -24,6 +25,11 @@ import {
 } from '../src/repository.js'
 import type { FastifyInstance } from 'fastify'
 import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
+import {
+  createGenerationOperation,
+  reserveGenerationOperationAttempt,
+  transitionGenerationOperation,
+} from '../src/generationOperations.js'
 
 const subtle = webcrypto.subtle
 const PNG_BYTES = Buffer.from(
@@ -779,6 +785,212 @@ describe('Phase 2D backups', () => {
       ).toEqual([tombstoneA])
     } finally {
       afterRestart.close()
+    }
+  })
+
+  it('round-trips the operation ledger and rewrites every protocol lineage before boot reconciliation', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'operation-character',
+          name: 'Operation Character',
+          chats: [
+            {
+              id: 'operation-chat',
+              name: 'Operation Chat',
+              note: '',
+              localLore: [],
+              message: [
+                { role: 'user', data: 'accepted', chatId: 'operation-user' },
+                { role: 'char', data: 'persisted result', chatId: 'operation-result' },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+
+    const liveDbPath = path.join(harness.dataDir, 'risu.db')
+    const seed = new DatabaseSync(liveDbPath)
+    let originalLineage: string
+    let originalProjectionEpoch: number
+    try {
+      seed.exec('PRAGMA foreign_keys = ON')
+      originalLineage = getDatabaseLineage(seed)
+      createGenerationOperation(seed, {
+        databaseLineage: originalLineage,
+        operationId: 'operation-round-trip',
+        protocolVersion: 1,
+        requestOrigin: 'accepted_send',
+        creatorWriterSessionId: 'writer-round-trip',
+        creatorWriterEpoch: 3,
+        bindingServerInstanceId: 'server-before-backup',
+        characterId: 'operation-character',
+        chatId: 'operation-chat',
+        mode: 'send',
+        acceptedMessageId: 'operation-user',
+        requestFingerprint: 'b'.repeat(64),
+        intent: { mode: 'send' },
+        acceptedRevision: 1,
+        state: 'accepted',
+      })
+      reserveGenerationOperationAttempt(seed, {
+        databaseLineage: originalLineage,
+        operationId: 'operation-round-trip',
+        expectedState: 'accepted',
+        expectedStateVersion: 1,
+        retryRequestId: 'operation-round-trip',
+        jobId: 'job-round-trip',
+        serverInstanceId: 'server-before-backup',
+        actorWriterSessionId: 'writer-round-trip',
+        actorWriterEpoch: 3,
+        launchRevision: 1,
+      })
+      transitionGenerationOperation(seed, {
+        databaseLineage: originalLineage,
+        operationId: 'operation-round-trip',
+        expectedState: 'launching',
+        expectedStateVersion: 2,
+        nextState: 'owned_by_job',
+      })
+      seed
+        .prepare(
+          `
+          UPDATE messages
+          SET json = json_set(
+            json,
+            '$.generationInfo',
+            json(?)
+          )
+          WHERE uid = 'operation-result'
+        `,
+        )
+        .run(JSON.stringify({ databaseLineage: originalLineage, operationId: 'operation-round-trip' }))
+      insertFinalizationRetry(seed, 'job-round-trip', 'operation-chat')
+      seed
+        .prepare(
+          `
+          UPDATE generation_finalization_retries
+          SET database_lineage = ?, operation_id = 'operation-round-trip', operation_attempt_no = 1,
+              actor_writer_session_id = 'writer-round-trip', actor_writer_epoch = 3,
+              accepted_message_id = 'operation-user', terminal_outcome = 'completed'
+          WHERE generation_id = 'job-round-trip'
+        `,
+        )
+        .run(originalLineage)
+      seed
+        .prepare(
+          `
+          UPDATE command_events
+          SET database_lineage = ?, operation_id = 'operation-round-trip',
+              source_message_id = 'operation-user', job_id = 'job-round-trip'
+          WHERE revision = 1
+        `,
+        )
+        .run(originalLineage)
+      originalProjectionEpoch = (
+        seed.prepare('SELECT epoch FROM generation_operation_projection_state WHERE id = 1').get() as { epoch: number }
+      ).epoch
+    } finally {
+      seed.close()
+    }
+
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'operation ledger round trip' },
+    })
+    expect(backup.statusCode).toBe(201)
+
+    const replaceLive = new DatabaseSync(liveDbPath)
+    try {
+      replaceLive.exec(`
+        DELETE FROM generation_operation_attempts;
+        DELETE FROM generation_operations;
+        DELETE FROM generation_finalization_retries;
+      `)
+    } finally {
+      replaceLive.close()
+    }
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+    const restoredLineage = restored.json().databaseLineage as string
+    expect(restoredLineage).not.toBe(originalLineage)
+
+    const verify = new DatabaseSync(liveDbPath, { readOnly: true })
+    try {
+      expect(
+        verify
+          .prepare(
+            `SELECT database_lineage, state, state_version, projection_epoch, result_message_id
+             FROM generation_operations WHERE operation_id = 'operation-round-trip'`,
+          )
+          .get(),
+      ).toEqual({
+        database_lineage: restoredLineage,
+        state: 'completed',
+        state_version: 4,
+        projection_epoch: expect.any(Number),
+        result_message_id: 'operation-result',
+      })
+      const projectionEpoch = (
+        verify.prepare('SELECT epoch FROM generation_operation_projection_state WHERE id = 1').get() as {
+          epoch: number
+        }
+      ).epoch
+      expect(projectionEpoch).toBeGreaterThan(originalProjectionEpoch)
+      expect(
+        verify
+          .prepare(
+            `SELECT database_lineage, status FROM generation_operation_attempts
+             WHERE operation_id = 'operation-round-trip'`,
+          )
+          .get(),
+      ).toEqual({ database_lineage: restoredLineage, status: 'completed' })
+      expect(
+        verify
+          .prepare(
+            `SELECT database_lineage, operation_id, operation_attempt_no, terminal_outcome
+             FROM generation_finalization_retries WHERE generation_id = 'job-round-trip'`,
+          )
+          .get(),
+      ).toEqual({
+        database_lineage: restoredLineage,
+        operation_id: 'operation-round-trip',
+        operation_attempt_no: 1,
+        terminal_outcome: 'completed',
+      })
+      expect(
+        verify
+          .prepare(
+            `SELECT database_lineage, operation_id, source_message_id, job_id
+             FROM command_events WHERE operation_id = 'operation-round-trip'`,
+          )
+          .get(),
+      ).toEqual({
+        database_lineage: restoredLineage,
+        operation_id: 'operation-round-trip',
+        source_message_id: 'operation-user',
+        job_id: 'job-round-trip',
+      })
+      const restoredMessage = verify.prepare("SELECT json FROM messages WHERE uid = 'operation-result'").get() as {
+        json: string
+      }
+      expect(JSON.parse(restoredMessage.json)).toMatchObject({
+        generationInfo: {
+          databaseLineage: restoredLineage,
+          operationId: 'operation-round-trip',
+        },
+      })
+    } finally {
+      verify.close()
     }
   })
 

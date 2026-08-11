@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyCompress from '@fastify/compress'
 import fastifyMultipart from '@fastify/multipart'
@@ -70,6 +71,7 @@ import { createEmbedMemoryJobBatchHandler, createEmbedMemoryJobHandler } from '.
 import { createSummarizeMemoryJobBatchHandler, createSummarizeMemoryJobHandler } from './memorySummarizeJobHandler.js'
 import { registerRequestTrace } from './requestTrace.js'
 import { createPushNotificationService } from './pushNotifications.js'
+import { reconcileGenerationOperationsAtStartup } from './generationOperations.js'
 
 /**
  * Node `server.requestTimeout` backstop the wall-clock bound for
@@ -173,6 +175,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   })
 
   const db = openDatabase(config.dataDir, { allowMissingDatabase: config.allowMissingDatabase })
+  const serverInstanceId = randomUUID()
   // Directory swaps are journaled around the SQLite restore transaction. Finish
   // an interrupted swap before any backfill, import, route, or worker can
   // observe a database/filesystem mixture.
@@ -189,6 +192,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   // Pre-credential-store preset copies must be repaired before routes or
   // workers can load them into a response, command baseline, or export.
   repairPersistedModelProfileInlineSecretsInSqlite(db)
+  reconcileGenerationOperationsAtStartup(db, serverInstanceId, app.log)
   const memoryEventBus = createMemoryEventBus(app.log)
   const emitMemoryEvent: MemoryEventSink = (event) => {
     if (opts.memoryEvents) {
@@ -318,6 +322,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerAssetsRoutes(app, db, authState, config.dataDir, activeWriterState)
   registerBackupRoutes(app, db, authState, config.dataDir, commandEventSink, {
     automaticBackupRetention: config.automaticBackupRetention ?? DEFAULT_AUTOMATIC_BACKUP_RETENTION,
+    serverInstanceId,
   })
   registerRequestHistoryRoutes(app, db, authState)
   registerPushNotificationRoutes(app, authState, pushNotifications)

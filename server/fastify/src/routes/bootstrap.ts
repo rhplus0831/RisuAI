@@ -11,6 +11,11 @@ import type { GreetingTranslationJobRegistry } from '../greetingTranslationJobs.
 import { emitProtocolMetric, jsonPayloadBytes } from '../protocolMetrics.js'
 import { getDatabaseLineage, getDatabaseWriterMetadata } from '../databaseLineage.js'
 import { assessDatabaseInitialization } from '../databaseInitialization.js'
+import {
+  GENERATION_OPERATION_PROTOCOL_VERSION,
+  getGenerationOperationProjectionEpoch,
+  listGenerationOperationProjections,
+} from '../generationOperations.js'
 
 export const ASSET_BASE_URL = '/api/v1/assets'
 
@@ -31,6 +36,8 @@ export function registerBootstrapRoutes(
       registerActiveWriterSession(activeWriterState, req)
     }
     const { version, revision } = getSchemaState(db)
+    const generationOperationProjectionEpoch = getGenerationOperationProjectionEpoch(db)
+    const generationOperations = listGenerationOperationProjections(db)
     const response = {
       // A damaged database with durable user data must never invite the client
       // to run first-use initialization. The initialize command uses this same
@@ -42,6 +49,9 @@ export function registerBootstrapRoutes(
       writerEpoch: activeWriterState?.epoch ?? getDatabaseWriterMetadata(db).epoch,
       ...(wasRequestedWriterActive === undefined ? {} : { requestedWriterWasActive: wasRequestedWriterActive }),
       assetBaseUrl: ASSET_BASE_URL,
+      generationOperationProtocol: { version: GENERATION_OPERATION_PROTOCOL_VERSION },
+      generationOperationProjectionEpoch,
+      generationOperations,
       // Transient running generations so a returning client, even after a full
       // reload, can discover and reattach. Server-memory only.
       activeGenerationJobs: generationJobs?.activeJobs() ?? [],
@@ -57,6 +67,8 @@ export function registerBootstrapRoutes(
         revision,
         payloadBytes: jsonPayloadBytes(response),
         activeGenerationJobCount: response.activeGenerationJobs.length,
+        generationOperationCount: generationOperations.length,
+        generationOperationProjectionEpoch,
         activeMessageTranslationCount: response.activeMessageTranslations.length,
         activeGreetingTranslationCount: response.activeGreetingTranslations.length,
       }),

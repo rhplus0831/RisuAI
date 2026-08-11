@@ -36,6 +36,79 @@ export interface ActiveGreetingTranslation {
   completedAt?: number
 }
 
+export type GenerationOperationState =
+  | 'cancel_requested'
+  | 'accepted'
+  | 'launching'
+  | 'owned_by_job'
+  | 'stopping'
+  | 'finalizing'
+  | 'retryable'
+  | 'abandoned'
+  | 'completed'
+  | 'cancelled'
+  | 'terminal_failed'
+  | 'invalidated'
+
+export interface GenerationOperationAttemptProjection {
+  attemptNo: number
+  retryRequestId: string
+  jobId: string
+  status:
+    | 'reserved'
+    | 'running'
+    | 'stopping'
+    | 'finalizing'
+    | 'completed'
+    | 'cancelled'
+    | 'retryable_failed'
+    | 'terminal_failed'
+    | 'abandoned'
+  serverInstanceId: string
+  actorWriterSessionId: string
+  actorWriterEpoch: number
+  launchRevision: number
+  providerDispatchStartedAt?: string
+  providerDispatchFinishedAt?: string
+  runnerSettledAt?: string
+  finalizationGenerationId?: string
+  failureCode?: string
+  lastError?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface GenerationOperationProjection {
+  operationId: string
+  protocolVersion: number
+  requestOrigin: 'unbound' | 'accepted_send' | 'continue' | 'regenerate' | 'legacy'
+  state: GenerationOperationState
+  stateVersion: number
+  projectionEpoch: number
+  creatorWriterSessionId: string
+  creatorWriterEpoch: number
+  bindingServerInstanceId?: string
+  characterId?: string
+  chatId?: string
+  mode?: 'send' | 'continue' | 'regenerate'
+  acceptedMessageId?: string
+  targetMessageId?: string
+  acceptedRevision?: number
+  currentAttempt?: GenerationOperationAttemptProjection
+  desiredTerminalOutcome?: 'completed' | 'cancelled'
+  resultMessageId?: string
+  failureCode?: string
+  failurePhase?: string
+  lastError?: string
+  providerMayHaveRun: boolean
+  cancelRequestedAt?: string
+  runnerSettledAt?: string
+  terminalAt?: string
+  createdAt?: string
+  updatedAt?: string
+  recoveryDisposition?: 'retryable'
+}
+
 export interface ServerBootstrapRuntime {
   initialized: boolean
   revision: number
@@ -47,6 +120,9 @@ export interface ServerBootstrapRuntime {
   databaseLineage?: string
   /** Persistent ownership generation, incremented whenever the writer changes. */
   writerEpoch?: number
+  generationOperationProtocol?: { version: number }
+  generationOperationProjectionEpoch?: number
+  generationOperations?: GenerationOperationProjection[]
   /**
    * Generations still running server-side, so a reloaded browser can re-attach to
    * the live stream of the open chat instead of only seeing the result after it
@@ -153,6 +229,11 @@ async function fetchServerBootstrapWithMode(input: {
       typeof record.requestedWriterWasActive === 'boolean' ? record.requestedWriterWasActive : undefined,
     databaseLineage: typeof record.databaseLineage === 'string' ? record.databaseLineage : undefined,
     writerEpoch: Number.isSafeInteger(record.writerEpoch) ? (record.writerEpoch as number) : undefined,
+    generationOperationProtocol: parseGenerationOperationProtocol(record.generationOperationProtocol),
+    generationOperationProjectionEpoch: isNonNegativeSafeInteger(record.generationOperationProjectionEpoch)
+      ? (record.generationOperationProjectionEpoch as number)
+      : undefined,
+    generationOperations: parseGenerationOperations(record.generationOperations),
     activeGenerationJobs: parseActiveGenerationJobs(record.activeGenerationJobs),
     activeMessageTranslations: parseActiveMessageTranslations(record.activeMessageTranslations),
     activeGreetingTranslations: parseActiveGreetingTranslations(record.activeGreetingTranslations),
@@ -161,6 +242,165 @@ async function fetchServerBootstrapWithMode(input: {
     status: 'ok',
     bootstrap,
   }
+}
+
+function parseGenerationOperationProtocol(value: unknown): { version: number } | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const version = (value as Record<string, unknown>).version
+  return isPositiveSafeInteger(version) ? { version: version as number } : undefined
+}
+
+function parseGenerationOperations(value: unknown): GenerationOperationProjection[] {
+  if (!Array.isArray(value)) return []
+  const operations: GenerationOperationProjection[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+    const record = entry as Record<string, unknown>
+    if (
+      typeof record.operationId !== 'string' ||
+      !isNonNegativeSafeInteger(record.protocolVersion) ||
+      !isGenerationOperationRequestOrigin(record.requestOrigin) ||
+      !isGenerationOperationState(record.state) ||
+      !isPositiveSafeInteger(record.stateVersion) ||
+      !isPositiveSafeInteger(record.projectionEpoch) ||
+      typeof record.creatorWriterSessionId !== 'string' ||
+      !isNonNegativeSafeInteger(record.creatorWriterEpoch) ||
+      typeof record.providerMayHaveRun !== 'boolean'
+    ) {
+      continue
+    }
+    const operation: GenerationOperationProjection = {
+      operationId: record.operationId,
+      protocolVersion: record.protocolVersion as number,
+      requestOrigin: record.requestOrigin,
+      state: record.state,
+      stateVersion: record.stateVersion as number,
+      projectionEpoch: record.projectionEpoch as number,
+      creatorWriterSessionId: record.creatorWriterSessionId,
+      creatorWriterEpoch: record.creatorWriterEpoch as number,
+      providerMayHaveRun: record.providerMayHaveRun,
+    }
+    for (const field of [
+      'bindingServerInstanceId',
+      'characterId',
+      'chatId',
+      'acceptedMessageId',
+      'targetMessageId',
+      'resultMessageId',
+      'failureCode',
+      'failurePhase',
+      'lastError',
+      'cancelRequestedAt',
+      'runnerSettledAt',
+      'terminalAt',
+      'createdAt',
+      'updatedAt',
+    ] as const) {
+      if (typeof record[field] === 'string') operation[field] = record[field]
+    }
+    if (record.mode === 'send' || record.mode === 'continue' || record.mode === 'regenerate') {
+      operation.mode = record.mode
+    }
+    if (isNonNegativeSafeInteger(record.acceptedRevision))
+      operation.acceptedRevision = record.acceptedRevision as number
+    if (record.desiredTerminalOutcome === 'completed' || record.desiredTerminalOutcome === 'cancelled') {
+      operation.desiredTerminalOutcome = record.desiredTerminalOutcome
+    }
+    if (record.recoveryDisposition === 'retryable') operation.recoveryDisposition = 'retryable'
+    const currentAttempt = parseGenerationOperationAttempt(record.currentAttempt)
+    if (currentAttempt) operation.currentAttempt = currentAttempt
+    operations.push(operation)
+  }
+  return operations
+}
+
+function parseGenerationOperationAttempt(value: unknown): GenerationOperationAttemptProjection | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  if (
+    !isPositiveSafeInteger(record.attemptNo) ||
+    typeof record.retryRequestId !== 'string' ||
+    typeof record.jobId !== 'string' ||
+    !isGenerationOperationAttemptStatus(record.status) ||
+    typeof record.serverInstanceId !== 'string' ||
+    typeof record.actorWriterSessionId !== 'string' ||
+    !isNonNegativeSafeInteger(record.actorWriterEpoch) ||
+    !isNonNegativeSafeInteger(record.launchRevision)
+  ) {
+    return undefined
+  }
+  const attempt: GenerationOperationAttemptProjection = {
+    attemptNo: record.attemptNo as number,
+    retryRequestId: record.retryRequestId,
+    jobId: record.jobId,
+    status: record.status,
+    serverInstanceId: record.serverInstanceId,
+    actorWriterSessionId: record.actorWriterSessionId,
+    actorWriterEpoch: record.actorWriterEpoch as number,
+    launchRevision: record.launchRevision as number,
+  }
+  for (const field of [
+    'providerDispatchStartedAt',
+    'providerDispatchFinishedAt',
+    'runnerSettledAt',
+    'finalizationGenerationId',
+    'failureCode',
+    'lastError',
+    'createdAt',
+    'updatedAt',
+  ] as const) {
+    if (typeof record[field] === 'string') attempt[field] = record[field]
+  }
+  return attempt
+}
+
+function isGenerationOperationAttemptStatus(value: unknown): value is GenerationOperationAttemptProjection['status'] {
+  return (
+    value === 'reserved' ||
+    value === 'running' ||
+    value === 'stopping' ||
+    value === 'finalizing' ||
+    value === 'completed' ||
+    value === 'cancelled' ||
+    value === 'retryable_failed' ||
+    value === 'terminal_failed' ||
+    value === 'abandoned'
+  )
+}
+
+function isGenerationOperationRequestOrigin(value: unknown): value is GenerationOperationProjection['requestOrigin'] {
+  return (
+    value === 'unbound' ||
+    value === 'accepted_send' ||
+    value === 'continue' ||
+    value === 'regenerate' ||
+    value === 'legacy'
+  )
+}
+
+function isGenerationOperationState(value: unknown): value is GenerationOperationState {
+  return (
+    value === 'cancel_requested' ||
+    value === 'accepted' ||
+    value === 'launching' ||
+    value === 'owned_by_job' ||
+    value === 'stopping' ||
+    value === 'finalizing' ||
+    value === 'retryable' ||
+    value === 'abandoned' ||
+    value === 'completed' ||
+    value === 'cancelled' ||
+    value === 'terminal_failed' ||
+    value === 'invalidated'
+  )
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0
+}
+
+function isPositiveSafeInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) > 0
 }
 
 function parseActiveGreetingTranslations(value: unknown): ActiveGreetingTranslation[] {

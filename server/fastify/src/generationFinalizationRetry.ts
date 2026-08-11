@@ -13,6 +13,13 @@ export const GENERATION_FINALIZATION_LEGACY_SNAPSHOT_ERROR = 'stalled_legacy'
 
 export interface GenerationFinalizationAttempt {
   generationId: string
+  databaseLineage?: string
+  operationId?: string
+  operationAttemptNo?: number
+  actorWriterSessionId?: string
+  actorWriterEpoch?: number
+  acceptedMessageId?: string
+  terminalOutcome?: 'completed' | 'cancelled'
   chatId: string
   mode: GenerationFinalizationMode
   targetMessageId?: string
@@ -26,6 +33,13 @@ export interface GenerationFinalizationAttempt {
 
 interface GenerationFinalizationRetryRow {
   generation_id: string
+  database_lineage: string | null
+  operation_id: string | null
+  operation_attempt_no: number | null
+  actor_writer_session_id: string | null
+  actor_writer_epoch: number | null
+  accepted_message_id: string | null
+  terminal_outcome: 'completed' | 'cancelled' | null
   chat_id: string
   mode: GenerationFinalizationMode
   target_message_id: string | null
@@ -114,6 +128,13 @@ export function createGenerationFinalizationRetryTable(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS generation_finalization_retries (
       generation_id TEXT PRIMARY KEY,
+      database_lineage TEXT,
+      operation_id TEXT,
+      operation_attempt_no INTEGER CHECK (operation_attempt_no IS NULL OR operation_attempt_no > 0),
+      actor_writer_session_id TEXT,
+      actor_writer_epoch INTEGER CHECK (actor_writer_epoch IS NULL OR actor_writer_epoch >= 0),
+      accepted_message_id TEXT,
+      terminal_outcome TEXT CHECK (terminal_outcome IS NULL OR terminal_outcome IN ('completed', 'cancelled')),
       chat_id TEXT NOT NULL,
       mode TEXT NOT NULL CHECK (mode IN ('send', 'continue', 'regenerate')),
       target_message_id TEXT,
@@ -141,11 +162,34 @@ export function enqueueGenerationFinalizationRetry(
   if ((attempt.mode === 'continue' || attempt.mode === 'regenerate') && !attempt.targetSnapshot) {
     throw new Error(`Generation finalization ${attempt.mode} attempts require a target snapshot`)
   }
+  const operationLineageValues = [
+    attempt.databaseLineage,
+    attempt.operationId,
+    attempt.operationAttemptNo,
+    attempt.actorWriterSessionId,
+    attempt.actorWriterEpoch,
+    attempt.terminalOutcome,
+  ]
+  const hasOperationLineage =
+    operationLineageValues.some((value) => value !== undefined) || attempt.acceptedMessageId !== undefined
+  if (hasOperationLineage && operationLineageValues.some((value) => value === undefined)) {
+    throw new Error('Protocol generation finalization attempts require complete operation lineage')
+  }
+  if (attempt.operationId !== undefined && attempt.mode === 'send' && attempt.acceptedMessageId === undefined) {
+    throw new Error('Protocol send finalization attempts require an accepted message id')
+  }
   const result = db
     .prepare(
       `
       INSERT INTO generation_finalization_retries (
         generation_id,
+        database_lineage,
+        operation_id,
+        operation_attempt_no,
+        actor_writer_session_id,
+        actor_writer_epoch,
+        accepted_message_id,
+        terminal_outcome,
         chat_id,
         mode,
         target_message_id,
@@ -158,8 +202,15 @@ export function enqueueGenerationFinalizationRetry(
         terminal_error,
         updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
       ON CONFLICT(generation_id) DO UPDATE SET
+        database_lineage = excluded.database_lineage,
+        operation_id = excluded.operation_id,
+        operation_attempt_no = excluded.operation_attempt_no,
+        actor_writer_session_id = excluded.actor_writer_session_id,
+        actor_writer_epoch = excluded.actor_writer_epoch,
+        accepted_message_id = excluded.accepted_message_id,
+        terminal_outcome = excluded.terminal_outcome,
         chat_id = excluded.chat_id,
         mode = excluded.mode,
         target_message_id = excluded.target_message_id,
@@ -175,6 +226,13 @@ export function enqueueGenerationFinalizationRetry(
     )
     .run(
       attempt.generationId,
+      attempt.databaseLineage ?? null,
+      attempt.operationId ?? null,
+      attempt.operationAttemptNo ?? null,
+      attempt.actorWriterSessionId ?? null,
+      attempt.actorWriterEpoch ?? null,
+      attempt.acceptedMessageId ?? null,
+      attempt.terminalOutcome ?? null,
       attempt.chatId,
       attempt.mode,
       attempt.targetMessageId ?? null,
@@ -270,6 +328,13 @@ export function listPendingGenerationFinalizationRetries(
       `
         SELECT
           generation_id,
+          database_lineage,
+          operation_id,
+          operation_attempt_no,
+          actor_writer_session_id,
+          actor_writer_epoch,
+          accepted_message_id,
+          terminal_outcome,
           chat_id,
           mode,
           target_message_id,
@@ -297,6 +362,13 @@ export function listPendingGenerationFinalizationRetries(
     return {
       attempt: {
         generationId: row.generation_id,
+        ...(row.database_lineage !== null ? { databaseLineage: row.database_lineage } : {}),
+        ...(row.operation_id !== null ? { operationId: row.operation_id } : {}),
+        ...(row.operation_attempt_no !== null ? { operationAttemptNo: row.operation_attempt_no } : {}),
+        ...(row.actor_writer_session_id !== null ? { actorWriterSessionId: row.actor_writer_session_id } : {}),
+        ...(row.actor_writer_epoch !== null ? { actorWriterEpoch: row.actor_writer_epoch } : {}),
+        ...(row.accepted_message_id !== null ? { acceptedMessageId: row.accepted_message_id } : {}),
+        ...(row.terminal_outcome !== null ? { terminalOutcome: row.terminal_outcome } : {}),
         chatId: row.chat_id,
         mode: row.mode,
         ...(row.target_message_id !== null ? { targetMessageId: row.target_message_id } : {}),

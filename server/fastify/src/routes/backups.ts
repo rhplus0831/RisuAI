@@ -13,6 +13,7 @@ import {
   listBackups,
   restoreBackup,
 } from '../repository.js'
+import { reconcileGenerationOperationsAtStartup } from '../generationOperations.js'
 
 interface CreateBody {
   label?: unknown
@@ -24,7 +25,7 @@ export function registerBackupRoutes(
   authState: AuthState,
   dataDir: string,
   eventSink: CommandEventSink,
-  options: { automaticBackupRetention?: number } = {},
+  options: { automaticBackupRetention?: number; serverInstanceId?: string } = {},
 ): void {
   app.post('/api/v1/backups', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
@@ -61,6 +62,9 @@ export function registerBackupRoutes(
       const { revision, event, databaseLineage, writerEpoch } = await restoreBackup(db, dataDir, req.params.id, {
         automaticBackupRetention: options.automaticBackupRetention,
       })
+      if (options.serverInstanceId) {
+        reconcileGenerationOperationsAtStartup(db, options.serverInstanceId, req.log)
+      }
       eventSink.emit(event)
       return { revision, event, databaseLineage, writerEpoch }
     } catch (err) {

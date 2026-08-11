@@ -4863,6 +4863,11 @@ export interface MessageTranslation {
 export interface MessageGenerationInfo {
   model?: string
   generationId?: string
+  databaseLineage?: string
+  operationId?: string
+  acceptedMessageId?: string
+  attemptNo?: number
+  jobId?: string
   inputTokens?: number
   outputTokens?: number
   maxContext?: number

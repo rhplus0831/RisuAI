@@ -291,6 +291,29 @@ describe('Phase 9-5a command events stream', () => {
     }
   })
 
+  it('round-trips optional generation-operation lineage through persisted replay', () => {
+    const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-event-lineage-'))
+    const db = openDatabase(dataDir)
+    try {
+      const event: CommandEvent = {
+        type: 'generation.persisted',
+        revision: 1,
+        resource: 'chatMessages',
+        id: 'assistant-a',
+        parentId: 'chat-a',
+        databaseLineage: 'database-a',
+        operationId: 'operation-a',
+        sourceMessageId: 'user-a',
+        jobId: 'job-a',
+      }
+      persistCommandEvent(db, event)
+      expect(listPersistedCommandEventHistory(db)).toEqual([event])
+    } finally {
+      db.close()
+      rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
+
   it('L8: prunes by revision keep-window with a bounded range delete, not an OFFSET walk', () => {
     const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-event-prune-'))
     const db = openDatabase(dataDir)
