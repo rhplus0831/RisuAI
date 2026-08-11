@@ -1,5 +1,8 @@
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   JobRegistry,
@@ -70,6 +73,14 @@ function lastJsonFrame(frames: readonly StreamJobFrame[]): string | undefined {
   return undefined
 }
 
+const replaySnapshotDirs = new Set<string>()
+
+function replayRegistry(options: ConstructorParameters<typeof JobRegistry>[0] = {}): JobRegistry {
+  const replaySnapshotDir = mkdtempSync(path.join(tmpdir(), 'risu-stream-jobs-test-'))
+  replaySnapshotDirs.add(replaySnapshotDir)
+  return new JobRegistry({ ...options, replaySnapshotDir })
+}
+
 interface EchoServer {
   url: string
   requests: { method: string; url: string; headers: http.IncomingHttpHeaders; body: Buffer }[]
@@ -122,6 +133,10 @@ function startEcho(): Promise<EchoServer> {
 
 afterEach(() => {
   vi.useRealTimers()
+  for (const replaySnapshotDir of replaySnapshotDirs) {
+    rmSync(replaySnapshotDir, { recursive: true, force: true })
+  }
+  replaySnapshotDirs.clear()
 })
 
 describe('sanitizeLocalTargetUrl', () => {
@@ -287,16 +302,19 @@ describe('JobRegistry buffering and lifecycle', () => {
     )
   })
 
-  it('retains a non-empty token suffix and the complete done result after the durable event cap', () => {
-    const reg = new JobRegistry()
+  it('compacts consecutive token deltas without changing observable replay text', () => {
+    const reg = replayRegistry()
     const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
     reg.enableReplay(job)
     reg.pushRaw(job, 'event: prompt\ndata: {"promptInfo":{}}\n\n')
     reg.pushRaw(job, 'event: info\ndata: {"generationId":"event-cap"}\n\n')
 
     const tokens = Array.from({ length: 600 }, (_, index) => `[${index}]`)
-    for (const content of tokens) {
-      reg.pushRaw(job, `event: token\ndata: ${JSON.stringify({ content })}\n\n`)
+    for (let index = 0; index < tokens.length; index += 1) {
+      reg.pushRaw(
+        job,
+        `event: token\ndata: ${JSON.stringify({ content: tokens[index], generatedTokens: index + 1 })}\n\n`,
+      )
     }
     const fullResult = tokens.join('')
     reg.pushRaw(job, `event: done\ndata: ${JSON.stringify({ result: fullResult })}\n\n`)
@@ -304,20 +322,34 @@ describe('JobRegistry buffering and lifecycle', () => {
     const replay = job.replayEvents ?? []
     const retainedTokens = replay
       .filter((frame) => frame.startsWith('event: token'))
-      .map((frame) => (JSON.parse(frame.split('\n')[1]!.slice('data: '.length)) as { content: string }).content)
+      .map(
+        (frame) =>
+          JSON.parse(frame.split('\n')[1]!.slice('data: '.length)) as {
+            content: string
+            generatedTokens: number
+          },
+      )
     const done = replay.find((frame) => frame.startsWith('event: done'))
 
-    expect(replay).toHaveLength(PROXY_STREAM_MAX_PENDING_EVENTS)
-    expect(retainedTokens.length).toBeGreaterThan(0)
-    expect(retainedTokens[0]).not.toBe(tokens[0])
-    expect(retainedTokens.at(-1)).toBe(tokens.at(-1))
-    expect(retainedTokens.join('')).not.toBe(fullResult)
+    expect(replay.length).toBeLessThan(PROXY_STREAM_MAX_PENDING_EVENTS)
+    expect(retainedTokens.length).toBeLessThan(tokens.length)
+    expect(retainedTokens.map((token) => token.content).join('')).toBe(fullResult)
+    expect(retainedTokens.at(-1)?.generatedTokens).toBe(tokens.length)
+    expect(job.replayTruncated).toBe(false)
     expect(done).toBeDefined()
     expect((JSON.parse(done!.split('\n')[1]!.slice('data: '.length)) as { result: string }).result).toBe(fullResult)
+
+    const client = fakeClient()
+    reg.attach(job.id, client)
+    const replayedText = client.messages
+      .filter((frame): frame is string => typeof frame === 'string' && frame.startsWith('event: token'))
+      .map((frame) => (JSON.parse(frame.split('\n')[1]!.slice('data: '.length)) as { content: string }).content)
+      .join('')
+    expect(replayedText).toBe(fullResult)
   })
 
-  it('uses UTF-8 byte accounting while retaining a suffix and complete result after the durable byte cap', () => {
-    const reg = new JobRegistry()
+  it('uses UTF-8 byte accounting and spills the duplicate terminal while retaining compacted tokens', () => {
+    const reg = replayRegistry()
     const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
     reg.enableReplay(job)
     reg.pushRaw(job, 'event: prompt\ndata: {"promptInfo":{}}\n\n')
@@ -331,41 +363,95 @@ describe('JobRegistry buffering and lifecycle', () => {
     reg.pushRaw(job, `event: done\ndata: ${JSON.stringify({ result: fullResult })}\n\n`)
 
     const replay = job.replayEvents ?? []
-    const retainedTokens = replay
+    const retainedTokenFrames = replay
       .filter((frame) => frame.startsWith('event: token'))
       .map((frame) => (JSON.parse(frame.split('\n')[1]!.slice('data: '.length)) as { content: string }).content)
     const done = replay.find((frame) => frame.startsWith('event: done'))
 
     expect(job.replayBytes).toBeLessThanOrEqual(PROXY_STREAM_MAX_PENDING_BYTES)
-    expect(retainedTokens.length).toBeGreaterThan(0)
-    expect(retainedTokens.length).toBeLessThan(tokens.length)
-    expect(retainedTokens.at(-1)).toBe(tokens.at(-1))
-    expect(Buffer.byteLength(retainedTokens.join(''))).toBeLessThan(Buffer.byteLength(fullResult))
-    expect((JSON.parse(done!.split('\n')[1]!.slice('data: '.length)) as { result: string }).result).toBe(fullResult)
+    expect(reg.replayMemoryBytes()).toBe(job.replayBytes)
+    expect(retainedTokenFrames.length).toBeLessThan(tokens.length)
+    expect(retainedTokenFrames.join('')).toBe(fullResult)
+    expect(done).toBeUndefined()
+    expect(job.replayTruncated).toBe(false)
+    expect(JSON.parse(reg.readTerminalSnapshot(job.id) ?? '{}')).toMatchObject({ result: fullResult })
+
+    const client = fakeClient()
+    reg.attach(job.id, client)
+    const terminalReference = String(client.messages.at(-1))
+    expect(terminalReference).toContain('event: done')
+    expect(terminalReference).toContain('"terminalSnapshot"')
   })
 
-  it('keeps an oversized protected terminal result even when it exceeds the soft byte target', () => {
-    const reg = new JobRegistry()
+  it('round-trips an oversized protected terminal through the durable side channel', () => {
+    const reg = replayRegistry()
     const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
     reg.enableReplay(job)
     const result = '한'.repeat(Math.ceil(PROXY_STREAM_MAX_PENDING_BYTES / 3) + 100)
 
     reg.pushRaw(job, `event: done\ndata: ${JSON.stringify({ result })}\n\n`)
 
-    expect(job.replayEvents).toHaveLength(1)
-    expect(job.replayBytes).toBeGreaterThan(PROXY_STREAM_MAX_PENDING_BYTES)
+    expect(job.replayEvents).toHaveLength(0)
+    expect(job.replayBytes).toBe(0)
+    expect(reg.replayMemoryBytes()).toBe(0)
+    expect(JSON.parse(reg.readTerminalSnapshot(job.id) ?? '{}')).toEqual({ result })
+
+    const client = fakeClient()
+    reg.attach(job.id, client)
+    expect(client.messages).toHaveLength(1)
+    expect(String(client.messages[0])).toContain('"terminalSnapshot"')
   })
 
-  it('keeps protected-only replay frames even when they exceed the soft event target', () => {
+  it('hard-caps protected-only replay and emits an explicit gap with eviction accounting', () => {
     const reg = new JobRegistry()
     const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
     reg.enableReplay(job)
+    reg.pushRaw(job, 'event: prompt\ndata: {"promptInfo":{}}\n\n')
+    reg.pushRaw(job, 'event: info\ndata: {"generationId":"protected-cap"}\n\n')
 
     for (let index = 0; index <= PROXY_STREAM_MAX_PENDING_EVENTS; index += 1) {
       reg.pushRaw(job, `event: warning\ndata: ${JSON.stringify({ message: `warning-${index}` })}\n\n`)
     }
 
-    expect(job.replayEvents).toHaveLength(PROXY_STREAM_MAX_PENDING_EVENTS + 1)
+    expect(job.replayEvents).toHaveLength(PROXY_STREAM_MAX_PENDING_EVENTS)
+    expect(job.replayBytes).toBeLessThanOrEqual(PROXY_STREAM_MAX_PENDING_BYTES)
+    expect(job.replayTruncated).toBe(true)
+    expect(job.replayEvictedEvents).toBe(3)
+    expect(job.replayEvictedBytes).toBeGreaterThan(0)
+    expect(reg.replayMemoryBytes()).toBe(job.replayBytes)
+    expect(job.replayEvents?.[0]).toContain('event: prompt')
+    expect(job.replayEvents?.[1]).toContain('event: info')
+
+    const client = fakeClient()
+    reg.attach(job.id, client)
+    expect(String(client.messages[0])).toContain('event: replay_gap')
+    expect(String(client.messages[0])).toContain('"evictedEvents":3')
+  })
+
+  it('enforces an aggregate replay-memory bound and releases exact accounting on cleanup', () => {
+    const reg = new JobRegistry({
+      replayMaxEvents: 16,
+      replayMaxBytes: 512,
+      replayMaxAggregateBytes: 180,
+    })
+    const first = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
+    const second = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
+    reg.enableReplay(first)
+    reg.enableReplay(second)
+
+    reg.pushRaw(first, `event: warning\ndata: ${JSON.stringify({ message: 'a'.repeat(80) })}\n\n`)
+    reg.pushRaw(second, `event: warning\ndata: ${JSON.stringify({ message: 'b'.repeat(80) })}\n\n`)
+
+    expect(reg.replayMemoryBytes()).toBeLessThanOrEqual(180)
+    expect(reg.replayMemoryBytes()).toBe((first.replayBytes ?? 0) + (second.replayBytes ?? 0))
+    expect(first.replayTruncated).toBe(true)
+    expect(first.replayEvictedEvents).toBe(1)
+
+    const retainedBytes = second.replayBytes ?? 0
+    reg.cleanup(first.id)
+    expect(reg.replayMemoryBytes()).toBe(retainedBytes)
+    reg.cleanup(second.id)
+    expect(reg.replayMemoryBytes()).toBe(0)
   })
 
   it('detaches attached clients that exceed the fanout buffer cap', () => {
@@ -425,6 +511,27 @@ describe('JobRegistry buffering and lifecycle', () => {
     expect(reg.has(job.id)).toBe(true)
     reg.detach(job.id, client)
     expect(reg.has(job.id)).toBe(false)
+  })
+
+  it('retains a durable terminal snapshot through the full done grace after viewers detach', () => {
+    const reg = replayRegistry()
+    const now = 10_000
+    const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10, now })
+    reg.enableReplay(job)
+    const client = fakeClient()
+    reg.attach(job.id, client)
+    reg.pushRaw(job, 'event: done\ndata: {"result":"retained"}\n\n', now)
+    reg.markDone(job, now)
+
+    reg.detach(job.id, client)
+    expect(reg.has(job.id)).toBe(true)
+    expect(JSON.parse(reg.readTerminalSnapshot(job.id) ?? '{}')).toEqual({ result: 'retained' })
+
+    reg.tickGc(now + PROXY_STREAM_DONE_GRACE_MS - 1)
+    expect(reg.has(job.id)).toBe(true)
+    reg.tickGc(now + PROXY_STREAM_DONE_GRACE_MS + 1)
+    expect(reg.has(job.id)).toBe(false)
+    expect(reg.readTerminalSnapshot(job.id)).toBeNull()
   })
 
   it('deleteJob aborts the controller and removes the job', () => {

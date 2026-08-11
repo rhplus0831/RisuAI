@@ -1144,6 +1144,22 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     notes: 'Authenticated observe-only special case; intentionally not writer-gated.',
   },
   {
+    id: 'generation-chat-terminal-snapshot',
+    methods: GET_ONLY,
+    path: '/api/v1/generate/chat/:id/terminal-snapshot',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Terminal snapshot fetch observes retained authenticated durable generation output.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only retained terminal snapshot for durable reattach.',
+    },
+    streaming: 'binary',
+    notes: 'Authenticated observe-only side channel; retained only for the generation job grace window.',
+  },
+  {
     id: 'generation-chat-cancel',
     methods: ['DELETE'],
     path: '/api/v1/generate/chat/:id',

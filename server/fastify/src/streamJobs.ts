@@ -1,5 +1,7 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import fs from 'node:fs'
 import net from 'node:net'
+import path from 'node:path'
 import { Readable } from 'node:stream'
 import { bufferToBodyInit, filterResponseHeaders, normalizeForwardHeaders } from './proxy.js'
 import { STREAM_CLIENT_MAX_BUFFERED_BYTES } from './streamBackpressure.js'
@@ -15,6 +17,7 @@ export const PROXY_STREAM_DONE_GRACE_MS = 30_000
 export const PROXY_STREAM_MAX_ACTIVE_JOBS = 64
 export const PROXY_STREAM_MAX_PENDING_EVENTS = 512
 export const PROXY_STREAM_MAX_PENDING_BYTES = 2 * 1024 * 1024
+export const DURABLE_REPLAY_MAX_AGGREGATE_BYTES = 16 * 1024 * 1024
 export const PROXY_STREAM_MAX_BODY_BASE64_BYTES = 8 * 1024 * 1024
 
 export type StreamJobEvent =
@@ -48,6 +51,14 @@ export interface StreamJob {
   pendingBytes: number
   replayEvents?: string[]
   replayBytes?: number
+  replayFrameSequences?: number[]
+  replayTruncated?: boolean
+  replayEvictedEvents?: number
+  replayEvictedBytes?: number
+  replayTerminalSnapshot?: {
+    bytes: number
+    href: string
+  }
   abortController: AbortController
   deadlineAt: number
   heartbeatSec: number
@@ -103,6 +114,9 @@ const DURABLE_REPLAY_PROTECTED_EVENTS = new Set([
   'error',
   'done',
 ])
+
+const DURABLE_REPLAY_ESSENTIAL_EVENTS = new Set(['prompt', 'info', 'error', 'done'])
+const DURABLE_REPLAY_TOKEN_COMPACTION_FRAMES = 64
 
 const PRIVATE_BLOCKS = (() => {
   const list = new net.BlockList()
@@ -177,6 +191,13 @@ export interface CreateJobOptions {
   now?: number
 }
 
+export interface JobRegistryOptions {
+  replayMaxEvents?: number
+  replayMaxBytes?: number
+  replayMaxAggregateBytes?: number
+  replaySnapshotDir?: string
+}
+
 function serializedSseEventType(text: string): string | undefined {
   const firstLineEnd = text.search(/\r?\n/)
   const firstLine = firstLineEnd === -1 ? text : text.slice(0, firstLineEnd)
@@ -229,33 +250,34 @@ export function isStreamDeadlineActivityFrame(text: string): boolean {
   return typeof content === 'string' && content.length > 0
 }
 
-function removeReplayFrame(job: StreamJob, index: number): void {
-  if (!job.replayEvents || job.replayBytes === undefined) return
-  const [removed] = job.replayEvents.splice(index, 1)
-  if (removed) job.replayBytes -= Buffer.byteLength(removed)
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
-function appendDurableReplayFrame(job: StreamJob, text: string): void {
-  if (!job.replayEvents || job.replayBytes === undefined) return
-  const type = serializedSseEventType(text)
-  if (type === 'info' || type === 'agent_preset_progress') {
-    const existingSnapshotIndex = job.replayEvents.findIndex((event) => serializedSseEventType(event) === type)
-    if (existingSnapshotIndex !== -1) removeReplayFrame(job, existingSnapshotIndex)
-  }
-  job.replayEvents.push(text)
-  job.replayBytes += Buffer.byteLength(text)
+function formatSerializedSseFrame(type: string, data: Record<string, unknown>): string {
+  return `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`
+}
 
-  while (
-    job.replayEvents.length > PROXY_STREAM_MAX_PENDING_EVENTS ||
-    job.replayBytes > PROXY_STREAM_MAX_PENDING_BYTES
-  ) {
-    const droppableIndex = job.replayEvents.findIndex((event) => {
-      const eventType = serializedSseEventType(event)
-      return !eventType || !DURABLE_REPLAY_PROTECTED_EVENTS.has(eventType)
-    })
-    if (droppableIndex === -1) break
-    removeReplayFrame(job, droppableIndex)
-  }
+function terminalSnapshotReferenceFrame(job: StreamJob): string | undefined {
+  const snapshot = job.replayTerminalSnapshot
+  if (!snapshot) return undefined
+  return formatSerializedSseFrame('done', {
+    jobId: job.id,
+    terminalSnapshot: {
+      version: 1,
+      href: snapshot.href,
+      bytes: snapshot.bytes,
+    },
+  })
+}
+
+function replaceableReplaySnapshotKey(text: string): string | undefined {
+  const type = serializedSseEventType(text)
+  if (type === 'info' || type === 'agent_preset_progress') return type
+  if (type !== 'post_generation_progress') return undefined
+  const data = serializedSseData(text)
+  if (!isRecord(data) || typeof data.phase !== 'string' || typeof data.runSeq !== 'number') return undefined
+  return `${type}:${data.phase}:${data.runSeq}`
 }
 
 function closeJobClient(client: JobClient): void {
@@ -288,6 +310,22 @@ function sendBoundedJobClient(client: JobClient, frame: StreamJobFrame): boolean
 
 export class JobRegistry {
   private readonly jobs = new Map<string, StreamJob>()
+  private readonly replayMaxEvents: number
+  private readonly replayMaxBytes: number
+  private readonly replayMaxAggregateBytes: number
+  private replayAggregateBytes = 0
+  private nextReplaySequence = 1
+  private replaySnapshotDir: string | undefined
+
+  constructor(options: JobRegistryOptions = {}) {
+    this.replayMaxEvents = Math.max(1, Math.floor(options.replayMaxEvents ?? PROXY_STREAM_MAX_PENDING_EVENTS))
+    this.replayMaxBytes = Math.max(1, Math.floor(options.replayMaxBytes ?? PROXY_STREAM_MAX_PENDING_BYTES))
+    this.replayMaxAggregateBytes = Math.max(
+      1,
+      Math.floor(options.replayMaxAggregateBytes ?? DURABLE_REPLAY_MAX_AGGREGATE_BYTES),
+    )
+    this.replaySnapshotDir = options.replaySnapshotDir
+  }
 
   size(): number {
     return this.jobs.size
@@ -303,6 +341,223 @@ export class JobRegistry {
 
   list(): StreamJob[] {
     return Array.from(this.jobs.values())
+  }
+
+  replayMemoryBytes(): number {
+    return this.replayAggregateBytes
+  }
+
+  private ensureReplaySnapshotDir(): string {
+    if (!this.replaySnapshotDir) throw new Error('Durable replay requires a terminal snapshot directory')
+    fs.mkdirSync(this.replaySnapshotDir, { recursive: true })
+    return this.replaySnapshotDir
+  }
+
+  private replaySnapshotPath(jobId: string): string {
+    const name = createHash('sha256').update(jobId).digest('hex')
+    return path.join(this.ensureReplaySnapshotDir(), `${name}.json`)
+  }
+
+  private persistTerminalSnapshot(job: StreamJob, text: string): void {
+    const data = serializedSseData(text)
+    if (!isRecord(data)) throw new Error('Durable terminal frame did not contain a JSON object payload')
+    const payload = JSON.stringify(data)
+    const target = this.replaySnapshotPath(job.id)
+    const temporary = `${target}.${randomUUID()}.tmp`
+    try {
+      fs.writeFileSync(temporary, payload, { encoding: 'utf8', flag: 'wx', mode: 0o600 })
+      fs.renameSync(temporary, target)
+    } catch (error) {
+      try {
+        fs.rmSync(temporary, { force: true })
+      } catch {
+        // Preserve the snapshot write failure.
+      }
+      throw error
+    }
+    job.replayTerminalSnapshot = {
+      bytes: Buffer.byteLength(payload),
+      href: `/api/v1/generate/chat/${encodeURIComponent(job.id)}/terminal-snapshot`,
+    }
+  }
+
+  terminalSnapshotStream(jobId: string): { stream: Readable; bytes: number } | null {
+    const job = this.jobs.get(jobId)
+    if (!job?.replayTerminalSnapshot) return null
+    const snapshotPath = this.replaySnapshotPath(jobId)
+    try {
+      const fd = fs.openSync(snapshotPath, 'r')
+      return {
+        stream: fs.createReadStream(snapshotPath, { fd, autoClose: true }),
+        bytes: job.replayTerminalSnapshot.bytes,
+      }
+    } catch {
+      return null
+    }
+  }
+
+  readTerminalSnapshot(jobId: string): string | null {
+    const job = this.jobs.get(jobId)
+    if (!job?.replayTerminalSnapshot) return null
+    const snapshotPath = this.replaySnapshotPath(jobId)
+    try {
+      return fs.readFileSync(snapshotPath, 'utf8')
+    } catch {
+      return null
+    }
+  }
+
+  private removeTerminalSnapshot(job: StreamJob): void {
+    if (!job.replayTerminalSnapshot || !this.replaySnapshotDir) return
+    const name = createHash('sha256').update(job.id).digest('hex')
+    try {
+      fs.rmSync(path.join(this.replaySnapshotDir, `${name}.json`), { force: true })
+    } catch {
+      // Job cleanup is best-effort; an instance-scoped directory is also removed
+      // during registry disposal.
+    }
+    job.replayTerminalSnapshot = undefined
+  }
+
+  private removeReplayFrame(job: StreamJob, index: number, truncated: boolean): string | undefined {
+    if (!job.replayEvents || job.replayBytes === undefined || !job.replayFrameSequences) return undefined
+    const [removed] = job.replayEvents.splice(index, 1)
+    job.replayFrameSequences.splice(index, 1)
+    if (!removed) return undefined
+    const bytes = Buffer.byteLength(removed)
+    job.replayBytes = Math.max(0, job.replayBytes - bytes)
+    this.replayAggregateBytes = Math.max(0, this.replayAggregateBytes - bytes)
+    if (truncated) {
+      job.replayTruncated = true
+      job.replayEvictedEvents = (job.replayEvictedEvents ?? 0) + 1
+      job.replayEvictedBytes = (job.replayEvictedBytes ?? 0) + bytes
+    }
+    return removed
+  }
+
+  private compactTrailingTokenFrames(job: StreamJob): void {
+    if (!job.replayEvents || job.replayBytes === undefined || !job.replayFrameSequences) return
+    let start = job.replayEvents.length
+    while (start > 0 && job.replayEvents.length - start < DURABLE_REPLAY_TOKEN_COMPACTION_FRAMES) {
+      if (serializedSseEventType(job.replayEvents[start - 1]!) !== 'token') break
+      start -= 1
+    }
+    const count = job.replayEvents.length - start
+    if (count < DURABLE_REPLAY_TOKEN_COMPACTION_FRAMES) return
+
+    const frames = job.replayEvents.slice(start)
+    const payloads = frames.map((frame) => serializedSseData(frame))
+    if (payloads.some((payload) => !isRecord(payload) || typeof payload.content !== 'string')) return
+    const lastPayload = payloads.at(-1) as Record<string, unknown>
+    const merged = formatSerializedSseFrame('token', {
+      ...lastPayload,
+      content: payloads.map((payload) => (payload as { content: string }).content).join(''),
+    })
+    const removedBytes = frames.reduce((total, frame) => total + Buffer.byteLength(frame), 0)
+    const mergedBytes = Buffer.byteLength(merged)
+    const sequence = job.replayFrameSequences[start] ?? this.nextReplaySequence++
+    job.replayEvents.splice(start, count, merged)
+    job.replayFrameSequences.splice(start, count, sequence)
+    job.replayBytes += mergedBytes - removedBytes
+    this.replayAggregateBytes += mergedBytes - removedBytes
+  }
+
+  private appendReplayFrame(job: StreamJob, text: string): void {
+    if (!job.replayEvents || job.replayBytes === undefined || !job.replayFrameSequences) return
+    const snapshotKey = replaceableReplaySnapshotKey(text)
+    if (snapshotKey) {
+      const existingSnapshotIndex = job.replayEvents.findIndex(
+        (event) => replaceableReplaySnapshotKey(event) === snapshotKey,
+      )
+      if (existingSnapshotIndex !== -1) this.removeReplayFrame(job, existingSnapshotIndex, false)
+    }
+
+    job.replayEvents.push(text)
+    job.replayFrameSequences.push(this.nextReplaySequence++)
+    const bytes = Buffer.byteLength(text)
+    job.replayBytes += bytes
+    this.replayAggregateBytes += bytes
+    if (serializedSseEventType(text) === 'token') this.compactTrailingTokenFrames(job)
+    this.enforceReplayBudgets(job)
+  }
+
+  private terminalFrameIndex(job: StreamJob): number {
+    return job.replayEvents?.findIndex((event) => serializedSseEventType(event) === 'done') ?? -1
+  }
+
+  private droppableFrameIndex(job: StreamJob, preferUnprotected: boolean): number {
+    if (!job.replayEvents) return -1
+    return job.replayEvents.findIndex((event) => {
+      const eventType = serializedSseEventType(event)
+      if (eventType === 'done') return false
+      return !preferUnprotected || !eventType || !DURABLE_REPLAY_PROTECTED_EVENTS.has(eventType)
+    })
+  }
+
+  private nonessentialFrameIndex(job: StreamJob): number {
+    if (!job.replayEvents) return -1
+    return job.replayEvents.findIndex((event) => {
+      const eventType = serializedSseEventType(event)
+      return !eventType || !DURABLE_REPLAY_ESSENTIAL_EVENTS.has(eventType)
+    })
+  }
+
+  private oldestAggregateCandidate(
+    predicate: (event: string) => boolean,
+  ): { job: StreamJob; index: number; sequence: number } | undefined {
+    let selected: { job: StreamJob; index: number; sequence: number } | undefined
+    for (const job of this.jobs.values()) {
+      if (!job.replayEvents || !job.replayFrameSequences) continue
+      for (let index = 0; index < job.replayEvents.length; index += 1) {
+        const event = job.replayEvents[index]
+        const sequence = job.replayFrameSequences[index]
+        if (event === undefined || sequence === undefined || !predicate(event)) continue
+        if (!selected || sequence < selected.sequence) selected = { job, index, sequence }
+      }
+    }
+    return selected
+  }
+
+  private enforceReplayBudgets(appendedJob: StreamJob): void {
+    if (!appendedJob.replayEvents || appendedJob.replayBytes === undefined) return
+    while (appendedJob.replayEvents.length > this.replayMaxEvents || appendedJob.replayBytes > this.replayMaxBytes) {
+      const terminalIndex = this.terminalFrameIndex(appendedJob)
+      if (terminalIndex !== -1 && appendedJob.replayTerminalSnapshot) {
+        this.removeReplayFrame(appendedJob, terminalIndex, false)
+        continue
+      }
+      const unprotectedIndex = this.droppableFrameIndex(appendedJob, true)
+      const nonessentialIndex = this.nonessentialFrameIndex(appendedJob)
+      const candidateIndex =
+        unprotectedIndex !== -1
+          ? unprotectedIndex
+          : nonessentialIndex !== -1
+            ? nonessentialIndex
+            : this.droppableFrameIndex(appendedJob, false)
+      if (candidateIndex === -1) break
+      this.removeReplayFrame(appendedJob, candidateIndex, true)
+    }
+
+    while (this.replayAggregateBytes > this.replayMaxAggregateBytes) {
+      const terminal = this.oldestAggregateCandidate((event) => serializedSseEventType(event) === 'done')
+      if (terminal?.job.replayTerminalSnapshot) {
+        this.removeReplayFrame(terminal.job, terminal.index, false)
+        continue
+      }
+      const unprotected = this.oldestAggregateCandidate((event) => {
+        const eventType = serializedSseEventType(event)
+        return eventType !== 'done' && (!eventType || !DURABLE_REPLAY_PROTECTED_EVENTS.has(eventType))
+      })
+      const candidate =
+        unprotected ??
+        this.oldestAggregateCandidate((event) => {
+          const eventType = serializedSseEventType(event)
+          return !eventType || !DURABLE_REPLAY_ESSENTIAL_EVENTS.has(eventType)
+        }) ??
+        this.oldestAggregateCandidate((event) => serializedSseEventType(event) !== 'done')
+      if (!candidate) break
+      this.removeReplayFrame(candidate.job, candidate.index, true)
+    }
   }
 
   create(opts: CreateJobOptions): StreamJob {
@@ -340,6 +595,10 @@ export class JobRegistry {
   enableReplay(job: StreamJob): void {
     job.replayEvents = []
     job.replayBytes = 0
+    job.replayFrameSequences = []
+    job.replayTruncated = false
+    job.replayEvictedEvents = 0
+    job.replayEvictedBytes = 0
   }
 
   private pushFrame(job: StreamJob, frame: StreamJobFrame): void {
@@ -383,8 +642,15 @@ export class JobRegistry {
     if (job.slidingDeadline && isStreamDeadlineActivityFrame(text)) {
       this.refreshDeadline(job, t)
     }
-    appendDurableReplayFrame(job, text)
-    this.pushFrame(job, text)
+    let liveFrame = text
+    if (job.replayEvents && serializedSseEventType(text) === 'done') {
+      this.persistTerminalSnapshot(job, text)
+      if (Buffer.byteLength(text) > this.replayMaxBytes) {
+        liveFrame = terminalSnapshotReferenceFrame(job) ?? text
+      }
+    }
+    this.appendReplayFrame(job, text)
+    this.pushFrame(job, liveFrame)
   }
 
   pushBinary(job: StreamJob, bytes: Buffer, now?: number): void {
@@ -406,11 +672,31 @@ export class JobRegistry {
     job.clients.add(client)
     const replayEvents = job.replayEvents ?? job.pendingEvents
     let clientOpen = true
+    if (job.replayTruncated) {
+      clientOpen = sendBoundedJobClient(
+        client,
+        formatSerializedSseFrame('replay_gap', {
+          reason: 'replay_budget_exceeded',
+          jobId: job.id,
+          evictedEvents: job.replayEvictedEvents ?? 0,
+          evictedBytes: job.replayEvictedBytes ?? 0,
+        }),
+      )
+    }
     for (const text of replayEvents) {
+      if (!clientOpen) break
       if (!sendBoundedJobClient(client, text)) {
         clientOpen = false
         break
       }
+    }
+    if (
+      clientOpen &&
+      job.replayTerminalSnapshot &&
+      !replayEvents.some((event) => typeof event === 'string' && serializedSseEventType(event) === 'done')
+    ) {
+      const reference = terminalSnapshotReferenceFrame(job)
+      if (reference && !sendBoundedJobClient(client, reference)) clientOpen = false
     }
     if (!clientOpen) {
       this.detach(job.id, client)
@@ -427,7 +713,7 @@ export class JobRegistry {
     const job = this.jobs.get(jobId)
     if (!job) return
     job.clients.delete(client)
-    if (job.done && job.clients.size === 0) {
+    if (job.done && job.clients.size === 0 && job.replayEvents === undefined) {
       this.cleanup(jobId)
     }
   }
@@ -448,7 +734,27 @@ export class JobRegistry {
         // ignore
       }
     }
+    if (job.replayBytes !== undefined) {
+      this.replayAggregateBytes = Math.max(0, this.replayAggregateBytes - job.replayBytes)
+      job.replayBytes = 0
+      job.replayEvents = []
+      job.replayFrameSequences = []
+    }
+    this.removeTerminalSnapshot(job)
     this.jobs.delete(jobId)
+  }
+
+  dispose(): void {
+    for (const job of [...this.jobs.values()]) this.cleanup(job.id)
+    if (this.replaySnapshotDir) {
+      try {
+        fs.rmSync(this.replaySnapshotDir, { recursive: true, force: true })
+      } catch {
+        // Best-effort shutdown cleanup.
+      }
+    }
+    this.replaySnapshotDir = undefined
+    this.replayAggregateBytes = 0
   }
 
   deleteJob(jobId: string, reason?: unknown): boolean {

@@ -66,6 +66,8 @@ export interface StreamMessageProjection {
   previousData: string
   ownedData: string
   appended: boolean
+  /** The stream crossed an explicit durable replay gap before terminal reconciliation. */
+  gapTruncated?: boolean
 }
 
 export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions): Promise<ConsumeStreamResponseResult> {
@@ -354,6 +356,7 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
       previousData: preStreamData,
       ownedData: lastStreamOwnedData,
       appended: appendedGeneratedMessage,
+      gapTruncated: req.replayGapTruncated === true,
     },
   }
 }

@@ -126,7 +126,11 @@ function makeControlledStream(): StreamHandle {
 
 function streamingReq(
   stream: ReadableStream<StreamResponseChunk>,
-  options: { halfStreaming?: boolean; halfStreamingProgressManaged?: boolean } = {},
+  options: {
+    halfStreaming?: boolean
+    halfStreamingProgressManaged?: boolean
+    replayGapTruncated?: boolean
+  } = {},
 ): requestDataResponse & { type: 'streaming' } {
   return { type: 'streaming', result: stream, ...options } as requestDataResponse & { type: 'streaming' }
 }
@@ -240,6 +244,21 @@ describe('consumeStreamResponse', () => {
     expect(messages[1].data).toBe('hello')
     expect(messages[1].role).toBe('char')
     expect(messages[1].chatId).toBe('gen-1')
+  })
+
+  it('marks the completed stream projection when its replay window was gap-truncated', async () => {
+    const currentChar = seed()
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(
+      callArgs(streamingReq(stream, { replayGapTruncated: true }), currentChar, ctrl.signal),
+    )
+    push({ msgKey: 'canonical terminal text' })
+    close()
+
+    const out = await promise
+    expect(out.projection.gapTruncated).toBe(true)
+    expect(out.result).toBe('canonical terminal text')
   })
 
   it('multiple chunks: last chunk wins for message slot and result', async () => {

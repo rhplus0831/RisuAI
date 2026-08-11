@@ -2083,14 +2083,24 @@ describe('Durable generation (Milestone 1)', () => {
     {
       cap: 'event',
       tokens: Array.from({ length: 600 }, (_, index) => `[${index}]`),
+      expectGap: false,
+      expectSnapshot: false,
     },
     {
       cap: 'byte',
       tokens: Array.from({ length: 256 }, (_, index) => `${index}:${'한'.repeat(2_048)}`),
+      expectGap: false,
+      expectSnapshot: true,
+    },
+    {
+      cap: 'oversized-terminal',
+      tokens: ['x'.repeat(2 * 1024 * 1024 + 16 * 1024)],
+      expectGap: true,
+      expectSnapshot: true,
     },
   ])(
-    'retains a replay suffix and complete terminal result after the durable $cap cap',
-    async ({ tokens }) => {
+    'keeps replay bounded with compaction, gap signaling, and terminal recovery at the durable $cap cap',
+    async ({ tokens, expectGap, expectSnapshot }) => {
       const provider = makeReplayCapProvider(tokens)
       providerImpl = provider.dispatchProvider
       const fullResult = tokens.join('')
@@ -2120,10 +2130,19 @@ describe('Durable generation (Milestone 1)', () => {
         .join('')
       const done = events.find((event) => event.type === 'done')
 
-      expect(replayedTokens.length).toBeGreaterThan(0)
-      expect(replayedTokens.length).toBeLessThan(fullResult.length)
-      expect(fullResult.endsWith(replayedTokens)).toBe(true)
-      expect(done?.data.result).toBe(fullResult)
+      expect(events.some((event) => event.type === 'replay_gap')).toBe(expectGap)
+      expect(replayedTokens).toBe(expectGap ? '' : fullResult)
+      if (expectSnapshot) {
+        const terminalSnapshot = done?.data.terminalSnapshot as { href?: unknown } | undefined
+        expect(terminalSnapshot?.href).toBe(`/api/v1/generate/chat/${encodeURIComponent(jobId)}/terminal-snapshot`)
+        const snapshotResponse = await fetch(`${harness.baseUrl}${terminalSnapshot?.href}`, {
+          headers: authHeaders(),
+        })
+        expect(snapshotResponse.status).toBe(200)
+        expect((await snapshotResponse.json()) as Record<string, unknown>).toMatchObject({ result: fullResult })
+      } else {
+        expect(done?.data.result).toBe(fullResult)
+      }
       expect((await waitForAssistantMessage()).data).toBe(fullResult)
       replayController.abort()
     },

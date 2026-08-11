@@ -87,6 +87,15 @@ export interface TokenEvent {
   elapsedMs?: number
 }
 
+/** The following durable replay frames are a truncated suffix. */
+export interface ReplayGapEvent {
+  type: 'replay_gap'
+  reason: 'replay_budget_exceeded'
+  jobId: string
+  evictedEvents: number
+  evictedBytes: number
+}
+
 export type ServerChatMutationSource =
   | 'user_message'
   | 'regenerate'
@@ -323,6 +332,12 @@ export interface DoneEvent {
    * retain it for replay and reattach.
    */
   result?: string
+  /** Authenticated side-channel containing the complete `done` data object. */
+  terminalSnapshot?: {
+    version: 1
+    href: string
+    bytes: number
+  }
   /** Additional provider choices returned by multi-generation (`genTime`). */
   alternates?: string[]
   generationId?: string
@@ -351,6 +366,7 @@ type PromptChatEventPayload =
   | PromptEvent
   | InfoEvent
   | TokenEvent
+  | ReplayGapEvent
   | MessagePatchEvent
   | SideEffectEvent
   | AgentPresetProgressEvent
@@ -369,6 +385,7 @@ export const CLIENT_PROMPT_CHAT_EVENT_TYPES = [
   'prompt',
   'info',
   'token',
+  'replay_gap',
   'message_patch',
   'side_effect',
   'agent_preset_progress',

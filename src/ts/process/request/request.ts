@@ -108,6 +108,10 @@ export type requestDataResponse =
       halfStreaming?: boolean
       /** The server-chat adapter already owns throughput updates for this stream. */
       halfStreamingProgressManaged?: boolean
+      /** Durable replay discarded at least one semantic frame before this projection. */
+      replayGapTruncated?: boolean
+      /** A gap was observed and the canonical terminal snapshot has not arrived yet. */
+      replayGapPending?: boolean
       special?: {
         emotion?: string
       }

@@ -378,6 +378,35 @@ async function openChatResponse(
   return { status: 'ok', response, requestUid }
 }
 
+async function fetchDurableTerminalSnapshot(
+  jobId: string,
+  reference: NonNullable<DoneEvent['terminalSnapshot']>,
+  signal: AbortSignal,
+): Promise<Omit<DoneEvent, 'type'>> {
+  const expectedHref = `${CHAT_ENDPOINT}/${encodeURIComponent(jobId)}/terminal-snapshot`
+  if (reference.version !== 1 || reference.href !== expectedHref) {
+    throw new Error('Server returned an invalid durable terminal snapshot reference.')
+  }
+  const auth = await getNodeServerProxyAuth()
+  const response = await fetch(expectedHref, {
+    method: 'GET',
+    headers: {
+      'risu-auth': auth,
+      'x-risu-caller': 'chat-terminal-snapshot',
+      ...activeWriterSessionHeader(),
+    },
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Durable terminal snapshot fetch failed with HTTP ${response.status}.`)
+  }
+  const payload = (await response.json()) as unknown
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('Server returned an invalid durable terminal snapshot payload.')
+  }
+  return payload as Omit<DoneEvent, 'type'>
+}
+
 function classifyReattachOpenError(error: {
   httpStatus?: number
   retryable?: boolean
@@ -591,6 +620,8 @@ export async function requestServerChatGeneration(
   let terminalResolved = false
   let tokenStreamInactive = false
   let tokenResult = ''
+  let replayGapTruncated = false
+  let replayGapPending = false
   let streamKey = 'server-chat'
   let halfStreaming = false
   let halfStreamingTarget: HalfStreamingProgressTarget | null = null
@@ -639,6 +670,7 @@ export async function requestServerChatGeneration(
   const terminal = new Promise<ServerChatTerminal>((resolve) => {
     resolveTerminal = resolve
   })
+  let streamingRequest: Extract<requestDataResponse, { type: 'streaming' }> | undefined
 
   const resolveReadyOnce = (value: ServerChatGenerationResult): void => {
     if (readyResolved) return
@@ -680,16 +712,19 @@ export async function requestServerChatGeneration(
         if (halfStreaming) {
           beginHalfStreaming(generation.generationId)
         }
+        streamingRequest = {
+          type: 'streaming',
+          result: tokenStream,
+          ...(halfStreaming ? { halfStreaming: true, halfStreamingProgressManaged: true } : {}),
+          ...(replayGapTruncated ? { replayGapTruncated: true } : {}),
+          ...(replayGapPending ? { replayGapPending: true } : {}),
+        }
         resolveReadyOnce({
           status: 'ok',
           prompt,
           info,
           messagePatches,
-          req: {
-            type: 'streaming',
-            result: tokenStream,
-            ...(halfStreaming ? { halfStreaming: true, halfStreamingProgressManaged: true } : {}),
-          },
+          req: streamingRequest,
           generationId: generation.generationId,
           generationInfo: generation.generationInfo,
           terminal,
@@ -741,10 +776,12 @@ export async function requestServerChatGeneration(
           if (!(await waitForDurableReconnect(delayMs, viewerAbortController.signal))) return { status: 'aborted' }
           const next = await openChatResponse(input, viewerAbortController.signal, durableJobId)
           if (next.status === 'ok') {
-            // Durable reattach replays the complete token delta history. Rebuild
-            // the accumulated text from zero so replayed deltas do not duplicate
-            // the partial text rendered before mobile suspension.
+            // Rebuild from the retained replay window so re-sent deltas do not
+            // duplicate text rendered before mobile suspension. A replay_gap
+            // frame below makes an incomplete retained window explicit.
             tokenResult = ''
+            replayGapPending = false
+            if (streamingRequest) streamingRequest.replayGapPending = false
             if (halfStreaming) {
               beginHalfStreaming(streamKey)
             }
@@ -793,6 +830,23 @@ export async function requestServerChatGeneration(
                   halfStreaming = info.halfStreaming === true
                   reconcileServerCommandRevision(info)
                   maybeResolveReady()
+                  break
+                case 'replay_gap':
+                  if (data.reason === 'replay_budget_exceeded') {
+                    replayGapTruncated = true
+                    replayGapPending = true
+                    tokenResult = ''
+                    if (streamingRequest) {
+                      streamingRequest.replayGapTruncated = true
+                      streamingRequest.replayGapPending = true
+                    }
+                    debugServerChat('server-chat-replay-gap', {
+                      requestUid: activeOpened.requestUid,
+                      jobId: durableJobId,
+                      evictedEvents: data.evictedEvents,
+                      evictedBytes: data.evictedBytes,
+                    })
+                  }
                   break
                 case 'message_patch':
                   if (data.patch && typeof data.patch === 'object') {
@@ -860,7 +914,7 @@ export async function requestServerChatGeneration(
                         elapsedMs: typeof data.elapsedMs === 'number' ? data.elapsedMs : undefined,
                       })
                     }
-                  } else {
+                  } else if (!replayGapPending) {
                     enqueueToken({ [streamKey]: tokenResult })
                   }
                   break
@@ -912,6 +966,22 @@ export async function requestServerChatGeneration(
                 }
                 case 'done':
                   donePayload = data as unknown as Omit<DoneEvent, 'type'>
+                  if (donePayload.terminalSnapshot) {
+                    try {
+                      const snapshotPayload = await fetchDurableTerminalSnapshot(
+                        durableJobId,
+                        donePayload.terminalSnapshot,
+                        viewerAbortController.signal,
+                      )
+                      donePayload = { ...snapshotPayload, ...donePayload }
+                    } catch (error) {
+                      settleTransportError(error instanceof Error ? error.message : String(error), 'terminal_failure')
+                      return
+                    }
+                  }
+                  const terminalClosesReplayGap = replayGapPending
+                  replayGapPending = false
+                  if (streamingRequest) streamingRequest.replayGapPending = false
                   const previousTokenResult = tokenResult
                   if (watchesDurableJob && typeof donePayload.result === 'string') {
                     // Durable replay is a lossy token window. Its protected
@@ -924,7 +994,7 @@ export async function requestServerChatGeneration(
                     tokenResult = donePayload.result
                   }
                   const terminalSnapshotChanged = tokenResult !== previousTokenResult
-                  if (halfStreaming || terminalSnapshotChanged) {
+                  if (halfStreaming || terminalSnapshotChanged || terminalClosesReplayGap) {
                     enqueueToken({ [streamKey]: tokenResult })
                   }
                   const terminalOutcome = donePayload.outcome === 'cancelled' ? 'cancelled' : 'completed'

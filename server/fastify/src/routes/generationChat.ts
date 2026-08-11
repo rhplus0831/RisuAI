@@ -5107,6 +5107,30 @@ export function registerGenerationChatRoutes(
     },
   )
 
+  // A replay-budget spill keeps the complete terminal payload in an
+  // instance-local file until the generation job's normal retention expires.
+  // The SSE `done.terminalSnapshot` reference points here; streaming the JSON
+  // file avoids rebuilding the oversized payload in the replay heap.
+  app.get<{ Params: { id: string } }>(
+    '/api/v1/generate/chat/:id/terminal-snapshot',
+    { exposeHeadRoute: false },
+    async (req, reply) => {
+      if (!(await requireAuth(authState, req, reply))) return
+      const snapshot = generationJobs.registry.terminalSnapshotStream(req.params.id)
+      if (!snapshot) {
+        reply.code(404).send({
+          error: 'generation_terminal_snapshot_not_found',
+          reason: 'Generation terminal snapshot not found or already expired.',
+        })
+        return
+      }
+      reply.header('cache-control', 'no-store')
+      reply.header('content-type', 'application/json; charset=utf-8')
+      reply.header('content-length', String(snapshot.bytes))
+      return reply.send(snapshot.stream)
+    },
+  )
+
   // Explicit cancel is authorized by the current active writer. It aborts provider
   // dispatch; the runner persists the streaming-so-far text and clears the
   // submission lock. A bare disconnect only detaches.

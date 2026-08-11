@@ -243,6 +243,11 @@ greeting, and input-hook translation in
 The chat route supports normal durable send/continue/regenerate jobs and an
 inline non-durable SSE mode for tools and tests. `generationJobs.ts` owns
 process-local detach, reattach, cancellation, replay, and terminal retention.
+Durable replay compacts replaceable snapshots and token runs under hard 2 MiB
+per-job and 16 MiB registry-wide frame-memory budgets. Semantic eviction emits
+an additive `replay_gap`; complete terminal payloads spill to an ephemeral
+authenticated file side channel when they cannot stay in the frame window, and
+remain fetchable until the job's terminal retention expires.
 Durable cancellation persists any streamed-so-far raw row mode-aware, then
 emits a protected `done` with additive `outcome: 'cancelled'`; older terminal
 frames without an outcome remain completed by default.

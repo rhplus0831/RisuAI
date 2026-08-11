@@ -94,6 +94,19 @@ export interface TokenEvent {
   elapsedMs?: number
 }
 
+/**
+ * Additive durable-replay signal. The retained frames after this marker are a
+ * truncated window; consumers must wait for the canonical terminal snapshot
+ * before treating generated text as complete.
+ */
+export interface ReplayGapEvent {
+  type: 'replay_gap'
+  reason: 'replay_budget_exceeded'
+  jobId: string
+  evictedEvents: number
+  evictedBytes: number
+}
+
 export interface MessagePatchEvent {
   type: 'message_patch'
   patch: AssembleMutationPayload
@@ -206,6 +219,16 @@ export interface DoneEvent {
    * streams retain it so replay and reattach remain self-contained.
    */
   result?: string
+  /**
+   * Durable side-channel reference used when the full terminal payload is not
+   * resident in the replay buffer. The authenticated endpoint returns the
+   * complete `done` data object, including `result` when present.
+   */
+  terminalSnapshot?: {
+    version: 1
+    href: string
+    bytes: number
+  }
   /** Additional provider choices returned by multi-generation (`genTime`). */
   alternates?: string[]
   generationId?: string
@@ -236,6 +259,7 @@ type PromptChatEventPayload =
   | PromptEvent
   | InfoEvent
   | TokenEvent
+  | ReplayGapEvent
   | MessagePatchEvent
   | SideEffectEvent
   | AgentPresetProgressEvent
@@ -256,6 +280,7 @@ export const PROMPT_CHAT_EVENT_TYPES = [
   'prompt',
   'info',
   'token',
+  'replay_gap',
   'message_patch',
   'side_effect',
   'agent_preset_progress',

@@ -240,7 +240,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   const streamJobRegistry = new JobRegistry()
   // Separately GC-ticked registry for detached chat generations and their
   // transient chatId→jobId submission lock.
-  const generationJobRegistry = new GenerationJobRegistry()
+  const generationJobRegistry = new GenerationJobRegistry(config.dataDir)
   const messageTranslationJobRegistry = new MessageTranslationJobRegistry()
   const greetingTranslationJobRegistry = new GreetingTranslationJobRegistry()
   const gcTimer = setInterval(() => {
@@ -308,6 +308,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     // operation fence was committed. Wait for them to settle before closing the
     // database; shutdown must not be projected as a user cancellation.
     await generationJobRegistry.settleRunners()
+    generationJobRegistry.registry.dispose()
     db.close()
   })
 

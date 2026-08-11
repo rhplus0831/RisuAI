@@ -1,4 +1,6 @@
-import { JobRegistry, type StreamJob } from './streamJobs.js'
+import { randomUUID } from 'node:crypto'
+import path from 'node:path'
+import { JobRegistry, type JobRegistryOptions, type StreamJob } from './streamJobs.js'
 
 export interface ActiveGenerationJobProjection {
   chatId: string
@@ -30,13 +32,22 @@ export interface ActiveGenerationJobProjection {
  *    client — even after a full reload — discovers and reattaches to a running
  *    generation.
  *
- * In-memory only (no `db.json`) and separate from the proxy registry; generation
- * jobs and proxy stream jobs never share state.
+ * Job authority remains process-local (no `db.json`) and separate from the
+ * proxy registry. Oversized terminal payload bytes may live in an ephemeral
+ * file side channel for the same retention window; those files are replay
+ * transport state, not durable generation authority.
  */
 export class GenerationJobRegistry {
-  readonly registry = new JobRegistry()
+  readonly registry: JobRegistry
   private readonly runningByChat = new Map<string, string>()
   private readonly runners = new Set<Promise<void>>()
+
+  constructor(dataDir?: string, options: Omit<JobRegistryOptions, 'replaySnapshotDir'> = {}) {
+    this.registry = new JobRegistry({
+      ...options,
+      ...(dataDir ? { replaySnapshotDir: path.join(dataDir, 'runtime', `generation-replay-${randomUUID()}`) } : {}),
+    })
+  }
 
   /**
    * Track a detached runner so shutdown can wait for it.

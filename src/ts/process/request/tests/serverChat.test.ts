@@ -733,6 +733,91 @@ describe('requestServerChat', () => {
     expect(get(activeGenerationJobs)).toEqual([])
   })
 
+  it('suppresses a gap-truncated suffix and fetches the canonical terminal snapshot before closing', async () => {
+    const controlled = controlledGenerationStream()
+    const calls: Array<{ url: string; method: string; caller: string | null }> = []
+    const terminalPayload = {
+      result: 'evicted prefix retained suffix',
+      generationId: 'job-side-channel',
+      generationInfo: { generationId: 'job-side-channel', model: 'm' },
+    }
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString()
+      const headers = new Headers(init?.headers)
+      calls.push({
+        url,
+        method: init?.method ?? 'GET',
+        caller: headers.get('x-risu-caller'),
+      })
+      if (url.endsWith('/terminal-snapshot')) {
+        return new Response(JSON.stringify(terminalPayload), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      return controlled.response
+    })
+
+    const pending = requestServerChatGeneration(baseInput, null, 'job-side-channel')
+    sendGenerationReadyFrames(controlled, 'job-side-channel')
+    const served = await pending
+    expect(served.status).toBe('ok')
+    if (served.status !== 'ok' || served.req.type !== 'streaming') return
+
+    const reader = served.req.result.getReader()
+    let suffixReadResolved = false
+    const firstRead = reader.read().then((value) => {
+      suffixReadResolved = true
+      return value
+    })
+    controlled.send('replay_gap', {
+      reason: 'replay_budget_exceeded',
+      jobId: 'job-side-channel',
+      evictedEvents: 4,
+      evictedBytes: 128,
+    })
+    controlled.send('token', { content: 'retained suffix' })
+    await vi.waitFor(() => {
+      expect(served.req.type === 'streaming' && served.req.replayGapTruncated).toBe(true)
+    })
+    expect(suffixReadResolved).toBe(false)
+    expect(served.req.replayGapPending).toBe(true)
+
+    controlled.send('done', {
+      terminalSnapshot: {
+        version: 1,
+        href: '/api/v1/generate/chat/job-side-channel/terminal-snapshot',
+        bytes: JSON.stringify(terminalPayload).length,
+      },
+      jobId: 'job-side-channel',
+    })
+    controlled.close()
+
+    await expect(firstRead).resolves.toEqual({
+      done: false,
+      value: { 'job-side-channel': 'evicted prefix retained suffix' },
+    })
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined })
+    expect(served.req.replayGapPending).toBe(false)
+    await expect(served.terminal).resolves.toMatchObject({
+      status: 'done',
+      reattachOutcome: 'completed',
+      done: terminalPayload,
+    })
+    expect(calls).toEqual([
+      {
+        url: '/api/v1/generate/chat/job-side-channel/stream',
+        method: 'GET',
+        caller: 'chat-reattach',
+      },
+      {
+        url: '/api/v1/generate/chat/job-side-channel/terminal-snapshot',
+        method: 'GET',
+        caller: 'chat-terminal-snapshot',
+      },
+    ])
+  })
+
   it.each([
     { mode: 'send' as const, changed: false },
     { mode: 'send' as const, changed: true },
