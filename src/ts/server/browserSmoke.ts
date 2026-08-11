@@ -8,12 +8,8 @@ import { generationFinalizationPersistences } from '../process/generationPersist
 import { activeGenerationJobs, generationJobLifecycles } from '../process/reattach'
 import { activeWriterSessionHeader } from './activeWriterSession'
 import { hydrateActiveChatFully } from './chatMessageHydration.svelte'
-import {
-  patchRuntimeSettings,
-  peekAppliedServerResourceRevision,
-  runServerCommand,
-  type ServerCommandResult,
-} from './commands'
+import { peekAppliedServerResourceRevision, type ServerCommandResult } from './commands'
+import { dispatchDurableServerBackedSettingsPatch } from './settingsBridge.svelte'
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { alertNormal } from '../alert'
 import { generationOperationCancellations, generationOperationProjections } from './generationOperations'
@@ -43,7 +39,7 @@ export interface FastifyBrowserSmokeHook {
   getDatabaseSnapshot: () => Database
   getLifecycleSnapshot: () => Promise<FastifyBrowserSmokeLifecycleSnapshot>
   isLoaded: () => boolean
-  patchRuntimeSettings: (patch: Record<string, unknown>) => Promise<ServerCommandResult<Record<string, unknown>>>
+  patchRuntimeSettings: (patch: Record<string, unknown>) => Promise<ServerCommandResult>
   waitForLoaded: (timeoutMs?: number) => Promise<void>
   // Swipe-persistence E2E: open a character (drives chat hydration), read the
   // reconstructed reroll candidates, and drive the swipe controls.
@@ -96,10 +92,11 @@ export function installFastifyBrowserSmokeHook() {
       })),
     }),
     isLoaded: () => get(loadedStore),
-    patchRuntimeSettings: (patch) =>
-      runServerCommand({
-        command: (baseRevision) => patchRuntimeSettings({ baseRevision, patch }),
-      }),
+    // Ride the real durable outbox path so the request carries the mutation
+    // receipt + database-lineage headers. The Journey 3 lineage-recovery gate
+    // depends on this: an untagged command released after an import only gets
+    // a benign revision_conflict, never the database_lineage_conflict reload.
+    patchRuntimeSettings: (patch) => dispatchDurableServerBackedSettingsPatch({ patch }),
     waitForLoaded,
     selectCharacter: (index) => selectedCharID.set(index),
     getRerollCandidates: () =>

@@ -153,9 +153,12 @@ test('Journey 3 (GATE): the same-character sidebar view survives old-lineage rec
     .toBe(true)
   await expect(page.locator('[data-risu-sidebar-panel="character"]').first()).toBeVisible()
 
-  // Hold a real command at the network boundary so the import deterministically
-  // leaves old-lineage work in flight. Releasing it after the lineage rotates
-  // must produce the ownership conflict and reload this exact history entry.
+  // Hold a real durable (lineage-tagged) command at the network boundary so the
+  // import deterministically leaves old-lineage work in flight. Releasing it
+  // after the lineage rotates must produce the ownership conflict and reload
+  // this exact history entry. Only receipt-tagged mutations can hit
+  // database_lineage_conflict; an untagged command would settle as a benign
+  // revision_conflict and never trigger the recovery reload under test.
   const heldCommand = await holdNextRuntimeSettingsCommand(page)
   const previousDocumentTimeOrigin = await page.evaluate(() => performance.timeOrigin)
   const lineageConflictResponsePromise = page.waitForResponse(isDatabaseLineageConflictResponse, {

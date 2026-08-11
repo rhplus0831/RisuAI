@@ -1,4 +1,5 @@
 import { devices, expect, test, type Locator, type Page } from '@playwright/test'
+import { randomUUID } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -491,10 +492,21 @@ async function startHarness(): Promise<Harness> {
 }
 
 async function importDatabase(app: FastifyInstance, auth: string, database: Record<string, unknown>) {
+  // The import route is writer-guarded: once an earlier test's page has
+  // registered a writer session, a header-less inject is rejected with 423.
+  // Claim the lease the way a freshly booted tab would (bootstrap registers
+  // the requested writer session), then import under that same session.
+  const writerSession = `browser-smoke-import-${randomUUID()}`
+  const registered = await app.inject({
+    method: 'GET',
+    url: '/api/v1/bootstrap',
+    headers: { 'risu-auth': auth, 'risu-writer-session': writerSession },
+  })
+  expect(registered.statusCode).toBe(200)
   const imported = await app.inject({
     method: 'POST',
     url: '/api/v1/import/risusave',
-    headers: { 'risu-auth': auth },
+    headers: { 'risu-auth': auth, 'risu-writer-session': writerSession },
     payload: { database },
   })
   expect(imported.statusCode).toBe(200)
