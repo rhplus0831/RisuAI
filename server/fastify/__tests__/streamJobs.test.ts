@@ -210,6 +210,17 @@ describe('normalizeStreamTimeoutMs / normalizeHeartbeatSec', () => {
 })
 
 describe('JobRegistry buffering and lifecycle', () => {
+  it('uses an exact preallocated durable job id and rejects collisions', () => {
+    const registry = new JobRegistry()
+    const job = registry.create({ id: 'preallocated-job', timeoutMs: 60_000, heartbeatSec: 10 })
+
+    expect(job.id).toBe('preallocated-job')
+    expect(registry.get('preallocated-job')).toBe(job)
+    expect(() => registry.create({ id: 'preallocated-job', timeoutMs: 60_000, heartbeatSec: 10 })).toThrow(
+      'Stream job already exists: preallocated-job',
+    )
+  })
+
   it('L1: identifies non-terminal chat SSE activity for sliding generation deadlines', () => {
     expect(isStreamDeadlineActivityFrame('event: token\ndata: {"content":"hello"}\n\n')).toBe(true)
     expect(isStreamDeadlineActivityFrame('event: token\ndata: {"content":""}\n\n')).toBe(false)

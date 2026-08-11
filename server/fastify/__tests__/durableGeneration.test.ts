@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { randomUUID } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -399,6 +400,81 @@ function postDurable(
   })
 }
 
+interface OperationProtocolAuthority extends JsonRecord {
+  revision: number
+  databaseLineage: string
+  generationOperationProjectionEpoch: number
+  generationOperations: JsonRecord[]
+  activeGenerationJobs: JsonRecord[]
+  generationFinalizations?: JsonRecord[]
+}
+
+interface AtomicOperationResponse extends JsonRecord {
+  operation: JsonRecord & {
+    operationId: string
+    state: string
+    stateVersion: number
+    projectionEpoch: number
+    currentAttempt?: JsonRecord & { attemptNo: number; jobId: string }
+  }
+  append?: JsonRecord
+  stream?: { href: string }
+}
+
+async function operationAuthority(writerSession = 'writer-a'): Promise<OperationProtocolAuthority> {
+  const response = await fetch(`${harness.baseUrl}/api/v1/bootstrap`, {
+    headers: authHeaders({ 'risu-writer-session': writerSession }),
+  })
+  expect(response.status).toBe(200)
+  return (await response.json()) as OperationProtocolAuthority
+}
+
+function atomicSendRequest(args: {
+  operationId: string
+  acceptedMessageId: string
+  baseRevision: number
+  text?: string
+}): JsonRecord {
+  return {
+    protocolVersion: 1,
+    operationId: args.operationId,
+    baseRevision: args.baseRevision,
+    characterId: 'char-1',
+    chatId: 'chat-1',
+    mode: 'send',
+    acceptedMessageId: args.acceptedMessageId,
+    message: { role: 'user', data: args.text ?? 'atomic hello', chatId: args.acceptedMessageId },
+    draftGeneration: 1,
+    generation: {
+      syntheticSayNothing: false,
+      resetMessages: false,
+      inlayAssetRefs: [],
+      clientContext: {},
+      clientCapabilities: {},
+    },
+  }
+}
+
+function postAtomicOperation(databaseLineage: string, body: JsonRecord, writerSession = 'writer-a'): Promise<Response> {
+  return fetch(`${harness.baseUrl}/api/v1/generation-operations`, {
+    method: 'POST',
+    headers: authHeaders({
+      'content-type': 'application/json',
+      'risu-database-lineage': databaseLineage,
+      'risu-writer-session': writerSession,
+    }),
+    body: JSON.stringify(body),
+  })
+}
+
+async function operationStatus(operationId: string): Promise<AtomicOperationResponse> {
+  const response = await fetch(`${harness.baseUrl}/api/v1/generation-operations/${encodeURIComponent(operationId)}`, {
+    headers: authHeaders(),
+  })
+  expect(response.status).toBe(200)
+  return (await response.json()) as AtomicOperationResponse
+}
+
 /**
  * A provider that streams `before`, then blocks until either `release()` is called
  * (then streams `after` + done) or the job's signal aborts (then throws, like a real
@@ -744,6 +820,567 @@ function seedGenerationFinalizationRetryRow(
 }
 
 describe('Durable generation (Milestone 1)', () => {
+  it('atomically replays one accepted send and carries exact lineage through SSE, bootstrap, journal, result, and events', async () => {
+    const gated = makeGatedProvider({ before: 'lineage', after: ' result' })
+    let providerCalls = 0
+    providerImpl = (context) => {
+      providerCalls += 1
+      return gated.dispatchProvider(context)
+    }
+
+    const authority = await operationAuthority()
+    const operationId = randomUUID()
+    const acceptedMessageId = randomUUID()
+    const request = atomicSendRequest({
+      operationId,
+      acceptedMessageId,
+      baseRevision: authority.revision,
+    })
+
+    const first = await postAtomicOperation(authority.databaseLineage, request)
+    expect(first.status).toBe(201)
+    const accepted = (await first.json()) as AtomicOperationResponse
+    expect(accepted.operation).toMatchObject({
+      operationId,
+      state: 'owned_by_job',
+      acceptedMessageId,
+      currentAttempt: { attemptNo: 1, jobId: expect.any(String) },
+    })
+    expect(accepted.append).toMatchObject({
+      disposition: 'accepted',
+      messageId: acceptedMessageId,
+      event: {
+        type: 'message.appended',
+        databaseLineage: authority.databaseLineage,
+        operationId,
+        sourceMessageId: acceptedMessageId,
+      },
+    })
+    expect((accepted.append?.event as JsonRecord).origin).toBeUndefined()
+    const jobId = accepted.operation.currentAttempt!.jobId
+
+    const replay = await postAtomicOperation(authority.databaseLineage, {
+      ...request,
+      baseRevision: authority.revision + 999,
+    })
+    expect(replay.status).toBe(200)
+    const replayed = (await replay.json()) as AtomicOperationResponse
+    expect(replayed.operation.currentAttempt).toMatchObject({ attemptNo: 1, jobId })
+    expect(replayed.append).toMatchObject({ disposition: 'accepted', messageId: acceptedMessageId })
+    const conflictingReplay = await postAtomicOperation(authority.databaseLineage, {
+      ...request,
+      message: { ...(request.message as JsonRecord), data: 'changed immutable message' },
+    })
+    expect(conflictingReplay.status).toBe(409)
+    expect(await conflictingReplay.json()).toEqual({ error: 'operation_id_conflict' })
+    expect(providerCalls).toBe(1)
+
+    const running = await operationAuthority()
+    const active = running.activeGenerationJobs.find((entry) => entry.operationId === operationId)
+    expect(active).toMatchObject({
+      databaseLineage: authority.databaseLineage,
+      operationId,
+      writerSessionId: 'writer-a',
+      attemptNo: 1,
+      jobId,
+      acceptedMessageId,
+      operationStateVersion: expect.any(Number),
+      projectionEpoch: expect.any(Number),
+    })
+    expect(running.generationOperations).toContainEqual(
+      expect.objectContaining({
+        operationId,
+        state: 'owned_by_job',
+        acceptedMessageId,
+        currentAttempt: expect.objectContaining({ attemptNo: 1, jobId }),
+      }),
+    )
+
+    const streamController = newController()
+    const stream = await fetch(
+      `${harness.baseUrl}/api/v1/generation-operations/${encodeURIComponent(operationId)}/stream` +
+        `?attemptNo=1&jobId=${encodeURIComponent(jobId)}&projectionEpoch=${active!.projectionEpoch}`,
+      { headers: authHeaders(), signal: streamController.signal },
+    )
+    expect(stream.status).toBe(200)
+    const initialEvents = await readSse(stream, (event) => event.type === 'token')
+    streamController.abort()
+    expect(initialEvents.some((event) => event.type === 'job_accepted')).toBe(true)
+    for (const event of initialEvents) {
+      expect(event.data).toMatchObject({
+        databaseLineage: authority.databaseLineage,
+        operationId,
+        writerSessionId: 'writer-a',
+        writerEpoch: expect.any(Number),
+        operationStateVersion: expect.any(Number),
+        projectionEpoch: expect.any(Number),
+        attemptNo: 1,
+        jobId,
+        acceptedMessageId,
+      })
+    }
+
+    executeDatabase(`
+      CREATE TRIGGER fail_protocol_generation_message_insert
+      BEFORE INSERT ON messages
+      WHEN NEW.role = 'char'
+      BEGIN
+        SELECT RAISE(FAIL, 'injected protocol finalization failure');
+      END;
+    `)
+    const beforeFinalization = await operationStatus(operationId)
+    const terminalStream = await fetch(
+      `${harness.baseUrl}/api/v1/generation-operations/${encodeURIComponent(operationId)}/stream` +
+        `?attemptNo=1&jobId=${encodeURIComponent(jobId)}` +
+        `&projectionEpoch=${beforeFinalization.operation.projectionEpoch}`,
+      { headers: authHeaders() },
+    )
+    expect(terminalStream.status).toBe(200)
+    const terminalPromise = readSse(terminalStream, (event) => event.type === 'error')
+    gated.release()
+    const terminalEvents = await terminalPromise
+    const terminalError = terminalEvents.find((event) => event.type === 'error')
+    expect(terminalError?.data).toMatchObject({
+      reason: 'generation_persistence_failed',
+      persistenceDisposition: 'queued',
+      databaseLineage: authority.databaseLineage,
+      operationId,
+      attemptNo: 1,
+      jobId,
+      acceptedMessageId,
+    })
+
+    const journalDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(
+        journalDb
+          .prepare(
+            `SELECT database_lineage AS databaseLineage, operation_id AS operationId,
+                    operation_attempt_no AS attemptNo,
+                    actor_writer_session_id AS writerSessionId,
+                    accepted_message_id AS acceptedMessageId,
+                    generation_id AS jobId, terminal_outcome AS terminalOutcome
+             FROM generation_finalization_retries WHERE generation_id = ?`,
+          )
+          .get(jobId),
+      ).toEqual({
+        databaseLineage: authority.databaseLineage,
+        operationId,
+        attemptNo: 1,
+        writerSessionId: 'writer-a',
+        acceptedMessageId,
+        jobId,
+        terminalOutcome: 'completed',
+      })
+    } finally {
+      journalDb.close()
+    }
+    const queuedAuthority = await operationAuthority()
+    expect(queuedAuthority.generationFinalizations).toContainEqual(
+      expect.objectContaining({
+        generationId: jobId,
+        databaseLineage: authority.databaseLineage,
+        operationId,
+        operationAttemptNo: 1,
+        acceptedMessageId,
+        terminalOutcome: 'completed',
+      }),
+    )
+
+    executeDatabase('DROP TRIGGER fail_protocol_generation_message_insert')
+    await waitFor(async () => {
+      const status = await operationStatus(operationId)
+      return status.operation.state === 'completed' ? status : undefined
+    })
+    expect(providerCalls).toBe(1)
+
+    const assistant = (await chatMessages(await bootstrap())).find((message) => message.role === 'char')
+    expect(assistant?.generationInfo).toMatchObject({
+      databaseLineage: authority.databaseLineage,
+      operationId,
+      acceptedMessageId,
+      attemptNo: 1,
+      jobId,
+    })
+    const eventDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(
+        eventDb
+          .prepare(
+            `SELECT type, database_lineage AS databaseLineage, operation_id AS operationId,
+                    source_message_id AS sourceMessageId, job_id AS jobId
+             FROM command_events WHERE operation_id = ? ORDER BY revision`,
+          )
+          .all(operationId),
+      ).toEqual([
+        {
+          type: 'message.appended',
+          databaseLineage: authority.databaseLineage,
+          operationId,
+          sourceMessageId: acceptedMessageId,
+          jobId: null,
+        },
+        {
+          type: 'generation.persisted',
+          databaseLineage: authority.databaseLineage,
+          operationId,
+          sourceMessageId: acceptedMessageId,
+          jobId,
+        },
+      ])
+    } finally {
+      eventDb.close()
+    }
+  })
+
+  it('binds a cancel-before-submit tombstone without appending or dispatching', async () => {
+    let providerCalls = 0
+    providerImpl = () => {
+      providerCalls += 1
+      return (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'done', finishReason: 'stop' }
+      })()
+    }
+    const authority = await operationAuthority()
+    const operationId = randomUUID()
+    const acceptedMessageId = randomUUID()
+    const cancellation = await fetch(
+      `${harness.baseUrl}/api/v1/generation-operations/${encodeURIComponent(operationId)}/cancellation`,
+      {
+        method: 'PUT',
+        headers: authHeaders({
+          'content-type': 'application/json',
+          'risu-database-lineage': authority.databaseLineage,
+          'risu-writer-session': 'writer-a',
+        }),
+        body: JSON.stringify({ reason: 'user_stop' }),
+      },
+    )
+    expect(cancellation.status).toBe(200)
+    expect(await cancellation.json()).toMatchObject({
+      disposition: 'cancelled_before_acceptance',
+      operation: { operationId, state: 'cancel_requested' },
+    })
+
+    const submit = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({ operationId, acceptedMessageId, baseRevision: authority.revision }),
+    )
+    expect(submit.status).toBe(200)
+    expect(await submit.json()).toMatchObject({
+      operation: { operationId, state: 'cancelled', acceptedMessageId },
+      append: { disposition: 'not_appended', messageId: acceptedMessageId },
+    })
+    expect(providerCalls).toBe(0)
+
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(db.prepare('SELECT COUNT(*) AS count FROM messages WHERE uid = ?').get(acceptedMessageId)).toEqual({
+        count: 0,
+      })
+      expect(
+        db
+          .prepare('SELECT COUNT(*) AS count FROM generation_operation_attempts WHERE operation_id = ?')
+          .get(operationId),
+      ).toEqual({ count: 0 })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('rejects synchronous generation-settings readiness before append or intent commit', async () => {
+    await seedDatabase({
+      ...fixtureDatabase,
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          chats: [{ ...durableChat(), generationSettings: undefined }],
+        },
+      ],
+    })
+    let providerCalls = 0
+    providerImpl = () => {
+      providerCalls += 1
+      return (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'done', finishReason: 'stop' }
+      })()
+    }
+    const authority = await operationAuthority()
+    const operationId = randomUUID()
+    const acceptedMessageId = randomUUID()
+    const response = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({ operationId, acceptedMessageId, baseRevision: authority.revision }),
+    )
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({
+      error: 'chat_generation_settings_incomplete',
+      chatId: 'chat-1',
+    })
+    expect(providerCalls).toBe(0)
+
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(
+        db.prepare('SELECT COUNT(*) AS count FROM generation_operations WHERE operation_id = ?').get(operationId),
+      ).toEqual({
+        count: 0,
+      })
+      expect(db.prepare('SELECT COUNT(*) AS count FROM messages WHERE uid = ?').get(acceptedMessageId)).toEqual({
+        count: 0,
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('shares one SQLite same-chat claim across protocol operations and the compatibility route', async () => {
+    const firstGate = makeGatedProvider({ before: 'first', after: ' result' })
+    providerImpl = firstGate.dispatchProvider
+    let authority = await operationAuthority()
+    const firstOperationId = randomUUID()
+    const firstMessageId = randomUUID()
+    const first = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({
+        operationId: firstOperationId,
+        acceptedMessageId: firstMessageId,
+        baseRevision: authority.revision,
+      }),
+    )
+    expect(first.status).toBe(201)
+
+    authority = await operationAuthority()
+    const blockedOperationId = randomUUID()
+    const blockedMessageId = randomUUID()
+    const blocked = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({
+        operationId: blockedOperationId,
+        acceptedMessageId: blockedMessageId,
+        baseRevision: 0,
+      }),
+    )
+    expect(blocked.status).toBe(409)
+    expect(await blocked.json()).toMatchObject({ error: 'generation_in_progress', operationId: firstOperationId })
+    const legacyBlocked = await postDurable({}, { writerSession: 'writer-a' })
+    expect(legacyBlocked.status).toBe(409)
+
+    firstGate.release()
+    await waitFor(async () => {
+      const status = await operationStatus(firstOperationId)
+      return status.operation.state === 'completed' ? status : undefined
+    })
+
+    const legacyGate = makeGatedProvider({ before: 'legacy', after: ' result' })
+    providerImpl = legacyGate.dispatchProvider
+    const legacyController = newController()
+    const legacy = await postDurable({}, { signal: legacyController.signal, writerSession: 'writer-a' })
+    expect(legacy.status).toBe(200)
+    await readSse(legacy, (event) => event.type === 'token')
+    legacyController.abort()
+
+    const claimDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(
+        claimDb
+          .prepare(
+            "SELECT request_origin AS requestOrigin, state FROM generation_operations WHERE chat_id = 'chat-1' AND request_origin = 'legacy' ORDER BY created_at DESC LIMIT 1",
+          )
+          .get(),
+      ).toEqual({ requestOrigin: 'legacy', state: 'owned_by_job' })
+    } finally {
+      claimDb.close()
+    }
+
+    authority = await operationAuthority()
+    const blockedByLegacyOperationId = randomUUID()
+    const blockedByLegacyMessageId = randomUUID()
+    const blockedByLegacy = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({
+        operationId: blockedByLegacyOperationId,
+        acceptedMessageId: blockedByLegacyMessageId,
+        baseRevision: authority.revision,
+      }),
+    )
+    expect(blockedByLegacy.status).toBe(409)
+    expect(await blockedByLegacy.json()).toMatchObject({ error: 'generation_in_progress' })
+
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(
+        db
+          .prepare('SELECT COUNT(*) AS count FROM messages WHERE uid IN (?, ?)')
+          .get(blockedMessageId, blockedByLegacyMessageId),
+      ).toEqual({ count: 0 })
+    } finally {
+      db.close()
+    }
+    legacyGate.release()
+  })
+
+  it('cancels only the authoritative current attempt despite stale advisory fields', async () => {
+    const gated = makeGatedProvider({ before: 'partial cancellation' })
+    let providerCalls = 0
+    providerImpl = (context) => {
+      providerCalls += 1
+      return gated.dispatchProvider(context)
+    }
+    const authority = await operationAuthority()
+    const operationId = randomUUID()
+    const acceptedMessageId = randomUUID()
+    const submit = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({ operationId, acceptedMessageId, baseRevision: authority.revision }),
+    )
+    expect(submit.status).toBe(201)
+    const submitted = (await submit.json()) as AtomicOperationResponse
+    const attempt = submitted.operation.currentAttempt!
+    await waitFor(async () => (providerCalls === 1 ? true : undefined))
+
+    const cancellation = await fetch(
+      `${harness.baseUrl}/api/v1/generation-operations/${encodeURIComponent(operationId)}/cancellation`,
+      {
+        method: 'PUT',
+        headers: authHeaders({
+          'content-type': 'application/json',
+          'risu-database-lineage': authority.databaseLineage,
+          'risu-writer-session': 'writer-a',
+        }),
+        body: JSON.stringify({
+          reason: 'user_stop',
+          knownStateVersion: 1,
+          knownAttemptNo: attempt.attemptNo + 99,
+          knownJobId: randomUUID(),
+        }),
+      },
+    )
+    expect(cancellation.status).toBe(202)
+    expect(await cancellation.json()).toMatchObject({
+      disposition: 'cancelling',
+      knownAttemptMatched: false,
+      operation: {
+        operationId,
+        state: 'stopping',
+        currentAttempt: { attemptNo: attempt.attemptNo, jobId: attempt.jobId },
+      },
+    })
+    await waitFor(async () => {
+      const status = await operationStatus(operationId)
+      return status.operation.state === 'cancelled' ? status : undefined
+    })
+    expect(providerCalls).toBe(1)
+
+    const replay = await fetch(
+      `${harness.baseUrl}/api/v1/generation-operations/${encodeURIComponent(operationId)}/cancellation`,
+      {
+        method: 'PUT',
+        headers: authHeaders({
+          'content-type': 'application/json',
+          'risu-database-lineage': authority.databaseLineage,
+          'risu-writer-session': 'writer-a',
+        }),
+        body: JSON.stringify({ reason: 'user_stop' }),
+      },
+    )
+    expect(replay.status).toBe(200)
+    expect(await replay.json()).toMatchObject({ disposition: 'already_cancelled' })
+  })
+
+  it('replays one explicit retry attempt without retargeting or redispatching', async () => {
+    let providerCalls = 0
+    providerImpl = () => {
+      providerCalls += 1
+      return (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'error', error: 'injected provider failure', nonRetryable: true }
+      })()
+    }
+    const authority = await operationAuthority()
+    const operationId = randomUUID()
+    const acceptedMessageId = randomUUID()
+    const submit = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({ operationId, acceptedMessageId, baseRevision: authority.revision }),
+    )
+    expect(submit.status).toBe(201)
+    const retryable = await waitFor(async () => {
+      const status = await operationStatus(operationId)
+      return status.operation.state === 'retryable' ? status : undefined
+    })
+    expect(providerCalls).toBe(1)
+
+    const retryGate = makeGatedProvider({ before: 'retried', after: ' once' })
+    providerImpl = (context) => {
+      providerCalls += 1
+      return retryGate.dispatchProvider(context)
+    }
+    const retryRequestId = randomUUID()
+    const retryBody = {
+      retryRequestId,
+      expectedStateVersion: retryable.operation.stateVersion,
+    }
+    const retry = await fetch(
+      `${harness.baseUrl}/api/v1/generation-operations/${encodeURIComponent(operationId)}/retries`,
+      {
+        method: 'POST',
+        headers: authHeaders({
+          'content-type': 'application/json',
+          'risu-database-lineage': authority.databaseLineage,
+          'risu-writer-session': 'writer-a',
+        }),
+        body: JSON.stringify(retryBody),
+      },
+    )
+    expect(retry.status).toBe(202)
+    const retried = (await retry.json()) as AtomicOperationResponse
+    expect(retried.operation).toMatchObject({
+      operationId,
+      state: 'owned_by_job',
+      acceptedMessageId,
+      currentAttempt: { attemptNo: 2, retryRequestId, jobId: expect.any(String) },
+    })
+    const retryJobId = retried.operation.currentAttempt!.jobId
+
+    const retryReplay = await fetch(
+      `${harness.baseUrl}/api/v1/generation-operations/${encodeURIComponent(operationId)}/retries`,
+      {
+        method: 'POST',
+        headers: authHeaders({
+          'content-type': 'application/json',
+          'risu-database-lineage': authority.databaseLineage,
+          'risu-writer-session': 'writer-a',
+        }),
+        body: JSON.stringify(retryBody),
+      },
+    )
+    expect(retryReplay.status).toBe(200)
+    expect(await retryReplay.json()).toMatchObject({
+      operation: { currentAttempt: { attemptNo: 2, retryRequestId, jobId: retryJobId } },
+    })
+    expect(providerCalls).toBe(2)
+
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(
+        db
+          .prepare('SELECT COUNT(*) AS count FROM generation_operation_attempts WHERE operation_id = ?')
+          .get(operationId),
+      ).toEqual({ count: 2 })
+      expect(db.prepare('SELECT COUNT(*) AS count FROM messages WHERE uid = ?').get(acceptedMessageId)).toEqual({
+        count: 1,
+      })
+    } finally {
+      db.close()
+    }
+    retryGate.release()
+    await waitFor(async () => {
+      const status = await operationStatus(operationId)
+      return status.operation.state === 'completed' ? status : undefined
+    })
+    expect(providerCalls).toBe(2)
+  })
+
   it('exposes the accepted durable job id before the SSE body is consumed', async () => {
     const res = await postDurable({})
     const headerJobId = res.headers.get('x-risu-generation-job-id')
@@ -1509,7 +2146,7 @@ describe('Durable generation (Milestone 1)', () => {
 
     const boot = await bootstrap()
     // The runtime payload carries the generating mode so reload-resume renders correctly.
-    expect(boot.activeGenerationJobs).toContainEqual({ chatId: 'chat-1', jobId, mode: 'send' })
+    expect(boot.activeGenerationJobs).toContainEqual(expect.objectContaining({ chatId: 'chat-1', jobId, mode: 'send' }))
 
     // A fresh client reattaches via the discovered id.
     const reController = newController()
@@ -1973,7 +2610,7 @@ describe('Durable generation (Milestone 1)', () => {
 
       const terminalEvents = await readSse(replay, (event) => event.type === 'done')
       expect(terminalEvents.find((event) => event.type === 'error')).toBeUndefined()
-      expect(terminalEvents.find((event) => event.type === 'warning')?.data).toEqual({
+      expect(terminalEvents.find((event) => event.type === 'warning')?.data).toMatchObject({
         message: 'Some server script updates were skipped because their targets changed during generation.',
         context: {
           kind: 'stale_generation_script_mutations',
@@ -2353,12 +2990,14 @@ describe('Durable generation (Milestone 1)', () => {
     })
 
     const boot = await bootstrap()
-    expect(boot.activeGenerationJobs).toContainEqual({
-      chatId: 'chat-1',
-      jobId,
-      mode: 'regenerate',
-      regenerateMessageId: 'msg-char-1',
-    })
+    expect(boot.activeGenerationJobs).toContainEqual(
+      expect.objectContaining({
+        chatId: 'chat-1',
+        jobId,
+        mode: 'regenerate',
+        regenerateMessageId: 'msg-char-1',
+      }),
+    )
     gated.release()
     controller.abort()
   })
@@ -2486,9 +3125,9 @@ describe('Durable generation (Milestone 1)', () => {
     expect(boot.activeGenerationJobs).toEqual([])
   })
 
-  // Shutdown must settle detached runners BEFORE closing the SQLite handle, so
-  // the aborted runner's cancel-persist lands in an open database (audit L13).
-  it('settles detached runners before closing the database on shutdown (L13)', async () => {
+  // Shutdown records system abandonment before aborting the detached runner.
+  // It must not reinterpret a server shutdown as a user-cancelled partial.
+  it('abandons detached runners before closing the database on shutdown (L13)', async () => {
     const gated = makeGatedProvider({ before: 'partial shutdown text' }) // never released
     providerImpl = gated.dispatchProvider
     const local = await startHarness()
@@ -2510,11 +3149,11 @@ describe('Durable generation (Milestone 1)', () => {
         }),
         signal: controller.signal,
       })
-      await readSse(res, (ev) => ev.type === 'token')
+      const initialEvents = await readSse(res, (ev) => ev.type === 'token')
+      const operationId = initialEvents.find((event) => event.type === 'job_accepted')?.data.operationId as string
       controller.abort() // bare disconnect; the job keeps running
 
-      // Shutdown aborts the job; the runner's cancel path persists the
-      // streamed-so-far text — it must land before db.close(), not race it.
+      // Shutdown aborts the job after committing explicit system abandonment.
       await local.app.close()
 
       const db = new DatabaseSync(path.join(local.dataDir, 'risu.db'), { readOnly: true })
@@ -2522,7 +3161,11 @@ describe('Durable generation (Milestone 1)', () => {
         const rows = db
           .prepare("SELECT data FROM messages WHERE chat_id = 'chat-1' AND alternate = 0 ORDER BY seq")
           .all() as Array<{ data: string }>
-        expect(rows.map((row) => row.data)).toContain('partial shutdown text')
+        expect(rows.map((row) => row.data)).not.toContain('partial shutdown text')
+        const operation = db
+          .prepare('SELECT state, failure_code AS failureCode FROM generation_operations WHERE operation_id = ?')
+          .get(operationId) as { state: string; failureCode: string }
+        expect(operation).toEqual({ state: 'abandoned', failureCode: 'server_shutdown' })
       } finally {
         db.close()
       }

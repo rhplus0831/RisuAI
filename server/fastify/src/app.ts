@@ -31,6 +31,7 @@ import {
   retryQueuedGenerationFinalizations,
   type GenerationChatRouteOptions,
 } from './routes/generationChat.js'
+import { registerGenerationOperationRoutes } from './routes/generationOperations.js'
 import { bootPromptVariables } from './prompt/promptVariablesBoot.js'
 import { registerHealthRoutes } from './routes/health.js'
 import { registerHubRoutes } from './routes/hub.js'
@@ -70,7 +71,11 @@ import { createEmbedMemoryJobBatchHandler, createEmbedMemoryJobHandler } from '.
 import { createSummarizeMemoryJobBatchHandler, createSummarizeMemoryJobHandler } from './memorySummarizeJobHandler.js'
 import { registerRequestTrace } from './requestTrace.js'
 import { createPushNotificationService } from './pushNotifications.js'
-import { reconcileGenerationOperationsAtStartup } from './generationOperations.js'
+import {
+  getGenerationOperationProjection,
+  reconcileGenerationOperationsAtStartup,
+  transitionGenerationOperation,
+} from './generationOperations.js'
 
 /**
  * Node `server.requestTimeout` backstop the wall-clock bound for
@@ -270,11 +275,38 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
       streamJobRegistry.deleteJob(job.id)
     }
     for (const job of generationJobRegistry.registry.list()) {
-      generationJobRegistry.registry.deleteJob(job.id)
+      if (job.databaseLineage && job.operationId) {
+        const operation = getGenerationOperationProjection(db, job.databaseLineage, job.operationId)
+        if (operation?.state === 'owned_by_job' || operation?.state === 'launching') {
+          transitionGenerationOperation(db, {
+            databaseLineage: job.databaseLineage,
+            operationId: job.operationId,
+            expectedState: operation.state,
+            expectedStateVersion: operation.stateVersion,
+            nextState: 'abandoned',
+            failureCode: 'server_shutdown',
+            failurePhase: 'shutdown',
+            providerMayHaveRun: operation.providerMayHaveRun,
+            runnerSettledAt: new Date().toISOString(),
+          })
+        } else if (operation?.state === 'stopping') {
+          transitionGenerationOperation(db, {
+            databaseLineage: job.databaseLineage,
+            operationId: job.operationId,
+            expectedState: 'stopping',
+            expectedStateVersion: operation.stateVersion,
+            nextState: 'cancelled',
+            failureCode: 'server_shutdown',
+            failurePhase: 'shutdown',
+            runnerSettledAt: new Date().toISOString(),
+          })
+        }
+      }
+      generationJobRegistry.registry.deleteJob(job.id, 'server_shutdown')
     }
-    // Detached generation runners were just aborted; wait for them to settle
-    // (their cancel path persists the streamed-so-far text) BEFORE closing the
-    // SQLite handle, so no runner ever touches a closed database.
+    // Detached generation runners were just system-aborted after their durable
+    // operation fence was committed. Wait for them to settle before closing the
+    // database; shutdown must not be projected as a user cancellation.
     await generationJobRegistry.settleRunners()
     db.close()
   })
@@ -343,6 +375,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     commandEventSink,
     generationJobRegistry,
     messageTranslationJobRegistry,
+    serverInstanceId,
     {
       ...opts.generationChat,
       pushNotifications: opts.generationChat?.pushNotifications ?? pushNotifications,
@@ -357,6 +390,24 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     },
     config.generationTrace,
   )
+  registerGenerationOperationRoutes(app, db, authState, config.dataDir, commandEventSink, {
+    serverInstanceId,
+    generationJobs: generationJobRegistry,
+    messageTranslationJobs: messageTranslationJobRegistry,
+    generationChatOptions: {
+      ...opts.generationChat,
+      pushNotifications: opts.generationChat?.pushNotifications ?? pushNotifications,
+      onPromptMemoryJobEnqueued: (job) => {
+        emitMemoryEvent(buildMemoryJobEvent(job))
+        try {
+          opts.generationChat?.onPromptMemoryJobEnqueued?.(job)
+        } catch (error) {
+          app.log.warn({ err: error, memoryJobId: job.id }, 'prompt memory job observer failed')
+        }
+      },
+    },
+    generationTrace: config.generationTrace,
+  })
   const finalizationRetryRaw = opts.generationChat?.finalizationRetry
   const finalizationRetryOptions = finalizationRetryRaw === false ? false : (finalizationRetryRaw ?? {})
   const runGenerationFinalizationRetrySweep = (): void => {

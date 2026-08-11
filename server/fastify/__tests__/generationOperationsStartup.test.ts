@@ -95,7 +95,7 @@ afterEach(async () => {
 })
 
 describe('generation operation startup reconciliation', () => {
-  it('abandons interrupted work, settles Stop, preserves exact journals, and projects deterministic truth', async () => {
+  it('rebuilds after append/launch/finalization loss without redispatching provider work', async () => {
     process.env.LOG_LEVEL = 'silent'
     const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-generation-operation-startup-'))
     dataDirs.push(dataDir)
@@ -107,6 +107,10 @@ describe('generation operation startup reconciliation', () => {
       lineage = getDatabaseLineage(db)
 
       createAccepted(db, lineage, 'accepted')
+      db.prepare(
+        `INSERT INTO messages (chat_id, seq, uid, role, data, disabled, json, alternate)
+         VALUES ('chat-accepted', 0, 'user-accepted', 'user', 'accepted before loss', NULL, ?, 0)`,
+      ).run(JSON.stringify({ role: 'user', data: 'accepted before loss', chatId: 'user-accepted' }))
 
       makeOwned(db, lineage, 'dispatched')
       db.prepare(
@@ -114,6 +118,9 @@ describe('generation operation startup reconciliation', () => {
          SET provider_dispatch_started_at = '2026-08-11T00:00:00.000Z'
          WHERE operation_id = 'dispatched'`,
       ).run()
+
+      // Process loss after owned_by_job commits but before the provider marker.
+      makeOwned(db, lineage, 'owned-undispatched')
 
       makeOwned(db, lineage, 'stopping')
       transitionGenerationOperation(db, {
@@ -238,6 +245,14 @@ describe('generation operation startup reconciliation', () => {
           result_message_id: null,
         },
         {
+          operation_id: 'owned-undispatched',
+          state: 'abandoned',
+          current_attempt_no: null,
+          failure_code: 'server_restarted',
+          provider_may_have_run: 0,
+          result_message_id: null,
+        },
+        {
           operation_id: 'persisted-result',
           state: 'completed',
           current_attempt_no: null,
@@ -266,7 +281,7 @@ describe('generation operation startup reconciliation', () => {
         verify
           .prepare(
             `SELECT operation_id, status FROM generation_operation_attempts
-             WHERE operation_id IN ('dispatched', 'journal', 'missing-journal', 'persisted-result', 'stopping')
+             WHERE operation_id IN ('dispatched', 'journal', 'missing-journal', 'owned-undispatched', 'persisted-result', 'stopping')
              ORDER BY operation_id`,
           )
           .all(),
@@ -274,9 +289,13 @@ describe('generation operation startup reconciliation', () => {
         { operation_id: 'dispatched', status: 'abandoned' },
         { operation_id: 'journal', status: 'finalizing' },
         { operation_id: 'missing-journal', status: 'abandoned' },
+        { operation_id: 'owned-undispatched', status: 'abandoned' },
         { operation_id: 'persisted-result', status: 'completed' },
         { operation_id: 'stopping', status: 'cancelled' },
       ])
+      expect(verify.prepare("SELECT COUNT(*) AS count FROM messages WHERE uid = 'user-accepted'").get()).toEqual({
+        count: 1,
+      })
     } finally {
       verify.close()
     }

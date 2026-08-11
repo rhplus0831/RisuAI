@@ -68,6 +68,21 @@ export interface StreamJob {
   mode?: 'send' | 'continue' | 'regenerate'
   regenerateMessageId?: string
   /**
+   * Durable operation lineage. Proxy jobs leave these fields unset. Every
+   * durable chat generation created by the operation protocol (including the
+   * compatibility route's server-created legacy claim) sets the complete
+   * required envelope before it is registered or exposed to a viewer.
+   */
+  databaseLineage?: string
+  operationId?: string
+  operationProtocolVersion?: number
+  writerEpoch?: number
+  operationStateVersion?: number
+  projectionEpoch?: number
+  attemptNo?: number
+  acceptedMessageId?: string
+  targetMessageId?: string
+  /**
    * Set when no-viewer pending frames were dropped at the cap. The
    * buffered prefix is gone, so a late viewer could never see a coherent
    * stream — the proxy runner aborts the upstream instead of draining the rest
@@ -154,6 +169,8 @@ export function normalizeHeartbeatSec(raw: unknown): number {
 }
 
 export interface CreateJobOptions {
+  /** Preallocated durable-attempt id. Omitted proxy jobs receive a new UUID. */
+  id?: string
   timeoutMs: unknown
   heartbeatSec: unknown
   slidingDeadline?: boolean
@@ -292,8 +309,10 @@ export class JobRegistry {
     const timeoutMs = normalizeStreamTimeoutMs(opts.timeoutMs)
     const heartbeatSec = normalizeHeartbeatSec(opts.heartbeatSec)
     const createdAt = opts.now ?? Date.now()
+    const id = opts.id ?? randomUUID()
+    if (this.jobs.has(id)) throw new Error(`Stream job already exists: ${id}`)
     const job: StreamJob = {
-      id: randomUUID(),
+      id,
       createdAt,
       updatedAt: createdAt,
       done: false,
@@ -432,10 +451,10 @@ export class JobRegistry {
     this.jobs.delete(jobId)
   }
 
-  deleteJob(jobId: string): boolean {
+  deleteJob(jobId: string, reason?: unknown): boolean {
     const job = this.jobs.get(jobId)
     if (!job) return false
-    job.abortController.abort()
+    job.abortController.abort(reason)
     this.markDone(job)
     this.cleanup(jobId)
     return true

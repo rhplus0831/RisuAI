@@ -87,6 +87,7 @@ import {
   type PromptEvent,
 } from '../prompt/sseEvents.js'
 import { ACTIVE_WRITER_SESSION_HEADER } from '../activeWriter.js'
+import { getDatabaseLineage, getDatabaseWriterMetadata } from '../databaseLineage.js'
 import { attachAbort } from '../requestAbort.js'
 import type { GenerationJobRegistry } from '../generationJobs.js'
 import { isStreamDeadlineActivityFrame, type JobClient, type StreamJob } from '../streamJobs.js'
@@ -126,12 +127,27 @@ import {
   type ServerMessageTranslationRunner,
 } from '../translation/generationCompletionTranslation.js'
 import { normalizeReportedClientContext } from '../../../../src/ts/process/request/clientContext.js'
+import {
+  GenerationOperationAttemptConflictError,
+  assertGenerationOperationDispatchable,
+  completeGenerationOperationFinalizationInTransaction,
+  createGenerationOperation,
+  getGenerationOperationProjection,
+  generationOperationRequestFingerprint,
+  markGenerationOperationProviderDispatchFinished,
+  markGenerationOperationProviderDispatchStarted,
+  reserveGenerationOperationAttempt,
+  transitionGenerationOperation,
+  type GenerationOperationLineage,
+  type GenerationOperationProjection,
+  type GenerationOperationTerminalOutcome,
+} from '../generationOperations.js'
 
 const ALLOWED_MODES = new Set(['send', 'continue', 'preview', 'preview_prompt', 'regenerate'])
 const SERVER_INLAY_SIGNATURE_CONTENT_TYPE = 'application/x-risu-inlay-signature+json'
 const PROVIDER_DISPATCH_FALLBACK = 'Provider dispatch failed before returning an error message.'
 
-interface ChatRequestBody {
+export interface ChatRequestBody {
   chatId?: unknown
   characterId?: unknown
   loadoutId?: unknown
@@ -153,7 +169,7 @@ type SuccessfulAssembleResult = AssembleResult & {
   prompt: Omit<PromptEvent, 'type'>
 }
 
-interface GenerationClientCapabilities {
+export interface GenerationClientCapabilities {
   compactPromptEvent: boolean
   promptMetadataOnly: boolean
   omitDuplicateDoneResult: boolean
@@ -168,6 +184,10 @@ type AssemblyPreflightResult =
   | { status: 'ready'; hypaContextTruncationCheckRequired: boolean }
   | { status: 'handled' }
   | { status: 'defer'; failure: AssemblyDeferredFailure }
+
+type GenerationSettingsPreflightResult =
+  | Exclude<AssemblyPreflightResult, { status: 'handled' }>
+  | { status: 'rejected'; statusCode: number; body: unknown }
 
 interface AssemblyDeferredFailure {
   error: unknown
@@ -187,6 +207,8 @@ export interface ChatProviderDispatchContext {
   historyMetadata?: Record<string, unknown>
   /** Dispatch-time request model selected from a provider sentinel. */
   resolvedRequestModel?: string
+  /** Durable-operation fence, invoked after awaited request transforms and immediately before each provider call. */
+  beforeProviderDispatch?: () => void
 }
 
 export type ChatProviderDispatcher = (
@@ -394,6 +416,7 @@ function dispatchProviderWithPolicies(
           },
         }
         let iterable: AsyncIterable<CompletionStreamFrame> | null | undefined
+        attemptContext.beforeProviderDispatch?.()
         try {
           iterable = await dispatcher(attemptContext)
         } catch (error) {
@@ -542,7 +565,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
-function readClientCapabilities(body: ChatRequestBody): GenerationClientCapabilities {
+export function readGenerationClientCapabilities(body: ChatRequestBody): GenerationClientCapabilities {
   const clientCapabilities = body.clientCapabilities
   return {
     compactPromptEvent: isRecord(clientCapabilities) && clientCapabilities.compactPromptEvent === true,
@@ -703,7 +726,7 @@ function validatePreview(body: ChatRequestBody): { ok: true } | { ok: false; err
 // standalone generation routes; see `requestAbort.ts`.
 
 /** Map a validated request body to the assembler input contract. */
-function toAssembleInput(body: ChatRequestBody): AssembleInput {
+export function toChatGenerationAssembleInput(body: ChatRequestBody): AssembleInput {
   return {
     chatId: body.chatId as string,
     characterId: body.characterId as string,
@@ -964,12 +987,11 @@ async function assemblePromptWithMetrics(
   }
 }
 
-function preflightChatGenerationSettings(
-  reply: FastifyReply,
+function inspectChatGenerationSettings(
   input: AssembleInput,
   dataDir: string,
   db: DatabaseSync,
-): AssemblyPreflightResult {
+): GenerationSettingsPreflightResult {
   try {
     const database = loadPersistedForAssembly(db, dataDir, input.chatId).database as Database | null
     if (!database) {
@@ -1022,15 +1044,37 @@ function preflightChatGenerationSettings(
     }
   } catch (err) {
     if (isChatGenerationSettingsIncompleteAssemblyError(err)) {
-      reply.code(err.statusCode).send(err.body)
-      return { status: 'handled' }
+      return { status: 'rejected', statusCode: err.statusCode, body: err.body }
     }
     if (isModelProfileGenerationGuardAssemblyError(err)) {
-      reply.code(err.statusCode).send(err.body)
-      return { status: 'handled' }
+      return { status: 'rejected', statusCode: err.statusCode, body: err.body }
     }
     return { status: 'defer', failure: { error: err } }
   }
+}
+
+function preflightChatGenerationSettings(
+  reply: FastifyReply,
+  input: AssembleInput,
+  dataDir: string,
+  db: DatabaseSync,
+): AssemblyPreflightResult {
+  const result = inspectChatGenerationSettings(input, dataDir, db)
+  if (result.status === 'rejected') {
+    reply.code(result.statusCode).send(result.body)
+    return { status: 'handled' }
+  }
+  return result
+}
+
+/** Synchronous settings gate used before the accepted-send transaction commits. */
+export function preflightGenerationOperationSettings(
+  input: AssembleInput,
+  dataDir: string,
+  db: DatabaseSync,
+): { status: 'ready' } | { status: 'rejected'; statusCode: number; body: unknown } {
+  const result = inspectChatGenerationSettings(input, dataDir, db)
+  return result.status === 'rejected' ? result : { status: 'ready' }
 }
 
 function sendAssemblyHttpError(reply: FastifyReply, err: unknown): boolean {
@@ -2567,6 +2611,76 @@ function makeSseJobClient(reply: FastifyReply): JobClient {
   }
 }
 
+function generationOperationLineageForJob(job: StreamJob): GenerationOperationLineage | undefined {
+  if (
+    !job.databaseLineage ||
+    !job.operationId ||
+    job.attemptNo === undefined ||
+    job.writerEpoch === undefined ||
+    !job.writerSessionId
+  ) {
+    return undefined
+  }
+  return {
+    databaseLineage: job.databaseLineage,
+    operationId: job.operationId,
+    attemptNo: job.attemptNo,
+    jobId: job.id,
+  }
+}
+
+function generationFinalizationLineageForJob(
+  job: StreamJob,
+  terminalOutcome: GenerationOperationTerminalOutcome,
+): Pick<
+  GenerationFinalizationAttempt,
+  | 'databaseLineage'
+  | 'operationId'
+  | 'operationAttemptNo'
+  | 'actorWriterSessionId'
+  | 'actorWriterEpoch'
+  | 'acceptedMessageId'
+  | 'terminalOutcome'
+> {
+  const lineage = generationOperationLineageForJob(job)
+  if (!lineage) return {}
+  return {
+    databaseLineage: lineage.databaseLineage,
+    operationId: lineage.operationId,
+    operationAttemptNo: lineage.attemptNo,
+    actorWriterSessionId: job.writerSessionId!,
+    actorWriterEpoch: job.writerEpoch!,
+    ...(job.acceptedMessageId ? { acceptedMessageId: job.acceptedMessageId } : {}),
+    terminalOutcome,
+  }
+}
+
+function updateJobOperationProjection(job: StreamJob, operation: GenerationOperationProjection): void {
+  job.operationStateVersion = operation.stateVersion
+  job.projectionEpoch = operation.projectionEpoch
+}
+
+function lineageEventForJob(db: DatabaseSync, job: StreamJob, event: PromptChatEvent): PromptChatEvent {
+  const lineage = generationOperationLineageForJob(job)
+  if (!lineage) return event
+  const operation = getGenerationOperationProjection(db, lineage.databaseLineage, lineage.operationId)
+  if (operation) updateJobOperationProjection(job, operation)
+  return {
+    ...event,
+    databaseLineage: lineage.databaseLineage,
+    operationId: lineage.operationId,
+    writerSessionId: job.writerSessionId!,
+    writerEpoch: job.writerEpoch!,
+    operationStateVersion: operation?.stateVersion ?? job.operationStateVersion!,
+    projectionEpoch: operation?.projectionEpoch ?? job.projectionEpoch!,
+    attemptNo: lineage.attemptNo,
+    jobId: lineage.jobId,
+    ...(job.acceptedMessageId ? { acceptedMessageId: job.acceptedMessageId } : {}),
+    ...(job.targetMessageId ? { targetMessageId: job.targetMessageId } : {}),
+    ...(event.type === 'done' && operation ? { operationState: operation.state } : {}),
+  }
+}
+
 /**
  * Attach a request connection as a **viewer** of a generation job over SSE: write
  * the event-stream head, send the `job_accepted` frame (so a drop during assembly
@@ -2579,6 +2693,7 @@ function attachGenerationViewer(
   reply: FastifyReply,
   registry: GenerationJobRegistry,
   job: StreamJob,
+  db?: DatabaseSync,
   viewerHeartbeatMs?: number,
   onLifecycleTransition?: GenerationChatRouteOptions['onDurableLifecycleTransition'],
 ): void {
@@ -2597,9 +2712,20 @@ function attachGenerationViewer(
       connection: 'keep-alive',
       'x-accel-buffering': 'no',
       'x-risu-generation-job-id': job.id,
+      ...(job.operationId ? { 'x-risu-generation-operation-id': job.operationId } : {}),
+      ...(job.attemptNo !== undefined ? { 'x-risu-generation-attempt-no': String(job.attemptNo) } : {}),
+      ...(job.projectionEpoch !== undefined
+        ? { 'x-risu-generation-projection-epoch': String(job.projectionEpoch) }
+        : {}),
     })
     client = makeSseJobClient(reply)
-    client.send(formatPromptChatFrame({ type: 'job_accepted', jobId: job.id }))
+    client.send(
+      formatPromptChatFrame(
+        db
+          ? lineageEventForJob(db, job, { type: 'job_accepted', jobId: job.id })
+          : { type: 'job_accepted', jobId: job.id },
+      ),
+    )
     registry.registry.attach(job.id, client)
     // SSE comment heartbeat a long assembly or provider connect can
     // leave the stream silent past idle-proxy timeouts before the first token.
@@ -2644,6 +2770,25 @@ function attachGenerationViewer(
     client.close()
     registry.registry.detach(job.id, client)
   }
+}
+
+export function attachGenerationOperationViewer(args: {
+  req: FastifyRequest
+  reply: FastifyReply
+  db: DatabaseSync
+  generationJobs: GenerationJobRegistry
+  job: StreamJob
+  options?: GenerationChatRouteOptions
+}): void {
+  attachGenerationViewer(
+    args.req,
+    args.reply,
+    args.generationJobs,
+    args.job,
+    args.db,
+    args.options?.viewerHeartbeatMs,
+    args.options?.onDurableLifecycleTransition,
+  )
 }
 
 /** Build a `char` assistant message in the shape `dispatchPersistGenerationResult` persists. */
@@ -3042,6 +3187,14 @@ function persistServerGenerationResult(args: {
   targetMessageId?: string
   mode?: GenerationFinalizationMode
   targetSnapshot?: GenerationFinalizationTargetSnapshot
+  operationLineage?: {
+    databaseLineage: string
+    operationId: string
+    operationAttemptNo: number
+    generationId: string
+    terminalOutcome: GenerationOperationTerminalOutcome
+    acceptedMessageId?: string
+  }
 }): GenerationFinalizationPersistenceResult {
   if (args.targetSnapshot) {
     const replayRevision = readAlreadyPersistedGenerationFinalizationRevision({
@@ -3192,8 +3345,28 @@ function persistServerGenerationResult(args: {
                 id: write.messageId,
                 parentId: args.chatId,
               }
+        if (args.operationLineage) {
+          completeGenerationOperationFinalizationInTransaction(targetDb, {
+            databaseLineage: args.operationLineage.databaseLineage,
+            operationId: args.operationLineage.operationId,
+            attemptNo: args.operationLineage.operationAttemptNo,
+            jobId: args.operationLineage.generationId,
+            terminalOutcome: args.operationLineage.terminalOutcome,
+            resultMessageId: write.messageId,
+          })
+        }
         return {
-          event,
+          event: args.operationLineage
+            ? {
+                ...event,
+                databaseLineage: args.operationLineage.databaseLineage,
+                operationId: args.operationLineage.operationId,
+                ...(args.operationLineage.acceptedMessageId
+                  ? { sourceMessageId: args.operationLineage.acceptedMessageId }
+                  : {}),
+                jobId: args.operationLineage.generationId,
+              }
+            : event,
           extra: {
             chatId: args.chatId,
             messageId: write.messageId,
@@ -3264,6 +3437,21 @@ function persistGenerationFinalizationAttempt(args: {
     targetMessageId: args.attempt.targetMessageId,
     mode: args.attempt.mode,
     targetSnapshot: args.attempt.targetSnapshot,
+    ...(args.attempt.databaseLineage &&
+    args.attempt.operationId &&
+    args.attempt.operationAttemptNo !== undefined &&
+    args.attempt.terminalOutcome
+      ? {
+          operationLineage: {
+            databaseLineage: args.attempt.databaseLineage,
+            operationId: args.attempt.operationId,
+            operationAttemptNo: args.attempt.operationAttemptNo,
+            generationId: args.attempt.generationId,
+            terminalOutcome: args.attempt.terminalOutcome,
+            ...(args.attempt.acceptedMessageId ? { acceptedMessageId: args.attempt.acceptedMessageId } : {}),
+          },
+        }
+      : {}),
   })
 }
 
@@ -3340,6 +3528,26 @@ function persistConfirmedGenerationFinalization(args: {
       attempt: args.attempt,
       err,
     })
+    if (isTerminalGenerationFinalizationError(err) && args.attempt.databaseLineage && args.attempt.operationId) {
+      const operation = getGenerationOperationProjection(
+        args.db,
+        args.attempt.databaseLineage,
+        args.attempt.operationId,
+      )
+      if (operation?.state === 'finalizing') {
+        transitionGenerationOperation(args.db, {
+          databaseLineage: args.attempt.databaseLineage,
+          operationId: args.attempt.operationId,
+          expectedState: 'finalizing',
+          expectedStateVersion: operation.stateVersion,
+          nextState: 'terminal_failed',
+          failureCode: 'operation_target_stale',
+          failurePhase: 'finalization',
+          lastError: errorMessage(err, 'generation finalization target is stale'),
+          providerMayHaveRun: true,
+        })
+      }
+    }
     return {
       kind: isTerminalGenerationFinalizationError(err) ? 'rejected' : 'queued',
       error: err,
@@ -3393,6 +3601,39 @@ function queueAndPersistGenerationFinalization(args: {
       journalConfirmed: false,
       authoritativeCommitted: false,
       cleanupComplete: false,
+    }
+  }
+  if (args.attempt.databaseLineage && args.attempt.operationId && args.attempt.terminalOutcome) {
+    try {
+      const operation = getGenerationOperationProjection(
+        args.db,
+        args.attempt.databaseLineage,
+        args.attempt.operationId,
+      )
+      if (operation?.state === 'owned_by_job' || operation?.state === 'stopping') {
+        const transitioned = transitionGenerationOperation(args.db, {
+          databaseLineage: args.attempt.databaseLineage,
+          operationId: args.attempt.operationId,
+          expectedState: operation.state,
+          expectedStateVersion: operation.stateVersion,
+          nextState: 'finalizing',
+          desiredTerminalOutcome: args.attempt.terminalOutcome,
+          finalizationGenerationId: args.attempt.generationId,
+        })
+        if (transitioned.status !== 'applied') {
+          throw new Error('generation operation changed before finalization could be bound')
+        }
+      } else if (operation?.state !== 'finalizing' && operation?.state !== args.attempt.terminalOutcome) {
+        throw new Error('generation operation is not eligible for finalization')
+      }
+    } catch (err) {
+      return {
+        kind: 'queued',
+        error: err,
+        journalConfirmed: true,
+        authoritativeCommitted: false,
+        cleanupComplete: false,
+      }
     }
   }
   return persistConfirmedGenerationFinalization(args)
@@ -3616,6 +3857,7 @@ async function buildDurablePostGeneration(args: {
   completionText: string
   alternateTexts?: readonly string[]
   generationId: string
+  job: StreamJob
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
   pushNotifications?: false | PushNotificationService
@@ -3625,6 +3867,17 @@ async function buildDurablePostGeneration(args: {
   metricContext?: PromptAssemblyMetricContext
 }): Promise<ProviderPostGenerationResult | undefined> {
   const completedAt = Date.now()
+  const operationLineage = generationOperationLineageForJob(args.job)
+  if (operationLineage) {
+    try {
+      const operation = markGenerationOperationProviderDispatchFinished(args.db, operationLineage)
+      updateJobOperationProjection(args.job, operation)
+    } catch {
+      // The started marker is the safety boundary. A transient failure while
+      // adding the advisory finished timestamp must not bypass the phase-aware
+      // finalization journal and its truthful persistence disposition.
+    }
+  }
   const {
     postGen,
     postGenError,
@@ -3664,6 +3917,7 @@ async function buildDurablePostGeneration(args: {
     eventSink: args.eventSink,
     attempt: {
       generationId: args.generationId,
+      ...generationFinalizationLineageForJob(args.job, 'completed'),
       chatId: args.input.chatId,
       mode: finalizationModeFromInput(args.input),
       message,
@@ -3676,6 +3930,15 @@ async function buildDurablePostGeneration(args: {
     },
   })
   if (finalization.kind === 'unconfirmed' || finalization.kind === 'queued' || finalization.kind === 'rejected') {
+    if (finalization.kind === 'unconfirmed') {
+      settleGenerationOperationWithoutResult({
+        db: args.db,
+        job: args.job,
+        failureCode: 'finalization_journal_unconfirmed',
+        failurePhase: 'finalization_journal',
+        lastError: errorMessage(finalization.error, 'failed to confirm generation finalization journal'),
+      })
+    }
     const disposition = finalization.kind
     const metricStatus =
       finalization.kind === 'unconfirmed'
@@ -3863,10 +4126,21 @@ function persistRawCancelledResult(args: {
   state: AssemblyState
   input: AssembleInput
   generationId: string
+  job: StreamJob
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
   text: string
 }): { outcome: GenerationFinalizationOutcome; messageId: string | undefined } {
+  const operationLineage = generationOperationLineageForJob(args.job)
+  if (operationLineage) {
+    try {
+      const operation = markGenerationOperationProviderDispatchFinished(args.db, operationLineage)
+      updateJobOperationProjection(args.job, operation)
+    } catch {
+      // Keep cancelled-partial finalization authoritative even if the
+      // nonessential provider-finished timestamp cannot be recorded.
+    }
+  }
   const targetSnapshot = captureGenerationFinalizationTargetSnapshot(args.input, args.state)
   const continueRow = args.input.mode === 'continue' ? findContinueRow(args.state) : undefined
   const raw = buildRawModeMessage({
@@ -3885,6 +4159,7 @@ function persistRawCancelledResult(args: {
     eventSink: args.eventSink,
     attempt: {
       generationId: args.generationId,
+      ...generationFinalizationLineageForJob(args.job, 'cancelled'),
       chatId: args.input.chatId,
       mode: finalizationModeFromInput(args.input),
       message: raw.message,
@@ -3894,6 +4169,107 @@ function persistRawCancelledResult(args: {
     },
   })
   return { outcome, messageId: raw.targetMessageId ?? raw.message.chatId }
+}
+
+function settleGenerationOperationWithoutResultOnce(args: {
+  db: DatabaseSync
+  job: StreamJob
+  failureCode: string
+  failurePhase: string
+  lastError?: string
+}): GenerationOperationProjection | undefined {
+  const lineage = generationOperationLineageForJob(args.job)
+  if (!lineage) return undefined
+  const operation = getGenerationOperationProjection(args.db, lineage.databaseLineage, lineage.operationId)
+  if (!operation) return undefined
+  let transitioned: ReturnType<typeof transitionGenerationOperation> | undefined
+  if (operation.state === 'owned_by_job' || operation.state === 'launching') {
+    transitioned = transitionGenerationOperation(args.db, {
+      databaseLineage: lineage.databaseLineage,
+      operationId: lineage.operationId,
+      expectedState: operation.state,
+      expectedStateVersion: operation.stateVersion,
+      nextState: 'retryable',
+      failureCode: args.failureCode,
+      failurePhase: args.failurePhase,
+      ...(args.lastError ? { lastError: args.lastError } : {}),
+      providerMayHaveRun: operation.providerMayHaveRun,
+      runnerSettledAt: new Date().toISOString(),
+    })
+  } else if (operation.state === 'stopping') {
+    transitioned = transitionGenerationOperation(args.db, {
+      databaseLineage: lineage.databaseLineage,
+      operationId: lineage.operationId,
+      expectedState: 'stopping',
+      expectedStateVersion: operation.stateVersion,
+      nextState: 'cancelled',
+      failureCode: args.failureCode === 'user_stop' ? null : args.failureCode,
+      failurePhase: args.failurePhase,
+      ...(args.lastError ? { lastError: args.lastError } : {}),
+      runnerSettledAt: new Date().toISOString(),
+    })
+  }
+  const current = transitioned?.operation ?? operation
+  updateJobOperationProjection(args.job, current)
+  return current
+}
+
+function settleGenerationOperationWithoutResult(args: {
+  db: DatabaseSync
+  job: StreamJob
+  failureCode: string
+  failurePhase: string
+  lastError?: string
+}): GenerationOperationProjection | undefined {
+  try {
+    return settleGenerationOperationWithoutResultOnce(args)
+  } catch {
+    // SQLite can be transiently unavailable at exactly the same fault point
+    // that made a finalization journal unconfirmed. Do not hide the truthful
+    // SSE disposition; retry the operation projection briefly after the
+    // competing writer releases its lock.
+    let remainingAttempts = 20
+    const retry = (): void => {
+      if (!args.db.isOpen) return
+      try {
+        settleGenerationOperationWithoutResultOnce(args)
+      } catch {
+        remainingAttempts -= 1
+        if (remainingAttempts <= 0) return
+        const timer = setTimeout(retry, 25)
+        timer.unref()
+      }
+    }
+    const timer = setTimeout(retry, 25)
+    timer.unref()
+    return undefined
+  }
+}
+
+function assertGenerationOperationTargetCurrent(db: DatabaseSync, job: StreamJob): void {
+  const lineage = generationOperationLineageForJob(job)
+  if (job.operationProtocolVersion !== 1 || !lineage || (!job.acceptedMessageId && !job.targetMessageId)) return
+  const tail = job.chatId ? (getChatMessages(db, job.chatId).at(-1) as Record<string, unknown> | undefined) : undefined
+  const expectedId = job.acceptedMessageId ?? job.targetMessageId
+  const expectedRole = job.acceptedMessageId ? 'user' : 'char'
+  if (tail?.chatId === expectedId && tail?.role === expectedRole) return
+  const operation = getGenerationOperationProjection(db, lineage.databaseLineage, lineage.operationId)
+  if (operation?.state === 'owned_by_job') {
+    const failed = transitionGenerationOperation(db, {
+      databaseLineage: lineage.databaseLineage,
+      operationId: lineage.operationId,
+      expectedState: 'owned_by_job',
+      expectedStateVersion: operation.stateVersion,
+      nextState: 'terminal_failed',
+      failureCode: 'operation_target_stale',
+      failurePhase: 'preflight',
+      lastError: 'The exact generation source or target is no longer the chat tail.',
+      providerMayHaveRun: operation.providerMayHaveRun,
+      runnerSettledAt: new Date().toISOString(),
+    })
+    if (failed.operation) updateJobOperationProjection(job, failed.operation)
+  }
+  throw new GenerationOperationAttemptConflictError('generation operation target is stale')
 }
 
 /**
@@ -3935,7 +4311,20 @@ async function runGenerationJob(args: {
     deferredFailure,
     metricContext = {},
   } = args
-  const emit = (event: PromptChatEvent): void => registry.registry.pushRaw(job, formatPromptChatFrame(event))
+  let lastTerminalError: string | undefined
+  const emit = (event: PromptChatEvent): void => {
+    if (event.type === 'error') lastTerminalError = event.error
+    if (event.type === 'done') {
+      settleGenerationOperationWithoutResult({
+        db,
+        job,
+        failureCode: event.outcome === 'cancelled' ? 'user_stop' : 'generation_ended_without_result',
+        failurePhase: event.outcome === 'cancelled' ? 'cancellation' : 'runner',
+        ...(lastTerminalError ? { lastError: lastTerminalError } : {}),
+      })
+    }
+    registry.registry.pushRaw(job, formatPromptChatFrame(lineageEventForJob(db, job, event)))
+  }
   const signal = job.abortController.signal
   const generationId = job.id
   let terminalDoneEmitted = false
@@ -3946,6 +4335,7 @@ async function runGenerationJob(args: {
 
     try {
       if (deferredFailure) throw deferredFailure.error
+      assertGenerationOperationTargetCurrent(db, job)
       if (preparedAssembly) retargetAssemblySignal(preparedAssembly, signal)
       const { result, deps, promptMs, stage2Ms } =
         preparedAssembly ??
@@ -3958,6 +4348,12 @@ async function runGenerationJob(args: {
           (progress) => emit({ type: 'agent_preset_progress', ...progress }),
           options,
         ))
+      const operationLineage = generationOperationLineageForJob(job)
+      if (operationLineage) {
+        const operation = assertGenerationOperationDispatchable(db, operationLineage)
+        updateJobOperationProjection(job, operation)
+      }
+      assertGenerationOperationTargetCurrent(db, job)
       const database = result.state?.database ?? deps.getDatabase()
       const persistedRevision =
         isPersistingMode(input.mode) && result.mutations
@@ -3980,9 +4376,20 @@ async function runGenerationJob(args: {
           prompt: result.prompt,
         }
         const shouldDispatch = shouldDispatchProvider(input, database)
-        const generationInfo =
+        const generationInfo: Record<string, unknown> | undefined =
           shouldDispatch && database
-            ? createGenerationInfo(database, generationId, successfulResult, promptMs, stage2Ms)
+            ? {
+                ...createGenerationInfo(database, generationId, successfulResult, promptMs, stage2Ms),
+                ...(generationOperationLineageForJob(job)
+                  ? {
+                      databaseLineage: job.databaseLineage,
+                      operationId: job.operationId,
+                      acceptedMessageId: job.acceptedMessageId,
+                      attemptNo: job.attemptNo,
+                      jobId: job.id,
+                    }
+                  : {}),
+              }
             : undefined
         const promptEvent = promptEventForClient(result.prompt, clientCapabilities, input.mode)
         const trace = createGenerationTraceContext({
@@ -4006,6 +4413,10 @@ async function runGenerationJob(args: {
           revision: persistedRevision,
           trace,
         })
+        if (operationLineage) {
+          const operation = assertGenerationOperationDispatchable(db, operationLineage)
+          updateJobOperationProjection(job, operation)
+        }
         emit({ type: 'prompt', ...promptEvent })
         if (result.mutations) {
           emit({ type: 'message_patch', patch: messagePatchForClient(result.mutations, clientCapabilities) })
@@ -4054,6 +4465,15 @@ async function runGenerationJob(args: {
                 generationInfo,
                 signal,
                 trace,
+                ...(operationLineage
+                  ? {
+                      beforeProviderDispatch: () => {
+                        assertGenerationOperationTargetCurrent(db, job)
+                        const operation = markGenerationOperationProviderDispatchStarted(db, operationLineage)
+                        updateJobOperationProjection(job, operation)
+                      },
+                    }
+                  : {}),
               },
               dispatchProvider,
             )
@@ -4103,6 +4523,7 @@ async function runGenerationJob(args: {
                   completionText,
                   alternateTexts,
                   generationId,
+                  job,
                   generationInfo,
                   promptInfo: successfulResult.prompt.promptInfo,
                   pushNotifications: options.pushNotifications,
@@ -4114,7 +4535,30 @@ async function runGenerationJob(args: {
               },
             })
             terminalDoneEmitted = transportResult.status !== 'aborted'
-            if (transportResult.status === 'aborted') {
+            if (transportResult.status === 'error') {
+              settleGenerationOperationWithoutResult({
+                db,
+                job,
+                failureCode: 'provider_failed',
+                failurePhase: 'provider',
+                lastError: lastTerminalError,
+              })
+            }
+            const abortedOperation = operationLineage
+              ? getGenerationOperationProjection(db, operationLineage.databaseLineage, operationLineage.operationId)
+              : undefined
+            if (transportResult.status === 'aborted' && operationLineage && abortedOperation?.state !== 'stopping') {
+              settleGenerationOperationWithoutResult({
+                db,
+                job,
+                failureCode: 'generation_aborted',
+                failurePhase: 'provider',
+              })
+              emit({ type: 'error', error: 'Generation stopped before a terminal provider result.', reason: 'aborted' })
+              emit({ type: 'done', generationId, generationInfo })
+              terminalDoneEmitted = true
+            }
+            if (transportResult.status === 'aborted' && (!operationLineage || abortedOperation?.state === 'stopping')) {
               // A streaming cancel persists the accumulated-so-far text.
               let cancelFinalization: GenerationFinalizationOutcome | undefined
               let cancelTargetMessageId: string | undefined
@@ -4133,6 +4577,7 @@ async function runGenerationJob(args: {
                   state: successfulResult.state,
                   input,
                   generationId,
+                  job,
                   generationInfo,
                   promptInfo: successfulResult.prompt.promptInfo,
                   text: transportResult.result,
@@ -4145,6 +4590,18 @@ async function runGenerationJob(args: {
                 cancelFinalization?.kind === 'queued' ||
                 cancelFinalization?.kind === 'rejected'
               ) {
+                if (cancelFinalization.kind === 'unconfirmed') {
+                  settleGenerationOperationWithoutResult({
+                    db,
+                    job,
+                    failureCode: 'cancel_finalization_journal_unconfirmed',
+                    failurePhase: 'finalization_journal',
+                    lastError: errorMessage(
+                      cancelFinalization.error,
+                      'failed to confirm cancelled generation finalization journal',
+                    ),
+                  })
+                }
                 const metricStatus =
                   cancelFinalization.kind === 'unconfirmed'
                     ? 'journal_error'
@@ -4288,13 +4745,110 @@ async function runGenerationJob(args: {
   }
 }
 
-/**
- * Accept a durable generation request. Enforce one-running-job-per-chat (the
- * active-writer submission gate is already enforced by the global guard
- * preHandler), create the job, claim the submission lock, capture the writer
- * identity, attach this connection as the first viewer, then launch the detached
- * runner.
- */
+export interface LaunchGenerationOperationArgs {
+  operation: GenerationOperationProjection
+  db: DatabaseSync
+  input: AssembleInput
+  dataDir: string
+  eventSink: CommandEventSink
+  clientCapabilities: GenerationClientCapabilities
+  options: GenerationChatRouteOptions
+  generationTrace?: GenerationTraceOptions
+  generationJobs: GenerationJobRegistry
+  messageTranslationJobs: MessageTranslationJobRegistry
+  preparedAssembly?: PromptAssemblyRun
+  deferredFailure?: AssemblyDeferredFailure
+  metricContext: PromptAssemblyMetricContext
+  attachInitialViewer?: (job: StreamJob) => void
+}
+
+/** Register an exact reserved attempt, commit ownership, then start its runner. */
+export function launchGenerationOperation(args: LaunchGenerationOperationArgs): GenerationOperationProjection {
+  const attempt = args.operation.currentAttempt
+  if (args.operation.state !== 'launching' || !attempt || !args.operation.chatId || !args.operation.mode) {
+    throw new Error('generation operation must have a reserved launching attempt')
+  }
+  const job = args.generationJobs.registry.create({
+    id: attempt.jobId,
+    timeoutMs: undefined,
+    heartbeatSec: undefined,
+    slidingDeadline: true,
+  })
+  try {
+    args.generationJobs.registry.enableReplay(job)
+    job.chatId = args.operation.chatId
+    job.writerSessionId = attempt.actorWriterSessionId
+    job.writerEpoch = attempt.actorWriterEpoch
+    job.mode = args.operation.mode
+    job.databaseLineage = getDatabaseLineage(args.db)
+    job.operationId = args.operation.operationId
+    job.operationProtocolVersion = args.operation.protocolVersion
+    job.operationStateVersion = args.operation.stateVersion
+    job.projectionEpoch = args.operation.projectionEpoch
+    job.attemptNo = attempt.attemptNo
+    job.acceptedMessageId = args.operation.acceptedMessageId
+    job.targetMessageId = args.operation.targetMessageId
+    if (args.operation.mode === 'regenerate') job.regenerateMessageId = args.operation.targetMessageId
+    args.generationJobs.register(args.operation.chatId, job.id)
+    args.options.onDurableLifecycleTransition?.('registered', job)
+
+    const owned = transitionGenerationOperation(args.db, {
+      databaseLineage: job.databaseLineage,
+      operationId: job.operationId,
+      expectedState: 'launching',
+      expectedStateVersion: args.operation.stateVersion,
+      nextState: 'owned_by_job',
+    })
+    if (owned.status !== 'applied') throw new Error('generation operation ownership changed during launch')
+    updateJobOperationProjection(job, owned.operation)
+
+    args.attachInitialViewer?.(job)
+    args.generationJobs.trackRunner(
+      runGenerationJob({
+        registry: args.generationJobs,
+        job,
+        db: args.db,
+        input: args.input,
+        dataDir: args.dataDir,
+        eventSink: args.eventSink,
+        clientCapabilities: args.clientCapabilities,
+        options: args.options,
+        generationTrace: args.generationTrace,
+        messageTranslationJobs: args.messageTranslationJobs,
+        preparedAssembly: args.preparedAssembly,
+        deferredFailure: args.deferredFailure,
+        metricContext: {
+          ...args.metricContext,
+          generationId: job.id,
+          durableJobId: job.id,
+          operationId: job.operationId,
+          operationAttemptNo: job.attemptNo,
+        },
+      }),
+    )
+    args.options.onDurableLifecycleTransition?.('runner_tracked', job)
+    return owned.operation
+  } catch (error) {
+    args.generationJobs.clearRunning(args.operation.chatId, job.id)
+    args.generationJobs.registry.deleteJob(job.id)
+    const current = getGenerationOperationProjection(args.db, job.databaseLineage!, job.operationId!)
+    if (current?.state === 'launching' || current?.state === 'owned_by_job') {
+      transitionGenerationOperation(args.db, {
+        databaseLineage: job.databaseLineage!,
+        operationId: job.operationId!,
+        expectedState: current.state,
+        expectedStateVersion: current.stateVersion,
+        nextState: 'retryable',
+        failureCode: 'generation_job_start_failed',
+        failurePhase: 'launch',
+        lastError: errorMessage(error, 'generation job startup failed'),
+      })
+    }
+    throw error
+  }
+}
+
+/** Compatibility durable route: create a legacy operation claim, then launch it. */
 function startDurableGeneration(args: {
   req: FastifyRequest
   reply: FastifyReply
@@ -4307,6 +4861,7 @@ function startDurableGeneration(args: {
   generationTrace?: GenerationTraceOptions
   generationJobs: GenerationJobRegistry
   messageTranslationJobs: MessageTranslationJobRegistry
+  serverInstanceId: string
   preparedAssembly?: PromptAssemblyRun
   deferredFailure?: AssemblyDeferredFailure
   metricContext: PromptAssemblyMetricContext
@@ -4321,59 +4876,83 @@ function startDurableGeneration(args: {
   }
   let job: StreamJob | undefined
   try {
-    job = generationJobs.registry.create({
-      timeoutMs: undefined,
-      heartbeatSec: undefined,
-      slidingDeadline: true,
+    const writerSessionId = readWriterSessionHeader(req) ?? 'legacy'
+    const writerEpoch = getDatabaseWriterMetadata(args.db).epoch
+    const operationId = randomUUID()
+    const accepted = createGenerationOperation(args.db, {
+      databaseLineage: getDatabaseLineage(args.db),
+      operationId,
+      protocolVersion: 0,
+      requestOrigin: 'legacy',
+      creatorWriterSessionId: writerSessionId,
+      creatorWriterEpoch: writerEpoch,
+      bindingServerInstanceId: args.serverInstanceId,
+      characterId: input.characterId,
+      chatId: input.chatId,
+      mode: finalizationModeFromInput(input),
+      targetMessageId: input.mode === 'regenerate' ? input.regenerateMessageId : null,
+      requestFingerprint: generationOperationRequestFingerprint({ input, legacy: true }),
+      intent: { input, legacy: true },
+      acceptedRevision: getSchemaState(args.db).revision,
+      state: 'accepted',
     })
-    generationJobs.registry.enableReplay(job)
-    job.chatId = input.chatId
-    job.writerSessionId = readWriterSessionHeader(req)
-    // Record the generating mode and regenerate target so reload-resume can render
-    // the right shape.
-    job.mode = input.mode === 'continue' || input.mode === 'regenerate' ? input.mode : 'send'
-    if (input.mode === 'regenerate') job.regenerateMessageId = input.regenerateMessageId
-    generationJobs.register(input.chatId, job.id)
-    args.options.onDurableLifecycleTransition?.('registered', job)
-    attachGenerationViewer(
-      req,
-      reply,
+    const reservation = reserveGenerationOperationAttempt(args.db, {
+      databaseLineage: getDatabaseLineage(args.db),
+      operationId,
+      expectedState: 'accepted',
+      expectedStateVersion: accepted.stateVersion,
+      retryRequestId: operationId,
+      jobId: randomUUID(),
+      serverInstanceId: args.serverInstanceId,
+      actorWriterSessionId: writerSessionId,
+      actorWriterEpoch: writerEpoch,
+      launchRevision: accepted.acceptedRevision ?? getSchemaState(args.db).revision,
+    })
+    if (reservation.status !== 'applied') throw new Error('legacy generation attempt reservation failed')
+    const launched = launchGenerationOperation({
+      operation: reservation.operation,
+      db: args.db,
+      input,
+      dataDir: args.dataDir,
+      eventSink: args.eventSink,
+      clientCapabilities: args.clientCapabilities,
+      options: args.options,
+      generationTrace: args.generationTrace,
       generationJobs,
-      job,
-      args.options.viewerHeartbeatMs,
-      args.options.onDurableLifecycleTransition,
-    )
-    args.options.onDurableLifecycleTransition?.('viewer_attached', job)
-    // Fire-and-forget, but tracked: shutdown awaits the runner before closing
-    // the database.
-    generationJobs.trackRunner(
-      runGenerationJob({
-        registry: generationJobs,
-        job,
-        db: args.db,
-        input,
-        dataDir: args.dataDir,
-        eventSink: args.eventSink,
-        clientCapabilities: args.clientCapabilities,
-        options: args.options,
-        generationTrace: args.generationTrace,
-        messageTranslationJobs: args.messageTranslationJobs,
-        preparedAssembly: args.preparedAssembly,
-        deferredFailure: args.deferredFailure,
-        metricContext: {
-          ...args.metricContext,
-          generationId: job.id,
-          durableJobId: job.id,
-        },
-      }),
-    )
-    args.options.onDurableLifecycleTransition?.('runner_tracked', job)
+      messageTranslationJobs: args.messageTranslationJobs,
+      preparedAssembly: args.preparedAssembly,
+      deferredFailure: args.deferredFailure,
+      metricContext: args.metricContext,
+      attachInitialViewer(attachedJob) {
+        job = attachedJob
+        attachGenerationViewer(
+          req,
+          reply,
+          generationJobs,
+          attachedJob,
+          args.db,
+          args.options.viewerHeartbeatMs,
+          args.options.onDurableLifecycleTransition,
+        )
+        args.options.onDurableLifecycleTransition?.('viewer_attached', attachedJob)
+      },
+    })
+    if (job) updateJobOperationProjection(job, launched)
   } catch (error) {
     if (job) {
       generationJobs.clearRunning(input.chatId, job.id)
       generationJobs.registry.deleteJob(job.id)
     }
     req.log.error({ err: error, chatId: input.chatId, jobId: job?.id }, 'Durable generation startup failed')
+    const sqliteCode =
+      error && typeof error === 'object' && 'code' in error ? String((error as { code?: unknown }).code ?? '') : ''
+    if (!reply.sent && sqliteCode.startsWith('SQLITE_CONSTRAINT')) {
+      reply.code(409).send({
+        error: 'generation_in_progress',
+        reason: 'A generation is already running for this chat.',
+      })
+      return
+    }
     if (reply.sent) {
       try {
         if (!reply.raw.writableEnded) reply.raw.end()
@@ -4394,6 +4973,7 @@ export function registerGenerationChatRoutes(
   eventSink: CommandEventSink,
   generationJobs: GenerationJobRegistry,
   messageTranslationJobs: MessageTranslationJobRegistry,
+  serverInstanceId: string,
   options: GenerationChatRouteOptions = {},
   generationTrace?: GenerationTraceOptions,
 ): void {
@@ -4406,8 +4986,8 @@ export function registerGenerationChatRoutes(
       return badRequest(reply, validation.error)
     }
 
-    const input = toAssembleInput(body)
-    const clientCapabilities = readClientCapabilities(body)
+    const input = toChatGenerationAssembleInput(body)
+    const clientCapabilities = readGenerationClientCapabilities(body)
     const durable = body.durable === true && isPersistingMode(input.mode)
     const metricContext = createPromptAssemblyMetricContext({
       req,
@@ -4472,6 +5052,7 @@ export function registerGenerationChatRoutes(
         generationTrace,
         generationJobs,
         messageTranslationJobs,
+        serverInstanceId,
         preparedAssembly,
         deferredFailure,
         metricContext,
@@ -4519,6 +5100,7 @@ export function registerGenerationChatRoutes(
         reply,
         generationJobs,
         job,
+        db,
         options.viewerHeartbeatMs,
         options.onDurableLifecycleTransition,
       )
@@ -4538,11 +5120,26 @@ export function registerGenerationChatRoutes(
       })
       return
     }
+    const lineage = generationOperationLineageForJob(job)
+    if (lineage) {
+      const operation = getGenerationOperationProjection(db, lineage.databaseLineage, lineage.operationId)
+      if (operation?.state === 'owned_by_job') {
+        const stopping = transitionGenerationOperation(db, {
+          databaseLineage: lineage.databaseLineage,
+          operationId: lineage.operationId,
+          expectedState: 'owned_by_job',
+          expectedStateVersion: operation.stateVersion,
+          nextState: 'stopping',
+          cancelRequestedAt: new Date().toISOString(),
+        })
+        if (stopping.operation) updateJobOperationProjection(job, stopping.operation)
+      }
+    }
     // Abort only — the runner's finally persists the streaming-so-far text and THEN
     // clears the submission lock. Clearing it here (synchronously, before the
     // async cancel-persist lands) would let an overlapping send for the same chat
     // start and race the cancel write.
-    job.abortController.abort()
+    job.abortController.abort('user_stop')
     return { success: true }
   })
 
@@ -4560,8 +5157,8 @@ export function registerGenerationChatRoutes(
         return badRequest(reply, validation.error)
       }
 
-      const input = toAssembleInput({ ...body, mode: 'preview_prompt' })
-      const clientCapabilities = readClientCapabilities(body)
+      const input = toChatGenerationAssembleInput({ ...body, mode: 'preview_prompt' })
+      const clientCapabilities = readGenerationClientCapabilities(body)
       const metricContext = createPromptAssemblyMetricContext({
         req,
         input,

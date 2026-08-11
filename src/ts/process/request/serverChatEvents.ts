@@ -17,6 +17,19 @@ import type { OpenAIChat } from '../index.svelte'
 
 export type PromptChatStage = 'validate' | 'prompt' | 'provider' | 'done'
 
+export interface ServerChatLineageEnvelope {
+  databaseLineage: string
+  operationId: string
+  writerSessionId: string
+  writerEpoch: number
+  operationStateVersion: number
+  projectionEpoch: number
+  attemptNo: number
+  jobId: string
+  acceptedMessageId?: string
+  targetMessageId?: string
+}
+
 export interface StageEvent {
   type: 'stage'
   stage: PromptChatStage
@@ -317,9 +330,22 @@ export interface DoneEvent {
   /** Server terminal message reconciliation. See {@link ServerChatPostGeneration}. */
   postGeneration?: ServerChatPostGeneration
   persistenceDisposition?: 'committed_cleanup_pending'
+  operationState?:
+    | 'cancel_requested'
+    | 'accepted'
+    | 'launching'
+    | 'owned_by_job'
+    | 'stopping'
+    | 'retryable'
+    | 'abandoned'
+    | 'completed'
+    | 'cancelled'
+    | 'terminal_failed'
+    | 'invalidated'
+    | 'finalizing'
 }
 
-export type PromptChatEvent =
+type PromptChatEventPayload =
   | StageEvent
   | JobAcceptedEvent
   | PromptEvent
@@ -332,6 +358,8 @@ export type PromptChatEvent =
   | WarningEvent
   | ErrorEvent
   | DoneEvent
+
+export type PromptChatEvent = PromptChatEventPayload & Partial<ServerChatLineageEnvelope>
 
 export type PromptChatEventType = PromptChatEvent['type']
 

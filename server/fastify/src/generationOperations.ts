@@ -266,7 +266,20 @@ export interface GenerationOperationTransitionInput {
   cancelRequestedAt?: string | null
   runnerSettledAt?: string | null
   terminalAt?: string | null
+  finalizationGenerationId?: string | null
   updatedAt?: string
+}
+
+export interface GenerationOperationStoredRequest {
+  requestFingerprint?: string
+  intent?: unknown
+}
+
+export interface GenerationOperationLineage {
+  databaseLineage: string
+  operationId: string
+  attemptNo: number
+  jobId: string
 }
 
 export interface ReserveGenerationOperationAttemptInput {
@@ -541,10 +554,24 @@ export function createGenerationOperation(
     throw new InvalidGenerationOperationTransitionError('cancel_requested', 'accepted')
   }
   const now = normalizeTimestamp(input.createdAt)
-  return withImmediateTransaction(db, () => {
-    const projectionEpoch = bumpGenerationOperationProjectionEpoch(db)
-    db.prepare(
-      `
+  return withImmediateTransaction(db, () => insertGenerationOperationInTransaction(db, input, now))
+}
+
+/** Insert while the caller owns an open SQLite transaction. */
+export function insertGenerationOperationInTransaction(
+  db: DatabaseSync,
+  input: CreateGenerationOperationInput,
+  normalizedCreatedAt = normalizeTimestamp(input.createdAt),
+): GenerationOperationProjection {
+  if (input.state === 'cancel_requested' && input.requestOrigin !== 'unbound') {
+    throw new InvalidGenerationOperationTransitionError('accepted', 'cancel_requested')
+  }
+  if (input.state === 'accepted' && input.requestOrigin === 'unbound') {
+    throw new InvalidGenerationOperationTransitionError('cancel_requested', 'accepted')
+  }
+  const projectionEpoch = bumpGenerationOperationProjectionEpoch(db)
+  db.prepare(
+    `
         INSERT INTO generation_operations (
           database_lineage, operation_id, protocol_version, request_origin,
           creator_writer_session_id, creator_writer_epoch, binding_server_instance_id,
@@ -556,36 +583,45 @@ export function createGenerationOperation(
           created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NULL, NULL, NULL, NULL, NULL, NULL, 0, ?, NULL, NULL, ?, ?)
       `,
-    ).run(
-      input.databaseLineage,
-      input.operationId,
-      input.protocolVersion,
-      input.requestOrigin,
-      input.creatorWriterSessionId,
-      input.creatorWriterEpoch,
-      input.bindingServerInstanceId ?? null,
-      input.characterId ?? null,
-      input.chatId ?? null,
-      input.mode ?? null,
-      input.acceptedMessageId ?? null,
-      input.targetMessageId ?? null,
-      input.clientDraftGeneration === undefined ? null : JSON.stringify(input.clientDraftGeneration),
-      input.requestFingerprint ?? null,
-      input.intent === undefined ? null : JSON.stringify(input.intent),
-      input.acceptedRevision ?? null,
-      input.state,
-      projectionEpoch,
-      input.cancelRequestedAt ?? (input.state === 'cancel_requested' ? now : null),
-      now,
-      now,
-    )
-    return requireGenerationOperationProjection(db, input.databaseLineage, input.operationId)
-  })
+  ).run(
+    input.databaseLineage,
+    input.operationId,
+    input.protocolVersion,
+    input.requestOrigin,
+    input.creatorWriterSessionId,
+    input.creatorWriterEpoch,
+    input.bindingServerInstanceId ?? null,
+    input.characterId ?? null,
+    input.chatId ?? null,
+    input.mode ?? null,
+    input.acceptedMessageId ?? null,
+    input.targetMessageId ?? null,
+    input.clientDraftGeneration === undefined ? null : JSON.stringify(input.clientDraftGeneration),
+    input.requestFingerprint ?? null,
+    input.intent === undefined ? null : JSON.stringify(input.intent),
+    input.acceptedRevision ?? null,
+    input.state,
+    projectionEpoch,
+    input.cancelRequestedAt ?? (input.state === 'cancel_requested' ? normalizedCreatedAt : null),
+    normalizedCreatedAt,
+    normalizedCreatedAt,
+  )
+  return requireGenerationOperationProjection(db, input.databaseLineage, input.operationId)
 }
 
 export function transitionGenerationOperation(
   db: DatabaseSync,
   input: GenerationOperationTransitionInput,
+): GenerationOperationMutationResult {
+  const updatedAt = normalizeTimestamp(input.updatedAt)
+  return withImmediateTransaction(db, () => transitionGenerationOperationInTransaction(db, input, updatedAt))
+}
+
+/** Apply a guarded operation transition while the caller owns the transaction. */
+export function transitionGenerationOperationInTransaction(
+  db: DatabaseSync,
+  input: GenerationOperationTransitionInput,
+  normalizedUpdatedAt = normalizeTimestamp(input.updatedAt),
 ): GenerationOperationMutationResult {
   assertAllowedTransition(input.expectedState, input.nextState)
   if (input.nextState === 'launching') {
@@ -594,64 +630,64 @@ export function transitionGenerationOperation(
   if (input.expectedState === 'cancel_requested' && input.nextState === 'cancelled') {
     throw new Error('Use bindCancelledGenerationOperation to bind a cancellation tombstone')
   }
-  const updatedAt = normalizeTimestamp(input.updatedAt)
-  return withImmediateTransaction(db, () => {
-    const current = getOperationStateRow(db, input.databaseLineage, input.operationId)
-    if (!current || current.state !== input.expectedState || current.state_version !== input.expectedStateVersion) {
-      return {
-        status: 'stale',
-        operation: getGenerationOperationProjection(db, input.databaseLineage, input.operationId),
-      }
+  const current = getOperationStateRow(db, input.databaseLineage, input.operationId)
+  if (!current || current.state !== input.expectedState || current.state_version !== input.expectedStateVersion) {
+    return {
+      status: 'stale',
+      operation: getGenerationOperationProjection(db, input.databaseLineage, input.operationId),
     }
+  }
 
-    if (ATTEMPT_OWNING_STATES.has(input.nextState) && current.current_attempt_no === null) {
-      throw new Error(`Generation operation ${input.nextState} requires a current attempt`)
-    }
-    const desiredTerminalOutcome =
-      input.nextState === 'finalizing'
-        ? (input.desiredTerminalOutcome ?? current.desired_terminal_outcome)
-        : ATTEMPT_OWNING_STATES.has(input.nextState)
-          ? current.desired_terminal_outcome
-          : null
-    if (input.nextState === 'finalizing' && desiredTerminalOutcome === null) {
-      throw new Error('Generation operation finalizing transition requires a desired terminal outcome')
-    }
-    const currentAttemptNo = ATTEMPT_OWNING_STATES.has(input.nextState) ? current.current_attempt_no : null
-    const projectionEpoch = bumpGenerationOperationProjectionEpoch(db)
-    const attemptStatus = ATTEMPT_STATUS_BY_TRANSITION[input.expectedState]?.[input.nextState]
-    if (current.current_attempt_no !== null && attemptStatus) {
-      const attemptResult = db
-        .prepare(
-          `
+  if (ATTEMPT_OWNING_STATES.has(input.nextState) && current.current_attempt_no === null) {
+    throw new Error(`Generation operation ${input.nextState} requires a current attempt`)
+  }
+  const desiredTerminalOutcome =
+    input.nextState === 'finalizing'
+      ? (input.desiredTerminalOutcome ?? current.desired_terminal_outcome)
+      : ATTEMPT_OWNING_STATES.has(input.nextState)
+        ? current.desired_terminal_outcome
+        : null
+  if (input.nextState === 'finalizing' && desiredTerminalOutcome === null) {
+    throw new Error('Generation operation finalizing transition requires a desired terminal outcome')
+  }
+  const currentAttemptNo = ATTEMPT_OWNING_STATES.has(input.nextState) ? current.current_attempt_no : null
+  const projectionEpoch = bumpGenerationOperationProjectionEpoch(db)
+  const attemptStatus = ATTEMPT_STATUS_BY_TRANSITION[input.expectedState]?.[input.nextState]
+  if (current.current_attempt_no !== null && attemptStatus) {
+    const attemptResult = db
+      .prepare(
+        `
             UPDATE generation_operation_attempts
             SET status = ?,
                 runner_settled_at = CASE WHEN ? THEN COALESCE(?, runner_settled_at) ELSE runner_settled_at END,
+                finalization_generation_id = COALESCE(?, finalization_generation_id),
                 failure_code = COALESCE(?, failure_code),
                 last_error = COALESCE(?, last_error),
                 updated_at = ?
             WHERE database_lineage = ? AND operation_id = ? AND attempt_no = ?
           `,
-        )
-        .run(
-          attemptStatus,
-          isSettledAttemptStatus(attemptStatus) ? 1 : 0,
-          input.runnerSettledAt ?? updatedAt,
-          input.failureCode ?? null,
-          input.lastError ?? null,
-          updatedAt,
-          input.databaseLineage,
-          input.operationId,
-          current.current_attempt_no,
-        )
-      if (attemptResult.changes !== 1) throw new Error('Generation operation current attempt is missing')
-    }
+      )
+      .run(
+        attemptStatus,
+        isSettledAttemptStatus(attemptStatus) ? 1 : 0,
+        input.runnerSettledAt ?? normalizedUpdatedAt,
+        input.finalizationGenerationId ?? null,
+        input.failureCode ?? null,
+        input.lastError ?? null,
+        normalizedUpdatedAt,
+        input.databaseLineage,
+        input.operationId,
+        current.current_attempt_no,
+      )
+    if (attemptResult.changes !== 1) throw new Error('Generation operation current attempt is missing')
+  }
 
-    const terminalAt = TERMINAL_STATES.has(input.nextState)
-      ? (input.terminalAt ?? current.terminal_at ?? updatedAt)
-      : current.terminal_at
-    const result = db
-      .prepare(
-        `
+  const terminalAt = TERMINAL_STATES.has(input.nextState)
+    ? (input.terminalAt ?? current.terminal_at ?? normalizedUpdatedAt)
+    : current.terminal_at
+  const result = db
+    .prepare(
+      `
           UPDATE generation_operations
           SET state = ?, state_version = state_version + 1, projection_epoch = ?, current_attempt_no = ?,
               desired_terminal_outcome = ?, result_message_id = ?, failure_code = ?, failure_phase = ?,
@@ -659,34 +695,33 @@ export function transitionGenerationOperation(
               terminal_at = ?, updated_at = ?
           WHERE database_lineage = ? AND operation_id = ? AND state = ? AND state_version = ?
         `,
-      )
-      .run(
-        input.nextState,
-        projectionEpoch,
-        currentAttemptNo,
-        desiredTerminalOutcome,
-        input.resultMessageId === undefined ? current.result_message_id : input.resultMessageId,
-        input.failureCode === undefined ? current.failure_code : input.failureCode,
-        input.failurePhase === undefined ? current.failure_phase : input.failurePhase,
-        input.lastError === undefined ? current.last_error : input.lastError,
-        input.providerMayHaveRun === undefined ? current.provider_may_have_run : input.providerMayHaveRun ? 1 : 0,
-        input.cancelRequestedAt === undefined ? current.cancel_requested_at : input.cancelRequestedAt,
-        input.runnerSettledAt === undefined ? current.runner_settled_at : input.runnerSettledAt,
-        terminalAt,
-        updatedAt,
-        input.databaseLineage,
-        input.operationId,
-        input.expectedState,
-        input.expectedStateVersion,
-      )
-    if (result.changes !== 1) {
-      throw new Error('Generation operation transition guard changed during an immediate transaction')
-    }
-    return {
-      status: 'applied',
-      operation: requireGenerationOperationProjection(db, input.databaseLineage, input.operationId),
-    }
-  })
+    )
+    .run(
+      input.nextState,
+      projectionEpoch,
+      currentAttemptNo,
+      desiredTerminalOutcome,
+      input.resultMessageId === undefined ? current.result_message_id : input.resultMessageId,
+      input.failureCode === undefined ? current.failure_code : input.failureCode,
+      input.failurePhase === undefined ? current.failure_phase : input.failurePhase,
+      input.lastError === undefined ? current.last_error : input.lastError,
+      input.providerMayHaveRun === undefined ? current.provider_may_have_run : input.providerMayHaveRun ? 1 : 0,
+      input.cancelRequestedAt === undefined ? current.cancel_requested_at : input.cancelRequestedAt,
+      input.runnerSettledAt === undefined ? current.runner_settled_at : input.runnerSettledAt,
+      terminalAt,
+      normalizedUpdatedAt,
+      input.databaseLineage,
+      input.operationId,
+      input.expectedState,
+      input.expectedStateVersion,
+    )
+  if (result.changes !== 1) {
+    throw new Error('Generation operation transition guard changed during an immediate transaction')
+  }
+  return {
+    status: 'applied',
+    operation: requireGenerationOperationProjection(db, input.databaseLineage, input.operationId),
+  }
 }
 
 export function bindCancelledGenerationOperation(
@@ -695,18 +730,26 @@ export function bindCancelledGenerationOperation(
 ): GenerationOperationMutationResult {
   assertAllowedTransition('cancel_requested', 'cancelled')
   const updatedAt = normalizeTimestamp(input.updatedAt)
-  return withImmediateTransaction(db, () => {
-    const current = getOperationStateRow(db, input.databaseLineage, input.operationId)
-    if (!current || current.state !== 'cancel_requested' || current.state_version !== input.expectedStateVersion) {
-      return {
-        status: 'stale',
-        operation: getGenerationOperationProjection(db, input.databaseLineage, input.operationId),
-      }
+  return withImmediateTransaction(db, () => bindCancelledGenerationOperationInTransaction(db, input, updatedAt))
+}
+
+/** Bind a cancel-before-submit tombstone while the caller owns the transaction. */
+export function bindCancelledGenerationOperationInTransaction(
+  db: DatabaseSync,
+  input: BindCancelledGenerationOperationInput,
+  normalizedUpdatedAt = normalizeTimestamp(input.updatedAt),
+): GenerationOperationMutationResult {
+  const current = getOperationStateRow(db, input.databaseLineage, input.operationId)
+  if (!current || current.state !== 'cancel_requested' || current.state_version !== input.expectedStateVersion) {
+    return {
+      status: 'stale',
+      operation: getGenerationOperationProjection(db, input.databaseLineage, input.operationId),
     }
-    const projectionEpoch = bumpGenerationOperationProjectionEpoch(db)
-    const result = db
-      .prepare(
-        `
+  }
+  const projectionEpoch = bumpGenerationOperationProjectionEpoch(db)
+  const result = db
+    .prepare(
+      `
           UPDATE generation_operations
           SET request_origin = ?, binding_server_instance_id = ?, character_id = ?, chat_id = ?, mode = ?,
               accepted_message_id = ?, target_message_id = ?, client_draft_generation_json = ?,
@@ -717,34 +760,33 @@ export function bindCancelledGenerationOperation(
           WHERE database_lineage = ? AND operation_id = ?
             AND state = 'cancel_requested' AND state_version = ?
         `,
-      )
-      .run(
-        input.requestOrigin,
-        input.bindingServerInstanceId,
-        input.characterId,
-        input.chatId,
-        input.mode,
-        input.acceptedMessageId ?? null,
-        input.targetMessageId ?? null,
-        input.clientDraftGeneration === undefined ? null : JSON.stringify(input.clientDraftGeneration),
-        input.requestFingerprint,
-        JSON.stringify(input.intent),
-        projectionEpoch,
-        updatedAt,
-        updatedAt,
-        updatedAt,
-        input.databaseLineage,
-        input.operationId,
-        input.expectedStateVersion,
-      )
-    if (result.changes !== 1) {
-      throw new Error('Generation operation cancellation binding guard changed during an immediate transaction')
-    }
-    return {
-      status: 'applied',
-      operation: requireGenerationOperationProjection(db, input.databaseLineage, input.operationId),
-    }
-  })
+    )
+    .run(
+      input.requestOrigin,
+      input.bindingServerInstanceId,
+      input.characterId,
+      input.chatId,
+      input.mode,
+      input.acceptedMessageId ?? null,
+      input.targetMessageId ?? null,
+      input.clientDraftGeneration === undefined ? null : JSON.stringify(input.clientDraftGeneration),
+      input.requestFingerprint,
+      JSON.stringify(input.intent),
+      projectionEpoch,
+      normalizedUpdatedAt,
+      normalizedUpdatedAt,
+      normalizedUpdatedAt,
+      input.databaseLineage,
+      input.operationId,
+      input.expectedStateVersion,
+    )
+  if (result.changes !== 1) {
+    throw new Error('Generation operation cancellation binding guard changed during an immediate transaction')
+  }
+  return {
+    status: 'applied',
+    operation: requireGenerationOperationProjection(db, input.databaseLineage, input.operationId),
+  }
 }
 
 export function reserveGenerationOperationAttempt(
@@ -753,50 +795,57 @@ export function reserveGenerationOperationAttempt(
 ): GenerationOperationAttemptReservationResult {
   assertAllowedTransition(input.expectedState, 'launching')
   const createdAt = normalizeTimestamp(input.createdAt)
-  return withImmediateTransaction(db, () => {
-    const replay = db
-      .prepare(
-        `
+  return withImmediateTransaction(db, () => reserveGenerationOperationAttemptInTransaction(db, input, createdAt))
+}
+
+/** Reserve an exact attempt while the caller owns an immediate transaction. */
+export function reserveGenerationOperationAttemptInTransaction(
+  db: DatabaseSync,
+  input: ReserveGenerationOperationAttemptInput,
+  normalizedCreatedAt = normalizeTimestamp(input.createdAt),
+): GenerationOperationAttemptReservationResult {
+  assertAllowedTransition(input.expectedState, 'launching')
+  const replay = db
+    .prepare(
+      `
           SELECT database_lineage, operation_id
           FROM generation_operation_attempts
           WHERE database_lineage = ? AND retry_request_id = ?
         `,
-      )
-      .get(input.databaseLineage, input.retryRequestId) as
-      | { database_lineage: string; operation_id: string }
-      | undefined
-    if (replay) {
-      if (replay.operation_id !== input.operationId) {
-        throw new GenerationOperationAttemptConflictError('retry request id belongs to another operation')
-      }
-      return {
-        status: 'replayed',
-        operation: requireGenerationOperationProjection(db, input.databaseLineage, input.operationId),
-      }
+    )
+    .get(input.databaseLineage, input.retryRequestId) as { database_lineage: string; operation_id: string } | undefined
+  if (replay) {
+    if (replay.operation_id !== input.operationId) {
+      throw new GenerationOperationAttemptConflictError('retry request id belongs to another operation')
     }
+    return {
+      status: 'replayed',
+      operation: requireGenerationOperationProjection(db, input.databaseLineage, input.operationId),
+    }
+  }
 
-    const current = getOperationStateRow(db, input.databaseLineage, input.operationId)
-    if (!current || current.state !== input.expectedState || current.state_version !== input.expectedStateVersion) {
-      return {
-        status: 'stale',
-        operation: getGenerationOperationProjection(db, input.databaseLineage, input.operationId),
-      }
+  const current = getOperationStateRow(db, input.databaseLineage, input.operationId)
+  if (!current || current.state !== input.expectedState || current.state_version !== input.expectedStateVersion) {
+    return {
+      status: 'stale',
+      operation: getGenerationOperationProjection(db, input.databaseLineage, input.operationId),
     }
-    if (current.current_attempt_no !== null)
-      throw new Error('Non-running generation operation retained a current attempt')
-    const nextAttempt = db
-      .prepare(
-        `
+  }
+  if (current.current_attempt_no !== null)
+    throw new Error('Non-running generation operation retained a current attempt')
+  const nextAttempt = db
+    .prepare(
+      `
           SELECT COALESCE(MAX(attempt_no), 0) + 1 AS attemptNo
           FROM generation_operation_attempts
           WHERE database_lineage = ? AND operation_id = ?
         `,
-      )
-      .get(input.databaseLineage, input.operationId) as { attemptNo: number }
-    const projectionEpoch = bumpGenerationOperationProjectionEpoch(db)
-    const operationResult = db
-      .prepare(
-        `
+    )
+    .get(input.databaseLineage, input.operationId) as { attemptNo: number }
+  const projectionEpoch = bumpGenerationOperationProjectionEpoch(db)
+  const operationResult = db
+    .prepare(
+      `
           UPDATE generation_operations
           SET state = 'launching', state_version = state_version + 1, projection_epoch = ?,
               current_attempt_no = ?, desired_terminal_outcome = NULL,
@@ -804,21 +853,21 @@ export function reserveGenerationOperationAttempt(
               runner_settled_at = NULL, terminal_at = NULL, updated_at = ?
           WHERE database_lineage = ? AND operation_id = ? AND state = ? AND state_version = ?
         `,
-      )
-      .run(
-        projectionEpoch,
-        nextAttempt.attemptNo,
-        createdAt,
-        input.databaseLineage,
-        input.operationId,
-        input.expectedState,
-        input.expectedStateVersion,
-      )
-    if (operationResult.changes !== 1) {
-      throw new Error('Generation operation attempt reservation guard changed during an immediate transaction')
-    }
-    db.prepare(
-      `
+    )
+    .run(
+      projectionEpoch,
+      nextAttempt.attemptNo,
+      normalizedCreatedAt,
+      input.databaseLineage,
+      input.operationId,
+      input.expectedState,
+      input.expectedStateVersion,
+    )
+  if (operationResult.changes !== 1) {
+    throw new Error('Generation operation attempt reservation guard changed during an immediate transaction')
+  }
+  db.prepare(
+    `
         INSERT INTO generation_operation_attempts (
           database_lineage, operation_id, attempt_no, retry_request_id, job_id, server_instance_id,
           actor_writer_session_id, actor_writer_epoch, status, launch_revision,
@@ -826,24 +875,23 @@ export function reserveGenerationOperationAttempt(
           finalization_generation_id, failure_code, last_error, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'reserved', ?, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?)
       `,
-    ).run(
-      input.databaseLineage,
-      input.operationId,
-      nextAttempt.attemptNo,
-      input.retryRequestId,
-      input.jobId,
-      input.serverInstanceId,
-      input.actorWriterSessionId,
-      input.actorWriterEpoch,
-      input.launchRevision,
-      createdAt,
-      createdAt,
-    )
-    return {
-      status: 'applied',
-      operation: requireGenerationOperationProjection(db, input.databaseLineage, input.operationId),
-    }
-  })
+  ).run(
+    input.databaseLineage,
+    input.operationId,
+    nextAttempt.attemptNo,
+    input.retryRequestId,
+    input.jobId,
+    input.serverInstanceId,
+    input.actorWriterSessionId,
+    input.actorWriterEpoch,
+    input.launchRevision,
+    normalizedCreatedAt,
+    normalizedCreatedAt,
+  )
+  return {
+    status: 'applied',
+    operation: requireGenerationOperationProjection(db, input.databaseLineage, input.operationId),
+  }
 }
 
 export function getGenerationOperationProjection(
@@ -856,6 +904,202 @@ export function getGenerationOperationProjection(
     operationId,
   ])[0]
   return row ? projectionFromRow(row) : undefined
+}
+
+export function getGenerationOperationStoredRequest(
+  db: DatabaseSync,
+  databaseLineage: string,
+  operationId: string,
+): GenerationOperationStoredRequest | undefined {
+  const row = db
+    .prepare(
+      `
+        SELECT request_fingerprint, intent_json
+        FROM generation_operations
+        WHERE database_lineage = ? AND operation_id = ?
+      `,
+    )
+    .get(databaseLineage, operationId) as { request_fingerprint: string | null; intent_json: string | null } | undefined
+  if (!row) return undefined
+  return {
+    ...(row.request_fingerprint !== null ? { requestFingerprint: row.request_fingerprint } : {}),
+    ...(row.intent_json !== null ? { intent: JSON.parse(row.intent_json) as unknown } : {}),
+  }
+}
+
+export function generationOperationForRetryRequest(
+  db: DatabaseSync,
+  databaseLineage: string,
+  retryRequestId: string,
+): { operationId: string; attemptNo: number; jobId: string } | undefined {
+  return db
+    .prepare(
+      `
+        SELECT operation_id AS operationId, attempt_no AS attemptNo, job_id AS jobId
+        FROM generation_operation_attempts
+        WHERE database_lineage = ? AND retry_request_id = ?
+      `,
+    )
+    .get(databaseLineage, retryRequestId) as { operationId: string; attemptNo: number; jobId: string } | undefined
+}
+
+/**
+ * Commit the billing-risk marker immediately before the first provider call.
+ * Repeated policy/fallback dispatches revalidate ownership without rewriting
+ * the first-dispatch timestamp.
+ */
+export function markGenerationOperationProviderDispatchStarted(
+  db: DatabaseSync,
+  lineage: GenerationOperationLineage,
+  updatedAt?: string,
+): GenerationOperationProjection {
+  const now = normalizeTimestamp(updatedAt)
+  return withImmediateTransaction(db, () => {
+    const current = requireCurrentAttempt(db, lineage)
+    if (current.state !== 'owned_by_job' || current.cancel_requested_at !== null) {
+      throw new GenerationOperationAttemptConflictError('generation operation is not dispatchable')
+    }
+    if (current.provider_dispatch_started_at === null) {
+      const projectionEpoch = bumpGenerationOperationProjectionEpoch(db)
+      const attempt = db
+        .prepare(
+          `
+            UPDATE generation_operation_attempts
+            SET provider_dispatch_started_at = ?, updated_at = ?
+            WHERE database_lineage = ? AND operation_id = ? AND attempt_no = ?
+              AND job_id = ? AND status = 'running' AND provider_dispatch_started_at IS NULL
+          `,
+        )
+        .run(now, now, lineage.databaseLineage, lineage.operationId, lineage.attemptNo, lineage.jobId)
+      if (attempt.changes !== 1) {
+        throw new GenerationOperationAttemptConflictError('generation attempt dispatch marker is stale')
+      }
+      db.prepare(
+        `
+          UPDATE generation_operations
+          SET projection_epoch = ?, provider_may_have_run = 1, updated_at = ?
+          WHERE database_lineage = ? AND operation_id = ? AND state = 'owned_by_job'
+            AND current_attempt_no = ?
+        `,
+      ).run(projectionEpoch, now, lineage.databaseLineage, lineage.operationId, lineage.attemptNo)
+    }
+    return requireGenerationOperationProjection(db, lineage.databaseLineage, lineage.operationId)
+  })
+}
+
+export function markGenerationOperationProviderDispatchFinished(
+  db: DatabaseSync,
+  lineage: GenerationOperationLineage,
+  updatedAt?: string,
+): GenerationOperationProjection {
+  const now = normalizeTimestamp(updatedAt)
+  return withImmediateTransaction(db, () => {
+    const current = requireCurrentAttempt(db, lineage)
+    if (current.provider_dispatch_finished_at === null) {
+      const projectionEpoch = bumpGenerationOperationProjectionEpoch(db)
+      db.prepare(
+        `
+          UPDATE generation_operation_attempts
+          SET provider_dispatch_finished_at = ?, updated_at = ?
+          WHERE database_lineage = ? AND operation_id = ? AND attempt_no = ? AND job_id = ?
+        `,
+      ).run(now, now, lineage.databaseLineage, lineage.operationId, lineage.attemptNo, lineage.jobId)
+      db.prepare(
+        `
+          UPDATE generation_operations
+          SET projection_epoch = ?, updated_at = ?
+          WHERE database_lineage = ? AND operation_id = ? AND current_attempt_no = ?
+        `,
+      ).run(projectionEpoch, now, lineage.databaseLineage, lineage.operationId, lineage.attemptNo)
+    }
+    return requireGenerationOperationProjection(db, lineage.databaseLineage, lineage.operationId)
+  })
+}
+
+/** Validate current ownership without mutating the projection. */
+export function assertGenerationOperationDispatchable(
+  db: DatabaseSync,
+  lineage: GenerationOperationLineage,
+): GenerationOperationProjection {
+  const current = requireCurrentAttempt(db, lineage)
+  if (
+    current.state !== 'owned_by_job' ||
+    current.cancel_requested_at !== null ||
+    current.attempt_status !== 'running'
+  ) {
+    throw new GenerationOperationAttemptConflictError('generation operation is not dispatchable')
+  }
+  return requireGenerationOperationProjection(db, lineage.databaseLineage, lineage.operationId)
+}
+
+/**
+ * Finish a protocol finalization inside the transcript command transaction.
+ * The caller has already written the exact result row but has not yet bumped
+ * the domain revision or persisted its command event, so any later failure
+ * rolls all three surfaces back together.
+ */
+export function completeGenerationOperationFinalizationInTransaction(
+  db: DatabaseSync,
+  input: GenerationOperationLineage & {
+    terminalOutcome: GenerationOperationTerminalOutcome
+    resultMessageId?: string
+    updatedAt?: string
+  },
+): GenerationOperationProjection {
+  const currentProjection = getGenerationOperationProjection(db, input.databaseLineage, input.operationId)
+  if (
+    currentProjection &&
+    currentProjection.state === input.terminalOutcome &&
+    currentProjection.resultMessageId === input.resultMessageId
+  ) {
+    return currentProjection
+  }
+  const current = requireCurrentAttempt(db, input)
+  if (
+    current.state !== 'finalizing' ||
+    current.desired_terminal_outcome !== input.terminalOutcome ||
+    current.attempt_status !== 'finalizing'
+  ) {
+    throw new GenerationOperationAttemptConflictError('generation finalization lineage is stale')
+  }
+  const now = normalizeTimestamp(input.updatedAt)
+  const projectionEpoch = bumpGenerationOperationProjectionEpoch(db)
+  const attemptStatus: GenerationOperationAttemptStatus =
+    input.terminalOutcome === 'completed' ? 'completed' : 'cancelled'
+  db.prepare(
+    `
+      UPDATE generation_operation_attempts
+      SET status = ?, runner_settled_at = COALESCE(runner_settled_at, ?), updated_at = ?
+      WHERE database_lineage = ? AND operation_id = ? AND attempt_no = ? AND job_id = ?
+    `,
+  ).run(attemptStatus, now, now, input.databaseLineage, input.operationId, input.attemptNo, input.jobId)
+  const result = db
+    .prepare(
+      `
+        UPDATE generation_operations
+        SET state = ?, state_version = state_version + 1, projection_epoch = ?,
+            current_attempt_no = NULL, desired_terminal_outcome = NULL,
+            result_message_id = ?, failure_code = NULL, failure_phase = NULL,
+            last_error = NULL, runner_settled_at = ?, terminal_at = ?, updated_at = ?
+        WHERE database_lineage = ? AND operation_id = ? AND state = 'finalizing'
+          AND current_attempt_no = ?
+      `,
+    )
+    .run(
+      input.terminalOutcome,
+      projectionEpoch,
+      input.resultMessageId ?? null,
+      now,
+      now,
+      now,
+      input.databaseLineage,
+      input.operationId,
+      input.attemptNo,
+    )
+  if (result.changes !== 1) {
+    throw new GenerationOperationAttemptConflictError('generation finalization transition is stale')
+  }
+  return requireGenerationOperationProjection(db, input.databaseLineage, input.operationId)
 }
 
 export function listGenerationOperationProjections(
@@ -1293,6 +1537,19 @@ function requireGenerationOperationProjection(
   const operation = getGenerationOperationProjection(db, databaseLineage, operationId)
   if (!operation) throw new Error(`Generation operation is missing: ${operationId}`)
   return operation
+}
+
+function requireCurrentAttempt(db: DatabaseSync, lineage: GenerationOperationLineage): GenerationOperationRow {
+  const current = getOperationStateRow(db, lineage.databaseLineage, lineage.operationId)
+  if (
+    !current ||
+    current.current_attempt_no !== lineage.attemptNo ||
+    current.attempt_no !== lineage.attemptNo ||
+    current.job_id !== lineage.jobId
+  ) {
+    throw new GenerationOperationAttemptConflictError('generation attempt lineage is stale')
+  }
+  return current
 }
 
 function startupJournalMatches(

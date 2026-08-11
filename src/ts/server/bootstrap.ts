@@ -17,6 +17,15 @@ export interface ActiveGenerationJob {
   mode?: 'send' | 'continue' | 'regenerate'
   /** The regenerate target id, present only for `mode === 'regenerate'`. */
   regenerateMessageId?: string
+  databaseLineage?: string
+  operationId?: string
+  writerSessionId?: string
+  writerEpoch?: number
+  operationStateVersion?: number
+  projectionEpoch?: number
+  attemptNo?: number
+  acceptedMessageId?: string
+  targetMessageId?: string
 }
 
 export interface ActiveMessageTranslation {
@@ -134,6 +143,13 @@ export type GenerationFinalizationProjectionFence =
 
 export interface GenerationFinalizationProjection {
   generationId: string
+  databaseLineage?: string
+  operationId?: string
+  operationAttemptNo?: number
+  actorWriterSessionId?: string
+  actorWriterEpoch?: number
+  acceptedMessageId?: string
+  terminalOutcome?: 'completed' | 'cancelled'
   chatId: string
   messageId: string
   mode: 'send' | 'continue' | 'regenerate'
@@ -469,7 +485,7 @@ function parseGenerationFinalizations(value: unknown): GenerationFinalizationPro
     ) {
       continue
     }
-    finalizations.push({
+    const finalization: GenerationFinalizationProjection = {
       generationId: record.generationId,
       chatId: record.chatId,
       messageId: record.messageId,
@@ -487,7 +503,20 @@ function parseGenerationFinalizations(value: unknown): GenerationFinalizationPro
       ...(parseGenerationFinalizationProjectionFence(record.projectionFence)
         ? { projectionFence: parseGenerationFinalizationProjectionFence(record.projectionFence)! }
         : {}),
-    })
+    }
+    for (const field of ['databaseLineage', 'operationId', 'actorWriterSessionId', 'acceptedMessageId'] as const) {
+      if (typeof record[field] === 'string') finalization[field] = record[field]
+    }
+    if (isPositiveSafeInteger(record.operationAttemptNo)) {
+      finalization.operationAttemptNo = record.operationAttemptNo as number
+    }
+    if (isNonNegativeSafeInteger(record.actorWriterEpoch)) {
+      finalization.actorWriterEpoch = record.actorWriterEpoch as number
+    }
+    if (record.terminalOutcome === 'completed' || record.terminalOutcome === 'cancelled') {
+      finalization.terminalOutcome = record.terminalOutcome
+    }
+    finalizations.push(finalization)
   }
   return finalizations
 }
@@ -609,6 +638,18 @@ function parseActiveGenerationJobs(value: unknown): ActiveGenerationJob[] {
       }
       if (typeof record.regenerateMessageId === 'string') {
         job.regenerateMessageId = record.regenerateMessageId
+      }
+      for (const field of [
+        'databaseLineage',
+        'operationId',
+        'writerSessionId',
+        'acceptedMessageId',
+        'targetMessageId',
+      ] as const) {
+        if (typeof record[field] === 'string') job[field] = record[field]
+      }
+      for (const field of ['writerEpoch', 'operationStateVersion', 'projectionEpoch', 'attemptNo'] as const) {
+        if (isNonNegativeSafeInteger(record[field])) job[field] = record[field] as number
       }
       jobs.push(job)
     }

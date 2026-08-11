@@ -76,6 +76,13 @@ export type GenerationFinalizationProjectionState =
 
 export interface GenerationFinalizationRetryProjection {
   generationId: string
+  databaseLineage?: string
+  operationId?: string
+  operationAttemptNo?: number
+  actorWriterSessionId?: string
+  actorWriterEpoch?: number
+  acceptedMessageId?: string
+  terminalOutcome?: 'completed' | 'cancelled'
   chatId: string
   messageId: string
   mode: GenerationFinalizationMode
@@ -226,9 +233,6 @@ export function enqueueGenerationFinalizationRetry(
     operationLineageValues.some((value) => value !== undefined) || attempt.acceptedMessageId !== undefined
   if (hasOperationLineage && operationLineageValues.some((value) => value === undefined)) {
     throw new Error('Protocol generation finalization attempts require complete operation lineage')
-  }
-  if (attempt.operationId !== undefined && attempt.mode === 'send' && attempt.acceptedMessageId === undefined) {
-    throw new Error('Protocol send finalization attempts require an accepted message id')
   }
   const result = db
     .prepare(
@@ -420,6 +424,13 @@ function listGenerationFinalizationRetryRows(db: DatabaseSync): GenerationFinali
       `
         SELECT
           generation_id,
+          database_lineage,
+          operation_id,
+          operation_attempt_no,
+          actor_writer_session_id,
+          actor_writer_epoch,
+          accepted_message_id,
+          terminal_outcome,
           chat_id,
           mode,
           target_message_id,
@@ -445,6 +456,13 @@ function parseGenerationFinalizationAttempt(row: GenerationFinalizationRetryRow)
   const mutations = parseGenerationFinalizationMutations(row.chat_var_mutations_json)
   return {
     generationId: row.generation_id,
+    ...(row.database_lineage !== null ? { databaseLineage: row.database_lineage } : {}),
+    ...(row.operation_id !== null ? { operationId: row.operation_id } : {}),
+    ...(row.operation_attempt_no !== null ? { operationAttemptNo: row.operation_attempt_no } : {}),
+    ...(row.actor_writer_session_id !== null ? { actorWriterSessionId: row.actor_writer_session_id } : {}),
+    ...(row.actor_writer_epoch !== null ? { actorWriterEpoch: row.actor_writer_epoch } : {}),
+    ...(row.accepted_message_id !== null ? { acceptedMessageId: row.accepted_message_id } : {}),
+    ...(row.terminal_outcome !== null ? { terminalOutcome: row.terminal_outcome } : {}),
     chatId: row.chat_id,
     mode: row.mode,
     ...(row.target_message_id !== null ? { targetMessageId: row.target_message_id } : {}),
@@ -529,6 +547,13 @@ export function listGenerationFinalizationRetryProjections(db: DatabaseSync): Ge
     const messageId = attempt.targetMessageId ?? attempt.message.chatId ?? attempt.generationId
     return {
       generationId: attempt.generationId,
+      ...(attempt.databaseLineage ? { databaseLineage: attempt.databaseLineage } : {}),
+      ...(attempt.operationId ? { operationId: attempt.operationId } : {}),
+      ...(attempt.operationAttemptNo !== undefined ? { operationAttemptNo: attempt.operationAttemptNo } : {}),
+      ...(attempt.actorWriterSessionId ? { actorWriterSessionId: attempt.actorWriterSessionId } : {}),
+      ...(attempt.actorWriterEpoch !== undefined ? { actorWriterEpoch: attempt.actorWriterEpoch } : {}),
+      ...(attempt.acceptedMessageId ? { acceptedMessageId: attempt.acceptedMessageId } : {}),
+      ...(attempt.terminalOutcome ? { terminalOutcome: attempt.terminalOutcome } : {}),
       chatId: attempt.chatId,
       messageId,
       mode: attempt.mode,

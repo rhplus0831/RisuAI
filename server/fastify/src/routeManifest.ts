@@ -1040,6 +1040,80 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'sse-optional',
   },
   {
+    id: 'generation-operation-submit',
+    methods: ['POST'],
+    path: '/api/v1/generation-operations',
+    auth: {
+      decision: 'required',
+      reason: 'Atomic generation acceptance reads and mutates the private transcript.',
+    },
+    activeWriter: {
+      decision: 'active-writer',
+      reason: 'Atomic generation acceptance appends and owns durable generation intent.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'generation-operation-status',
+    methods: GET_ONLY,
+    path: '/api/v1/generation-operations/:operationId',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Operation status exposes private accepted-send lifecycle state.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only exact operation authority probe.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'generation-operation-stream',
+    methods: GET_ONLY,
+    path: '/api/v1/generation-operations/:operationId/stream',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Exact-attempt reattach observes an authenticated generation stream.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only observe path for an exact operation attempt.',
+    },
+    streaming: 'sse',
+  },
+  {
+    id: 'generation-operation-cancel',
+    methods: ['PUT'],
+    path: '/api/v1/generation-operations/:operationId/cancellation',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Operation cancellation controls private durable generation work.',
+    },
+    activeWriter: {
+      decision: 'active-writer',
+      reason: 'Cancellation records a durable lifecycle fence.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'generation-operation-retry',
+    methods: ['POST'],
+    path: '/api/v1/generation-operations/:operationId/retries',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Operation retry launches an exact retained generation intent.',
+    },
+    activeWriter: {
+      decision: 'active-writer',
+      reason: 'Retry reserves and launches a new durable attempt.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'generation-chat',
     methods: ['POST'],
     path: '/api/v1/generate/chat',

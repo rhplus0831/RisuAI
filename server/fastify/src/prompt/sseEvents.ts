@@ -19,6 +19,19 @@ import type { RawMessageTranslation } from '../translation/rawMessageTranslation
 
 export type PromptChatStage = 'validate' | 'prompt' | 'provider' | 'done'
 
+export interface LineageEnvelope {
+  databaseLineage: string
+  operationId: string
+  writerSessionId: string
+  writerEpoch: number
+  operationStateVersion: number
+  projectionEpoch: number
+  attemptNo: number
+  jobId: string
+  acceptedMessageId?: string
+  targetMessageId?: string
+}
+
 export interface StageEvent {
   type: 'stage'
   stage: PromptChatStage
@@ -201,9 +214,23 @@ export interface DoneEvent {
   postGeneration?: PostGenerationFrame
   /** The message committed, but finalization-journal cleanup still needs a retry sweep. */
   persistenceDisposition?: 'committed_cleanup_pending'
+  /** Authoritative durable operation state at terminal-frame emission. */
+  operationState?:
+    | 'cancel_requested'
+    | 'accepted'
+    | 'launching'
+    | 'owned_by_job'
+    | 'stopping'
+    | 'retryable'
+    | 'abandoned'
+    | 'completed'
+    | 'cancelled'
+    | 'terminal_failed'
+    | 'invalidated'
+    | 'finalizing'
 }
 
-export type PromptChatEvent =
+type PromptChatEventPayload =
   | StageEvent
   | JobAcceptedEvent
   | PromptEvent
@@ -217,6 +244,9 @@ export type PromptChatEvent =
   | WarningEvent
   | ErrorEvent
   | DoneEvent
+
+/** Lineage is additive for old streams and complete on operation-owned jobs. */
+export type PromptChatEvent = PromptChatEventPayload & Partial<LineageEnvelope>
 
 export type PromptChatEventType = PromptChatEvent['type']
 

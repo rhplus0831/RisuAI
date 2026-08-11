@@ -1,5 +1,21 @@
 import { JobRegistry, type StreamJob } from './streamJobs.js'
 
+export interface ActiveGenerationJobProjection {
+  chatId: string
+  jobId: string
+  mode?: 'send' | 'continue' | 'regenerate'
+  regenerateMessageId?: string
+  databaseLineage?: string
+  operationId?: string
+  writerSessionId?: string
+  writerEpoch?: number
+  operationStateVersion?: number
+  projectionEpoch?: number
+  attemptNo?: number
+  acceptedMessageId?: string
+  targetMessageId?: string
+}
+
 /**
  * Durable-generation job registry.
  *
@@ -88,18 +104,8 @@ export class GenerationJobRegistry {
    * target) lets a reloaded browser reattach with the right generating mode. Done /
    * GC'd jobs are filtered out.
    */
-  activeJobs(): Array<{
-    chatId: string
-    jobId: string
-    mode?: 'send' | 'continue' | 'regenerate'
-    regenerateMessageId?: string
-  }> {
-    const out: Array<{
-      chatId: string
-      jobId: string
-      mode?: 'send' | 'continue' | 'regenerate'
-      regenerateMessageId?: string
-    }> = []
+  activeJobs(): ActiveGenerationJobProjection[] {
+    const out: ActiveGenerationJobProjection[] = []
     for (const [chatId, jobId] of this.runningByChat.entries()) {
       const job = this.registry.get(jobId)
       if (job && !job.done) {
@@ -108,6 +114,15 @@ export class GenerationJobRegistry {
           jobId,
           ...(job.mode ? { mode: job.mode } : {}),
           ...(job.regenerateMessageId ? { regenerateMessageId: job.regenerateMessageId } : {}),
+          ...(job.databaseLineage ? { databaseLineage: job.databaseLineage } : {}),
+          ...(job.operationId ? { operationId: job.operationId } : {}),
+          ...(job.writerSessionId ? { writerSessionId: job.writerSessionId } : {}),
+          ...(job.writerEpoch !== undefined ? { writerEpoch: job.writerEpoch } : {}),
+          ...(job.operationStateVersion !== undefined ? { operationStateVersion: job.operationStateVersion } : {}),
+          ...(job.projectionEpoch !== undefined ? { projectionEpoch: job.projectionEpoch } : {}),
+          ...(job.attemptNo !== undefined ? { attemptNo: job.attemptNo } : {}),
+          ...(job.acceptedMessageId ? { acceptedMessageId: job.acceptedMessageId } : {}),
+          ...(job.targetMessageId ? { targetMessageId: job.targetMessageId } : {}),
         })
       }
     }
