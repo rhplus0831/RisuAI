@@ -12,6 +12,9 @@ interface TestPersistenceDatabase {
 const persistenceStateMocks = vi.hoisted(() => ({
   database: { characters: [] } as TestPersistenceDatabase,
   fetchBootstrap: vi.fn(),
+  applyGenerationOperationBootstrap: vi.fn(),
+  setPendingRecoveredGenerationEffects: vi.fn(),
+  reconcilePendingRecoveredGenerationEffects: vi.fn(),
 }))
 
 vi.mock('../storage/database.svelte', () => ({
@@ -24,6 +27,15 @@ vi.mock('../server/resourceWriteGuard.svelte', () => ({
 
 vi.mock('../server/bootstrap', () => ({
   fetchServerBootstrapReadOnly: persistenceStateMocks.fetchBootstrap,
+}))
+
+vi.mock('../server/generationOperations', () => ({
+  applyGenerationOperationBootstrap: persistenceStateMocks.applyGenerationOperationBootstrap,
+}))
+
+vi.mock('./recoveredGenerationEffects', () => ({
+  setPendingRecoveredGenerationEffects: persistenceStateMocks.setPendingRecoveredGenerationEffects,
+  reconcilePendingRecoveredGenerationEffects: persistenceStateMocks.reconcilePendingRecoveredGenerationEffects,
 }))
 
 import {
@@ -58,6 +70,10 @@ beforeEach(() => {
   vi.useFakeTimers()
   persistenceStateMocks.database = { characters: [] }
   persistenceStateMocks.fetchBootstrap.mockReset()
+  persistenceStateMocks.applyGenerationOperationBootstrap.mockReset()
+  persistenceStateMocks.setPendingRecoveredGenerationEffects.mockReset()
+  persistenceStateMocks.reconcilePendingRecoveredGenerationEffects.mockReset()
+  persistenceStateMocks.reconcilePendingRecoveredGenerationEffects.mockResolvedValue(undefined)
   clearRetainedChatProjections()
   resetGenerationFinalizationPersistencesForTests()
 })
@@ -196,6 +212,66 @@ describe('generation finalization persistence projection', () => {
     expect(get(generationFinalizationPersistences)).toEqual([
       expect.objectContaining({ generationId: 'generation-a', state: 'stalled', failureCount: 3 }),
     ])
+  })
+
+  it('reconciles the full bootstrap when a queued finalization commits without another stream event', async () => {
+    setGenerationFinalizationPersistences([
+      {
+        generationId: 'generation-a',
+        chatId: 'chat-a',
+        messageId: 'generation-a',
+        mode: 'send',
+        state: 'queued',
+        failureCount: 1,
+      },
+    ])
+    const operation = {
+      operationId: 'operation-a',
+      protocolVersion: 1,
+      requestOrigin: 'accepted_send',
+      state: 'completed',
+      stateVersion: 5,
+      projectionEpoch: 9,
+      creatorWriterSessionId: 'writer-a',
+      creatorWriterEpoch: 1,
+      chatId: 'chat-a',
+      providerMayHaveRun: true,
+    }
+    const pendingEffect = {
+      ledgerVersion: 1,
+      databaseLineage: 'lineage-a',
+      keyType: 'operation',
+      keyId: 'operation-a',
+      kind: 'igp',
+      effectClass: 'durable',
+      operationId: 'operation-a',
+      generationId: 'generation-a',
+      characterId: 'character-a',
+      chatId: 'chat-a',
+      messageId: 'generation-a',
+      status: 'pending',
+      createdAt: '2026-08-12T00:00:00.000Z',
+      updatedAt: '2026-08-12T00:00:00.000Z',
+    }
+    const bootstrap = {
+      initialized: true,
+      revision: 4,
+      generationOperationProtocol: { version: 1 },
+      generationOperationProjectionEpoch: 9,
+      generationOperations: [operation],
+      activeGenerationJobs: [],
+      generationFinalizations: [],
+      pendingGenerationEffects: [pendingEffect],
+    }
+    persistenceStateMocks.fetchBootstrap.mockResolvedValue({ status: 'ok', bootstrap })
+
+    startGenerationFinalizationPersistenceRefresh()
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    expect(persistenceStateMocks.applyGenerationOperationBootstrap).toHaveBeenCalledWith(bootstrap, 'bootstrap')
+    expect(get(generationFinalizationPersistences)).toEqual([])
+    expect(persistenceStateMocks.setPendingRecoveredGenerationEffects).toHaveBeenCalledWith([pendingEffect])
+    expect(persistenceStateMocks.reconcilePendingRecoveredGenerationEffects).toHaveBeenCalledOnce()
   })
 
   it('acknowledges persisted pending rows without silently clearing terminal history', () => {

@@ -2,6 +2,10 @@ import { get } from 'svelte/store'
 import { loadedStore, selectedCharID } from '../stores.svelte'
 import { getDatabase, type Database } from '../storage/database.svelte'
 import { getRerollBuffer, reroll, unReroll } from '../process/rerollNavigation.svelte'
+import { acceptedSendRecoveries } from '../process/acceptedSendRecoveryState'
+import { activeChatGenerations } from '../process/generationActivity.svelte'
+import { generationFinalizationPersistences } from '../process/generationPersistenceState'
+import { activeGenerationJobs, generationJobLifecycles } from '../process/reattach'
 import { activeWriterSessionHeader } from './activeWriterSession'
 import { hydrateActiveChatFully } from './chatMessageHydration.svelte'
 import {
@@ -12,12 +16,32 @@ import {
 } from './commands'
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { alertNormal } from '../alert'
+import { generationOperationCancellations, generationOperationProjections } from './generationOperations'
+import { listPendingMutations } from './pendingMutationOutbox'
+
+export interface FastifyBrowserSmokeLifecycleSnapshot {
+  acceptedSendRecoveries: unknown[]
+  activeGenerationJobs: unknown[]
+  activeChatGenerations: unknown[]
+  generationFinalizations: unknown[]
+  generationJobLifecycles: Record<string, unknown>
+  generationOperationCancellations: unknown[]
+  generationOperations: unknown[]
+  outbox: Array<{
+    key: string
+    mutationId: string
+    phase: string
+    kind?: string
+    requests: unknown[]
+  }>
+}
 
 export interface FastifyBrowserSmokeHook {
   assertDirectProjectionWriteRejected: () => boolean
   activeWriterHeaders: () => Promise<Record<string, string>>
   getAppliedServerResourceRevision: () => number | null
   getDatabaseSnapshot: () => Database
+  getLifecycleSnapshot: () => Promise<FastifyBrowserSmokeLifecycleSnapshot>
   isLoaded: () => boolean
   patchRuntimeSettings: (patch: Record<string, unknown>) => Promise<ServerCommandResult<Record<string, unknown>>>
   waitForLoaded: (timeoutMs?: number) => Promise<void>
@@ -53,6 +77,24 @@ export function installFastifyBrowserSmokeHook() {
     },
     getAppliedServerResourceRevision: peekAppliedServerResourceRevision,
     getDatabaseSnapshot: () => getDatabase({ snapshot: true }),
+    getLifecycleSnapshot: async () => ({
+      acceptedSendRecoveries: structuredClone(get(acceptedSendRecoveries)),
+      activeGenerationJobs: structuredClone(get(activeGenerationJobs)),
+      activeChatGenerations: get(activeChatGenerations).map(({ controller: _controller, ...activity }) =>
+        structuredClone(activity),
+      ),
+      generationFinalizations: structuredClone(get(generationFinalizationPersistences)),
+      generationJobLifecycles: structuredClone(get(generationJobLifecycles)),
+      generationOperationCancellations: structuredClone(get(generationOperationCancellations)),
+      generationOperations: structuredClone(get(generationOperationProjections)),
+      outbox: (await listPendingMutations()).map(({ handle, intent }) => ({
+        key: handle.key,
+        mutationId: handle.mutationId,
+        phase: handle.phase,
+        ...(intent.kind ? { kind: intent.kind } : {}),
+        requests: structuredClone(intent.requests),
+      })),
+    }),
     isLoaded: () => get(loadedStore),
     patchRuntimeSettings: (patch) =>
       runServerCommand({

@@ -51,7 +51,14 @@ async function refreshGenerationFinalizationPersistences(): Promise<void> {
     const { fetchServerBootstrapReadOnly } = await import('../server/bootstrap')
     const result = await fetchServerBootstrapReadOnly(null, { cacheRevision: false })
     if (refreshEnabled && result.status === 'ok' && result.bootstrap.generationFinalizations) {
+      const [{ applyGenerationOperationBootstrap }, recoveredGenerationEffects] = await Promise.all([
+        import('../server/generationOperations'),
+        import('./recoveredGenerationEffects'),
+      ])
+      applyGenerationOperationBootstrap(result.bootstrap, 'bootstrap')
       setGenerationFinalizationPersistences(result.bootstrap.generationFinalizations)
+      recoveredGenerationEffects.setPendingRecoveredGenerationEffects(result.bootstrap.pendingGenerationEffects ?? [])
+      await recoveredGenerationEffects.reconcilePendingRecoveredGenerationEffects()
     }
   } catch {
     // Keep the last truthful projection; the next bounded refresh can retry.
