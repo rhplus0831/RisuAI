@@ -67,6 +67,11 @@ async function importActiveWriterSession() {
   return await import('./activeWriterSession')
 }
 
+async function flushMutationObserver() {
+  await Promise.resolve()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
 beforeEach(() => {
   takeoverMocks.alertRequiredSelect.mockReset()
   takeoverMocks.alertRequiredSelect.mockImplementation(() => new Promise(() => {}))
@@ -215,7 +220,8 @@ describe('active writer browser session', () => {
 
     const laterTextarea = document.createElement('textarea')
     document.getElementById('app')?.appendChild(laterTextarea)
-    await vi.waitFor(() => expect(laterTextarea.readOnly).toBe(true))
+    await flushMutationObserver()
+    expect(laterTextarea.readOnly).toBe(true)
   })
 
   it('notifies once and reloads when a terminal durable predecessor loses its rollback', async () => {

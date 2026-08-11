@@ -48,19 +48,19 @@ describe('QuickSettingsGUI tabs', () => {
     await tick()
 
     const botButton = buttonByName(language.chatBot)
-    const otherBotButton = buttonByName(language.otherBots)
+    const memoryButton = buttonByName(language.settingsNavMemory)
     const moduleButton = buttonByName(language.modules)
 
     expect(botButton.type).toBe('button')
     expect(botButton.getAttribute('aria-pressed')).toBe('true')
-    expect(otherBotButton.getAttribute('aria-pressed')).toBe('false')
+    expect(memoryButton.getAttribute('aria-pressed')).toBe('false')
     expect(moduleButton.getAttribute('aria-pressed')).toBe('false')
 
     moduleButton.click()
     await tick()
 
     expect(botButton.getAttribute('aria-pressed')).toBe('false')
-    expect(otherBotButton.getAttribute('aria-pressed')).toBe('false')
+    expect(memoryButton.getAttribute('aria-pressed')).toBe('false')
     expect(moduleButton.getAttribute('aria-pressed')).toBe('true')
   })
 })

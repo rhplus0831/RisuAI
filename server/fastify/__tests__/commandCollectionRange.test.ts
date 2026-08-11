@@ -589,7 +589,9 @@ describe('Phase 4 presets collection range', () => {
     expectNoCharacterOrChatChurn(before)
     expect(readSettings().promptPresetsId).toBe(1)
     expect(readSettings().mainPrompt).toBe('prompt 1')
-    expect(readCollection('prompt_templates')).toEqual([{ id: expect.any(String), type: 'plain', text: 'sp-1' }])
+    expect(readCollection('prompt_templates')).toEqual([
+      { id: expect.any(String), type: 'plain', text: 'sp-1', role: 'system' },
+    ])
   })
 
   it('PATCH selected prompt-presets/:id persists touched settings and promptTemplate projections', async () => {
@@ -623,7 +625,7 @@ describe('Phase 4 presets collection range', () => {
     expect(collectionRowidsByPosition('prompt_presets')).toEqual(beforeRowids)
     expect(readSettings().mainPrompt).toBe('prompt 0 patched')
     expect(readCollection('prompt_templates')).toEqual([
-      { id: expect.any(String), type: 'plain', text: 'sp-0 patched' },
+      { id: expect.any(String), type: 'plain', text: 'sp-0 patched', role: 'system' },
     ])
     expect(body).toMatchObject({
       promptPresetId: 'prompt-0',
@@ -765,7 +767,9 @@ describe('Phase 4 presets collection range', () => {
       selectedProjectionApplied: true,
       ownerProjectionApplied: false,
     })
-    expect(readCollection('prompt_templates')).toEqual([{ id: expect.any(String), type: 'plain', text: 'current' }])
+    expect(readCollection('prompt_templates')).toEqual([
+      { id: expect.any(String), type: 'plain', text: 'current', role: 'system' },
+    ])
   })
 
   it('DELETE selected prompt-presets/:id persists the next selected promptTemplate + settings', async () => {
@@ -794,7 +798,9 @@ describe('Phase 4 presets collection range', () => {
     expect(readSettings().promptPresetsId).toBe(0)
     expect(body.selectedPromptPresetId).toBe('prompt-0')
     expect(readSettings().mainPrompt).toBe('prompt 0')
-    expect(readCollection('prompt_templates')).toEqual([{ id: expect.any(String), type: 'plain', text: 'sp-0' }])
+    expect(readCollection('prompt_templates')).toEqual([
+      { id: expect.any(String), type: 'plain', text: 'sp-0', role: 'system' },
+    ])
   })
 })
 
@@ -959,7 +965,9 @@ describe('Phase 4 prompt-items collection range', () => {
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     expect(promptPresetTemplate('prompt-a').map((i) => i.id)).toEqual(['item-0', 'item-1', 'item-2', 'item-3'])
-    expect(readCollection('prompt_templates')).toEqual([{ id: 'legacy-item', type: 'plain', text: 'legacy' }])
+    expect(readCollection('prompt_templates')).toEqual([
+      { id: 'legacy-item', type: 'plain', text: 'legacy', role: 'system' },
+    ])
   })
 
   it('PATCH prompt-items/:id with promptPresetId updates only the selected prompt_presets row', async () => {
@@ -979,7 +987,9 @@ describe('Phase 4 prompt-items collection range', () => {
     expectNoCharacterOrChatChurn(before)
     expect(collectionRowidsByPosition('prompt_presets')).toEqual(beforeRowids)
     expect(promptPresetTemplate('prompt-a')[1]).toMatchObject({ id: 'item-1', text: 'patched scoped' })
-    expect(readCollection('prompt_templates')).toEqual([{ id: 'legacy-item', type: 'plain', text: 'legacy' }])
+    expect(readCollection('prompt_templates')).toEqual([
+      { id: 'legacy-item', type: 'plain', text: 'legacy', role: 'system' },
+    ])
   })
 
   it('normalizes id-less selected prompt preset rows before scoped prompt item patches', async () => {
@@ -1008,7 +1018,9 @@ describe('Phase 4 prompt-items collection range', () => {
       id: normalizedRow.id,
       text: 'patched normalized scoped',
     })
-    expect(readCollection('prompt_templates')).toEqual([{ id: 'legacy-item', type: 'plain', text: 'legacy' }])
+    expect(readCollection('prompt_templates')).toEqual([
+      { id: 'legacy-item', type: 'plain', text: 'legacy', role: 'system' },
+    ])
   })
 
   it('DELETE prompt-items/:id with promptPresetId updates only the selected prompt_presets row', async () => {
@@ -1026,7 +1038,9 @@ describe('Phase 4 prompt-items collection range', () => {
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     expect(promptPresetTemplate('prompt-a').map((i) => i.id)).toEqual(['item-0', 'item-2'])
-    expect(readCollection('prompt_templates')).toEqual([{ id: 'legacy-item', type: 'plain', text: 'legacy' }])
+    expect(readCollection('prompt_templates')).toEqual([
+      { id: 'legacy-item', type: 'plain', text: 'legacy', role: 'system' },
+    ])
   })
 
   it('POST prompt-items/reorder with promptPresetId updates only the selected prompt_presets row', async () => {
@@ -1044,7 +1058,9 @@ describe('Phase 4 prompt-items collection range', () => {
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     expect(promptPresetTemplate('prompt-a').map((i) => i.id)).toEqual(['item-2', 'item-0', 'item-1'])
-    expect(readCollection('prompt_templates')).toEqual([{ id: 'legacy-item', type: 'plain', text: 'legacy' }])
+    expect(readCollection('prompt_templates')).toEqual([
+      { id: 'legacy-item', type: 'plain', text: 'legacy', role: 'system' },
+    ])
   })
 
   it('POST prompt-items/enable=false with promptPresetId clears only the selected prompt preset template', async () => {
@@ -1062,8 +1078,10 @@ describe('Phase 4 prompt-items collection range', () => {
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     expect(promptPresetTemplate('prompt-a')).toEqual([])
-    expect(promptPresetTemplate('prompt-b')).toEqual([{ id: 'item-b', type: 'plain', text: 'b0' }])
-    expect(readCollection('prompt_templates')).toEqual([{ id: 'legacy-item', type: 'plain', text: 'legacy' }])
+    expect(promptPresetTemplate('prompt-b')).toEqual([{ id: 'item-b', type: 'plain', text: 'b0', role: 'system' }])
+    expect(readCollection('prompt_templates')).toEqual([
+      { id: 'legacy-item', type: 'plain', text: 'legacy', role: 'system' },
+    ])
   })
 
   it('rejects scoped prompt item commands when the prompt preset selection is stale', async () => {
@@ -1078,7 +1096,9 @@ describe('Phase 4 prompt-items collection range', () => {
 
     expect(result.statusCode).toBe(400)
     expect(promptPresetTemplate('prompt-a')[1]).toMatchObject({ id: 'item-1', text: 'a1' })
-    expect(readCollection('prompt_templates')).toEqual([{ id: 'legacy-item', type: 'plain', text: 'legacy' }])
+    expect(readCollection('prompt_templates')).toEqual([
+      { id: 'legacy-item', type: 'plain', text: 'legacy', role: 'system' },
+    ])
   })
 })
 

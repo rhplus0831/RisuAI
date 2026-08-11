@@ -70,8 +70,8 @@ describe('normalizeTemplate', () => {
     const result = normalizeTemplate(makeChar())
     expect(result.usingPromptTemplate).toBe(true)
     expect(result.promptTemplate).toEqual([
-      { type: 'description' },
-      { type: 'chat', rangeStart: 0, rangeEnd: 'end' },
+      { id: expect.any(String), type: 'description' },
+      { id: expect.any(String), type: 'chat', rangeStart: 0, rangeEnd: 'end' },
       { type: 'postEverything' },
     ])
   })
@@ -82,7 +82,10 @@ describe('normalizeTemplate', () => {
       promptTemplate: [{ type: 'description' }, { type: 'postEverything' }] as PromptItem[],
     })
     const result = normalizeTemplate(makeChar())
-    expect(result.promptTemplate).toEqual([{ type: 'description' }, { type: 'postEverything' }])
+    expect(result.promptTemplate).toEqual([
+      { id: expect.any(String), type: 'description' },
+      { id: expect.any(String), type: 'postEverything' },
+    ])
   })
 
   it('clones the db template so the result can be mutated without touching state', () => {
@@ -91,7 +94,7 @@ describe('normalizeTemplate', () => {
     const result = normalizeTemplate(makeChar())
     expect(result.promptTemplate).not.toBe(testDatabaseState.db.promptTemplate)
     // implicit postEverything must not leak back into db state
-    expect(testDatabaseState.db.promptTemplate).toEqual([{ type: 'description' }])
+    expect(testDatabaseState.db.promptTemplate).toEqual([{ id: expect.any(String), type: 'description' }])
   })
 
   it('forces the utility-bot template when utilityBot=true and utilOverride defaults to false', () => {
@@ -118,7 +121,7 @@ describe('normalizeTemplate', () => {
     })
     const result = normalizeTemplate(makeChar({ utilityBot: true }))
     expect(result.usingPromptTemplate).toBe(true)
-    expect(result.promptTemplate).toEqual([{ type: 'description' }, { type: 'postEverything' }])
+    expect(result.promptTemplate).toEqual([{ id: expect.any(String), type: 'description' }, { type: 'postEverything' }])
   })
 
   it('forces the utility-bot template when utilOverride=true but the user has no template', () => {
@@ -144,7 +147,10 @@ describe('normalizeTemplate', () => {
     })
     const result = normalizeTemplate(makeChar({ utilityBot: false }))
     expect(result.usingPromptTemplate).toBe(true)
-    expect(result.promptTemplate).toEqual([{ type: 'description' }, { type: 'postEverything' }])
+    expect(result.promptTemplate).toEqual([
+      { id: expect.any(String), type: 'description' },
+      { id: expect.any(String), type: 'postEverything' },
+    ])
   })
 
   it('uses the selected prompt preset instead of stale top-level or legacy bot preset templates', () => {

@@ -443,6 +443,7 @@ async function mountPromptSettingsComponent(target: HTMLElement): Promise<Mounte
 }
 
 interface PromptDragTransfer {
+  types: string[]
   getData: (type: string) => string
   setData: (type: string, value: string) => void
   setDragImage: ReturnType<typeof vi.fn>
@@ -450,9 +451,14 @@ interface PromptDragTransfer {
 
 function createPromptDragTransfer(): PromptDragTransfer {
   const data = new Map<string, string>()
+  const types: string[] = []
   return {
+    types,
     getData: (type) => data.get(type) ?? '',
-    setData: (type, value) => data.set(type, value),
+    setData: (type, value) => {
+      data.set(type, value)
+      if (!types.includes(type)) types.push(type)
+    },
     setDragImage: vi.fn(),
   }
 }

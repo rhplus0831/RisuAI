@@ -304,6 +304,7 @@ vi.mock('src/ts/translator/translator', () => ({
 
 vi.mock('src/ts/parser/parser.svelte', () => ({
   hasher: vi.fn(async (value: Uint8Array) => `hash:${new TextDecoder().decode(value)}`),
+  risuChatParser: vi.fn((text: string) => text),
 }))
 
 vi.mock('localforage', () => ({

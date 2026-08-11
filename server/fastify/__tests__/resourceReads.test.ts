@@ -1260,7 +1260,7 @@ describe('authenticated resource read routes', () => {
         openAIKey: MASKED_PROVIDER_SECRET,
         temperature: 0.7,
         mainPrompt: 'Large legacy body'.repeat(2_000),
-        promptTemplate: [{ id: 'legacy-prompt', type: 'plain', text: 'Legacy prompt body' }],
+        promptTemplate: [{ id: 'legacy-prompt', type: 'plain', text: 'Legacy prompt body', role: 'system' }],
       }),
     })
     expect(legacy.payload).not.toContain('legacy-secret')

@@ -145,6 +145,14 @@ export async function loadFixture(name: string): Promise<LoadedFixture> {
   setDatabase(seed)
   // setDatabase mutates `seed` in place and assigns it to getDatabase() via setDatabaseLite.
   // Characters/chats from the fixture survive because they're carried in `seed`.
+  // Post-generation writes resolve their owner strictly by stable IDs. The
+  // characterization corpus predates that invariant, so give legacy fixture
+  // chats deterministic IDs without consuming the mocked generation UUIDs.
+  for (const [characterIndex, character] of getDatabase().characters.entries()) {
+    for (const [chatIndex, chat] of character.chats.entries()) {
+      chat.id ??= `fixture-chat-${characterIndex}-${chatIndex}`
+    }
+  }
   if (promptInfoOverride !== undefined) {
     getDatabase().promptInfoInsideChat = promptInfoOverride
   }

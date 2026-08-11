@@ -14,7 +14,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 
 export interface FixtureSnapshot {
   messages: NormalizedMessage[]
-  generationInfo: unknown
+  generationInfo?: unknown
   stages: number[]
   sideEffects: SideEffectCall[]
   providerCalls: NormalizedProviderCall[]
@@ -127,7 +127,9 @@ export function captureSnapshot(stages: number[]): FixtureSnapshot {
 
   return {
     messages: chat.message.map(normalizeMessage),
-    generationInfo: lastAssistant ? normalizeGenerationInfo(lastAssistant.generationInfo) : undefined,
+    ...(lastAssistant?.generationInfo !== undefined
+      ? { generationInfo: normalizeGenerationInfo(lastAssistant.generationInfo) }
+      : {}),
     stages,
     sideEffects: getSideEffectCalls(),
     providerCalls: getProviderCalls().map(normalizeProviderCall),
