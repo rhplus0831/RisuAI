@@ -1,4 +1,13 @@
 export const languageChineseTraditional = {
+  acceptedSendRecovery: {
+    generationFailed: '訊息已儲存，但無法開始產生回覆。請只重試回覆，不要再次傳送訊息。',
+    generationInProgress: '訊息已儲存，但另一個裝置或工作階段正在此聊天中產生回覆。請在完成後重試。',
+    abandoned: '訊息已儲存，但伺服器重新啟動中斷了回覆。你可以重試回覆。',
+    providerMayHaveRun: '先前的供應商請求可能已執行並產生費用。',
+    providerMayHaveRunConfirm: '先前的供應商請求可能已產生費用。重試可能再次產生費用。仍要重試嗎？',
+    retry: '重試回覆',
+    retrying: '正在重試…',
+  },
   generationPersistenceQueued: '此回覆正在等待儲存，仍處於暫存狀態。',
   generationPersistenceStalled: '此暫存回覆持續儲存失敗。它仍保留在佇列中，並會自動重試。',
   generationPersistenceTerminal: '無法安全儲存此暫存回覆，系統不會再自動重試。其日誌記錄已保留。',

@@ -30,6 +30,7 @@
   import { parseDevToolAutopilotImport } from './devToolAutopilotImport'
   import { findChatGenerationActivity } from 'src/ts/process/generationActivity.svelte'
   import { coordinateAcceptedChatSend } from 'src/ts/process/acceptedSendCoordinator.svelte'
+  import { canUseGenerationOperationProtocol } from 'src/ts/server/generationOperations'
 
   let previewMode = $state('chat')
   let previewJoin = $state('yes')
@@ -248,14 +249,18 @@
         if (findChatGenerationActivity(activeTarget) || !isActiveChatTargetFresh(activeTarget)) {
           return
         }
-        const appended = await appendCurrentChatUserMessageForSend(autopilot[i], {
-          expectedTarget: activeTarget,
-        })
-        if (appended.status === 'error') {
-          alertError(appended.error)
-          return
-        }
-        const outcome = await coordinateAcceptedChatSend({ target: activeTarget, append: appended })
+        const outcome = canUseGenerationOperationProtocol()
+          ? await coordinateAcceptedChatSend({ target: activeTarget, message: autopilot[i] })
+          : await (async () => {
+              const appended = await appendCurrentChatUserMessageForSend(autopilot[i], {
+                expectedTarget: activeTarget,
+              })
+              if (appended.status === 'error') {
+                alertError(appended.error)
+                return { status: 'append_failed' as const }
+              }
+              return coordinateAcceptedChatSend({ target: activeTarget, append: appended })
+            })()
         if (outcome.status !== 'generated') return
         if (!isActiveChatTargetFresh(activeTarget)) {
           return

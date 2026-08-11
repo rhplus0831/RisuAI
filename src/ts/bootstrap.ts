@@ -43,6 +43,7 @@ import {
 } from './server/activeWriterSession'
 import { startBridgePatchLifecycleFlush } from './server/bridgeFlush'
 import { replayPendingMutations } from './server/pendingMutationReplay'
+import { applyGenerationOperationBootstrap, configureGenerationOperationProtocol } from './server/generationOperations'
 import {
   countPendingMutationRecords,
   preparePendingMutationOutbox,
@@ -278,6 +279,7 @@ export async function loadWebInitialDatabase() {
   const runtime = firstBootstrap.bootstrap.initialized
     ? firstBootstrap.bootstrap
     : await initializeFreshServerDatabase(firstBootstrap.bootstrap)
+  configureGenerationOperationProtocol(runtime.generationOperationProtocol, runtime.databaseLineage)
 
   const { databaseLineage, requestedWriterWasActive, writerEpoch } = firstBootstrap.bootstrap
   if (
@@ -339,6 +341,7 @@ export async function loadWebInitialDatabase() {
   )
   setServerCommandConflictGapHandler(handleServerCommandConflictGap)
   setResourceWriteGuardEnabled(true)
+  applyGenerationOperationBootstrap(runtime)
   setActiveGenerationJobs(runtime.activeGenerationJobs ?? [])
   setGenerationFinalizationPersistences(runtime.generationFinalizations ?? [])
   startGenerationFinalizationPersistenceRefresh()

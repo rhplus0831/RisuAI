@@ -1,4 +1,17 @@
 export const languageGerman = {
+  acceptedSendRecovery: {
+    generationFailed:
+      'Deine Nachricht wurde gespeichert, aber die Antwort konnte nicht gestartet werden. Versuche nur die Antwort erneut.',
+    generationInProgress:
+      'Deine Nachricht wurde gespeichert, aber ein anderes Gerät oder eine andere Sitzung generiert bereits in diesem Chat. Versuche die Antwort danach erneut.',
+    abandoned:
+      'Deine Nachricht wurde gespeichert, aber die Antwort wurde durch einen Serverneustart unterbrochen. Du kannst die Antwort erneut versuchen.',
+    providerMayHaveRun: 'Die vorherige Anbieteranfrage wurde möglicherweise bereits ausgeführt und berechnet.',
+    providerMayHaveRunConfirm:
+      'Die vorherige Anbieteranfrage wurde möglicherweise bereits berechnet. Ein erneuter Versuch kann weitere Kosten verursachen. Trotzdem erneut versuchen?',
+    retry: 'Antwort erneut versuchen',
+    retrying: 'Wird erneut versucht…',
+  },
   generationPersistenceQueued: 'Diese Antwort wartet auf das Speichern und bleibt vorläufig.',
   generationPersistenceStalled:
     'Das Speichern dieser vorläufigen Antwort schlägt weiterhin fehl. Sie bleibt in der Warteschlange und wird automatisch erneut versucht.',

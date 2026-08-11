@@ -1,4 +1,13 @@
 export const languageChinese = {
+  acceptedSendRecovery: {
+    generationFailed: '消息已保存，但无法开始生成回复。请只重试回复，不要再次发送消息。',
+    generationInProgress: '消息已保存，但另一个设备或会话正在此聊天中生成回复。请在生成结束后重试。',
+    abandoned: '消息已保存，但服务器重启中断了回复生成。你可以重试回复。',
+    providerMayHaveRun: '先前的提供商请求可能已经执行并产生费用。',
+    providerMayHaveRunConfirm: '先前的提供商请求可能已经产生费用。重试可能再次产生费用。仍要重试吗？',
+    retry: '重试回复',
+    retrying: '正在重试…',
+  },
   generationPersistenceQueued: '此回复正在等待保存，仍处于临时状态。',
   generationPersistenceStalled: '此临时回复持续保存失败。它仍保留在队列中，并会自动重试。',
   generationPersistenceTerminal: '无法安全保存此临时回复，系统不会再自动重试。其日志记录已保留。',

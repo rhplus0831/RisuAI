@@ -52,6 +52,7 @@ import { getLLMCache, searchLLMCache } from 'src/ts/translator/translator'
 import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer, type LLMModel } from 'src/ts/model/types'
 import { sendChat as processSendChat } from 'src/ts/process/index.svelte'
 import { coordinateAcceptedChatSend } from 'src/ts/process/acceptedSendCoordinator.svelte'
+import { canUseGenerationOperationProtocol } from 'src/ts/server/generationOperations'
 import { isChatGenerationKnown } from 'src/ts/process/reattach'
 import { getModelInfo } from 'src/ts/model/modellist'
 import type { ModelModeExtended } from 'src/ts/process/request/shared'
@@ -1896,6 +1897,10 @@ const makeRisuaiAPIV3 = (
       }
 
       if (message) {
+        if (canUseGenerationOperationProtocol()) {
+          const result = await coordinateAcceptedChatSend({ target, message })
+          return result.status === 'generated'
+        }
         const appendResult = await appendCurrentChatUserMessageForSend(message, { expectedTarget: target })
         if (appendResult.status === 'error') {
           throw new Error(appendResult.error)

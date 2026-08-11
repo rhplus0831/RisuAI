@@ -85,6 +85,10 @@ export const languageEnglish = {
       'Your message was saved, but its reply could not be started. Retry without sending the message again.',
     generationInProgress:
       'Your message was saved, but another client or session was already generating in this chat. Retry the reply after that generation finishes.',
+    abandoned: 'Your message was saved, but its reply was interrupted by a server restart. You can retry the reply.',
+    providerMayHaveRun: 'The previous provider request may already have run and may have been billed.',
+    providerMayHaveRunConfirm:
+      'The previous provider request may already have been billed. Retrying may create another billed request. Retry anyway?',
     retry: 'Retry reply',
     retrying: 'Retrying…',
   },

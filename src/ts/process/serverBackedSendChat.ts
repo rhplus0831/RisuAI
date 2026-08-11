@@ -17,6 +17,7 @@ import {
   requestServerChat,
   requestServerChatGeneration,
   type ServerChatInput,
+  type ServerChatOperationStream,
   type ServerChatTerminal,
 } from './request/serverChat'
 import type { ServerChatMessagePatch } from './request/serverChatEvents'
@@ -382,7 +383,7 @@ const INLAY_MARKER_RE = /{{(inlay|inlayed|inlayeddata)::(.+?)}}/g
  * from a bot turn without surfacing their assets); every other role surfaces all
  * three tag types.
  */
-async function collectServerInlayAssetRefs(chat: Chat): Promise<ServerInlayAssetRefPayload[]> {
+export async function collectServerInlayAssetRefs(chat: Chat): Promise<ServerInlayAssetRefPayload[]> {
   const ids = new Set<string>()
   for (const message of chat.message ?? []) {
     if (typeof message.data !== 'string') continue
@@ -594,6 +595,8 @@ export async function reattachServerBackedSendChat(args: {
   abortSignal: AbortSignal
   setProcessStage: (stage: number) => void
   jobId: string
+  /** Protocol-v1 attach uses the operation-addressed URL returned by submit/status. */
+  operationStream?: ServerChatOperationStream
   /** The running job's generating mode, so the reattach renders correctly. */
   continue?: boolean
   regenerateMessageId?: string
@@ -612,7 +615,12 @@ export async function reattachServerBackedSendChat(args: {
     mode,
   }
   if (mode === 'regenerate') input.regenerateMessageId = args.regenerateMessageId
-  const served = await requestServerChatGeneration(input, args.abortSignal, args.jobId)
+  const served = await requestServerChatGeneration(
+    input,
+    args.abortSignal,
+    args.operationStream ? undefined : args.jobId,
+    args.operationStream,
+  )
 
   if (served.status === 'aborted') return { status: 'aborted' }
   if (served.status === 'error') {

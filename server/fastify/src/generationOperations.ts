@@ -110,6 +110,7 @@ interface GenerationOperationRow {
   mode: GenerationOperationMode | null
   accepted_message_id: string | null
   target_message_id: string | null
+  client_draft_generation_json: string | null
   accepted_revision: number | null
   state: GenerationOperationState
   state_version: number
@@ -213,6 +214,7 @@ export interface GenerationOperationProjection {
   mode?: GenerationOperationMode
   acceptedMessageId?: string
   targetMessageId?: string
+  clientDraftGeneration?: unknown
   acceptedRevision?: number
   currentAttempt?: GenerationOperationAttemptProjection
   desiredTerminalOutcome?: GenerationOperationTerminalOutcome
@@ -1474,6 +1476,9 @@ function projectionFromRow(row: GenerationOperationRow): GenerationOperationProj
     ...(row.mode !== null ? { mode: row.mode } : {}),
     ...(row.accepted_message_id !== null ? { acceptedMessageId: row.accepted_message_id } : {}),
     ...(row.target_message_id !== null ? { targetMessageId: row.target_message_id } : {}),
+    ...(row.client_draft_generation_json !== null
+      ? { clientDraftGeneration: JSON.parse(row.client_draft_generation_json) as unknown }
+      : {}),
     ...(row.accepted_revision !== null ? { acceptedRevision: row.accepted_revision } : {}),
     ...(row.attempt_no !== null
       ? {

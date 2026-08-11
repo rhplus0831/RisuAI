@@ -85,6 +85,32 @@ afterEach(async () => {
 })
 
 describe('pending mutation outbox', () => {
+  it('encrypts and restores complete generation-operation submit intents', async () => {
+    const intent: DurableMutationIntent = {
+      version: 1,
+      kind: 'generation-operation-submit',
+      requests: [
+        {
+          method: 'POST',
+          path: '/generation-operations',
+          body: {
+            operationId: '11111111-1111-4111-8111-111111111111',
+            acceptedMessageId: '22222222-2222-4222-8222-222222222222',
+            baseRevision: 7,
+            draftGeneration: { transcriptIdentity: 'chat-a', sequence: 4 },
+          },
+        },
+      ],
+    }
+    const handle = stagePendingMutation('generation-operation-submit:operation-a', intent)
+
+    await expect(handle.ready).resolves.toBe('persisted')
+    expect((await listPendingMutations())[0]?.intent).toEqual(intent)
+    expect(pendingMutationProjectionTargets(intent)).toEqual([
+      'generation-operation:11111111-1111-4111-8111-111111111111',
+    ])
+  })
+
   it('lazily advances an explicit committed-order counter and retains it when rows are cleared', async () => {
     expect(await readRawOrderCounters()).toEqual([])
 

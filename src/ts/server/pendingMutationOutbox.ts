@@ -9,12 +9,14 @@ export interface DurableMutationRequest {
   method: DurableMutationRequestMethod
   /** Command path below `/api/v1/commands`, including the leading slash. */
   path: string
-  /** Request fields excluding the enqueue-time `baseRevision`. */
+  /** Command fields exclude enqueue-time `baseRevision`; atomic submit persists its complete request. */
   body: Record<string, unknown>
 }
 
 export interface DurableMutationIntent {
   version: 1
+  /** Non-command mutation families that share the encrypted transport outbox. */
+  kind?: 'generation-operation-submit' | 'generation-operation-retry'
   requests: DurableMutationRequest[]
   /**
    * Additional semantic lanes that must settle before this intent. The keys
@@ -431,6 +433,10 @@ export function acceptPendingMutationLocalProjectionToken(token: PendingMutation
 
 export function pendingMutationProjectionTargets(intent: DurableMutationIntent): string[] {
   const normalized = normalizeIntent(intent)
+  if (normalized.kind) {
+    const operationId = generationOperationIdFromPendingIntent(normalized)
+    return operationId ? [`generation-operation:${operationId}`] : []
+  }
   const targets = new Set<string>()
   for (const request of normalized.requests) {
     for (const target of pendingMutationRequestProjectionTargets(request)) targets.add(target)
@@ -1506,8 +1512,18 @@ function normalizeIntent(value: unknown): DurableMutationIntent {
   if (record.version !== 1 || !Array.isArray(record.requests)) {
     throw new TypeError('Unsupported pending mutation intent')
   }
+  if (
+    record.kind !== undefined &&
+    record.kind !== 'generation-operation-submit' &&
+    record.kind !== 'generation-operation-retry'
+  ) {
+    throw new TypeError('Unsupported pending mutation intent kind')
+  }
   if (record.requests.length === 0 || record.requests.length > MAX_DURABLE_MUTATION_REQUESTS) {
     throw new RangeError('Pending mutation request count is invalid')
+  }
+  if (record.kind && record.requests.length !== 1) {
+    throw new RangeError('Generation operation pending intents require exactly one request')
   }
   let dependencyKeys: string[] = []
   if (record.dependencyKeys !== undefined) {
@@ -1518,16 +1534,40 @@ function normalizeIntent(value: unknown): DurableMutationIntent {
   }
   return {
     version: 1,
-    requests: record.requests.map(normalizeRequest),
+    ...(record.kind ? { kind: record.kind } : {}),
+    requests: record.requests.map((request) => normalizeRequest(request, record.kind)),
     ...(dependencyKeys.length === 0 ? {} : { dependencyKeys }),
   }
+}
+
+export function isGenerationOperationPendingIntent(intent: DurableMutationIntent): intent is DurableMutationIntent & {
+  kind: 'generation-operation-submit' | 'generation-operation-retry'
+} {
+  return intent.kind === 'generation-operation-submit' || intent.kind === 'generation-operation-retry'
+}
+
+function generationOperationIdFromPendingIntent(intent: DurableMutationIntent): string | undefined {
+  const request = intent.requests[0]
+  if (intent.kind === 'generation-operation-submit') {
+    return typeof request?.body.operationId === 'string' ? request.body.operationId : undefined
+  }
+  if (intent.kind === 'generation-operation-retry') {
+    const match = /^\/generation-operations\/([^/?#]+)\/retries$/.exec(request?.path ?? '')
+    if (!match) return undefined
+    try {
+      return decodeURIComponent(match[1]!)
+    } catch {
+      return match[1]
+    }
+  }
+  return undefined
 }
 
 function serializePendingMutationIntent(intent: DurableMutationIntent): Uint8Array<ArrayBuffer> {
   return new TextEncoder().encode(JSON.stringify({ intent } satisfies EncryptedPendingMutationPayload))
 }
 
-function normalizeRequest(value: unknown): DurableMutationRequest {
+function normalizeRequest(value: unknown, kind?: DurableMutationIntent['kind']): DurableMutationRequest {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new TypeError('Pending mutation request must be an object')
   }
@@ -1545,15 +1585,21 @@ function normalizeRequest(value: unknown): DurableMutationRequest {
     throw new TypeError('Pending mutation command path is invalid')
   }
   const method = request.method as DurableMutationRequestMethod
-  if (
-    !ALLOWED_DURABLE_COMMANDS.some((candidate) => candidate.method === method && candidate.path.test(request.path!))
-  ) {
+  const generationOperationPathAllowed =
+    (kind === 'generation-operation-submit' && method === 'POST' && request.path === '/generation-operations') ||
+    (kind === 'generation-operation-retry' &&
+      method === 'POST' &&
+      /^\/generation-operations\/[^/?#]+\/retries$/.test(request.path))
+  const commandPathAllowed =
+    kind === undefined &&
+    ALLOWED_DURABLE_COMMANDS.some((candidate) => candidate.method === method && candidate.path.test(request.path!))
+  if (!generationOperationPathAllowed && !commandPathAllowed) {
     throw new TypeError('Pending mutation command path is not allowlisted')
   }
   if (!request.body || typeof request.body !== 'object' || Array.isArray(request.body)) {
     throw new TypeError('Pending mutation request body must be an object')
   }
-  if (Object.prototype.hasOwnProperty.call(request.body, 'baseRevision')) {
+  if (kind === undefined && Object.prototype.hasOwnProperty.call(request.body, 'baseRevision')) {
     throw new TypeError('Pending mutation intent must not persist a base revision')
   }
   return {

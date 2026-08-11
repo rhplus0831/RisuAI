@@ -1,5 +1,6 @@
 import { dispatchDurableMutationReplay } from './durableMutationDispatch'
-import { listPendingMutations } from './pendingMutationOutbox'
+import { dispatchGenerationOperationPendingReplay } from './generationOperations'
+import { isGenerationOperationPendingIntent, listPendingMutations } from './pendingMutationOutbox'
 
 export interface PendingMutationReplaySummary {
   attempted: number
@@ -39,7 +40,9 @@ export async function replayPendingMutations(): Promise<PendingMutationReplaySum
       continue
     }
     summary.attempted += 1
-    const outcome = await dispatchDurableMutationReplay(entry.handle, entry.intent)
+    const outcome = isGenerationOperationPendingIntent(entry.intent)
+      ? await dispatchGenerationOperationPendingReplay(entry.handle, entry.intent)
+      : await dispatchDurableMutationReplay(entry.handle, entry.intent)
     if (outcome.disposition === 'succeeded') {
       summary.succeeded += 1
     } else if (outcome.disposition === 'retained') {

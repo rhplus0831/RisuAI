@@ -657,9 +657,13 @@ function residentChatMessagesForTarget(target: ActiveChatTarget): Message[] | nu
   return matches[0].messages
 }
 
-function residentHasAcceptedSendReply(target: ActiveChatTarget, messageId: string): boolean {
+function residentHasAcceptedSendReply(
+  target: ActiveChatTarget,
+  messageId: string,
+  exact: { operationId?: string; resultMessageId?: string } = {},
+): boolean {
   const messages = residentChatMessagesForTarget(target)
-  return messages !== null && transcriptHasReplyForAcceptedSend(messages, messageId)
+  return messages !== null && transcriptHasReplyForAcceptedSend(messages, messageId, exact)
 }
 
 async function awaitUntilAborted<T>(
@@ -697,7 +701,7 @@ async function awaitUntilAborted<T>(
 export async function reconcileAcceptedSendCompletion(
   target: ActiveChatTarget,
   messageId: string,
-  options: { signal?: AbortSignal | null } = {},
+  options: { signal?: AbortSignal | null; operationId?: string; resultMessageId?: string } = {},
 ): Promise<AcceptedSendCompletionReconciliationResult> {
   const chatId = target.chatId
   if (!target.characterId || !chatId || !messageId) {
@@ -735,7 +739,7 @@ export async function reconcileAcceptedSendCompletion(
     const newerAuthoritativeProjection = hasNewerChatBodyResourceRevision(chatId, fetched.revision)
     if (projectionChanged || staleReason || newerAuthoritativeProjection) {
       recordHydrationStaleDrop('chat', staleReason ?? 'newer-targeted-chat-projection')
-      if (newerAuthoritativeProjection && residentHasAcceptedSendReply(target, messageId)) {
+      if (newerAuthoritativeProjection && residentHasAcceptedSendReply(target, messageId, options)) {
         return { status: 'reconciled', source: 'newer_resident_projection' }
       }
       return { status: 'not_reconciled', reason: 'superseded' }
@@ -756,7 +760,7 @@ export async function reconcileAcceptedSendCompletion(
     ) {
       return { status: 'not_reconciled', reason: 'invalid_range' }
     }
-    if (!transcriptHasReplyForAcceptedSend(fetched.message, messageId)) {
+    if (!transcriptHasReplyForAcceptedSend(fetched.message, messageId, options)) {
       return { status: 'not_reconciled', reason: 'reply_missing' }
     }
     if (residentChatMessagesForTarget(target) === null) {
@@ -771,7 +775,7 @@ export async function reconcileAcceptedSendCompletion(
       return { status: 'not_reconciled', reason: 'apply_failed' }
     }
     markChatBodyResourceRevision(chatId, fetched.revision)
-    if (!residentHasAcceptedSendReply(target, messageId)) {
+    if (!residentHasAcceptedSendReply(target, messageId, options)) {
       return { status: 'not_reconciled', reason: 'post_apply_verification_failed' }
     }
     return { status: 'reconciled', source: 'applied' }

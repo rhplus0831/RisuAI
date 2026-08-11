@@ -1,4 +1,16 @@
 export const languageSpanish = {
+  acceptedSendRecovery: {
+    generationFailed:
+      'Tu mensaje se guardó, pero no se pudo iniciar la respuesta. Reintenta la respuesta sin volver a enviar el mensaje.',
+    generationInProgress:
+      'Tu mensaje se guardó, pero otro dispositivo o sesión ya está generando en este chat. Reintenta cuando termine.',
+    abandoned: 'Tu mensaje se guardó, pero un reinicio del servidor interrumpió la respuesta. Puedes reintentarla.',
+    providerMayHaveRun: 'Es posible que la solicitud anterior al proveedor ya se haya ejecutado y facturado.',
+    providerMayHaveRunConfirm:
+      'Es posible que la solicitud anterior ya se haya facturado. Reintentar puede generar otro cargo. ¿Reintentar de todos modos?',
+    retry: 'Reintentar respuesta',
+    retrying: 'Reintentando…',
+  },
   generationPersistenceQueued: 'Esta respuesta está esperando a guardarse y sigue siendo provisional.',
   generationPersistenceStalled:
     'El guardado de esta respuesta provisional sigue fallando. Permanece en cola y se reintentará automáticamente.',

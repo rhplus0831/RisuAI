@@ -80,7 +80,12 @@ describe('generation operation store', () => {
     const { db, lineage } = openTestDatabase()
     try {
       const accepted = createGenerationOperation(db, acceptedInput(lineage))
-      expect(accepted).toMatchObject({ state: 'accepted', stateVersion: 1, projectionEpoch: 1 })
+      expect(accepted).toMatchObject({
+        state: 'accepted',
+        stateVersion: 1,
+        projectionEpoch: 1,
+        clientDraftGeneration: { databaseLineage: lineage, sequence: 4 },
+      })
       expect(getGenerationOperationProjectionEpoch(db)).toBe(1)
 
       expect(() =>
@@ -304,6 +309,7 @@ describe('generation operation store', () => {
           state: 'cancelled',
           stateVersion: 2,
           projectionEpoch: 2,
+          clientDraftGeneration: { sequence: 8 },
         },
       })
       expect(db.prepare('SELECT COUNT(*) AS count FROM generation_operation_attempts').get()).toEqual({ count: 0 })

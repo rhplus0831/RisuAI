@@ -69,6 +69,8 @@ const runtimeApi = vi.hoisted(() => ({
   startActiveMessageTranslationRefresh: vi.fn(),
   setActiveGreetingTranslations: vi.fn(),
   startActiveGreetingTranslationRefresh: vi.fn(),
+  applyGenerationOperationBootstrap: vi.fn(),
+  configureGenerationOperationProtocol: vi.fn(),
 }))
 
 const bridgeApi = vi.hoisted(() => ({ stop: vi.fn(), start: vi.fn() }))
@@ -201,6 +203,10 @@ vi.mock('./server/messageTranslationJobs', () => ({
 vi.mock('./server/greetingTranslations.svelte', () => ({
   setActiveGreetingTranslations: runtimeApi.setActiveGreetingTranslations,
   startActiveGreetingTranslationRefresh: runtimeApi.startActiveGreetingTranslationRefresh,
+}))
+vi.mock('./server/generationOperations', () => ({
+  applyGenerationOperationBootstrap: runtimeApi.applyGenerationOperationBootstrap,
+  configureGenerationOperationProtocol: runtimeApi.configureGenerationOperationProtocol,
 }))
 vi.mock('./server/memoryJobEvents', () => ({ publishServerMemoryJobEvent: memoryApi.publish }))
 vi.mock('./server/memoryJobProjection.svelte', () => ({
@@ -576,6 +582,7 @@ describe('API-backed client bootstrap', () => {
     })
     expect(pendingMutationApi.flushAcknowledgements).toHaveBeenCalledOnce()
     expect(pendingMutationApi.replay).toHaveBeenCalledOnce()
+    expect(runtimeApi.configureGenerationOperationProtocol).toHaveBeenCalledWith(undefined, 'database-a')
     expect(pendingMutationApi.prepare.mock.invocationCallOrder[0]).toBeLessThan(
       pendingMutationApi.replay.mock.invocationCallOrder[0],
     )
@@ -583,6 +590,13 @@ describe('API-backed client bootstrap', () => {
       resourceApi.loadInitial.mock.invocationCallOrder[0],
     )
     expect(resourceApi.loadInitial).toHaveBeenCalledWith({ hooks: resourceApi.hooks })
+    expect(runtimeApi.applyGenerationOperationBootstrap).toHaveBeenCalledWith(runtimeBootstrap().bootstrap)
+    expect(pendingMutationApi.replay.mock.invocationCallOrder[0]).toBeLessThan(
+      runtimeApi.applyGenerationOperationBootstrap.mock.invocationCallOrder[0],
+    )
+    expect(resourceApi.loadInitial.mock.invocationCallOrder[0]).toBeLessThan(
+      runtimeApi.applyGenerationOperationBootstrap.mock.invocationCallOrder[0],
+    )
     expect(runtimeApi.setGenerationFinalizationPersistences).toHaveBeenCalledWith([
       expect.objectContaining({ generationId: 'generation-a', state: 'queued' }),
     ])

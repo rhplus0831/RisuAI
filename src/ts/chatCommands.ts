@@ -160,6 +160,10 @@ export interface AppendCurrentChatUserMessageForSendOptions {
   expectedTarget?: ActiveChatTarget | null
 }
 
+export type OptimisticGenerationOperationAppendResult =
+  | { status: 'ok'; messageId: string; rollback: () => void }
+  | { status: 'error'; error: string }
+
 export const CHAT_PATCH_ALLOWED_KEYS = new Set([
   'name',
   'note',
@@ -5116,6 +5120,50 @@ export async function appendCurrentChatUserMessageForSend(
     return { status: 'error', error: 'Server commands are unavailable.' }
   }
   return { status: 'error', error: result.error }
+}
+
+/**
+ * Apply the exact protocol-v1 user row after its complete operation request is
+ * staged in the encrypted outbox. This helper deliberately does not dispatch a
+ * message command: the generation-operation endpoint owns the append and
+ * generation intent in one transaction.
+ */
+export function appendOptimisticGenerationOperationUserMessage(
+  target: ActiveChatTarget,
+  message: Message,
+): OptimisticGenerationOperationAppendResult {
+  if (!isActiveChatTargetFresh(target)) {
+    return { status: 'error', error: 'The active chat changed before the message could be staged.' }
+  }
+  const messageId = message.chatId
+  if (!messageId) return { status: 'error', error: 'The accepted message id is missing.' }
+
+  let applied = false
+  withTrustedResourceWrite(() => {
+    const character = locateSnapshotCharacter(target.characterId, target.selectedCharID)
+    if (!character) return
+    const chatIndex = locateChatIndex(character, target.chatId)
+    if (chatIndex < 0) return
+    const chat = character.chats[chatIndex]
+    chat.message ??= []
+    if (chat.message.some((candidate) => candidate.chatId === messageId)) return
+    chat.message.push(message)
+    applied = true
+  })
+  if (!applied) return { status: 'error', error: 'The accepted message could not be staged in the active chat.' }
+  if (target.chatId) markChatMessageMutationIntent(target.chatId)
+
+  return {
+    status: 'ok',
+    messageId,
+    rollback: () =>
+      removeOptimisticCurrentChatMessage({
+        selectedCharID: target.selectedCharID,
+        characterId: target.characterId,
+        chatId: target.chatId,
+        messageId,
+      }),
+  }
 }
 
 /**

@@ -45,6 +45,7 @@ import {
 import { playMessageCompletionSoundIfEnabled } from './messageCompletionSound'
 import type { SendChatFailure } from './sendChatFailure'
 import type { GenerationReattachOutcome } from './generationReattachOutcome'
+import type { ServerChatOperationStream } from './request/serverChat'
 import { abortInputHookActivity } from './inputHookActivity.svelte'
 import {
   stablePostGenerationChatTarget,
@@ -114,6 +115,8 @@ export interface SendChatArgs {
    * replays the in-flight stream.
    */
   reattachJobId?: string
+  /** Attach the just-accepted protocol-v1 operation without issuing a legacy generation POST. */
+  generationOperationStream?: ServerChatOperationStream
 }
 
 function chatGenerationSettingsSaveError(
@@ -178,6 +181,7 @@ function refreshLegacyGenerationProjection(): void {
 export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): Promise<boolean> {
   chatProcessStage.set(0)
   const abortSignal = arg.signal ?? new AbortController().signal
+  const attachesDurableGeneration = !!arg.reattachJobId || !!arg.generationOperationStream
 
   // NOTE: `throwError()` can be called before these are populated (e.g. HypaV3 early validation errors).
   // Keep them declared up-front to avoid TDZ ReferenceErrors in production builds.
@@ -240,7 +244,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     }
   }
 
-  if (!arg.reattachJobId) {
+  if (!attachesDurableGeneration) {
     const generationSettingsGuard = guardActiveChatGenerationSettingsForSend(generationSettingsState)
     if (generationSettingsGuard.status === 'error') {
       alertError(generationSettingsGuard.error)
@@ -277,7 +281,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     const ctx = setupSendChatContext({
       chatProcessIndex,
       chatAdditonalTokens: arg.chatAdditonalTokens,
-      writeMaintenance: !arg.reattachJobId,
+      writeMaintenance: !attachesDurableGeneration,
       target: generationTarget,
     })
     selectedChar = ctx.selectedChar
@@ -290,7 +294,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     currentChar = nowChatroom
     let currentChat = nowChatroom.chats[selectedChat]
 
-    if (!arg.reattachJobId) {
+    if (!attachesDurableGeneration) {
       const contextPersistence = await ctx.persistence
       if (contextPersistence.status !== 'ok') {
         alertError(language.errors.sendContextPersistenceFailed)
@@ -325,7 +329,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     // prompt payload. In Fastify mode, supported text sends are server-mandatory
     // and out-of-subset sends hard-fail instead of silently falling through to
     // local assembly. The local branch remains for compatibility tests.
-    if (arg.reattachJobId) {
+    if (attachesDurableGeneration) {
       // Re-attach to a live durable generation instead of assembling and
       // dispatching a fresh send. The job is server-persisted, so the browser only
       // renders the replayed stream.
@@ -339,7 +343,8 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
         stageTimings,
         abortSignal,
         setProcessStage,
-        jobId: arg.reattachJobId,
+        jobId: arg.generationOperationStream?.jobId ?? arg.reattachJobId!,
+        operationStream: arg.generationOperationStream,
         // Carry the running job's mode so the replayed stream renders on the
         // correct row; see `serverGenerationTargetMessageId`.
         continue: arg.continue,
@@ -370,7 +375,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       }
     }
 
-    const assemblyRoute = arg.reattachJobId
+    const assemblyRoute = attachesDurableGeneration
       ? ({ type: 'local' } as const)
       : resolveServerPromptAssembly({
           currentChar,

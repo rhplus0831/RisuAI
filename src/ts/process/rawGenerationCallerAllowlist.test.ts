@@ -31,6 +31,10 @@ function moduleSource(file: string): string {
   return source.match(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/)?.[1] ?? ''
 }
 
+function fullSource(file: string): string {
+  return readFileSync(path.join(repositoryRoot, file), 'utf8')
+}
+
 function resolvesToRawGenerationModule(file: string, specifier: string): boolean {
   if (specifier.startsWith('src/')) return specifier === rawGenerationModule
   const resolved = path
@@ -83,7 +87,7 @@ describe('raw chat generation caller allowlist', () => {
       { file: 'src/lib/SideBars/DevTool.svelte', localName: 'sendChat', calls: 1 },
       { file: 'src/ts/hotkey.ts', localName: 'sendChat', calls: 1 },
       { file: 'src/ts/plugins/apiV3/v3.svelte.ts', localName: 'processSendChat', calls: 1 },
-      { file: 'src/ts/process/acceptedSendCoordinator.svelte.ts', localName: 'sendChat', calls: 1 },
+      { file: 'src/ts/process/acceptedSendCoordinator.svelte.ts', localName: 'sendChat', calls: 2 },
       { file: 'src/ts/process/reattach.ts', localName: 'sendChat', calls: 1 },
     ])
 
@@ -98,5 +102,22 @@ describe('raw chat generation caller allowlist', () => {
       'async function attemptGeneration',
     )
     expect(moduleSource('src/ts/process/reattach.ts')).toContain('reattachJobId: job.jobId')
+  })
+
+  it('keeps every Wave 3 append-and-generate caller on the capability-gated atomic submit path', () => {
+    const expectedAtomicCalls = [
+      ['src/lib/ChatScreens/DefaultChatScreen.svelte', 'message: userMessage'],
+      ['src/lib/SideBars/DevTool.svelte', 'message: autopilot[i]'],
+      ['src/ts/plugins/apiV3/v3.svelte.ts', 'coordinateAcceptedChatSend({ target, message })'],
+      ['src/ts/process/command.ts', 'message: e'],
+      ['src/ts/process/files/multisend.ts', 'message: text'],
+    ] as const
+
+    for (const [file, atomicCall] of expectedAtomicCalls) {
+      const source = fullSource(file)
+      expect(source, file).toContain('canUseGenerationOperationProtocol')
+      expect(source, file).toContain(atomicCall)
+      expect(source, `${file} compatibility path`).toContain('appendCurrentChatUserMessageForSend')
+    }
   })
 })

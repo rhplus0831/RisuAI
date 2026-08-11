@@ -104,6 +104,7 @@ export interface GenerationOperationProjection {
   mode?: 'send' | 'continue' | 'regenerate'
   acceptedMessageId?: string
   targetMessageId?: string
+  clientDraftGeneration?: unknown
   acceptedRevision?: number
   currentAttempt?: GenerationOperationAttemptProjection
   desiredTerminalOutcome?: 'completed' | 'cancelled'
@@ -308,7 +309,7 @@ function parseGenerationOperationProtocol(value: unknown): { version: number } |
   return isPositiveSafeInteger(version) ? { version: version as number } : undefined
 }
 
-function parseGenerationOperations(value: unknown): GenerationOperationProjection[] {
+export function parseGenerationOperations(value: unknown): GenerationOperationProjection[] {
   if (!Array.isArray(value)) return []
   const operations: GenerationOperationProjection[] = []
   for (const entry of value) {
@@ -358,6 +359,9 @@ function parseGenerationOperations(value: unknown): GenerationOperationProjectio
     }
     if (record.mode === 'send' || record.mode === 'continue' || record.mode === 'regenerate') {
       operation.mode = record.mode
+    }
+    if (Object.hasOwn(record, 'clientDraftGeneration')) {
+      operation.clientDraftGeneration = structuredClone(record.clientDraftGeneration)
     }
     if (isNonNegativeSafeInteger(record.acceptedRevision))
       operation.acceptedRevision = record.acceptedRevision as number

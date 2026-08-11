@@ -40,6 +40,7 @@ import {
   setActiveGreetingTranslations,
 } from './greetingTranslations.svelte'
 import { fetchServerBootstrapReadOnly } from './bootstrap'
+import { applyGenerationOperationBootstrap } from './generationOperations'
 import { recordFullResourceRefresh } from './protocolDiagnostics'
 import { ensurePromptTemplateHydrated } from './promptTemplateHydration'
 import {
@@ -251,6 +252,7 @@ function syncSelectedCharacterAfterRefresh(selection: SelectedCharacterRefreshSn
 async function refreshRuntimeJobs(): Promise<void> {
   const runtime = await fetchServerBootstrapReadOnly(null, { cacheRevision: false })
   if (runtime.status !== 'ok') return
+  applyGenerationOperationBootstrap(runtime.bootstrap)
   setActiveGenerationJobs(runtime.bootstrap.activeGenerationJobs ?? [])
   setActiveMessageTranslations(runtime.bootstrap.activeMessageTranslations ?? [])
   setActiveGreetingTranslations(runtime.bootstrap.activeGreetingTranslations ?? [])

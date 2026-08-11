@@ -1,13 +1,34 @@
 import { get } from 'svelte/store'
 import type { ActiveChatTarget, AppendCurrentChatUserMessageResult, ChatMutationFinalOutcome } from '../chatCommands'
+import { waitForPendingChatGenerationSettingsSave } from '../chatCommands'
+import {
+  guardActiveChatGenerationSettingsForSend,
+  resolveActiveChatGenerationSettings,
+} from '../activeChatGenerationSettings'
 import { reconcileAcceptedSendCompletion } from '../server/chatMessageHydration.svelte'
 import { sleep } from '../util'
 import { clearActiveGenerationAbortController, createActiveGenerationAbortController, sendChat } from './index.svelte'
 import { chatGenerationTargetKey } from './generationActivity.svelte'
+import type { Message } from '../storage/database.svelte'
+import { getDatabase } from '../storage/database.svelte'
+import { flushPendingSelectedPersonaUpdate } from '../persona'
+import { alertConfirm } from '../alert'
+import { language } from '../../lang'
+import { collectServerInlayAssetRefs } from './serverBackedSendChat'
+import { readBrowserClientContext } from './request/clientContext'
+import { SERVER_CHAT_CLIENT_CAPABILITIES } from './request/serverChat'
+import {
+  readGenerationOperationStatus,
+  retryGenerationOperation,
+  stageAcceptedSendGenerationOperation,
+  submitStagedAcceptedSendOperation,
+  type GenerationOperationStreamDescriptor,
+} from '../server/generationOperations'
 import {
   acceptedSendRecoveries,
   recordAcceptedSendRecovery,
   removeAcceptedSendRecovery,
+  resetAcceptedSendRecoveryStateForTests,
   setAcceptedSendRecoveryRetrying,
   type AcceptedSendRecovery,
   type AcceptedSendRecoveryCause,
@@ -24,12 +45,17 @@ type AcceptedAppendResult = Exclude<AppendCurrentChatUserMessageResult, { status
 
 export type AcceptedSendCoordinatorResult =
   | { status: 'generated' }
+  | { status: 'generated'; operationId: string; acceptedMessageId: string }
   | { status: 'append_failed' }
   | { status: 'generation_failed'; cause: AcceptedSendRecoveryCause }
 
 export interface CoordinateAcceptedChatSendInput {
   target: ActiveChatTarget
-  append: AcceptedAppendResult
+  /** Compatibility append, used only when protocol v1 was not advertised. */
+  append?: AcceptedAppendResult
+  /** Protocol-v1 send payload; the coordinator creates both UUIDs before staging. */
+  message?: string | Message
+  draftGeneration?: unknown
   syntheticSayNothing?: boolean
   onAppendAccepted?: () => void
   onAppendFailed?: (outcome?: ChatMutationFinalOutcome) => void
@@ -37,8 +63,10 @@ export interface CoordinateAcceptedChatSendInput {
 
 interface AcceptedGenerationRequest {
   id: string
+  operationId?: string
   target: ActiveChatTarget
   messageId: string
+  resultMessageId?: string
   syntheticSayNothing: boolean
 }
 
@@ -185,7 +213,11 @@ async function acceptedGenerationReachedServer(
     if (bootstrap.status === 'aborted' || controller.signal.aborted) return 'authority_unknown'
 
     const completion = await settleBeforeAbort(
-      reconcileAcceptedSendCompletion(request.target, request.messageId, { signal: controller.signal }),
+      reconcileAcceptedSendCompletion(request.target, request.messageId, {
+        signal: controller.signal,
+        ...(request.operationId ? { operationId: request.operationId } : {}),
+        ...(request.resultMessageId ? { resultMessageId: request.resultMessageId } : {}),
+      }),
       controller.signal,
     )
     if (completion.status === 'aborted' || controller.signal.aborted) return 'authority_unknown'
@@ -212,6 +244,139 @@ async function startAcceptedGeneration(request: AcceptedGenerationRequest): Prom
   return { status: 'generation_failed', cause: attempt.cause }
 }
 
+function chatForTarget(target: ActiveChatTarget) {
+  const character = target.characterId
+    ? getDatabase().characters?.find((candidate) => candidate.chaId === target.characterId)
+    : getDatabase().characters?.[target.selectedCharID]
+  return target.chatId
+    ? character?.chats?.find((candidate) => candidate.id === target.chatId)
+    : character?.chats?.[target.chatPage]
+}
+
+async function prepareAtomicSendGenerationIntent(input: CoordinateAcceptedChatSendInput) {
+  const readiness = guardActiveChatGenerationSettingsForSend(
+    resolveActiveChatGenerationSettings({ target: input.target }),
+  )
+  if (readiness.status === 'error') return { status: 'error' as const, error: readiness.error }
+  if (input.target.chatId) {
+    const settings = await waitForPendingChatGenerationSettingsSave(input.target.chatId)
+    if (settings && settings.status !== 'ok') {
+      return { status: 'error' as const, error: 'Chat generation settings could not be saved.' }
+    }
+  }
+  const persona = await flushPendingSelectedPersonaUpdate()
+  if (persona && persona.status !== 'ok') {
+    return { status: 'error' as const, error: 'Persona settings could not be saved.' }
+  }
+  const chat = chatForTarget(input.target)
+  if (!chat) return { status: 'error' as const, error: 'No active chat found.' }
+  const inlayAssetRefs = await collectServerInlayAssetRefs(chat)
+  return {
+    status: 'ok' as const,
+    generation: {
+      syntheticSayNothing: input.syntheticSayNothing === true,
+      resetMessages: false,
+      inlayAssetRefs,
+      clientContext: readBrowserClientContext(),
+      clientCapabilities: { ...SERVER_CHAT_CLIENT_CAPABILITIES },
+    },
+  }
+}
+
+async function observeAcceptedOperationStream(
+  target: ActiveChatTarget,
+  stream: GenerationOperationStreamDescriptor,
+): Promise<boolean> {
+  const controller = createActiveGenerationAbortController()
+  try {
+    return await sendChat(-1, {
+      signal: controller.signal,
+      expectedTarget: target,
+      generationOperationStream: stream,
+    })
+  } finally {
+    clearActiveGenerationAbortController(controller)
+  }
+}
+
+async function coordinateAtomicAcceptedChatSend(
+  input: CoordinateAcceptedChatSendInput & { message: string | Message },
+): Promise<AcceptedSendCoordinatorResult> {
+  let preparedIntent: Awaited<ReturnType<typeof prepareAtomicSendGenerationIntent>>
+  try {
+    preparedIntent = await prepareAtomicSendGenerationIntent(input)
+  } catch (error) {
+    console.error(error)
+    notifyAppendFailed(input.onAppendFailed)
+    return { status: 'append_failed' }
+  }
+  if (preparedIntent.status === 'error') {
+    notifyAppendFailed(input.onAppendFailed)
+    return { status: 'append_failed' }
+  }
+  let staged: Awaited<ReturnType<typeof stageAcceptedSendGenerationOperation>>
+  try {
+    staged = await stageAcceptedSendGenerationOperation({
+      target: input.target,
+      message: input.message,
+      draftGeneration: input.draftGeneration,
+      generation: preparedIntent.generation,
+    })
+  } catch (error) {
+    console.error(error)
+    notifyAppendFailed(input.onAppendFailed)
+    return { status: 'append_failed' }
+  }
+  if ('status' in staged) {
+    notifyAppendFailed(input.onAppendFailed)
+    return { status: 'append_failed' }
+  }
+
+  let submitted: Awaited<ReturnType<typeof submitStagedAcceptedSendOperation>>
+  try {
+    submitted = await submitStagedAcceptedSendOperation(staged)
+  } catch (error) {
+    console.error(error)
+    return { status: 'generation_failed', cause: 'generation_failed' }
+  }
+  if (submitted.status === 'retained') {
+    // The complete intent and optimistic row remain durable. Bootstrap/outbox
+    // replay will project the eventual acceptance without appending again.
+    return { status: 'generation_failed', cause: 'generation_failed' }
+  }
+  if (submitted.status !== 'accepted' || submitted.response.append?.disposition !== 'accepted') {
+    notifyAppendFailed(input.onAppendFailed)
+    return { status: 'append_failed' }
+  }
+  notifyAppendAccepted(input.onAppendAccepted)
+
+  const operationId = submitted.response.operation.operationId
+  const acceptedMessageId = submitted.response.operation.acceptedMessageId ?? staged.request.acceptedMessageId
+  let stream = submitted.stream
+  if (
+    !stream &&
+    (submitted.response.operation.state === 'accepted' || submitted.response.operation.state === 'launching')
+  ) {
+    const status = await readGenerationOperationStatus(operationId)
+    if (status.status === 'accepted') stream = status.stream
+  }
+  if (stream) await observeAcceptedOperationStream(input.target, stream)
+
+  const status = await readGenerationOperationStatus(operationId)
+  if (status.status === 'accepted' && status.response.operation.state === 'completed') {
+    const completion = await acceptedGenerationReachedServer({
+      id: operationId,
+      operationId,
+      target: input.target,
+      messageId: acceptedMessageId,
+      resultMessageId: status.response.operation.resultMessageId,
+      syntheticSayNothing: input.syntheticSayNothing === true,
+    })
+    if (completion === 'reconciled') return { status: 'generated', operationId, acceptedMessageId }
+  }
+  return { status: 'generation_failed', cause: 'generation_failed' }
+}
+
 /**
  * Own a user-message append after dispatch. An immediately accepted append is
  * handed to generation now; a retained append stays here until its durable
@@ -221,6 +386,10 @@ async function startAcceptedGeneration(request: AcceptedGenerationRequest): Prom
 export function coordinateAcceptedChatSend(
   input: CoordinateAcceptedChatSendInput,
 ): Promise<AcceptedSendCoordinatorResult> {
+  if (input.message !== undefined) {
+    return coordinateAtomicAcceptedChatSend(input as CoordinateAcceptedChatSendInput & { message: string | Message })
+  }
+  if (!input.append) return Promise.resolve({ status: 'append_failed' })
   const id = acceptedSendOperationId(input.target, input.append.messageId)
   const existing = coordinatedOperations.get(id)
   if (existing) return existing.promise
@@ -260,12 +429,52 @@ export function findAcceptedSendRecovery(
 ): AcceptedSendRecovery | undefined {
   const targetKey = chatGenerationTargetKey(target)
   if (!targetKey) return undefined
-  return recoveries.find((recovery) => chatGenerationTargetKey(recovery.target) === targetKey)
+  return recoveries.find(
+    (recovery) => recovery.phase === 'retryable' && chatGenerationTargetKey(recovery.target) === targetKey,
+  )
+}
+
+export function findAcceptedSendRecoveries(
+  recoveries: readonly AcceptedSendRecovery[],
+  target: ActiveChatTarget | null | undefined,
+): AcceptedSendRecovery[] {
+  const targetKey = chatGenerationTargetKey(target)
+  if (!targetKey) return []
+  return recoveries.filter(
+    (recovery) => recovery.phase === 'retryable' && chatGenerationTargetKey(recovery.target) === targetKey,
+  )
 }
 
 export async function retryAcceptedChatSend(id: string): Promise<boolean> {
   const recovery = get(acceptedSendRecoveries).find((candidate) => candidate.id === id)
   if (!recovery || recovery.retrying) return false
+
+  if (recovery.operationId) {
+    if (recovery.phase !== 'retryable' || recovery.stateVersion === undefined) return false
+    if (recovery.providerMayHaveRun && !(await alertConfirm(language.acceptedSendRecovery.providerMayHaveRunConfirm))) {
+      return false
+    }
+    setRecoveryRetrying(id, true)
+    try {
+      const retried = await retryGenerationOperation(recovery.operationId, recovery.stateVersion)
+      if (retried.status !== 'accepted') return false
+      if (retried.stream) await observeAcceptedOperationStream(recovery.target, retried.stream)
+      const status = await readGenerationOperationStatus(recovery.operationId)
+      if (status.status !== 'accepted' || status.response.operation.state !== 'completed') return false
+      return (
+        (await acceptedGenerationReachedServer({
+          id: recovery.operationId,
+          operationId: recovery.operationId,
+          target: recovery.target,
+          messageId: recovery.messageId,
+          resultMessageId: status.response.operation.resultMessageId,
+          syntheticSayNothing: recovery.syntheticSayNothing,
+        })) === 'reconciled'
+      )
+    } finally {
+      setRecoveryRetrying(id, false)
+    }
+  }
 
   setRecoveryRetrying(id, true)
   const request: AcceptedGenerationRequest = {
@@ -297,5 +506,5 @@ export async function retryAcceptedChatSend(id: string): Promise<boolean> {
 
 export function resetAcceptedSendCoordinatorForTests(): void {
   coordinatedOperations.clear()
-  acceptedSendRecoveries.set([])
+  resetAcceptedSendRecoveryStateForTests()
 }

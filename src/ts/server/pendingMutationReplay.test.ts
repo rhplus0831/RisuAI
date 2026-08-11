@@ -2,12 +2,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const outboxApi = vi.hoisted(() => ({ list: vi.fn() }))
 const durableApi = vi.hoisted(() => ({ replay: vi.fn() }))
+const generationOperationApi = vi.hoisted(() => ({ replay: vi.fn() }))
 
 vi.mock('./pendingMutationOutbox', () => ({
+  isGenerationOperationPendingIntent: (intent: { kind?: string }) => intent.kind?.startsWith('generation-operation-'),
   listPendingMutations: outboxApi.list,
 }))
 vi.mock('./durableMutationDispatch', () => ({
   dispatchDurableMutationReplay: durableApi.replay,
+}))
+vi.mock('./generationOperations', () => ({
+  dispatchGenerationOperationPendingReplay: generationOperationApi.replay,
 }))
 
 import { replayPendingMutations } from './pendingMutationReplay'
@@ -15,6 +20,7 @@ import { replayPendingMutations } from './pendingMutationReplay'
 beforeEach(() => {
   vi.clearAllMocks()
   durableApi.replay.mockResolvedValue({ disposition: 'succeeded', result: { status: 'ok' } })
+  generationOperationApi.replay.mockResolvedValue({ disposition: 'succeeded', result: { status: 'accepted' } })
 })
 
 describe('pending mutation replay', () => {
@@ -33,6 +39,24 @@ describe('pending mutation replay', () => {
 
     expect(order).toEqual(['mutation-a', 'mutation-b'])
     expect(summary).toEqual({ attempted: 2, discarded: 0, retained: 1, succeeded: 1 })
+  })
+
+  it('routes atomic submit intents back to the generation-operation endpoint', async () => {
+    const operationEntry: any = entry('generation-operation-submit:operation-a', 'mutation-operation-a')
+    operationEntry.intent.kind = 'generation-operation-submit'
+    operationEntry.intent.requests = [
+      { method: 'POST', path: '/generation-operations', body: { operationId: 'operation-a' } },
+    ]
+    outboxApi.list.mockResolvedValue([operationEntry])
+
+    await expect(replayPendingMutations()).resolves.toEqual({
+      attempted: 1,
+      discarded: 0,
+      retained: 0,
+      succeeded: 1,
+    })
+    expect(generationOperationApi.replay).toHaveBeenCalledWith(operationEntry.handle, operationEntry.intent)
+    expect(durableApi.replay).not.toHaveBeenCalled()
   })
 
   it('counts terminal mutation-id failures as discarded instead of retrying forever', async () => {

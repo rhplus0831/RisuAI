@@ -406,6 +406,8 @@ export async function refreshGenerationJobFromBootstrap(jobId: string): Promise<
   }
 
   const jobs = runtime.bootstrap.activeGenerationJobs ?? []
+  const { applyGenerationOperationBootstrap } = await import('../server/generationOperations')
+  applyGenerationOperationBootstrap(runtime.bootstrap)
   if (runtime.bootstrap.generationFinalizations) {
     setGenerationFinalizationPersistences(runtime.bootstrap.generationFinalizations)
   }
@@ -479,6 +481,8 @@ export async function refreshActiveGenerationJobsFromBootstrap(signal?: AbortSig
           (lifecycle) => !isTerminalLifecycle(lifecycle.status),
         )
         const jobs = runtime.bootstrap.activeGenerationJobs ?? []
+        const { applyGenerationOperationBootstrap } = await import('../server/generationOperations')
+        applyGenerationOperationBootstrap(runtime.bootstrap)
         if (runtime.bootstrap.generationFinalizations) {
           setGenerationFinalizationPersistences(runtime.bootstrap.generationFinalizations)
         }

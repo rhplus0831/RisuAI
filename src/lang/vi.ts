@@ -1,4 +1,17 @@
 export const languageVietnamese = {
+  acceptedSendRecovery: {
+    generationFailed:
+      'Tin nhắn đã được lưu nhưng chưa thể bắt đầu trả lời. Hãy thử lại câu trả lời mà không gửi lại tin nhắn.',
+    generationInProgress:
+      'Tin nhắn đã được lưu nhưng thiết bị hoặc phiên khác đang tạo nội dung trong cuộc trò chuyện này. Hãy thử lại sau khi hoàn tất.',
+    abandoned:
+      'Tin nhắn đã được lưu nhưng quá trình trả lời bị gián đoạn do máy chủ khởi động lại. Bạn có thể thử lại.',
+    providerMayHaveRun: 'Yêu cầu trước đó tới nhà cung cấp có thể đã chạy và phát sinh phí.',
+    providerMayHaveRunConfirm:
+      'Yêu cầu trước đó có thể đã phát sinh phí. Thử lại có thể tạo thêm một khoản phí. Vẫn thử lại?',
+    retry: 'Thử lại câu trả lời',
+    retrying: 'Đang thử lại…',
+  },
   generationPersistenceQueued: 'Phản hồi này đang chờ được lưu và vẫn là dữ liệu tạm thời.',
   generationPersistenceStalled:
     'Việc lưu phản hồi tạm thời này liên tục thất bại. Phản hồi vẫn nằm trong hàng đợi và sẽ tự động thử lại.',

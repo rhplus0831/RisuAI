@@ -12,6 +12,7 @@ import {
 } from 'src/ts/chatCommands'
 import { hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
 import { coordinateAcceptedChatSend } from '../acceptedSendCoordinator.svelte'
+import { canUseGenerationOperationProtocol } from 'src/ts/server/generationOperations'
 
 type sendTextFileArg = {
   file: string
@@ -90,12 +91,20 @@ async function sendPofile(arg: sendTextFileArg): Promise<boolean> {
       text = `Note: ${note}\n${text}`
     }
     if (!isActiveChatTargetFresh(target)) return false
-    const appendResult = await appendCurrentChatUserMessageForSend(text, { expectedTarget: target })
-    if (appendResult.status === 'error') return false
-    const outcome = await coordinateAcceptedChatSend({ target, append: appendResult })
-    if (outcome.status !== 'generated') return false
+    let acceptedMessageId: string
+    if (canUseGenerationOperationProtocol()) {
+      const outcome = await coordinateAcceptedChatSend({ target, message: text })
+      if (outcome.status !== 'generated' || !('acceptedMessageId' in outcome)) return false
+      acceptedMessageId = outcome.acceptedMessageId
+    } else {
+      const appendResult = await appendCurrentChatUserMessageForSend(text, { expectedTarget: target })
+      if (appendResult.status === 'error') return false
+      const outcome = await coordinateAcceptedChatSend({ target, append: appendResult })
+      if (outcome.status !== 'generated') return false
+      acceptedMessageId = appendResult.messageId
+    }
 
-    const assistant = await resolveAcceptedAssistantResult(target, appendResult.messageId)
+    const assistant = await resolveAcceptedAssistantResult(target, acceptedMessageId)
     if (!assistant) return false
     const msgStr = assistant.data
       .split('\n')

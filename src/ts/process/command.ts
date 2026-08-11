@@ -18,6 +18,7 @@ import {
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import type { Chat } from '../storage/database.svelte'
 import { coordinateAcceptedChatSend } from './acceptedSendCoordinator.svelte'
+import { canUseGenerationOperationProtocol } from '../server/generationOperations'
 
 export async function processMultiCommand(command: string) {
   let pipe = ''
@@ -186,9 +187,13 @@ async function processCommand(command: string, pipe: string): Promise<false | st
         if (clearMode && !(await clearCurrentChatMessagesBeforeSend(activeTarget))) {
           break
         }
-        const appended = await appendCurrentChatUserMessageForSend(e, { expectedTarget: activeTarget })
-        if (appended.status === 'error') break
-        const outcome = await coordinateAcceptedChatSend({ target: activeTarget, append: appended })
+        const outcome = canUseGenerationOperationProtocol()
+          ? await coordinateAcceptedChatSend({ target: activeTarget, message: e })
+          : await (async () => {
+              const appended = await appendCurrentChatUserMessageForSend(e, { expectedTarget: activeTarget })
+              if (appended.status === 'error') return { status: 'append_failed' as const }
+              return coordinateAcceptedChatSend({ target: activeTarget, append: appended })
+            })()
         if (outcome.status !== 'generated') break
         if (!isActiveChatTargetFresh(activeTarget)) {
           break

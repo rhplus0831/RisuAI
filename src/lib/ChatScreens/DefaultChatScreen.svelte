@@ -130,9 +130,11 @@
   import {
     acceptedSendRecoveries,
     coordinateAcceptedChatSend,
-    findAcceptedSendRecovery,
+    findAcceptedSendRecoveries,
     retryAcceptedChatSend,
   } from 'src/ts/process/acceptedSendCoordinator.svelte'
+  import { canUseGenerationOperationProtocol } from 'src/ts/server/generationOperations'
+  import { registerAcceptedSendDraftGenerationListener } from 'src/ts/process/acceptedSendRecoveryState'
   import {
     activeGenerationJobs,
     generationJobLifecycles,
@@ -251,6 +253,28 @@
   const unregisterComposerDraftStorageFailure = registerDefaultChatComposerDraftStorageFailureListener(() => {
     reportComposerDraftPersistenceError(language.composerDraftRecovery.storageFailed)
   })
+  const unregisterAcceptedDraftGeneration = registerAcceptedSendDraftGenerationListener((generation) => {
+    const acceptedGeneration = generation as DefaultChatComposerDraftGeneration & {
+      acceptedComposerClear?: 'message' | 'all'
+    }
+    if (
+      composerComponentDestroyed ||
+      getActiveTranscriptWindowIdentity() !== generation.transcriptIdentity ||
+      !isDefaultChatComposerDraftGenerationCurrent(generation)
+    ) {
+      return
+    }
+    messageInput = ''
+    messageInputTranslate = ''
+    fileInput = []
+    if (acceptedGeneration.acceptedComposerClear === 'all') {
+      draftText = ''
+      btwText = ''
+    }
+    composerFileInvalidationVersion += 1
+    composerMutationVersion += 1
+    updateInputSizeAll()
+  })
 
   onDestroy(() => {
     if (activeTranscriptWindowIdentity !== null) {
@@ -258,12 +282,13 @@
     }
     composerComponentDestroyed = true
     unregisterComposerDraftStorageFailure()
+    unregisterAcceptedDraftGeneration()
   })
 
   let currentCharacter = $derived(getDatabase().characters[$selectedCharID])
-  let currentAcceptedSendRecovery = $derived.by(() => {
+  let currentAcceptedSendRecoveries = $derived.by(() => {
     void $selectedCharID
-    return findAcceptedSendRecovery($acceptedSendRecoveries, captureActiveChatTarget())
+    return findAcceptedSendRecoveries($acceptedSendRecoveries, captureActiveChatTarget())
   })
   let currentDisplayCharacter = $derived.by(() => {
     void $RegexDisplayReloadPointer
@@ -908,7 +933,8 @@
 
   function handoffAcceptedSend(input: {
     target: ActiveChatTarget
-    append: Exclude<Awaited<ReturnType<typeof appendCurrentChatUserMessageForSend>>, { status: 'error' }>
+    append?: Exclude<Awaited<ReturnType<typeof appendCurrentChatUserMessageForSend>>, { status: 'error' }>
+    message?: Message
     composerOperation: ComposerOperation
     clearDraftFields: boolean
     confirmBoundary: boolean
@@ -917,10 +943,19 @@
     const previousLength = chatForTarget(input.target)?.message.length ?? 0
     const generation = coordinateAcceptedChatSend({
       target: input.target,
-      append: input.append,
+      ...(input.append ? { append: input.append } : {}),
+      ...(input.message ? { message: input.message } : {}),
+      ...(input.composerOperation.draftGeneration
+        ? {
+            draftGeneration: {
+              ...input.composerOperation.draftGeneration,
+              acceptedComposerClear: input.clearDraftFields ? ('all' as const) : ('message' as const),
+            },
+          }
+        : {}),
       syntheticSayNothing: input.syntheticSayNothing,
       onAppendAccepted: () => {
-        if (input.append.status === 'queued') {
+        if (input.append?.status === 'queued') {
           settleQueuedComposerOperation(input.composerOperation, input.clearDraftFields)
         } else if (input.clearDraftFields) {
           clearComposerAndDraftForCurrentOperation(input.composerOperation)
@@ -1609,6 +1644,17 @@
       }
 
       if (userMessage) {
+        if (canUseGenerationOperationProtocol()) {
+          handoffAcceptedSend({
+            target: activeTarget,
+            message: userMessage,
+            composerOperation,
+            clearDraftFields: false,
+            confirmBoundary: true,
+            syntheticSayNothing,
+          })
+          return
+        }
         const appended = await appendCurrentChatUserMessageForSend(userMessage, { expectedTarget: activeTarget })
         if (appended.status === 'error') {
           if (composerComponentDestroyed || !isActiveChatTargetFresh(activeTarget)) return
@@ -1708,6 +1754,16 @@
         return
       }
 
+      if (canUseGenerationOperationProtocol()) {
+        handoffAcceptedSend({
+          target: activeTarget,
+          message: userMessage,
+          composerOperation,
+          clearDraftFields: true,
+          confirmBoundary: true,
+        })
+        return
+      }
       const appended = await appendCurrentChatUserMessageForSend(userMessage, { expectedTarget: activeTarget })
       if (appended.status === 'error') {
         if (!isActiveChatTargetFresh(activeTarget) || !isCurrentComposerOperation(composerOperation)) return
@@ -2310,28 +2366,35 @@
           </div>
         </div>
       {/if}
-      {#if currentAcceptedSendRecovery}
+      {#each currentAcceptedSendRecoveries as recovery (recovery.id)}
         <div
           class="chat-screen-content-width mb-2 flex items-center gap-3 rounded-md border border-draculared p-3 text-sm text-draculared"
           role="alert"
-          data-testid="accepted-send-recovery">
-          <span>
-            {currentAcceptedSendRecovery.cause === 'generation_in_progress'
-              ? language.acceptedSendRecovery.generationInProgress
-              : language.acceptedSendRecovery.generationFailed}
-          </span>
+          data-testid="accepted-send-recovery"
+          data-generation-operation-id={recovery.operationId}>
+          <div>
+            <p>
+              {recovery.operationState === 'abandoned'
+                ? language.acceptedSendRecovery.abandoned
+                : recovery.cause === 'generation_in_progress'
+                  ? language.acceptedSendRecovery.generationInProgress
+                  : language.acceptedSendRecovery.generationFailed}
+            </p>
+            {#if recovery.providerMayHaveRun}
+              <p class="mt-1 text-textcolor2">{language.acceptedSendRecovery.providerMayHaveRun}</p>
+            {/if}
+          </div>
           <button
             type="button"
             class="ml-auto shrink-0 rounded-md border border-draculared px-3 py-1.5 text-sm transition-colors hover:bg-draculared hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={currentAcceptedSendRecovery.retrying}
+            disabled={recovery.retrying}
+            aria-busy={recovery.retrying}
             data-testid="accepted-send-retry"
-            onclick={() => void retryAcceptedChatSend(currentAcceptedSendRecovery!.id)}>
-            {currentAcceptedSendRecovery.retrying
-              ? language.acceptedSendRecovery.retrying
-              : language.acceptedSendRecovery.retry}
+            onclick={() => void retryAcceptedChatSend(recovery.id)}>
+            {recovery.retrying ? language.acceptedSendRecovery.retrying : language.acceptedSendRecovery.retry}
           </button>
         </div>
-      {/if}
+      {/each}
       <div
         bind:this={composerRow}
         data-floating-chat-input={floatingInputOpen ? 'true' : undefined}

@@ -59,6 +59,7 @@ import type { GenerationReattachOutcomeStatus } from '../generationReattachOutco
 import { readBrowserClientContext } from './clientContext'
 import { alertToast } from '../../alert'
 import { language } from '../../../lang'
+import { applyGenerationOperationSseEvent } from '../../server/generationOperations'
 
 const CHAT_ENDPOINT = '/api/v1/generate/chat'
 const INCOMPLETE_CHAT_GENERATION_SETTINGS_ERROR = 'chat_generation_settings_incomplete'
@@ -67,7 +68,7 @@ const REQUEST_UID_HEADER = 'X-Request-UID'
 const DURABLE_JOB_ID_HEADER = 'X-Risu-Generation-Job-ID'
 const DURABLE_STREAM_RECONNECT_DELAYS_MS = [0, 250, 500, 1_000, 2_000, 4_000] as const
 const MAX_DURABLE_STREAM_RECONNECT_CYCLES = 8
-const SERVER_CHAT_CLIENT_CAPABILITIES = {
+export const SERVER_CHAT_CLIENT_CAPABILITIES = {
   compactPromptEvent: true,
   promptMetadataOnly: true,
   omitDuplicateDoneResult: true,
@@ -118,6 +119,15 @@ export interface ServerChatInput {
    * Computed by `resolveDurableGeneration`.
    */
   durable?: boolean
+}
+
+export interface ServerChatOperationStream {
+  operationId: string
+  acceptedMessageId: string
+  attemptNo: number
+  jobId: string
+  projectionEpoch: number
+  href: string
 }
 
 /** The assembled prompt payload, parsed from the `prompt` SSE event. */
@@ -283,6 +293,7 @@ async function openChatResponse(
   input: ServerChatInput,
   signal: AbortSignal | null,
   reattachJobId?: string,
+  operationStream?: ServerChatOperationStream,
 ): Promise<
   | { status: 'ok'; response: Response; requestUid?: string }
   | {
@@ -301,31 +312,32 @@ async function openChatResponse(
   try {
     // Reattach by GETting the live stream of an already-running durable job
     // (buffered frames first, then live). A fresh send POSTs the intent body.
-    response = reattachJobId
-      ? await fetch(`${CHAT_ENDPOINT}/${encodeURIComponent(reattachJobId)}/stream`, {
-          method: 'GET',
-          headers: {
-            'risu-auth': auth,
-            'x-risu-caller': 'chat-reattach',
-            ...activeWriterSessionHeader(),
-          },
-          signal: signal ?? undefined,
-        })
-      : await fetch(CHAT_ENDPOINT, {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'risu-auth': auth,
-            'x-risu-caller': serverChatCaller(input),
-            ...activeWriterSessionHeader(),
-          },
-          body: JSON.stringify({
-            ...input,
-            clientCapabilities: SERVER_CHAT_CLIENT_CAPABILITIES,
-            clientContext: readBrowserClientContext(),
-          }),
-          signal: signal ?? undefined,
-        })
+    response =
+      reattachJobId || operationStream
+        ? await fetch(operationStream?.href ?? `${CHAT_ENDPOINT}/${encodeURIComponent(reattachJobId!)}/stream`, {
+            method: 'GET',
+            headers: {
+              'risu-auth': auth,
+              'x-risu-caller': operationStream ? 'generation-operation-stream' : 'chat-reattach',
+              ...activeWriterSessionHeader(),
+            },
+            signal: signal ?? undefined,
+          })
+        : await fetch(CHAT_ENDPOINT, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              'risu-auth': auth,
+              'x-risu-caller': serverChatCaller(input),
+              ...activeWriterSessionHeader(),
+            },
+            body: JSON.stringify({
+              ...input,
+              clientCapabilities: SERVER_CHAT_CLIENT_CAPABILITIES,
+              clientContext: readBrowserClientContext(),
+            }),
+            signal: signal ?? undefined,
+          })
   } catch (err) {
     if (signal?.aborted) return { status: 'aborted' }
     const msg = err instanceof Error ? err.message : String(err)
@@ -334,7 +346,7 @@ async function openChatResponse(
   const requestUid = response.headers.get(REQUEST_UID_HEADER) || undefined
   debugServerChat('server-chat-response-opened', {
     requestUid,
-    caller: reattachJobId ? 'chat-reattach' : serverChatCaller(input),
+    caller: operationStream ? 'generation-operation-stream' : reattachJobId ? 'chat-reattach' : serverChatCaller(input),
     status: response.status,
     ok: response.ok,
   })
@@ -556,6 +568,7 @@ export async function requestServerChatGeneration(
   input: ServerChatInput,
   signal: AbortSignal | null,
   reattachJobId?: string,
+  operationStream?: ServerChatOperationStream,
 ): Promise<ServerChatGenerationResult> {
   const agentPresetSession = beginAgentPresetProgress(input.chatId)
   const postGenerationSession = beginPostGenerationProgress({
@@ -566,8 +579,8 @@ export async function requestServerChatGeneration(
   // explicit Stop immediately so cancellation owns the whole visible activity,
   // including the pre-response window. Fresh durable sends fill this from the
   // response header (or job_accepted) below.
-  let durableJobId = reattachJobId ?? ''
-  const watchesDurableJob = input.durable === true || reattachJobId !== undefined
+  let durableJobId = operationStream?.jobId ?? reattachJobId ?? ''
+  const watchesDurableJob = input.durable === true || reattachJobId !== undefined || operationStream !== undefined
   let cancelledDurableJobId = ''
   const viewerAbortController = new AbortController()
   let consumerDetached = false
@@ -589,7 +602,7 @@ export async function requestServerChatGeneration(
     signal?.addEventListener('abort', onOwnerAbort, { once: true })
   }
 
-  const opened = await openChatResponse(input, viewerAbortController.signal, reattachJobId)
+  const opened = await openChatResponse(input, viewerAbortController.signal, reattachJobId, operationStream)
   if (opened.status !== 'ok') {
     stopWatchingAbort()
     if (opened.status === 'aborted' && reattachJobId) forgetActiveGenerationJob(reattachJobId)
@@ -647,6 +660,7 @@ export async function requestServerChatGeneration(
     status: GenerationReattachOutcomeStatus,
   ): { reattachOutcome: GenerationReattachOutcomeStatus } | Record<string, never> =>
     reattachJobId ? { reattachOutcome: status } : {}
+  let operationLineage: Partial<ServerChatOperationStream> = operationStream ?? {}
   const rememberDurableJob = (): void => {
     if (!watchesDurableJob || durableJobId.length === 0) return
     rememberActiveGenerationJob({
@@ -656,6 +670,10 @@ export async function requestServerChatGeneration(
       ...(input.mode === 'regenerate' && input.regenerateMessageId
         ? { regenerateMessageId: input.regenerateMessageId }
         : {}),
+      ...(operationLineage.operationId ? { operationId: operationLineage.operationId } : {}),
+      ...(operationLineage.acceptedMessageId ? { acceptedMessageId: operationLineage.acceptedMessageId } : {}),
+      ...(operationLineage.attemptNo !== undefined ? { attemptNo: operationLineage.attemptNo } : {}),
+      ...(operationLineage.projectionEpoch !== undefined ? { projectionEpoch: operationLineage.projectionEpoch } : {}),
     })
   }
   rememberDurableJob()
@@ -774,7 +792,12 @@ export async function requestServerChatGeneration(
         let reattachOutcome: GenerationReattachOutcomeStatus = 'retryable_transport_failure'
         for (const delayMs of DURABLE_STREAM_RECONNECT_DELAYS_MS) {
           if (!(await waitForDurableReconnect(delayMs, viewerAbortController.signal))) return { status: 'aborted' }
-          const next = await openChatResponse(input, viewerAbortController.signal, durableJobId)
+          const next = await openChatResponse(
+            input,
+            viewerAbortController.signal,
+            operationStream ? undefined : durableJobId,
+            operationStream,
+          )
           if (next.status === 'ok') {
             // Rebuild from the retained replay window so re-sent deltas do not
             // duplicate text rendered before mobile suspension. A replay_gap
@@ -812,6 +835,18 @@ export async function requestServerChatGeneration(
               switch (frame.event) {
                 case 'job_accepted':
                   if (typeof data.jobId === 'string') durableJobId = data.jobId
+                  operationLineage = {
+                    ...operationLineage,
+                    ...(typeof data.operationId === 'string' ? { operationId: data.operationId } : {}),
+                    ...(typeof data.acceptedMessageId === 'string'
+                      ? { acceptedMessageId: data.acceptedMessageId }
+                      : {}),
+                    ...(Number.isSafeInteger(data.attemptNo) ? { attemptNo: data.attemptNo as number } : {}),
+                    ...(Number.isSafeInteger(data.projectionEpoch)
+                      ? { projectionEpoch: data.projectionEpoch as number }
+                      : {}),
+                  }
+                  applyGenerationOperationSseEvent({ ...data, type: 'job_accepted' })
                   rememberDurableJob()
                   // Backward-compatible with servers that predate the response
                   // header: an abort may have won the race with this first frame.
@@ -982,6 +1017,7 @@ export async function requestServerChatGeneration(
                   const terminalClosesReplayGap = replayGapPending
                   replayGapPending = false
                   if (streamingRequest) streamingRequest.replayGapPending = false
+                  applyGenerationOperationSseEvent({ ...data, type: 'done' })
                   const previousTokenResult = tokenResult
                   if (watchesDurableJob && typeof donePayload.result === 'string') {
                     // Durable replay is a lossy token window. Its protected

@@ -3,13 +3,48 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ActiveChatTarget, ChatMutationFinalOutcome } from '../chatCommands'
 
 const coordinatorMocks = vi.hoisted(() => ({
+  alertConfirm: vi.fn(),
   clearController: vi.fn(),
   controller: new AbortController(),
   createController: vi.fn(),
   reconcileAcceptedSendCompletion: vi.fn(),
   refreshActiveGenerationJobsFromBootstrap: vi.fn(),
+  readGenerationOperationStatus: vi.fn(),
+  retryGenerationOperation: vi.fn(),
   sendChat: vi.fn(),
   sleep: vi.fn(),
+  stageAcceptedSendGenerationOperation: vi.fn(),
+  submitStagedAcceptedSendOperation: vi.fn(),
+}))
+
+vi.mock('../chatCommands', () => ({
+  waitForPendingChatGenerationSettingsSave: vi.fn(async () => undefined),
+}))
+
+vi.mock('../activeChatGenerationSettings', () => ({
+  guardActiveChatGenerationSettingsForSend: vi.fn(() => ({ status: 'ok' })),
+  resolveActiveChatGenerationSettings: vi.fn(() => ({})),
+}))
+
+vi.mock('../storage/database.svelte', () => ({
+  getDatabase: vi.fn(() => ({
+    characters: [{ chaId: 'character-a', chats: [{ id: 'chat-a', message: [] }] }],
+  })),
+}))
+
+vi.mock('../persona', () => ({ flushPendingSelectedPersonaUpdate: vi.fn(async () => undefined) }))
+vi.mock('../alert', () => ({ alertConfirm: coordinatorMocks.alertConfirm }))
+vi.mock('../../lang', () => ({
+  language: { acceptedSendRecovery: { providerMayHaveRunConfirm: 'confirm retry' } },
+}))
+vi.mock('./serverBackedSendChat', () => ({ collectServerInlayAssetRefs: vi.fn(async () => []) }))
+vi.mock('./request/clientContext', () => ({ readBrowserClientContext: vi.fn(() => ({})) }))
+vi.mock('./request/serverChat', () => ({ SERVER_CHAT_CLIENT_CAPABILITIES: {} }))
+vi.mock('../server/generationOperations', () => ({
+  readGenerationOperationStatus: coordinatorMocks.readGenerationOperationStatus,
+  retryGenerationOperation: coordinatorMocks.retryGenerationOperation,
+  stageAcceptedSendGenerationOperation: coordinatorMocks.stageAcceptedSendGenerationOperation,
+  submitStagedAcceptedSendOperation: coordinatorMocks.submitStagedAcceptedSendOperation,
 }))
 
 vi.mock('../util', () => ({
@@ -37,6 +72,7 @@ import {
   resetAcceptedSendCoordinatorForTests,
   retryAcceptedChatSend,
 } from './acceptedSendCoordinator.svelte'
+import { applyAcceptedSendOperationProjection } from './acceptedSendRecoveryState'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -60,6 +96,7 @@ beforeEach(() => {
   coordinatorMocks.controller = new AbortController()
   coordinatorMocks.createController.mockReturnValue(coordinatorMocks.controller)
   coordinatorMocks.sendChat.mockResolvedValue(true)
+  coordinatorMocks.alertConfirm.mockResolvedValue(true)
   coordinatorMocks.reconcileAcceptedSendCompletion.mockResolvedValue({
     status: 'not_reconciled',
     reason: 'authority_unavailable',
@@ -78,6 +115,70 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 describe('accepted send coordinator', () => {
+  it('submits a standard accepted send atomically and reconciles exact completion lineage', async () => {
+    const staged = {
+      request: { acceptedMessageId: 'message-atomic' },
+      target: target(),
+      intent: {},
+      handle: {},
+      optimisticMessage: {},
+      rollbackOptimisticAppend: vi.fn(),
+    }
+    coordinatorMocks.stageAcceptedSendGenerationOperation.mockResolvedValueOnce(staged)
+    coordinatorMocks.submitStagedAcceptedSendOperation.mockResolvedValueOnce({
+      status: 'accepted',
+      response: {
+        operation: {
+          operationId: 'operation-atomic',
+          acceptedMessageId: 'message-atomic',
+          state: 'completed',
+          resultMessageId: 'reply-atomic',
+        },
+        append: { disposition: 'accepted', messageId: 'message-atomic' },
+      },
+    })
+    coordinatorMocks.readGenerationOperationStatus.mockResolvedValueOnce({
+      status: 'accepted',
+      response: {
+        operation: {
+          operationId: 'operation-atomic',
+          acceptedMessageId: 'message-atomic',
+          state: 'completed',
+          resultMessageId: 'reply-atomic',
+        },
+      },
+    })
+    coordinatorMocks.reconcileAcceptedSendCompletion.mockResolvedValueOnce({ status: 'reconciled', source: 'applied' })
+    const onAppendAccepted = vi.fn()
+
+    await expect(
+      coordinateAcceptedChatSend({
+        target: target(),
+        message: { role: 'user', data: 'atomic hello' },
+        draftGeneration: { sequence: 4 },
+        onAppendAccepted,
+      }),
+    ).resolves.toEqual({
+      status: 'generated',
+      operationId: 'operation-atomic',
+      acceptedMessageId: 'message-atomic',
+    })
+    expect(coordinatorMocks.stageAcceptedSendGenerationOperation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: target(),
+        message: { role: 'user', data: 'atomic hello' },
+        draftGeneration: { sequence: 4 },
+      }),
+    )
+    expect(onAppendAccepted).toHaveBeenCalledTimes(1)
+    expect(coordinatorMocks.sendChat).not.toHaveBeenCalled()
+    expect(coordinatorMocks.reconcileAcceptedSendCompletion).toHaveBeenCalledWith(target(), 'message-atomic', {
+      signal: expect.any(AbortSignal),
+      operationId: 'operation-atomic',
+      resultMessageId: 'reply-atomic',
+    })
+  })
+
   it('starts one captured-target generation after a queued append is accepted', async () => {
     const settlement = deferred<ChatMutationFinalOutcome>()
     const onAppendAccepted = vi.fn()
@@ -307,5 +408,54 @@ describe('accepted send coordinator', () => {
     await expect(retry).resolves.toBe(false)
     expect(transcriptSignal.aborted).toBe(true)
     expect(get(acceptedSendRecoveries)).toEqual([expect.objectContaining({ id: recovery.id, retrying: false })])
+  })
+
+  it('requires explicit confirmation before retrying an abandoned operation that may have been billed', async () => {
+    applyAcceptedSendOperationProjection({
+      operationId: 'operation-abandoned',
+      protocolVersion: 1,
+      requestOrigin: 'accepted_send',
+      state: 'abandoned',
+      stateVersion: 4,
+      projectionEpoch: 4,
+      creatorWriterSessionId: 'writer-a',
+      creatorWriterEpoch: 1,
+      characterId: 'character-a',
+      chatId: 'chat-a',
+      mode: 'send',
+      acceptedMessageId: 'message-a',
+      acceptedRevision: 2,
+      resultMessageId: 'reply-a',
+      providerMayHaveRun: true,
+      createdAt: '2026-08-11T00:00:00.000Z',
+      updatedAt: '2026-08-11T00:00:01.000Z',
+    })
+
+    coordinatorMocks.alertConfirm.mockResolvedValueOnce(false)
+    await expect(retryAcceptedChatSend('operation-abandoned')).resolves.toBe(false)
+    expect(coordinatorMocks.retryGenerationOperation).not.toHaveBeenCalled()
+
+    coordinatorMocks.alertConfirm.mockResolvedValueOnce(true)
+    coordinatorMocks.retryGenerationOperation.mockResolvedValueOnce({
+      status: 'accepted',
+      response: { operation: { state: 'owned_by_job' } },
+    })
+    coordinatorMocks.readGenerationOperationStatus.mockResolvedValueOnce({
+      status: 'accepted',
+      response: { operation: { state: 'completed', resultMessageId: 'reply-a' } },
+    })
+    coordinatorMocks.reconcileAcceptedSendCompletion.mockResolvedValueOnce({ status: 'reconciled', source: 'applied' })
+
+    await expect(retryAcceptedChatSend('operation-abandoned')).resolves.toBe(true)
+    expect(coordinatorMocks.retryGenerationOperation).toHaveBeenCalledWith('operation-abandoned', 4)
+    expect(coordinatorMocks.reconcileAcceptedSendCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({ characterId: 'character-a', chatId: 'chat-a' }),
+      'message-a',
+      {
+        signal: expect.any(AbortSignal),
+        operationId: 'operation-abandoned',
+        resultMessageId: 'reply-a',
+      },
+    )
   })
 })

@@ -87,6 +87,9 @@ vi.mock('../../lang', () => ({
               ? {
                   generationFailed: 'acceptedSendGenerationFailed',
                   generationInProgress: 'acceptedSendGenerationInProgress',
+                  abandoned: 'acceptedSendAbandoned',
+                  providerMayHaveRun: 'acceptedSendProviderMayHaveRun',
+                  providerMayHaveRunConfirm: 'acceptedSendProviderMayHaveRunConfirm',
                   retry: 'acceptedSendRetry',
                   retrying: 'acceptedSendRetrying',
                 }
@@ -350,6 +353,7 @@ import {
 import { translate } from '../../ts/translator/translator'
 import { runInputHook } from 'src/ts/process/inputHooks'
 import { resetAcceptedSendCoordinatorForTests } from 'src/ts/process/acceptedSendCoordinator.svelte'
+import { applyAcceptedSendOperationProjection } from 'src/ts/process/acceptedSendRecoveryState'
 import { activeGenerationJobs, generationJobLifecycles } from 'src/ts/process/reattach'
 import {
   abortInputHookActivity,
@@ -708,6 +712,54 @@ afterEach(() => {
   resetHalfStreamingProgressForTests()
   activeGenerationJobs.set([])
   generationJobLifecycles.set({})
+})
+
+describe('DefaultChatScreen accepted-send recovery projection', () => {
+  it('renders distinct retry controls and the abandoned billing warning', async () => {
+    seedDatabase([1])
+    applyAcceptedSendOperationProjection({
+      operationId: 'operation-a',
+      protocolVersion: 1,
+      requestOrigin: 'accepted_send',
+      state: 'retryable',
+      stateVersion: 2,
+      projectionEpoch: 2,
+      creatorWriterSessionId: 'writer-a',
+      creatorWriterEpoch: 1,
+      characterId: 'character-0',
+      chatId: 'chat-0',
+      mode: 'send',
+      acceptedMessageId: 'accepted-a',
+      acceptedRevision: 2,
+      providerMayHaveRun: false,
+      createdAt: '2026-08-11T00:00:00.000Z',
+      updatedAt: '2026-08-11T00:00:01.000Z',
+    })
+    applyAcceptedSendOperationProjection({
+      operationId: 'operation-b',
+      protocolVersion: 1,
+      requestOrigin: 'accepted_send',
+      state: 'abandoned',
+      stateVersion: 3,
+      projectionEpoch: 3,
+      creatorWriterSessionId: 'writer-a',
+      creatorWriterEpoch: 1,
+      characterId: 'character-0',
+      chatId: 'chat-0',
+      mode: 'send',
+      acceptedMessageId: 'accepted-b',
+      acceptedRevision: 3,
+      providerMayHaveRun: true,
+      createdAt: '2026-08-11T00:00:00.000Z',
+      updatedAt: '2026-08-11T00:00:02.000Z',
+    })
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelectorAll('[data-testid="accepted-send-recovery"]')).toHaveLength(2))
+    expect(target.textContent).toContain('acceptedSendAbandoned')
+    expect(target.textContent).toContain('acceptedSendProviderMayHaveRun')
+    expect(target.querySelectorAll('[data-testid="accepted-send-retry"]')).toHaveLength(2)
+  })
 })
 
 describe('DefaultChatScreen overflow menu accessibility', () => {
