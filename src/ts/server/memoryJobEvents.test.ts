@@ -5,13 +5,17 @@ import { publishServerMemoryJobEvent, subscribeServerMemoryJobEvents } from './m
 function memoryEvent(jobId: string): ServerMemoryEvent {
   return {
     type: 'memory.job',
+    streamId: 'memory-stream-1',
+    version: jobId === 'job-1' ? 1 : 2,
     chatId: 'chat-1',
     job: {
       id: jobId,
+      instanceId: `${jobId}-instance`,
       kind: 'summarize',
       status: 'running',
       attemptCount: 1,
       maxAttempts: 3,
+      updatedAt: '2026-08-11T00:00:00.000Z',
     },
   }
 }

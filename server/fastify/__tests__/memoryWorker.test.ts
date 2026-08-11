@@ -138,20 +138,12 @@ describe('memory worker lifecycle and dispatch', () => {
           chatId: 'chat-1',
           job: {
             id: 'job-events',
+            instanceId: expect.any(String),
             kind: 'summarize',
             status: 'running',
             attemptCount: 1,
             maxAttempts: 3,
-          },
-          sideEffect: {
-            kind: 'hypav3_progress',
-            payload: {
-              open: true,
-              miniMsg: '',
-              msg: '[Hypa V3] Summarizing...',
-              subMsg: '',
-              status: 'running',
-            },
+            updatedAt: expect.any(String),
           },
         },
         {
@@ -159,22 +151,13 @@ describe('memory worker lifecycle and dispatch', () => {
           chatId: 'chat-1',
           job: {
             id: 'job-events',
+            instanceId: expect.any(String),
             kind: 'summarize',
             status: 'completed',
             attemptCount: 1,
             maxAttempts: 3,
             error: null,
             updatedAt: expect.any(String),
-          },
-          sideEffect: {
-            kind: 'hypav3_progress',
-            payload: {
-              open: false,
-              miniMsg: '',
-              msg: '',
-              subMsg: '',
-              status: 'completed',
-            },
           },
         },
       ])
@@ -526,18 +509,12 @@ describe('memory worker lifecycle and dispatch', () => {
         chatId: 'chat-1',
         job: {
           id: 'job-fail-events',
+          instanceId: expect.any(String),
           kind: 'chunk',
           status: 'failed',
           attemptCount: 1,
           maxAttempts: 1,
-        },
-        sideEffect: {
-          kind: 'hypav3_progress',
-          payload: {
-            open: false,
-            msg: '',
-            status: 'failed',
-          },
+          updatedAt: expect.any(String),
         },
       })
     } finally {
@@ -635,18 +612,12 @@ describe('memory worker lifecycle and dispatch', () => {
         chatId: 'chat-1',
         job: {
           id: 'job-retry-events',
+          instanceId: expect.any(String),
           kind: 'embed',
           status: 'pending',
           attemptCount: 1,
           maxAttempts: 2,
-        },
-        sideEffect: {
-          kind: 'hypav3_progress',
-          payload: {
-            open: true,
-            msg: '[Hypa V3] Waiting to embed...',
-            status: 'pending',
-          },
+          updatedAt: expect.any(String),
         },
       })
     } finally {
@@ -847,16 +818,10 @@ describe('memory worker lifecycle and dispatch', () => {
         chatId: 'chat-1',
         job: {
           id: 'job-recovered',
+          instanceId: expect.any(String),
           kind: 'summarize',
           status: 'pending',
-        },
-        sideEffect: {
-          kind: 'hypav3_progress',
-          payload: {
-            open: true,
-            msg: '[Hypa V3] Waiting to summarize...',
-            status: 'pending',
-          },
+          updatedAt: expect.any(String),
         },
       })
       expect(events[1]).toMatchObject({

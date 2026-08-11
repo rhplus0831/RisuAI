@@ -68,6 +68,8 @@ export const languageGerman = {
   },
   showHelp: 'Hilfe anzeigen',
   help: {
+    hypaV3ProgressOpenChatOnly:
+      'Zeigt die vollständige Speicherfortschrittsanzeige nur für den geöffneten Chat. Aufgaben in anderen Chats bleiben als kompakte Anzahl sichtbar.',
     model: 'Das Hauptmodell, das im Chat verwendet wird',
     submodel:
       'Ein Hilfsmodell ist ein Modell, das zur Analyse von Emotionen und automatischen Vorschlägen usw. verwendet wird, um die die Konversation dynamischer zu gestalten. GPT-3.5 wird hier empfohlen.',
@@ -909,6 +911,7 @@ export const languageGerman = {
   globalRegexScript: 'Regex',
   accessibility: 'Barrierefreiheit',
   reducedMotion: 'Bewegungen reduzieren',
+  hypaV3ProgressOpenChatOnly: 'Vollen Speicherfortschritt nur für offenen Chat anzeigen',
   sendWithEnter: 'Mit Enter senden(Umschalt + Enter beim Entpacken zu senden)',
   fixedChatTextarea: 'Unten im Chatfenster fixieren',
   clickToEdit: 'Text zum Bearbeiten anklicken',
@@ -1405,6 +1408,20 @@ export const languageGerman = {
     preserveOrphanedMemoryLabel: 'Verwaiste Erinnerungen bewahren',
     applyRegexScriptWhenRerollingLabel: 'Regex-Skript beim Neugenerieren anwenden',
     doNotSummarizeUserMessageLabel: 'Benutzernachrichten nicht zusammenfassen',
+  },
+  hypaV3Progress: {
+    activeJobs: (count: number) => `${count} aktive Speicheraufgabe${count === 1 ? '' : 'n'}`,
+    activeInOtherChats: (count: number) => `${count} aktive Speicheraufgabe${count === 1 ? '' : 'n'} in anderen Chats`,
+    otherChatsCompact: (count: number) => `+${count} andere Chat-Aufgabe${count === 1 ? '' : 'n'}`,
+    openDetailsAction: (count: number) =>
+      `Details für ${count} aktive Speicheraufgabe${count === 1 ? '' : 'n'} anzeigen`,
+    closeDetailsAction: 'Details der Speicheraufgaben ausblenden',
+    unnamedChat: 'Unbenannter Chat',
+    unknownChat: (id: string) => `Chat ${id}`,
+    kind: { chunk: 'Speicher vorbereiten', embed: 'Speicher durchsuchen', summarize: 'Speicher zusammenfassen' },
+    pending: 'Wartet',
+    running: 'Läuft',
+    attempt: (attemptCount: number, maxAttempts: number) => `Versuch ${attemptCount}/${maxAttempts}`,
   },
   hypaV3Modal: {
     titleLabel: 'HypaV3',

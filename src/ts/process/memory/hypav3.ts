@@ -8,9 +8,13 @@ import { type Chat, type character, getDatabase } from 'src/ts/storage/database.
 import { type OpenAIChat } from '../index.svelte'
 import { requestChatData } from '../request/request'
 import { chatCompletion, unloadEngine } from '../webllm'
-import { hypaV3ProgressStore } from 'src/ts/stores.svelte'
 import { type ChatTokenizer } from 'src/ts/tokenizer'
 import { inlayTokenRegex } from 'src/ts/util/inlayTokens'
+import {
+  startLocalMemoryJob,
+  updateLocalMemoryJob,
+  type LocalMemoryJobHandle,
+} from 'src/ts/server/memoryJobProjection.svelte'
 
 export interface HypaV3Preset {
   name: string
@@ -92,6 +96,23 @@ export interface HypaV3Result {
 const logPrefix = '[HypaV3]'
 const memoryPromptTag = 'Past Events Summary'
 const summarySeparator = '\n\n'
+
+async function runLocalMemoryOperation<T>(
+  room: Chat,
+  kind: LocalMemoryJobHandle['kind'],
+  operation: () => Promise<T>,
+  statusForResult: (result: T) => 'completed' | 'failed' = () => 'completed',
+): Promise<T> {
+  const job = startLocalMemoryJob({ chatId: room.id, kind })
+  try {
+    const result = await operation()
+    updateLocalMemoryJob(job, statusForResult(result))
+    return result
+  } catch (error) {
+    updateLocalMemoryJob(job, 'failed', error instanceof Error ? error.message : String(error))
+    throw error
+  }
+}
 
 function splitBySeparator(text: string, separator: string): string[] {
   try {
@@ -337,33 +358,22 @@ async function hypaMemoryV3MainExp(
       maxConcurrentTasks: settings.summarizationModel === 'subModel' ? settings.summarizationMaxConcurrent : 1,
     })
 
-    rateLimiter.taskQueueChangeCallback = (queuedCount) => {
-      hypaV3ProgressStore.set({
-        open: true,
-        miniMsg: `${rateLimiter.queuedTaskCount}`,
-        msg: `${logPrefix} Summarizing...`,
-        subMsg: `${rateLimiter.queuedTaskCount} queued`,
-      })
-    }
-
     const summarizationTasks = toSummarizeArray.map((item) => () => summarize(item))
 
     // Start of performance measurement: summarize
     console.log(logPrefix, `Starting ${toSummarizeArray.length} summarization.`)
     const summarizeStartTime = performance.now()
 
-    const batchResult = await rateLimiter.executeBatch<string>(summarizationTasks)
+    const batchResult = await runLocalMemoryOperation(
+      room,
+      'summarize',
+      () => rateLimiter.executeBatch<string>(summarizationTasks),
+      (result) => (result.results.every((item) => item.success && item.data) ? 'completed' : 'failed'),
+    )
 
     const summarizeEndTime = performance.now()
     console.debug(`${logPrefix} summarization completed in ${summarizeEndTime - summarizeStartTime}ms`)
     // End of performance measurement: summarize
-
-    hypaV3ProgressStore.set({
-      open: false,
-      miniMsg: '',
-      msg: '',
-      subMsg: '',
-    })
 
     // Apply results in input order and stop at the first failure. The returned
     // memory keeps the consecutive successful prefix accumulated before it.
@@ -548,22 +558,13 @@ async function hypaMemoryV3MainExp(
       }),
     })
 
-    processor.progressCallback = (queuedCount) => {
-      hypaV3ProgressStore.set({
-        open: true,
-        miniMsg: `${queuedCount}`,
-        msg: `${logPrefix} Similarity searching...`,
-        subMsg: `${queuedCount} queued`,
-      })
-    }
-
     try {
       // Start of performance measurement: addTexts
       console.log(`${logPrefix} Starting addTexts with ${ebdTexts.length} chunks`)
       const addStartTime = performance.now()
 
       // Add EmbeddingTexts to processor for similarity search
-      await processor.addTexts(ebdTexts)
+      await runLocalMemoryOperation(room, 'embed', () => processor.addTexts(ebdTexts))
 
       const addEndTime = performance.now()
       console.debug(`${logPrefix} addTexts completed in ${addEndTime - addStartTime}ms`)
@@ -575,13 +576,6 @@ async function hypaMemoryV3MainExp(
         error: `${logPrefix} Similarity search failed: ${error}`,
         memory: toSerializableHypaV3Data(data),
       }
-    } finally {
-      hypaV3ProgressStore.set({
-        open: false,
-        miniMsg: '',
-        msg: '',
-        subMsg: '',
-      })
     }
 
     const recentChats = chats.slice(-settings.queryChatCount).filter((chat) => chat.content.trim().length > 0)
@@ -604,7 +598,9 @@ async function hypaMemoryV3MainExp(
         console.log(`${logPrefix} Starting similarity search with ${recentChats.length} queries`)
         const searchStartTime = performance.now()
 
-        const batchScoredResults = await processor.similaritySearchScoredBatch(queries.map((query) => query.content))
+        const batchScoredResults = await runLocalMemoryOperation(room, 'embed', () =>
+          processor.similaritySearchScoredBatch(queries.map((query) => query.content)),
+        )
 
         /*
                 // Hybrid search hook.
@@ -673,13 +669,6 @@ async function hypaMemoryV3MainExp(
           error: `${logPrefix} Similarity search failed: ${error}`,
           memory: toSerializableHypaV3Data(data),
         }
-      } finally {
-        hypaV3ProgressStore.set({
-          open: false,
-          miniMsg: '',
-          msg: '',
-          subMsg: '',
-        })
       }
     }
 

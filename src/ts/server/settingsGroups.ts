@@ -44,6 +44,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   alwaysScrollToNewMessage: 'sidebar',
   animationSpeed: 'display',
   reducedMotion: 'display',
+  hypaV3ProgressOpenChatOnly: 'display',
   antiClaudeOverload: 'runtime',
   apiType: 'providers',
   askRemoval: 'sidebar',

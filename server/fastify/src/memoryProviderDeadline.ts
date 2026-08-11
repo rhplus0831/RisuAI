@@ -12,3 +12,29 @@ export function armMemoryProviderFetchDeadline(controller: AbortController, dead
   timer.unref?.()
   return () => clearTimeout(timer)
 }
+
+export function createMemoryProviderAbortScope(
+  parentSignal?: AbortSignal,
+  deadlineMs?: number,
+): { signal: AbortSignal; dispose: () => void } {
+  const controller = new AbortController()
+  const forwardParentAbort = (): void => controller.abort(parentSignal?.reason)
+  if (parentSignal?.aborted) {
+    forwardParentAbort()
+  } else {
+    parentSignal?.addEventListener('abort', forwardParentAbort, { once: true })
+  }
+  const clearDeadline = armMemoryProviderFetchDeadline(controller, deadlineMs)
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      clearDeadline()
+      parentSignal?.removeEventListener('abort', forwardParentAbort)
+    },
+  }
+}
+
+export function throwIfMemoryProviderAborted(signal: AbortSignal): void {
+  if (!signal.aborted) return
+  throw signal.reason instanceof Error ? signal.reason : new Error('memory provider request aborted')
+}

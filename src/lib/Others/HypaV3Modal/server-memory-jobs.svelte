@@ -9,6 +9,11 @@
   } from 'src/ts/process/request/serverMemory'
   import { subscribeServerMemoryJobEvents } from 'src/ts/server/memoryJobEvents'
   import { createMemoryJobRefreshController, type MemoryJobRefreshController } from 'src/ts/server/memoryJobRefresh'
+  import {
+    memoryJobProjectionStore,
+    replaceMemoryJobsForChat,
+    selectMemoryJobsForChat,
+  } from 'src/ts/server/memoryJobProjection.svelte'
 
   interface Props {
     chatId: string
@@ -16,7 +21,7 @@
 
   let { chatId }: Props = $props()
 
-  let jobs = $state<ServerMemoryJob[]>([])
+  const jobs = $derived(selectMemoryJobsForChat($memoryJobProjectionStore, chatId))
   let loading = $state(false)
   let actionError = $state<string | null>(null)
   let refreshError = $state<string | null>(null)
@@ -106,17 +111,16 @@
     refreshController = createMemoryJobRefreshController({
       chatId,
       listJobs: (currentChatId, signal, etag) => listServerMemoryJobs({ chatId: currentChatId, etag }, signal),
-      onJobs: (nextJobs, loadedAt) => {
-        jobs = nextJobs
+      onJobs: (nextJobs, loadedAt, snapshot) => {
+        replaceMemoryJobsForChat(chatId, nextJobs, snapshot)
         refreshError = null
         lastLoadedAt = loadedAt
       },
       onError: (message) => {
-        jobs = []
         refreshError = message
       },
       onClear: () => {
-        jobs = []
+        replaceMemoryJobsForChat(chatId, [])
         actionError = null
         refreshError = null
         lastLoadedAt = null
@@ -175,7 +179,7 @@
     </div>
   {:else}
     <div class="mt-3 flex flex-col gap-2">
-      {#each jobs as job (job.id)}
+      {#each jobs as job (job.instanceId)}
         <div
           class="flex flex-col gap-3 rounded-sm border border-zinc-700 bg-zinc-900/70 p-3 sm:flex-row sm:items-center sm:justify-between">
           <div class="min-w-0">

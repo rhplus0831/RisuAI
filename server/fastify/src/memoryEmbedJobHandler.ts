@@ -21,9 +21,9 @@ import {
   type MemoryJob,
 } from './memoryRepository.js'
 import { loadPersistedDatabaseForMemoryJob } from './repository.js'
-import { MEMORY_JOB_BATCH_MAX_JOBS, type MemoryJobBatchHandler } from './memoryWorker.js'
+import { MEMORY_JOB_BATCH_MAX_JOBS, type MemoryJobBatchHandler, type MemoryJobHandlerContext } from './memoryWorker.js'
 import { emitProtocolMetric } from './protocolMetrics.js'
-import { armMemoryProviderFetchDeadline } from './memoryProviderDeadline.js'
+import { createMemoryProviderAbortScope, throwIfMemoryProviderAborted } from './memoryProviderDeadline.js'
 
 export interface EmbedMemoryJobHandlerOptions {
   db: DatabaseSync
@@ -52,12 +52,14 @@ interface DatabaseLike {
   hypaV3Settings?: unknown
 }
 
-export function createEmbedMemoryJobHandler(opts: EmbedMemoryJobHandlerOptions): (job: MemoryJob) => Promise<void> {
+export function createEmbedMemoryJobHandler(
+  opts: EmbedMemoryJobHandlerOptions,
+): (job: MemoryJob, context?: MemoryJobHandlerContext) => Promise<void> {
   const embed = opts.embed ?? embedTexts
   const embedGroups = opts.embedGroups ?? embedTextGroups
   const acquireRateLimit = createEmbeddingRateLimiter(opts)
 
-  return async (job: MemoryJob): Promise<void> => {
+  return async (job: MemoryJob, context?: MemoryJobHandlerContext): Promise<void> => {
     if (job.kind !== 'embed') {
       throw new Error(`embed handler received ${job.kind} job`)
     }
@@ -72,8 +74,11 @@ export function createEmbedMemoryJobHandler(opts: EmbedMemoryJobHandlerOptions):
       embed,
       embedGroups,
       acquireRateLimit,
+      signal: context?.signal,
     })
     if (result.kind === 'existing') return
+    const currentJob = getMemoryJob(opts.db, job.id)
+    if (currentJob?.status !== 'pending' && currentJob?.status !== 'running') return
     persistEmbedding(opts.db, result)
   }
 }
@@ -135,6 +140,7 @@ export function createEmbedMemoryJobBatchHandler(opts: EmbedMemoryJobHandlerOpti
           modelRequest: modelRequest.request,
           embedGroups,
           acquireRateLimit,
+          signal: context.signal,
         })
         commitContextualBatchResults(opts, context, results)
       }
@@ -153,6 +159,7 @@ export function createEmbedMemoryJobBatchHandler(opts: EmbedMemoryJobHandlerOpti
             embed,
             embedGroups,
             acquireRateLimit,
+            signal: context.signal,
           }),
         } satisfies BatchJobResult
       } catch (error) {
@@ -207,6 +214,7 @@ async function executeEmbedJob(input: {
   embed: NonNullable<EmbedMemoryJobHandlerOptions['embed']>
   embedGroups: NonNullable<EmbedMemoryJobHandlerOptions['embedGroups']>
   acquireRateLimit: EmbeddingRateLimiter
+  signal?: AbortSignal
 }): Promise<EmbedExecutionResult> {
   const payload = parseEmbedPayload(input.job.payload)
   const chunk = getMemoryChunk(input.opts.db, payload.chunkId)
@@ -234,19 +242,22 @@ async function executeEmbedJob(input: {
   }
   assertChunkWithinEmbeddingLimits(modelRequest.request, chunk.id, chunk.text)
 
-  const controller = new AbortController()
   await input.acquireRateLimit(input.settings)
+  if (input.signal?.aborted) {
+    throw input.signal.reason instanceof Error ? input.signal.reason : new Error('memory job cancelled')
+  }
+  const abortScope = createMemoryProviderAbortScope(input.signal, input.opts.providerFetchDeadlineMs)
   if (modelRequest.request.provider === 'voyage-contextual') {
     let embedding: Awaited<ReturnType<NonNullable<EmbedMemoryJobHandlerOptions['embedGroups']>>>
-    const clearDeadline = armMemoryProviderFetchDeadline(controller, input.opts.providerFetchDeadlineMs)
     try {
+      throwIfMemoryProviderAborted(abortScope.signal)
       embedding = await input.embedGroups({
         request: modelRequest.request,
         groups: [[chunk.text]],
-        signal: controller.signal,
+        signal: abortScope.signal,
       })
     } finally {
-      clearDeadline()
+      abortScope.dispose()
     }
     if ('error' in embedding) {
       throw new Error(embedding.error)
@@ -268,15 +279,15 @@ async function executeEmbedJob(input: {
   }
 
   let embedding: Awaited<ReturnType<NonNullable<EmbedMemoryJobHandlerOptions['embed']>>>
-  const clearDeadline = armMemoryProviderFetchDeadline(controller, input.opts.providerFetchDeadlineMs)
   try {
+    throwIfMemoryProviderAborted(abortScope.signal)
     embedding = await input.embed({
       request: modelRequest.request,
       input: [chunk.text],
-      signal: controller.signal,
+      signal: abortScope.signal,
     })
   } finally {
-    clearDeadline()
+    abortScope.dispose()
   }
   if ('error' in embedding) {
     throw new Error(embedding.error)
@@ -442,6 +453,7 @@ async function executeContextualEmbedJobs(input: {
   modelRequest: MemoryEmbeddingModelRequest
   embedGroups: NonNullable<EmbedMemoryJobHandlerOptions['embedGroups']>
   acquireRateLimit: EmbeddingRateLimiter
+  signal?: AbortSignal
 }): Promise<BatchJobResult[]> {
   try {
     const parsed = input.jobs.map((job) => {
@@ -483,18 +495,21 @@ async function executeContextualEmbedJobs(input: {
       parsed.map((item) => item.chunk.text),
     )
 
-    const controller = new AbortController()
     await input.acquireRateLimit(input.settings)
+    if (input.signal?.aborted) {
+      throw input.signal.reason instanceof Error ? input.signal.reason : new Error('memory job cancelled')
+    }
+    const abortScope = createMemoryProviderAbortScope(input.signal, input.opts.providerFetchDeadlineMs)
     let embedding: Awaited<ReturnType<NonNullable<EmbedMemoryJobHandlerOptions['embedGroups']>>>
-    const clearDeadline = armMemoryProviderFetchDeadline(controller, input.opts.providerFetchDeadlineMs)
     try {
+      throwIfMemoryProviderAborted(abortScope.signal)
       embedding = await input.embedGroups({
         request: input.modelRequest,
         groups: [parsed.map((item) => item.chunk.text)],
-        signal: controller.signal,
+        signal: abortScope.signal,
       })
     } finally {
-      clearDeadline()
+      abortScope.dispose()
     }
     if ('error' in embedding) {
       throw new Error(embedding.error)

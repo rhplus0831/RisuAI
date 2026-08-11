@@ -15,8 +15,8 @@ import { isMemorySummaryCompatibleWithModel } from './memorySummaryCompatibility
 import { summarizeOnce, type SummaryAdapterResult } from './memorySummaryAdapter.js'
 import { resolveMemorySummaryModel, type MemorySummaryModelRequest } from './memorySummaryModel.js'
 import { loadPersistedDatabaseForMemoryJob } from './repository.js'
-import { MEMORY_JOB_BATCH_MAX_JOBS, type MemoryJobBatchHandler } from './memoryWorker.js'
-import { armMemoryProviderFetchDeadline } from './memoryProviderDeadline.js'
+import { MEMORY_JOB_BATCH_MAX_JOBS, type MemoryJobBatchHandler, type MemoryJobHandlerContext } from './memoryWorker.js'
+import { createMemoryProviderAbortScope, throwIfMemoryProviderAborted } from './memoryProviderDeadline.js'
 import { resolveModelProfile } from '../../../src/ts/model/modelProfileResolver.js'
 import {
   completeRequestHistory,
@@ -62,11 +62,11 @@ interface ChatLike {
 
 export function createSummarizeMemoryJobHandler(
   opts: SummarizeMemoryJobHandlerOptions,
-): (job: MemoryJob) => Promise<void> {
+): (job: MemoryJob, context?: MemoryJobHandlerContext) => Promise<void> {
   const summarize = opts.summarize ?? summarizeOnce
   const acquireRateLimit = createSummaryRateLimiter(opts)
 
-  return async (job: MemoryJob): Promise<void> => {
+  return async (job: MemoryJob, context?: MemoryJobHandlerContext): Promise<void> => {
     if (job.kind !== 'summarize') {
       throw new Error(`summarize handler received ${job.kind} job`)
     }
@@ -80,8 +80,11 @@ export function createSummarizeMemoryJobHandler(
       settings,
       summarize,
       acquireRateLimit,
+      signal: context?.signal,
     })
     if (result.kind === 'existing') return
+    const currentJob = getMemoryJob(opts.db, job.id)
+    if (currentJob?.status !== 'pending' && currentJob?.status !== 'running') return
     persistSummary(opts.db, result)
   }
 }
@@ -116,6 +119,7 @@ export function createSummarizeMemoryJobBatchHandler(opts: SummarizeMemoryJobHan
             settings,
             summarize,
             acquireRateLimit,
+            signal: context.signal,
           }),
         } satisfies BatchJobResult
       } catch (error) {
@@ -182,6 +186,7 @@ async function executeSummarizeJob(input: {
   settings: HypaV3Settings
   summarize: NonNullable<SummarizeMemoryJobHandlerOptions['summarize']>
   acquireRateLimit: SummaryRateLimiter
+  signal?: AbortSignal
 }): Promise<SummarizeExecutionResult> {
   const payload = parseSummarizePayload(input.job.payload)
   const chunk = getMemoryChunk(input.opts.db, payload.chunkId)
@@ -216,10 +221,12 @@ async function executeSummarizeJob(input: {
     settings: input.settings,
     isResummarize: false,
   })
-  const controller = new AbortController()
   await input.acquireRateLimit(input.settings)
+  if (input.signal?.aborted) {
+    throw input.signal.reason instanceof Error ? input.signal.reason : new Error('memory job cancelled')
+  }
+  const abortScope = createMemoryProviderAbortScope(input.signal, input.opts.providerFetchDeadlineMs)
   let summary: SummaryAdapterResult
-  const clearDeadline = armMemoryProviderFetchDeadline(controller, input.opts.providerFetchDeadlineMs)
   const historyScope = memoryRequestHistoryScope(input.database, input.job.chatId)
   const historyHandle = tryBeginRequestHistory({
     db: input.opts.db,
@@ -240,15 +247,16 @@ async function executeSummarizeJob(input: {
     },
   })
   try {
+    throwIfMemoryProviderAborted(abortScope.signal)
     summary = await input.summarize(prompt.messages, {
       ...modelRequest.request,
       maxTokens: prompt.options.maxTokens,
       temperature: prompt.options.temperature,
-      signal: controller.signal,
+      signal: abortScope.signal,
     })
     if ('error' in summary) {
       completeRequestHistory(historyHandle, {
-        status: controller.signal.aborted ? 'cancelled' : 'error',
+        status: abortScope.signal.aborted ? 'cancelled' : 'error',
         error: summary.error,
       })
     } else {
@@ -260,12 +268,12 @@ async function executeSummarizeJob(input: {
     }
   } catch (error) {
     completeRequestHistory(historyHandle, {
-      status: controller.signal.aborted ? 'cancelled' : 'error',
+      status: abortScope.signal.aborted ? 'cancelled' : 'error',
       error: error instanceof Error ? error.message : String(error),
     })
     throw error
   } finally {
-    clearDeadline()
+    abortScope.dispose()
   }
   if ('error' in summary) {
     markChunkFailed(input.opts.db, chunk.id)

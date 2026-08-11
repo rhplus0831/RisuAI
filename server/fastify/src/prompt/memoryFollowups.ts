@@ -35,6 +35,7 @@ export interface EnqueuePromptMemoryFollowUpsInput {
   embeddingModel: string
   diagnostics: PromptMemoryMissingMemoryDiagnostics
   enqueueJob?: (job: EnqueueMemoryJobInput) => MemoryJob
+  onJobCreated?: (job: MemoryJob) => void
 }
 
 interface HypaV3EmbedJobPayload {
@@ -74,7 +75,7 @@ export function enqueuePromptMemoryFollowUps(
       messageIndexes: rangeInclusive(chunk.rangeStartSeq, chunk.rangeEndSeq),
       chatMemos: chunk.messageId ? [chunk.messageId] : [],
     }
-    enqueueIdempotentJob(input.db, result, enqueueJob, {
+    enqueueIdempotentJob(input.db, result, enqueueJob, input.onJobCreated, {
       id: buildSummarizeJobId(input.chatId, chunkId, input.summaryModel),
       chatId: input.chatId,
       kind: 'summarize',
@@ -101,7 +102,7 @@ export function enqueuePromptMemoryFollowUps(
       chunkId,
       model: input.embeddingModel,
     }
-    enqueueIdempotentJob(input.db, result, enqueueJob, {
+    enqueueIdempotentJob(input.db, result, enqueueJob, input.onJobCreated, {
       id: buildEmbedJobId(input.chatId, chunkId, input.embeddingModel),
       chatId: input.chatId,
       kind: 'embed',
@@ -132,6 +133,7 @@ function enqueueIdempotentJob(
   db: DatabaseSync,
   diagnostics: PromptMemoryFollowUpDiagnostics,
   enqueueJob: (job: EnqueueMemoryJobInput) => MemoryJob,
+  onJobCreated: ((job: MemoryJob) => void) | undefined,
   job: EnqueueMemoryJobInput,
 ): void {
   if (getMemoryJob(db, job.id)) {
@@ -139,8 +141,9 @@ function enqueueIdempotentJob(
     return
   }
   try {
-    enqueueJob(job)
+    const created = enqueueJob(job)
     diagnostics.jobsCreated += 1
+    onJobCreated?.(created)
   } catch (error) {
     diagnostics.errors.push(errorMessage(error))
   }

@@ -3096,6 +3096,7 @@ export function setDatabase(data: Database) {
   data.assetWidth ??= -1
   data.animationSpeed ??= 0.4
   data.reducedMotion ??= false
+  data.hypaV3ProgressOpenChatOnly ??= false
   data.colorScheme ??= safeStructuredClone(defaultColorScheme)
   data.colorSchemeName ??= 'default'
   data.customColorScheme ??= safeStructuredClone(
@@ -3975,6 +3976,7 @@ export interface Database {
   assetWidth: number
   animationSpeed: number
   reducedMotion: boolean
+  hypaV3ProgressOpenChatOnly?: boolean
   botSettingAtStart: false
   NAIsettings: NAISettings
   hideRealm: boolean

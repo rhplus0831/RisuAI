@@ -63,7 +63,7 @@ import { JobRegistry, PROXY_STREAM_GC_INTERVAL_MS } from './streamJobs.js'
 import { GenerationJobRegistry } from './generationJobs.js'
 import { MessageTranslationJobRegistry } from './messageTranslationJobs.js'
 import { GreetingTranslationJobRegistry } from './greetingTranslationJobs.js'
-import { createMemoryEventBus, emitMemoryEventSafely, type MemoryEventSink } from './memoryEvents.js'
+import { buildMemoryJobEvent, createMemoryEventBus, type MemoryEventSink } from './memoryEvents.js'
 import { backfillLegacyHypaV3MemoryRows } from './memoryLegacyImport.js'
 import { MemoryWorker, type MemoryWorkerOptions } from './memoryWorker.js'
 import { createEmbedMemoryJobBatchHandler, createEmbedMemoryJobHandler } from './memoryEmbedJobHandler.js'
@@ -193,12 +193,8 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   repairPersistedModelProfileInlineSecretsInSqlite(db)
   reconcileGenerationOperationsAtStartup(db, serverInstanceId, app.log)
   const memoryEventBus = createMemoryEventBus(app.log)
-  const emitMemoryEvent: MemoryEventSink = (event) => {
-    if (opts.memoryEvents) {
-      emitMemoryEventSafely(opts.memoryEvents, event)
-    }
-    memoryEventBus.emit(event)
-  }
+  if (opts.memoryEvents) memoryEventBus.subscribe(opts.memoryEvents)
+  const emitMemoryEvent: MemoryEventSink = (event) => memoryEventBus.emit(event)
   const defaultSummarizeOptions = { db, dataDir: config.dataDir }
   const defaultEmbedOptions = { db, dataDir: config.dataDir }
   const defaultMemoryHandlers = {
@@ -347,7 +343,18 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     commandEventSink,
     generationJobRegistry,
     messageTranslationJobRegistry,
-    { ...opts.generationChat, pushNotifications: opts.generationChat?.pushNotifications ?? pushNotifications },
+    {
+      ...opts.generationChat,
+      pushNotifications: opts.generationChat?.pushNotifications ?? pushNotifications,
+      onPromptMemoryJobEnqueued: (job) => {
+        emitMemoryEvent(buildMemoryJobEvent(job))
+        try {
+          opts.generationChat?.onPromptMemoryJobEnqueued?.(job)
+        } catch (error) {
+          app.log.warn({ err: error, memoryJobId: job.id }, 'prompt memory job observer failed')
+        }
+      },
+    },
     config.generationTrace,
   )
   const finalizationRetryRaw = opts.generationChat?.finalizationRetry
@@ -378,7 +385,11 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
       ? null
       : setInterval(runGenerationFinalizationRetrySweep, finalizationRetryOptions.intervalMs ?? 5000)
   generationFinalizationRetryTimer?.unref()
-  registerMemoryJobRoutes(app, db, authState, { onEvent: emitMemoryEvent })
+  registerMemoryJobRoutes(app, db, authState, {
+    onEvent: emitMemoryEvent,
+    snapshotVersion: () => memoryEventBus.snapshotVersion(),
+    abortRunningJob: (jobId) => memoryWorker?.abortRunningJob(jobId) ?? false,
+  })
   registerMemoryReadRoutes(app, db, authState)
   bootPromptVariables()
 

@@ -157,6 +157,7 @@ export interface AssembleDeps {
   loadPromptMemoryQueryVectors?(): MemorySelectionInput['queryVectors']
   loadPromptMemoryQueryDiagnostics?(): PromptMemoryQueryDiagnostics
   enqueuePromptMemoryFollowUpJob?: (job: EnqueueMemoryJobInput) => MemoryJob
+  onPromptMemoryJobEnqueued?: (job: MemoryJob) => void
   executeAgentPresetStep?: AgentPresetStepExecutor
   /** Optional live progress reporter for Agent Preset helper steps. */
   agentPresetProgress?: AgentPresetProgressReporter
@@ -621,6 +622,7 @@ export interface AssemblyState {
   assetDataDir?: string
   promptMemoryQueryVectors?: MemorySelectionInput['queryVectors']
   enqueuePromptMemoryFollowUpJob?: (job: EnqueueMemoryJobInput) => MemoryJob
+  onPromptMemoryJobEnqueued?: (job: MemoryJob) => void
   executeAgentPresetStep?: AgentPresetStepExecutor
   /**
    * The non-empty asset lookup the history walk resolves inlay / asset bytes
@@ -782,6 +784,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     promptMemoryQueryDiagnostics:
       deps.loadPromptMemoryQueryDiagnostics?.() ?? emptyPromptMemoryQueryDiagnostics(undefined, 'feature-disabled'),
     enqueuePromptMemoryFollowUpJob: deps.enqueuePromptMemoryFollowUpJob,
+    onPromptMemoryJobEnqueued: deps.onPromptMemoryJobEnqueued,
     resolveStoredAsset: deps.resolveStoredAsset,
     executeAgentPresetStep: deps.executeAgentPresetStep,
   }
@@ -2026,6 +2029,7 @@ function buildPromptMemoryRowsForAssembly(state: AssemblyState): OpenAIChat[] {
     embeddingModel,
     diagnostics: selection.diagnostics.missingMemory,
     enqueueJob: state.enqueuePromptMemoryFollowUpJob,
+    onJobCreated: state.onPromptMemoryJobEnqueued,
   })
   state.promptMemoryRows = assembled.rows
   return assembled.rows
@@ -2108,6 +2112,7 @@ function planPromptMemoryChunksForAssembly(input: {
       chats,
       plan,
       model: input.settings.summarizationModel,
+      onJobCreated: input.state.onPromptMemoryJobEnqueued,
     })
     diagnostics.plannedWindows = planned.planned.length
     diagnostics.chunksCreated = planned.chunksCreated

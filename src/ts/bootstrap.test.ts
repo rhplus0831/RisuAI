@@ -24,6 +24,7 @@ const eventApi = vi.hoisted(() => ({
     sinceRevision?: number | null
     onCommandEvent: (event: TestCommandEvent) => void
     onMemoryEvent?: (event: TestMemoryEvent) => void
+    onMemorySnapshot?: (snapshot: TestMemorySnapshot) => void
     onWriterEvent?: (event: TestWriterEvent) => void
     onFrame?: (frame?: { event: string; data: string }) => void
     onError?: (error: string) => void
@@ -80,7 +81,7 @@ const pendingMutationApi = vi.hoisted(() => ({
   scope: null as string | null,
 }))
 const ownershipApi = vi.hoisted(() => ({ count: vi.fn(() => 0), discard: vi.fn(), reset: vi.fn() }))
-const memoryApi = vi.hoisted(() => ({ publish: vi.fn(), applyProgress: vi.fn() }))
+const memoryApi = vi.hoisted(() => ({ publish: vi.fn(), applyEvent: vi.fn(() => true), applySnapshot: vi.fn() }))
 const activeWriterApi = vi.hoisted(() => ({ enterTakeover: vi.fn() }))
 const pushApi = vi.hoisted(() => ({
   initialize: vi.fn(async () => undefined),
@@ -98,9 +99,25 @@ interface TestCommandEvent {
 
 interface TestMemoryEvent {
   type: 'memory.job'
+  streamId: string
+  version: number
   chatId: string
-  job: { id: string; kind: string; status: string; attemptCount: number; maxAttempts: number }
-  sideEffect?: { kind: 'hypav3_progress'; payload: unknown }
+  job: {
+    id: string
+    instanceId: string
+    kind: string
+    status: string
+    attemptCount: number
+    maxAttempts: number
+    updatedAt?: string
+  }
+}
+
+interface TestMemorySnapshot {
+  type: 'memory.snapshot'
+  streamId: string
+  version: number
+  jobs: Array<TestMemoryEvent['job'] & { chatId: string }>
 }
 
 interface TestWriterEvent {
@@ -186,7 +203,10 @@ vi.mock('./server/greetingTranslations.svelte', () => ({
   startActiveGreetingTranslationRefresh: runtimeApi.startActiveGreetingTranslationRefresh,
 }))
 vi.mock('./server/memoryJobEvents', () => ({ publishServerMemoryJobEvent: memoryApi.publish }))
-vi.mock('./process/request/serverMemory', () => ({ applyServerHypaV3Progress: memoryApi.applyProgress }))
+vi.mock('./server/memoryJobProjection.svelte', () => ({
+  applyServerMemoryJobEvent: memoryApi.applyEvent,
+  applyServerMemoryJobSnapshot: memoryApi.applySnapshot,
+}))
 
 vi.mock('./server/commands', async (importActual) => {
   const actual = await importActual<typeof import('./server/commands')>()
@@ -4473,14 +4493,46 @@ describe('API-backed client bootstrap', () => {
     await loadWebInitialDatabase()
     const event: TestMemoryEvent = {
       type: 'memory.job',
+      streamId: 'memory-stream-1',
+      version: 2,
       chatId: 'chat-a',
-      job: { id: 'job-a', kind: 'hypav3', status: 'running', attemptCount: 1, maxAttempts: 3 },
-      sideEffect: { kind: 'hypav3_progress', payload: { progress: 0.5 } },
+      job: {
+        id: 'job-a',
+        instanceId: 'job-instance-a',
+        kind: 'summarize',
+        status: 'running',
+        attemptCount: 1,
+        maxAttempts: 3,
+      },
     }
     eventApi.subscriptions[0].onMemoryEvent?.(event)
 
-    expect(memoryApi.applyProgress).toHaveBeenCalledWith({ progress: 0.5 })
+    expect(memoryApi.applyEvent).toHaveBeenCalledWith(event)
     expect(memoryApi.publish).toHaveBeenCalledWith(event)
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+  })
+
+  it('hydrates memory projection snapshots without refreshing durable resources', async () => {
+    await loadWebInitialDatabase()
+    const snapshot: TestMemorySnapshot = {
+      type: 'memory.snapshot',
+      streamId: 'memory-stream-1',
+      version: 1,
+      jobs: [
+        {
+          id: 'job-a',
+          instanceId: 'job-instance-a',
+          chatId: 'chat-a',
+          kind: 'summarize',
+          status: 'pending',
+          attemptCount: 0,
+          maxAttempts: 3,
+        },
+      ],
+    }
+    eventApi.subscriptions[0].onMemorySnapshot?.(snapshot)
+
+    expect(memoryApi.applySnapshot).toHaveBeenCalledWith(snapshot)
     expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
   })
 

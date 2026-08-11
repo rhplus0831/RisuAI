@@ -35,6 +35,7 @@ export interface PlanHypaV3ChunkJobsInput {
   model?: string
   maxAttempts?: number
   nextRunAt?: string
+  onJobCreated?: (job: MemoryJob) => void
 }
 
 export interface PlannedHypaV3ChunkJob {
@@ -67,7 +68,7 @@ export function planHypaV3ChunkJobs(input: PlanHypaV3ChunkJobsInput): PlanHypaV3
     throw new ValidationError('server-side memory summarization supports only subModel or memory')
   }
 
-  return withTransaction(input.db, () => {
+  const result = withTransaction(input.db, () => {
     const planned: PlannedHypaV3ChunkJob[] = []
     let chunksCreated = 0
     let jobsCreated = 0
@@ -118,6 +119,10 @@ export function planHypaV3ChunkJobs(input: PlanHypaV3ChunkJobsInput): PlanHypaV3
 
     return { planned, chunksCreated, jobsCreated }
   })
+  for (const item of result.planned) {
+    if (item.jobCreated && item.job) input.onJobCreated?.(item.job)
+  }
+  return result
 }
 
 export function buildSummarizeJobPayload(input: {

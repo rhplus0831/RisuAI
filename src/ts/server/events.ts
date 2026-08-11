@@ -15,6 +15,8 @@ export type ServerCommandEventHandler = (event: CommandEvent) => void
 
 export interface ServerMemoryJobEvent {
   type: 'memory.job'
+  streamId: string
+  version: number
   chatId: string
   job: Omit<ServerMemoryJob, 'chatId'>
   sideEffect?: {
@@ -26,6 +28,15 @@ export interface ServerMemoryJobEvent {
 export type ServerMemoryEvent = ServerMemoryJobEvent
 export type ServerMemoryEventHandler = (event: ServerMemoryEvent) => void
 
+export interface ServerMemoryJobSnapshot {
+  type: 'memory.snapshot'
+  streamId: string
+  version: number
+  jobs: ServerMemoryJob[]
+}
+
+export type ServerMemorySnapshotHandler = (snapshot: ServerMemoryJobSnapshot) => void
+
 export interface ServerWriterEvent {
   sessionId: string | null
   epoch: number
@@ -36,6 +47,7 @@ export type ServerWriterEventHandler = (event: ServerWriterEvent) => void
 export interface SubscribeServerCommandEventsInput {
   onCommandEvent: ServerCommandEventHandler
   onMemoryEvent?: ServerMemoryEventHandler
+  onMemorySnapshot?: ServerMemorySnapshotHandler
   onWriterEvent?: ServerWriterEventHandler
   onFrame?: (frame: { event: string; data: string; id?: string }) => void
   onError?: (error: string) => void
@@ -140,6 +152,9 @@ export async function subscribeServerCommandEvents(
         } else if (frame.event === 'memory') {
           const event = parseMemoryEvent(frame.data)
           if (event) input.onMemoryEvent?.(event)
+        } else if (frame.event === 'memory_snapshot') {
+          const snapshot = parseMemorySnapshot(frame.data)
+          if (snapshot) input.onMemorySnapshot?.(snapshot)
         } else if (frame.event === 'writer') {
           const event = parseWriterEvent(frame.data)
           if (event) input.onWriterEvent?.(event)
@@ -227,10 +242,13 @@ function parseMemoryEvent(data: string): ServerMemoryEvent | null {
   if (!parsed || typeof parsed !== 'object') return null
   const record = parsed as Record<string, unknown>
   if (record.type !== 'memory.job') return null
+  if (typeof record.streamId !== 'string' || record.streamId.length === 0) return null
+  if (!Number.isSafeInteger(record.version) || (record.version as number) < 0) return null
   if (typeof record.chatId !== 'string') return null
   if (!record.job || typeof record.job !== 'object' || Array.isArray(record.job)) return null
   const jobRecord = record.job as Record<string, unknown>
   if (typeof jobRecord.id !== 'string') return null
+  if (typeof jobRecord.instanceId !== 'string' || jobRecord.instanceId.length === 0) return null
   if (!isMemoryJobKind(jobRecord.kind)) return null
   if (!isMemoryJobStatus(jobRecord.status)) return null
   if (!Number.isInteger(jobRecord.attemptCount) || (jobRecord.attemptCount as number) < 0) return null
@@ -238,9 +256,12 @@ function parseMemoryEvent(data: string): ServerMemoryEvent | null {
 
   const event: ServerMemoryJobEvent = {
     type: 'memory.job',
+    streamId: record.streamId,
+    version: record.version as number,
     chatId: record.chatId,
     job: {
       id: jobRecord.id,
+      instanceId: jobRecord.instanceId,
       kind: jobRecord.kind,
       status: jobRecord.status,
       attemptCount: jobRecord.attemptCount as number,
@@ -261,6 +282,56 @@ function parseMemoryEvent(data: string): ServerMemoryEvent | null {
   }
 
   return event
+}
+
+function parseMemorySnapshot(data: string): ServerMemoryJobSnapshot | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(data)
+  } catch {
+    return null
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  const record = parsed as Record<string, unknown>
+  if (record.type !== 'memory.snapshot') return null
+  if (typeof record.streamId !== 'string' || record.streamId.length === 0) return null
+  if (!Number.isSafeInteger(record.version) || (record.version as number) < 0) return null
+  if (!Array.isArray(record.jobs)) return null
+  const jobs: ServerMemoryJob[] = []
+  for (const value of record.jobs) {
+    const job = parseMemorySnapshotJob(value)
+    if (!job) return null
+    jobs.push(job)
+  }
+  return {
+    type: 'memory.snapshot',
+    streamId: record.streamId,
+    version: record.version as number,
+    jobs,
+  }
+}
+
+function parseMemorySnapshotJob(value: unknown): ServerMemoryJob | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const record = value as Record<string, unknown>
+  if (typeof record.id !== 'string' || record.id.length === 0) return null
+  if (typeof record.instanceId !== 'string' || record.instanceId.length === 0) return null
+  if (typeof record.chatId !== 'string' || record.chatId.length === 0) return null
+  if (!isMemoryJobKind(record.kind) || !isMemoryJobStatus(record.status)) return null
+  if (record.status !== 'pending' && record.status !== 'running') return null
+  if (!Number.isInteger(record.attemptCount) || (record.attemptCount as number) < 0) return null
+  if (!Number.isInteger(record.maxAttempts) || (record.maxAttempts as number) <= 0) return null
+  if (typeof record.updatedAt !== 'string') return null
+  return {
+    id: record.id,
+    instanceId: record.instanceId,
+    chatId: record.chatId,
+    kind: record.kind,
+    status: record.status,
+    attemptCount: record.attemptCount as number,
+    maxAttempts: record.maxAttempts as number,
+    updatedAt: record.updatedAt,
+  }
 }
 
 function parseMemorySideEffect(value: unknown): ServerMemoryJobEvent['sideEffect'] | null {

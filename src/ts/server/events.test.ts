@@ -8,7 +8,7 @@ vi.mock('../storage/fastifyStorage', () => ({
 
 import { subscribeServerCommandEvents } from './events'
 import type { CommandEvent } from './commands'
-import type { ServerMemoryEvent, ServerWriterEvent } from './events'
+import type { ServerMemoryEvent, ServerMemoryJobSnapshot, ServerWriterEvent } from './events'
 
 interface CapturedFetch {
   url: string
@@ -70,25 +70,35 @@ describe('server command event subscription helper', () => {
     }
     const memoryEvent: ServerMemoryEvent = {
       type: 'memory.job',
+      streamId: 'memory-stream-1',
+      version: 2,
       chatId: 'chat-1',
       job: {
         id: 'job-1',
+        instanceId: 'job-instance-1',
         kind: 'summarize',
         status: 'pending',
         attemptCount: 0,
         maxAttempts: 3,
+        updatedAt: '2026-08-11T00:00:00.000Z',
       },
-      sideEffect: {
-        kind: 'hypav3_progress',
-        payload: {
-          open: true,
-          miniMsg: '1',
-          msg: '[Hypa V3] Waiting to summarize...',
-          subMsg: '1 queued',
-          status: 'pending',
-          queuedCount: 1,
+    }
+    const memorySnapshot: ServerMemoryJobSnapshot = {
+      type: 'memory.snapshot',
+      streamId: 'memory-stream-1',
+      version: 1,
+      jobs: [
+        {
+          id: 'snapshot-job',
+          instanceId: 'snapshot-instance',
+          chatId: 'chat-2',
+          kind: 'embed',
+          status: 'running',
+          attemptCount: 1,
+          maxAttempts: 3,
+          updatedAt: '2026-08-11T00:00:00.000Z',
         },
-      },
+      ],
     }
     const writerEvent: ServerWriterEvent = { sessionId: 'writer-b', epoch: 2 }
     const calls = stubEventsFetch(
@@ -104,6 +114,9 @@ describe('server command event subscription helper', () => {
         'event: message',
         'data: ignored',
         '',
+        'event: memory_snapshot',
+        `data: ${JSON.stringify(memorySnapshot)}`,
+        '',
         'event: memory',
         `data: ${JSON.stringify(memoryEvent)}`,
         '',
@@ -114,20 +127,24 @@ describe('server command event subscription helper', () => {
     )
     const seen: CommandEvent[] = []
     const memorySeen: ServerMemoryEvent[] = []
+    const memorySnapshots: ServerMemoryJobSnapshot[] = []
     const writerSeen: ServerWriterEvent[] = []
 
     const subscription = await subscribeServerCommandEvents({
       onCommandEvent: (event) => seen.push(event),
       onMemoryEvent: (event) => memorySeen.push(event),
+      onMemorySnapshot: (snapshot) => memorySnapshots.push(snapshot),
       onWriterEvent: (event) => writerSeen.push(event),
     })
 
     expect(subscription.status).toBe('ok')
     await waitFor(() => seen.length === 1)
     await waitFor(() => memorySeen.length === 1)
+    await waitFor(() => memorySnapshots.length === 1)
     await waitFor(() => writerSeen.length === 1)
     expect(seen).toEqual([commandEvent])
     expect(memorySeen).toEqual([memoryEvent])
+    expect(memorySnapshots).toEqual([memorySnapshot])
     expect(writerSeen).toEqual([writerEvent])
     expect(calls).toHaveLength(1)
     expect(calls[0]).toMatchObject({

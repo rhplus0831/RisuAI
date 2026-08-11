@@ -215,6 +215,8 @@ export const languageEnglish = {
   help: {
     reducedMotion:
       'Minimizes animations and transitions. This app setting is used instead of your operating system or browser preference.',
+    hypaV3ProgressOpenChatOnly:
+      'Shows the full memory-job indicator only for the open chat. Jobs in other chats remain visible as a compact count.',
     floatingChatInput:
       'Shows a floating chat input when you scroll far enough that the standard input is no longer readily available.',
     model: 'Model option is a main model used in chat.',
@@ -1381,6 +1383,7 @@ export const languageEnglish = {
   globalRegexScript: 'Global Regex',
   accessibility: 'Accessibility',
   reducedMotion: 'Reduce Motion',
+  hypaV3ProgressOpenChatOnly: 'Show Full Memory Progress for Open Chat Only',
   sendWithEnter: 'Send with Enter Key',
   fixedChatTextarea: 'Fixed at the bottom of the chat window(When unchecked, Shift + Enter changes to send a message.)',
   floatingChatInput: 'Floating Chat Input',
@@ -2108,6 +2111,23 @@ export const languageEnglish = {
     preserveOrphanedMemoryLabel: 'Preserve Orphaned Memory',
     applyRegexScriptWhenRerollingLabel: 'Apply Regex Script When Rerolling',
     doNotSummarizeUserMessageLabel: 'Do Not Summarize User Message',
+  },
+  hypaV3Progress: {
+    activeJobs: (count: number) => `${count} active memory ${count === 1 ? 'job' : 'jobs'}`,
+    activeInOtherChats: (count: number) => `${count} active memory ${count === 1 ? 'job' : 'jobs'} in other chats`,
+    otherChatsCompact: (count: number) => `+${count} other ${count === 1 ? 'chat job' : 'chat jobs'}`,
+    openDetailsAction: (count: number) => `Show details for ${count} active memory ${count === 1 ? 'job' : 'jobs'}`,
+    closeDetailsAction: 'Hide memory job details',
+    unnamedChat: 'Unnamed chat',
+    unknownChat: (id: string) => `Chat ${id}`,
+    kind: {
+      chunk: 'Preparing memory',
+      embed: 'Searching memory',
+      summarize: 'Summarizing memory',
+    },
+    pending: 'Waiting',
+    running: 'Running',
+    attempt: (attemptCount: number, maxAttempts: number) => `Attempt ${attemptCount}/${maxAttempts}`,
   },
   hypaV3Modal: {
     titleLabel: 'HypaV3',

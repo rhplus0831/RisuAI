@@ -62,6 +62,8 @@ export const languageVietnamese = {
   },
   showHelp: 'Hiển thị trợ giúp',
   help: {
+    hypaV3ProgressOpenChatOnly:
+      'Chỉ hiển thị đầy đủ tiến trình tác vụ bộ nhớ cho cuộc trò chuyện đang mở. Tác vụ ở cuộc trò chuyện khác vẫn hiện dưới dạng số đếm nhỏ gọn.',
     model: 'Tùy chọn mô hình là mô hình chính được sử dụng trong trò chuyện.',
     submodel:
       'Mô hình phụ trợ là mô hình được sử dụng để phân tích hình ảnh cảm xúc và đề xuất tự động, v.v. Nên sử dụng gpt3.5.',
@@ -877,6 +879,7 @@ export const languageVietnamese = {
   globalRegexScript: 'Regex toàn cầu',
   accessibility: 'Khả năng tiếp cận',
   reducedMotion: 'Giảm chuyển động',
+  hypaV3ProgressOpenChatOnly: 'Chỉ hiện đầy đủ tiến trình bộ nhớ cho cuộc trò chuyện đang mở',
   sendWithEnter: 'Gửi bằng phím Enter(Shift + Enter chuyển sang gửi tin nhắn khi không kiểm tra.)',
   fixedChatTextarea: 'Cố định ở dưới khung chat',
   clickToEdit: 'Bấm vào văn bản để chỉnh sửa',
@@ -1364,6 +1367,19 @@ export const languageVietnamese = {
     preserveOrphanedMemoryLabel: 'Giữ Bộ nhớ Mồ côi',
     applyRegexScriptWhenRerollingLabel: 'Áp dụng Script Regex khi Tạo lại',
     doNotSummarizeUserMessageLabel: 'Không Tóm tắt Tin nhắn Người dùng',
+  },
+  hypaV3Progress: {
+    activeJobs: (count: number) => `${count} tác vụ bộ nhớ đang hoạt động`,
+    activeInOtherChats: (count: number) => `${count} tác vụ bộ nhớ đang hoạt động trong cuộc trò chuyện khác`,
+    otherChatsCompact: (count: number) => `+${count} tác vụ ở trò chuyện khác`,
+    openDetailsAction: (count: number) => `Hiện chi tiết ${count} tác vụ bộ nhớ đang hoạt động`,
+    closeDetailsAction: 'Ẩn chi tiết tác vụ bộ nhớ',
+    unnamedChat: 'Cuộc trò chuyện chưa đặt tên',
+    unknownChat: (id: string) => `Cuộc trò chuyện ${id}`,
+    kind: { chunk: 'Chuẩn bị bộ nhớ', embed: 'Tìm kiếm bộ nhớ', summarize: 'Tóm tắt bộ nhớ' },
+    pending: 'Đang chờ',
+    running: 'Đang chạy',
+    attempt: (attemptCount: number, maxAttempts: number) => `Lần thử ${attemptCount}/${maxAttempts}`,
   },
   hypaV3Modal: {
     titleLabel: 'HypaV3',

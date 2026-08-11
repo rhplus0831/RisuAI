@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { DatabaseSync, StatementSync } from 'node:sqlite'
 import { ValidationError } from './repository.js'
 
@@ -119,6 +120,7 @@ export interface CreateMemoryEmbeddingInput {
 
 export interface MemoryJob {
   id: string
+  instanceId: string
   chatId: string
   kind: MemoryJobKind
   status: MemoryJobStatus
@@ -133,6 +135,7 @@ export interface MemoryJob {
 
 export interface MemoryJobListItem {
   id: string
+  instanceId: string
   chatId: string
   kind: MemoryJobKind
   status: MemoryJobStatus
@@ -144,6 +147,7 @@ export interface MemoryJobListItem {
 
 export interface CreateMemoryJobInput {
   id: string
+  instanceId?: string
   chatId: string
   kind: MemoryJobKind
   payload: unknown
@@ -244,6 +248,7 @@ interface MemoryEmbeddingRow {
 
 interface MemoryJobRow {
   id: string
+  instance_id: string
   chat_id: string
   kind: string
   status: string
@@ -463,6 +468,7 @@ export function mapMemoryJobRow(row: MemoryJobRow): MemoryJob {
   }
   return {
     id: row.id,
+    instanceId: row.instance_id,
     chatId: row.chat_id,
     kind: requireJobKind(row.kind),
     status: requireJobStatus(row.status),
@@ -479,11 +485,12 @@ export function mapMemoryJobRow(row: MemoryJobRow): MemoryJob {
 function mapMemoryJobListItemRow(
   row: Pick<
     MemoryJobRow,
-    'id' | 'chat_id' | 'kind' | 'status' | 'attempt_count' | 'max_attempts' | 'error' | 'updated_at'
+    'id' | 'instance_id' | 'chat_id' | 'kind' | 'status' | 'attempt_count' | 'max_attempts' | 'error' | 'updated_at'
   >,
 ): MemoryJobListItem {
   return {
     id: row.id,
+    instanceId: row.instance_id,
     chatId: row.chat_id,
     kind: requireJobKind(row.kind),
     status: requireJobStatus(row.status),
@@ -1114,6 +1121,7 @@ export function listMemoryEmbeddings(
 
 export function createMemoryJob(db: DatabaseSync, input: CreateMemoryJobInput): MemoryJob {
   requireString(input.id, 'job id')
+  if (input.instanceId !== undefined) requireString(input.instanceId, 'job instance id')
   requireString(input.chatId, 'chat id')
   const kind = requireJobKind(input.kind)
   const status = input.status ?? 'pending'
@@ -1128,6 +1136,7 @@ export function createMemoryJob(db: DatabaseSync, input: CreateMemoryJobInput): 
     db.prepare(`
       INSERT INTO memory_jobs (
         id,
+        instance_id,
         chat_id,
         kind,
         status,
@@ -1136,9 +1145,10 @@ export function createMemoryJob(db: DatabaseSync, input: CreateMemoryJobInput): 
         attempt_count,
         max_attempts,
         next_run_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     input.id,
+    input.instanceId ?? randomUUID(),
     input.chatId,
     kind,
     status,
@@ -1243,10 +1253,13 @@ export function listMemoryJobItems(
   }
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
   const rows = allRows<
-    Pick<MemoryJobRow, 'id' | 'chat_id' | 'kind' | 'status' | 'attempt_count' | 'max_attempts' | 'error' | 'updated_at'>
+    Pick<
+      MemoryJobRow,
+      'id' | 'instance_id' | 'chat_id' | 'kind' | 'status' | 'attempt_count' | 'max_attempts' | 'error' | 'updated_at'
+    >
   >(
     db.prepare(`
-        SELECT id, chat_id, kind, status, attempt_count, max_attempts, error, updated_at
+        SELECT id, instance_id, chat_id, kind, status, attempt_count, max_attempts, error, updated_at
         FROM memory_jobs
         ${where}
         ORDER BY created_at, id

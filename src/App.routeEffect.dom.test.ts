@@ -266,7 +266,6 @@ import {
   customSideBarConfigDialogStore,
   easyPanelStore,
   hypaV3ModalOpen,
-  hypaV3ProgressStore,
   irisStore,
   loadedStore,
   loadoutModalStore,
@@ -366,7 +365,6 @@ function seedStores() {
   bookmarkListOpen.set(false)
   alertStore.set({ type: 'none', msg: 'n' })
   hypaV3ModalOpen.set(false)
-  hypaV3ProgressStore.set({ open: false, miniMsg: '', msg: '', subMsg: '' })
   LoadingStatusState.text = ''
   QuickSettings.open = false
   popupStore.children = null

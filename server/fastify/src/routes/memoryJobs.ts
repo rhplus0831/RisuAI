@@ -10,7 +10,6 @@ import {
   enqueueMemoryJob,
   getMemoryJob,
   listMemoryJobItems,
-  listMemoryJobs,
   type MemoryJobKind,
   type MemoryJobStatus,
 } from '../memoryRepository.js'
@@ -52,21 +51,11 @@ function isMemoryJobStatus(value: unknown): value is MemoryJobStatus {
   return typeof value === 'string' && (MEMORY_JOB_STATUSES as readonly string[]).includes(value)
 }
 
-function activeJobCount(db: DatabaseSync, chatId: string): number {
-  return listMemoryJobs(db, { chatId, statuses: ['pending', 'running'] }).length
-}
-
 function emitRouteJobEvent(db: DatabaseSync, onEvent: MemoryEventSink | undefined, jobId: string): void {
   if (!onEvent) return
   const job = getMemoryJob(db, jobId)
   if (!job) return
-  emitMemoryEventSafely(
-    onEvent,
-    buildMemoryJobEvent(job, {
-      includeHypaV3Progress: true,
-      queuedCount: activeJobCount(db, job.chatId),
-    }),
-  )
+  emitMemoryEventSafely(onEvent, buildMemoryJobEvent(job))
 }
 
 function badRequest(error: string): { error: string } {
@@ -94,7 +83,11 @@ export function registerMemoryJobRoutes(
   app: FastifyInstance,
   db: DatabaseSync,
   authState: AuthState,
-  options: { onEvent?: MemoryEventSink } = {},
+  options: {
+    onEvent?: MemoryEventSink
+    snapshotVersion?: () => { streamId: string; version: number }
+    abortRunningJob?: (jobId: string) => boolean
+  } = {},
 ): void {
   app.post('/api/v1/memory/jobs', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
@@ -163,6 +156,7 @@ export function registerMemoryJobRoutes(
       return badRequest('status must be one of: pending, running, completed, failed, cancelled')
     }
 
+    const memorySnapshot = options.snapshotVersion?.()
     const jobs = presentMemoryJobs(
       listMemoryJobItems(db, {
         chatId: typeof query.chatId === 'string' ? query.chatId : undefined,
@@ -173,6 +167,10 @@ export function registerMemoryJobRoutes(
     )
     const etag = memoryJobsEtag(jobs)
     reply.header('etag', etag)
+    if (memorySnapshot) {
+      reply.header('x-risu-memory-stream-id', memorySnapshot.streamId)
+      reply.header('x-risu-memory-version', String(memorySnapshot.version))
+    }
     if (req.headers['if-none-match'] === etag) {
       reply.code(304)
       return
@@ -187,10 +185,12 @@ export function registerMemoryJobRoutes(
       reply.code(404)
       return { error: 'memory job not found or not cancellable' }
     }
+    options.abortRunningJob?.(job.id)
     emitRouteJobEvent(db, options.onEvent, job.id)
     return {
       job: {
         id: job.id,
+        instanceId: job.instanceId,
         chatId: job.chatId,
         kind: job.kind,
         status: job.status,

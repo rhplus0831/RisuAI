@@ -1,30 +1,25 @@
+import { randomUUID } from 'node:crypto'
 import type { FastifyBaseLogger } from 'fastify'
-import type { MemoryJob, MemoryJobListItem, MemoryJobStatus } from './memoryRepository.js'
+import type { MemoryJob, MemoryJobListItem } from './memoryRepository.js'
 import { emitProtocolMetric, jsonPayloadBytes } from './protocolMetrics.js'
-
-export interface HypaV3ProgressPayload {
-  open: boolean
-  miniMsg: string
-  msg: string
-  subMsg: string
-  status: MemoryJobStatus
-  queuedCount?: number
-}
-
-export interface MemoryHypaV3ProgressSideEffect {
-  kind: 'hypav3_progress'
-  payload: HypaV3ProgressPayload
-}
 
 export interface MemoryJobEvent {
   type: 'memory.job'
+  streamId?: string
+  version?: number
   chatId: string
   job: Omit<MemoryJobListItem, 'chatId' | 'error' | 'updatedAt'> &
     Partial<Pick<MemoryJobListItem, 'error' | 'updatedAt'>>
-  sideEffect?: MemoryHypaV3ProgressSideEffect
 }
 
 export type MemoryEvent = MemoryJobEvent
+
+export interface MemoryJobSnapshot {
+  type: 'memory.snapshot'
+  streamId: string
+  version: number
+  jobs: MemoryJobListItem[]
+}
 
 export type MemoryEventSink = (event: MemoryEvent) => void
 export type MemoryEventListener = (event: MemoryEvent) => void
@@ -32,6 +27,7 @@ export type MemoryEventListener = (event: MemoryEvent) => void
 export interface MemoryEventBus {
   emit(event: MemoryEvent): void
   subscribe(listener: MemoryEventListener): () => void
+  snapshotVersion(): { streamId: string; version: number }
 }
 
 export function emitMemoryEventSafely(sink: MemoryEventSink, event: MemoryEvent): void {
@@ -45,12 +41,19 @@ export function emitMemoryEventSafely(sink: MemoryEventSink, event: MemoryEvent)
 
 export function createMemoryEventBus(logger?: FastifyBaseLogger): MemoryEventBus {
   const listeners = new Set<MemoryEventListener>()
+  const streamId = randomUUID()
+  let version = 0
   return {
     emit(event) {
+      const publishedEvent: MemoryEvent = {
+        ...event,
+        streamId,
+        version: ++version,
+      }
       emitProtocolMetric(
         'memory_event_fanout',
         () => {
-          const payloadBytes = jsonPayloadBytes(event)
+          const payloadBytes = jsonPayloadBytes(publishedEvent)
           const frameBytes =
             payloadBytes === null ? null : payloadBytes + Buffer.byteLength('event: memory\ndata: \n\n', 'utf8')
           return {
@@ -58,15 +61,15 @@ export function createMemoryEventBus(logger?: FastifyBaseLogger): MemoryEventBus
             frameBytes,
             listenerCount: listeners.size,
             deliveredBytes: frameBytes === null ? null : frameBytes * listeners.size,
-            jobKind: event.job.kind,
-            jobStatus: event.job.status,
-            hasSideEffect: event.sideEffect !== undefined,
+            jobKind: publishedEvent.job.kind,
+            jobStatus: publishedEvent.job.status,
+            hasSideEffect: false,
           }
         },
         logger,
       )
       for (const listener of listeners) {
-        emitMemoryEventSafely(listener, event)
+        emitMemoryEventSafely(listener, publishedEvent)
       }
     },
     subscribe(listener) {
@@ -75,30 +78,28 @@ export function createMemoryEventBus(logger?: FastifyBaseLogger): MemoryEventBus
         listeners.delete(listener)
       }
     },
+    snapshotVersion() {
+      return { streamId, version }
+    },
   }
 }
 
-export function buildMemoryJobEvent(
-  job: MemoryJob,
-  options: { includeHypaV3Progress?: boolean; queuedCount?: number } = {},
-): MemoryJobEvent {
+export function buildMemoryJobEvent(job: MemoryJob): MemoryJobEvent {
   const event: MemoryJobEvent = {
     type: 'memory.job',
     chatId: job.chatId,
     job: {
       id: job.id,
+      instanceId: job.instanceId,
       kind: job.kind,
       status: job.status,
       attemptCount: job.attemptCount,
       maxAttempts: job.maxAttempts,
+      updatedAt: job.updatedAt,
     },
   }
   if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
     event.job.error = sanitizeMemoryJobError(job.error)
-    event.job.updatedAt = job.updatedAt
-  }
-  if (options.includeHypaV3Progress) {
-    event.sideEffect = buildHypaV3ProgressSideEffect(job, options.queuedCount)
   }
   return event
 }
@@ -109,34 +110,4 @@ export function sanitizeMemoryJobError(error: string | null): string | null {
     .slice(0, 1000)
     .replace(/([?&](?:key|api[_-]?key|token|secret)=)[^&\s]+/giu, '$1[redacted]')
     .replace(/((?:authorization|api[_ -]?key|token|secret)\s*[:=]\s*)(?:bearer\s+)?\S+/giu, '$1[redacted]')
-}
-
-export function buildHypaV3ProgressSideEffect(job: MemoryJob, queuedCount?: number): MemoryHypaV3ProgressSideEffect {
-  const queueText = queuedCount === undefined ? '' : `${queuedCount}`
-  const active = job.status === 'pending' || job.status === 'running'
-  const payload: HypaV3ProgressPayload = {
-    open: active,
-    miniMsg: active ? queueText : '',
-    msg: active ? `[Hypa V3] ${memoryProgressVerb(job)}` : '',
-    subMsg: active && queuedCount !== undefined ? `${queuedCount} queued` : '',
-    status: job.status,
-  }
-  if (queuedCount !== undefined) {
-    payload.queuedCount = queuedCount
-  }
-  return {
-    kind: 'hypav3_progress',
-    payload,
-  }
-}
-
-function memoryProgressVerb(job: MemoryJob): string {
-  switch (job.kind) {
-    case 'chunk':
-      return job.status === 'running' ? 'Chunking...' : 'Waiting to chunk...'
-    case 'embed':
-      return job.status === 'running' ? 'Similarity searching...' : 'Waiting to embed...'
-    case 'summarize':
-      return job.status === 'running' ? 'Summarizing...' : 'Waiting to summarize...'
-  }
 }

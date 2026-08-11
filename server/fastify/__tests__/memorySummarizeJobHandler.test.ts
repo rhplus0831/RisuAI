@@ -6,6 +6,7 @@ import { openDatabase } from '../src/db.js'
 import {
   createSummarizeMemoryJobBatchHandler,
   createSummarizeMemoryJobHandler,
+  type SummarizeMemoryJobHandlerOptions,
 } from '../src/memorySummarizeJobHandler.js'
 import { MemoryWorker } from '../src/memoryWorker.js'
 import {
@@ -612,6 +613,50 @@ describe('summarize memory job handler', () => {
       expect(getMemoryChunk(db, 'chunk-1')).toMatchObject({ status: 'failed' })
       expect(listMemorySummaries(db, { chatId: 'chat-1' })).toHaveLength(0)
       expect(worker.isProcessing).toBe(false)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('forwards worker cancellation to the running provider signal and retains cancelled state', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      seedChunkAndJob(db)
+      let providerSignal: AbortSignal | undefined
+      const summarize: NonNullable<SummarizeMemoryJobHandlerOptions['summarize']> = vi.fn(
+        async (_messages, opts): Promise<SummaryAdapterResult> => {
+          providerSignal = opts.signal
+          return new Promise<SummaryAdapterResult>((_resolve, reject) => {
+            const onAbort = (): void => reject(new Error('provider aborted by cancellation'))
+            if (opts.signal?.aborted) {
+              onAbort()
+              return
+            }
+            opts.signal?.addEventListener('abort', onAbort, { once: true })
+          })
+        },
+      )
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          summarize: createSummarizeMemoryJobBatchHandler({
+            db,
+            loadDatabase: database,
+            summarize,
+          }),
+        },
+      })
+
+      const tick = worker.tick()
+      await flushMicrotasks()
+      expect(providerSignal).toBeDefined()
+      expect(cancelMemoryJob(db, 'job-1')).toMatchObject({ status: 'cancelled' })
+      expect(worker.abortRunningJob('job-1')).toBe(true)
+      await expect(tick).resolves.toBe(true)
+
+      expect(providerSignal?.aborted).toBe(true)
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'cancelled' })
+      expect(listMemorySummaries(db, { chatId: 'chat-1' })).toHaveLength(0)
     } finally {
       db.close()
     }

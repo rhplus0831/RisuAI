@@ -703,6 +703,53 @@ describe('schema migrations', () => {
     }
   })
 
+  it('backfills concrete instance identity for memory jobs created before v29', () => {
+    const dataDir = makeDataDir()
+    const seed = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      seed.exec(`
+        CREATE TABLE schema_version (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          version INTEGER NOT NULL,
+          revision INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT INTO schema_version (id, version, revision) VALUES (1, 28, 17);
+        CREATE TABLE memory_jobs (
+          id TEXT PRIMARY KEY,
+          chat_id TEXT NOT NULL,
+          kind TEXT NOT NULL CHECK (kind IN ('chunk', 'embed', 'summarize')),
+          status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
+          payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
+          error TEXT,
+          attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+          max_attempts INTEGER NOT NULL DEFAULT 3 CHECK (max_attempts > 0),
+          next_run_at TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO memory_jobs (
+          id, chat_id, kind, status, payload_json, next_run_at, created_at, updated_at
+        ) VALUES (
+          'legacy-job', 'chat-1', 'summarize', 'pending', '{}',
+          '2026-08-11T00:00:00.000Z', '2026-08-11T00:00:00.000Z', '2026-08-11T00:00:00.000Z'
+        );
+      `)
+    } finally {
+      seed.close()
+    }
+
+    const db = openDatabase(dataDir)
+    try {
+      expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 17 })
+      const row = db.prepare("SELECT instance_id FROM memory_jobs WHERE id = 'legacy-job'").get() as {
+        instance_id: string
+      }
+      expect(row.instance_id).toMatch(/^[0-9a-f]{32}$/)
+    } finally {
+      db.close()
+    }
+  })
+
   it('enforces memory table status, kind, and payload constraints', () => {
     const db = openDatabase(makeDataDir())
     try {

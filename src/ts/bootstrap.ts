@@ -11,7 +11,7 @@ import { updateGuisize } from './gui/guisize'
 import { moduleUpdate } from './process/modules'
 import { registerModelDynamic } from './model/modellist'
 import { fetchServerBootstrap, fetchServerBootstrapReadOnly, type ServerBootstrapRuntime } from './server/bootstrap'
-import { subscribeServerCommandEvents, type ServerMemoryEvent } from './server/events'
+import { subscribeServerCommandEvents, type ServerMemoryEvent, type ServerMemoryJobSnapshot } from './server/events'
 import { publishServerMemoryJobEvent } from './server/memoryJobEvents'
 import {
   canUseServerCommands,
@@ -81,8 +81,7 @@ import {
   setActiveGreetingTranslations,
   startActiveGreetingTranslationRefresh,
 } from './server/greetingTranslations.svelte'
-import { applyServerHypaV3Progress } from './process/request/serverMemory'
-import { shouldAcceptMemoryJobUpdate } from './server/memoryJobOrdering'
+import { applyServerMemoryJobEvent, applyServerMemoryJobSnapshot } from './server/memoryJobProjection.svelte'
 import {
   initializePushNotificationCoordinator,
   reconcileChatCompletionPushNotificationSetting,
@@ -438,6 +437,7 @@ async function startServerResourceEvents(options: { replayPendingMutations?: boo
     sinceRevision: peekAppliedServerResourceRevision(),
     onCommandEvent: handleServerCommandEvent,
     onMemoryEvent: applyServerMemoryEvent,
+    onMemorySnapshot: applyServerMemorySnapshot,
     onWriterEvent: (event) => {
       if (event.sessionId !== null && event.sessionId !== getActiveWriterSessionId()) {
         enterWriterTakeoverFlow()
@@ -646,11 +646,12 @@ export function calculateServerResourceReconnectDelayMs(attempt: number, random:
 }
 
 function applyServerMemoryEvent(event: ServerMemoryEvent) {
-  if (!shouldAcceptMemoryJobUpdate({ chatId: event.chatId, ...event.job })) return
-  if (event.sideEffect?.kind === 'hypav3_progress') {
-    applyServerHypaV3Progress(event.sideEffect.payload)
-  }
+  if (!applyServerMemoryJobEvent(event)) return
   publishServerMemoryJobEvent(event)
+}
+
+function applyServerMemorySnapshot(snapshot: ServerMemoryJobSnapshot) {
+  applyServerMemoryJobSnapshot(snapshot)
 }
 
 /**

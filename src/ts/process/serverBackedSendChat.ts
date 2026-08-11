@@ -12,7 +12,6 @@ import { safeStructuredClone } from '../polyfill'
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { getInlayAssetMetadata, getServerInlayAssetId } from './files/inlays'
 import { runInlayScreen } from './inlayScreen'
-import { applyServerHypaV3Progress } from './request/serverMemory'
 import { applyServerChatRestoration, applyServerMessagePatch } from './request/serverMessagePatch'
 import {
   requestServerChat,
@@ -789,7 +788,9 @@ export async function applyServerBackedTerminal(args: {
         break
       }
       case 'hypav3_progress':
-        applyServerHypaV3Progress(sideEffect.payload)
+        // Memory job progress is projected from identified memory events and
+        // authoritative snapshots. A legacy display-only side effect cannot
+        // safely mutate that projection.
         break
       default:
         break

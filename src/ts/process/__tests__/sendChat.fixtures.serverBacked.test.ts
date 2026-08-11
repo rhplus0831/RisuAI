@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { get } from 'svelte/store'
 import type { FastifyInstance } from 'fastify'
 
 // Server-backed sendChat sweep. Unlike sendChat.fixtures.test.ts, this file does
@@ -122,7 +121,6 @@ import { isTokenizerUrl, serveTokenizerFetch } from '../__fixtures__/mocks/token
 import { getSideEffectCalls, resetSideEffectCalls } from '../__fixtures__/sideEffects'
 import { getProviderCalls, installProviderScript, resetProviderState } from '../__fixtures__/providerFake'
 import { type FixtureSnapshot, captureSnapshot, recordStages } from '../__fixtures__/snapshot'
-import { hypaV3ProgressStore } from '../../stores.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
 import type { Chat } from '../../storage/database.svelte'
 import { setResourceWriteGuardEnabled } from '../../server/resourceWriteGuard.svelte'
@@ -1165,12 +1163,6 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     expect(captured.stages).toEqual([1, 3, 4])
     expect(captured.doingChat).toBe(false)
     expect(captured.providerCalls).toEqual([])
-    expect(get(hypaV3ProgressStore)).toEqual({
-      open: true,
-      miniMsg: '2',
-      msg: '[Hypa V3] Summarizing...',
-      subMsg: '2 queued',
-    })
     expect(getServerChatCalls()).toHaveLength(1)
     expect(getServerChatCalls()[0]).toMatchObject({
       url: '/api/v1/generate/chat',

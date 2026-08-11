@@ -1059,6 +1059,38 @@ describe('memory repository jobs', () => {
     }
   })
 
+  it('assigns a fresh concrete instance when a pruned logical job id is recreated', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      const first = createMemoryJob(db, {
+        id: 'recreated-job',
+        chatId: 'chat-1',
+        kind: 'summarize',
+        payload: {},
+        status: 'completed',
+      })
+      db.prepare("UPDATE memory_jobs SET updated_at = '2026-06-01T00:00:00.000Z' WHERE id = 'recreated-job'").run()
+      expect(
+        pruneTerminalMemoryJobs(db, {
+          now: '2026-06-06T00:00:00.000Z',
+          retentionMs: 24 * 60 * 60 * 1000,
+        }),
+      ).toBe(1)
+
+      const recreated = enqueueMemoryJob(db, {
+        id: 'recreated-job',
+        chatId: 'chat-1',
+        kind: 'summarize',
+        payload: {},
+      })
+      expect(recreated.id).toBe(first.id)
+      expect(recreated.instanceId).not.toBe(first.instanceId)
+      expect(recreated.status).toBe('pending')
+    } finally {
+      db.close()
+    }
+  })
+
   it('validates payload serialization, row mapper statuses, and uniqueness conflicts', () => {
     const db = openDatabase(makeDataDir())
     try {
@@ -1103,6 +1135,7 @@ describe('memory repository jobs', () => {
       expect(() =>
         mapMemoryJobRow({
           id: 'job-row',
+          instance_id: 'job-row-instance',
           chat_id: 'chat-1',
           kind: 'translate',
           status: 'pending',
@@ -1118,6 +1151,7 @@ describe('memory repository jobs', () => {
       expect(() =>
         mapMemoryJobRow({
           id: 'job-row',
+          instance_id: 'job-row-instance',
           chat_id: 'chat-1',
           kind: 'chunk',
           status: 'pending',

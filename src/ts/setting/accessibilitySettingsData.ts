@@ -28,6 +28,14 @@ export const accessibilitySettingsItems: SettingItem[] = [
     keywords: ['reduced', 'motion', 'animation', 'accessibility'],
   },
   {
+    id: 'acc.hypaV3ProgressOpenChatOnly',
+    type: 'check',
+    labelKey: 'hypaV3ProgressOpenChatOnly',
+    helpKey: 'hypaV3ProgressOpenChatOnly',
+    bindKey: 'hypaV3ProgressOpenChatOnly',
+    keywords: ['hypa', 'memory', 'progress', 'chat', 'accessibility'],
+  },
+  {
     id: 'acc.askRemoval',
     type: 'check',
     labelKey: 'askRemoval',

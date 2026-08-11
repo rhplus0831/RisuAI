@@ -114,6 +114,7 @@ import { generationSubmitRateLimit } from '../routeRateLimits.js'
 import { REQUEST_UID_HEADER } from '../requestTrace.js'
 import type { ChatCompletionNotificationContext, PushNotificationService } from '../pushNotifications.js'
 import type { MessageTranslationJobRegistry } from '../messageTranslationJobs.js'
+import type { MemoryJob } from '../memoryRepository.js'
 import {
   emptyPromptMemoryQueryDiagnostics,
   prefetchPromptMemoryQueryVectors,
@@ -206,6 +207,7 @@ export interface GenerationChatRouteOptions {
   promptMemoryEmbeddingDeadlineMs?: number
   pushNotifications?: false | PushNotificationService
   runMessageTranslation?: ServerMessageTranslationRunner
+  onPromptMemoryJobEnqueued?: (job: MemoryJob) => void
   finalizationRetry?:
     | false
     | {
@@ -872,6 +874,7 @@ function loadDatabaseDeps(
     loadMemoryDatabase: () => db,
     loadPromptMemoryQueryVectors: () => promptMemoryQueryPrefetch.vectors,
     loadPromptMemoryQueryDiagnostics: () => promptMemoryQueryPrefetch.diagnostics,
+    onPromptMemoryJobEnqueued: undefined,
     setPromptMemoryQueryPrefetch: (prefetch) => {
       promptMemoryQueryPrefetch = prefetch
     },
@@ -901,6 +904,7 @@ async function assemblePromptWithMetrics(
   const metricStartedAt = protocolMetricsEnabled() ? protocolNowMs() : 0
   const startedAt = Date.now()
   const deps = loadDatabaseDeps(dataDir, db, input.chatId, measurement, signal, agentPresetProgress)
+  deps.onPromptMemoryJobEnqueued = options.onPromptMemoryJobEnqueued
   try {
     const database = deps.loadDatabase()
     const promptMemoryPrefetchStartedAt = protocolNowMs()

@@ -10,7 +10,13 @@ import {
 } from '../commands/events.js'
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
-import type { MemoryEvent, MemoryEventBus } from '../memoryEvents.js'
+import {
+  sanitizeMemoryJobError,
+  type MemoryEvent,
+  type MemoryEventBus,
+  type MemoryJobSnapshot,
+} from '../memoryEvents.js'
+import { listMemoryJobItems } from '../memoryRepository.js'
 import { emitProtocolMetric, protocolDurationMs, protocolMetricsEnabled, protocolNowMs } from '../protocolMetrics.js'
 import { writeBoundedRaw } from '../streamBackpressure.js'
 import type { WriterEvent } from '../writerEvents.js'
@@ -27,11 +33,15 @@ function formatMemoryEvent(event: MemoryEvent): string {
   return `event: memory\ndata: ${JSON.stringify(event)}\n\n`
 }
 
+function formatMemorySnapshot(snapshot: MemoryJobSnapshot): string {
+  return `event: memory_snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`
+}
+
 function formatWriterEvent(event: { sessionId: string | null; epoch: number }): string {
   return `event: writer\ndata: ${JSON.stringify(event)}\n\n`
 }
 
-type EventStreamFrameType = 'writer' | 'connected' | 'command' | 'memory' | 'heartbeat'
+type EventStreamFrameType = 'writer' | 'connected' | 'command' | 'memory_snapshot' | 'memory' | 'heartbeat'
 type EventStreamCloseReason = 'normal_close' | 'client_abort' | 'slow_consumer_overflow' | 'replay_unavailable'
 
 interface EventStreamMetricTracker {
@@ -46,6 +56,7 @@ export function createEventStreamMetricTracker(logger?: FastifyBaseLogger): Even
     writer: 0,
     connected: 0,
     command: 0,
+    memory_snapshot: 0,
     memory: 0,
     heartbeat: 0,
   }
@@ -53,6 +64,7 @@ export function createEventStreamMetricTracker(logger?: FastifyBaseLogger): Even
     writer: 0,
     connected: 0,
     command: 0,
+    memory_snapshot: 0,
     memory: 0,
     heartbeat: 0,
   }
@@ -108,8 +120,10 @@ export function registerEventsRoutes(
     }
 
     let liveCommandDelivery = false
+    let liveMemoryDelivery = false
     let liveWriterDelivery = false
     const queuedCommandEvents: CommandEvent[] = []
+    const queuedMemoryEvents: MemoryEvent[] = []
     const queuedWriterEvents: WriterEvent[] = []
     let heartbeat: NodeJS.Timeout | null = null
     let unsubscribeCommand: (() => void) | null = null
@@ -152,6 +166,15 @@ export function registerEventsRoutes(
       }
       queuedCommandEvents.push(event)
     })
+    unsubscribeMemory = memoryEvents.subscribe((event) => {
+      if (liveMemoryDelivery) {
+        if (!reply.raw.writableEnded) {
+          sendFrame('memory', formatMemoryEvent(event))
+        }
+        return
+      }
+      queuedMemoryEvents.push(event)
+    })
     unsubscribeWriter = activeWriterState.events.subscribe((event) => {
       if (liveWriterDelivery) {
         if (!reply.raw.writableEnded) {
@@ -164,6 +187,15 @@ export function registerEventsRoutes(
     const initialWriterEvent = {
       sessionId: activeWriterState.sessionId,
       epoch: activeWriterState.epoch,
+    }
+    const snapshotVersion = memoryEvents.snapshotVersion()
+    const memorySnapshot: MemoryJobSnapshot = {
+      type: 'memory.snapshot',
+      ...snapshotVersion,
+      jobs: listMemoryJobItems(db, { statuses: ['pending', 'running'] }).map((job) => ({
+        ...job,
+        error: sanitizeMemoryJobError(job.error),
+      })),
     }
     req.raw.once('aborted', onRequestAborted)
     req.raw.once('close', onRequestClose)
@@ -229,6 +261,7 @@ export function registerEventsRoutes(
     })
     sendFrame('writer', formatWriterEvent(initialWriterEvent))
     sendFrame('connected', formatSseComment('connected'))
+    sendFrame('memory_snapshot', formatMemorySnapshot(memorySnapshot))
     for (const event of queuedWriterEvents) {
       if (!reply.raw.writableEnded) {
         sendFrame('writer', formatWriterEvent(event))
@@ -257,12 +290,21 @@ export function registerEventsRoutes(
             sendFrame('heartbeat', formatSseComment('heartbeat'))
           }
         }, 25_000),
-      subscribeMemory: () =>
-        memoryEvents.subscribe((event) => {
-          if (!reply.raw.writableEnded) {
+      subscribeMemory: () => {
+        for (const event of queuedMemoryEvents) {
+          if (
+            !reply.raw.writableEnded &&
+            event.streamId === memorySnapshot.streamId &&
+            typeof event.version === 'number' &&
+            event.version > memorySnapshot.version
+          ) {
             sendFrame('memory', formatMemoryEvent(event))
           }
-        }),
+        }
+        queuedMemoryEvents.length = 0
+        liveMemoryDelivery = true
+        return unsubscribeMemory ?? (() => {})
+      },
     })
     heartbeat = armed.heartbeat
     unsubscribeMemory = armed.unsubscribeMemory

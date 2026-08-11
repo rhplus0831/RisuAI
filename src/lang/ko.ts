@@ -75,6 +75,8 @@ const languageKoreanBase = {
   },
   showHelp: '도움말 보기',
   help: {
+    hypaV3ProgressOpenChatOnly:
+      '현재 열려 있는 채팅에 대해서만 전체 메모리 작업 표시기를 보여 줍니다. 다른 채팅의 작업은 작은 개수 표시로 계속 확인할 수 있습니다.',
     model: '채팅에서 사용되는 모델입니다.',
     submodel: '보조 모델은 감정 이미지, 자동 제안등을 분석하는 데 사용되는 모델입니다. gpt3.5가 권장됩니다.',
     oaiapikey: 'OpenAI용 API 키입니다. https://platform.openai.com/account/api-keys에서 구하실 수 있습니다.',
@@ -919,6 +921,7 @@ const languageKoreanBase = {
   globalRegexScript: '글로벌 정규식',
   accessibility: '접근성',
   reducedMotion: '모션 줄이기',
+  hypaV3ProgressOpenChatOnly: '열린 채팅의 메모리 진행 상황만 전체 표시',
   sendWithEnter: '엔터키로 메세지 보내기(체크 해제시 Shift + Enter가 메세지 전송으로 변경.)',
   fixedChatTextarea: '채팅창 하단 고정',
   floatingChatInput: '떠 있는 채팅 입력창',
@@ -1477,6 +1480,19 @@ const languageKoreanBase = {
     preserveOrphanedMemoryLabel: '고아 메모리 보존',
     applyRegexScriptWhenRerollingLabel: '재생성 시 정규식 스크립트 적용',
     doNotSummarizeUserMessageLabel: '유저 메시지 요약하지 않기',
+  },
+  hypaV3Progress: {
+    activeJobs: (count: number) => `진행 중인 메모리 작업 ${count}개`,
+    activeInOtherChats: (count: number) => `다른 채팅에서 진행 중인 메모리 작업 ${count}개`,
+    otherChatsCompact: (count: number) => `다른 채팅 +${count}`,
+    openDetailsAction: (count: number) => `진행 중인 메모리 작업 ${count}개의 세부 정보 표시`,
+    closeDetailsAction: '메모리 작업 세부 정보 숨기기',
+    unnamedChat: '이름 없는 채팅',
+    unknownChat: (id: string) => `채팅 ${id}`,
+    kind: { chunk: '메모리 준비', embed: '메모리 검색', summarize: '메모리 요약' },
+    pending: '대기 중',
+    running: '실행 중',
+    attempt: (attemptCount: number, maxAttempts: number) => `시도 ${attemptCount}/${maxAttempts}`,
   },
   hypaV3Modal: {
     titleLabel: 'HypaV3',

@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { get } from 'svelte/store'
 
 vi.mock('../../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../../platform')>()
@@ -19,7 +18,6 @@ vi.mock('../../../server/activeWriterSession', () => ({
 }))
 
 import {
-  applyServerHypaV3Progress,
   cancelServerMemoryJob,
   deleteServerMemorySummary,
   listServerMemoryChunks,
@@ -31,7 +29,6 @@ import {
   type ServerMemorySummary,
 } from '../serverMemory'
 import { handleActiveWriterStaleResponse } from '../../../server/activeWriterSession'
-import { hypaV3ProgressStore } from '../../../stores.svelte'
 
 interface CapturedFetch {
   url: string
@@ -65,6 +62,7 @@ const baseSummary: ServerMemorySummary = {
 
 const baseJob: ServerMemoryJob = {
   id: 'job/1',
+  instanceId: 'job-instance-1',
   chatId: 'chat 1',
   kind: 'summarize',
   status: 'pending',
@@ -103,12 +101,6 @@ function makeMemoryFetch(bodyForUrl: (url: string, init: RequestInit) => unknown
 
 beforeEach(() => {
   vi.mocked(handleActiveWriterStaleResponse).mockClear()
-  hypaV3ProgressStore.set({
-    open: false,
-    miniMsg: '',
-    msg: '',
-    subMsg: '',
-  })
 })
 
 afterEach(() => {
@@ -291,8 +283,18 @@ describe('server memory API adapter', () => {
     })
   })
 
-  it('lists jobs with optional route filters', async () => {
-    const memoryFetch = makeMemoryFetch(() => ({ jobs: [baseJob] }))
+  it('lists jobs with optional route filters and snapshot ordering metadata', async () => {
+    const memoryFetch = makeMemoryFetch(
+      () =>
+        new Response(JSON.stringify({ jobs: [baseJob] }), {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+            'x-risu-memory-stream-id': 'memory-stream-1',
+            'x-risu-memory-version': '7',
+          },
+        }),
+    )
     vi.stubGlobal('fetch', memoryFetch.fetch)
 
     const result = await listServerMemoryJobs({
@@ -301,7 +303,11 @@ describe('server memory API adapter', () => {
       status: 'pending',
     })
 
-    expect(result).toEqual({ status: 'ok', jobs: [baseJob] })
+    expect(result).toEqual({
+      status: 'ok',
+      memorySnapshot: { streamId: 'memory-stream-1', version: 7 },
+      jobs: [baseJob],
+    })
     expect(memoryFetch.calls[0]).toEqual({
       url: '/api/v1/memory/jobs?chatId=chat+1&kind=summarize&status=pending',
       method: 'GET',
@@ -311,7 +317,17 @@ describe('server memory API adapter', () => {
   })
 
   it('lists jobs with an If-None-Match validator when provided', async () => {
-    const memoryFetch = makeMemoryFetch(() => jsonResponse(null, 304))
+    const memoryFetch = makeMemoryFetch(
+      () =>
+        new Response(null, {
+          status: 304,
+          headers: {
+            etag: '"jobs-etag"',
+            'x-risu-memory-stream-id': 'memory-stream-1',
+            'x-risu-memory-version': '8',
+          },
+        }),
+    )
     vi.stubGlobal('fetch', memoryFetch.fetch)
 
     const result = await listServerMemoryJobs({
@@ -319,7 +335,11 @@ describe('server memory API adapter', () => {
       etag: '"jobs-etag"',
     })
 
-    expect(result).toEqual({ status: 'not-modified' })
+    expect(result).toEqual({
+      status: 'not-modified',
+      etag: '"jobs-etag"',
+      memorySnapshot: { streamId: 'memory-stream-1', version: 8 },
+    })
     expect(memoryFetch.calls[0]).toEqual({
       url: '/api/v1/memory/jobs?chatId=chat+1',
       method: 'GET',
@@ -487,42 +507,6 @@ describe('server memory API adapter', () => {
     await expect(listServerMemoryJobs()).resolves.toEqual({
       status: 'error',
       error: 'Invalid server response',
-    })
-  })
-
-  it('applies Fastify Hypa V3 progress payloads to the browser store', () => {
-    const applied = applyServerHypaV3Progress({
-      open: true,
-      miniMsg: '2',
-      msg: '[Hypa V3] Summarizing...',
-      subMsg: '2 queued',
-      status: 'running',
-      queuedCount: 2,
-    })
-
-    expect(applied).toBe(true)
-    expect(get(hypaV3ProgressStore)).toEqual({
-      open: true,
-      miniMsg: '2',
-      msg: '[Hypa V3] Summarizing...',
-      subMsg: '2 queued',
-    })
-  })
-
-  it('ignores malformed or unavailable Hypa V3 progress payloads', () => {
-    hypaV3ProgressStore.set({
-      open: true,
-      miniMsg: '1',
-      msg: 'existing',
-      subMsg: 'existing sub',
-    })
-
-    expect(applyServerHypaV3Progress({ open: true, miniMsg: 1, msg: '', subMsg: '' })).toBe(false)
-    expect(get(hypaV3ProgressStore)).toEqual({
-      open: true,
-      miniMsg: '1',
-      msg: 'existing',
-      subMsg: 'existing sub',
     })
   })
 })

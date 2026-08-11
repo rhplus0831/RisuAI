@@ -13,6 +13,7 @@ import {
   listMemoryChunks,
   listMemoryJobs,
   listMemorySummaries,
+  type MemoryJob,
 } from '../src/memoryRepository.js'
 import { LEGACY_HYPA_V3_SUMMARY_MODEL } from '../src/memorySummaryCompatibility.js'
 import { EntityNotFoundError } from '../src/repository.js'
@@ -2728,12 +2729,14 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         ] as never,
       })
       const history = chunkPlanningHistory()
+      const visiblePendingJobs: MemoryJob[] = []
 
       const first = beginAssembly(
         baseInput(),
         depsFor(db, {
           loadMemoryDatabase: () => memoryDb,
           loadPromptMemoryQueryVectors: () => [],
+          onPromptMemoryJobEnqueued: (job) => visiblePendingJobs.push(job),
         }),
       )
       first.historyMessages = structuredClone(history)
@@ -2763,6 +2766,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
 
       const jobs = listMemoryJobs(memoryDb, { chatId: 'chat-1', kind: 'summarize' })
       expect(jobs).toHaveLength(1)
+      expect(visiblePendingJobs).toMatchObject([{ id: jobs[0].id, instanceId: jobs[0].instanceId, status: 'pending' }])
       expect(jobs[0]).toMatchObject({
         chatId: 'chat-1',
         kind: 'summarize',
@@ -3282,12 +3286,14 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         status: 'pending',
       })
       const db = memoryEnabledDatabase()
+      const visiblePendingJobs: MemoryJob[] = []
 
       const first = beginAssembly(
         baseInput(),
         depsFor(db, {
           loadMemoryDatabase: () => memoryDb,
           loadPromptMemoryQueryVectors: () => [[1, 0]],
+          onPromptMemoryJobEnqueued: (job) => visiblePendingJobs.push(job),
         }),
       )
       fillStaticSlots(first)
@@ -3317,12 +3323,15 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
           .map((job) => job.kind)
           .sort(),
       ).toEqual(['embed', 'summarize', 'summarize'])
+      expect(visiblePendingJobs).toHaveLength(3)
+      expect(visiblePendingJobs.every((job) => job.status === 'pending' && job.instanceId.length > 0)).toBe(true)
 
       const second = beginAssembly(
         baseInput(),
         depsFor(db, {
           loadMemoryDatabase: () => memoryDb,
           loadPromptMemoryQueryVectors: () => [[1, 0]],
+          onPromptMemoryJobEnqueued: (job) => visiblePendingJobs.push(job),
         }),
       )
       fillStaticSlots(second)
@@ -3337,6 +3346,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         errors: [],
       })
       expect(listMemoryJobs(memoryDb, { chatId: 'chat-1' })).toHaveLength(3)
+      expect(visiblePendingJobs).toHaveLength(3)
     } finally {
       memoryDb.close()
     }

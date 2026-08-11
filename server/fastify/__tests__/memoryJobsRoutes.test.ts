@@ -141,6 +141,7 @@ describe('Phase 8-2e memory job routes', () => {
     expect(res.statusCode).toBe(201)
     const body = res.json() as { job: MemoryJob }
     expect(body.job).toMatchObject({
+      instanceId: expect.any(String),
       chatId: 'chat-1',
       kind: 'summarize',
       status: 'pending',
@@ -155,24 +156,17 @@ describe('Phase 8-2e memory job routes', () => {
     expect(harness.events).toEqual([
       {
         type: 'memory.job',
+        streamId: expect.any(String),
+        version: 1,
         chatId: 'chat-1',
         job: {
           id: body.job.id,
+          instanceId: body.job.instanceId,
           kind: 'summarize',
           status: 'pending',
           attemptCount: 0,
           maxAttempts: 5,
-        },
-        sideEffect: {
-          kind: 'hypav3_progress',
-          payload: {
-            open: true,
-            miniMsg: '1',
-            msg: '[Hypa V3] Waiting to summarize...',
-            subMsg: '1 queued',
-            status: 'pending',
-            queuedCount: 1,
-          },
+          updatedAt: expect.any(String),
         },
       },
     ])
@@ -247,6 +241,8 @@ describe('Phase 8-2e memory job routes', () => {
     expect(activeJobs).toContainEqual(expect.objectContaining({ id: chunkJob.id, status: 'cancelled' }))
     expect(activeJobs[0]).not.toHaveProperty('payload')
     expect(active.headers.etag).toEqual(expect.any(String))
+    expect(active.headers['x-risu-memory-stream-id']).toEqual(expect.any(String))
+    expect(Number(active.headers['x-risu-memory-version'])).toBeGreaterThanOrEqual(4)
 
     const chatFiltered = await harness.app.inject({
       method: 'GET',
@@ -284,6 +280,8 @@ describe('Phase 8-2e memory job routes', () => {
     })
     expect(unchanged.statusCode).toBe(304)
     expect(unchanged.body).toBe('')
+    expect(unchanged.headers['x-risu-memory-stream-id']).toBe(active.headers['x-risu-memory-stream-id'])
+    expect(unchanged.headers['x-risu-memory-version']).toBe(active.headers['x-risu-memory-version'])
   })
 
   it('returns a failed job with a bounded, redacted error and completion time', async () => {
@@ -430,6 +428,7 @@ describe('Phase 8-2e memory job routes', () => {
     expect(res.statusCode).toBe(200)
     expect((res.json() as { job: MemoryJob }).job).toMatchObject({
       id: job.id,
+      instanceId: job.instanceId,
       chatId: 'chat-1',
       kind: 'chunk',
       status: 'cancelled',
@@ -439,26 +438,18 @@ describe('Phase 8-2e memory job routes', () => {
     expect(harness.events).toEqual([
       {
         type: 'memory.job',
+        streamId: expect.any(String),
+        version: expect.any(Number),
         chatId: 'chat-1',
         job: {
           id: job.id,
+          instanceId: job.instanceId,
           kind: 'chunk',
           status: 'cancelled',
           attemptCount: 0,
           maxAttempts: 3,
           error: null,
           updatedAt: expect.any(String),
-        },
-        sideEffect: {
-          kind: 'hypav3_progress',
-          payload: {
-            open: false,
-            miniMsg: '',
-            msg: '',
-            subMsg: '',
-            status: 'cancelled',
-            queuedCount: 0,
-          },
         },
       },
     ])
@@ -469,6 +460,65 @@ describe('Phase 8-2e memory job routes', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(second.statusCode).toBe(404)
+  })
+
+  it('aborts a running provider operation on cancellation and does not commit completion', async () => {
+    await stopHarness(harness)
+    let providerSignal: AbortSignal | null = null
+    let markProviderStarted!: () => void
+    const providerStarted = new Promise<void>((resolve) => {
+      markProviderStarted = resolve
+    })
+    let markProviderSettled!: () => void
+    const providerSettled = new Promise<void>((resolve) => {
+      markProviderSettled = resolve
+    })
+    harness = await startHarness({
+      memoryWorker: {
+        pollIntervalMs: 10_000,
+        handlers: {
+          summarize: async (_job, context) => {
+            providerSignal = context.signal
+            markProviderStarted()
+            await new Promise<void>((resolve) => {
+              if (context.signal.aborted) {
+                resolve()
+                return
+              }
+              context.signal.addEventListener('abort', () => resolve(), { once: true })
+            })
+            markProviderSettled()
+          },
+        },
+      },
+    })
+    ;({ assertion } = await setupAuthedClient(harness.app))
+    const job = await enqueue(harness.app, {
+      chatId: 'chat-provider',
+      kind: 'summarize',
+      payload: { chunkId: 'chunk-provider' },
+    })
+    await providerStarted
+
+    const cancelled = await harness.app.inject({
+      method: 'DELETE',
+      url: `/api/v1/memory/jobs/${job.id}`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(cancelled.statusCode).toBe(200)
+    expect(providerSignal).not.toBeNull()
+    expect(providerSignal!.aborted).toBe(true)
+    await providerSettled
+
+    const listed = await harness.app.inject({
+      method: 'GET',
+      url: `/api/v1/memory/jobs?chatId=chat-provider&status=cancelled`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect((listed.json() as { jobs: MemoryJob[] }).jobs).toMatchObject([
+      { id: job.id, instanceId: job.instanceId, status: 'cancelled' },
+    ])
+    expect(harness.events.map((event) => event.job.status)).toEqual(['pending', 'running', 'cancelled'])
   })
 
   it('returns validation failures for malformed enqueue, list, and cancel requests', async () => {

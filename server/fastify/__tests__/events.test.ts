@@ -347,10 +347,12 @@ describe('Phase 9-5a command events stream', () => {
       chatId: 'chat-1',
       job: {
         id: 'job-1',
+        instanceId: 'job-instance-1',
         kind: 'summarize',
         status: 'pending',
         attemptCount: 0,
         maxAttempts: 3,
+        updatedAt: '2026-08-11T00:00:00.000Z',
       },
     }
     const seen: MemoryEvent[] = []
@@ -363,7 +365,13 @@ describe('Phase 9-5a command events stream', () => {
     })
 
     expect(() => bus.emit(event)).not.toThrow()
-    expect(seen).toEqual([event])
+    expect(seen).toEqual([
+      {
+        ...event,
+        streamId: expect.any(String),
+        version: 1,
+      },
+    ])
   })
 
   it('emits one opt-in memory fanout metric per event and no metric when disabled', () => {
@@ -372,18 +380,17 @@ describe('Phase 9-5a command events stream', () => {
       chatId: 'chat-metric',
       job: {
         id: 'job-metric',
+        instanceId: 'job-metric-instance',
         kind: 'summarize',
         status: 'running',
         attemptCount: 1,
         maxAttempts: 3,
-      },
-      sideEffect: {
-        kind: 'hypav3_progress',
-        payload: { open: true, miniMsg: '1', msg: 'Summarizing', subMsg: '', status: 'running' },
+        updatedAt: '2026-08-11T00:00:00.000Z',
       },
     }
     const bus = createMemoryEventBus()
-    bus.subscribe(() => {})
+    const published: MemoryEvent[] = []
+    bus.subscribe((value) => published.push(value))
     bus.subscribe(() => {})
 
     bus.emit(event)
@@ -394,8 +401,9 @@ describe('Phase 9-5a command events stream', () => {
 
     const metrics = capturedMetrics.filter((metric) => metric.metric === 'memory_event_fanout')
     expect(metrics).toHaveLength(1)
-    const payloadBytes = Buffer.byteLength(JSON.stringify(event), 'utf8')
-    const frameBytes = Buffer.byteLength(`event: memory\ndata: ${JSON.stringify(event)}\n\n`, 'utf8')
+    const publishedEvent = published.at(-1)!
+    const payloadBytes = Buffer.byteLength(JSON.stringify(publishedEvent), 'utf8')
+    const frameBytes = Buffer.byteLength(`event: memory\ndata: ${JSON.stringify(publishedEvent)}\n\n`, 'utf8')
     expect(metrics[0]).toMatchObject({
       payloadBytes,
       frameBytes,
@@ -403,7 +411,7 @@ describe('Phase 9-5a command events stream', () => {
       deliveredBytes: frameBytes * 2,
       jobKind: 'summarize',
       jobStatus: 'running',
-      hasSideEffect: true,
+      hasSideEffect: false,
     })
   })
 
@@ -876,6 +884,73 @@ describe('Phase 9-5a command events stream', () => {
     })
   })
 
+  it('hydrates active memory jobs on startup and clears them authoritatively on reconnect', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const pending = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/memory/jobs',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        chatId: 'chat-snapshot',
+        kind: 'embed',
+        payload: { chunkId: 'chunk-1', model: 'model-a' },
+      },
+    })
+    expect(pending.statusCode).toBe(201)
+    const pendingJob = pending.json().job as { id: string; instanceId: string }
+    const baseUrl = await listen(harness.app)
+
+    const firstAbort = new AbortController()
+    const first = await fetch(`${baseUrl}/api/v1/events`, {
+      headers: { 'risu-auth': assertion },
+      signal: firstAbort.signal,
+    })
+    const firstReader = first.body!.getReader()
+    const firstText = await readUntil(firstReader, (chunk) => chunk.includes('event: memory_snapshot\n'))
+    const firstSnapshots = parseSseJsonEvents(firstText, 'memory_snapshot') as Array<{
+      streamId: string
+      version: number
+      jobs: Array<{ id: string; instanceId: string; status: string }>
+    }>
+    expect(firstSnapshots).toHaveLength(1)
+    expect(firstSnapshots[0]).toMatchObject({
+      streamId: expect.any(String),
+      version: expect.any(Number),
+      jobs: [{ id: pendingJob.id, instanceId: pendingJob.instanceId, status: 'pending' }],
+    })
+    firstAbort.abort()
+    firstReader.releaseLock()
+
+    const cancelled = await harness.app.inject({
+      method: 'DELETE',
+      url: `/api/v1/memory/jobs/${pendingJob.id}`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(cancelled.statusCode).toBe(200)
+
+    const reconnectAbort = new AbortController()
+    const reconnect = await fetch(`${baseUrl}/api/v1/events`, {
+      headers: { 'risu-auth': assertion },
+      signal: reconnectAbort.signal,
+    })
+    const reconnectReader = reconnect.body!.getReader()
+    try {
+      const reconnectText = await readUntil(reconnectReader, (chunk) => chunk.includes('event: memory_snapshot\n'))
+      const reconnectSnapshots = parseSseJsonEvents(reconnectText, 'memory_snapshot') as Array<{
+        streamId: string
+        version: number
+        jobs: unknown[]
+      }>
+      expect(reconnectSnapshots).toHaveLength(1)
+      expect(reconnectSnapshots[0].streamId).toBe(firstSnapshots[0].streamId)
+      expect(reconnectSnapshots[0].version).toBeGreaterThan(firstSnapshots[0].version)
+      expect(reconnectSnapshots[0].jobs).toEqual([])
+    } finally {
+      reconnectAbort.abort()
+      reconnectReader.releaseLock()
+    }
+  })
+
   it('delivers memory progress events from memory job mutations', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const baseUrl = await listen(harness.app)
@@ -903,30 +978,23 @@ describe('Phase 9-5a command events stream', () => {
     const jobId = memoryJob.json().job.id as string
 
     try {
-      const text = await readUntil(reader!, (chunk) => chunk.includes('event: memory'))
-      expect(text).toContain('event: memory')
+      const text = await readUntil(reader!, (chunk) => chunk.includes('event: memory\n'))
+      expect(text).toContain('event: memory\n')
       const dataLine = text.split('\n').find((line) => line.startsWith('data: '))
       expect(dataLine).toBeDefined()
       expect(JSON.parse(dataLine!.slice('data: '.length))).toMatchObject({
         type: 'memory.job',
+        streamId: expect.any(String),
+        version: expect.any(Number),
         chatId: 'chat-1',
         job: {
           id: jobId,
+          instanceId: expect.any(String),
           kind: 'summarize',
           status: 'pending',
           attemptCount: 0,
           maxAttempts: 3,
-        },
-        sideEffect: {
-          kind: 'hypav3_progress',
-          payload: {
-            open: true,
-            miniMsg: '1',
-            msg: '[Hypa V3] Waiting to summarize...',
-            subMsg: '1 queued',
-            status: 'pending',
-            queuedCount: 1,
-          },
+          updatedAt: expect.any(String),
         },
       })
     } finally {
@@ -969,8 +1037,8 @@ describe('Phase 9-5a command events stream', () => {
     const jobId = memoryJob.json().job.id as string
 
     try {
-      const text = await readUntil(reader!, (chunk) => chunk.includes('event: memory'))
-      expect(text).toContain('event: memory')
+      const text = await readUntil(reader!, (chunk) => chunk.includes('event: memory\n'))
+      expect(text).toContain('event: memory\n')
       const dataLine = text.split('\n').find((line) => line.startsWith('data: '))
       expect(dataLine).toBeDefined()
       expect(JSON.parse(dataLine!.slice('data: '.length))).toMatchObject({
@@ -1007,8 +1075,8 @@ describe('Phase 9-5a command events stream', () => {
     await waitFor(() => harness.commandEvents.activeListeners === 0)
     await waitFor(() => capturedMetrics.some((metric) => metric.metric === 'event_stream_connection'))
     expect(capturedMetrics.find((metric) => metric.metric === 'event_stream_connection')).toMatchObject({
-      frameCount: 2,
-      frameCounts: { writer: 1, connected: 1 },
+      frameCount: 3,
+      frameCounts: { writer: 1, connected: 1, memory_snapshot: 1 },
       closeReason: 'client_abort',
       writeOverflow: false,
     })

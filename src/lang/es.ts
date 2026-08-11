@@ -64,6 +64,8 @@ export const languageSpanish = {
   },
   showHelp: 'Mostrar Ayuda',
   help: {
+    hypaV3ProgressOpenChatOnly:
+      'Muestra el indicador completo de tareas de memoria solo para el chat abierto. Las tareas de otros chats siguen visibles como un contador compacto.',
     model: 'La opción de modelo es el modelo principal usado en el chat.',
     submodel:
       'El Modelo Auxiliar es un modelo que se utiliza para analizar imágenes de emociones, auto sugerencias, etc. Se recomienda GPT-3.5.',
@@ -891,6 +893,7 @@ export const languageSpanish = {
   globalRegexScript: 'Regex Global',
   accessibility: 'Accesibilidad',
   reducedMotion: 'Reducir movimiento',
+  hypaV3ProgressOpenChatOnly: 'Mostrar progreso completo de memoria solo para el chat abierto',
   sendWithEnter:
     'Enviar con la Tecla Enter(Al desactivar la verificación, Shift + Enter cambia a Transmisión de Mensajes.)',
   fixedChatTextarea: 'Fijación en la parte inferior de la ventana de chat',
@@ -1384,6 +1387,21 @@ export const languageSpanish = {
     preserveOrphanedMemoryLabel: 'Preservar Memoria Huérfana',
     applyRegexScriptWhenRerollingLabel: 'Aplicar Script Regex al Regenerar',
     doNotSummarizeUserMessageLabel: 'No Resumir Mensajes del Usuario',
+  },
+  hypaV3Progress: {
+    activeJobs: (count: number) => `${count} ${count === 1 ? 'tarea activa' : 'tareas activas'} de memoria`,
+    activeInOtherChats: (count: number) =>
+      `${count} ${count === 1 ? 'tarea activa' : 'tareas activas'} de memoria en otros chats`,
+    otherChatsCompact: (count: number) => `+${count} en otros chats`,
+    openDetailsAction: (count: number) =>
+      `Mostrar detalles de ${count} ${count === 1 ? 'tarea activa' : 'tareas activas'} de memoria`,
+    closeDetailsAction: 'Ocultar detalles de tareas de memoria',
+    unnamedChat: 'Chat sin nombre',
+    unknownChat: (id: string) => `Chat ${id}`,
+    kind: { chunk: 'Preparando memoria', embed: 'Buscando en la memoria', summarize: 'Resumiendo memoria' },
+    pending: 'En espera',
+    running: 'En ejecución',
+    attempt: (attemptCount: number, maxAttempts: number) => `Intento ${attemptCount}/${maxAttempts}`,
   },
   hypaV3Modal: {
     titleLabel: 'HypaV3',

@@ -1,6 +1,5 @@
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from '../../server/activeWriterSession'
 import { getNodeServerProxyAuth } from '../../storage/fastifyStorage'
-import { hypaV3ProgressStore } from '../../stores.svelte'
 
 const MEMORY_ENDPOINT = '/api/v1/memory'
 const MEMORY_READ_PAGE_LIMIT = 200
@@ -50,6 +49,7 @@ export interface PatchServerMemorySummaryInput {
 
 export interface ServerMemoryJob {
   id: string
+  instanceId: string
   chatId: string
   kind: ServerMemoryJobKind
   status: ServerMemoryJobStatus
@@ -67,31 +67,17 @@ export interface ListServerMemoryJobsInput {
 }
 
 export type ServerMemoryResult<T> =
-  | ({ status: 'ok'; etag?: string } & T)
+  | ({ status: 'ok'; etag?: string; memorySnapshot?: ServerMemorySnapshotVersion } & T)
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
-  | { status: 'not-modified'; etag?: string }
+  | { status: 'not-modified'; etag?: string; memorySnapshot?: ServerMemorySnapshotVersion }
 
-export function canUseServerMemoryApi(): boolean {
-  return true
+export interface ServerMemorySnapshotVersion {
+  streamId: string
+  version: number
 }
 
-export function applyServerHypaV3Progress(payload: unknown): boolean {
-  if (!canUseServerMemoryApi()) return false
-  if (!payload || typeof payload !== 'object') return false
-
-  const progress = payload as Partial<ServerHypaV3ProgressPayload>
-  if (typeof progress.open !== 'boolean') return false
-  if (typeof progress.miniMsg !== 'string') return false
-  if (typeof progress.msg !== 'string') return false
-  if (typeof progress.subMsg !== 'string') return false
-
-  hypaV3ProgressStore.set({
-    open: progress.open,
-    miniMsg: progress.miniMsg,
-    msg: progress.msg,
-    subMsg: progress.subMsg,
-  })
+export function canUseServerMemoryApi(): boolean {
   return true
 }
 
@@ -158,6 +144,7 @@ function isServerMemoryJob(value: unknown): value is ServerMemoryJob {
   if (!isRecord(value)) return false
   return (
     isNonEmptyString(value.id) &&
+    isNonEmptyString(value.instanceId) &&
     isNonEmptyString(value.chatId) &&
     ['chunk', 'embed', 'summarize'].includes(value.kind as string) &&
     ['pending', 'running', 'completed', 'failed', 'cancelled'].includes(value.status as string) &&
@@ -221,8 +208,9 @@ async function requestMemoryJson<T>(
   }
 
   const etag = response.headers.get('etag') ?? undefined
+  const memorySnapshot = readMemorySnapshotVersion(response.headers)
   if (response.status === 304) {
-    return { status: 'not-modified', ...(etag ? { etag } : {}) }
+    return { status: 'not-modified', ...(etag ? { etag } : {}), ...(memorySnapshot ? { memorySnapshot } : {}) }
   }
 
   let body: unknown = null
@@ -242,7 +230,16 @@ async function requestMemoryJson<T>(
 
   const decoded = options.decode(body)
   if (decoded === null) return { status: 'error', error: 'Invalid server response' }
-  return { status: 'ok', ...(etag ? { etag } : {}), ...decoded }
+  return { status: 'ok', ...(etag ? { etag } : {}), ...(memorySnapshot ? { memorySnapshot } : {}), ...decoded }
+}
+
+function readMemorySnapshotVersion(headers: Headers): ServerMemorySnapshotVersion | undefined {
+  const streamId = headers.get('x-risu-memory-stream-id')
+  const versionText = headers.get('x-risu-memory-version')
+  if (!streamId || versionText === null || !/^\d+$/.test(versionText)) return undefined
+  const version = Number(versionText)
+  if (!Number.isSafeInteger(version)) return undefined
+  return { streamId, version }
 }
 
 export async function listServerMemoryChunks(

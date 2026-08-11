@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerMemoryJob, ServerMemoryResult } from '../process/request/serverMemory'
 import {
+  MEMORY_JOB_TERMINAL_FENCE_LIMIT,
   clearMemoryJobTerminalUpdateFence,
   recordTerminalMemoryJobUpdate,
   shouldAcceptMemoryJobUpdate,
@@ -9,14 +10,21 @@ import { createMemoryJobRefreshController, hasActiveMemoryJobs } from './memoryJ
 
 const NOW = new Date('2026-06-01T00:00:00.000Z')
 
-function job(status: ServerMemoryJob['status'], id = `job-${status}`, chatId = 'chat-1'): ServerMemoryJob {
+function job(
+  status: ServerMemoryJob['status'],
+  id = `job-${status}`,
+  chatId = 'chat-1',
+  instanceId = `${id}-instance`,
+): ServerMemoryJob {
   return {
     id,
+    instanceId,
     chatId,
     kind: 'summarize',
     status,
     attemptCount: 1,
     maxAttempts: 3,
+    updatedAt: NOW.toISOString(),
   }
 }
 
@@ -163,6 +171,29 @@ describe('memory job refresh controller', () => {
     controller.dispose()
   })
 
+  it('does not let an older empty GET erase a newer active event', async () => {
+    const pendingList = deferred<ServerMemoryResult<{ jobs: ServerMemoryJob[] }>>()
+    const seenJobs: ServerMemoryJob[][] = []
+    const controller = createMemoryJobRefreshController({
+      chatId: 'chat-1',
+      listJobs: vi.fn().mockReturnValue(pendingList.promise),
+      onJobs: (jobs) => seenJobs.push(jobs),
+      onError: vi.fn(),
+      onClear: vi.fn(),
+      onLoading: vi.fn(),
+      now: () => NOW,
+    })
+
+    const refresh = controller.refresh()
+    const running = job('running', 'job-newer')
+    expect(controller.applyJobUpdate(running)).toBe(true)
+    pendingList.resolve({ status: 'ok', jobs: [] })
+    await refresh
+
+    expect(seenJobs.at(-1)).toEqual([running])
+    controller.dispose()
+  })
+
   it('filters cached not-modified jobs after a terminal update', async () => {
     const listJobs = vi
       .fn()
@@ -235,7 +266,7 @@ describe('memory job refresh controller', () => {
     const listJobs = vi.fn().mockResolvedValue({ status: 'ok', jobs: [] })
     recordTerminalMemoryJobUpdate({
       chatId: 'chat-2',
-      id: 'job-1',
+      instanceId: 'job-instance-1',
       status: 'cancelled',
     })
     const controller = createMemoryJobRefreshController({
@@ -248,11 +279,53 @@ describe('memory job refresh controller', () => {
       now: () => NOW,
     })
 
-    expect(shouldAcceptMemoryJobUpdate({ chatId: 'chat-2', id: 'job-1', status: 'running' })).toBe(false)
+    expect(shouldAcceptMemoryJobUpdate({ chatId: 'chat-2', instanceId: 'job-instance-1', status: 'running' })).toBe(
+      false,
+    )
 
     controller.setChatId('chat-2')
 
-    expect(shouldAcceptMemoryJobUpdate({ chatId: 'chat-2', id: 'job-1', status: 'running' })).toBe(false)
+    expect(shouldAcceptMemoryJobUpdate({ chatId: 'chat-2', instanceId: 'job-instance-1', status: 'running' })).toBe(
+      false,
+    )
+    controller.dispose()
+  })
+
+  it('accepts a recreated logical id with a new instance and bounds terminal fences', () => {
+    recordTerminalMemoryJobUpdate({
+      chatId: 'chat-1',
+      instanceId: 'old-instance',
+      status: 'completed',
+    })
+    expect(shouldAcceptMemoryJobUpdate({ chatId: 'chat-1', instanceId: 'old-instance', status: 'running' })).toBe(false)
+    expect(shouldAcceptMemoryJobUpdate({ chatId: 'chat-1', instanceId: 'new-instance', status: 'running' })).toBe(true)
+
+    for (let index = 0; index <= MEMORY_JOB_TERMINAL_FENCE_LIMIT; index += 1) {
+      recordTerminalMemoryJobUpdate({
+        chatId: 'chat-1',
+        instanceId: `bounded-instance-${index}`,
+        status: 'cancelled',
+      })
+    }
+    expect(shouldAcceptMemoryJobUpdate({ chatId: 'chat-1', instanceId: 'old-instance', status: 'running' })).toBe(true)
+  })
+
+  it('replaces an old active instance when the same logical id is recreated', () => {
+    const seenJobs: ServerMemoryJob[][] = []
+    const controller = createMemoryJobRefreshController({
+      chatId: 'chat-1',
+      listJobs: vi.fn(),
+      onJobs: (jobs) => seenJobs.push(jobs),
+      onError: vi.fn(),
+      onClear: vi.fn(),
+      onLoading: vi.fn(),
+      now: () => NOW,
+    })
+
+    expect(controller.applyJobUpdate(job('running', 'logical-job', 'chat-1', 'old-instance'))).toBe(true)
+    const recreated = job('pending', 'logical-job', 'chat-1', 'new-instance')
+    expect(controller.applyJobUpdate(recreated)).toBe(true)
+    expect(seenJobs.at(-1)).toEqual([recreated])
     controller.dispose()
   })
 

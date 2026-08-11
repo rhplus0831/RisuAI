@@ -1,4 +1,4 @@
-import type { ServerMemoryJob, ServerMemoryResult } from '../process/request/serverMemory'
+import type { ServerMemoryJob, ServerMemoryResult, ServerMemorySnapshotVersion } from '../process/request/serverMemory'
 import { isTerminalMemoryJobStatus, recordTerminalMemoryJobUpdate } from './memoryJobOrdering'
 
 const DEFAULT_REFRESH_INTERVAL_MS = 5000
@@ -21,7 +21,7 @@ export interface MemoryJobRefreshControllerOptions {
     signal?: AbortSignal | null,
     etag?: string,
   ) => Promise<ServerMemoryResult<{ jobs: ServerMemoryJob[] }>>
-  onJobs(jobs: ServerMemoryJob[], loadedAt: string): void
+  onJobs(jobs: ServerMemoryJob[], loadedAt: string, snapshot?: ServerMemorySnapshotVersion): void
   onError(error: string): void
   onClear(): void
   onLoading(loading: boolean): void
@@ -46,7 +46,9 @@ export function createMemoryJobRefreshController(
   let activeController: AbortController | null = null
   let lastEtag: string | undefined
   let lastJobs: ServerMemoryJob[] = []
-  const terminalJobIds = new Set<string>()
+  let liveUpdateSerial = 0
+  const liveUpdateSerials = new Map<string, number>()
+  const terminalJobInstances = new Set<string>()
 
   function stopPolling(): void {
     if (!refreshTimer) return
@@ -66,21 +68,29 @@ export function createMemoryJobRefreshController(
   }
 
   function recordTerminalJob(job: ServerMemoryJob): void {
-    terminalJobIds.add(job.id)
+    terminalJobInstances.add(jobKey(job))
     recordTerminalMemoryJobUpdate(job)
   }
 
-  function normalizeJobs(jobs: readonly ServerMemoryJob[]): ServerMemoryJob[] {
+  function normalizeJobs(jobs: readonly ServerMemoryJob[], requestUpdateFence: number): ServerMemoryJob[] {
     const nextJobs = new Map(
-      lastJobs.filter((job) => isTerminalMemoryJobStatus(job.status)).map((job) => [job.id, job]),
+      lastJobs.filter((job) => isTerminalMemoryJobStatus(job.status)).map((job) => [jobKey(job), job]),
     )
     for (const job of jobs) {
       if (job.chatId !== chatId) continue
+      const key = jobKey(job)
+      if ((liveUpdateSerials.get(key) ?? 0) > requestUpdateFence) continue
       if (isTerminalMemoryJobStatus(job.status)) {
         recordTerminalJob(job)
-        nextJobs.set(job.id, job)
-      } else if (!terminalJobIds.has(job.id)) {
-        nextJobs.set(job.id, job)
+        nextJobs.set(key, job)
+      } else if (!terminalJobInstances.has(key)) {
+        removeOlderLogicalJobInstances(nextJobs, job)
+        nextJobs.set(key, job)
+      }
+    }
+    for (const job of lastJobs) {
+      if ((liveUpdateSerials.get(jobKey(job)) ?? 0) > requestUpdateFence) {
+        nextJobs.set(jobKey(job), job)
       }
     }
     return boundTerminalHistory([...nextJobs.values()])
@@ -98,12 +108,21 @@ export function createMemoryJobRefreshController(
   function clearChatState(): void {
     lastEtag = undefined
     lastJobs = []
-    terminalJobIds.clear()
+    liveUpdateSerials.clear()
+    terminalJobInstances.clear()
   }
 
-  function publishJobs(nextJobs: ServerMemoryJob[]): void {
+  function publishJobs(nextJobs: ServerMemoryJob[], snapshot?: ServerMemorySnapshotVersion): void {
     lastJobs = nextJobs
-    options.onJobs(nextJobs, now().toISOString())
+    const retainedKeys = new Set(nextJobs.map(jobKey))
+    for (const key of liveUpdateSerials.keys()) {
+      if (!retainedKeys.has(key)) liveUpdateSerials.delete(key)
+    }
+    terminalJobInstances.clear()
+    for (const job of nextJobs) {
+      if (isTerminalMemoryJobStatus(job.status)) terminalJobInstances.add(jobKey(job))
+    }
+    options.onJobs(nextJobs, now().toISOString(), snapshot)
     syncPolling(nextJobs)
   }
 
@@ -113,11 +132,17 @@ export function createMemoryJobRefreshController(
     const terminal = isTerminalMemoryJobStatus(job.status)
     if (terminal) {
       recordTerminalJob(job)
-    } else if (terminalJobIds.has(job.id)) {
+    } else if (terminalJobInstances.has(jobKey(job))) {
       return false
     }
 
-    const nextJobs = lastJobs.filter((current) => current.id !== job.id)
+    const updateSerial = ++liveUpdateSerial
+    liveUpdateSerials.set(jobKey(job), updateSerial)
+    const nextJobs = lastJobs.filter(
+      (current) =>
+        jobKey(current) !== jobKey(job) &&
+        !(isActiveMemoryJobStatus(current.status) && current.id === job.id && current.instanceId !== job.instanceId),
+    )
     nextJobs.push(job)
     publishJobs(boundTerminalHistory(nextJobs))
     return true
@@ -144,6 +169,7 @@ export function createMemoryJobRefreshController(
     }
 
     const serial = ++requestSerial
+    const requestUpdateFence = liveUpdateSerial
     const controller = new AbortController()
     activeController = controller
     inFlight = true
@@ -155,10 +181,10 @@ export function createMemoryJobRefreshController(
 
       if (result.status === 'ok') {
         lastEtag = result.etag
-        publishJobs(normalizeJobs(result.jobs))
+        publishJobs(normalizeJobs(result.jobs, requestUpdateFence), result.memorySnapshot)
       } else if (result.status === 'not-modified') {
         lastEtag = result.etag ?? lastEtag
-        publishJobs(normalizeJobs(lastJobs))
+        publishJobs(normalizeJobs(lastJobs, requestUpdateFence), result.memorySnapshot)
       } else {
         stopPolling()
         options.onError(result.status === 'unavailable' ? 'Server memory jobs are unavailable.' : result.error)
@@ -207,5 +233,29 @@ export function createMemoryJobRefreshController(
     applyJobUpdate,
     setChatId,
     dispose,
+  }
+}
+
+function jobKey(job: Pick<ServerMemoryJob, 'chatId' | 'instanceId'>): string {
+  return `${job.chatId}\u0000${job.instanceId}`
+}
+
+function isActiveMemoryJobStatus(status: ServerMemoryJob['status']): boolean {
+  return status === 'pending' || status === 'running'
+}
+
+function removeOlderLogicalJobInstances(
+  jobs: Map<string, ServerMemoryJob>,
+  replacement: Pick<ServerMemoryJob, 'chatId' | 'id' | 'instanceId'>,
+): void {
+  for (const [key, job] of jobs) {
+    if (
+      isActiveMemoryJobStatus(job.status) &&
+      job.chatId === replacement.chatId &&
+      job.id === replacement.id &&
+      job.instanceId !== replacement.instanceId
+    ) {
+      jobs.delete(key)
+    }
   }
 }

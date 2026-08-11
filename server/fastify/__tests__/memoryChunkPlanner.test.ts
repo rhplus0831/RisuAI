@@ -53,10 +53,23 @@ describe('Hypa V3 chunk/job planning bridge', () => {
       })
 
       expect(plan.errors).toEqual([])
-      const result = planHypaV3ChunkJobs({ db, chatId: 'chat-1', chats, plan })
+      const visiblePendingJobs: string[] = []
+      const result = planHypaV3ChunkJobs({
+        db,
+        chatId: 'chat-1',
+        chats,
+        plan,
+        onJobCreated: (job) => {
+          expect(job.status).toBe('pending')
+          expect(job.instanceId).not.toBe('')
+          expect(listMemoryJobs(db, { chatId: 'chat-1' }).map((current) => current.id)).toContain(job.id)
+          visiblePendingJobs.push(job.id)
+        },
+      })
 
       expect(result.chunksCreated).toBe(2)
       expect(result.jobsCreated).toBe(2)
+      expect(visiblePendingJobs).toEqual(result.planned.map((entry) => entry.job!.id))
       expect(result.planned.map((entry) => entry.chunk.rangeStartSeq)).toEqual([0, 2])
       expect(result.planned.map((entry) => entry.chunk.rangeEndSeq)).toEqual([1, 3])
       expect(result.planned.map((entry) => entry.chunk.text)).toEqual([

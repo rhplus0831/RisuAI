@@ -343,6 +343,15 @@ describe('server-backed data-driven settings', () => {
     })
   })
 
+  it('exposes open-chat-only memory progress under Accessibility', () => {
+    expect(accessibilitySettingsItems.find((item) => item.id === 'acc.hypaV3ProgressOpenChatOnly')).toMatchObject({
+      type: 'check',
+      labelKey: 'hypaV3ProgressOpenChatOnly',
+      helpKey: 'hypaV3ProgressOpenChatOnly',
+      bindKey: 'hypaV3ProgressOpenChatOnly',
+    })
+  })
+
   it('exposes the default-enabled floating chat input under Accessibility', () => {
     const item = accessibilitySettingsItems.find((candidate) => candidate.id === 'acc.floatingChatInput')
 

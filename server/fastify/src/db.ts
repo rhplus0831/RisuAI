@@ -21,7 +21,7 @@ import {
   repairPersistedGlobalLorebookIdsInSqlite,
 } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 29
+export const CURRENT_SCHEMA_VERSION = 30
 
 export interface OpenDatabaseOptions {
   allowMissingDatabase?: boolean
@@ -351,6 +351,18 @@ export const MIGRATIONS: readonly MigrationStep[] = [
       ensureColumn(db, 'command_events', 'job_id', 'ALTER TABLE command_events ADD COLUMN job_id TEXT')
     },
   },
+  {
+    version: 30,
+    name: 'memory-job-instance-identity',
+    up: (db) => {
+      createMemoryTables(db)
+      db.exec(`
+        UPDATE memory_jobs
+        SET instance_id = lower(hex(randomblob(16)))
+        WHERE instance_id = ''
+      `)
+    },
+  },
 ]
 
 /** Whether `table` already has a column named `column` (PRAGMA table_info). */
@@ -588,6 +600,7 @@ function createMemoryTables(db: DatabaseSync): void {
 
     CREATE TABLE IF NOT EXISTS memory_jobs (
       id TEXT PRIMARY KEY,
+      instance_id TEXT NOT NULL,
       chat_id TEXT NOT NULL,
       kind TEXT NOT NULL CHECK (kind IN ('chunk', 'embed', 'summarize')),
       status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
@@ -634,6 +647,12 @@ function createMemoryTables(db: DatabaseSync): void {
     'memory_jobs',
     'next_run_at',
     "ALTER TABLE memory_jobs ADD COLUMN next_run_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.000Z'",
+  )
+  ensureColumn(
+    db,
+    'memory_jobs',
+    'instance_id',
+    "ALTER TABLE memory_jobs ADD COLUMN instance_id TEXT NOT NULL DEFAULT ''",
   )
 }
 
