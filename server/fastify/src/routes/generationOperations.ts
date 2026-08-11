@@ -637,17 +637,21 @@ export function registerGenerationOperationRoutes(
     },
   )
 
-  app.get<{ Params: { operationId: string } }>('/api/v1/generation-operations/:operationId', async (req, reply) => {
-    if (!(await requireAuth(authState, req, reply))) return
-    try {
-      const operationId = canonicalUuid(req.params.operationId, 'operationId')
-      const operation = getGenerationOperationProjection(db, getDatabaseLineage(db), operationId)
-      if (!operation) return reply.code(404).send({ error: 'generation_operation_not_found' })
-      return { operation, projectionEpoch: getGenerationOperationProjectionEpoch(db) }
-    } catch (error) {
-      return sendOperationError(reply, error)
-    }
-  })
+  app.get<{ Params: { operationId: string } }>(
+    '/api/v1/generation-operations/:operationId',
+    { exposeHeadRoute: false },
+    async (req, reply) => {
+      if (!(await requireAuth(authState, req, reply))) return
+      try {
+        const operationId = canonicalUuid(req.params.operationId, 'operationId')
+        const operation = getGenerationOperationProjection(db, getDatabaseLineage(db), operationId)
+        if (!operation) return reply.code(404).send({ error: 'generation_operation_not_found' })
+        return { operation, projectionEpoch: getGenerationOperationProjectionEpoch(db) }
+      } catch (error) {
+        return sendOperationError(reply, error)
+      }
+    },
+  )
 
   app.get<{
     Params: { operationId: string }
