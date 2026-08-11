@@ -14,25 +14,29 @@ const testState = vi.hoisted(() => {
     },
   }
 
-  const sendChatSpy = vi.fn(async () => {
+  const completeAcceptedChatSend = async (input: { target: any; append: { messageId: string } }) => {
     runTrustedWrite(() => {
-      const currentChar = databaseState.db.characters[0]
-      const currentChat = currentChar.chats[currentChar.chatPage]
-      const latestMessage = currentChat.message.at(-1)
-      currentChat.message.push({
+      const character = databaseState.db.characters.find((candidate) => candidate.chaId === input.target.characterId)
+      const chat = character?.chats.find((candidate: any) => candidate.id === input.target.chatId)
+      const acceptedIndex = chat?.message.findIndex((message: any) => message.chatId === input.append.messageId) ?? -1
+      const acceptedMessage = acceptedIndex >= 0 ? chat.message[acceptedIndex] : undefined
+      chat?.message.splice(acceptedIndex + 1, 0, {
         role: 'char',
-        data: `translated:${latestMessage?.data ?? ''}`,
+        data: `translated:${acceptedMessage?.data ?? ''}`,
       })
     })
-    return true
-  })
+    return { status: 'generated' as const }
+  }
+  const coordinateAcceptedChatSendSpy = vi.fn<(input: any) => Promise<any>>(completeAcceptedChatSend)
 
   let runTrustedWrite = <T>(callback: () => T): T => callback()
+  let appendCurrentChatUserMessageOverride: ((...args: any[]) => Promise<any>) | undefined
 
   return {
     databaseState,
     selectedCharID,
-    sendChatSpy,
+    completeAcceptedChatSend,
+    coordinateAcceptedChatSendSpy,
     downloadFileSpy: vi.fn(),
     selectMultipleFileSpy: vi.fn(),
     postInlayAssetSpy: vi.fn(),
@@ -42,6 +46,12 @@ const testState = vi.hoisted(() => {
     hydrateChatMessagesSpy: vi.fn(async () => {}),
     setRunTrustedWrite(fn: typeof runTrustedWrite) {
       runTrustedWrite = fn
+    },
+    getAppendCurrentChatUserMessageOverride() {
+      return appendCurrentChatUserMessageOverride
+    },
+    setAppendCurrentChatUserMessageOverride(override: typeof appendCurrentChatUserMessageOverride) {
+      appendCurrentChatUserMessageOverride = override
     },
   }
 })
@@ -70,12 +80,25 @@ vi.mock('src/ts/stores.svelte', () => ({
   selectedCharID: testState.selectedCharID,
 }))
 
+vi.mock('src/ts/chatCommands', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/chatCommands')>()
+  return {
+    ...actual,
+    appendCurrentChatUserMessageForSend: (...args: Parameters<typeof actual.appendCurrentChatUserMessageForSend>) => {
+      const override = testState.getAppendCurrentChatUserMessageOverride()
+      return override
+        ? override(actual.appendCurrentChatUserMessageForSend, ...args)
+        : actual.appendCurrentChatUserMessageForSend(...args)
+    },
+  }
+})
+
 vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
   hydrateChatMessages: testState.hydrateChatMessagesSpy,
 }))
 
-vi.mock('../index.svelte', () => ({
-  sendChat: testState.sendChatSpy,
+vi.mock('../acceptedSendCoordinator.svelte', () => ({
+  coordinateAcceptedChatSend: testState.coordinateAcceptedChatSendSpy,
 }))
 
 vi.mock('src/ts/globalApi.svelte', () => ({
@@ -172,6 +195,14 @@ function textBytes(value: string): Uint8Array {
   return new TextEncoder().encode(value)
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
+}
+
 function makePoFile(entryCount: number): string {
   return Array.from({ length: entryCount }, (_unused, index) => {
     return `msgid "line ${index}"\nmsgstr ""\n`
@@ -241,8 +272,9 @@ beforeEach(() => {
   vi.unstubAllGlobals()
   stubCommandFetch()
   testState.setRunTrustedWrite(withTrustedResourceWrite)
+  testState.setAppendCurrentChatUserMessageOverride(undefined)
   resetChatState()
-  testState.sendChatSpy.mockClear()
+  testState.coordinateAcceptedChatSendSpy.mockReset().mockImplementation(testState.completeAcceptedChatSend)
   testState.downloadFileSpy.mockReset()
   testState.selectMultipleFileSpy.mockReset()
   testState.postInlayAssetSpy.mockReset()
@@ -272,7 +304,7 @@ describe('postChatFile file-send handling', () => {
     })
 
     expect(results).toEqual([{ type: 'void' }])
-    expect(testState.sendChatSpy).toHaveBeenCalledTimes(entryCount)
+    expect(testState.coordinateAcceptedChatSendSpy).toHaveBeenCalledTimes(entryCount)
     expect(testState.downloadFileSpy).toHaveBeenCalledTimes(1)
 
     const [downloadName, translatedPo] = testState.downloadFileSpy.mock.calls[0]
@@ -283,6 +315,52 @@ describe('postChatFile file-send handling', () => {
     expect(translatedPo.match(/^msgstr ""$/gm)).toHaveLength(entryCount)
   })
 
+  it('waits for a queued accepted-send outcome before appending the next PO entry', async () => {
+    const settlement = deferred<{ status: 'accepted' }>()
+    const appendSpy = vi.fn(async (actualAppend: (...args: any[]) => Promise<any>, ...args: any[]) => {
+      const accepted = await actualAppend(...args)
+      if (appendSpy.mock.calls.length === 1 && accepted.status === 'ok') {
+        return {
+          status: 'queued' as const,
+          messageId: accepted.messageId,
+          settlement: settlement.promise,
+        }
+      }
+      return accepted
+    })
+    testState.setAppendCurrentChatUserMessageOverride(appendSpy)
+    testState.coordinateAcceptedChatSendSpy.mockImplementation(async (input: any) => {
+      if (input.append.status === 'queued') {
+        const finalOutcome = await input.append.settlement
+        if (finalOutcome.status !== 'accepted') return { status: 'append_failed' }
+      }
+      return testState.completeAcceptedChatSend(input)
+    })
+
+    const resultPromise = postChatFile({
+      name: 'queued.po',
+      data: textBytes(makePoFile(2)),
+    })
+    for (
+      let attempt = 0;
+      attempt < 40 && testState.coordinateAcceptedChatSendSpy.mock.calls.length === 0;
+      attempt += 1
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+
+    expect(testState.coordinateAcceptedChatSendSpy).toHaveBeenCalledTimes(1)
+    expect(appendSpy).toHaveBeenCalledTimes(1)
+    expect(testState.downloadFileSpy).not.toHaveBeenCalled()
+
+    settlement.resolve({ status: 'accepted' })
+
+    await expect(resultPromise).resolves.toEqual([{ type: 'void' }])
+    expect(appendSpy).toHaveBeenCalledTimes(2)
+    expect(testState.coordinateAcceptedChatSendSpy).toHaveBeenCalledTimes(2)
+    expect(testState.downloadFileSpy).toHaveBeenCalledTimes(1)
+  })
+
   it.each(finalEntrySeparatorFixtures)('flushes the final PO entry $description', async ({ source, expected }) => {
     const results = await postChatFile({
       name: 'final-entry.po',
@@ -290,7 +368,7 @@ describe('postChatFile file-send handling', () => {
     })
 
     expect(results).toEqual([{ type: 'void' }])
-    expect(testState.sendChatSpy).toHaveBeenCalledTimes(1)
+    expect(testState.coordinateAcceptedChatSendSpy).toHaveBeenCalledTimes(1)
     expect(testState.downloadFileSpy).toHaveBeenCalledTimes(1)
     expect(testState.downloadFileSpy.mock.calls[0][1]).toContain(`"${expected}"`)
   })
@@ -313,12 +391,12 @@ describe('postChatFile file-send handling', () => {
   )
 
   it('exports the assistant adjacent to the exact accepted user message instead of the last row', async () => {
-    testState.sendChatSpy.mockImplementationOnce(async () => {
+    testState.coordinateAcceptedChatSendSpy.mockImplementationOnce(async () => {
       const messages = testState.databaseState.db.characters[0].chats[0].message
       messages.push({ role: 'char', data: 'owned translation' })
       messages.push({ role: 'user', data: 'unrelated source', chatId: 'unrelated-user' })
       messages.push({ role: 'char', data: 'unrelated last result', chatId: 'unrelated-assistant' })
-      return true
+      return { status: 'generated' }
     })
 
     const results = await postChatFile({
@@ -333,7 +411,7 @@ describe('postChatFile file-send handling', () => {
   })
 
   it('forces guarded hydration when the accepted assistant projection is missing', async () => {
-    testState.sendChatSpy.mockResolvedValueOnce(true)
+    testState.coordinateAcceptedChatSendSpy.mockResolvedValueOnce({ status: 'generated' })
     testState.hydrateChatMessagesSpy.mockImplementationOnce(async () => {
       const messages = testState.databaseState.db.characters[0].chats[0].message
       const acceptedIndex = messages.findIndex((message: any) => message.role === 'user')
@@ -351,7 +429,10 @@ describe('postChatFile file-send handling', () => {
   })
 
   it('suppresses success and download when generation resolves false', async () => {
-    testState.sendChatSpy.mockResolvedValueOnce(false)
+    testState.coordinateAcceptedChatSendSpy.mockResolvedValueOnce({
+      status: 'generation_failed',
+      cause: 'generation_failed',
+    })
 
     const results = await postChatFile({
       name: 'failed-generation.po',
@@ -364,11 +445,11 @@ describe('postChatFile file-send handling', () => {
   })
 
   it('suppresses success and download when no exact adjacent assistant exists after hydration', async () => {
-    testState.sendChatSpy.mockImplementationOnce(async () => {
+    testState.coordinateAcceptedChatSendSpy.mockImplementationOnce(async () => {
       const messages = testState.databaseState.db.characters[0].chats[0].message
       messages.push({ role: 'user', data: 'intervening source', chatId: 'intervening-user' })
       messages.push({ role: 'char', data: 'unowned translation', chatId: 'unowned-assistant' })
-      return true
+      return { status: 'generated' }
     })
 
     const results = await postChatFile({
@@ -477,7 +558,7 @@ describe('postChatFile file-send handling', () => {
     })
 
     expect(results).toEqual([{ type: 'void' }])
-    expect(testState.sendChatSpy).toHaveBeenCalledTimes(2)
+    expect(testState.coordinateAcceptedChatSendSpy).toHaveBeenCalledTimes(2)
     const commands = await waitForMessageCommands(calls, 2)
     expect(commands.map((command) => command.body.message.data)).toEqual(['line 0', 'line 1'])
     expect(testState.downloadFileSpy).toHaveBeenCalledTimes(1)
@@ -489,16 +570,17 @@ describe('postChatFile file-send handling', () => {
       id: 'chat-2',
       message: [],
     })
-    testState.sendChatSpy.mockImplementationOnce(async () => {
+    testState.coordinateAcceptedChatSendSpy.mockImplementationOnce(async (input) => {
       const currentChar = testState.databaseState.db.characters[0]
-      const currentChat = currentChar.chats[currentChar.chatPage]
-      const latestMessage = currentChat.message.at(-1)
-      currentChat.message.push({
+      const capturedChat = currentChar.chats.find((chat: any) => chat.id === input.target.chatId)
+      const acceptedIndex = capturedChat.message.findIndex((message: any) => message.chatId === input.append.messageId)
+      const acceptedMessage = capturedChat.message[acceptedIndex]
+      capturedChat.message.splice(acceptedIndex + 1, 0, {
         role: 'char',
-        data: `translated:${latestMessage?.data ?? ''}`,
+        data: `translated:${acceptedMessage?.data ?? ''}`,
       })
       currentChar.chatPage = 1
-      return true
+      return { status: 'generated' }
     })
 
     const results = await postChatFile({
@@ -507,7 +589,7 @@ describe('postChatFile file-send handling', () => {
     })
 
     expect(results).toEqual([])
-    expect(testState.sendChatSpy).toHaveBeenCalledTimes(1)
+    expect(testState.coordinateAcceptedChatSendSpy).toHaveBeenCalledTimes(1)
     expect(testState.databaseState.db.characters[0].chats[0].message.map((message: any) => message.data)).toEqual([
       'line 0',
       'translated:line 0',
@@ -525,12 +607,12 @@ describe('postChatFile file-send handling', () => {
 
     await expect(postChatFile('translate attachments')).resolves.toEqual([])
     expect(testState.selectMultipleFileSpy).toHaveBeenCalledTimes(2)
-    expect(testState.sendChatSpy).not.toHaveBeenCalled()
+    expect(testState.coordinateAcceptedChatSendSpy).not.toHaveBeenCalled()
     expect(testState.downloadFileSpy).not.toHaveBeenCalled()
   })
 
   it('L36: .po processing errors resolve without uncaught rejection', async () => {
-    testState.sendChatSpy.mockRejectedValueOnce(new Error('send failed'))
+    testState.coordinateAcceptedChatSendSpy.mockRejectedValueOnce(new Error('send failed'))
 
     await expect(
       postChatFile({
@@ -539,7 +621,7 @@ describe('postChatFile file-send handling', () => {
       }),
     ).resolves.toEqual([])
 
-    expect(testState.sendChatSpy).toHaveBeenCalledTimes(1)
+    expect(testState.coordinateAcceptedChatSendSpy).toHaveBeenCalledTimes(1)
     expect(testState.downloadFileSpy).not.toHaveBeenCalled()
   })
 })

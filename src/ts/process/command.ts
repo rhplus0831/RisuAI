@@ -4,11 +4,12 @@ import { selectedCharID } from '../stores.svelte'
 import { alertInput, alertMd, alertNormal, alertSelect } from '../alert'
 import { sayTTS } from './tts'
 import { risuChatParser } from '../parser/parser.svelte'
-import { sendChat } from './index.svelte'
 import { loadLoreBookV3Prompt } from './lorebook.svelte'
 import { clearManualTriggerAbortController, createManualTriggerAbortController, runTrigger } from './triggers'
 import {
   captureActiveChatTarget,
+  clearCurrentChatMessagesBeforeSend,
+  appendCurrentChatUserMessageForSend,
   mutateChatWithScopedCommand,
   currentChatScriptstateSnapshot,
   dispatchPatchChatScriptstateScoped,
@@ -16,6 +17,7 @@ import {
 } from '../chatCommands'
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import type { Chat } from '../storage/database.svelte'
+import { coordinateAcceptedChatSend } from './acceptedSendCoordinator.svelte'
 
 export async function processMultiCommand(command: string) {
   let pipe = ''
@@ -181,19 +183,13 @@ async function processCommand(command: string, pipe: string): Promise<false | st
         if (!isActiveChatTargetFresh(activeTarget)) {
           break
         }
-        const appended = mutateCurrentChatMessages((chat) => {
-          if (clearMode) {
-            chat.message = []
-          }
-          chat.message.push({
-            role: 'user',
-            data: e,
-          })
-        })
-        if (!appended || !isActiveChatTargetFresh(activeTarget)) {
+        if (clearMode && !(await clearCurrentChatMessagesBeforeSend(activeTarget))) {
           break
         }
-        await sendChat(-1)
+        const appended = await appendCurrentChatUserMessageForSend(e, { expectedTarget: activeTarget })
+        if (appended.status === 'error') break
+        const outcome = await coordinateAcceptedChatSend({ target: activeTarget, append: appended })
+        if (outcome.status !== 'generated') break
         if (!isActiveChatTargetFresh(activeTarget)) {
           break
         }

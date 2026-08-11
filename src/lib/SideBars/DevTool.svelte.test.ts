@@ -13,7 +13,11 @@ const devToolMocks = vi.hoisted(() => ({
   alertNormal: vi.fn(),
   beginAlertWait: vi.fn(() => Symbol('preview-wait')),
   clearAlertWait: vi.fn(() => true),
-  appendCurrentChatUserMessageForSend: vi.fn(async () => ({ status: 'ok', messageId: 'message-b' })),
+  appendCurrentChatUserMessageForSend: vi.fn<(...args: any[]) => Promise<any>>(async () => ({
+    status: 'ok',
+    messageId: 'message-b',
+  })),
+  coordinateAcceptedChatSend: vi.fn<(...args: any[]) => Promise<any>>(async () => ({ status: 'generated' })),
   sendChat: vi.fn(async () => true),
   setChatScriptstateValue: vi.fn(),
 }))
@@ -22,6 +26,10 @@ vi.mock('src/ts/process/index.svelte', () => ({
   previewBody: '{"chat":"b"}',
   previewFormated: [{ role: 'user', content: 'Preview for B' }],
   sendChat: devToolMocks.sendChat,
+}))
+
+vi.mock('src/ts/process/acceptedSendCoordinator.svelte', () => ({
+  coordinateAcceptedChatSend: devToolMocks.coordinateAcceptedChatSend,
 }))
 
 vi.mock('src/ts/chatCommands', () => ({
@@ -99,6 +107,14 @@ async function settle() {
   }
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
+}
+
 async function openSection(name: string): Promise<HTMLElement> {
   const trigger = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
     (button) => button.textContent?.trim() === name,
@@ -123,7 +139,7 @@ function runButton(panel: HTMLElement): HTMLButtonElement {
 async function addAutopilotLine(panel: HTMLElement, text: string) {
   panel.querySelector<HTMLButtonElement>(`button[aria-label="${language.add}: Autopilot"]`)!.click()
   await settle()
-  const textarea = panel.querySelector<HTMLTextAreaElement>('textarea')
+  const textarea = Array.from(panel.querySelectorAll<HTMLTextAreaElement>('textarea')).at(-1)
   expect(textarea).toBeTruthy()
   textarea!.value = text
   textarea!.dispatchEvent(new InputEvent('input', { bubbles: true }))
@@ -147,6 +163,7 @@ beforeEach(() => {
     status: 'ok',
     messageId: 'message-b',
   })
+  devToolMocks.coordinateAcceptedChatSend.mockReset().mockResolvedValue({ status: 'generated' })
   devToolMocks.sendChat.mockReset().mockResolvedValue(true)
   selectedCharID.set(0)
   setDatabaseLite({
@@ -204,7 +221,11 @@ describe('DevTool chat generation ownership', () => {
     expect(devToolMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledWith('Continue in B', {
       expectedTarget: targetB,
     })
-    expect(devToolMocks.sendChat).toHaveBeenCalledWith(0, { expectedTarget: targetB })
+    expect(devToolMocks.coordinateAcceptedChatSend).toHaveBeenCalledWith({
+      target: targetB,
+      append: { status: 'ok', messageId: 'message-b' },
+    })
+    expect(devToolMocks.sendChat).not.toHaveBeenCalled()
   })
 
   it('MTC-10: blocks Chat B preview and autopilot while Chat B generates', async () => {
@@ -236,7 +257,7 @@ describe('DevTool chat generation ownership', () => {
     expect(devToolMocks.alertMd).not.toHaveBeenCalled()
   })
 
-  it('does not redirect autopilot generation after navigation during append', async () => {
+  it('hands an accepted append to the captured target after navigation', async () => {
     let resolveAppend!: (result: { status: 'ok'; messageId: string }) => void
     devToolMocks.appendCurrentChatUserMessageForSend.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -256,6 +277,65 @@ describe('DevTool chat generation ownership', () => {
     resolveAppend({ status: 'ok', messageId: 'message-b' })
     await settle()
 
+    expect(devToolMocks.coordinateAcceptedChatSend).toHaveBeenCalledWith({
+      target: targetB,
+      append: { status: 'ok', messageId: 'message-b' },
+    })
     expect(devToolMocks.sendChat).not.toHaveBeenCalled()
+  })
+
+  it('awaits each queued coordinator outcome before advancing autopilot', async () => {
+    const appendSettlement = deferred<{ status: 'accepted' }>()
+    devToolMocks.appendCurrentChatUserMessageForSend
+      .mockResolvedValueOnce({
+        status: 'queued',
+        messageId: 'message-b-1',
+        settlement: appendSettlement.promise,
+      })
+      .mockResolvedValueOnce({ status: 'ok', messageId: 'message-b-2' })
+    devToolMocks.coordinateAcceptedChatSend
+      .mockImplementationOnce(async (input: any) => {
+        await input.append.settlement
+        return { status: 'generated' }
+      })
+      .mockResolvedValueOnce({ status: 'generated' })
+
+    const autopilotPanel = await openSection('Autopilot')
+    await addAutopilotLine(autopilotPanel, 'First')
+    await addAutopilotLine(autopilotPanel, 'Second')
+    runButton(autopilotPanel).click()
+    await settle()
+
+    expect(devToolMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledTimes(1)
+    expect(devToolMocks.coordinateAcceptedChatSend).toHaveBeenCalledWith({
+      target: targetB,
+      append: {
+        status: 'queued',
+        messageId: 'message-b-1',
+        settlement: appendSettlement.promise,
+      },
+    })
+
+    appendSettlement.resolve({ status: 'accepted' })
+    await settle()
+
+    expect(devToolMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledTimes(2)
+    expect(devToolMocks.coordinateAcceptedChatSend).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops autopilot after the current accepted item reaches recovery', async () => {
+    devToolMocks.coordinateAcceptedChatSend.mockResolvedValueOnce({
+      status: 'generation_failed',
+      cause: 'generation_failed',
+    })
+    const autopilotPanel = await openSection('Autopilot')
+    await addAutopilotLine(autopilotPanel, 'First')
+    await addAutopilotLine(autopilotPanel, 'Do not append')
+
+    runButton(autopilotPanel).click()
+    await settle()
+
+    expect(devToolMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledTimes(1)
+    expect(devToolMocks.coordinateAcceptedChatSend).toHaveBeenCalledTimes(1)
   })
 })

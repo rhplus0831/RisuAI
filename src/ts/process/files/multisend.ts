@@ -1,5 +1,4 @@
 import { getDatabase, type Message } from 'src/ts/storage/database.svelte'
-import { sendChat } from '../index.svelte'
 import { downloadFile } from 'src/ts/globalApi.svelte'
 import { HypaProcesser } from '../memory/hypamemory'
 import { BufferToText as BufferToText } from 'src/ts/util'
@@ -12,6 +11,7 @@ import {
   type ActiveChatTarget,
 } from 'src/ts/chatCommands'
 import { hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
+import { coordinateAcceptedChatSend } from '../acceptedSendCoordinator.svelte'
 
 type sendTextFileArg = {
   file: string
@@ -91,10 +91,9 @@ async function sendPofile(arg: sendTextFileArg): Promise<boolean> {
     }
     if (!isActiveChatTargetFresh(target)) return false
     const appendResult = await appendCurrentChatUserMessageForSend(text, { expectedTarget: target })
-    if (appendResult.status !== 'ok') return false
-    if (!isActiveChatTargetFresh(target)) return false
-    const generated = await sendChat(-1)
-    if (!generated) return false
+    if (appendResult.status === 'error') return false
+    const outcome = await coordinateAcceptedChatSend({ target, append: appendResult })
+    if (outcome.status !== 'generated') return false
 
     const assistant = await resolveAcceptedAssistantResult(target, appendResult.messageId)
     if (!assistant) return false

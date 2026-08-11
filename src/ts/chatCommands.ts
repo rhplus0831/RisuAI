@@ -5118,6 +5118,32 @@ export async function appendCurrentChatUserMessageForSend(
   return { status: 'error', error: result.error }
 }
 
+/**
+ * Durably clear the captured active transcript before an append-and-generate
+ * operation. A retained replacement is not complete until replay settles, so
+ * callers must not append or generate from the replacement before this helper
+ * resolves true.
+ */
+export async function clearCurrentChatMessagesBeforeSend(target: ActiveChatTarget): Promise<boolean> {
+  if (!isActiveChatTargetFresh(target)) return false
+  const previous = currentChatScopedSnapshot()
+  const chatId = previous.chatId
+  if (!chatId || chatId !== target.chatId) return false
+
+  const pending = dispatchReplaceMessagesScoped(chatId, [], previous)
+  if (!pending) return false
+
+  const outcome = await pending
+  if (outcome.status === 'accepted') return true
+  if (outcome.status === 'failed') return false
+
+  try {
+    return (await outcome.settlement).status === 'accepted'
+  } catch {
+    return false
+  }
+}
+
 function removeOptimisticCurrentChatMessage(input: {
   selectedCharID: number
   characterId: string | undefined

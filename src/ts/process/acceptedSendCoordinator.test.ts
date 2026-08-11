@@ -7,7 +7,6 @@ const coordinatorMocks = vi.hoisted(() => ({
   controller: new AbortController(),
   createController: vi.fn(),
   fetchServerGenerationChatMessages: vi.fn(),
-  isChatGenerationKnown: vi.fn(),
   refreshActiveGenerationJobsFromBootstrap: vi.fn(),
   sendChat: vi.fn(),
   sleep: vi.fn(),
@@ -24,7 +23,6 @@ vi.mock('./index.svelte', () => ({
 }))
 
 vi.mock('./reattach', () => ({
-  isChatGenerationKnown: coordinatorMocks.isChatGenerationKnown,
   refreshActiveGenerationJobsFromBootstrap: coordinatorMocks.refreshActiveGenerationJobsFromBootstrap,
 }))
 
@@ -62,7 +60,6 @@ beforeEach(() => {
   coordinatorMocks.createController.mockReturnValue(coordinatorMocks.controller)
   coordinatorMocks.sendChat.mockResolvedValue(true)
   coordinatorMocks.fetchServerGenerationChatMessages.mockResolvedValue({ status: 'unavailable' })
-  coordinatorMocks.isChatGenerationKnown.mockReturnValue(false)
   coordinatorMocks.refreshActiveGenerationJobsFromBootstrap.mockResolvedValue(undefined)
   coordinatorMocks.sleep.mockResolvedValue(undefined)
   resetAcceptedSendCoordinatorForTests()
@@ -177,20 +174,21 @@ describe('accepted send coordinator', () => {
     expect(get(acceptedSendRecoveries)).toEqual([])
   })
 
-  it('does not record a failure when foreground refresh finds the detached job still running', async () => {
+  it('does not treat an unrelated same-chat job as success without the accepted reply', async () => {
     coordinatorMocks.sendChat.mockResolvedValueOnce(false)
-    coordinatorMocks.isChatGenerationKnown.mockReturnValueOnce(true)
 
     await expect(
       coordinateAcceptedChatSend({
         target: target(),
         append: { status: 'ok', messageId: 'message-a' },
       }),
-    ).resolves.toEqual({ status: 'generated' })
+    ).resolves.toEqual({ status: 'generation_failed', cause: 'generation_failed' })
 
     expect(coordinatorMocks.refreshActiveGenerationJobsFromBootstrap).toHaveBeenCalledTimes(1)
-    expect(coordinatorMocks.fetchServerGenerationChatMessages).not.toHaveBeenCalled()
-    expect(get(acceptedSendRecoveries)).toEqual([])
+    expect(coordinatorMocks.fetchServerGenerationChatMessages).toHaveBeenCalledWith('chat-a', 'message-a')
+    expect(get(acceptedSendRecoveries)).toEqual([
+      expect.objectContaining({ target: target(), messageId: 'message-a', cause: 'generation_failed' }),
+    ])
   })
 
   it('keeps a generation-in-progress recovery through a rejected retry and refreshes remote jobs', async () => {
@@ -203,8 +201,6 @@ describe('accepted send coordinator', () => {
       .mockImplementationOnce(rejectForRunningGeneration)
       .mockImplementationOnce(rejectForRunningGeneration)
       .mockResolvedValueOnce(true)
-    coordinatorMocks.isChatGenerationKnown.mockReturnValue(true)
-
     await expect(
       coordinateAcceptedChatSend({
         target: target(),

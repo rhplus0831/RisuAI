@@ -4,7 +4,7 @@
   import NumberInput from '../UI/GUI/NumberInput.svelte'
   import Button from '../UI/GUI/Button.svelte'
   import { getRequestLog } from 'src/ts/globalApi.svelte'
-  import { alertError, alertMd, alertNormal, beginAlertWait, clearAlertWait } from 'src/ts/alert'
+  import { alertError, alertMd, beginAlertWait, clearAlertWait } from 'src/ts/alert'
   import Accordion from '../UI/Accordion.svelte'
   import { getCharToken, getChatToken } from 'src/ts/tokenizer'
   import { tokenizePreset } from 'src/ts/process/prompt'
@@ -29,6 +29,7 @@
   import { language } from 'src/lang'
   import { parseDevToolAutopilotImport } from './devToolAutopilotImport'
   import { findChatGenerationActivity } from 'src/ts/process/generationActivity.svelte'
+  import { coordinateAcceptedChatSend } from 'src/ts/process/acceptedSendCoordinator.svelte'
 
   let previewMode = $state('chat')
   let previewJoin = $state('yes')
@@ -250,22 +251,12 @@
         const appended = await appendCurrentChatUserMessageForSend(autopilot[i], {
           expectedTarget: activeTarget,
         })
-        if (!isActiveChatTargetFresh(activeTarget)) {
-          return
-        }
-        if (appended.status === 'queued') {
-          alertNormal(language.pendingChatMessageQueued)
-          return
-        }
-        if (appended.status !== 'ok') {
+        if (appended.status === 'error') {
           alertError(appended.error)
           return
         }
-        if (!isActiveChatTargetFresh(activeTarget)) {
-          return
-        }
-        const generated = await sendChat(i, { expectedTarget: activeTarget })
-        if (!generated) return
+        const outcome = await coordinateAcceptedChatSend({ target: activeTarget, append: appended })
+        if (outcome.status !== 'generated') return
         if (!isActiveChatTargetFresh(activeTarget)) {
           return
         }

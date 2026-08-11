@@ -13,7 +13,7 @@ import {
   type AcceptedSendRecovery,
   type AcceptedSendRecoveryCause,
 } from './acceptedSendRecoveryState'
-import { isChatGenerationKnown, refreshActiveGenerationJobsFromBootstrap } from './reattach'
+import { refreshActiveGenerationJobsFromBootstrap } from './reattach'
 
 export {
   acceptedSendRecoveries,
@@ -140,21 +140,14 @@ async function attemptGeneration(
 /**
  * A mobile browser can lose its viewer stream while the detached server job
  * continues. Before calling that a generation failure, ask the server whether
- * the chat still has an active job or the accepted row already has its durable
- * assistant reply.
+ * the accepted row already has its durable assistant reply. Chat-level job
+ * activity is not proof that the job belongs to this accepted message.
  */
-async function acceptedGenerationReachedServer(
-  request: AcceptedGenerationRequest,
-  cause: AcceptedSendRecoveryCause,
-): Promise<boolean> {
+async function acceptedGenerationReachedServer(request: AcceptedGenerationRequest): Promise<boolean> {
   const chatId = request.target.chatId
   if (!chatId) return false
 
   await refreshActiveGenerationJobsFromBootstrap()
-  // A known job in this case belongs to the generation that rejected this new
-  // accepted message. Keep the dedicated wait-and-retry warning visible.
-  if (cause === 'generation_in_progress') return false
-  if (isChatGenerationKnown(chatId)) return true
 
   try {
     const transcript = await fetchServerGenerationChatMessages(chatId, request.messageId)
@@ -171,7 +164,7 @@ async function startAcceptedGeneration(request: AcceptedGenerationRequest): Prom
     return { status: 'generated' }
   }
 
-  if (await acceptedGenerationReachedServer(request, attempt.cause)) {
+  if (await acceptedGenerationReachedServer(request)) {
     return { status: 'generated' }
   }
 
@@ -247,7 +240,7 @@ export async function retryAcceptedChatSend(id: string): Promise<boolean> {
     return true
   }
 
-  if (await acceptedGenerationReachedServer(request, attempt.cause)) {
+  if (await acceptedGenerationReachedServer(request)) {
     removeAcceptedSendRecovery(id)
     return true
   }

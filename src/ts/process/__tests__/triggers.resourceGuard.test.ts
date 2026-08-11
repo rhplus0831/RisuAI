@@ -22,6 +22,15 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, getModuleTriggers: () => [], moduleUpdate: () => {} }
 })
 
+const coordinateAcceptedChatSendMock = vi.hoisted(() => vi.fn(async () => ({ status: 'generated' as const })))
+vi.mock('../acceptedSendCoordinator.svelte', () => ({
+  coordinateAcceptedChatSend: coordinateAcceptedChatSendMock,
+}))
+
+vi.mock('src/ts/activeChatGenerationSettings', () => ({
+  guardActiveChatGenerationSettingsForSend: vi.fn(() => ({ status: 'ok' })),
+}))
+
 import { safeStructuredClone } from '../../polyfill'
 import { testDatabaseState } from '../../__tests__/resourceDatabaseState'
 import { runTrigger } from '../triggers'
@@ -106,6 +115,14 @@ async function waitFor(predicate: () => boolean): Promise<void> {
   }
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
+}
+
 function seedDatabase(): void {
   selectedCharID.set(0)
   testDatabaseState.db = {
@@ -143,6 +160,7 @@ beforeEach(() => {
   ;(globalThis as Record<string, unknown>).safeStructuredClone = safeStructuredClone
   clearCachedServerCommandRevision()
   setResourceWriteGuardEnabled(false)
+  coordinateAcceptedChatSendMock.mockReset().mockResolvedValue({ status: 'generated' })
   seedDatabase()
 })
 
@@ -152,6 +170,44 @@ afterEach(() => {
 })
 
 describe('trigger durable writes under the resource guard', () => {
+  it('awaits the accepted-send outcome for STScript /multisend', async () => {
+    const calls = stubCommandFetch()
+    const generation = deferred<{ status: 'generated' }>()
+    coordinateAcceptedChatSendMock.mockReturnValueOnce(generation.promise)
+    setResourceWriteGuardEnabled(true)
+    const char = characterWithTriggers([
+      {
+        comment: 'scripted multisend',
+        type: 'manual',
+        conditions: [],
+        effect: [{ type: 'v2Command', valueType: 'value', value: '/multisend scripted row' }],
+      },
+    ])
+
+    let settled = false
+    const triggerRun = runTrigger(char, 'manual', {
+      chat: char.chats[char.chatPage],
+      manualName: 'scripted multisend',
+    }).then((result) => {
+      settled = true
+      return result
+    })
+    await waitFor(() => coordinateAcceptedChatSendMock.mock.calls.length === 1)
+
+    expect(settled).toBe(false)
+    expect(coordinateAcceptedChatSendMock).toHaveBeenCalledWith({
+      target: expect.objectContaining({ characterId: 'char-a', chatId: 'chat-1' }),
+      append: expect.objectContaining({ status: 'ok', messageId: expect.any(String) }),
+    })
+    expect(
+      calls.filter((call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'POST'),
+    ).toHaveLength(1)
+
+    generation.resolve({ status: 'generated' })
+    await expect(triggerRun).resolves.toBeTruthy()
+    expect(settled).toBe(true)
+  })
+
   it('keeps readonly display trigger rows immutable while attaching low-level metadata', async () => {
     const trigger = Object.freeze({
       comment: 'readonly display',

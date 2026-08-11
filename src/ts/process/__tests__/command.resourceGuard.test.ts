@@ -23,9 +23,15 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, getModuleTriggers: () => [], moduleUpdate: () => {} }
 })
 
-const sendChatMock = vi.hoisted(() => vi.fn(async () => true))
-vi.mock('../index.svelte', () => ({
-  sendChat: sendChatMock,
+const coordinateAcceptedChatSendMock = vi.hoisted(() =>
+  vi.fn<(...args: any[]) => Promise<any>>(async () => ({ status: 'generated' })),
+)
+vi.mock('../acceptedSendCoordinator.svelte', () => ({
+  coordinateAcceptedChatSend: coordinateAcceptedChatSendMock,
+}))
+
+vi.mock('src/ts/activeChatGenerationSettings', () => ({
+  guardActiveChatGenerationSettingsForSend: vi.fn(() => ({ status: 'ok' })),
 }))
 
 // Spy: count setDatabase normalizer runs without changing its behavior.
@@ -153,6 +159,14 @@ async function waitForMatchingCalls(
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
   throw new Error(`expected ${expected} matching commands; saw: ${JSON.stringify(calls)}`)
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
 }
 
 function commandMessages(call: CapturedFetch): Array<Record<string, unknown>> {
@@ -323,8 +337,7 @@ beforeEach(() => {
   setResourceWriteGuardEnabled(false)
   seedDatabase()
   setDatabaseSpy.count = 0
-  sendChatMock.mockClear()
-  sendChatMock.mockResolvedValue(true)
+  coordinateAcceptedChatSendMock.mockReset().mockResolvedValue({ status: 'generated' })
 })
 
 afterEach(() => {
@@ -515,21 +528,73 @@ describe('slash-command durable writes under the resource guard', () => {
       'first',
       'second',
     ])
-    expect(sendChatMock).toHaveBeenCalledTimes(2)
-    expect(sendChatMock).toHaveBeenNthCalledWith(1, -1)
-    expect(sendChatMock).toHaveBeenNthCalledWith(2, -1)
+    expect(coordinateAcceptedChatSendMock).toHaveBeenCalledTimes(2)
+    expect(coordinateAcceptedChatSendMock).toHaveBeenNthCalledWith(1, {
+      target: expect.objectContaining({ characterId: 'char-a', chatId: 'chat-1' }),
+      append: expect.objectContaining({ status: 'ok', messageId: expect.any(String) }),
+    })
+    expect(coordinateAcceptedChatSendMock).toHaveBeenNthCalledWith(2, {
+      target: expect.objectContaining({ characterId: 'char-a', chatId: 'chat-1' }),
+      append: expect.objectContaining({ status: 'ok', messageId: expect.any(String) }),
+    })
     expect(setDatabaseSpy.count).toBe(0)
+  })
+
+  it('awaits each coordinated /multisend result before appending the next segment', async () => {
+    seedDatabase([{ role: 'char', data: 'base', chatId: 'm-base' }])
+    const calls = stubCommandFetch()
+    const firstGeneration = deferred<{ status: 'generated' }>()
+    coordinateAcceptedChatSendMock.mockReturnValueOnce(firstGeneration.promise)
+    setResourceWriteGuardEnabled(true)
+
+    const command = processMultiCommand('/multisend first|||second')
+    await waitForMatchingCalls(
+      calls,
+      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'POST',
+      1,
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(coordinateAcceptedChatSendMock).toHaveBeenCalledTimes(1)
+    expect(
+      calls.filter((call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'POST'),
+    ).toHaveLength(1)
+
+    firstGeneration.resolve({ status: 'generated' })
+    await expect(command).resolves.toBe('')
+
+    expect(coordinateAcceptedChatSendMock).toHaveBeenCalledTimes(2)
+    expect(
+      calls.filter((call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'POST'),
+    ).toHaveLength(2)
+  })
+
+  it('stops /multisend after an accepted item reaches coordinator recovery', async () => {
+    seedDatabase([{ role: 'char', data: 'base', chatId: 'm-base' }])
+    const calls = stubCommandFetch()
+    coordinateAcceptedChatSendMock.mockResolvedValueOnce({
+      status: 'generation_failed',
+      cause: 'generation_failed',
+    })
+    setResourceWriteGuardEnabled(true)
+
+    await expect(processMultiCommand('/multisend first|||do not append')).resolves.toBe('')
+
+    expect(
+      calls.filter((call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'POST'),
+    ).toHaveLength(1)
+    expect(coordinateAcceptedChatSendMock).toHaveBeenCalledTimes(1)
   })
 
   it('L32: /multisend stops after the active chat changes during the first send', async () => {
     seedDatabase([{ role: 'char', data: 'base', chatId: 'm-base' }], { includeSiblings: true })
     const calls = stubCommandFetch()
     setResourceWriteGuardEnabled(true)
-    sendChatMock.mockImplementationOnce(async () => {
+    coordinateAcceptedChatSendMock.mockImplementationOnce(async () => {
       withTrustedResourceWrite(() => {
         testDatabaseState.db.characters[0].chatPage = 1
       })
-      return true
+      return { status: 'generated' }
     })
 
     await expect(processMultiCommand('/multisend first|||second')).resolves.toBe('')
@@ -552,8 +617,11 @@ describe('slash-command durable writes under the resource guard', () => {
     expect(testDatabaseState.db.characters[0].chats[1].message.map((message: any) => message.data)).toEqual([
       'active sibling',
     ])
-    expect(sendChatMock).toHaveBeenCalledTimes(1)
-    expect(sendChatMock).toHaveBeenCalledWith(-1)
+    expect(coordinateAcceptedChatSendMock).toHaveBeenCalledTimes(1)
+    expect(coordinateAcceptedChatSendMock).toHaveBeenCalledWith({
+      target: expect.objectContaining({ characterId: 'char-a', chatId: 'chat-1' }),
+      append: expect.objectContaining({ status: 'ok', messageId: expect.any(String) }),
+    })
     expect(setDatabaseSpy.count).toBe(0)
   })
 
@@ -569,15 +637,75 @@ describe('slash-command durable writes under the resource guard', () => {
       (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
       2,
     )
-    expect(messageCommands.map((call) => commandMessages(call).map((message) => message.data))).toEqual([
-      ['first'],
-      ['second'],
-    ])
+    expect(messageCommands.map((call) => commandMessages(call))).toEqual([[], []])
+    const appendCommands = await waitForMatchingCalls(
+      calls,
+      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'POST',
+      2,
+    )
+    expect(appendCommands.map((call) => call.body.message.data)).toEqual(['first', 'second'])
     expect(testDatabaseState.db.characters[0].chats[0].message.map((message: any) => message.data)).toEqual(['second'])
-    expect(sendChatMock).toHaveBeenCalledTimes(2)
-    expect(sendChatMock).toHaveBeenNthCalledWith(1, -1)
-    expect(sendChatMock).toHaveBeenNthCalledWith(2, -1)
+    expect(coordinateAcceptedChatSendMock).toHaveBeenCalledTimes(2)
+    expect(
+      calls
+        .filter((call) => call.url === '/api/v1/commands/chats/chat-1/messages')
+        .map((call) => [call.method, call.method === 'PUT' ? commandMessages(call) : call.body.message.data]),
+    ).toEqual([
+      ['PUT', []],
+      ['POST', 'first'],
+      ['PUT', []],
+      ['POST', 'second'],
+    ])
     expect(setDatabaseSpy.count).toBe(0)
+  })
+
+  it('does not append or generate until /multisend clear is durably accepted', async () => {
+    const calls: CapturedFetch[] = []
+    const clearResponse = deferred<Response>()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/chats/chat-1/messages' && init.method === 'PUT') {
+          return clearResponse.promise
+        }
+        if (url === '/api/v1/commands/chats/chat-1/messages' && init.method === 'POST') {
+          return jsonResponse({
+            revision: 12,
+            event: { type: 'message.appended', revision: 12, resource: 'message', parentId: 'chat-1' },
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    seedDatabase([{ role: 'char', data: 'base', chatId: 'm-base' }])
+    setResourceWriteGuardEnabled(true)
+
+    const command = processMultiCommand('/multisend clear|||first')
+    await waitForCommand(
+      calls,
+      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
+    )
+
+    expect(calls.some((call) => call.method === 'POST')).toBe(false)
+    expect(coordinateAcceptedChatSendMock).not.toHaveBeenCalled()
+
+    clearResponse.resolve(
+      jsonResponse({
+        revision: 11,
+        event: { type: 'messages.replaced', revision: 11, resource: 'message', parentId: 'chat-1' },
+      }),
+    )
+    await expect(command).resolves.toBe('')
+
+    expect(calls.map((call) => call.method)).toEqual(['GET', 'PUT', 'POST'])
+    expect(coordinateAcceptedChatSendMock).toHaveBeenCalledTimes(1)
   })
 
   it('L32: forced message-command failure restores only the active chat', async () => {
