@@ -16,6 +16,7 @@ import { retryQueuedGenerationFinalizations } from '../src/routes/generationChat
 import {
   SQLITE_BACKUP_EXCLUDED_TABLES,
   SQLITE_BACKUP_TABLES,
+  addAsset,
   assetsDir,
   getAllAssetMetadata,
   listBackups,
@@ -66,7 +67,10 @@ function harnessConfig(dataDir: string, automaticBackupRetention?: number) {
   }
 }
 
-async function startHarness(automaticBackupRetention?: number): Promise<Harness> {
+async function startHarness(
+  automaticBackupRetention?: number,
+  configureApp?: (app: FastifyInstance) => void,
+): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-'))
   const commandEvents = createCommandEventSink()
@@ -76,6 +80,7 @@ async function startHarness(automaticBackupRetention?: number): Promise<Harness>
     generationChat: { finalizationRetry: false },
   })
   installResourceDatabaseBootstrapAdapter(app)
+  configureApp?.(app)
   return { app, dataDir, commandEvents }
 }
 
@@ -518,6 +523,96 @@ describe('Phase 2D backups', () => {
     })
     expect(afterRestore.json().revision).toBe(revisionAfter)
   })
+
+  it.each(['restore', 'import'] as const)(
+    'rejects an old-lineage command held across a whole-database %s boundary',
+    async (replacementKind) => {
+      await stopHarness(harness)
+      let holdCommand = false
+      let markCommandHeld!: () => void
+      let releaseCommand!: () => void
+      const commandHeld = new Promise<void>((resolve) => {
+        markCommandHeld = resolve
+      })
+      const commandRelease = new Promise<void>((resolve) => {
+        releaseCommand = resolve
+      })
+      harness = await startHarness(undefined, (app) => {
+        app.addHook('preHandler', async (req) => {
+          if (!holdCommand || req.url.split('?')[0] !== '/api/v1/commands/settings/display') return
+          markCommandHeld()
+          await commandRelease
+        })
+      })
+
+      const { assertion } = await setupAuthedClient(harness.app)
+      await importDb(harness.app, assertion, { tag: 'replacement-A', theme: 'dark' })
+      const backup = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/backups',
+        headers: { 'risu-auth': assertion },
+        payload: { label: 'held-command restore target' },
+      })
+      expect(backup.statusCode).toBe(201)
+      await importDb(harness.app, assertion, { tag: 'live-B', theme: 'dark' })
+
+      const writerSession = 'tier4-held-command-writer'
+      const beforeReplacement = await harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/bootstrap',
+        headers: { 'risu-auth': assertion, 'risu-writer-session': writerSession },
+      })
+      expect(beforeReplacement.statusCode).toBe(200)
+      const oldLineage = beforeReplacement.json().databaseLineage as string
+      holdCommand = true
+      const heldCommand = harness.app.inject({
+        method: 'PATCH',
+        url: '/api/v1/commands/settings/display',
+        headers: {
+          'risu-auth': assertion,
+          'risu-writer-session': writerSession,
+          'risu-mutation-id': `held-across-${replacementKind}`,
+          'risu-database-lineage': oldLineage,
+        },
+        payload: {
+          baseRevision: beforeReplacement.json().revision,
+          patch: { theme: 'light' },
+        },
+      })
+      await commandHeld
+
+      const replacement =
+        replacementKind === 'restore'
+          ? await harness.app.inject({
+              method: 'POST',
+              url: `/api/v1/backups/${backup.json().id}/restore`,
+              headers: { 'risu-auth': assertion, 'risu-writer-session': writerSession },
+            })
+          : await harness.app.inject({
+              method: 'POST',
+              url: '/api/v1/import/risusave',
+              headers: { 'risu-auth': assertion, 'risu-writer-session': writerSession },
+              payload: { database: { characters: [], tag: 'replacement-A', theme: 'dark' } },
+            })
+      releaseCommand()
+
+      expect(replacement.statusCode).toBe(200)
+      expect(replacement.json().databaseLineage).not.toBe(oldLineage)
+      const rejected = await heldCommand
+      expect(rejected.statusCode).toBe(409)
+      expect(rejected.json()).toEqual({
+        error: 'database_lineage_conflict',
+        databaseLineage: replacement.json().databaseLineage,
+      })
+
+      const afterReplacement = await harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/bootstrap',
+        headers: { 'risu-auth': assertion, 'risu-writer-session': writerSession },
+      })
+      expect(afterReplacement.json().database).toMatchObject({ tag: 'replacement-A', theme: 'dark' })
+    },
+  )
 
   it('clears device-local request history when restoring a SQLite backup', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
@@ -1765,6 +1860,82 @@ describe('Phase 2D backups', () => {
     })
     expect(asset.statusCode).toBe(200)
     expect(Buffer.from(asset.rawPayload)).toEqual(PNG_BYTES)
+  })
+
+  it('keeps every snapshotted asset reference readable when an upload lands between SQLite and file copies', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const initialUpload = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'content-type': 'image/png', 'risu-auth': assertion },
+      payload: PNG_BYTES,
+    })
+    expect(initialUpload.statusCode).toBe(201)
+
+    const concurrentBytes = Buffer.from('/* tier-4 concurrent backup asset */')
+    let concurrentAssetId = ''
+    let injected = false
+    const liveAssets = assetsDir(harness.dataDir)
+    const originalCpSync = fs.cpSync.bind(fs)
+    const copySpy = vi.spyOn(fs, 'cpSync').mockImplementation((source, destination, options) => {
+      if (!injected && String(source) === liveAssets && String(destination).includes(`${path.sep}backups${path.sep}`)) {
+        injected = true
+        const concurrentDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+        try {
+          concurrentAssetId = addAsset(concurrentDb, harness.dataDir, {
+            bytes: concurrentBytes,
+            contentType: 'text/css',
+          }).entry.id
+        } finally {
+          concurrentDb.close()
+        }
+      }
+      return originalCpSync(source, destination, options)
+    })
+
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'concurrent asset boundary' },
+    })
+    copySpy.mockRestore()
+    expect(backup.statusCode).toBe(201)
+    expect(injected).toBe(true)
+    expect(backup.json().assetCount).toBe(1)
+
+    const backupRoot = path.join(harness.dataDir, 'backups', backup.json().id)
+    const backupDb = new DatabaseSync(path.join(backupRoot, 'risu.db'), { readOnly: true })
+    try {
+      const snapshottedAssets = getAllAssetMetadata(backupDb)
+      expect(snapshottedAssets.map((asset) => asset.id)).toEqual([PNG_SHA])
+      for (const asset of snapshottedAssets) {
+        expect(existsSync(path.join(backupRoot, 'assets', `${asset.id}.${asset.ext}`))).toBe(true)
+      }
+    } finally {
+      backupDb.close()
+    }
+
+    // The directory copy can include a T2 upload that the T1 SQLite snapshot
+    // does not index. It is a harmless extra on restore: authoritative metadata
+    // never points at missing bytes, and the later file remains unreachable.
+    expect(readFileSync(path.join(backupRoot, 'assets', `${concurrentAssetId}.css`))).toEqual(concurrentBytes)
+    rmSync(liveAssets, { recursive: true, force: true })
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const snapshottedAsset = await harness.app.inject({ method: 'GET', url: `/api/v1/assets/${PNG_SHA}` })
+    expect(snapshottedAsset.statusCode).toBe(200)
+    expect(Buffer.from(snapshottedAsset.rawPayload)).toEqual(PNG_BYTES)
+    const unindexedExtra = await harness.app.inject({
+      method: 'GET',
+      url: `/api/v1/assets/${concurrentAssetId}`,
+    })
+    expect(unindexedExtra.statusCode).toBe(404)
   })
 
   it('clears device-local request history when restoring a legacy JSON backup', async () => {

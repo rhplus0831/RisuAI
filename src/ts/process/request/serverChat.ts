@@ -540,6 +540,8 @@ export async function requestServerChatGeneration(
   let durableJobId = reattachJobId ?? ''
   const watchesDurableJob = input.durable === true || reattachJobId !== undefined
   let cancelledDurableJobId = ''
+  const viewerAbortController = new AbortController()
+  let consumerDetached = false
   const cancelDurableOnAbort = (): void => {
     // A durable send or a reattached generation: an explicit abort (the stop
     // button) cancels the server job; a bare disconnect only detaches.
@@ -547,13 +549,18 @@ export async function requestServerChatGeneration(
     cancelledDurableJobId = durableJobId
     void cancelServerChatGeneration(durableJobId)
   }
-  const stopWatchingAbort = (): void => signal?.removeEventListener('abort', cancelDurableOnAbort)
-  if (watchesDurableJob) {
-    if (signal?.aborted) cancelDurableOnAbort()
-    else signal?.addEventListener('abort', cancelDurableOnAbort, { once: true })
+  const onOwnerAbort = (): void => {
+    cancelDurableOnAbort()
+    viewerAbortController.abort()
+  }
+  const stopWatchingAbort = (): void => signal?.removeEventListener('abort', onOwnerAbort)
+  if (signal?.aborted) {
+    onOwnerAbort()
+  } else {
+    signal?.addEventListener('abort', onOwnerAbort, { once: true })
   }
 
-  const opened = await openChatResponse(input, signal, reattachJobId)
+  const opened = await openChatResponse(input, viewerAbortController.signal, reattachJobId)
   if (opened.status !== 'ok') {
     stopWatchingAbort()
     if (opened.status === 'aborted' && reattachJobId) forgetActiveGenerationJob(reattachJobId)
@@ -731,8 +738,8 @@ export async function requestServerChatGeneration(
         let lastError = transportError
         let reattachOutcome: GenerationReattachOutcomeStatus = 'retryable_transport_failure'
         for (const delayMs of DURABLE_STREAM_RECONNECT_DELAYS_MS) {
-          if (!(await waitForDurableReconnect(delayMs, signal))) return { status: 'aborted' }
-          const next = await openChatResponse(input, signal, durableJobId)
+          if (!(await waitForDurableReconnect(delayMs, viewerAbortController.signal))) return { status: 'aborted' }
+          const next = await openChatResponse(input, viewerAbortController.signal, durableJobId)
           if (next.status === 'ok') {
             // Durable reattach replays the complete token delta history. Rebuild
             // the accumulated text from zero so replayed deltas do not duplicate
@@ -762,7 +769,7 @@ export async function requestServerChatGeneration(
         while (true) {
           let transportError = 'stream ended without a done event'
           try {
-            for await (const frame of iterateSseEvents(activeOpened.response.body!, signal)) {
+            for await (const frame of iterateSseEvents(activeOpened.response.body!, viewerAbortController.signal)) {
               const data = parseData(frame.data)
               if (!data) continue
               switch (frame.event) {
@@ -960,6 +967,7 @@ export async function requestServerChatGeneration(
             transportError = err instanceof Error ? err.message : String(err)
           }
 
+          if (consumerDetached) return
           if (signal?.aborted) {
             settleAborted()
             return
@@ -977,10 +985,13 @@ export async function requestServerChatGeneration(
       })()
     },
     cancel() {
+      consumerDetached = true
       tokenStreamInactive = true
+      viewerAbortController.abort()
       resolveTerminalOnce({ status: 'error', error: 'Aborted', warnings })
       clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
       clearHalfStreaming()
+      stopWatchingAbort()
     },
   })
 

@@ -15,7 +15,11 @@ import {
   markGenerationFinalizationRetryFailure,
   pruneTerminalGenerationFinalizationRetries,
 } from '../src/generationFinalizationRetry.js'
-import { retryQueuedGenerationFinalizations, type ChatProviderDispatcher } from '../src/routes/generationChat.js'
+import {
+  retryQueuedGenerationFinalizations,
+  type ChatProviderDispatcher,
+  type GenerationChatRouteOptions,
+} from '../src/routes/generationChat.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import { readResourceDatabaseFromFetch, type RuntimeBootstrap } from './helpers/resourceDatabase.js'
 
@@ -40,6 +44,7 @@ let providerImpl: ChatProviderDispatcher = () => {
   return g()
 }
 let failNextGenerationPersistEvent = false
+let durableLifecycleHook: GenerationChatRouteOptions['onDurableLifecycleTransition']
 
 const DURABLE_PERSONA_ID = 'durable-persona'
 const DURABLE_MODEL_PRESET_ID = 'durable-model-preset'
@@ -80,6 +85,7 @@ async function startHarness(
     generationChat: {
       dispatchProvider: (ctx) => providerImpl(ctx),
       finalizationRetry: { intervalMs: 10 },
+      onDurableLifecycleTransition: (transition, job) => durableLifecycleHook?.(transition, job),
       ...generationChatOverrides,
     },
     commandEvents,
@@ -195,6 +201,7 @@ interface GenerationFinalizationRetryTestRow {
 
 beforeEach(async () => {
   failNextGenerationPersistEvent = false
+  durableLifecycleHook = undefined
   providerImpl = () => {
     async function* g(): AsyncGenerator<CompletionStreamFrame> {
       yield { kind: 'done', finishReason: 'stop' }
@@ -207,6 +214,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  durableLifecycleHook = undefined
   for (const controller of openControllers) controller.abort()
   openControllers.clear()
   await harness.app.close()
@@ -743,6 +751,47 @@ describe('Durable generation (Milestone 1)', () => {
     const events = await readSse(res, (event) => event.type === 'done')
     expect(jobIdFromEvents(events)).toBe(headerJobId)
   })
+
+  it.each(['registered', 'viewer_write_started', 'viewer_attached', 'runner_tracked'] as const)(
+    'cleans up the job and chat slot when startup fails after %s',
+    async (transition) => {
+      let failedJobId = ''
+      let failedJobSignal: AbortSignal | undefined
+      durableLifecycleHook = (current, job) => {
+        if (current !== transition) return
+        failedJobId = job.id
+        failedJobSignal = job.abortController.signal
+        throw new Error(`injected durable lifecycle failure after ${transition}`)
+      }
+
+      const failed = await postDurable({})
+      if (transition === 'registered') {
+        expect(failed.status).toBe(500)
+        await expect(failed.json()).resolves.toEqual({ error: 'generation_job_start_failed' })
+      } else {
+        expect(failed.status).toBe(200)
+        await failed.text()
+      }
+
+      expect(failedJobId).not.toBe('')
+      expect(failedJobSignal?.aborted).toBe(true)
+      await waitFor(async () => {
+        const state = await bootstrap()
+        return state.activeGenerationJobs.length === 0 ? true : undefined
+      })
+
+      const missing = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(failedJobId)}/stream`, {
+        headers: authHeaders(),
+      })
+      expect(missing.status).toBe(404)
+
+      durableLifecycleHook = undefined
+      const retry = await postDurable({})
+      expect(retry.status).toBe(200)
+      const events = await readSse(retry, (event) => event.type === 'done')
+      expect(events.at(-1)?.type).toBe('done')
+    },
+  )
 
   // The generation survives the client drop and persists with no client present.
   it('keeps generating after the client drops mid-stream and persists the result (EC-D1)', async () => {

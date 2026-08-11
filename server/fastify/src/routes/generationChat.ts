@@ -219,6 +219,11 @@ export interface GenerationChatRouteOptions {
    * Defaults to the job's `heartbeatSec`; injectable for tests.
    */
   viewerHeartbeatMs?: number
+  /** Deterministic lifecycle seam for fault-injection tests. */
+  onDurableLifecycleTransition?: (
+    transition: 'registered' | 'viewer_write_started' | 'viewer_attached' | 'runner_tracked',
+    job: StreamJob,
+  ) => void
 }
 
 export interface GenerationFinalizationRetryLogger {
@@ -2571,41 +2576,66 @@ function attachGenerationViewer(
   registry: GenerationJobRegistry,
   job: StreamJob,
   viewerHeartbeatMs?: number,
+  onLifecycleTransition?: GenerationChatRouteOptions['onDurableLifecycleTransition'],
 ): void {
-  reply.hijack()
-  reply.raw.writeHead(200, {
-    'content-type': 'text/event-stream',
-    'cache-control': 'no-store',
-    connection: 'keep-alive',
-    'x-accel-buffering': 'no',
-    'x-risu-generation-job-id': job.id,
-  })
-  const client = makeSseJobClient(reply)
-  client.send(formatPromptChatFrame({ type: 'job_accepted', jobId: job.id }))
-  registry.registry.attach(job.id, client)
-  // SSE comment heartbeat a long assembly or provider connect can
-  // leave the stream silent past idle-proxy timeouts before the first token.
-  // Comments are invisible to the SSE block parser and are written directly to
-  // this viewer's socket — they never enter the job's replay buffer.
-  const heartbeat = setInterval(
-    () => {
-      if (!reply.raw.writableEnded) {
-        writeBoundedRaw(reply.raw, ': heartbeat\n\n')
+  let client: JobClient | undefined
+  let heartbeat: ReturnType<typeof setInterval> | undefined
+  const onClose = (): void => {
+    if (heartbeat) clearInterval(heartbeat)
+    if (client) registry.registry.detach(job.id, client)
+  }
+  try {
+    reply.hijack()
+    onLifecycleTransition?.('viewer_write_started', job)
+    reply.raw.writeHead(200, {
+      'content-type': 'text/event-stream',
+      'cache-control': 'no-store',
+      connection: 'keep-alive',
+      'x-accel-buffering': 'no',
+      'x-risu-generation-job-id': job.id,
+    })
+    client = makeSseJobClient(reply)
+    client.send(formatPromptChatFrame({ type: 'job_accepted', jobId: job.id }))
+    registry.registry.attach(job.id, client)
+    // SSE comment heartbeat a long assembly or provider connect can
+    // leave the stream silent past idle-proxy timeouts before the first token.
+    // Comments are invisible to the SSE block parser and are written directly to
+    // this viewer's socket — they never enter the job's replay buffer.
+    heartbeat = setInterval(
+      () => {
+        if (!reply.raw.writableEnded) {
+          writeBoundedRaw(reply.raw, ': heartbeat\n\n')
+        }
+      },
+      viewerHeartbeatMs ?? job.heartbeatSec * 1000,
+    )
+    heartbeat.unref()
+    req.raw.once('close', onClose)
+  } catch (error) {
+    req.raw.removeListener('close', onClose)
+    if (heartbeat) clearInterval(heartbeat)
+    if (client) {
+      registry.registry.detach(job.id, client)
+      client.close()
+    } else {
+      try {
+        if (!reply.raw.writableEnded) reply.raw.end()
+      } catch {
+        // Preserve the original attachment failure.
       }
-    },
-    viewerHeartbeatMs ?? job.heartbeatSec * 1000,
-  )
-  heartbeat.unref()
-  req.raw.once('close', () => {
-    clearInterval(heartbeat)
-    registry.registry.detach(job.id, client)
-  })
+    }
+    throw error
+  }
+  if (!client || !heartbeat) {
+    throw new Error('generation viewer attachment did not initialize')
+  }
   // Reattach to an already-completed (in-grace) job: `attach` just flushed the
   // buffered terminal frame, and the runner's finally already ran (it cannot close
   // this late viewer), so close + detach here. Otherwise the socket and the job
   // would dangle until the client hangs up (the job is `done` with one client, which
   // neither GC branch collects).
   if (job.done) {
+    req.raw.removeListener('close', onClose)
     clearInterval(heartbeat)
     client.close()
     registry.registry.detach(job.id, client)
@@ -4277,43 +4307,71 @@ function startDurableGeneration(args: {
     })
     return
   }
-  const job = generationJobs.registry.create({
-    timeoutMs: undefined,
-    heartbeatSec: undefined,
-    slidingDeadline: true,
-  })
-  generationJobs.registry.enableReplay(job)
-  job.chatId = input.chatId
-  job.writerSessionId = readWriterSessionHeader(req)
-  // Record the generating mode and regenerate target so reload-resume can render
-  // the right shape.
-  job.mode = input.mode === 'continue' || input.mode === 'regenerate' ? input.mode : 'send'
-  if (input.mode === 'regenerate') job.regenerateMessageId = input.regenerateMessageId
-  generationJobs.register(input.chatId, job.id)
-  attachGenerationViewer(req, reply, generationJobs, job, args.options.viewerHeartbeatMs)
-  // Fire-and-forget, but tracked: shutdown awaits the runner before closing
-  // the database.
-  generationJobs.trackRunner(
-    runGenerationJob({
-      registry: generationJobs,
+  let job: StreamJob | undefined
+  try {
+    job = generationJobs.registry.create({
+      timeoutMs: undefined,
+      heartbeatSec: undefined,
+      slidingDeadline: true,
+    })
+    generationJobs.registry.enableReplay(job)
+    job.chatId = input.chatId
+    job.writerSessionId = readWriterSessionHeader(req)
+    // Record the generating mode and regenerate target so reload-resume can render
+    // the right shape.
+    job.mode = input.mode === 'continue' || input.mode === 'regenerate' ? input.mode : 'send'
+    if (input.mode === 'regenerate') job.regenerateMessageId = input.regenerateMessageId
+    generationJobs.register(input.chatId, job.id)
+    args.options.onDurableLifecycleTransition?.('registered', job)
+    attachGenerationViewer(
+      req,
+      reply,
+      generationJobs,
       job,
-      db: args.db,
-      input,
-      dataDir: args.dataDir,
-      eventSink: args.eventSink,
-      clientCapabilities: args.clientCapabilities,
-      options: args.options,
-      generationTrace: args.generationTrace,
-      messageTranslationJobs: args.messageTranslationJobs,
-      preparedAssembly: args.preparedAssembly,
-      deferredFailure: args.deferredFailure,
-      metricContext: {
-        ...args.metricContext,
-        generationId: job.id,
-        durableJobId: job.id,
-      },
-    }),
-  )
+      args.options.viewerHeartbeatMs,
+      args.options.onDurableLifecycleTransition,
+    )
+    args.options.onDurableLifecycleTransition?.('viewer_attached', job)
+    // Fire-and-forget, but tracked: shutdown awaits the runner before closing
+    // the database.
+    generationJobs.trackRunner(
+      runGenerationJob({
+        registry: generationJobs,
+        job,
+        db: args.db,
+        input,
+        dataDir: args.dataDir,
+        eventSink: args.eventSink,
+        clientCapabilities: args.clientCapabilities,
+        options: args.options,
+        generationTrace: args.generationTrace,
+        messageTranslationJobs: args.messageTranslationJobs,
+        preparedAssembly: args.preparedAssembly,
+        deferredFailure: args.deferredFailure,
+        metricContext: {
+          ...args.metricContext,
+          generationId: job.id,
+          durableJobId: job.id,
+        },
+      }),
+    )
+    args.options.onDurableLifecycleTransition?.('runner_tracked', job)
+  } catch (error) {
+    if (job) {
+      generationJobs.clearRunning(input.chatId, job.id)
+      generationJobs.registry.deleteJob(job.id)
+    }
+    req.log.error({ err: error, chatId: input.chatId, jobId: job?.id }, 'Durable generation startup failed')
+    if (reply.sent) {
+      try {
+        if (!reply.raw.writableEnded) reply.raw.end()
+      } catch {
+        // The attachment failure may also have made the response unwritable.
+      }
+      return
+    }
+    reply.code(500).send({ error: 'generation_job_start_failed' })
+  }
 }
 
 export function registerGenerationChatRoutes(
@@ -4444,7 +4502,14 @@ export function registerGenerationChatRoutes(
         })
         return
       }
-      attachGenerationViewer(req, reply, generationJobs, job, options.viewerHeartbeatMs)
+      attachGenerationViewer(
+        req,
+        reply,
+        generationJobs,
+        job,
+        options.viewerHeartbeatMs,
+        options.onDurableLifecycleTransition,
+      )
     },
   )
 

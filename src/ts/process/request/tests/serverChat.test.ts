@@ -1772,42 +1772,120 @@ describe('requestServerChatGeneration durable cancel-on-abort', () => {
     expect(deletes).toEqual([])
   })
 
-  it('does not throw when the token stream is cancelled before the SSE reader observes abort', async () => {
+  it('passively detaches a cancelled token consumer while keeping the durable job replayable', async () => {
     const deletes: string[] = []
+    const calls: Array<{ url: string; method: string }> = []
+    let detachedViewers = 0
     const enc = new TextEncoder()
     vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET'
+      calls.push({ url, method })
       if (init?.method === 'DELETE') {
         deletes.push(url)
         return new Response(JSON.stringify({ success: true }), { status: 200 })
       }
+      if (method === 'GET') {
+        const replay = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(enc.encode('event: job_accepted\ndata: {"jobId":"job-consumer-detach"}\n\n'))
+            controller.enqueue(enc.encode('event: prompt\ndata: {"formated":[{"role":"user","content":"hi"}]}\n\n'))
+            controller.enqueue(
+              enc.encode(
+                'event: info\ndata: {"generationId":"job-consumer-detach","generationInfo":{"generationId":"job-consumer-detach","model":"m"}}\n\n',
+              ),
+            )
+            controller.enqueue(enc.encode('event: token\ndata: {"content":"completed after detach"}\n\n'))
+            controller.enqueue(
+              enc.encode(
+                'event: done\ndata: {"result":"completed after detach","generationId":"job-consumer-detach","generationInfo":{"generationId":"job-consumer-detach"}}\n\n',
+              ),
+            )
+            controller.close()
+          },
+        })
+        return new Response(replay, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+      }
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
-          controller.enqueue(enc.encode('event: job_accepted\ndata: {"jobId":"job-cancel-close"}\n\n'))
+          controller.enqueue(enc.encode('event: job_accepted\ndata: {"jobId":"job-consumer-detach"}\n\n'))
+          controller.enqueue(
+            enc.encode(
+              'event: agent_preset_progress\ndata: {"chatId":"chat-1","presetId":"ap-detach","presetName":"Detached","phase":"beforeMain","status":"running","totalSteps":2,"completedSteps":1,"activeSteps":[]}\n\n',
+            ),
+          )
+          controller.enqueue(
+            enc.encode(
+              'event: post_generation_progress\ndata: {"phase":"onOutput","status":"running","runSeq":1,"ownerType":"module","ownerName":"Detached","llmCallCount":1,"pendingLlmCount":1,"llmCallCounts":{"LLM":1,"axLLM":0},"pendingLlmCounts":{"LLM":1,"axLLM":0}}\n\n',
+            ),
+          )
           controller.enqueue(enc.encode('event: prompt\ndata: {"formated":[{"role":"user","content":"hi"}]}\n\n'))
           controller.enqueue(
             enc.encode(
-              'event: info\ndata: {"generationId":"job-cancel-close","generationInfo":{"generationId":"job-cancel-close","model":"m"}}\n\n',
+              'event: info\ndata: {"generationId":"job-consumer-detach","generationInfo":{"generationId":"job-consumer-detach","model":"m"}}\n\n',
             ),
           )
-          // Intentionally hang until abort.
+          controller.enqueue(enc.encode('event: token\ndata: {"content":"partial"}\n\n'))
+          // Intentionally remain live while the local token consumer detaches.
+        },
+        cancel() {
+          detachedViewers += 1
         },
       })
-      return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+      return new Response(stream, {
+        status: 200,
+        headers: {
+          'content-type': 'text/event-stream',
+          'x-risu-generation-job-id': 'job-consumer-detach',
+        },
+      })
     })
 
-    const controller = new AbortController()
-    const served = await requestServerChatGeneration({ ...baseInput, durable: true }, controller.signal)
+    const owner = new AbortController()
+    const addAbortListener = vi.spyOn(owner.signal, 'addEventListener')
+    const removeAbortListener = vi.spyOn(owner.signal, 'removeEventListener')
+    const served = await requestServerChatGeneration({ ...baseInput, durable: true }, owner.signal)
     expect(served.status).toBe('ok')
     if (served.status !== 'ok') return
     expect(served.req.type).toBe('streaming')
     if (served.req.type !== 'streaming') return
+    await vi.waitFor(() => {
+      expect(findAgentPresetProgress('chat-1')).toBeDefined()
+      expect(findPostGenerationProgress('char-1', 'chat-1')).toBeDefined()
+    })
+    expect(get(activeGenerationJobs)).toEqual([{ chatId: 'chat-1', jobId: 'job-consumer-detach', mode: 'send' }])
 
     await served.req.result.getReader().cancel()
-    controller.abort()
-
     await expect(served.terminal).resolves.toMatchObject({ status: 'error', error: 'Aborted' })
-    await new Promise((r) => setTimeout(r, 5))
-    expect(deletes).toContain('/api/v1/generate/chat/job-cancel-close')
+    await vi.waitFor(() => expect(detachedViewers).toBe(1))
+    expect(get(agentPresetProgress)).toEqual([])
+    expect(get(postGenerationProgress)).toEqual([])
+    expect(addAbortListener.mock.calls.some(([type]) => type === 'abort')).toBe(true)
+    expect(removeAbortListener.mock.calls.some(([type]) => type === 'abort')).toBe(true)
+
+    owner.abort()
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(deletes).toEqual([])
+    expect(get(activeGenerationJobs)).toEqual([{ chatId: 'chat-1', jobId: 'job-consumer-detach', mode: 'send' }])
+
+    const reattached = await requestServerChatGeneration(baseInput, null, 'job-consumer-detach')
+    expect(reattached.status).toBe('ok')
+    if (reattached.status !== 'ok' || reattached.req.type !== 'streaming') return
+    const reader = reattached.req.result.getReader()
+    await expect(reader.read()).resolves.toEqual({
+      done: false,
+      value: { 'job-consumer-detach': 'completed after detach' },
+    })
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined })
+    await expect(reattached.terminal).resolves.toMatchObject({
+      status: 'done',
+      reattachOutcome: 'completed',
+      done: { result: 'completed after detach' },
+    })
+    expect(get(activeGenerationJobs)).toEqual([])
+    expect(calls).toEqual([
+      { url: '/api/v1/generate/chat', method: 'POST' },
+      { url: '/api/v1/generate/chat/job-consumer-detach/stream', method: 'GET' },
+    ])
   })
 })
 
