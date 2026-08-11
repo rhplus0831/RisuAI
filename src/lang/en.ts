@@ -1768,6 +1768,16 @@ export const languageEnglish = {
   triggerEffectSendAI: 'Resend AI',
   triggerEffectUnsupportedOnServer:
     'Unsupported on this server: this imported effect is preserved but has no effect during generation.',
+  triggerConfigurationUnsupportedDiagnostic: (effectTypes: string[], cbsCallbacks: string[]) =>
+    `This configuration contains server-unsupported definitions. They are preserved but blocked during generation.${effectTypes.length > 0 ? ` Effects: ${effectTypes.join(', ')}.` : ''}${cbsCallbacks.length > 0 ? ` CBS callbacks: ${cbsCallbacks.join(', ')}.` : ''}`,
+  triggerImportUnsupportedDiagnostic: (effectTypes: string[], cbsCallbacks: string[]) =>
+    `The imported definitions were kept unchanged, but unsupported behavior will be blocked during generation.${effectTypes.length > 0 ? ` Effects: ${effectTypes.join(', ')}.` : ''}${cbsCallbacks.length > 0 ? ` CBS callbacks: ${cbsCallbacks.join(', ')}.` : ''}`,
+  triggerEffectRuntimeUnsupported: (effectType: string) =>
+    `Trigger effect “${effectType}” is unsupported on this server and was skipped.`,
+  cbsCallbackRuntimeUnsupported: (callbackName: string) =>
+    `CBS callback “${callbackName}” is unsupported on this server and returned an empty value.`,
+  cbsClientContextUnavailable: (callbackName: string) =>
+    `CBS callback “${callbackName}” could not resolve because browser context was unavailable.`,
   triggerEffCheckSim: 'Check Similarity',
   triggerEffShowAlert: 'Show Alert',
   normal: 'Normal',

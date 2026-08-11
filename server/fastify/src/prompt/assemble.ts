@@ -12,6 +12,7 @@ import type {
 } from '../../../../src/ts/storage/database.svelte'
 import type { CbsCallbackMemo } from '../../../../src/ts/cbs'
 import type { PromptItem } from '../../../../src/ts/process/prompt'
+import type { ReportedClientContext } from '../../../../src/ts/process/request/clientContext.js'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { trimUntilPunctuation } from '../../../../src/ts/util/punctuation.js'
 import { EntityNotFoundError } from '../repository.js'
@@ -89,7 +90,7 @@ import { processScriptAsync } from './scripts.js'
 import { getActiveModules, getModuleTriggers } from './modules.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 import { getChatDefaultVariables } from './chatVarDefaults.js'
-import { modelInfoForPromptScope } from './promptScope.js'
+import { modelInfoForPromptScope, type ServerCbsCallbackDiagnosticReason } from './promptScope.js'
 import type { PromptEvent, WarningEvent } from './sseEvents.js'
 import type { MemorySelectionInput } from '../memorySelectionService.js'
 import {
@@ -212,6 +213,8 @@ export interface AssembleInput {
   inlayAssets?: unknown[]
   /** Legacy browser-local inlay id -> server asset id aliases. */
   inlayAssetRefs?: unknown[]
+  /** Browser values reported by the client for server-owned CBS expansion. */
+  clientContext?: ReportedClientContext
 }
 
 export type AssembleMutationSource =
@@ -511,6 +514,10 @@ export interface AssemblyState {
   unsupportedTriggerEffectTypes: Set<string>
   /** Types already surfaced through the warning SSE channel. */
   warnedUnsupportedTriggerEffectTypes: Set<string>
+  /** Unavailable CBS callbacks observed anywhere in this generation. */
+  cbsCallbackDiagnostics: Map<string, ServerCbsCallbackDiagnosticReason>
+  /** CBS callback names already surfaced through the warning SSE channel. */
+  warnedCbsCallbackNames: Set<string>
   // --- Lorebook placement + token preflight (set by `fillLorebookSlots`) ---
   /** The lorebook activation report (entries that fired + why). */
   report?: LorebookActivationReport
@@ -709,6 +716,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
   const memoryDatabase = deps.loadMemoryDatabase?.() ?? null
   const resolvedMainProfile = resolveModelProfile({ database })
   const unsupportedTriggerEffectTypes = new Set<string>()
+  const cbsCallbackDiagnostics = new Map<string, ServerCbsCallbackDiagnosticReason>()
   const ctx: ExpandContext = {
     database,
     selectedCharID,
@@ -720,6 +728,8 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     ...(deps.assetDataDir ? { assetDataDir: deps.assetDataDir } : {}),
     cbsCallbackMemo,
     unsupportedTriggerEffectTypes,
+    clientContext: input.clientContext,
+    cbsCallbackDiagnostics,
   }
   const unformated = createEmptyUnformatedSlots()
 
@@ -756,6 +766,8 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     resolvedMainProfile,
     unsupportedTriggerEffectTypes,
     warnedUnsupportedTriggerEffectTypes: new Set<string>(),
+    cbsCallbackDiagnostics,
+    warnedCbsCallbackNames: new Set<string>(),
     initialMessages,
     messageMutationCheckpoint: initialMessages,
     initialScriptstate: cloneScriptstate(currentChat.scriptstate),
@@ -1057,6 +1069,8 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
     chatPage: state.chatPage,
     signal: state.signal,
     unsupportedEffectTypes: state.unsupportedTriggerEffectTypes,
+    clientContext: state.ctx.clientContext,
+    cbsCallbackDiagnostics: state.cbsCallbackDiagnostics,
     runLua: async ({ code, mode, lowLevelAccess, chat, varEngine, source }) => {
       const result = await runServerLua(
         { code, mode, lowLevelAccess, source },
@@ -1124,6 +1138,8 @@ export async function applyRequestTrigger(state: AssemblyState, rows: OpenAIChat
     chatPage: state.chatPage,
     signal: state.signal,
     unsupportedEffectTypes: state.unsupportedTriggerEffectTypes,
+    clientContext: state.ctx.clientContext,
+    cbsCallbackDiagnostics: state.cbsCallbackDiagnostics,
   }
   try {
     const result = await runTrigger(triggerCtx, state.currentChar, 'request', {
@@ -2403,7 +2419,7 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
         reason: diagnostic.reason,
       },
     })),
-    ...takeUnsupportedTriggerWarnings(state),
+    ...takeServerCompatibilityWarnings(state),
   ]
 
   if (state.stopSending) {
@@ -2518,6 +2534,26 @@ function takeUnsupportedTriggerWarnings(state: AssemblyState): Omit<WarningEvent
     })
   }
   return warnings
+}
+
+function takeCbsCallbackWarnings(state: AssemblyState): Omit<WarningEvent, 'type'>[] {
+  const warnings: Omit<WarningEvent, 'type'>[] = []
+  for (const [callbackName, reason] of state.cbsCallbackDiagnostics) {
+    if (state.warnedCbsCallbackNames.has(callbackName)) continue
+    state.warnedCbsCallbackNames.add(callbackName)
+    warnings.push({
+      message:
+        reason === 'unsupported_on_server'
+          ? `CBS callback "${callbackName}" is unsupported on this server and returned an empty value.`
+          : `CBS callback "${callbackName}" could not resolve because client context was not reported and returned an empty value.`,
+      context: { kind: 'unsupported_cbs_callback', callbackName, reason },
+    })
+  }
+  return warnings
+}
+
+function takeServerCompatibilityWarnings(state: AssemblyState): Omit<WarningEvent, 'type'>[] {
+  return [...takeUnsupportedTriggerWarnings(state), ...takeCbsCallbackWarnings(state)]
 }
 
 function cloneAgentPresetRuntime(runtime: AgentPresetRuntimeState | undefined): AgentPresetRuntimeState | undefined {
@@ -2680,6 +2716,8 @@ async function runOutputTrigger(
     chatPage: state.chatPage,
     signal: state.signal,
     unsupportedEffectTypes: state.unsupportedTriggerEffectTypes,
+    clientContext: state.ctx.clientContext,
+    cbsCallbackDiagnostics: state.cbsCallbackDiagnostics,
     runLua: async ({ code, mode, lowLevelAccess, chat, varEngine, source }) => {
       const traceRun = luaTrace?.beginRun({
         phase: 'onOutput',
@@ -3043,6 +3081,7 @@ export async function runServerPostGeneration(
     mutations.chatVarMutations.length > 0 ||
     (mutations.characterFieldMutations?.length ?? 0) > 0 ||
     mutations.localLoreMutation !== undefined
+  const warnings = takeServerCompatibilityWarnings(state)
 
   return {
     finalText,
@@ -3050,8 +3089,6 @@ export async function runServerPostGeneration(
     mutations,
     resendChat,
     changed,
-    ...(state.unsupportedTriggerEffectTypes.size > state.warnedUnsupportedTriggerEffectTypes.size
-      ? { warnings: takeUnsupportedTriggerWarnings(state) }
-      : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
   }
 }

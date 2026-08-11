@@ -1625,6 +1625,97 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(bootstrap.json().database.characters[0].chats[0].scriptstate?.$llmResult).toBeUndefined()
   })
 
+  it('resolves browser language and screen width from client context while guarding unsupported CBS', async () => {
+    await restartHarness({
+      dispatchProvider: () =>
+        (async function* (): AsyncGenerator<CompletionStreamFrame> {
+          yield { kind: 'token', content: 'context reply' }
+          yield { kind: 'done', finishReason: 'stop' }
+        })(),
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          desc: 'WIDTH={{screenwidth}} LANG={{metadata::browserlanguage}} HEIGHT={{screenheight}}',
+        },
+      ],
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        ...basePayload,
+        clientContext: { browserLanguage: 'ko-KR', screenWidth: 777 },
+      },
+    })
+    expect(res.statusCode).toBe(200)
+
+    const events = parseEvents(res.body)
+    const promptText = JSON.stringify(events.find((event) => event.type === 'prompt')?.data.formated ?? [])
+    expect(promptText).toContain('WIDTH=777 LANG=ko-KR HEIGHT=')
+    expect(promptText).not.toContain('{{screenheight}}')
+    expect(events.filter((event) => event.type === 'warning').map((event) => event.data)).toEqual([
+      {
+        message: 'CBS callback "screenheight" is unsupported on this server and returned an empty value.',
+        context: {
+          kind: 'unsupported_cbs_callback',
+          callbackName: 'screenheight',
+          reason: 'unsupported_on_server',
+        },
+      },
+    ])
+    expect(events.at(-1)?.type).toBe('done')
+  })
+
+  it('keeps implemented browser-context CBS non-throwing when older clients report no context', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          desc: 'WIDTH={{screenwidth}} LANG={{metadata::browserlanguage}}',
+        },
+      ],
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+
+    const events = parseEvents(res.body)
+    expect(events.filter((event) => event.type === 'warning').map((event) => event.data)).toEqual([
+      {
+        message:
+          'CBS callback "screenwidth" could not resolve because client context was not reported and returned an empty value.',
+        context: {
+          kind: 'unsupported_cbs_callback',
+          callbackName: 'screenwidth',
+          reason: 'client_context_unavailable',
+        },
+      },
+      {
+        message:
+          'CBS callback "browserlanguage" could not resolve because client context was not reported and returned an empty value.',
+        context: {
+          kind: 'unsupported_cbs_callback',
+          callbackName: 'browserlanguage',
+          reason: 'client_context_unavailable',
+        },
+      },
+    ])
+    expect(events.at(-1)?.type).toBe('done')
+  })
+
   it('persists the assembly-time chat-var delta in send mode and bumps the revision (C-A1)', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {

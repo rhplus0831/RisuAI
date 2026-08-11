@@ -1098,6 +1098,13 @@ export const languageChinese = {
   resultStoredVar: '存储结果的变量',
   triggerEffRunLLM: '执行主控模型',
   triggerEffectSendAI: '重新发送 AI',
+  triggerConfigurationUnsupportedDiagnostic: (effectTypes: string[], cbsCallbacks: string[]) =>
+    `此配置包含服务器不支持的定义。定义会被保留，但在生成时会被阻止。${effectTypes.length > 0 ? ` 效果：${effectTypes.join('、')}。` : ''}${cbsCallbacks.length > 0 ? ` CBS 回调：${cbsCallbacks.join('、')}。` : ''}`,
+  triggerImportUnsupportedDiagnostic: (effectTypes: string[], cbsCallbacks: string[]) =>
+    `导入的定义已原样保留，但不支持的行为会在生成时被阻止。${effectTypes.length > 0 ? ` 效果：${effectTypes.join('、')}。` : ''}${cbsCallbacks.length > 0 ? ` CBS 回调：${cbsCallbacks.join('、')}。` : ''}`,
+  triggerEffectRuntimeUnsupported: (effectType: string) => `此服务器不支持触发器效果“${effectType}”，已跳过。`,
+  cbsCallbackRuntimeUnsupported: (callbackName: string) => `此服务器不支持 CBS 回调“${callbackName}”，已返回空值。`,
+  cbsClientContextUnavailable: (callbackName: string) => `浏览器上下文不可用，无法解析 CBS 回调“${callbackName}”。`,
   triggerEffCheckSim: '检查相似度',
   triggerEffShowAlert: '显示警告',
   normal: '正常',

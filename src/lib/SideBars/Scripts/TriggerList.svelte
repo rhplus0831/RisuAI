@@ -7,6 +7,7 @@
   import { openURL } from 'src/ts/globalApi.svelte'
   import { hubURL } from 'src/ts/characterCards'
   import TriggerV2List from './TriggerV2List.svelte'
+  import { diagnoseServerTriggerCompatibility } from 'src/ts/process/triggerServerSupport'
 
   interface Props {
     value?: triggerscript[]
@@ -21,6 +22,7 @@
       value?.[0]?.effect?.[0]?.type !== 'v2Header',
   )
   let modeReplacementAttempt = 0
+  let serverCompatibilityDiagnostics = $derived(diagnoseServerTriggerCompatibility(value))
 
   const loadTriggerV1List = () => import('./TriggerV1List.svelte').then((m) => m.default)
 
@@ -48,6 +50,17 @@
   }
 </script>
 
+{#if v1Enabled && (serverCompatibilityDiagnostics.unsupportedEffectTypes.length > 0 || serverCompatibilityDiagnostics.unsupportedCbsCallbacks.length > 0)}
+  <div
+    class="mt-2 border border-yellow-600 p-2 text-xs text-textcolor2"
+    role="status"
+    data-risu-server-compatibility-diagnostic>
+    {language.triggerConfigurationUnsupportedDiagnostic(
+      serverCompatibilityDiagnostics.unsupportedEffectTypes,
+      serverCompatibilityDiagnostics.unsupportedCbsCallbacks,
+    )}
+  </div>
+{/if}
 <div class="flex items-start mt-2 gap-2">
   {#if v1Enabled || getDatabase().showDeprecatedTriggerV1}
     <button

@@ -3,6 +3,7 @@ import type { ChatVarBackend } from '../../../../src/ts/parser/chatVarBackend'
 import type { LLMModel } from '../../../../src/ts/model/types'
 import { resolveModelProfile, type ResolvedModelProfile } from '../../../../src/ts/model/modelProfileResolver'
 import { getChatDefaultVariables, readChatVariable } from './chatVarDefaults.js'
+import type { ReportedClientContext } from '../../../../src/ts/process/request/clientContext.js'
 
 /**
  * Request-local prompt scope used by CBS callbacks to read and mutate chat
@@ -17,7 +18,13 @@ export interface PromptScope {
   globalChatVariables: Record<string, unknown>
   /** Effective main-request model metadata for CBS `{{metadata::model*}}`. */
   modelInfo?: LLMModel
+  /** Browser values reported with the generation request. */
+  clientContext?: ReportedClientContext
+  /** Request-wide CBS diagnostics collector shared across parser expansions. */
+  cbsCallbackDiagnostics?: Map<string, ServerCbsCallbackDiagnosticReason>
 }
+
+export type ServerCbsCallbackDiagnosticReason = 'unsupported_on_server' | 'client_context_unavailable'
 
 let activeScope: PromptScope | null = null
 let dirty = false
@@ -46,6 +53,19 @@ export function getActiveSelectedCharID(): number {
 
 export function getActiveChatPage(): number {
   return activeScope?.chatPage ?? 0
+}
+
+export function getActiveClientContext(): ReportedClientContext | undefined {
+  return activeScope?.clientContext
+}
+
+export function reportActiveCbsCallbackDiagnostic(
+  callbackName: string,
+  reason: ServerCbsCallbackDiagnosticReason,
+): void {
+  if (!activeScope?.cbsCallbackDiagnostics?.has(callbackName)) {
+    activeScope?.cbsCallbackDiagnostics?.set(callbackName, reason)
+  }
 }
 
 export function modelInfoForPromptScope(profile: ResolvedModelProfile): LLMModel {

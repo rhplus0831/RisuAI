@@ -50,3 +50,58 @@ export const serverUnsupportedTriggerEffectTypes: ReadonlySet<string> = new Set(
 export function isServerUnsupportedTriggerEffectType(type: string): boolean {
   return serverUnsupportedTriggerEffectTypes.has(type)
 }
+
+/**
+ * Browser-context CBS deliberately not implemented by Fastify. Screen width
+ * and browser language are supported through reported client context; screen
+ * height remains explicit no-port behavior.
+ */
+export const serverUnsupportedCbsCallbackNames: ReadonlySet<string> = new Set(['screenheight', 'screen_height'])
+
+export interface TriggerServerCompatibilityDiagnostics {
+  unsupportedEffectTypes: string[]
+  unsupportedCbsCallbacks: string[]
+}
+
+const unsupportedCbsPattern = /\{\{\s*(screenheight|screen_height)(?=\s*(?:::|\}\}))/giu
+
+function collectUnsupportedCbsFromString(value: string, output: Set<string>): void {
+  unsupportedCbsPattern.lastIndex = 0
+  for (const match of value.matchAll(unsupportedCbsPattern)) {
+    if (match[1]) output.add('screenheight')
+  }
+}
+
+/**
+ * Inspect an imported or configured trigger definition without normalizing or
+ * mutating it. The result is stable and deduplicated for concise UI diagnostics.
+ */
+export function diagnoseServerTriggerCompatibility(definitions: unknown): TriggerServerCompatibilityDiagnostics {
+  const unsupportedEffectTypes = new Set<string>()
+  const unsupportedCbsCallbacks = new Set<string>()
+  const seen = new Set<object>()
+
+  const visit = (value: unknown): void => {
+    if (typeof value === 'string') {
+      collectUnsupportedCbsFromString(value, unsupportedCbsCallbacks)
+      return
+    }
+    if (!value || typeof value !== 'object' || seen.has(value)) return
+    seen.add(value)
+
+    if (!Array.isArray(value)) {
+      const type = (value as { type?: unknown }).type
+      if (typeof type === 'string' && isServerUnsupportedTriggerEffectType(type)) {
+        unsupportedEffectTypes.add(type)
+      }
+    }
+
+    for (const nested of Array.isArray(value) ? value : Object.values(value)) visit(nested)
+  }
+
+  visit(definitions)
+  return {
+    unsupportedEffectTypes: [...unsupportedEffectTypes].sort(),
+    unsupportedCbsCallbacks: [...unsupportedCbsCallbacks].sort(),
+  }
+}

@@ -27,6 +27,7 @@ export interface ServerChatCall {
   syntheticSayNothing: boolean
   regenerateMessageId: string
   clientCapabilities: Record<string, unknown> | null
+  clientContext: Record<string, unknown> | null
 }
 
 interface ChatPayload {
@@ -37,6 +38,7 @@ interface ChatPayload {
   syntheticSayNothing?: unknown
   regenerateMessageId?: unknown
   clientCapabilities?: unknown
+  clientContext?: unknown
 }
 
 interface State {
@@ -364,6 +366,10 @@ export async function serverChatFetch(input: RequestInfo | URL, init?: RequestIn
     clientCapabilities:
       body.clientCapabilities && typeof body.clientCapabilities === 'object' && !Array.isArray(body.clientCapabilities)
         ? (body.clientCapabilities as Record<string, unknown>)
+        : null,
+    clientContext:
+      body.clientContext && typeof body.clientContext === 'object' && !Array.isArray(body.clientContext)
+        ? (body.clientContext as Record<string, unknown>)
         : null,
   })
 

@@ -1118,6 +1118,14 @@ export const languageChineseTraditional = {
   resultStoredVar: '儲存結果的變數',
   triggerEffRunLLM: '執行主要模型',
   triggerEffectSendAI: '重新發送至 AI',
+  triggerConfigurationUnsupportedDiagnostic: (effectTypes: string[], cbsCallbacks: string[]) =>
+    `此設定包含伺服器不支援的定義。定義會被保留，但在生成時會被阻擋。${effectTypes.length > 0 ? ` 效果：${effectTypes.join('、')}。` : ''}${cbsCallbacks.length > 0 ? ` CBS 回呼：${cbsCallbacks.join('、')}。` : ''}`,
+  triggerImportUnsupportedDiagnostic: (effectTypes: string[], cbsCallbacks: string[]) =>
+    `匯入的定義已原樣保留，但不支援的行為會在生成時被阻擋。${effectTypes.length > 0 ? ` 效果：${effectTypes.join('、')}。` : ''}${cbsCallbacks.length > 0 ? ` CBS 回呼：${cbsCallbacks.join('、')}。` : ''}`,
+  triggerEffectRuntimeUnsupported: (effectType: string) => `此伺服器不支援觸發器效果「${effectType}」，已略過。`,
+  cbsCallbackRuntimeUnsupported: (callbackName: string) => `此伺服器不支援 CBS 回呼「${callbackName}」，已回傳空值。`,
+  cbsClientContextUnavailable: (callbackName: string) =>
+    `瀏覽器內容無法使用，因此無法解析 CBS 回呼「${callbackName}」。`,
   triggerEffCheckSim: '檢查相似度',
   triggerEffShowAlert: '顯示警示',
   normal: '正常',

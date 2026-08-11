@@ -23,7 +23,10 @@
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
   import { alertError } from 'src/ts/alert'
   import { parseTriggerV2Import } from './triggerV2Import'
-  import { isServerUnsupportedTriggerEffectType } from 'src/ts/process/triggerServerSupport'
+  import {
+    diagnoseServerTriggerCompatibility,
+    isServerUnsupportedTriggerEffectType,
+  } from 'src/ts/process/triggerServerSupport'
   import { hasDragType, RISU_EFFECT_DRAG_TYPE, RISU_TRIGGER_DRAG_TYPE } from 'src/ts/dragTypes'
 
   interface Props {
@@ -167,6 +170,7 @@
 
   let lastClickTime = 0
   let { value = $bindable([]), lowLevelAble = false, ownerKey = '' }: Props = $props()
+  let serverCompatibilityDiagnostics = $derived(diagnoseServerTriggerCompatibility(value))
   let selectedIndex = $state(0)
   let selectedEffectIndex = $state(-1)
   let selectedTriggerIndices = $state<number[]>([])
@@ -638,6 +642,15 @@
 
         for (const trigger of importedTriggers) {
           value.push(trigger)
+        }
+        const diagnostics = diagnoseServerTriggerCompatibility(importedTriggers)
+        if (diagnostics.unsupportedEffectTypes.length > 0 || diagnostics.unsupportedCbsCallbacks.length > 0) {
+          alertError(
+            language.triggerImportUnsupportedDiagnostic(
+              diagnostics.unsupportedEffectTypes,
+              diagnostics.unsupportedCbsCallbacks,
+            ),
+          )
         }
       } catch {
         if (isCurrentImportTarget()) alertError(language.errors.noData)
@@ -2828,6 +2841,17 @@
         }}>
         {#if menuMode === 0}
           <div class="pr-2 md:w-96 flex flex-col md:h-full mt-2 md:mt-0">
+            {#if serverCompatibilityDiagnostics.unsupportedEffectTypes.length > 0 || serverCompatibilityDiagnostics.unsupportedCbsCallbacks.length > 0}
+              <div
+                class="mb-2 border border-yellow-600 p-2 text-xs text-textcolor2"
+                role="status"
+                data-risu-server-compatibility-diagnostic>
+                {language.triggerConfigurationUnsupportedDiagnostic(
+                  serverCompatibilityDiagnostics.unsupportedEffectTypes,
+                  serverCompatibilityDiagnostics.unsupportedCbsCallbacks,
+                )}
+              </div>
+            {/if}
             <div
               class="flex-1 flex flex-col overflow-y-auto"
               bind:this={triggerScrollRef}

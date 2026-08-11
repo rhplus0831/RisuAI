@@ -1176,6 +1176,16 @@ export const languageSpanish = {
   resultStoredVar: 'Variable para Almacenar el Resultado',
   triggerEffRunLLM: 'Ejecutar Modelo Principal',
   triggerEffectSendAI: 'Reenviar IA',
+  triggerConfigurationUnsupportedDiagnostic: (effectTypes: string[], cbsCallbacks: string[]) =>
+    `Esta configuración contiene definiciones no compatibles con el servidor. Se conservan, pero se bloquean durante la generación.${effectTypes.length > 0 ? ` Efectos: ${effectTypes.join(', ')}.` : ''}${cbsCallbacks.length > 0 ? ` Retrollamadas CBS: ${cbsCallbacks.join(', ')}.` : ''}`,
+  triggerImportUnsupportedDiagnostic: (effectTypes: string[], cbsCallbacks: string[]) =>
+    `Las definiciones importadas se conservaron sin cambios, pero el comportamiento no compatible se bloqueará durante la generación.${effectTypes.length > 0 ? ` Efectos: ${effectTypes.join(', ')}.` : ''}${cbsCallbacks.length > 0 ? ` Retrollamadas CBS: ${cbsCallbacks.join(', ')}.` : ''}`,
+  triggerEffectRuntimeUnsupported: (effectType: string) =>
+    `El efecto de activador «${effectType}» no es compatible con este servidor y se omitió.`,
+  cbsCallbackRuntimeUnsupported: (callbackName: string) =>
+    `La retrollamada CBS «${callbackName}» no es compatible con este servidor y devolvió un valor vacío.`,
+  cbsClientContextUnavailable: (callbackName: string) =>
+    `La retrollamada CBS «${callbackName}» no se pudo resolver porque el contexto del navegador no estaba disponible.`,
   triggerEffCheckSim: 'Verificar Similitud',
   triggerEffShowAlert: 'Mostrar Alerta',
   normal: 'Normal',

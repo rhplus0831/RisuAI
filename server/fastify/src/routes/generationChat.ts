@@ -123,6 +123,7 @@ import {
   handleGeneratedChatCompletion,
   type ServerMessageTranslationRunner,
 } from '../translation/generationCompletionTranslation.js'
+import { normalizeReportedClientContext } from '../../../../src/ts/process/request/clientContext.js'
 
 const ALLOWED_MODES = new Set(['send', 'continue', 'preview', 'preview_prompt', 'regenerate'])
 const SERVER_INLAY_SIGNATURE_CONTENT_TYPE = 'application/x-risu-inlay-signature+json'
@@ -141,6 +142,7 @@ interface ChatRequestBody {
   inlayAssets?: unknown
   inlayAssetRefs?: unknown
   clientCapabilities?: unknown
+  clientContext?: unknown
   durable?: unknown
 }
 
@@ -706,6 +708,7 @@ function toAssembleInput(body: ChatRequestBody): AssembleInput {
     expectedRevision: typeof body.expectedRevision === 'number' ? body.expectedRevision : undefined,
     inlayAssets: Array.isArray(body.inlayAssets) ? body.inlayAssets : undefined,
     inlayAssetRefs: Array.isArray(body.inlayAssetRefs) ? body.inlayAssetRefs : undefined,
+    clientContext: normalizeReportedClientContext(body.clientContext),
   }
 }
 

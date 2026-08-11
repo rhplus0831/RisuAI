@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 
+const alertMocks = vi.hoisted(() => ({ alertToast: vi.fn() }))
+
 vi.mock('../../../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'test-auth-token',
 }))
@@ -9,6 +11,8 @@ vi.mock('../../../server/activeWriterSession', () => ({
   activeWriterSessionHeader: () => ({ 'risu-writer-session': 'writer-session-1' }),
   handleActiveWriterStaleResponse: vi.fn((response: Response) => response.status === 423),
 }))
+
+vi.mock('../../../alert', () => alertMocks)
 
 import {
   cancelServerChatGeneration,
@@ -51,6 +55,7 @@ import {
   setActiveMessageTranslations,
 } from '../../../server/messageTranslationJobs'
 import { halfStreamingProgress, resetHalfStreamingProgressForTests } from '../../halfStreamingProgress'
+import { language } from '../../../../lang'
 
 const baseInput: ServerChatInput = {
   chatId: 'chat-1',
@@ -135,6 +140,7 @@ beforeEach(() => {
   setActiveMessageTranslations([])
   localStorage.removeItem('risu:protocol-debug')
   vi.mocked(handleActiveWriterStaleResponse).mockClear()
+  alertMocks.alertToast.mockReset()
 })
 
 afterEach(() => {
@@ -229,6 +235,10 @@ describe('requestServerChat', () => {
       promptMetadataOnly: true,
       omitDuplicateDoneResult: true,
       hypaContextTruncationConfirmation: true,
+    })
+    expect(calls[0]?.clientContext).toEqual({
+      browserLanguage: navigator.language,
+      screenWidth: window.innerWidth,
     })
   })
 
@@ -1336,7 +1346,7 @@ describe('requestServerChat', () => {
     expect(get(agentPresetProgress)).toEqual([])
   })
 
-  it('ignores unknown events and captures warning events during generation streams', async () => {
+  it('captures warning events and makes server compatibility warnings visible', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       vi.stubGlobal('fetch', async () => {
@@ -1345,6 +1355,16 @@ describe('requestServerChat', () => {
           start(controller) {
             controller.enqueue(enc.encode('event: future_event\ndata: {"ignored":true}\n\n'))
             controller.enqueue(enc.encode('event: warning\ndata: {"message":"careful"}\n\n'))
+            controller.enqueue(
+              enc.encode(
+                'event: warning\ndata: {"message":"effect skipped","context":{"kind":"unsupported_trigger_effect","effectType":"v2SetCharacterDesc"}}\n\n',
+              ),
+            )
+            controller.enqueue(
+              enc.encode(
+                'event: warning\ndata: {"message":"callback skipped","context":{"kind":"unsupported_cbs_callback","callbackName":"screenheight","reason":"unsupported_on_server"}}\n\n',
+              ),
+            )
             controller.enqueue(enc.encode('event: prompt\ndata: {"messages":[{"role":"user","content":"hi"}]}\n\n'))
             controller.enqueue(
               enc.encode(
@@ -1380,9 +1400,28 @@ describe('requestServerChat', () => {
       await expect(reader.read()).resolves.toEqual({ done: true, value: undefined })
       await expect(res.terminal).resolves.toMatchObject({
         status: 'done',
-        warnings: [{ message: 'careful' }],
+        warnings: [
+          { message: 'careful' },
+          {
+            message: 'effect skipped',
+            context: { kind: 'unsupported_trigger_effect', effectType: 'v2SetCharacterDesc' },
+          },
+          {
+            message: 'callback skipped',
+            context: {
+              kind: 'unsupported_cbs_callback',
+              callbackName: 'screenheight',
+              reason: 'unsupported_on_server',
+            },
+          },
+        ],
       })
       expect(warn).toHaveBeenCalledWith('Server chat warning: careful', '')
+      expect(alertMocks.alertToast).toHaveBeenNthCalledWith(
+        1,
+        language.triggerEffectRuntimeUnsupported('v2SetCharacterDesc'),
+      )
+      expect(alertMocks.alertToast).toHaveBeenNthCalledWith(2, language.cbsCallbackRuntimeUnsupported('screenheight'))
     } finally {
       warn.mockRestore()
     }

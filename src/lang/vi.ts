@@ -1160,6 +1160,16 @@ export const languageVietnamese = {
   resultStoredVar: 'Biến lưu trữ kết quả',
   triggerEffRunLLM: 'Chạy mô hình chính',
   triggerEffectSendAI: 'Gửi lại AI',
+  triggerConfigurationUnsupportedDiagnostic: (effectTypes: string[], cbsCallbacks: string[]) =>
+    `Cấu hình này chứa các định nghĩa máy chủ không hỗ trợ. Chúng được giữ nguyên nhưng bị chặn trong khi tạo.${effectTypes.length > 0 ? ` Hiệu ứng: ${effectTypes.join(', ')}.` : ''}${cbsCallbacks.length > 0 ? ` Hàm gọi lại CBS: ${cbsCallbacks.join(', ')}.` : ''}`,
+  triggerImportUnsupportedDiagnostic: (effectTypes: string[], cbsCallbacks: string[]) =>
+    `Các định nghĩa đã nhập được giữ nguyên, nhưng hành vi không được hỗ trợ sẽ bị chặn trong khi tạo.${effectTypes.length > 0 ? ` Hiệu ứng: ${effectTypes.join(', ')}.` : ''}${cbsCallbacks.length > 0 ? ` Hàm gọi lại CBS: ${cbsCallbacks.join(', ')}.` : ''}`,
+  triggerEffectRuntimeUnsupported: (effectType: string) =>
+    `Hiệu ứng kích hoạt “${effectType}” không được máy chủ này hỗ trợ và đã bị bỏ qua.`,
+  cbsCallbackRuntimeUnsupported: (callbackName: string) =>
+    `Hàm gọi lại CBS “${callbackName}” không được máy chủ này hỗ trợ và đã trả về giá trị rỗng.`,
+  cbsClientContextUnavailable: (callbackName: string) =>
+    `Không thể phân giải hàm gọi lại CBS “${callbackName}” vì ngữ cảnh trình duyệt không khả dụng.`,
   triggerEffCheckSim: 'Kiểm tra độ tương đồng',
   triggerEffShowAlert: 'Hiển thị cảnh báo',
   normal: 'Bình thường',

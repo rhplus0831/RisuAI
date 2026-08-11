@@ -1,6 +1,8 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const triggerAlertMocks = vi.hoisted(() => ({ alertError: vi.fn() }))
+
 vi.mock('src/ts/server/settingsBridge.svelte', () => ({
   createServerBackedSettingDraft: <T>(_key: string, fallback: T) => ({ value: fallback }),
 }))
@@ -10,9 +12,7 @@ vi.mock('src/ts/process/triggers', () => ({
   requestAllowList: [],
 }))
 
-vi.mock('src/ts/alert', () => ({
-  alertError: vi.fn(),
-}))
+vi.mock('src/ts/alert', () => triggerAlertMocks)
 
 vi.mock('src/lib/UI/GUI/TextAreaInput.svelte', async () => {
   const mock = await import('../AuthorNoteEditor.testTextArea.svelte')
@@ -155,6 +155,7 @@ beforeEach(() => {
   delete (globalThis as XssTestGlobal).triggerV2Xss
   target = document.createElement('div')
   document.body.appendChild(target)
+  triggerAlertMocks.alertError.mockReset()
 })
 
 afterEach(() => {
@@ -389,6 +390,60 @@ describe('TriggerV2List effect display', () => {
     await settle()
 
     expect(component.getValue().map((trigger) => trigger.comment)).toEqual(['Header B', 'Alpha B'])
+  })
+
+  it('preserves unsupported imports and reports their effect and CBS diagnostics', async () => {
+    const imported: triggerscript[] = [
+      {
+        comment: 'Imported unsupported definitions',
+        type: 'start',
+        conditions: [],
+        effect: [
+          {
+            type: 'v2SetCharacterDesc',
+            value: 'must not persist',
+            valueType: 'value',
+            indent: 0,
+          },
+          {
+            type: 'v2SystemPrompt',
+            value: 'height={{screen_height}}',
+            valueType: 'value',
+            location: 'promptend',
+            indent: 0,
+          },
+        ],
+      },
+    ]
+    const file = { text: vi.fn(async () => JSON.stringify(imported)) } as unknown as File
+    const inputClick = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function () {
+      Object.defineProperty(this, 'files', { configurable: true, value: [file] })
+      this.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    component = mount(TriggerV2ListHarness, {
+      target,
+      props: {
+        initialValue: [
+          { comment: 'Header', type: 'manual', conditions: [], effect: [] },
+          { comment: 'Existing', type: 'manual', conditions: [], effect: [] },
+        ],
+      },
+    }) as MountedComponent
+    await openEditor()
+
+    document.querySelector<HTMLButtonElement>(`[aria-label="${language.import}: ${language.trigger}"]`)?.click()
+    await vi.waitFor(() => expect(file.text).toHaveBeenCalledOnce())
+    inputClick.mockRestore()
+    await vi.waitFor(() => expect(component?.getValue()).toHaveLength(3))
+
+    expect(component.getValue()[2]).toEqual(imported[0])
+    expect(triggerAlertMocks.alertError).toHaveBeenCalledWith(
+      language.triggerImportUnsupportedDiagnostic(['v2SetCharacterDesc'], ['screenheight']),
+    )
+    expect(target.querySelector('[data-risu-server-compatibility-diagnostic]')?.textContent).toContain(
+      'v2SetCharacterDesc',
+    )
+    expect(target.querySelector('[data-risu-server-compatibility-diagnostic]')?.textContent).toContain('screenheight')
   })
 
   it('renders array insertion fields without null or malformed placeholders', async () => {

@@ -47,6 +47,27 @@ export const defaultCBSRegisterArg: CBSRegisterArg = {
   isMobile: false,
   appVer: '0.0.0',
   getCurrentTriggerId: () => 'null',
+  getScreenWidth: () => {
+    try {
+      return typeof window === 'undefined' ? '' : window.innerWidth.toString()
+    } catch {
+      return ''
+    }
+  },
+  getScreenHeight: () => {
+    try {
+      return typeof window === 'undefined' ? '' : window.innerHeight.toString()
+    } catch {
+      return ''
+    }
+  },
+  getBrowserLanguage: () => {
+    try {
+      return typeof navigator === 'undefined' ? '' : navigator.language
+    } catch {
+      return ''
+    }
+  },
   getModelInfo: () =>
     ({
       id: 'placeholder',
@@ -146,6 +167,10 @@ export type CBSRegisterArg = {
    * concept.
    */
   getCurrentTriggerId: () => string
+  /** Browser-context values are injected so the shared callback registry never closes over host globals. */
+  getScreenWidth: () => string
+  getScreenHeight: () => string
+  getBrowserLanguage: () => string
 }
 
 function stableMemoStringify(value: unknown): string {
@@ -303,6 +328,9 @@ export function registerCBS(arg: CBSRegisterArg) {
     getModelInfo,
     callInternalFunction,
     getCurrentTriggerId,
+    getScreenWidth,
+    getScreenHeight,
+    getBrowserLanguage,
   } = arg
 
   // Basic character/user variables
@@ -1693,7 +1721,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: 'screenwidth',
     callback: (str, matcherArg, args, vars) => {
-      return window.innerWidth.toString()
+      return getScreenWidth()
     },
     alias: ['screen_width'],
     description:
@@ -1703,7 +1731,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: 'screenheight',
     callback: (str, matcherArg, args, vars) => {
-      return window.innerHeight.toString()
+      return getScreenHeight()
     },
     alias: ['screen_height'],
     description:
@@ -2284,7 +2312,7 @@ export function registerCBS(arg: CBSRegisterArg) {
         case 'browserlanguage':
         case 'browserlocale':
         case 'browserlang': {
-          return navigator.language
+          return getBrowserLanguage()
         }
         case 'modelshortname': {
           const modelInfo = getModelInfo(db.aiModel)

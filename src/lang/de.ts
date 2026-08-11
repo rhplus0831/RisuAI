@@ -1197,6 +1197,16 @@ export const languageGerman = {
   resultStoredVar: 'Variable zum Speichern des Ergebnisses',
   triggerEffRunLLM: 'Hauptmodell ausführen',
   triggerEffectSendAI: 'KI erneut senden',
+  triggerConfigurationUnsupportedDiagnostic: (effectTypes: string[], cbsCallbacks: string[]) =>
+    `Diese Konfiguration enthält serverseitig nicht unterstützte Definitionen. Sie bleiben erhalten, werden aber während der Generierung blockiert.${effectTypes.length > 0 ? ` Effekte: ${effectTypes.join(', ')}.` : ''}${cbsCallbacks.length > 0 ? ` CBS-Callbacks: ${cbsCallbacks.join(', ')}.` : ''}`,
+  triggerImportUnsupportedDiagnostic: (effectTypes: string[], cbsCallbacks: string[]) =>
+    `Die importierten Definitionen wurden unverändert beibehalten, aber nicht unterstütztes Verhalten wird während der Generierung blockiert.${effectTypes.length > 0 ? ` Effekte: ${effectTypes.join(', ')}.` : ''}${cbsCallbacks.length > 0 ? ` CBS-Callbacks: ${cbsCallbacks.join(', ')}.` : ''}`,
+  triggerEffectRuntimeUnsupported: (effectType: string) =>
+    `Der Trigger-Effekt „${effectType}“ wird auf diesem Server nicht unterstützt und wurde übersprungen.`,
+  cbsCallbackRuntimeUnsupported: (callbackName: string) =>
+    `Der CBS-Callback „${callbackName}“ wird auf diesem Server nicht unterstützt und gab einen leeren Wert zurück.`,
+  cbsClientContextUnavailable: (callbackName: string) =>
+    `Der CBS-Callback „${callbackName}“ konnte nicht aufgelöst werden, weil der Browserkontext nicht verfügbar war.`,
   triggerEffCheckSim: 'Ähnlichkeit prüfen',
   triggerEffShowAlert: 'Alarm anzeigen',
   normal: 'Normal',

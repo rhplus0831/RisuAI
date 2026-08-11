@@ -55,6 +55,9 @@ import type { requestDataResponse, StreamResponseChunk } from './request'
 import { HYPA_CONTEXT_TRUNCATION_CONFIRMATION_REQUIRED } from './hypaContextTruncation'
 import { GENERATION_IN_PROGRESS_FAILURE_CAUSE } from '../sendChatFailure'
 import type { GenerationReattachOutcomeStatus } from '../generationReattachOutcome'
+import { readBrowserClientContext } from './clientContext'
+import { alertToast } from '../../alert'
+import { language } from '../../../lang'
 
 const CHAT_ENDPOINT = '/api/v1/generate/chat'
 const INCOMPLETE_CHAT_GENERATION_SETTINGS_ERROR = 'chat_generation_settings_incomplete'
@@ -69,6 +72,20 @@ const SERVER_CHAT_CLIENT_CAPABILITIES = {
   omitDuplicateDoneResult: true,
   hypaContextTruncationConfirmation: true,
 } as const
+
+function showServerCompatibilityWarning(warning: ServerChatWarning): void {
+  const context = warning.context
+  if (context?.kind === 'unsupported_trigger_effect' && typeof context.effectType === 'string') {
+    alertToast(language.triggerEffectRuntimeUnsupported(context.effectType))
+    return
+  }
+  if (context?.kind !== 'unsupported_cbs_callback' || typeof context.callbackName !== 'string') return
+  alertToast(
+    context.reason === 'client_context_unavailable'
+      ? language.cbsClientContextUnavailable(context.callbackName)
+      : language.cbsCallbackRuntimeUnsupported(context.callbackName),
+  )
+}
 
 function clearLiveGenerationProgress(
   agentPresetSession: AgentPresetProgressSession,
@@ -304,6 +321,7 @@ async function openChatResponse(
           body: JSON.stringify({
             ...input,
             clientCapabilities: SERVER_CHAT_CLIENT_CAPABILITIES,
+            clientContext: readBrowserClientContext(),
           }),
           signal: signal ?? undefined,
         })
@@ -821,6 +839,7 @@ export async function requestServerChatGeneration(
                       context: warning.context,
                     })
                     console.warn(`Server chat warning: ${warning.message}`, warning.context ?? '')
+                    showServerCompatibilityWarning(warning)
                   }
                   break
                 case 'token': {

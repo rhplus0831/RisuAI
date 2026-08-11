@@ -121,6 +121,14 @@ considers absent, empty, or the compatibility string `"null"` unset. Run-var
 mutations are removed from rendered text and emitted as targeted chat-variable
 mutations.
 
+Fresh generation and prompt-preview requests report a bounded browser-context
+snapshot. Fastify resolves `{{screenwidth}}` and
+`{{metadata::browserlanguage}}` from that last-reported snapshot rather than
+reading browser globals. Missing context is non-fatal and emits a structured
+warning. `{{screenheight}}` remains deliberately unsupported: it expands to an
+empty value, emits the same non-throwing warning contract, and is diagnosed in
+trigger configuration/import surfaces.
+
 ## Lorebook Activation And Injection
 
 Normal activation excludes entries marked `agentOnly` or
@@ -319,7 +327,10 @@ of truth; categories include commands, alerts, privileged LLM/image/similarity
 work, legacy browser JavaScript, GUI/update/wait operations, and the V2
 character/persona/note/lorebook state arms. Generation emits one warning per
 distinct unsupported effect type, even when recursion or a loop encounters it
-multiple times.
+multiple times. The trigger editors mark configured unsupported definitions,
+dedicated V2 JSON import reports them without changing the imported rows, and
+the browser presents runtime compatibility warnings visibly as well as retaining
+them in the generation result.
 
 This boundary is specific to V2 trigger effects. It does not make the durable
 Lua setters above unsupported. Keep the two compatibility surfaces distinct in

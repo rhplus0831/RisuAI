@@ -3,7 +3,14 @@ import { risuChatParser } from '../../../../src/ts/parser/risuChatParser'
 import { dateTimeFormat, makeArray, parseArray, parseDict } from '../../../../src/ts/parser/risuChatParserHelpers'
 import { calcString } from '../../../../src/ts/process/infunctions'
 import { getChatVar, getGlobalChatVar, setChatVar } from '../../../../src/ts/parser/chatVarBackend'
-import { getActiveChatPage, getActiveDatabase, getActiveModelInfo, getActiveSelectedCharID } from './promptScope.js'
+import {
+  getActiveChatPage,
+  getActiveClientContext,
+  getActiveDatabase,
+  getActiveModelInfo,
+  getActiveSelectedCharID,
+  reportActiveCbsCallbackDiagnostic,
+} from './promptScope.js'
 import { getActiveModules, getModuleLorebooks } from './modules.js'
 
 /**
@@ -13,10 +20,10 @@ import { getActiveModules, getModuleLorebooks } from './modules.js'
  * active `promptScope` singleton rather than from browser resource state or
  * Svelte stores.
  *
- * Browser-context callbacks like `{{screenwidth}}` and
- * `{{metadata::browserlanguage}}` register with their original `cbs.ts` bodies,
- * which reference `window` / `navigator` globals and will throw at invocation on
- * the server.
+ * Browser-context callbacks never read server globals. `{{screenwidth}}` and
+ * `{{metadata::browserlanguage}}` resolve from the client context reported with
+ * the generation request. The deliberately unsupported `{{screenheight}}`
+ * returns an empty value and records a visible warning instead of throwing.
  *
  * `getCurrentTriggerId` returns `'null'` because manual triggers are a
  * browser UI concept.
@@ -63,6 +70,25 @@ function getScopedModules() {
   const currentChar = database.characters[getActiveSelectedCharID()]
   const currentChat = currentChar?.chats[getActiveChatPage()]
   return getActiveModules(database, currentChar, currentChat)
+}
+
+function reportedScreenWidth(): string {
+  const value = getActiveClientContext()?.screenWidth
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.round(value).toString()
+  reportActiveCbsCallbackDiagnostic('screenwidth', 'client_context_unavailable')
+  return ''
+}
+
+function reportedBrowserLanguage(): string {
+  const value = getActiveClientContext()?.browserLanguage
+  if (typeof value === 'string' && value.length > 0) return value
+  reportActiveCbsCallbackDiagnostic('browserlanguage', 'client_context_unavailable')
+  return ''
+}
+
+function unsupportedScreenHeight(): string {
+  reportActiveCbsCallbackDiagnostic('screenheight', 'unsupported_on_server')
+  return ''
 }
 
 export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
@@ -120,5 +146,8 @@ export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
     isMobile: false,
     appVer: '2026.4.181',
     getCurrentTriggerId: () => 'null',
+    getScreenWidth: reportedScreenWidth,
+    getScreenHeight: unsupportedScreenHeight,
+    getBrowserLanguage: reportedBrowserLanguage,
   }
 }

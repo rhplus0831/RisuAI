@@ -135,6 +135,10 @@ export interface TriggerRunContext {
   runLua?: (args: TriggerLuaRunArgs) => Promise<TriggerLuaRunResult>
   /** Shared per-generation collector; a set deduplicates recursive/in-loop effects. */
   unsupportedEffectTypes?: Set<string>
+  /** Browser values reported with the generation request for CBS in trigger fields. */
+  clientContext?: ExpandContext['clientContext']
+  /** Shared per-generation collector for unavailable CBS in trigger fields. */
+  cbsCallbackDiagnostics?: ExpandContext['cbsCallbackDiagnostics']
 }
 
 /**
@@ -944,6 +948,8 @@ export async function runTrigger(
       chatPage: ctx.chatPage,
       chara: workingChar,
       runVar: false,
+      clientContext: ctx.clientContext,
+      cbsCallbackDiagnostics: ctx.cbsCallbackDiagnostics,
     }).text
 
   let recursionVarChanged = false
@@ -1531,6 +1537,8 @@ export async function runStartTrigger(
     chatPage,
     signal: ctx.signal,
     unsupportedEffectTypes: ctx.unsupportedTriggerEffectTypes,
+    clientContext: ctx.clientContext,
+    cbsCallbackDiagnostics: ctx.cbsCallbackDiagnostics,
     runLua: async ({ code, mode, lowLevelAccess, chat: luaChat, varEngine, source }) => {
       const result = await runServerLua(
         { code, mode, lowLevelAccess, source },

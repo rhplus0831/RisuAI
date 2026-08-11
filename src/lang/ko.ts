@@ -1278,6 +1278,16 @@ const languageKoreanBase = {
   triggerEffectSendAI: 'AI 재전송',
   triggerEffectUnsupportedOnServer:
     '이 서버에서는 지원되지 않습니다: 가져온 이 효과는 보존되지만 생성 중에는 아무 효과가 없습니다.',
+  triggerConfigurationUnsupportedDiagnostic: (effectTypes: string[], cbsCallbacks: string[]) =>
+    `이 설정에는 서버에서 지원하지 않는 정의가 있습니다. 정의는 보존되지만 생성 중에는 차단됩니다.${effectTypes.length > 0 ? ` 효과: ${effectTypes.join(', ')}.` : ''}${cbsCallbacks.length > 0 ? ` CBS 콜백: ${cbsCallbacks.join(', ')}.` : ''}`,
+  triggerImportUnsupportedDiagnostic: (effectTypes: string[], cbsCallbacks: string[]) =>
+    `가져온 정의는 변경 없이 유지되었지만 지원하지 않는 동작은 생성 중에 차단됩니다.${effectTypes.length > 0 ? ` 효과: ${effectTypes.join(', ')}.` : ''}${cbsCallbacks.length > 0 ? ` CBS 콜백: ${cbsCallbacks.join(', ')}.` : ''}`,
+  triggerEffectRuntimeUnsupported: (effectType: string) =>
+    `트리거 효과 “${effectType}”은(는) 이 서버에서 지원되지 않아 건너뛰었습니다.`,
+  cbsCallbackRuntimeUnsupported: (callbackName: string) =>
+    `CBS 콜백 “${callbackName}”은(는) 이 서버에서 지원되지 않아 빈 값을 반환했습니다.`,
+  cbsClientContextUnavailable: (callbackName: string) =>
+    `브라우저 컨텍스트를 사용할 수 없어 CBS 콜백 “${callbackName}”을(를) 확인할 수 없습니다.`,
   triggerEffCheckSim: '유사성 확인',
   triggerEffShowAlert: '알림 보이기',
   normal: '일반',

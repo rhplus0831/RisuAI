@@ -103,6 +103,9 @@ registerRisuChatParserCBS({
   isMobile: false,
   appVer: versionInfo.version,
   getCurrentTriggerId: () => get(CurrentTriggerIdStore) ?? 'null',
+  getScreenWidth: () => window.innerWidth.toString(),
+  getScreenHeight: () => window.innerHeight.toString(),
+  getBrowserLanguage: () => navigator.language,
 })
 
 DOMPurify.addHook('uponSanitizeElement', (node: HTMLElement, data) => {

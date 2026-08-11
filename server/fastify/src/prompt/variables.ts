@@ -8,6 +8,8 @@ import { risuChatParser } from '../../../../src/ts/parser/risuChatParser'
 import { clearActivePromptScope, isActivePromptScopeDirty, setActivePromptScope } from './promptScope.js'
 import { AgentPresetGenerationError } from './agentPresetErrors.js'
 import { expandAgentPresetOutputCbs } from '../../../../src/ts/agentPresetReferences'
+import type { ReportedClientContext } from '../../../../src/ts/process/request/clientContext.js'
+import type { ServerCbsCallbackDiagnosticReason } from './promptScope.js'
 
 /**
  * Server-side `risuChatParser` entry point.
@@ -20,9 +22,8 @@ import { expandAgentPresetOutputCbs } from '../../../../src/ts/agentPresetRefere
  * the caller can check `expandVariables.returns.dirty` to decide
  * whether to persist `ctx.database` via `applyImport`.
  *
- * Browser-context cbs callbacks (`{{screenwidth}}`,
- * `{{metadata::browserlanguage}}`) register but will throw at invocation on the
- * server.
+ * Browser-context CBS resolves through `ctx.clientContext`; unavailable or
+ * unsupported callbacks return an empty value and add a non-fatal diagnostic.
  *
  * `bootPromptVariables()` must have been called before the first
  * `expandVariables` invocation; the boot wires the chatVar backend and
@@ -74,6 +75,10 @@ export interface ExpandContext {
   modelInfo?: LLMModel
   /** Server-only per-generation collector for trigger effects retained as no-ops. */
   unsupportedTriggerEffectTypes?: Set<string>
+  /** Browser values last reported with the generation request. */
+  clientContext?: ReportedClientContext
+  /** Server-only per-generation collector for unavailable CBS callbacks. */
+  cbsCallbackDiagnostics?: Map<string, ServerCbsCallbackDiagnosticReason>
 }
 
 export interface ExpandResult {
@@ -105,6 +110,8 @@ export function expandVariables(input: string, ctx: ExpandContext): ExpandResult
     scriptstate,
     globalChatVariables,
     modelInfo: ctx.modelInfo,
+    clientContext: ctx.clientContext,
+    cbsCallbackDiagnostics: ctx.cbsCallbackDiagnostics,
   })
 
   try {
