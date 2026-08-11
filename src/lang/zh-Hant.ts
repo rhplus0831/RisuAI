@@ -805,6 +805,7 @@ export const languageChineseTraditional = {
   showFirstMessagePages: '顯示初始訊息分頁',
   roundIcons: '圓形頭像',
   streaming: '串流回應',
+  oobaLegacyBufferedOnlyNotice: 'Ooba Legacy 僅使用緩衝式 HTTP 相容模式。串流與半串流無法使用。',
   chatBot: '對話角色',
   otherBots: '其他機器人',
   user: '使用者',

@@ -1,5 +1,5 @@
 import type { Database } from '../storage/database.svelte'
-import { LLMFlags, LLMProvider, type LLMModel } from './types'
+import { LLMFlags, LLMFormat, LLMProvider, type LLMModel } from './types'
 import {
   resolveModelProfile,
   type ModelProfileStatus,
@@ -29,6 +29,7 @@ export interface ModelProfileUiState {
   usesCohereProvider: boolean
   usesOpenAIProvider: boolean
   usesStreamingModel: boolean
+  usesOobaLegacyModel: boolean
   usesGeminiThinkingModel: boolean
   usesMancerModel: boolean
   usesReverseProxyModel: boolean
@@ -87,6 +88,7 @@ export function resolveModelProfileUiState({
     usesCohereProvider: modelInfos.some((info) => info.provider === LLMProvider.Cohere),
     usesOpenAIProvider: modelInfos.some((info) => info.provider === LLMProvider.OpenAI),
     usesStreamingModel: modelInfos.some((info) => info.flags.includes(LLMFlags.hasStreaming)),
+    usesOobaLegacyModel: modelInfos.some((info) => info.format === LLMFormat.OobaLegacy),
     usesGeminiThinkingModel: modelInfos.some((info) => info.flags.includes(LLMFlags.geminiThinking)),
     usesMancerModel: modelIds.some((modelId) => modelId.startsWith('mancer')),
     usesReverseProxyModel: modelIds.includes('reverse_proxy'),

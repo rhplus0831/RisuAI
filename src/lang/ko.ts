@@ -891,6 +891,8 @@ const languageKoreanBase = {
   roundIcons: '둥근 아이콘',
   streaming: '스트리밍',
   halfStreaming: '하프 스트리밍 (속도만 표시)',
+  oobaLegacyBufferedOnlyNotice:
+    'Ooba Legacy는 버퍼링된 HTTP 호환 모드만 사용합니다. 스트리밍과 하프 스트리밍은 사용할 수 없습니다.',
   halfStreamingTokensPerSecond: (tokensPerSecond: number) => `${tokensPerSecond.toFixed(1)} 토큰/초`,
   chatBot: '채팅 봇',
   otherBots: '기타 봇',

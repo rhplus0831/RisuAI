@@ -865,6 +865,8 @@ export const languageGerman = {
   showFirstMessagePages: 'Seiten der ersten Nachricht anzeigen',
   roundIcons: 'Runde Icons',
   streaming: 'Streaming',
+  oobaLegacyBufferedOnlyNotice:
+    'Ooba Legacy verwendet nur den gepufferten HTTP-Kompatibilitätsmodus. Streaming und Half Streaming sind nicht verfügbar.',
   chatBot: 'Chat Bot',
   otherBots: 'Hilfs-KIs',
   user: 'Benutzer',

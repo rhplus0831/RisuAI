@@ -78,6 +78,21 @@ describe('runKobold', () => {
     expect(capturedUrl).toBe('http://localhost:5001/api/v1/generate')
   })
 
+  it('appends only /generate when the baseUrl already ends in /api/v1', async () => {
+    let capturedUrl = ''
+    vi.stubGlobal('fetch', async (url: string) => {
+      capturedUrl = url
+      return ok({ results: [{ text: 'x' }] })
+    })
+    const resolved = resolveKoboldRequest({
+      messages: [{ role: 'user', content: 'hi' }],
+      baseUrl: 'http://localhost:5001/api/v1',
+      signal: new AbortController().signal,
+    })!
+    await runKobold(resolved)
+    expect(capturedUrl).toBe('http://localhost:5001/api/v1/generate')
+  })
+
   it('applies additional parameters after building the body and injects headers', async () => {
     let captured: RequestInit | null = null
     vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {

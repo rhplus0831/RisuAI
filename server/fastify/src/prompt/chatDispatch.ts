@@ -1578,6 +1578,9 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
   }
 
   if (provider === 'ooba-legacy') {
+    // Compatibility policy: Ooba Legacy remains buffered HTTP. The legacy
+    // settings UI disables streaming for this transport instead of reviving
+    // the retired WebSocket adapter.
     const providerOptions = profile.providerOptions
     const ooba = db.ooba
     const request = resolveOobaLegacyRequest({

@@ -359,6 +359,31 @@ describe('BotSettings legacy layout synchronization', () => {
   })
 })
 
+describe('BotSettings Ooba Legacy streaming compatibility', () => {
+  it('renders buffered-only streaming controls as disabled with a localized notice', async () => {
+    if (component) unmount(component)
+    setDatabaseLite({
+      ...getDatabase({ snapshot: true }),
+      aiModel: 'mancer',
+      subModel: '',
+      textgenWebUIBlockingURL: 'http://localhost:5000/api/v1/blocking',
+      useLegacyGUI: false,
+    } as any)
+    component = mount(BotSettings, { target, props: { settingsKind: 'legacy' } })
+    await tick()
+
+    const streaming = target.querySelector<HTMLInputElement>(`input[aria-label="Response ${language.streaming}"]`)
+    const halfStreaming = target.querySelector<HTMLInputElement>(`input[aria-label="${language.halfStreaming}"]`)
+    const notice = target.querySelector('[data-ooba-legacy-buffered-notice]')
+
+    expect(streaming?.checked).toBe(false)
+    expect(streaming?.disabled).toBe(true)
+    expect(halfStreaming?.checked).toBe(false)
+    expect(halfStreaming?.disabled).toBe(true)
+    expect(notice?.textContent?.trim()).toBe(language.oobaLegacyBufferedOnlyNotice)
+  })
+})
+
 describe('BotSettings recommended model preset', () => {
   it('renders model presets for the selected prompt and persists a recommendation by id', async () => {
     if (component) unmount(component)

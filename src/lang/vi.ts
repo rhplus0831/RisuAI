@@ -835,6 +835,8 @@ export const languageVietnamese = {
   showFirstMessagePages: 'Hiển thị trang tin nhắn đầu tiên',
   roundIcons: 'Biểu tượng tròn',
   streaming: 'Truyền phát',
+  oobaLegacyBufferedOnlyNotice:
+    'Ooba Legacy chỉ sử dụng chế độ tương thích HTTP có bộ đệm. Truyền phát và truyền phát một phần không khả dụng.',
   chatBot: 'Bot trò chuyện',
   otherBots: 'Bot khác',
   user: 'Người dùng',

@@ -77,13 +77,21 @@ export function resolveKoboldRequest(input: ResolveInput): KoboldRequest | null 
 
 function endpoint(req: KoboldRequest): string {
   // Kobold accepts the user-supplied URL as either a base or a complete
-  // `/api/v1/generate` URL. Append the path only when missing.
+  // `/api/v1/generate` URL. Join only the missing trailing path segments so
+  // the retained `/api/v1` default does not duplicate its own prefix.
   const url = new URL(req.baseUrl)
-  if (url.pathname.length < 3) {
-    url.pathname = '/api/v1/generate'
-  } else if (!url.pathname.includes('/api/v1/generate')) {
-    url.pathname = url.pathname.replace(/\/+$/, '') + '/api/v1/generate'
+  const suffix = ['api', 'v1', 'generate']
+  const pathSegments = url.pathname.split('/').filter(Boolean)
+  let overlap = Math.min(pathSegments.length, suffix.length)
+
+  while (overlap > 0) {
+    const pathTail = pathSegments.slice(-overlap)
+    const suffixHead = suffix.slice(0, overlap)
+    if (pathTail.every((segment, index) => segment === suffixHead[index])) break
+    overlap -= 1
   }
+
+  url.pathname = `/${[...pathSegments, ...suffix.slice(overlap)].join('/')}`
   return url.toString()
 }
 

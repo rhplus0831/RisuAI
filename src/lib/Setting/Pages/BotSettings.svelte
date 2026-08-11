@@ -1310,6 +1310,7 @@
   let usesCohereProvider = $derived(modelProfileUiState.usesCohereProvider)
   let usesOpenAIProvider = $derived(modelProfileUiState.usesOpenAIProvider)
   let usesStreamingModel = $derived(modelProfileUiState.usesStreamingModel)
+  let usesOobaLegacyModel = $derived(modelProfileUiState.usesOobaLegacyModel)
   let usesGeminiThinkingModel = $derived(modelProfileUiState.usesGeminiThinkingModel)
   let usesMancerModel = $derived(modelProfileUiState.usesMancerModel)
   let usesReverseProxyModel = $derived(modelProfileUiState.usesReverseProxyModel)
@@ -1793,6 +1794,15 @@
         {#if (useStreamingDraft.value || halfStreamingDraft.value) && usesGeminiThinkingModel}
           <Check bind:check={streamGeminiThoughtsDraft.value} name={`Stream Gemini Thoughts`} />
         {/if}
+      {:else if usesOobaLegacyModel && !usesStreamingModel}
+        <Check check={false} name={`Response ${language.streaming}`} disabled />
+        <Check check={false} name={language.halfStreaming} disabled />
+      {/if}
+
+      {#if usesOobaLegacyModel}
+        <p class="text-textcolor2 text-sm" data-ooba-legacy-buffered-notice>
+          {language.oobaLegacyBufferedOnlyNotice}
+        </p>
       {/if}
 
       {#if usesReverseProxyModel}

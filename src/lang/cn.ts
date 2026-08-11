@@ -784,6 +784,7 @@ export const languageChinese = {
   showFirstMessagePages: '显示第一条消息页面',
   roundIcons: '圆形头像',
   streaming: '即时串流传输',
+  oobaLegacyBufferedOnlyNotice: 'Ooba Legacy 仅使用缓冲式 HTTP 兼容模式。流式传输和半流式传输不可用。',
   chatBot: '聊天机器人',
   otherBots: '其他机器人',
   user: '用户',

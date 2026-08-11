@@ -1330,6 +1330,8 @@ export const languageEnglish = {
   roundIcons: 'Round Icons',
   streaming: 'Streaming',
   halfStreaming: 'Half streaming (show speed only)',
+  oobaLegacyBufferedOnlyNotice:
+    'Ooba Legacy uses buffered HTTP compatibility mode. Streaming and half streaming are unavailable.',
   halfStreamingTokensPerSecond: (tokensPerSecond: number) => `${tokensPerSecond.toFixed(1)} tokens/s`,
   chatBot: 'Chat Bot',
   otherBots: 'Other Bots',
