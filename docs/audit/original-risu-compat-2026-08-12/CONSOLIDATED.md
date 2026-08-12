@@ -149,6 +149,37 @@ fixed; PM-verified: diff hunks match spec, focused suites green, harness
 re-run shows exactly the two NEW-H1 cells converged — residual deltas are
 signed cluster 28 + queued NEW-H2 — goldens updated).
 
+W2 LANDED `0e46fed68` (cluster 9, CA-OR-3 middle path, CA-OR-4 fork
+parity, cluster 10 — PM-verified: doc pins updated, cluster-10 golden
+healthy on both races, independent harness re-run matched).
+
+W3 LANDED `f256dd250` (clusters 6, 7a, 7b, 16 — PM-verified: shutdown
+stopping-cancel branch removed, `generation_finalization_pending` fence +
+notice live, retry threads acceptedMessageId; harness matrix unchanged,
+cluster-10 healthy).
+
+W4 LANDED `0cf091c25` (clusters 8a–8d + 15 lore merge — PM-verified:
+`desc` in the mutation union (`assemble.ts:383`), schema-v32 claim leases,
+per-job memory abort controllers, terminal patch applies character/lore
+with freshness guards; harness matrix unchanged).
+
+W5 LANDED `19fbcfb14` (clusters 2, 21, 17+18, 5, NEW-H2, CA-LM-3,
+CA-ST-4 + ko parity sweep — PM-verified: Kobold rule byte-matches baseline,
+20 ko.ts strings, request-divergent harness cells 16→4).
+RESIDUE `be74a491b` (PM, full-gate findings): polyfill import crash in the
+smoke server (agentLorebookInputs), alias table completed against the
+fork-point catalog (gpt-4.1 family + dated gpt-4o; bare `gpt-5` left
+unmapped as a valid live ID), effect-lease route manifest entry, three
+stale pins updated to approved behavior.
+
+**AUDIT CLOSED 2026-08-12.** Full gate green at `be74a491b`: format, check,
+check:server, frontend 6135/6135, gates, ui-map, server 3276/3277(1 skip),
+smoke 15/15; `pnpm test:compat-harness` green (16-cell matrix + healthy
+cluster-10 runners) — NOTE it requires the baseline worktree at
+`/home/codex/risu-baseline-71c476e9c` and is not part of test:all. One
+load-flake observed once (activeWriterSession offline-freeze; passes in
+isolation; predates the waves; deflake task chip filed).
+
 **Wave plan:** W1 continue/send semantics (1, 4, 12-mismatch, NEW-H1);
 W2 stream persistence (9, CA-OR-3, CA-OR-4, 10); W3 lifecycle/protocol
 (6, 7a, 7b, 16); W4 side effects (8a–8d, 15 lore merge); W5 import/export +
