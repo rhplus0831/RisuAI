@@ -77,6 +77,7 @@ export interface StreamJob {
   chatId?: string
   writerSessionId?: string | null
   mode?: 'send' | 'continue' | 'regenerate'
+  continueDisposition?: 'append' | 'extend'
   regenerateMessageId?: string
   /**
    * Durable operation lineage. Proxy jobs leave these fields unset. Every

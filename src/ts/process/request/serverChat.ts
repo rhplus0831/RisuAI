@@ -787,6 +787,7 @@ export async function requestServerChatGeneration(
       chatId: input.chatId,
       jobId: durableJobId,
       ...(input.mode === 'continue' || input.mode === 'regenerate' ? { mode: input.mode } : { mode: 'send' }),
+      ...(info?.continueDisposition ? { continueDisposition: info.continueDisposition } : {}),
       ...(input.mode === 'regenerate' && input.regenerateMessageId
         ? { regenerateMessageId: input.regenerateMessageId }
         : {}),
@@ -856,6 +857,7 @@ export async function requestServerChatGeneration(
           ...(halfStreaming ? { halfStreaming: true, halfStreamingProgressManaged: true } : {}),
           ...(replayGapTruncated ? { replayGapTruncated: true } : {}),
           ...(replayGapPending ? { replayGapPending: true } : {}),
+          ...(info.continueDisposition ? { continueDisposition: info.continueDisposition } : {}),
         }
         resolveReadyOnce({
           status: 'ok',
@@ -995,6 +997,7 @@ export async function requestServerChatGeneration(
                   info = data as unknown as ServerChatInfo
                   halfStreaming = info.halfStreaming === true
                   reconcileServerCommandRevision(info)
+                  rememberDurableJob()
                   maybeResolveReady()
                   break
                 case 'replay_gap':

@@ -544,8 +544,8 @@ async function reattachGenerationJob(job: ActiveGenerationJob, target: ActiveCha
     // reattach while this one streams.
     consumePresentedGenerationJob(job.jobId)
     // Carry the running job's mode so the replayed stream renders on the right
-    // row (continue extends the existing row; regenerate targets its slot) rather
-    // than as a fresh send. Older servers omit `mode` and are treated as send.
+    // row (Continue's replayed info selects append/extend; regenerate targets its
+    // slot) rather than as a fresh send. Older servers omit `mode` and are treated as send.
     const controller = createActiveGenerationAbortController()
     try {
       const operationStream = generationOperationStreamForActiveJob(job)

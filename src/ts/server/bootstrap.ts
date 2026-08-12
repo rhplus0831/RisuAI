@@ -15,6 +15,8 @@ export interface ActiveGenerationJob {
    * Absent (treated as `send`) for older server builds.
    */
   mode?: 'send' | 'continue' | 'regenerate'
+  /** Append-style legacy boundary or Fastify's in-place extension. */
+  continueDisposition?: 'append' | 'extend'
   /** The regenerate target id, present only for `mode === 'regenerate'`. */
   regenerateMessageId?: string
   databaseLineage?: string

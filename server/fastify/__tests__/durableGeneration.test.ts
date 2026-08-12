@@ -537,6 +537,7 @@ async function bootstrap(): Promise<{
     chatId: string
     jobId: string
     mode?: 'send' | 'continue' | 'regenerate'
+    continueDisposition?: 'append' | 'extend'
     regenerateMessageId?: string
   }>
   database: {
@@ -2865,12 +2866,11 @@ describe('Durable generation (Milestone 1)', () => {
   })
 
   // Durable continue / regenerate.
-  // The durable job finalizes all three generating modes: continue extends the
-  // last char row in place, regenerate replaces the target, and send appends.
-  // Each survives a mid-stream disconnect, and streaming-cancel persistence is
-  // mode-aware too.
+  // The durable job finalizes all three generating modes: Continue follows its
+  // append/extend disposition, regenerate replaces the target, and send appends.
+  // Each survives a mid-stream disconnect, and streaming-cancel persistence is mode-aware too.
 
-  it('survives a disconnect on a durable continue and extends the row in place (Phase 6b)', async () => {
+  it('survives a disconnect on an append-style durable continue without replacing the prior assistant (Phase 6b)', async () => {
     await seedChatWithMessages([
       { role: 'user', data: 'tell me a story', chatId: 'msg-user-1' },
       { role: 'char', data: 'Once upon a time', chatId: 'msg-char-1', saying: 'char-1' },
@@ -2883,16 +2883,21 @@ describe('Durable generation (Milestone 1)', () => {
     await readSse(res, (ev) => ev.type === 'token')
     controller.abort() // disconnect mid-stream — the job must keep running
 
+    const running = await bootstrap()
+    expect(running.activeGenerationJobs).toContainEqual(
+      expect.objectContaining({ chatId: 'chat-1', mode: 'continue', continueDisposition: 'append' }),
+    )
+
     gated.release()
-    const extended = await waitFor(async () => {
-      const row = (await chatMessages(await bootstrap())).find((m) => m.chatId === 'msg-char-1')
+    const appended = await waitFor(async () => {
+      const row = (await chatMessages(await bootstrap())).find((m) => m.role === 'char' && m.chatId !== 'msg-char-1')
       return typeof row?.data === 'string' && row.data.includes('lived happily') ? row : undefined
     })
-    expect(extended.data).toBe('Once upon a time and they lived happily.')
-    // Extended the SAME row (id preserved); no duplicate appended.
+    expect(appended.data).toBe('*says nothing* and they lived happily.')
     const messages = await chatMessages(await bootstrap())
-    expect(messages).toHaveLength(2)
-    expect(messages[1].chatId).toBe('msg-char-1')
+    expect(messages).toHaveLength(3)
+    expect(messages[1]).toMatchObject({ chatId: 'msg-char-1', data: 'Once upon a time' })
+    expect(messages[2].chatId).not.toBe('msg-char-1')
   })
 
   it('survives a disconnect on a durable regenerate and replaces the target (Phase 6b)', async () => {
@@ -3001,7 +3006,7 @@ describe('Durable generation (Milestone 1)', () => {
     ).toBe(true)
   })
 
-  it('cancels a durable continue and extends the row with the streamed-so-far text (Phase 6b)', async () => {
+  it('cancels an append-style durable continue without replacing the prior assistant (Phase 6b)', async () => {
     await seedChatWithMessages([
       { role: 'user', data: 'story', chatId: 'msg-user-1' },
       { role: 'char', data: 'Once upon a time', chatId: 'msg-char-1', saying: 'char-1' },
@@ -3018,12 +3023,14 @@ describe('Durable generation (Milestone 1)', () => {
     })
     await cancelJob(jobId)
 
-    const extended = await waitFor(async () => {
-      const row = (await chatMessages(await bootstrap())).find((m) => m.chatId === 'msg-char-1')
+    const appended = await waitFor(async () => {
+      const row = (await chatMessages(await bootstrap())).find((m) => m.role === 'char' && m.chatId !== 'msg-char-1')
       return typeof row?.data === 'string' && row.data.includes('and then') ? row : undefined
     })
-    expect(extended.data).toBe('Once upon a time and then')
-    expect(await chatMessages(await bootstrap())).toHaveLength(2) // extended in place
+    expect(appended.data).toBe('*says nothing* and then')
+    const messages = await chatMessages(await bootstrap())
+    expect(messages).toHaveLength(3)
+    expect(messages[1]).toMatchObject({ chatId: 'msg-char-1', data: 'Once upon a time' })
     controller.abort()
   })
 

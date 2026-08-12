@@ -295,6 +295,34 @@ describe('consumeStreamResponse', () => {
     expect(testDatabaseState.db.characters[0].chats[0].message).toHaveLength(2)
   })
 
+  it('append-style continue creates a generation-owned row behind the prior assistant', async () => {
+    const currentChar = seed()
+    testDatabaseState.db.characters[0].chats[0].message.push({
+      role: 'char',
+      data: 'previous chapter',
+      chatId: 'previous-assistant',
+    })
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const req = streamingReq(stream)
+    req.continueDisposition = 'append'
+    const promise = consumeStreamResponse(
+      callArgs(req, currentChar, ctrl.signal, {
+        arg: { continue: true },
+        skipEditOutput: true,
+      }),
+    )
+    push({ msgKey: '\n### Chapter 2\nnew chapter' })
+    close()
+
+    const out = await promise
+    const messages = testDatabaseState.db.characters[0].chats[0].message
+    expect(messages).toHaveLength(3)
+    expect(messages[1]).toMatchObject({ chatId: 'previous-assistant', data: 'previous chapter' })
+    expect(messages[2]).toMatchObject({ chatId: 'gen-1', data: '### Chapter 2\nnew chapter' })
+    expect(out.projection).toMatchObject({ messageId: 'gen-1', appended: true, previousData: '' })
+  })
+
   it('empty/falsy chunk value: coerces to empty string instead of throwing', async () => {
     const currentChar = seed()
     const { stream, push, close } = makeControlledStream()

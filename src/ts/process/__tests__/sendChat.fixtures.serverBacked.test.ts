@@ -407,6 +407,7 @@ function prepareRouteBackedFixture(name: (typeof ROUTE_BACKED_CHAT_FIXTURES)[num
   chat.id = 'chat-route-backed'
   ;(testDatabaseState.db as typeof testDatabaseState.db & { currentChar: number }).currentChar = 0
   testDatabaseState.db.mainPrompt = defaultMainPrompt
+  if (name === 'continue') testDatabaseState.db.useSayNothing = false
   testDatabaseState.db.formatingOrder = [
     'main',
     'description',

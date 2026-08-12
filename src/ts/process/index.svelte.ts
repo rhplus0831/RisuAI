@@ -471,7 +471,10 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     const serverGenerationTargetCharacterId = serverDispatch ? currentChar.chaId : undefined
     const serverGenerationTargetChatId = serverDispatch ? currentChat.id : undefined
     const serverGenerationTargetMessageId =
-      serverDispatch && (arg.continue || arg.regenerateMessageId)
+      serverDispatch &&
+      (arg.regenerateMessageId ||
+        (arg.continue &&
+          (serverDispatch.req.type !== 'streaming' || serverDispatch.req.continueDisposition !== 'append')))
         ? (arg.regenerateMessageId ?? currentChat.message.at(-1)?.chatId)
         : undefined
     if (serverDispatch) {
@@ -523,8 +526,8 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       generationId = dispatch.generationId
       generationInfo = dispatch.generationInfo
     }
-    // New generations own the row keyed by generationId. Continue/regenerate
-    // captured their pre-existing row before dispatch and keep that identity.
+    // New/append-style generations own the row keyed by generationId. In-place
+    // Continue and regenerate keep the pre-dispatch target identity.
     errorTargetMessageId ??= generationId
 
     const orchestrate = await orchestrateResponse({

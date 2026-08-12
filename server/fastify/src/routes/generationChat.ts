@@ -34,6 +34,7 @@ import {
   type AssembleMutationPayload,
   type AssembleResult,
   type AssemblyState,
+  type ContinueDisposition,
   type PromptAssemblyStage,
 } from '../prompt/assemble.js'
 import {
@@ -1697,9 +1698,10 @@ function persistAssemblyMutations(args: {
  * Resolve the assistant message + replace target for the inline (non-durable)
  * server-dispatch path, which carries `continue` and `regenerate` (a send is
  * always durable). The two modes differ in message identity:
- *   - continue: `runServerPostGeneration` extended the last `char` row IN PLACE
- *     (its original `chatId` preserved), so persist that row — replace by its
- *     own `chatId`, no separate target.
+ *   - extend-style continue: `runServerPostGeneration` rewrites the last `char`
+ *     row in place, preserving its original `chatId`.
+ *   - append-style continue: the transient say-nothing boundary becomes a new
+ *     assistant row keyed by `generationId`, so persistence appends it.
  *   - regenerate: a NEW row keyed by `generationId` was appended after the
  *     transcript was truncated to the target; persist it but REPLACE the old
  *     target (`regenerateMessageId`) when that target existed at assembly start.
@@ -1714,7 +1716,7 @@ function resolveInlineGenerationMessage(args: {
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
 }): { message: Message; targetMessageId?: string } {
-  if (args.input.mode === 'continue') {
+  if (args.input.mode === 'continue' && args.state.continueDisposition === 'extend') {
     const messages = args.state.currentChat.message ?? []
     const row = [...messages].reverse().find((message) => message.role === 'char')
     if (row) return { message: structuredClone(row) as Message }
@@ -1755,7 +1757,8 @@ function findContinueRow(state: AssemblyState): Message | undefined {
 /**
  * Mode-aware RAW assistant message (no post-gen derivation) + replace target,
  * shared by the post-gen derivation-failure fallback and the streaming-cancel
- * persist. `continue` extends the captured continue row in place (keeping its id);
+ * persist. Extend-style `continue` keeps the captured row id; append-style
+ * `continue` creates a generation-owned row from the say-nothing boundary;
  * `regenerate` replaces the target (`regenerateMessageId`) only when that target
  * existed at assembly start; `send` appends a fresh row keyed by `generationId`.
  * The mode-aware target is what makes a durable continue/regenerate land on the
@@ -1763,6 +1766,7 @@ function findContinueRow(state: AssemblyState): Message | undefined {
  */
 function buildRawModeMessage(args: {
   input: AssembleInput
+  continueDisposition: ContinueDisposition
   initialMessages?: readonly Message[]
   continueRow: Message | undefined
   text: string
@@ -1773,7 +1777,7 @@ function buildRawModeMessage(args: {
 }): { message: Message; targetMessageId?: string } {
   const normalizeRawText = (text: string): string =>
     args.removeIncompleteResponse ? trimUntilPunctuation(text) : text.trim()
-  if (args.input.mode === 'continue') {
+  if (args.input.mode === 'continue' && args.continueDisposition === 'extend') {
     return {
       message: buildAssistantMessage({
         data: normalizeRawText((args.continueRow?.data ?? '') + args.text),
@@ -1784,9 +1788,10 @@ function buildRawModeMessage(args: {
       }),
     }
   }
+  const appendContinueBase = args.input.mode === 'continue' ? '*says nothing*' : ''
   return {
     message: buildAssistantMessage({
-      data: normalizeRawText(args.text),
+      data: normalizeRawText(appendContinueBase + args.text),
       generationId: args.generationId,
       characterId: args.input.characterId,
       generationInfo: args.generationInfo,
@@ -1826,7 +1831,7 @@ function captureGenerationFinalizationTargetSnapshot(
   const transcriptLength = sourceRows.length
   const tail = sourceRows.at(-1)
 
-  if (mode === 'continue' && tail?.role === 'char') {
+  if (mode === 'continue' && state.continueDisposition === 'extend' && tail?.role === 'char') {
     return {
       mode,
       kind: 'target-tail',
@@ -2006,6 +2011,7 @@ async function resolvePostGenerationResult(args: {
     // Derivation threw: persist the raw provider text so the result is not lost.
     const raw = buildRawModeMessage({
       input: args.input,
+      continueDisposition: args.state.continueDisposition,
       initialMessages: args.state.initialMessages,
       continueRow,
       text: args.completionText,
@@ -2502,6 +2508,9 @@ async function streamAssembly(
           ...(database?.halfStreaming === true ? { halfStreaming: true } : {}),
           generationId: shouldDispatch ? generationId : undefined,
           generationInfo,
+          ...(successfulResult.state?.input.mode === 'continue'
+            ? { continueDisposition: successfulResult.state.continueDisposition }
+            : {}),
           // Present only when a chat-var write actually persisted, so the browser
           // reconciles its cached command revision; omitted otherwise.
           revision: persistedRevision,
@@ -2913,11 +2922,15 @@ function buildProviderAlternateMessages(args: {
 function rawProviderAlternateText(state: AssemblyState, input: AssembleInput, text: string): string {
   let continueBase = ''
   if (input.mode === 'continue') {
-    const initialMessages = state.initialMessages ?? []
-    for (let index = initialMessages.length - 1; index >= 0; index--) {
-      if (initialMessages[index]?.role === 'char') {
-        continueBase = initialMessages[index].data ?? ''
-        break
+    if (state.continueDisposition === 'append') {
+      continueBase = '*says nothing*'
+    } else {
+      const initialMessages = state.initialMessages ?? []
+      for (let index = initialMessages.length - 1; index >= 0; index--) {
+        if (initialMessages[index]?.role === 'char') {
+          continueBase = initialMessages[index].data ?? ''
+          break
+        }
       }
     }
   }
@@ -3956,8 +3969,8 @@ export async function retryPendingGenerationCompletionEffects(args: {
  * Durable-job post-generation pass. Runs server derivation, then persists the
  * **derived** assistant message + post-gen scriptstate delta server-side
  * (mode-aware via the shared
- * `resolvePostGenerationResult` — `send` appends, `continue` extends the last row
- * in place, `regenerate` replaces the target) and folds the bumped revision /
+ * `resolvePostGenerationResult` — `send` appends, `continue` follows its derived
+ * append/extend disposition, and `regenerate` replaces the target) and folds the bumped revision /
  * final text / resend onto the `done` frame so the (possibly reattached) browser
  * reconciles without persisting.
  *
@@ -4271,6 +4284,7 @@ function persistRawCancelledResult(args: {
   const continueRow = args.input.mode === 'continue' ? findContinueRow(args.state) : undefined
   const raw = buildRawModeMessage({
     input: args.input,
+    continueDisposition: args.state.continueDisposition,
     initialMessages: args.state.initialMessages,
     continueRow,
     text: args.text,
@@ -4552,6 +4566,9 @@ async function runGenerationJob(args: {
           emit({ type: 'message_patch', patch: messagePatchForClient(result.mutations, clientCapabilities) })
         }
         emit({ type: 'stage', stage: 'prompt', status: 'end' })
+        if (successfulResult.state?.input.mode === 'continue') {
+          job.continueDisposition = successfulResult.state.continueDisposition
+        }
         emit({
           type: 'info',
           timings: { prompt: promptMs },
@@ -4560,6 +4577,9 @@ async function runGenerationJob(args: {
           ...(database?.halfStreaming === true ? { halfStreaming: true } : {}),
           generationId: shouldDispatch ? generationId : undefined,
           generationInfo,
+          ...(successfulResult.state?.input.mode === 'continue'
+            ? { continueDisposition: successfulResult.state.continueDisposition }
+            : {}),
           revision: persistedRevision,
         })
         if (shouldDispatch && database && generationInfo) {
@@ -4697,7 +4717,7 @@ async function runGenerationJob(args: {
                 cancelTargetMessageId =
                   input.mode === 'regenerate'
                     ? input.regenerateMessageId
-                    : input.mode === 'continue'
+                    : input.mode === 'continue' && successfulResult.state.continueDisposition === 'extend'
                       ? findContinueRow(successfulResult.state)?.chatId
                       : undefined
                 const cancelPersisted = persistRawCancelledResult({

@@ -112,6 +112,8 @@ export type requestDataResponse =
       replayGapTruncated?: boolean
       /** A gap was observed and the canonical terminal snapshot has not arrived yet. */
       replayGapPending?: boolean
+      /** Server-selected row behavior for Continue. */
+      continueDisposition?: 'append' | 'extend'
       special?: {
         emotion?: string
       }

@@ -6,6 +6,7 @@ export interface ActiveGenerationJobProjection {
   chatId: string
   jobId: string
   mode?: 'send' | 'continue' | 'regenerate'
+  continueDisposition?: 'append' | 'extend'
   regenerateMessageId?: string
   databaseLineage?: string
   operationId?: string
@@ -124,6 +125,7 @@ export class GenerationJobRegistry {
           chatId,
           jobId,
           ...(job.mode ? { mode: job.mode } : {}),
+          ...(job.continueDisposition ? { continueDisposition: job.continueDisposition } : {}),
           ...(job.regenerateMessageId ? { regenerateMessageId: job.regenerateMessageId } : {}),
           ...(job.databaseLineage ? { databaseLineage: job.databaseLineage } : {}),
           ...(job.operationId ? { operationId: job.operationId } : {}),

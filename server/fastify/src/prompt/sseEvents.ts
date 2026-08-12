@@ -72,6 +72,8 @@ export interface InfoEvent {
   halfStreaming?: boolean
   generationId?: string
   generationInfo?: Record<string, unknown>
+  /** Server-selected Continue row behavior. Absent for non-Continue/older servers. */
+  continueDisposition?: 'append' | 'extend'
   /**
    * The clamped response token budget (`finalizeRequestBudget`). This is a
    * budget, not a completion count, so it is surfaced separately rather than

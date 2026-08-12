@@ -128,7 +128,8 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
   let anonymousStreamTarget: Message | undefined
   let lastStreamOwnedData = ''
   let appendedGeneratedMessage = false
-  if (arg.continue) {
+  const extendsContinue = arg.continue === true && req.continueDisposition !== 'append'
+  if (extendsContinue) {
     msgIndex -= 1
     const continueTarget = initialMessages[msgIndex]
     prefix = continueTarget?.data ?? ''
@@ -263,7 +264,7 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
   }
   const renderCoalescer = createStreamRenderCoalescer(applyLatestChunk, opts.renderFlushScheduler)
   const removeEmptyGeneratedMessage = (): void => {
-    if (arg.continue) return
+    if (extendsContinue) return
     if (streamDetached) return
     if (result.length > 0 && (!halfStreaming || streamCompleted) && !streamAborted && !abortSignal.aborted) return
     const target = resolveStreamMessage()

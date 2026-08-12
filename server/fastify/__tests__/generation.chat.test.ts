@@ -2820,6 +2820,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         >
       }
       db.aiModel = 'echo_model'
+      ;(db as unknown as { useSayNothing: boolean }).useSayNothing = false
       db.formatingOrder = ['main', 'description', 'chats', 'lastChat']
       db.characters[0].customscript = [
         { in: 'SECRET', out: '@@inject', type: 'editprocess', flag: '', ableFlag: false },
@@ -6355,6 +6356,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
   ): Promise<number> {
     return seedDatabase(harness.app, assertion, {
       ...fixtureDatabase,
+      useSayNothing: false,
       aiModel: 'echo_model',
       echoMessage,
       echoDelay: 0,
@@ -6385,7 +6387,9 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       payload: { chatId: 'chat-1', characterId: 'char-1', mode: 'continue' },
     })
     expect(res.statusCode).toBe(200)
-    expect(doneFrame(parseEvents(res.body)).postGeneration?.revision).toBe(2)
+    const events = parseEvents(res.body)
+    expect(events.find((event) => event.type === 'info')?.data.continueDisposition).toBe('extend')
+    expect(doneFrame(events).postGeneration?.revision).toBe(2)
 
     const persisted = await persistedMessages(assertion)
     // Extended the SAME assistant row (chatId preserved); no duplicate appended.
@@ -6393,6 +6397,77 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(persisted[1].chatId).toBe('msg-char-1')
     expect(persisted[1].data).toContain('Once upon a time')
     expect(persisted[1].data).toContain('and they lived happily')
+  })
+
+  it('uses the original say-nothing boundary to append Continue output without exposing the prior assistant to module editoutput', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...(dbWithServerDispatch({
+        chats: [
+          {
+            id: 'chat-1',
+            message: [
+              { role: 'user', data: 'tell me a story', chatId: 'msg-user-1' },
+              {
+                role: 'char',
+                data: 'private reasoning\n### Chapter 1\nold chapter',
+                chatId: 'msg-char-1',
+                saying: 'char-1',
+              },
+            ],
+            modules: ['cutedog'],
+            note: '',
+            name: 'Chat',
+            localLore: [],
+          },
+        ],
+      }) as Record<string, unknown>),
+      useSayNothing: true,
+      echoMessage: '\n### Chapter 2\nnew chapter',
+      globalChatVariables: { toggle_showmethought: '0' },
+      modules: [
+        {
+          id: 'cutedog',
+          name: 'cutedog compatibility fixture',
+          description: '',
+          regex: [
+            {
+              comment: '앞부분 날리기',
+              in: '([\\s\\S]*)#{1,4}\\s{0,1}Chapter([^\\n]+)\\n+([\\s\\S]*)',
+              out: '{{#if_pure {{? {{getglobalvar::toggle_showmethought}}=0 }} }}\n## Response\n\n### Chapter$2\n\n$3{{/if}}{{#if_pure {{? {{getglobalvar::toggle_showmethought}}=1 }} }}\n$1\n\n## Response\n\n### Chapter$2\n\n$3{{/if}}',
+              type: 'editoutput',
+              ableFlag: true,
+              flag: 'g<order 1>s',
+            },
+          ],
+        },
+      ],
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { chatId: 'chat-1', characterId: 'char-1', mode: 'continue' },
+    })
+    expect(res.statusCode).toBe(200)
+    const events = parseEvents(res.body)
+    const info = events.find((event) => event.type === 'info')
+    expect(info?.data.continueDisposition).toBe('append')
+    expect(doneFrame(events).postGeneration?.finalText).toContain('new chapter')
+
+    const persisted = await persistedMessages(assertion)
+    expect(persisted).toHaveLength(3)
+    expect(persisted[1]).toMatchObject({
+      chatId: 'msg-char-1',
+      data: 'private reasoning\n### Chapter 1\nold chapter',
+    })
+    expect(persisted[2]).toMatchObject({ role: 'char', chatId: expect.any(String) })
+    expect(persisted[2].chatId).not.toBe('msg-char-1')
+    expect(persisted[2].data).toContain('### Chapter 2')
+    expect(persisted[2].data).toContain('new chapter')
+    expect(persisted[2].data).not.toContain('old chapter')
+    expect(persisted[2].data).not.toContain('*says nothing*')
   })
 
   it('keeps buffered Continue editoutput to one invocation (accepted OR-6 divergence)', async () => {
@@ -6471,6 +6546,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, {
       ...fixtureDatabase,
+      useSayNothing: false,
       useStreaming: true,
       characters: [
         {

@@ -69,6 +69,8 @@ export interface InfoEvent {
   responseBudget?: number
   generationId?: string
   generationInfo?: Record<string, unknown>
+  /** Server-selected Continue row behavior. Absent for non-Continue/older servers. */
+  continueDisposition?: 'append' | 'extend'
   /**
    * The chat revision after the route persisted the assembly-time chat-var
    * delta. Present only when a persisting mode actually wrote `chatVarMutations`;

@@ -1019,6 +1019,34 @@ describe('requestServerChat', () => {
     expect(Object.hasOwn(terminal.done ?? {}, 'result')).toBe(false)
   })
 
+  it('projects the server-selected append disposition onto a Continue stream', async () => {
+    const controlled = controlledGenerationStream()
+    vi.stubGlobal('fetch', async () => controlled.response)
+
+    const pending = requestServerChatGeneration({ ...baseInput, mode: 'continue' }, null)
+    controlled.send('prompt', { promptInfo: {} })
+    controlled.send('info', {
+      generationId: 'gen-append-continue',
+      generationInfo: { generationId: 'gen-append-continue', model: 'm' },
+      continueDisposition: 'append',
+    })
+    const served = await pending
+
+    expect(served.status).toBe('ok')
+    if (served.status !== 'ok' || served.req.type !== 'streaming') return
+    expect(served.info?.continueDisposition).toBe('append')
+    expect(served.req.continueDisposition).toBe('append')
+
+    controlled.send('done', {
+      generationId: 'gen-append-continue',
+      generationInfo: { generationId: 'gen-append-continue', model: 'm' },
+    })
+    controlled.close()
+    const reader = served.req.result.getReader()
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined })
+    await expect(served.terminal).resolves.toMatchObject({ status: 'done' })
+  })
+
   it('keeps delivered token text authoritative for an inline stream with a different done fallback', async () => {
     const controlled = controlledGenerationStream()
     vi.stubGlobal('fetch', async () => controlled.response)

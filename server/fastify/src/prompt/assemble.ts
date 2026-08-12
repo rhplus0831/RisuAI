@@ -218,6 +218,9 @@ export interface AssembleInput {
   clientContext?: ReportedClientContext
 }
 
+/** Server-derived persistence behavior for a Continue generation. */
+export type ContinueDisposition = 'append' | 'extend'
+
 export type AssembleMutationSource =
   | 'user_message'
   | 'regenerate'
@@ -497,6 +500,14 @@ export interface AssemblyState {
   formatOrder: FormatOrderKey[]
   /** `input.mode === 'continue'`; drives the `[Continue the last response]` marker. */
   isContinue: boolean
+  /**
+   * Compatibility policy derived from the effective `useSayNothing` setting.
+   * `append` mirrors the original transient say-nothing turn; `extend` keeps
+   * Fastify's explicit in-place continuation behavior.
+   */
+  continueDisposition: ContinueDisposition
+  /** Identity of the non-persistent say-nothing row used by append-style Continue. */
+  transientContinueBoundaryId?: string
   /** Abort signal from `AssembleDeps.signal`, handed to every Lua run. */
   signal?: AbortSignal
   /**
@@ -741,6 +752,24 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
   const formatOrder = buildFormatOrder(database)
   const stableCardCache = createStableCardRenderCache()
   const initialMessages = cloneMessages(currentChat.message ?? [], 'initialMessages')
+  const continueDisposition: ContinueDisposition =
+    input.mode === 'continue' && (currentChar as { type?: string }).type !== 'group' && database.useSayNothing === true
+      ? 'append'
+      : 'extend'
+  const transientContinueBoundaryId = continueDisposition === 'append' ? randomUUID() : undefined
+  if (transientContinueBoundaryId) {
+    ;(currentChat.message ??= []).push({
+      role: 'user',
+      data: '*says nothing*',
+      chatId: transientContinueBoundaryId,
+      name: database.username,
+    } as Message)
+    // This is an effective-database working copy, not durable storage. Keeping
+    // it in sync makes CBS/Lua history reads see the same boundary the original
+    // browser implementation exposed throughout prompt assembly.
+    const effectiveChat = database.characters?.[selectedCharID]?.chats?.[chatPage]
+    if (effectiveChat) effectiveChat.message = currentChat.message
+  }
   const activeModuleIds = getActiveModules(database, currentChar, currentChat).map((module) => module.id)
 
   return {
@@ -761,6 +790,8 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     signal: deps.signal,
     luaExecBudget,
     isContinue: input.mode === 'continue',
+    continueDisposition,
+    ...(transientContinueBoundaryId ? { transientContinueBoundaryId } : {}),
     modelPresetId: currentChat.generationSettings?.modelPresetId,
     promptPresetId: currentChat.generationSettings?.promptPresetId,
     loadoutId: input.loadoutId,
@@ -800,6 +831,12 @@ function cloneMessages(
 
 function cloneScriptstate(scriptstate: Chat['scriptstate'] | undefined): Record<string, string | number | boolean> {
   return structuredClone(scriptstate ?? {}) as Record<string, string | number | boolean>
+}
+
+function persistentMessageRows(state: AssemblyState): Message[] {
+  const rows = state.currentChat.message ?? []
+  const boundaryId = state.transientContinueBoundaryId
+  return boundaryId ? rows.filter((message) => message.chatId !== boundaryId) : rows
 }
 
 function characterFieldValue(value: unknown): string | null {
@@ -951,7 +988,7 @@ function captureMessageReplacement(
   source: Exclude<AssembleMutationSource, 'user_message'>,
 ): void {
   const before = state.messageMutationCheckpoint ?? []
-  const afterRows = state.currentChat.message ?? []
+  const afterRows = persistentMessageRows(state)
   assemblyMessageCaptureInstrumentation.messageReplacementComparisons++
   const firstChangedIndex = firstChangedMessageIndex(before, afterRows)
   if (firstChangedIndex === undefined) return
@@ -1396,7 +1433,7 @@ function submitTranscriptReplacementRequired(state: AssemblyState): boolean {
 
 function captureSubmitTranscript(state: AssemblyState): void {
   if (!submitTranscriptReplacementRequired(state)) return
-  state.submitMessages = cloneMessages(state.currentChat.message ?? [], 'submitTranscript')
+  state.submitMessages = cloneMessages(persistentMessageRows(state), 'submitTranscript')
 }
 
 /**
@@ -1852,8 +1889,11 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
     captureMessageReplacement(state, 'start_trigger')
   }
   if (history.injectMutations.length > 0) {
-    state.historyInjectRewroteTranscript = true
-    for (const mutation of history.injectMutations) {
+    const persistentInjectMutations = history.injectMutations.filter(
+      (mutation) => mutation.messageId !== state.transientContinueBoundaryId,
+    )
+    state.historyInjectRewroteTranscript = persistentInjectMutations.length > 0
+    for (const mutation of persistentInjectMutations) {
       const initial = state.initialMessages?.find((message) => message.chatId === mutation.messageId)
       if (!initial) state.historyInjectRequiresTranscriptReplacement = true
       state.messageMutations?.push({
@@ -1864,9 +1904,11 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
         message: mutation.after,
       })
     }
-    captureSubmitTranscript(state)
-    bumpHistoryCallbackMemo(state)
-    invalidateStableCardCache(state)
+    if (persistentInjectMutations.length > 0) {
+      captureSubmitTranscript(state)
+      bumpHistoryCallbackMemo(state)
+      invalidateStableCardCache(state)
+    }
   }
 }
 
@@ -2619,10 +2661,13 @@ export async function runServerAlternatePostGeneration(state: AssemblyState, com
   const continueIndex = messages.length - 1
   const initialMessages = isolated.initialMessages ?? messages
   const initialContinueIndex = initialMessages.length - 1
-  const continueBase =
-    isContinue && initialMessages[initialContinueIndex]?.role === 'char'
-      ? (initialMessages[initialContinueIndex].data ?? '')
-      : ''
+  const continueBase = isContinue
+    ? isolated.continueDisposition === 'append'
+      ? '*says nothing*'
+      : initialMessages[initialContinueIndex]?.role === 'char'
+        ? (initialMessages[initialContinueIndex].data ?? '')
+        : ''
+    : ''
   const editIndex = isContinue ? continueIndex : messages.length
 
   const reformatted = reformatCompletion(continueBase + completionText)
@@ -2681,12 +2726,12 @@ function appendAssistantRow(
   continueIndex: number,
 ): void {
   const messages = (state.currentChat.message ??= [])
-  if (isContinue && messages[continueIndex]?.role === 'char') {
+  if (isContinue && state.continueDisposition === 'extend' && messages[continueIndex]?.role === 'char') {
     messages[continueIndex] = { ...messages[continueIndex], data: editedText }
     bumpHistoryCallbackMemo(state)
     return
   }
-  messages.push({
+  const message = {
     role: 'char',
     data: editedText,
     saying: state.currentChar.chaId,
@@ -2694,7 +2739,17 @@ function appendAssistantRow(
     chatId: input.generationId,
     ...(input.generationInfo ? { generationInfo: input.generationInfo } : {}),
     ...(input.promptInfo ? { promptInfo: input.promptInfo } : {}),
-  } as Message)
+  } as Message
+  if (
+    isContinue &&
+    state.continueDisposition === 'append' &&
+    messages[continueIndex]?.chatId === state.transientContinueBoundaryId
+  ) {
+    messages[continueIndex] = message
+    delete state.transientContinueBoundaryId
+  } else {
+    messages.push(message)
+  }
   bumpHistoryCallbackMemo(state)
 }
 
@@ -2798,7 +2853,7 @@ function assistantTextAfterPass(
   fallback: string,
 ): string {
   const messages = state.currentChat.message ?? []
-  if (isContinue) {
+  if (isContinue && state.continueDisposition === 'extend') {
     return messages[continueIndex]?.data ?? fallback
   }
   const byId = messages.find((message) => message.chatId === input.generationId)
@@ -3029,9 +3084,21 @@ export async function runServerPostGeneration(
   const isContinue = state.input.mode === 'continue'
   const messages = (state.currentChat.message ??= [])
   const continueIndex = messages.length - 1
-  const continueBase =
-    isContinue && messages[continueIndex]?.role === 'char' ? (messages[continueIndex].data ?? '') : ''
-  const editIndex = isContinue ? continueIndex : messages.length
+  const continueBase = isContinue
+    ? state.continueDisposition === 'append'
+      ? '*says nothing*'
+      : messages[continueIndex]?.role === 'char'
+        ? (messages[continueIndex].data ?? '')
+        : ''
+    : ''
+  const editIndex =
+    isContinue &&
+    state.continueDisposition === 'append' &&
+    messages[continueIndex]?.chatId !== state.transientContinueBoundaryId
+      ? messages.length
+      : isContinue
+        ? continueIndex
+        : messages.length
 
   // Baseline the post-gen delta against the post-assembly scriptstate (the route
   // already persisted the assembly-time delta), and clear the assembly-time
