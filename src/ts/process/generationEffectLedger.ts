@@ -25,9 +25,18 @@ export interface RunGenerationEffectResult<T> {
   status: 'completed' | 'skipped' | 'failed' | 'already_receipted' | 'unavailable'
 }
 
+export interface GenerationEffectExecutionContext {
+  /** Stable across an expired-lease reclaim; callbacks can use it as their idempotency key. */
+  idempotencyKey: string
+  reclaimed: boolean
+}
+
 interface ClaimedEffectResponse {
   status: 'claimed'
   claimId: string
+  leaseExpiresAt?: string
+  idempotencyKey: string
+  reclaimed: boolean
 }
 
 interface NotClaimedEffectResponse {
@@ -90,15 +99,19 @@ export function runLedgeredGenerationEffect<T>(
   ref: ServerGenerationEffectLedgerRef | undefined,
   kind: GenerationEffectKind,
   delivery: GenerationEffectDelivery,
-  effect: () => Promise<GenerationEffectExecution<T>> | GenerationEffectExecution<T>,
+  effect: (
+    context: GenerationEffectExecutionContext,
+  ) => Promise<GenerationEffectExecution<T>> | GenerationEffectExecution<T>,
 ): Promise<RunGenerationEffectResult<T>> {
   if (!ref) {
     if (delivery === 'late_recovery') return Promise.resolve({ executed: false, status: 'unavailable' })
-    return Promise.resolve(effect()).then((result) => ({
-      executed: true,
-      value: result.value,
-      status: result.status,
-    }))
+    return Promise.resolve(effect({ idempotencyKey: `legacy-live-generation-effect:${kind}`, reclaimed: false })).then(
+      (result) => ({
+        executed: true,
+        value: result.value,
+        status: result.status,
+      }),
+    )
   }
 
   const key = `${ref.databaseLineage}:${ref.generationId}:${kind}`
@@ -117,7 +130,9 @@ async function runClaimedGenerationEffect<T>(
   ref: ServerGenerationEffectLedgerRef,
   kind: GenerationEffectKind,
   delivery: GenerationEffectDelivery,
-  effect: () => Promise<GenerationEffectExecution<T>> | GenerationEffectExecution<T>,
+  effect: (
+    context: GenerationEffectExecutionContext,
+  ) => Promise<GenerationEffectExecution<T>> | GenerationEffectExecution<T>,
 ): Promise<RunGenerationEffectResult<T>> {
   const claim = await claimEffect(ref, kind, delivery)
   if (!claim) return { executed: false, status: 'unavailable' }
@@ -132,8 +147,9 @@ async function runClaimedGenerationEffect<T>(
     }
   }
 
+  const stopLeaseRenewal = startEffectLeaseRenewal(ref, kind, claim)
   try {
-    const result = await effect()
+    const result = await effect({ idempotencyKey: claim.idempotencyKey, reclaimed: claim.reclaimed })
     const receipted = await settleEffect(ref, kind, claim.claimId, {
       status: result.status,
       ...(result.status === 'skipped' ? { reason: result.reason } : {}),
@@ -149,6 +165,8 @@ async function runClaimedGenerationEffect<T>(
       lastError: error instanceof Error ? error.message : String(error),
     })
     throw error
+  } finally {
+    stopLeaseRenewal()
   }
 }
 
@@ -181,12 +199,66 @@ async function claimEffect(
   if (!response.ok || !body || typeof body !== 'object' || Array.isArray(body)) return null
   const record = body as Record<string, unknown>
   if (record.status === 'claimed' && typeof record.claimId === 'string') {
-    return { status: 'claimed', claimId: record.claimId }
+    return {
+      status: 'claimed',
+      claimId: record.claimId,
+      ...(typeof record.leaseExpiresAt === 'string' ? { leaseExpiresAt: record.leaseExpiresAt } : {}),
+      idempotencyKey:
+        typeof record.idempotencyKey === 'string' ? record.idempotencyKey : generationEffectIdempotencyKey(ref, kind),
+      reclaimed: record.reclaimed === true,
+    }
   }
   if (record.status === 'not_claimed' && typeof record.reason === 'string') {
     return { status: 'not_claimed', reason: record.reason }
   }
   return null
+}
+
+function startEffectLeaseRenewal(
+  ref: ServerGenerationEffectLedgerRef,
+  kind: GenerationEffectKind,
+  claim: ClaimedEffectResponse,
+): () => void {
+  if (!claim.leaseExpiresAt) return () => {}
+  const remainingMs = Date.parse(claim.leaseExpiresAt) - Date.now()
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return () => {}
+  const interval = setInterval(
+    () => void renewEffectLease(ref, kind, claim.claimId),
+    Math.max(1_000, Math.min(30_000, Math.floor(remainingMs / 3))),
+  )
+  return () => clearInterval(interval)
+}
+
+async function renewEffectLease(
+  ref: ServerGenerationEffectLedgerRef,
+  kind: GenerationEffectKind,
+  claimId: string,
+): Promise<void> {
+  const auth = await getNodeServerProxyAuth()
+  try {
+    const response = await fetch(
+      `/api/v1/generation-effects/${encodeURIComponent(ref.generationId)}/${encodeURIComponent(kind)}/lease`,
+      {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+          'risu-auth': auth,
+          ...activeWriterSessionHeader(),
+          [SERVER_DATABASE_LINEAGE_HEADER]: ref.databaseLineage,
+        },
+        body: JSON.stringify({ claimId }),
+      },
+    )
+    const body = await readJson(response)
+    handleActiveWriterStaleResponse(response, body)
+  } catch {
+    // Expiry makes a lost renewal recoverable; the callback keeps its stable
+    // idempotency key in case another writer has to reclaim it.
+  }
+}
+
+function generationEffectIdempotencyKey(ref: ServerGenerationEffectLedgerRef, kind: GenerationEffectKind): string {
+  return ['generation-effect-v1', ref.databaseLineage, ref.keyType, ref.keyId, kind].map(encodeURIComponent).join(':')
 }
 
 async function settleEffect(

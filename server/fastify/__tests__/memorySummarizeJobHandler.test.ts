@@ -339,7 +339,7 @@ describe('summarize memory job handler', () => {
     }
   })
 
-  it('L19: commits batch summaries in planned order only until the first failed write', async () => {
+  it('L19: commits staged batch summaries independently after a sibling write fails', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
@@ -387,21 +387,20 @@ describe('summarize memory job handler', () => {
 
       expect(await worker.tick()).toBe(true)
 
-      expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((summary) => summary.chunkId)).toEqual(['chunk-1'])
+      expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((summary) => summary.chunkId)).toEqual([
+        'chunk-1',
+        'chunk-3',
+      ])
       expect(getMemoryChunk(db, 'chunk-1')).toMatchObject({ status: 'summarized' })
       expect(getMemoryChunk(db, 'chunk-2')).toMatchObject({ status: 'failed' })
-      expect(getMemoryChunk(db, 'chunk-3')).toMatchObject({ status: 'pending' })
+      expect(getMemoryChunk(db, 'chunk-3')).toMatchObject({ status: 'summarized' })
       expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'completed', error: null })
       expect(getMemoryJob(db, 'job-2')).toMatchObject({
         status: 'pending',
         error: 'summary text must be a non-empty string',
         nextRunAt: '2026-05-25T00:00:01.000Z',
       })
-      expect(getMemoryJob(db, 'job-3')).toMatchObject({
-        status: 'pending',
-        error: 'summary text must be a non-empty string',
-        nextRunAt: '2026-05-25T00:00:01.000Z',
-      })
+      expect(getMemoryJob(db, 'job-3')).toMatchObject({ status: 'completed', error: null })
     } finally {
       db.close()
     }
@@ -500,6 +499,7 @@ describe('summarize memory job handler', () => {
           summarize: createSummarizeMemoryJobBatchHandler({
             db,
             loadDatabase: () => database({ summarizationMaxConcurrent: 2 }),
+            sleep: async () => {},
             summarize: async () => {
               active += 1
               maxActive = Math.max(maxActive, active)
@@ -662,7 +662,72 @@ describe('summarize memory job handler', () => {
     }
   })
 
-  it('does not commit a staged summary after a running batch job is cancelled', async () => {
+  it('scopes batch cancellation to the addressed provider job', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      seedBatchJob(db, {
+        id: 'job-1',
+        chunkId: 'chunk-1',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'chunk one',
+      })
+      seedBatchJob(db, {
+        id: 'job-2',
+        chunkId: 'chunk-2',
+        rangeStartSeq: 2,
+        rangeEndSeq: 3,
+        text: 'chunk two',
+      })
+      const providerSignals = new Map<string, AbortSignal>()
+      let finishSecond!: () => void
+      const secondGate = new Promise<void>((resolve) => {
+        finishSecond = resolve
+      })
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          summarize: createSummarizeMemoryJobBatchHandler({
+            db,
+            loadDatabase: () => database({ summarizationMaxConcurrent: 2 }),
+            sleep: async () => {},
+            summarize: async (messages, opts) => {
+              const text = String(messages[0]?.content ?? '')
+              const jobId = text.includes('chunk one') ? 'job-1' : 'job-2'
+              if (opts.signal) providerSignals.set(jobId, opts.signal)
+              if (jobId === 'job-2') {
+                await secondGate
+                return { text: 'second summary', tokens: 1 }
+              }
+              return new Promise<SummaryAdapterResult>((_resolve, reject) => {
+                opts.signal?.addEventListener('abort', () => reject(new Error('first cancelled')), { once: true })
+              })
+            },
+          }),
+        },
+      })
+
+      const tick = worker.tick()
+      await flushMicrotasks()
+      expect(providerSignals.size).toBe(2)
+      expect(cancelMemoryJob(db, 'job-1')).toMatchObject({ status: 'cancelled' })
+      expect(worker.abortRunningJob('job-1')).toBe(true)
+      expect(providerSignals.get('job-1')?.aborted).toBe(true)
+      expect(providerSignals.get('job-2')?.aborted).toBe(false)
+      finishSecond()
+      await expect(tick).resolves.toBe(true)
+
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'cancelled' })
+      expect(getMemoryJob(db, 'job-2')).toMatchObject({ status: 'completed', attemptCount: 1 })
+      expect(listMemorySummaries(db, { chatId: 'chat-1' })).toEqual([
+        expect.objectContaining({ chunkId: 'chunk-2', text: 'second summary' }),
+      ])
+    } finally {
+      db.close()
+    }
+  })
+
+  it('commits a staged sibling summary after another running batch job is cancelled', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
@@ -696,12 +761,11 @@ describe('summarize memory job handler', () => {
 
       expect(await worker.tick()).toBe(true)
 
-      expect(listMemorySummaries(db, { chatId: 'chat-1' })).toHaveLength(0)
+      expect(listMemorySummaries(db, { chatId: 'chat-1' })).toEqual([
+        expect.objectContaining({ chunkId: 'chunk-2', text: 'summary' }),
+      ])
       expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'cancelled' })
-      expect(getMemoryJob(db, 'job-2')).toMatchObject({
-        status: 'pending',
-        error: 'summarize job job-1 is no longer running',
-      })
+      expect(getMemoryJob(db, 'job-2')).toMatchObject({ status: 'completed', error: null })
     } finally {
       db.close()
     }

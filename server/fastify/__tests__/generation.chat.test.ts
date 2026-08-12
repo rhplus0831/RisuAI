@@ -2535,6 +2535,12 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       before: null,
       expected: '<section>Durable background</section>',
     },
+    {
+      field: 'desc',
+      lua: "setDescription(id, 'A durable new description.')",
+      before: 'DESC',
+      expected: 'A durable new description.',
+    },
   ])(
     'durably persists Lua editRequest character field $field and emits a character-refreshing event',
     async (testCase) => {
@@ -4652,6 +4658,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
                 code: `
                   function onOutput(id)
                     setName(id, 'Output Tess')
+                    setDescription(id, 'Output description')
                     setCharacterFirstMessage(id, 'Output greeting')
                     setBackgroundEmbedding(id, 'Output background')
                     upsertLocalLoreBook(id, 'output-lore', 'output replacement', { key = 'output-key' })
@@ -4676,6 +4683,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       { key: 'name', before: 'Tess', after: 'Output Tess' },
       { key: 'firstMessage', before: 'Greetings.', after: 'Output greeting' },
       { key: 'backgroundHTML', before: null, after: 'Output background' },
+      { key: 'desc', before: 'DESC', after: 'Output description' },
     ])
     expect(done.postGeneration?.messagePatch?.localLoreMutation?.after).toEqual([
       expect.objectContaining({
@@ -4694,6 +4702,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(character.statusCode).toBe(200)
     expect(character.json().character).toMatchObject({
       name: 'Output Tess',
+      desc: 'Output description',
       firstMessage: 'Output greeting',
       backgroundHTML: 'Output background',
       chats: [
@@ -4736,7 +4745,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     { scope: 'local_lore', key: undefined },
     { scope: 'chat_variable', key: '$mood' },
   ] as const)(
-    'C6: inline finalization drops a stale $scope mutation without losing the generated message',
+    'C6: inline finalization reconciles a concurrent $scope mutation without losing the generated message',
     async (testCase) => {
       let applyConcurrentEdit: () => Promise<void> = async () => {
         throw new Error('concurrent edit was not configured')
@@ -4761,6 +4770,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
                     ? `
                         function onOutput(id)
                           setName(id, 'script name')
+                          setDescription(id, 'script description')
                           setCharacterFirstMessage(id, 'script greeting')
                         end
                       `
@@ -4836,20 +4846,30 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       })
       expect(response.statusCode).toBe(200)
       const events = parseEvents(response.body)
-      expect(events.find((event) => event.type === 'warning')?.data).toEqual({
-        message: 'Some server script updates were skipped because their targets changed during generation.',
-        context: {
-          kind: 'stale_generation_script_mutations',
-          droppedMutations: [
-            testCase.key === undefined ? { scope: testCase.scope } : { scope: testCase.scope, key: testCase.key },
-          ],
-        },
-      })
+      if (testCase.scope === 'local_lore') {
+        expect(events.find((event) => event.type === 'warning')).toBeUndefined()
+      } else {
+        expect(events.find((event) => event.type === 'warning')?.data).toEqual({
+          message: 'Some server script updates were skipped because their targets changed during generation.',
+          context: {
+            kind: 'stale_generation_script_mutations',
+            droppedMutations: [{ scope: testCase.scope, key: testCase.key }],
+          },
+        })
+      }
       const patch = doneFrame(events).postGeneration?.messagePatch
       if (testCase.scope === 'character_field') {
-        expect(patch?.characterFieldMutations).toEqual([{ key: 'name', before: 'Tess', after: 'script name' }])
+        expect(patch?.characterFieldMutations).toEqual([
+          { key: 'name', before: 'Tess', after: 'script name' },
+          { key: 'desc', before: 'DESC', after: 'script description' },
+        ])
       }
-      if (testCase.scope === 'local_lore') expect(patch?.localLoreMutation).toBeUndefined()
+      if (testCase.scope === 'local_lore') {
+        expect(patch?.localLoreMutation?.after).toEqual([
+          expect.objectContaining({ id: 'user-lore-id', content: 'user lore' }),
+          expect.objectContaining({ comment: 'script-lore', content: 'script lore' }),
+        ])
+      }
       if (testCase.scope === 'chat_variable') expect(patch?.chatVarMutations ?? []).toEqual([])
       expect((await persistedMessages(assertion)).at(-1)).toMatchObject({
         role: 'char',
@@ -4862,16 +4882,116 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         headers: { 'risu-auth': assertion },
       })
       if (testCase.scope === 'character_field') {
-        expect(character.json().character).toMatchObject({ name: 'script name', firstMessage: 'user greeting' })
+        expect(character.json().character).toMatchObject({
+          name: 'script name',
+          desc: 'script description',
+          firstMessage: 'user greeting',
+        })
       } else if (testCase.scope === 'local_lore') {
         expect(character.json().character.chats[0].localLore).toEqual([
           expect.objectContaining({ id: 'user-lore-id', content: 'user lore' }),
+          expect.objectContaining({ comment: 'script-lore', content: 'script lore' }),
         ])
       } else {
         expect(character.json().character.chats[0].scriptstate).toEqual({ $mood: 'user-value' })
       }
     },
   )
+
+  it('drops only a truly conflicting scripted local-lore entry and keeps the concurrent user edit', async () => {
+    let applyConcurrentEdit: () => Promise<void> = async () => {
+      throw new Error('concurrent edit was not configured')
+    }
+    await restartHarness({
+      dispatchProvider: () =>
+        (async function* (): AsyncGenerator<CompletionStreamFrame> {
+          yield { kind: 'token', content: 'entry conflict reply' }
+          await applyConcurrentEdit()
+          yield { kind: 'done', finishReason: 'stop' }
+        })(),
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    const existingLore = {
+      id: 'shared-lore-id',
+      key: 'shared',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'shared-lore',
+      content: 'original lore',
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    }
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithServerDispatch({
+        chats: [{ ...fixtureDatabase.characters[0].chats[0], localLore: [existingLore] }],
+        triggerscript: [
+          {
+            comment: '',
+            type: 'output',
+            conditions: [],
+            effect: [
+              {
+                type: 'triggerlua',
+                code: `
+                  function onOutput(id)
+                    upsertLocalLoreBook(id, 'shared-lore', 'script lore')
+                    upsertLocalLoreBook(id, 'independent-script-lore', 'independent script lore')
+                  end
+                `,
+              },
+            ],
+          },
+        ],
+      }),
+    )
+    applyConcurrentEdit = async () => {
+      const bootstrap = await harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/bootstrap',
+        headers: { 'risu-auth': assertion },
+      })
+      const edit = await harness.app.inject({
+        method: 'PUT',
+        url: '/api/v1/commands/chats/chat-1/lorebooks',
+        headers: { 'risu-auth': assertion },
+        payload: {
+          baseRevision: bootstrap.json().revision,
+          entries: [{ ...existingLore, content: 'user lore' }],
+        },
+      })
+      expect(edit.statusCode).toBe(200)
+    }
+
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    const events = parseEvents(response.body)
+    expect(events.find((event) => event.type === 'warning')?.data).toMatchObject({
+      context: {
+        kind: 'stale_generation_script_mutations',
+        droppedMutations: [{ scope: 'local_lore' }],
+      },
+    })
+    expect(doneFrame(events).postGeneration?.messagePatch?.localLoreMutation?.after).toEqual([
+      expect.objectContaining({ id: 'shared-lore-id', content: 'user lore' }),
+      expect.objectContaining({ comment: 'independent-script-lore', content: 'independent script lore' }),
+    ])
+    const character = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters/char-1',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(character.json().character.chats[0].localLore).toEqual([
+      expect.objectContaining({ id: 'shared-lore-id', content: 'user lore' }),
+      expect.objectContaining({ comment: 'independent-script-lore', content: 'independent script lore' }),
+    ])
+  })
 
   it.each([
     {

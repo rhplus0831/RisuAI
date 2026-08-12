@@ -3278,7 +3278,35 @@ function applyGenerationLocalLoreMutationFresh(args: {
   args.chat.localLore = after
 }
 
-function applyGenerationLocalLoreMutationDroppingConflict(args: {
+function localLoreEntryId(entry: unknown): string | undefined {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return undefined
+  const id = (entry as { id?: unknown }).id
+  return typeof id === 'string' && id.trim().length > 0 ? id : undefined
+}
+
+function uniqueLocalLoreEntriesById(entries: readonly unknown[]): Map<string, unknown> {
+  const counts = new Map<string, number>()
+  for (const entry of entries) {
+    const id = localLoreEntryId(entry)
+    if (id) counts.set(id, (counts.get(id) ?? 0) + 1)
+  }
+  const unique = new Map<string, unknown>()
+  for (const entry of entries) {
+    const id = localLoreEntryId(entry)
+    if (id && counts.get(id) === 1) unique.set(id, entry)
+  }
+  return unique
+}
+
+function unaddressableLocalLoreEntries(entries: readonly unknown[]): unknown[] {
+  const unique = uniqueLocalLoreEntriesById(entries)
+  return entries.filter((entry) => {
+    const id = localLoreEntryId(entry)
+    return !id || !unique.has(id)
+  })
+}
+
+function applyGenerationLocalLoreMutationDroppingConflicts(args: {
   chat: Record<string, unknown>
   localLoreMutation: AssembleMutationPayload['localLoreMutation']
 }): {
@@ -3287,13 +3315,62 @@ function applyGenerationLocalLoreMutationDroppingConflict(args: {
 } {
   if (!args.localLoreMutation) return { dropped: [] }
   const live = Array.isArray(args.chat.localLore) ? args.chat.localLore : []
-  if (!isDeepStrictEqual(live, args.localLoreMutation.before)) {
-    return { dropped: [{ scope: 'local_lore' }] }
+  const before = args.localLoreMutation.before
+  const scriptedAfter = args.localLoreMutation.after
+
+  // Preserve the established fast path, including generation-owned repair of
+  // degraded legacy ids, when no concurrent lore write occurred.
+  if (isDeepStrictEqual(live, before)) {
+    const after = structuredClone(scriptedAfter)
+    repairGenerationLocalLoreEntryIds(after)
+    args.chat.localLore = after
+    return { applied: { before, after }, dropped: [] }
   }
-  const after = structuredClone(args.localLoreMutation.after)
-  repairGenerationLocalLoreEntryIds(after)
-  args.chat.localLore = after
-  return { applied: { before: args.localLoreMutation.before, after }, dropped: [] }
+
+  const beforeById = uniqueLocalLoreEntriesById(before)
+  const afterById = uniqueLocalLoreEntriesById(scriptedAfter)
+  const liveById = uniqueLocalLoreEntriesById(live)
+  const scriptedIds = new Set([...beforeById.keys(), ...afterById.keys()])
+  const changedIds = [...scriptedIds].filter((id) => !isDeepStrictEqual(beforeById.get(id), afterById.get(id)))
+  let conflict = !isDeepStrictEqual(unaddressableLocalLoreEntries(before), unaddressableLocalLoreEntries(scriptedAfter))
+  let appliedEntry = false
+  const merged = structuredClone(live) as unknown[]
+
+  for (const id of changedIds) {
+    const previous = beforeById.get(id)
+    const desired = afterById.get(id)
+    const current = liveById.get(id)
+    if (previous !== undefined && !isDeepStrictEqual(current, previous)) {
+      // An identical desired value is already converged, not a conflict.
+      if (!isDeepStrictEqual(current, desired)) conflict = true
+      continue
+    }
+    if (previous === undefined && current !== undefined) {
+      if (!isDeepStrictEqual(current, desired)) conflict = true
+      continue
+    }
+
+    const index = merged.findIndex((entry) => localLoreEntryId(entry) === id)
+    if (desired === undefined) {
+      if (index >= 0) merged.splice(index, 1)
+    } else if (index >= 0) {
+      merged[index] = structuredClone(desired)
+    } else {
+      merged.push(structuredClone(desired))
+    }
+    appliedEntry = true
+  }
+
+  if (!appliedEntry) {
+    return { dropped: conflict ? [{ scope: 'local_lore' }] : [] }
+  }
+  repairGenerationLocalLoreEntryIds(merged)
+  const liveBefore = structuredClone(live) as typeof before
+  args.chat.localLore = merged
+  return {
+    applied: { before: liveBefore, after: merged as typeof scriptedAfter },
+    dropped: conflict ? [{ scope: 'local_lore' }] : [],
+  }
 }
 
 type GenerationFinalizationMutationExtra = Record<string, unknown> &
@@ -3406,7 +3483,7 @@ function persistServerGenerationResult(args: {
           character,
           characterFieldMutations: args.characterFieldMutations,
         })
-        const localLoreResult = applyGenerationLocalLoreMutationDroppingConflict({
+        const localLoreResult = applyGenerationLocalLoreMutationDroppingConflicts({
           chat,
           localLoreMutation: args.localLoreMutation,
         })

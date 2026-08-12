@@ -2741,7 +2741,7 @@ describe('Durable generation (Milestone 1)', () => {
     { scope: 'local_lore', key: undefined },
     { scope: 'chat_variable', key: '$mood' },
   ] as const)(
-    'C6: durable finalization drops a stale $scope mutation without losing the generated message',
+    'C6: durable finalization reconciles a concurrent $scope mutation without losing the generated message',
     async (testCase) => {
       const gated = makeGatedProvider({ before: 'durable conflict-safe', after: ' reply' })
       providerImpl = gated.dispatchProvider
@@ -2806,15 +2806,17 @@ describe('Durable generation (Milestone 1)', () => {
 
       const terminalEvents = await readSse(replay, (event) => event.type === 'done')
       expect(terminalEvents.find((event) => event.type === 'error')).toBeUndefined()
-      expect(terminalEvents.find((event) => event.type === 'warning')?.data).toMatchObject({
-        message: 'Some server script updates were skipped because their targets changed during generation.',
-        context: {
-          kind: 'stale_generation_script_mutations',
-          droppedMutations: [
-            testCase.key === undefined ? { scope: testCase.scope } : { scope: testCase.scope, key: testCase.key },
-          ],
-        },
-      })
+      if (testCase.scope === 'local_lore') {
+        expect(terminalEvents.find((event) => event.type === 'warning')).toBeUndefined()
+      } else {
+        expect(terminalEvents.find((event) => event.type === 'warning')?.data).toMatchObject({
+          message: 'Some server script updates were skipped because their targets changed during generation.',
+          context: {
+            kind: 'stale_generation_script_mutations',
+            droppedMutations: [{ scope: testCase.scope, key: testCase.key }],
+          },
+        })
+      }
       const done = terminalEvents.find((event) => event.type === 'done')
       const postGeneration = done?.data.postGeneration as
         | {
@@ -2828,7 +2830,12 @@ describe('Durable generation (Milestone 1)', () => {
       if (testCase.scope === 'character_field') {
         expect(postGeneration?.messagePatch?.characterFieldMutations).toBeUndefined()
       } else if (testCase.scope === 'local_lore') {
-        expect(postGeneration?.messagePatch?.localLoreMutation).toBeUndefined()
+        expect(postGeneration?.messagePatch?.localLoreMutation).toMatchObject({
+          after: [
+            expect.objectContaining({ id: 'user-lore-id', content: 'user lore' }),
+            expect.objectContaining({ comment: 'script-lore', content: 'script lore' }),
+          ],
+        })
       } else {
         expect(postGeneration?.messagePatch?.chatVarMutations ?? []).toEqual([])
       }
@@ -2843,6 +2850,7 @@ describe('Durable generation (Milestone 1)', () => {
       } else if (testCase.scope === 'local_lore') {
         expect(boot.database.characters[0].chats[0].localLore).toEqual([
           expect.objectContaining({ id: 'user-lore-id', content: 'user lore' }),
+          expect.objectContaining({ comment: 'script-lore', content: 'script lore' }),
         ])
       } else {
         expect(boot.database.characters[0].chats[0].scriptstate).toEqual({ $mood: 'user-value' })

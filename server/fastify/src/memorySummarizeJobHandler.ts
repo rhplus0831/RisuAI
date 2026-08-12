@@ -119,7 +119,7 @@ export function createSummarizeMemoryJobBatchHandler(opts: SummarizeMemoryJobHan
             settings,
             summarize,
             acquireRateLimit,
-            signal: context.signal,
+            signal: context.signalFor(job.id),
           }),
         } satisfies BatchJobResult
       } catch (error) {
@@ -130,13 +130,7 @@ export function createSummarizeMemoryJobBatchHandler(opts: SummarizeMemoryJobHan
       }
     })
 
-    let blockedByCommitFailure: string | null = null
     for (const item of results) {
-      if (blockedByCommitFailure !== null) {
-        context.retryOrFail(item.job.id, blockedByCommitFailure)
-        continue
-      }
-
       if ('error' in item) {
         context.retryOrFail(item.job.id, item.error || 'summarize job failed')
         continue
@@ -144,7 +138,6 @@ export function createSummarizeMemoryJobBatchHandler(opts: SummarizeMemoryJobHan
 
       try {
         if (getMemoryJob(opts.db, item.job.id)?.status !== 'running') {
-          blockedByCommitFailure = `summarize job ${item.job.id} is no longer running`
           continue
         }
         if (item.result.kind === 'summary') {
@@ -152,8 +145,8 @@ export function createSummarizeMemoryJobBatchHandler(opts: SummarizeMemoryJobHan
         }
         context.complete(item.job.id)
       } catch (error) {
-        blockedByCommitFailure = error instanceof Error && error.message ? error.message : String(error)
-        context.retryOrFail(item.job.id, blockedByCommitFailure)
+        const message = error instanceof Error && error.message ? error.message : String(error)
+        context.retryOrFail(item.job.id, message)
       }
     }
   }

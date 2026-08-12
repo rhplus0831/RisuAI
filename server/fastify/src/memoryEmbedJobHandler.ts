@@ -140,7 +140,9 @@ export function createEmbedMemoryJobBatchHandler(opts: EmbedMemoryJobHandlerOpti
           modelRequest: modelRequest.request,
           embedGroups,
           acquireRateLimit,
-          signal: context.signal,
+          // One provider request produces vectors for the whole contextual
+          // group. A single job cancellation must not abort its siblings; the
+          // commit fence below discards only the cancelled job's staged vector.
         })
         commitContextualBatchResults(opts, context, results)
       }
@@ -159,7 +161,7 @@ export function createEmbedMemoryJobBatchHandler(opts: EmbedMemoryJobHandlerOpti
             embed,
             embedGroups,
             acquireRateLimit,
-            signal: context.signal,
+            signal: context.signalFor(job.id),
           }),
         } satisfies BatchJobResult
       } catch (error) {
@@ -552,13 +554,7 @@ function commitIndependentBatchResults(
   context: Parameters<MemoryJobBatchHandler>[1],
   results: readonly BatchJobResult[],
 ): void {
-  let blockedByCommitFailure: string | null = null
   for (const item of results) {
-    if (blockedByCommitFailure !== null) {
-      context.retryOrFail(item.job.id, blockedByCommitFailure)
-      continue
-    }
-
     if ('error' in item) {
       context.retryOrFail(item.job.id, item.error || 'embed job failed')
       continue
@@ -566,7 +562,6 @@ function commitIndependentBatchResults(
 
     try {
       if (getMemoryJob(opts.db, item.job.id)?.status !== 'running') {
-        blockedByCommitFailure = `embed job ${item.job.id} is no longer running`
         continue
       }
       if (item.result.kind === 'embedding') {
@@ -574,8 +569,8 @@ function commitIndependentBatchResults(
       }
       context.complete(item.job.id)
     } catch (error) {
-      blockedByCommitFailure = error instanceof Error && error.message ? error.message : String(error)
-      context.retryOrFail(item.job.id, blockedByCommitFailure)
+      const message = error instanceof Error && error.message ? error.message : String(error)
+      context.retryOrFail(item.job.id, message)
     }
   }
 }
@@ -591,13 +586,10 @@ function commitContextualBatchResults(
     return
   }
 
-  const successful = results as Array<{ job: MemoryJob; result: EmbedExecutionResult }>
-  for (const item of successful) {
-    if (getMemoryJob(opts.db, item.job.id)?.status !== 'running') {
-      retryContextualBatch(context, successful, `embed job ${item.job.id} is no longer running`)
-      return
-    }
-  }
+  const successful = (results as Array<{ job: MemoryJob; result: EmbedExecutionResult }>).filter(
+    (item) => getMemoryJob(opts.db, item.job.id)?.status === 'running',
+  )
+  if (successful.length === 0) return
 
   try {
     persistEmbeddingGroup(

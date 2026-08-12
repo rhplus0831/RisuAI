@@ -14,6 +14,7 @@ import {
   ensureGenerationEffectLedger,
   listGenerationEffects,
   listPendingClientGenerationEffects,
+  renewGenerationEffectClaim,
   settleGenerationEffect,
 } from '../src/generationEffects.js'
 
@@ -111,6 +112,81 @@ describe('generation effect ledger', () => {
           }),
         ).toMatchObject({ status: 'not_claimed', reason: 'already_receipted', effect: { status: 'completed' } })
       }
+    } finally {
+      db.close()
+    }
+  })
+
+  it('reclaims an expired durable claim with one stable idempotency key and fences stale receipts', () => {
+    const { db, lineage } = openTestDatabase()
+    try {
+      ensureGenerationEffectLedger(db, {
+        databaseLineage: lineage,
+        operationId: 'operation-a',
+        operationProtocolVersion: 1,
+        generationId: 'generation-a',
+        characterId: 'character-a',
+        chatId: 'chat-a',
+        messageId: 'message-a',
+        createdAt: '2026-08-12T00:00:00.000Z',
+      })
+      const first = claimGenerationEffect(db, {
+        databaseLineage: lineage,
+        generationId: 'generation-a',
+        kind: 'plugin_output',
+        delivery: 'live_terminal',
+        claimedAt: '2026-08-12T00:00:00.000Z',
+        leaseMs: 1_000,
+      })
+      if (first.status !== 'claimed') throw new Error('expected first claim')
+
+      expect(listPendingClientGenerationEffects(db, lineage, '2026-08-12T00:00:00.999Z')).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ kind: 'plugin_output' })]),
+      )
+      expect(listPendingClientGenerationEffects(db, lineage, '2026-08-12T00:00:01.000Z')).toEqual(
+        expect.arrayContaining([expect.objectContaining({ kind: 'plugin_output', status: 'claimed' })]),
+      )
+
+      const reclaimed = claimGenerationEffect(db, {
+        databaseLineage: lineage,
+        generationId: 'generation-a',
+        kind: 'plugin_output',
+        delivery: 'late_recovery',
+        claimedAt: '2026-08-12T00:00:01.000Z',
+        leaseMs: 1_000,
+      })
+      if (reclaimed.status !== 'claimed') throw new Error('expected reclaimed claim')
+      expect(reclaimed).toMatchObject({ reclaimed: true })
+      expect(reclaimed.claimId).not.toBe(first.claimId)
+      expect(reclaimed.idempotencyKey).toBe(first.idempotencyKey)
+      expect(
+        settleGenerationEffect(db, {
+          databaseLineage: lineage,
+          generationId: 'generation-a',
+          kind: 'plugin_output',
+          claimId: first.claimId,
+          status: 'completed',
+        }),
+      ).toBeUndefined()
+      expect(
+        renewGenerationEffectClaim(db, {
+          databaseLineage: lineage,
+          generationId: 'generation-a',
+          kind: 'plugin_output',
+          claimId: reclaimed.claimId,
+          renewedAt: '2026-08-12T00:00:01.500Z',
+          leaseMs: 1_000,
+        }),
+      ).toMatchObject({ status: 'claimed', leaseExpiresAt: '2026-08-12T00:00:02.500Z' })
+      expect(
+        settleGenerationEffect(db, {
+          databaseLineage: lineage,
+          generationId: 'generation-a',
+          kind: 'plugin_output',
+          claimId: reclaimed.claimId,
+          status: 'completed',
+        }),
+      ).toMatchObject({ status: 'completed' })
     } finally {
       db.close()
     }

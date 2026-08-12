@@ -7,6 +7,8 @@ export type ChatOutputListenerArg = {
   characterIndex: number
   chatIndex: number
   messageIndex: number
+  /** Stable across durable generation-effect lease reclaim. */
+  effectIdempotencyKey?: string
 }
 
 export type ChatOutputListener = (arg: ChatOutputListenerArg) => void | Promise<void>
@@ -32,6 +34,7 @@ export async function runChatOutputListeners(arg: ChatOutputListenerArg): Promis
     characterIndex: arg.characterIndex,
     chatIndex: arg.chatIndex,
     messageIndex: arg.messageIndex,
+    ...(arg.effectIdempotencyKey ? { effectIdempotencyKey: arg.effectIdempotencyKey } : {}),
   }
   for (const listener of chatOutputListeners) {
     try {

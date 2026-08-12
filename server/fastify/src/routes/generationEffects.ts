@@ -6,6 +6,7 @@ import {
   claimGenerationEffect,
   isGenerationEffectKind,
   listGenerationEffects,
+  renewGenerationEffectClaim,
   settleGenerationEffect,
   type GenerationEffectDelivery,
 } from '../generationEffects.js'
@@ -70,6 +71,32 @@ export function registerGenerationEffectRoutes(app: FastifyInstance, db: Databas
           ...(messageId ? { messageId } : {}),
         })
         return reply.code(result.status === 'claimed' ? 201 : 200).send(result)
+      } catch (error) {
+        if (error instanceof ValidationError) return reply.code(400).send({ error: error.message })
+        throw error
+      }
+    },
+  )
+
+  app.put<{ Params: { generationId: string; effectKind: string } }>(
+    '/api/v1/generation-effects/:generationId/:effectKind/lease',
+    async (req, reply) => {
+      if (!(await requireAuth(authState, req, reply))) return
+      try {
+        const generationId = requiredIdentifier(req.params.generationId, 'generationId')
+        if (!isGenerationEffectKind(req.params.effectKind)) throw new ValidationError('invalid effectKind')
+        if (!isRecord(req.body)) throw new ValidationError('request body must be an object')
+        const databaseLineage = readRequestedDatabaseLineage(req)
+        assertDatabaseLineage(db, databaseLineage)
+        const claimId = requiredIdentifier(req.body.claimId, 'claimId')
+        const effect = renewGenerationEffectClaim(db, {
+          databaseLineage,
+          generationId,
+          kind: req.params.effectKind,
+          claimId,
+        })
+        if (!effect) return reply.code(409).send({ error: 'generation_effect_claim_stale' })
+        return { effect }
       } catch (error) {
         if (error instanceof ValidationError) return reply.code(400).send({ error: error.message })
         throw error

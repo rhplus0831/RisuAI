@@ -22,7 +22,7 @@ import {
   repairPersistedGlobalLorebookIdsInSqlite,
 } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 31
+export const CURRENT_SCHEMA_VERSION = 32
 
 export interface OpenDatabaseOptions {
   allowMissingDatabase?: boolean
@@ -367,6 +367,13 @@ export const MIGRATIONS: readonly MigrationStep[] = [
   {
     version: 31,
     name: 'generation-effect-ledger',
+    up: (db) => {
+      createGenerationEffectLedgerTable(db)
+    },
+  },
+  {
+    version: 32,
+    name: 'generation-effect-claim-leases',
     up: (db) => {
       createGenerationEffectLedgerTable(db)
     },

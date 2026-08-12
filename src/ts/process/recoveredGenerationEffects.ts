@@ -80,7 +80,7 @@ export async function reconcileRecoveredGenerationEffects(
 
   // Match the uninterrupted ordering: plugin automation observes the terminal
   // transcript before IGP appends its durable prompt output.
-  const plugin = await runLedgeredGenerationEffect(ref, 'plugin_output', 'late_recovery', async () => {
+  const plugin = await runLedgeredGenerationEffect(ref, 'plugin_output', 'late_recovery', async (effectContext) => {
     const resolution = resolveGeneration(ref)
     if (!resolution || chatOutputListeners.size === 0) return skippedGenerationEffect('not_configured')
     await runChatOutputListeners({
@@ -89,6 +89,7 @@ export async function reconcileRecoveredGenerationEffects(
       characterIndex: resolution.characterIndex,
       chatIndex: resolution.chatIndex,
       messageIndex: resolution.messageIndex,
+      effectIdempotencyKey: effectContext.idempotencyKey,
     })
     return completedGenerationEffect(undefined)
   })

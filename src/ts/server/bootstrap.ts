@@ -144,7 +144,10 @@ export interface PendingGenerationEffect {
   characterId: string
   chatId: string
   messageId: string
-  status: 'pending'
+  status: 'pending' | 'claimed'
+  claimId?: string
+  claimedAt?: string
+  leaseExpiresAt?: string
   createdAt: string
   updatedAt: string
 }
@@ -361,7 +364,7 @@ function parsePendingGenerationEffects(value: unknown): PendingGenerationEffect[
       typeof record.characterId !== 'string' ||
       typeof record.chatId !== 'string' ||
       typeof record.messageId !== 'string' ||
-      record.status !== 'pending' ||
+      (record.status !== 'pending' && record.status !== 'claimed') ||
       typeof record.createdAt !== 'string' ||
       typeof record.updatedAt !== 'string'
     ) {
@@ -379,7 +382,10 @@ function parsePendingGenerationEffects(value: unknown): PendingGenerationEffect[
       characterId: record.characterId,
       chatId: record.chatId,
       messageId: record.messageId,
-      status: 'pending',
+      status: record.status,
+      ...(typeof record.claimId === 'string' ? { claimId: record.claimId } : {}),
+      ...(typeof record.claimedAt === 'string' ? { claimedAt: record.claimedAt } : {}),
+      ...(typeof record.leaseExpiresAt === 'string' ? { leaseExpiresAt: record.leaseExpiresAt } : {}),
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
     })

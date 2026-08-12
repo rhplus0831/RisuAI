@@ -421,7 +421,7 @@ function applyServerMessagePatches(args: {
         chatId: target.chatId,
       })
       if (!resolution) return
-      applyServerMessagePatch(resolution.chat, patch)
+      applyServerMessagePatch(resolution.chat, patch, resolution.character)
     })
   }
   return resolveServerBackedCurrentChat({
@@ -932,7 +932,7 @@ export async function applyServerBackedTerminal(args: {
     if (!resolution) return
     const liveChat = resolution.chat
     if (postGen?.messagePatch) {
-      applyServerMessagePatch(liveChat, postGen.messagePatch)
+      applyServerMessagePatch(liveChat, postGen.messagePatch, resolution.character)
     }
     const assistant =
       findGeneratedAssistantMessage(liveChat, generationId) ??
@@ -1107,7 +1107,7 @@ export async function applyServerBackedTerminal(args: {
       ? finalChat.message.find((message) => message.chatId === args.targetMessageId && message.role === 'char')
       : undefined)
 
-  await runLedgeredGenerationEffect(effectLedger, 'plugin_output', 'live_terminal', async () => {
+  await runLedgeredGenerationEffect(effectLedger, 'plugin_output', 'live_terminal', async (effectContext) => {
     if (!finalResolution || chatOutputListeners.size === 0) return skippedGenerationEffect('not_configured')
     const characters = getDatabase().characters
     await runChatOutputListeners({
@@ -1116,6 +1116,7 @@ export async function applyServerBackedTerminal(args: {
       characterIndex: characters.indexOf(finalResolution.character),
       chatIndex: finalResolution.character.chats.indexOf(finalChat),
       messageIndex: finalAssistant ? finalChat.message.indexOf(finalAssistant) : -1,
+      effectIdempotencyKey: effectContext.idempotencyKey,
     })
     return completedGenerationEffect(undefined)
   })

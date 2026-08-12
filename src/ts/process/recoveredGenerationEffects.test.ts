@@ -69,7 +69,7 @@ vi.mock('./generationEffectLedger', async (importOriginal) => {
         return { executed: false, status: 'already_receipted' }
       }
       if (ledger.receipts.has(kind)) return { executed: false, status: 'already_receipted' }
-      const result = await effect()
+      const result = await effect({ idempotencyKey: `test:${kind}`, reclaimed: false })
       ledger.receipts.add(kind)
       return { executed: true, status: result.status, value: result.value }
     }),

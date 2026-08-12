@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { Chat, Message } from '../../../storage/database.svelte'
+import type { character, Chat, Message } from '../../../storage/database.svelte'
 import type { ServerChatMessagePatch } from '../serverChatEvents'
 import { applyServerMessagePatch } from '../serverMessagePatch'
 
@@ -228,6 +228,37 @@ describe('applyServerMessagePatch', () => {
     )
 
     expect(chat.lastMemory).toBe('message-1')
+  })
+
+  it('applies trusted terminal character and local-lore mutations only to fresh targets', () => {
+    const character = { name: 'Tess', desc: 'old description' } as character
+    const chat = {
+      message: [],
+      note: '',
+      name: '',
+      localLore: [{ id: 'lore-a', comment: 'note', content: 'old' }],
+    } as Chat
+    const terminalPatch = patch({
+      characterFieldMutations: [
+        { key: 'name', before: 'Tess', after: 'Output Tess' },
+        { key: 'desc', before: 'old description', after: 'new description' },
+      ],
+      localLoreMutation: {
+        before: [{ id: 'lore-a', comment: 'note', content: 'old' }],
+        after: [{ id: 'lore-a', comment: 'note', content: 'scripted' }],
+      },
+    })
+
+    applyServerMessagePatch(chat, terminalPatch, character)
+
+    expect(character).toMatchObject({ name: 'Output Tess', desc: 'new description' })
+    expect(chat.localLore).toEqual([{ id: 'lore-a', comment: 'note', content: 'scripted' }])
+
+    character.desc = 'newer user description'
+    chat.localLore = [{ id: 'user-lore', comment: 'user note', content: 'newer' }] as Chat['localLore']
+    applyServerMessagePatch(chat, terminalPatch, character)
+    expect(character.desc).toBe('newer user description')
+    expect(chat.localLore).toEqual([{ id: 'user-lore', comment: 'user note', content: 'newer' }])
   })
 
   it('applies compact replace-all suffix mutations from firstChangedIndex', () => {

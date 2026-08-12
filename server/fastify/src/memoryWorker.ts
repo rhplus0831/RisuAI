@@ -36,7 +36,10 @@ export type MemoryJobHandlers = {
 }
 
 export interface MemoryJobBatchHandlerContext {
+  /** The first job's signal, retained for compatibility with existing handlers. */
   signal: AbortSignal
+  /** Cancellation authority is scoped to the addressed claimed job. */
+  signalFor: (jobId: string) => AbortSignal
   claimNext: (filter: { chatId?: string; kind?: MemoryJobKind }) => MemoryJob | null
   complete: (jobId: string) => MemoryJob | null
   retryOrFail: (jobId: string, error: string) => MemoryJob | null
@@ -206,20 +209,22 @@ export class MemoryWorker {
   private async processOne(): Promise<boolean> {
     const job = this.claimNextJobFairly()
     if (!job) return false
-    const abortController = new AbortController()
-    const registeredJobIds = new Set<string>()
-    const registerRunningJob = (runningJob: MemoryJob): void => {
-      registeredJobIds.add(runningJob.id)
-      this.runningJobAbortControllers.set(runningJob.id, abortController)
+    const registeredJobs = new Map<string, AbortController>()
+    const registerRunningJob = (runningJob: MemoryJob): AbortController => {
+      const controller = new AbortController()
+      registeredJobs.set(runningJob.id, controller)
+      this.runningJobAbortControllers.set(runningJob.id, controller)
+      return controller
     }
-    registerRunningJob(job)
+    const jobAbortController = registerRunningJob(job)
     this.emitJob(job)
 
     try {
       const batchHandler = this.batchHandlers[job.kind]
       if (batchHandler) {
         await batchHandler(job, {
-          signal: abortController.signal,
+          signal: jobAbortController.signal,
+          signalFor: (jobId) => registeredJobs.get(jobId)?.signal ?? AbortSignal.abort('memory job is not running'),
           claimNext: (filter) => {
             const claimed =
               this.retry.now === undefined
@@ -245,7 +250,7 @@ export class MemoryWorker {
         return true
       }
 
-      await this.handlers[job.kind](job, { signal: abortController.signal })
+      await this.handlers[job.kind](job, { signal: jobAbortController.signal })
       const completed = completeMemoryJob(this.db, job.id)
       if (completed) {
         this.emitJob(completed)
@@ -259,8 +264,8 @@ export class MemoryWorker {
       }
       return true
     } finally {
-      for (const jobId of registeredJobIds) {
-        if (this.runningJobAbortControllers.get(jobId) === abortController) {
+      for (const [jobId, controller] of registeredJobs) {
+        if (this.runningJobAbortControllers.get(jobId) === controller) {
           this.runningJobAbortControllers.delete(jobId)
         }
       }

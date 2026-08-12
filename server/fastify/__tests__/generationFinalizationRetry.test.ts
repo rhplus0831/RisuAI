@@ -54,6 +54,22 @@ describe('generation finalization retry scheduling', () => {
     expect(generationFinalizationRetryBackoffMs(100)).toBe(GENERATION_FINALIZATION_RETRY_MAX_DELAY_MS)
   })
 
+  it('round-trips description mutations through the retained finalization envelope', () => {
+    enqueueGenerationFinalizationRetry(db, {
+      generationId: 'generation-desc',
+      chatId: 'chat-a',
+      mode: 'send',
+      message: { role: 'char', data: 'reply', chatId: 'generation-desc' },
+      chatVarMutations: [],
+      characterFieldMutations: [{ key: 'desc', before: 'old description', after: 'new description' }],
+      targetSnapshot: { mode: 'send', kind: 'tail', transcriptLength: 0 },
+    })
+
+    expect(listPendingGenerationFinalizationRetries(db)[0]?.attempt.characterFieldMutations).toEqual([
+      { key: 'desc', before: 'old description', after: 'new description' },
+    ])
+  })
+
   it('keeps a failed row out of replay selection until its calculated due time', () => {
     enqueueSend('generation-a')
     markGenerationFinalizationRetryFailure(db, 'generation-a', 'temporary failure', false)

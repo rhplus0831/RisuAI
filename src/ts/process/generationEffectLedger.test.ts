@@ -59,6 +59,10 @@ describe('client generation effect ledger', () => {
     })
 
     expect(effect).toHaveBeenCalledTimes(1)
+    expect(effect).toHaveBeenCalledWith({
+      idempotencyKey: 'generation-effect-v1:lineage-a:operation:operation-a:igp',
+      reclaimed: false,
+    })
     expect(receipted).toBe(true)
     expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({

@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { getDatabaseLineage } from './databaseLineage.js'
 
 export const GENERATION_EFFECT_LEDGER_VERSION = 1
+export const GENERATION_EFFECT_CLAIM_LEASE_MS = 5 * 60_000
 
 export const GENERATION_EFFECT_KINDS = [
   'igp',
@@ -57,6 +58,7 @@ interface GenerationEffectRow {
   last_error: string | null
   created_at: string
   claimed_at: string | null
+  lease_expires_at: string | null
   settled_at: string | null
   updated_at: string
 }
@@ -80,6 +82,7 @@ export interface GenerationEffectProjection {
   lastError?: string
   createdAt: string
   claimedAt?: string
+  leaseExpiresAt?: string
   settledAt?: string
   updatedAt: string
 }
@@ -113,11 +116,28 @@ export interface ClaimGenerationEffectInput {
   delivery: GenerationEffectDelivery
   messageId?: string
   claimedAt?: string
+  leaseMs?: number
 }
 
 export type ClaimGenerationEffectResult =
-  | { status: 'claimed'; effect: GenerationEffectProjection; claimId: string }
+  | {
+      status: 'claimed'
+      effect: GenerationEffectProjection
+      claimId: string
+      leaseExpiresAt: string
+      idempotencyKey: string
+      reclaimed?: true
+    }
   | { status: 'not_claimed'; effect?: GenerationEffectProjection; reason: string }
+
+export interface RenewGenerationEffectClaimInput {
+  databaseLineage: string
+  generationId: string
+  kind: GenerationEffectKind
+  claimId: string
+  renewedAt?: string
+  leaseMs?: number
+}
 
 export interface SettleGenerationEffectInput {
   databaseLineage: string
@@ -161,6 +181,7 @@ export function createGenerationEffectLedgerTable(db: DatabaseSync): void {
       last_error TEXT,
       created_at TEXT NOT NULL,
       claimed_at TEXT,
+      lease_expires_at TEXT,
       settled_at TEXT,
       updated_at TEXT NOT NULL,
       PRIMARY KEY (database_lineage, key_type, key_id, effect_kind),
@@ -177,6 +198,15 @@ export function createGenerationEffectLedgerTable(db: DatabaseSync): void {
 
     CREATE INDEX IF NOT EXISTS generation_effects_pending
       ON generation_effects (database_lineage, status, updated_at);
+  `)
+  ensureGenerationEffectColumn(
+    db,
+    'lease_expires_at',
+    'ALTER TABLE generation_effects ADD COLUMN lease_expires_at TEXT',
+  )
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS generation_effects_recoverable_claims
+      ON generation_effects (database_lineage, status, lease_expires_at, effect_kind);
   `)
 }
 
@@ -268,25 +298,36 @@ export function listGenerationEffects(
 export function listPendingClientGenerationEffects(
   db: DatabaseSync,
   databaseLineage = getDatabaseLineage(db),
+  now: string | Date = new Date(),
 ): GenerationEffectProjection[] {
   const clientKinds = [...CLIENT_EFFECT_KINDS]
   const placeholders = clientKinds.map(() => '?').join(', ')
   return selectGenerationEffectRows(
     db,
-    `WHERE database_lineage = ? AND status = 'pending' AND effect_kind IN (${placeholders})
+    `WHERE database_lineage = ?
+       AND (status = 'pending' OR (
+         status = 'claimed' AND effect_class = 'durable'
+         AND (lease_expires_at IS NULL OR lease_expires_at <= ?)
+       ))
+       AND effect_kind IN (${placeholders})
      ORDER BY created_at, generation_id, effect_kind`,
-    [databaseLineage, ...clientKinds],
+    [databaseLineage, normalizeTimestamp(now), ...clientKinds],
   ).map(projectionFromRow)
 }
 
 export function listPendingServerGenerationEffects(
   db: DatabaseSync,
   databaseLineage = getDatabaseLineage(db),
+  now: string | Date = new Date(),
 ): GenerationEffectProjection[] {
   return selectGenerationEffectRows(
     db,
-    "WHERE database_lineage = ? AND status = 'pending' AND effect_kind = 'generated_translation' ORDER BY created_at, generation_id",
-    [databaseLineage],
+    `WHERE database_lineage = ? AND effect_kind = 'generated_translation'
+       AND (status = 'pending' OR (
+         status = 'claimed' AND (lease_expires_at IS NULL OR lease_expires_at <= ?)
+       ))
+     ORDER BY created_at, generation_id`,
+    [databaseLineage, normalizeTimestamp(now)],
   ).map(projectionFromRow)
 }
 
@@ -316,13 +357,18 @@ export function claimGenerationEffectInTransaction(
   if (input.delivery === 'server' && input.kind !== 'generated_translation') {
     return { status: 'not_claimed', effect: projectionFromRow(current), reason: 'client_owned' }
   }
-  if (current.status !== 'pending') {
+  const now = normalizeTimestamp(input.claimedAt)
+  const leaseExpiresAt = claimLeaseExpiresAt(now, input.leaseMs)
+  const reclaiming =
+    current.status === 'claimed' &&
+    current.effect_class === 'durable' &&
+    (current.lease_expires_at === null || current.lease_expires_at <= now)
+  if (current.status !== 'pending' && !reclaiming) {
     return { status: 'not_claimed', effect: projectionFromRow(current), reason: 'already_receipted' }
   }
 
-  const now = normalizeTimestamp(input.claimedAt)
   const claimId = randomUUID()
-  if (input.delivery === 'late_recovery' && current.effect_class === 'ephemeral') {
+  if (!reclaiming && input.delivery === 'late_recovery' && current.effect_class === 'ephemeral') {
     db.prepare(
       `UPDATE generation_effects
        SET status = 'skipped', claim_id = ?, delivery = ?, reason = 'late_recovery',
@@ -336,10 +382,26 @@ export function claimGenerationEffectInTransaction(
   const result = db
     .prepare(
       `UPDATE generation_effects
-       SET status = 'claimed', claim_id = ?, delivery = ?, claimed_at = ?, updated_at = ?
-       WHERE database_lineage = ? AND generation_id = ? AND effect_kind = ? AND status = 'pending'`,
+       SET status = 'claimed', claim_id = ?, delivery = ?, claimed_at = ?,
+           lease_expires_at = ?, settled_at = NULL, updated_at = ?
+       WHERE database_lineage = ? AND generation_id = ? AND effect_kind = ?
+         AND (${
+           reclaiming
+             ? "status = 'claimed' AND claim_id = ? AND (lease_expires_at IS NULL OR lease_expires_at <= ?)"
+             : "status = 'pending'"
+         })`,
     )
-    .run(claimId, input.delivery, now, now, input.databaseLineage, input.generationId, input.kind)
+    .run(
+      claimId,
+      input.delivery,
+      now,
+      leaseExpiresAt,
+      now,
+      input.databaseLineage,
+      input.generationId,
+      input.kind,
+      ...(reclaiming ? [current.claim_id, now] : []),
+    )
   if (result.changes !== 1) {
     const raced = requireGenerationEffectRow(db, input.databaseLineage, input.generationId, input.kind)
     return { status: 'not_claimed', effect: projectionFromRow(raced), reason: 'already_receipted' }
@@ -347,8 +409,29 @@ export function claimGenerationEffectInTransaction(
   return {
     status: 'claimed',
     claimId,
+    leaseExpiresAt,
+    idempotencyKey: generationEffectIdempotencyKey(current),
+    ...(reclaiming ? { reclaimed: true as const } : {}),
     effect: projectionFromRow(requireGenerationEffectRow(db, input.databaseLineage, input.generationId, input.kind)),
   }
+}
+
+export function renewGenerationEffectClaim(
+  db: DatabaseSync,
+  input: RenewGenerationEffectClaimInput,
+): GenerationEffectProjection | undefined {
+  const now = normalizeTimestamp(input.renewedAt)
+  const leaseExpiresAt = claimLeaseExpiresAt(now, input.leaseMs)
+  const result = db
+    .prepare(
+      `UPDATE generation_effects
+       SET lease_expires_at = ?, updated_at = ?
+       WHERE database_lineage = ? AND generation_id = ? AND effect_kind = ?
+         AND status = 'claimed' AND claim_id = ?`,
+    )
+    .run(leaseExpiresAt, now, input.databaseLineage, input.generationId, input.kind, input.claimId)
+  if (result.changes !== 1) return undefined
+  return projectionFromRow(requireGenerationEffectRow(db, input.databaseLineage, input.generationId, input.kind))
 }
 
 export function settleGenerationEffect(
@@ -482,14 +565,33 @@ function projectionFromRow(row: GenerationEffectRow): GenerationEffectProjection
     ...(row.last_error !== null ? { lastError: row.last_error } : {}),
     createdAt: row.created_at,
     ...(row.claimed_at !== null ? { claimedAt: row.claimed_at } : {}),
+    ...(row.lease_expires_at !== null ? { leaseExpiresAt: row.lease_expires_at } : {}),
     ...(row.settled_at !== null ? { settledAt: row.settled_at } : {}),
     updatedAt: row.updated_at,
   }
 }
 
-function normalizeTimestamp(value?: string): string {
-  if (value !== undefined && !Number.isNaN(Date.parse(value))) return new Date(value).toISOString()
+function normalizeTimestamp(value?: string | Date): string {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString()
+  if (typeof value === 'string' && !Number.isNaN(Date.parse(value))) return new Date(value).toISOString()
   return new Date().toISOString()
+}
+
+function claimLeaseExpiresAt(claimedAt: string, leaseMs = GENERATION_EFFECT_CLAIM_LEASE_MS): string {
+  const normalizedLeaseMs =
+    Number.isFinite(leaseMs) && leaseMs > 0 ? Math.floor(leaseMs) : GENERATION_EFFECT_CLAIM_LEASE_MS
+  return new Date(Date.parse(claimedAt) + normalizedLeaseMs).toISOString()
+}
+
+function generationEffectIdempotencyKey(row: GenerationEffectRow): string {
+  return ['generation-effect-v1', row.database_lineage, row.key_type, row.key_id, row.effect_kind]
+    .map(encodeURIComponent)
+    .join(':')
+}
+
+function ensureGenerationEffectColumn(db: DatabaseSync, column: string, alterSql: string): void {
+  const columns = db.prepare('PRAGMA table_info(generation_effects)').all() as Array<{ name: string }>
+  if (!columns.some((candidate) => candidate.name === column)) db.exec(alterSql)
 }
 
 function withImmediateTransaction<T>(db: DatabaseSync, fn: () => T): T {

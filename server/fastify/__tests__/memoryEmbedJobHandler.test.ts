@@ -635,7 +635,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('does not commit a staged embedding after a running batch job is cancelled', async () => {
+  it('commits a staged sibling embedding after another running batch job is cancelled', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, { id: 'job-1', chunkId: 'chunk-1', text: 'chunk one' })
@@ -657,12 +657,9 @@ describe('embed memory job handler', () => {
 
       expect(await worker.tick()).toBe(true)
 
-      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' })).toHaveLength(0)
+      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' })).toEqual([expect.objectContaining({ chunkId: 'chunk-2' })])
       expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'cancelled' })
-      expect(getMemoryJob(db, 'job-2')).toMatchObject({
-        status: 'pending',
-        error: 'embed job job-1 is no longer running',
-      })
+      expect(getMemoryJob(db, 'job-2')).toMatchObject({ status: 'completed', error: null })
     } finally {
       db.close()
     }
@@ -1298,7 +1295,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('does not commit staged Voyage contextual vectors after a running job is cancelled', async () => {
+  it('commits staged Voyage contextual sibling vectors after a running job is cancelled', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
@@ -1333,12 +1330,11 @@ describe('embed memory job handler', () => {
 
       expect(await worker.tick()).toBe(true)
 
-      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' })).toHaveLength(0)
+      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' })).toEqual([
+        expect.objectContaining({ chunkId: 'chunk-2', groupIndex: 1 }),
+      ])
       expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'cancelled' })
-      expect(getMemoryJob(db, 'job-2')).toMatchObject({
-        status: 'pending',
-        error: 'embed job job-1 is no longer running',
-      })
+      expect(getMemoryJob(db, 'job-2')).toMatchObject({ status: 'completed', error: null })
     } finally {
       db.close()
     }

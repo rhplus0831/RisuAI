@@ -127,7 +127,7 @@ export interface ServerChatMetadataMutation {
 }
 
 export interface ServerChatCharacterFieldMutation {
-  key: 'name' | 'firstMessage' | 'backgroundHTML'
+  key: 'name' | 'firstMessage' | 'backgroundHTML' | 'desc'
   before: string | null
   after: string
 }

@@ -380,7 +380,7 @@ export interface AssembleChatMetadataMutation {
 }
 
 export type AssembleCharacterFieldMutation = {
-  key: 'name' | 'firstMessage' | 'backgroundHTML'
+  key: 'name' | 'firstMessage' | 'backgroundHTML' | 'desc'
   before: string | null
   after: string
 }
@@ -854,6 +854,7 @@ function characterFieldSnapshot(value: character): Record<AssembleCharacterField
     name: characterFieldValue(value.name),
     firstMessage: characterFieldValue(value.firstMessage),
     backgroundHTML: characterFieldValue(value.backgroundHTML),
+    desc: characterFieldValue(value.desc),
   }
 }
 
