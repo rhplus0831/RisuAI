@@ -1144,6 +1144,21 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'generation-effect-lease',
+    methods: ['PUT'],
+    path: '/api/v1/generation-effects/:generationId/:effectKind/lease',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Lease renewal extends the exact browser generation effect delivery authority.',
+    },
+    activeWriter: {
+      decision: 'active-writer',
+      reason: 'Only the active writer may renew its generation effect claim lease.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'generation-effect-receipt',
     methods: ['PUT'],
     path: '/api/v1/generation-effects/:generationId/:effectKind/receipt',

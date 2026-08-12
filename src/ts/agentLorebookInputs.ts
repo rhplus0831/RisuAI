@@ -1,6 +1,6 @@
 import type { AgentLorebookInput } from './agentPresetRecords'
 import type { Chat, character, loreBook } from './storage/database.svelte'
-import { safeStructuredClone } from './polyfill'
+import { safeStructuredClone } from './safeStructuredClone'
 
 export const AGENT_ONLY_LOREBOOK_EXTENSION_KEY = 'risu_agent_only'
 

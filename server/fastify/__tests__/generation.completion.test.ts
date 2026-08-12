@@ -739,11 +739,11 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
 
     const { assertion } = await setupAuthedClient(harness.app)
     const modes = [
-      ['model', 'gpt4o'],
-      ['submodel', 'gpt4om'],
-      ['memory', 'gpt41'],
-      ['emotion', 'gpt41-mini'],
-      ['otherAx', 'gpt41-nano'],
+      ['model', 'gpt-4o'],
+      ['submodel', 'gpt-4o-mini'],
+      ['memory', 'gpt-4.1'],
+      ['emotion', 'gpt-4.1-mini'],
+      ['otherAx', 'gpt-4.1-nano'],
       ['translate', 'gpt-5-mini'],
       ['scriptMain', 'gpt-5'],
       ['scriptAux', 'gpt-5-nano'],
@@ -826,7 +826,7 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
         `event: done\ndata: ${JSON.stringify({ finishReason: 'stop' })}\n\n`,
     )
     expect(sent).toMatchObject({
-      model: 'gpt4om',
+      model: 'gpt-4o-mini',
       stream: true,
       max_tokens: 11,
       temperature: 0.25,

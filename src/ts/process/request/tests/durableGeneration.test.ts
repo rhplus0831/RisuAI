@@ -191,7 +191,11 @@ describe('resolveDurableGeneration', () => {
 
   describe('non-durable — inherited from the assembly gate (never a hard fail)', () => {
     it('is non-durable for a non-text send and carries the assembly reason', () => {
-      const input = makeInput({ currentChat: makeChat([{ role: 'char', data: 'bot turn' }]) })
+      // A text char tail is a valid durable empty send since the NEW-H1 parity
+      // restoration; only a genuinely non-text tail inherits the assembly gate.
+      const input = makeInput({
+        currentChat: makeChat([{ role: 'char', data: 42 as never }]),
+      })
       expectNonDurable(resolveDurableGeneration(input))
     })
 
