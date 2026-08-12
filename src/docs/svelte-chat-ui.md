@@ -90,7 +90,10 @@ generation frame can carry the final automatic translation result, and
 the existing job UI for running/failure states. `Chats.svelte` grants one-shot
 client eligibility only to other appended rows under the chat's automatic
 translation policy. `Chat.svelte` renders bilingual display through
-`x-risu-bilingual-translation` blocks.
+`x-risu-bilingual-translation` blocks. When automatic translation is enabled,
+an existing persisted translation is displayed for either role; the bot-only
+setting prevents new user-message translation requests without hiding stored
+user-message translation data.
 
 `src/lib/ChatScreens/ChatBody.svelte` retains the legacy client-only HTML
 translation path for synthetic greetings and non-persisted preview rows that

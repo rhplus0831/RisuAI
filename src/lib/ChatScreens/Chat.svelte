@@ -857,7 +857,11 @@
     return character.chats?.[chatPage] ?? null
   }
 
-  function automaticTranslationEnabled(): boolean {
+  function automaticTranslationDisplayEnabled(): boolean {
+    return currentLiveChat()?.autoTranslate === true
+  }
+
+  function automaticTranslationRequestEnabled(): boolean {
     const chat = currentLiveChat()
     return chat?.autoTranslate === true && !(chat.autoTranslateBotOnly === true && role === 'user')
   }
@@ -1602,14 +1606,14 @@
   })
 
   $effect(() => {
-    if (automaticTranslationEnabled() && activeRawTranslation() && !suppressAutomaticTranslationDisplay) {
+    if (automaticTranslationDisplayEnabled() && activeRawTranslation() && !suppressAutomaticTranslationDisplay) {
       translated = true
     }
   })
 
   $effect(() => {
     if (!autoTranslateOnReady || automaticTranslationEligibilityConsumed) return
-    if (!automaticTranslationEnabled()) {
+    if (!automaticTranslationRequestEnabled()) {
       consumeAutomaticTranslationEligibility()
       return
     }

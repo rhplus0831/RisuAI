@@ -1572,7 +1572,7 @@ describe('server raw translation controls', () => {
     expect(target.textContent).not.toContain('stored automatic translation')
   })
 
-  it('skips automatic display for user rows in bot-only mode while retaining the manual toggle', async () => {
+  it('auto-displays an existing user translation in bot-only mode without requesting a new translation', async () => {
     customHtmlMocks.canUseServerCommands.mockReturnValue(true)
     seedDatabase(1, null as unknown as string)
     const chat = testDatabaseState.db.characters[0].chats[0]
@@ -1590,14 +1590,17 @@ describe('server raw translation controls', () => {
       settingsHash: 'b'.repeat(64),
       updatedAt: 123,
     }
-    mountCustomHtmlRows(1, 'user')
+    mountCustomHtmlRows(1, 'user', { autoTranslateOnReady: true })
     await settle()
 
-    expect(target.textContent).toContain('visible message 0')
-    expect(target.textContent).not.toContain('manual user translation')
+    expect(target.textContent).toContain('manual user translation')
+    expect(target.textContent).not.toContain('visible message 0')
+    expect(customHtmlMocks.translateMessageCommand).not.toHaveBeenCalled()
+
     target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
     await settle()
-    expect(target.textContent).toContain('manual user translation')
+    expect(target.textContent).toContain('visible message 0')
+    expect(target.textContent).not.toContain('manual user translation')
   })
 
   it('consumes one-shot append eligibility only after streaming finishes and attempts translation once', async () => {
