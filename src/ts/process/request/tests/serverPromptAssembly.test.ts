@@ -295,9 +295,9 @@ describe('resolveServerPromptAssembly', () => {
   })
 
   describe('unsupported — hard-fail, never a silent local fallback', () => {
-    it('rejects a send whose last message is not a user message (the old silent unavailable)', () => {
+    it('routes an empty send from an assistant tail to the server', () => {
       const input = makeInput({ currentChat: makeChat([{ role: 'char', data: 'bot turn' }]) })
-      expectUnsupported(resolveServerPromptAssembly(input))
+      expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
     })
 
     it('rejects a send with no messages', () => {

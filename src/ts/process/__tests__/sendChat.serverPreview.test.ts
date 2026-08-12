@@ -1174,8 +1174,43 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     expect(testDatabaseState.db.characters[0].chats[0].message.at(-1)?.data).toBe('metadata-only reply')
   })
 
-  it('allows one server-requested resend for a root send', async () => {
+  it('dispatches an empty send from an assistant tail when say-nothing is disabled', async () => {
     await seedEcho()
+    testDatabaseState.db.useSayNothing = false
+    const chat = testDatabaseState.db.characters[0].chats[0]
+    chat.message.push({ role: 'char', data: 'first reply', chatId: 'msg-assistant-1' })
+    setServerChatDispatchResult(
+      'second reply',
+      {
+        model: 'echo_model',
+        generationId: 'uuid-empty-send',
+        inputTokens: 7,
+        outputTokens: 50,
+        maxContext: 4000,
+      },
+      'uuid-empty-send',
+    )
+    vi.stubGlobal('fetch', serverChatWithContextFetch)
+
+    await expect(chatModule.sendChat(-1)).resolves.toBe(true)
+
+    expect(getServerChatCalls()).toHaveLength(1)
+    expect(getServerChatCalls()[0]).toMatchObject({
+      mode: 'send',
+      userMessage: '',
+      emptySend: true,
+      syntheticSayNothing: false,
+    })
+    expect(chat.message.map(({ role, data }) => ({ role, data }))).toEqual([
+      { role: 'user', data: 'ping' },
+      { role: 'char', data: 'first reply' },
+      { role: 'char', data: 'second reply' },
+    ])
+  })
+
+  it('plain-resends a sendAIprompt request without a say-nothing row', async () => {
+    await seedEcho()
+    testDatabaseState.db.useSayNothing = true
     setServerChatPrompt(
       [{ role: 'user', content: 'server-only prompt' }],
       { promptText: 'SERVER PROMPT', inputTokens: 11, outputTokens: 22 },
@@ -1190,14 +1225,46 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       stageTiming: { stage1: 1, stage2: 0, stage3: 0, stage4: 0 },
     })
     setServerChatPostGenerationQueue([{ resendChat: true }, {}])
-    vi.stubGlobal('fetch', serverChatWithContextFetch)
+    let chatPosts = 0
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      if (url.endsWith('/api/v1/generate/chat') && (init?.method ?? 'GET') === 'POST') {
+        chatPosts += 1
+        if (chatPosts === 2) {
+          setServerChatDispatchResult(
+            'resend reply',
+            {
+              model: 'echo_model',
+              generationId: 'uuid-1',
+              inputTokens: 7,
+              outputTokens: 50,
+              maxContext: 4000,
+              stageTiming: { stage1: 1, stage2: 0, stage3: 0, stage4: 0 },
+            },
+            'uuid-1',
+          )
+        }
+      }
+      return serverChatWithContextFetch(input, init)
+    })
 
     const ok = await chatModule.sendChat(-1)
 
     expect(ok).toBe(true)
     expect(getServerChatCalls()).toHaveLength(2)
+    expect(getServerChatCalls()[1]).toMatchObject({
+      mode: 'send',
+      userMessage: '',
+      emptySend: true,
+      syntheticSayNothing: false,
+    })
     expect(getServerCompletionCalls()).toEqual([])
     expect(messageCompletionSoundState.play).toHaveBeenCalledOnce()
+    expect(testDatabaseState.db.characters[0].chats[0].message.map(({ role, data }) => ({ role, data }))).toEqual([
+      { role: 'user', data: 'ping' },
+      { role: 'char', data: 'fixture echo reply' },
+      { role: 'char', data: 'resend reply' },
+    ])
   })
 
   it('caps repeated server-requested resend cycles for a root send', async () => {

@@ -4267,6 +4267,44 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
     expect(normal.mutations?.messageMutations.map((mutation) => mutation.source)).toEqual(['user_message', 'editinput'])
   })
 
+  it('dispatches an empty send from an assistant tail without input hooks or a user row', async () => {
+    const database = m1Db([msg('user', 'first turn', 'msg-user-1'), msg('char', 'first reply', 'msg-char-1')], {
+      char: {
+        triggerscript: [
+          {
+            comment: '',
+            type: 'input',
+            conditions: [],
+            effect: [{ type: 'setvar', operator: '=', var: 'inputSeen', value: '1' }],
+          },
+        ] as never,
+        customscript: [{ in: '.+', out: 'EDITED', type: 'editinput', flag: '', ableFlag: false }] as never,
+      },
+    })
+
+    const assembled = await assemblePrompt(baseInput({ userMessage: undefined, emptySend: true }), depsFor(database))
+
+    expect(assembled.stopSending).toBe(false)
+    expect(assembled.mutations?.chatVarMutations).toEqual([])
+    expect(assembled.mutations?.messageMutations).toEqual([])
+    expect(assembled.state?.currentChat.message.map(({ role, data }) => ({ role, data }))).toEqual([
+      { role: 'user', data: 'first turn' },
+      { role: 'char', data: 'first reply' },
+    ])
+
+    const post = await runServerPostGeneration(assembled.state!, {
+      completionText: 'second reply',
+      generationId: 'generation-empty-send',
+    })
+
+    expect(post.finalText).toBe('second reply')
+    expect(assembled.state?.currentChat.message.map(({ role, data }) => ({ role, data }))).toEqual([
+      { role: 'user', data: 'first turn' },
+      { role: 'char', data: 'first reply' },
+      { role: 'char', data: 'second reply' },
+    ])
+  })
+
   it('captures editinput rewrites once after the appended user checkpoint', async () => {
     resetAssemblyMessageCaptureInstrumentation()
 

@@ -206,6 +206,8 @@ export interface AssembleInput {
   mode: 'send' | 'continue' | 'preview' | 'preview_prompt' | 'regenerate'
   regenerateMessageId?: string
   userMessage?: string
+  /** Original-compatible send from an assistant tail without appending a user row. */
+  emptySend?: boolean
   /** Client-created empty-send sentinel; skips only submit-time input hooks. */
   syntheticSayNothing?: boolean
   resetMessages?: boolean
@@ -2441,8 +2443,8 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
     // chat-screen submit handler while the server receives the raw user text.
     const bypassInputHooks =
       state.input.mode === 'send' &&
-      state.input.syntheticSayNothing === true &&
-      state.input.userMessage === '*says nothing*'
+      (state.input.emptySend === true ||
+        (state.input.syntheticSayNothing === true && state.input.userMessage === '*says nothing*'))
     if (!bypassInputHooks) await runInputTrigger(state)
     appendUserMessageRow(state)
     if (!bypassInputHooks) await applyEditInput(state)

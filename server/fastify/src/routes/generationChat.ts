@@ -163,6 +163,7 @@ export interface ChatRequestBody {
   mode?: unknown
   regenerateMessageId?: unknown
   userMessage?: unknown
+  emptySend?: unknown
   syntheticSayNothing?: unknown
   resetMessages?: unknown
   expectedRevision?: unknown
@@ -651,8 +652,14 @@ function validate(body: ChatRequestBody): { ok: true } | { ok: false; error: str
       error: 'mode must be one of: send, continue, preview, preview_prompt, regenerate',
     }
   }
-  if (body.mode === 'send' && !isNonEmptyString(body.userMessage)) {
-    return { ok: false, error: 'userMessage is required when mode is "send"' }
+  if (body.emptySend !== undefined && typeof body.emptySend !== 'boolean') {
+    return { ok: false, error: 'emptySend must be a boolean when provided' }
+  }
+  if (body.emptySend === true && (body.mode !== 'send' || body.userMessage !== undefined)) {
+    return { ok: false, error: 'emptySend requires mode "send" without userMessage' }
+  }
+  if (body.mode === 'send' && !isNonEmptyString(body.userMessage) && body.emptySend !== true) {
+    return { ok: false, error: 'userMessage or emptySend is required when mode is "send"' }
   }
   if (body.syntheticSayNothing !== undefined && typeof body.syntheticSayNothing !== 'boolean') {
     return { ok: false, error: 'syntheticSayNothing must be a boolean when provided' }
@@ -743,6 +750,7 @@ export function toChatGenerationAssembleInput(body: ChatRequestBody): AssembleIn
     loadoutId: typeof body.loadoutId === 'string' ? body.loadoutId : undefined,
     regenerateMessageId: typeof body.regenerateMessageId === 'string' ? body.regenerateMessageId : undefined,
     userMessage: typeof body.userMessage === 'string' ? body.userMessage : undefined,
+    emptySend: body.emptySend === true ? true : undefined,
     syntheticSayNothing: body.syntheticSayNothing === true ? true : undefined,
     resetMessages: typeof body.resetMessages === 'boolean' ? body.resetMessages : undefined,
     expectedRevision: typeof body.expectedRevision === 'number' ? body.expectedRevision : undefined,
@@ -4269,7 +4277,7 @@ function persistRawCancelledResult(args: {
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
   text: string
-}): { outcome: GenerationFinalizationOutcome; messageId: string | undefined } {
+}): { outcome: GenerationFinalizationOutcome; messageId: string | undefined; finalText: string } {
   const operationLineage = generationOperationLineageForJob(args.job)
   if (operationLineage) {
     try {
@@ -4308,7 +4316,11 @@ function persistRawCancelledResult(args: {
       ...(targetSnapshot ? { targetSnapshot } : {}),
     },
   })
-  return { outcome, messageId: raw.targetMessageId ?? raw.message.chatId }
+  return {
+    outcome,
+    messageId: raw.targetMessageId ?? raw.message.chatId,
+    finalText: raw.message.data,
+  }
 }
 
 function settleGenerationOperationWithoutResultOnce(args: {
@@ -4713,6 +4725,7 @@ async function runGenerationJob(args: {
               let cancelFinalization: GenerationFinalizationOutcome | undefined
               let cancelTargetMessageId: string | undefined
               let cancelPersistedMessageId: string | undefined
+              let cancelPersistedFinalText: string | undefined
               if (transportResult.result.length > 0 && successfulResult.state) {
                 cancelTargetMessageId =
                   input.mode === 'regenerate'
@@ -4734,6 +4747,7 @@ async function runGenerationJob(args: {
                 })
                 cancelFinalization = cancelPersisted.outcome
                 cancelPersistedMessageId = cancelPersisted.messageId
+                cancelPersistedFinalText = cancelPersisted.finalText
               }
               if (
                 cancelFinalization?.kind === 'unconfirmed' ||
@@ -4840,11 +4854,10 @@ async function runGenerationJob(args: {
                   generationInfo,
                   ...(persistedRevision !== undefined
                     ? {
-                        postGeneration: buildPostGenerationFrameBody(
-                          persistedRevision,
-                          undefined,
-                          cancelPersistedMessageId,
-                        ),
+                        postGeneration: {
+                          ...buildPostGenerationFrameBody(persistedRevision, undefined, cancelPersistedMessageId),
+                          ...(cancelPersistedFinalText !== undefined ? { finalText: cancelPersistedFinalText } : {}),
+                        },
                       }
                     : {}),
                   ...(cleanupPending ? { persistenceDisposition: 'committed_cleanup_pending' as const } : {}),

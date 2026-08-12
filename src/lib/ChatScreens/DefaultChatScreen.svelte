@@ -1618,7 +1618,7 @@
       const translatedComposerBeforeSend = composerOperation.messageInputTranslate
       const filesBeforeSend = [...composerOperation.fileInput]
 
-      if (!continueResponse && composerBeforeSend.startsWith('/')) {
+      if (composerBeforeSend.startsWith('/')) {
         const commandProcessed = await processMultiCommand(composerBeforeSend)
         if (commandProcessed !== false) {
           if (clearMessageInputForCurrentOperation(composerOperation)) {
@@ -1644,8 +1644,8 @@
       const fileSuffix = appendInlayMarkers(filesBeforeSend)
       let messageForSend = composerBeforeSend + fileSuffix
 
-      if (!continueResponse) {
-        if (messageForSend === '') {
+      if (messageForSend === '') {
+        if (!continueResponse) {
           const messages = currentChatRecord.message ?? []
           if (messages.length === 0 || messages[messages.length - 1].role !== 'user') {
             if (getDatabase().useSayNothing) {
@@ -1657,14 +1657,15 @@
               }
             }
           }
-        } else {
-          // Server prompt assembly owns submit-time input triggers/editinput.
-          userMessage = {
-            role: 'user',
-            data: messageForSend,
-            time: Date.now(),
-            name: null,
-          }
+        }
+      } else {
+        // A typed Continue is consumed as a normal user turn before generation;
+        // server prompt assembly owns its input trigger and editinput transforms.
+        userMessage = {
+          role: 'user',
+          data: messageForSend,
+          time: Date.now(),
+          name: null,
         }
       }
 

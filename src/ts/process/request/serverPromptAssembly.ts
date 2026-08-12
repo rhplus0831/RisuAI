@@ -283,10 +283,12 @@ export function resolveServerPromptAssembly(input: ServerPromptAssemblyInput): S
   const mode = deriveMode(input)
   if (mode === 'send') {
     const lastMessage = input.currentChat.message.at(-1)
-    if (lastMessage?.role !== 'user' || typeof lastMessage.data !== 'string') {
+    const isTextSendTail =
+      typeof lastMessage?.data === 'string' && (lastMessage.role === 'user' || lastMessage.role === 'char')
+    if (!isTextSendTail) {
       return {
         type: 'unsupported',
-        reason: 'Server prompt assembly for a send requires the last message to be a text user message.',
+        reason: 'Server prompt assembly for a send requires a text user or assistant tail message.',
       }
     }
   }

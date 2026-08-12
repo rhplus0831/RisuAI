@@ -3181,7 +3181,7 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(textarea.value).toBe('Newer draft typed during continue')
   })
 
-  it('preserves the existing draft, translation, and files when continuing a response', async () => {
+  it('consumes typed composer text as a user turn before continuing', async () => {
     seedDatabase([2])
     getResourceDatabase().useAutoTranslateInput = true
     loadPageMocks.postChatFile.mockResolvedValueOnce([{ type: 'asset', data: 'asset-a' }])
@@ -3193,19 +3193,16 @@ describe('DefaultChatScreen transcript window state', () => {
     })
     const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
     const translation = target.querySelector<HTMLTextAreaElement>('#messageInputTranslate')!
-    translation.value = 'Translated unsent draft'
+    translation.value = 'Translated typed turn'
     translation.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
-    textarea.value = '/draft that must not execute'
+    textarea.value = '/typed continue turn'
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
 
     await clickPostFileMenuItem()
     await waitFor(() => expect(target.textContent).toContain('Missing file'))
     const sourceBeforeContinue = textarea.value
-    const translationBeforeContinue = translation.value
-    expect(sourceBeforeContinue).not.toBe('')
-    expect(translationBeforeContinue).not.toBe('')
     loadPageMocks.processMultiCommand.mockClear()
     loadPageMocks.appendCurrentChatUserMessageForSend.mockClear()
 
@@ -3214,18 +3211,25 @@ describe('DefaultChatScreen transcript window state', () => {
     continueMenuItem!.click()
     await waitFor(() => expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(1))
 
-    expect(textarea.value).toBe(sourceBeforeContinue)
-    expect(translation.value).toBe(translationBeforeContinue)
-    expect(target.textContent).toContain('Missing file')
-    expect(loadPageMocks.processMultiCommand).not.toHaveBeenCalled()
-    expect(loadPageMocks.appendCurrentChatUserMessageForSend).not.toHaveBeenCalled()
+    expect(textarea.value).toBe('')
+    expect(translation.value).toBe('')
+    expect(target.textContent).not.toContain('Missing file')
+    expect(loadPageMocks.processMultiCommand).toHaveBeenCalledWith(sourceBeforeContinue)
+    expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: 'user',
+        data: `${sourceBeforeContinue}{{inlayed::asset-a}}`,
+      }),
+      expect.objectContaining({ expectedTarget: expectedActiveTarget(0) }),
+    )
     expect(loadPageMocks.sendChat).toHaveBeenCalledWith(
       -1,
       expect.objectContaining({
-        continue: true,
         expectedTarget: expectedActiveTarget(0),
       }),
     )
+    const sendArgs = loadPageMocks.sendChat.mock.calls[0]?.[1] as { continue?: boolean } | undefined
+    expect(sendArgs?.continue).not.toBe(true)
   })
 
   it('does not call reroll navigation when the active chat changes during reroll hydration', async () => {

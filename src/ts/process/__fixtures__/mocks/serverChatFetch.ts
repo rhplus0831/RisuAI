@@ -24,6 +24,7 @@ export interface ServerChatCall {
   characterId: string
   mode: string
   userMessage: string
+  emptySend: boolean
   syntheticSayNothing: boolean
   regenerateMessageId: string
   clientCapabilities: Record<string, unknown> | null
@@ -35,6 +36,7 @@ interface ChatPayload {
   characterId?: unknown
   mode?: unknown
   userMessage?: unknown
+  emptySend?: unknown
   syntheticSayNothing?: unknown
   regenerateMessageId?: unknown
   clientCapabilities?: unknown
@@ -361,6 +363,7 @@ export async function serverChatFetch(input: RequestInfo | URL, init?: RequestIn
     characterId: typeof body.characterId === 'string' ? body.characterId : '',
     mode: typeof body.mode === 'string' ? body.mode : '',
     userMessage: typeof body.userMessage === 'string' ? body.userMessage : '',
+    emptySend: body.emptySend === true,
     syntheticSayNothing: body.syntheticSayNothing === true,
     regenerateMessageId: typeof body.regenerateMessageId === 'string' ? body.regenerateMessageId : '',
     clientCapabilities:

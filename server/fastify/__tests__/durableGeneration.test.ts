@@ -2352,7 +2352,7 @@ describe('Durable generation (Milestone 1)', () => {
         outcome: 'cancelled',
         result: 'partial',
         generationId: jobId,
-        postGeneration: { messageId: jobId, revision: expect.any(Number) },
+        postGeneration: { messageId: jobId, revision: expect.any(Number), finalText: 'partial' },
       },
     })
     controllerA.abort()
@@ -3031,7 +3031,27 @@ describe('Durable generation (Milestone 1)', () => {
     const messages = await chatMessages(await bootstrap())
     expect(messages).toHaveLength(3)
     expect(messages[1]).toMatchObject({ chatId: 'msg-char-1', data: 'Once upon a time' })
+    const replayController = newController()
+    const replay = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+      headers: authHeaders(),
+      signal: replayController.signal,
+    })
+    const replayEvents = await readSse(replay, (event) => event.type === 'done')
+    expect(replayEvents.at(-1)).toMatchObject({
+      type: 'done',
+      data: {
+        outcome: 'cancelled',
+        result: ' and then',
+        generationId: jobId,
+        postGeneration: {
+          messageId: appended.chatId,
+          revision: expect.any(Number),
+          finalText: '*says nothing* and then',
+        },
+      },
+    })
     controller.abort()
+    replayController.abort()
   })
 
   it('cancels a durable regenerate and replaces the target with the streamed-so-far text (Phase 6b)', async () => {

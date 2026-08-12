@@ -108,6 +108,8 @@ export interface ServerChatInput {
   characterId: string
   mode: 'send' | 'continue' | 'preview' | 'preview_prompt' | 'regenerate'
   userMessage?: string
+  /** Original-compatible send from an assistant tail without appending a user row. */
+  emptySend?: boolean
   syntheticSayNothing?: boolean
   regenerateMessageId?: string
   loadoutId?: string

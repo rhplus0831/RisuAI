@@ -173,8 +173,8 @@ export type PostGenerationTranslationFrame =
 
 /**
  * Server terminal message reconciliation. Completed generations may carry the
- * post-generation derivation; cancelled generations may carry only the
- * persisted partial row identity and revision.
+ * post-generation derivation; cancelled generations may carry the exact
+ * persisted partial-row text along with its identity and revision.
  */
 export interface PostGenerationFrame {
   /** Stable id of the persisted generated row (including continue/regenerate targets). */
@@ -182,8 +182,9 @@ export interface PostGenerationFrame {
   /**
    * The `editoutput`'d + run-var'd assistant text (server-owned final text). The
    * browser writes it onto the just-streamed assistant message in place of its
-   * own copy (it no longer runs `editoutput` on the server path). Present only
-   * when the pass actually changed the text.
+   * own copy (it no longer runs `editoutput` on the server path). On completion
+   * it is present only when the pass changed the text; on cancellation it is the
+   * exact persisted raw snapshot.
    */
   finalText?: string
   /**

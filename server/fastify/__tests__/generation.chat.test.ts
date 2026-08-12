@@ -789,7 +789,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(res.json().error).toMatch(/mode must be one of/)
   })
 
-  it('rejects mode=send without userMessage', async () => {
+  it('rejects mode=send without userMessage or an explicit empty-send marker', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const res = await harness.app.inject({
       method: 'POST',
@@ -799,8 +799,31 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
     expect(res.statusCode).toBe(400)
     expect(res.json()).toEqual({
-      error: 'userMessage is required when mode is "send"',
+      error: 'userMessage or emptySend is required when mode is "send"',
     })
+  })
+
+  it.each([
+    {
+      name: 'a non-boolean empty-send marker',
+      payload: { ...basePayload, userMessage: undefined, emptySend: 'yes' },
+      error: 'emptySend must be a boolean when provided',
+    },
+    {
+      name: 'an empty-send marker with user text',
+      payload: { ...basePayload, emptySend: true },
+      error: 'emptySend requires mode "send" without userMessage',
+    },
+  ])('rejects $name', async ({ payload, error }) => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload,
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error })
   })
 
   it.each([
@@ -1174,6 +1197,45 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(dispatchContext?.result.state?.promptMemorySelectionDiagnostics?.hotPathWork).toMatchObject({
       generatedQueryEmbeddings: true,
       calledProviders: true,
+    })
+  })
+
+  it('accepts an explicit empty send from an assistant-tail transcript without appending a user row', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          chats: [
+            {
+              id: 'chat-1',
+              message: [
+                { role: 'user', data: 'first turn', chatId: 'msg-user-1' },
+                { role: 'char', data: 'first reply', chatId: 'msg-char-1' },
+              ],
+              note: '',
+              name: 'Chat',
+              localLore: [],
+            },
+          ],
+        },
+      ],
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { ...basePayload, userMessage: undefined, emptySend: true },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const events = parseEvents(res.body)
+    expect(events.find((event) => event.type === 'prompt')).toBeDefined()
+    expect(events.find((event) => event.type === 'message_patch')?.data.patch).toMatchObject({
+      messageMutations: [],
+      chatVarMutations: [],
     })
   })
 

@@ -651,7 +651,6 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       ownsGenerationActivity = false
       return await sendChat(chatProcessIndex, {
         signal: abortSignal,
-        continue: serverRequestedResend ? true : undefined,
         ...(arg.expectedTarget !== undefined ? { expectedTarget: arg.expectedTarget } : {}),
         ...(arg.onFailure ? { onFailure: arg.onFailure } : {}),
         serverResendDepth: serverRequestedResend ? (arg.serverResendDepth ?? 0) + 1 : 0,

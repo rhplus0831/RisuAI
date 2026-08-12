@@ -1401,7 +1401,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     },
   )
 
-  it('keeps a cancelled partial row but suppresses every success-only terminal consumer', async () => {
+  it('reconciles a cancelled partial snapshot but suppresses every success-only terminal consumer', async () => {
     const loaded = await loadFixture('simple-send')
     cleanups.push(loaded.cleanup)
     testDatabaseState.db.characters[0].chats[0].id = 'chat-cancelled-replay'
@@ -1424,7 +1424,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
       postGeneration: {
         messageId: 'uuid-0',
         revision: 3,
-        finalText: 'must not replace the cancelled raw row',
+        finalText: '*says nothing*complete partial reply',
       },
     })
 
@@ -1435,7 +1435,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     expect(result).toBe(false)
     expect(onReattachOutcome).toHaveBeenCalledWith({ status: 'cancelled' })
     const assistant = testDatabaseState.db.characters[0].chats[0].message.find((message) => message.role === 'char')
-    expect(assistant?.data).toBe('complete partial reply')
+    expect(assistant?.data).toBe('*says nothing*complete partial reply')
     expect(listener).not.toHaveBeenCalled()
     expect(getProviderCalls()).toEqual([])
     expect(terminalEffectMocks.notify).not.toHaveBeenCalled()

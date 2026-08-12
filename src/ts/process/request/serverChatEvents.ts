@@ -303,8 +303,9 @@ export interface ServerChatAgentPresetError {
 /**
  * Server terminal message reconciliation, mirroring `PostGenerationFrame` in
  * the server `sseEvents.ts`. Completed generations can carry the derivation
- * fields; cancelled generations can carry only persisted partial-row identity
- * and revision. The browser applies success-only fields only on completion.
+ * fields; cancelled generations can carry the exact persisted partial-row text
+ * with its identity and revision. The browser otherwise applies success-only
+ * fields only on completion.
  */
 export interface ServerChatPostGeneration {
   messageId?: string

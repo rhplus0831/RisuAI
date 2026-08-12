@@ -324,7 +324,7 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     expect(char.name).toBe('Stable Character')
   })
 
-  it('reconciles a cancelled terminal without running success-only terminal effects', async () => {
+  it('applies the exact cancelled snapshot without running success-only terminal effects', async () => {
     const { char, target } = seedReorderedTerminalChats()
     target.message[0].data = 'persisted partial reply'
     const listener = vi.fn()
@@ -340,7 +340,8 @@ describe('server-backed terminal stable chat target (R-02)', () => {
           result: 'persisted partial reply',
           alternates: ['must not become an alternate'],
           postGeneration: {
-            finalText: 'must not replace the cancelled partial',
+            messageId: 'gen-stable',
+            finalText: '*says nothing*persisted partial reply',
             messagePatch: makePostGenerationPatch('chat-target', 'must not patch'),
           },
         },
@@ -363,7 +364,7 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     })
 
     expect(result).toMatchObject({ status: 'cancelled', reattachOutcome: 'cancelled', resendChat: false })
-    expect(target.message[0].data).toBe('persisted partial reply')
+    expect(target.message[0].data).toBe('*says nothing*persisted partial reply')
     expect(target.scriptstate).toBeUndefined()
     expect(listener).not.toHaveBeenCalled()
     expect(ttsMock.say).not.toHaveBeenCalled()

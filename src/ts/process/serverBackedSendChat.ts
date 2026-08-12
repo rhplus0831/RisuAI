@@ -20,7 +20,7 @@ import {
   type ServerChatOperationStream,
   type ServerChatTerminal,
 } from './request/serverChat'
-import type { ServerChatMessagePatch } from './request/serverChatEvents'
+import type { ServerChatMessagePatch, ServerChatPostGeneration } from './request/serverChatEvents'
 import type { DispatchSuccessReq } from './dispatch/dispatchRequest'
 import type { OpenAIChat } from './index.svelte'
 import { seedRerollBufferFromAlternates } from './rerollNavigation.svelte'
@@ -338,6 +338,41 @@ async function reconcileRejectedGenerationProjection(args: {
   }
 }
 
+function applyCancelledTerminalSnapshot(args: {
+  selectedChar: number
+  selectedChat: number
+  target: ServerBackedStableChatTarget
+  generationId: string
+  postGeneration?: ServerChatPostGeneration
+  streamProjection?: StreamMessageProjection
+}): void {
+  const finalText = args.postGeneration?.finalText
+  const projection = args.streamProjection
+  if (typeof finalText !== 'string' || !args.target.chatId || projection?.chatId !== args.target.chatId) {
+    return
+  }
+
+  withTrustedResourceWrite(() => {
+    const resolution = resolveServerBackedLiveChat({
+      selectedChar: args.selectedChar,
+      selectedChat: args.selectedChat,
+      characterId: args.target.characterId,
+      chatId: args.target.chatId,
+    })
+    if (!resolution) return
+    const assistant =
+      (args.postGeneration?.messageId
+        ? resolution.chat.message.find(
+            (message) => message.chatId === args.postGeneration?.messageId && message.role === 'char',
+          )
+        : undefined) ?? findGeneratedAssistantMessage(resolution.chat, args.generationId)
+    // Reconcile only the row still owned by this stream. A user edit that landed
+    // after the last token must win over the cancelled terminal snapshot.
+    if (!assistant || assistant.data !== projection.ownedData) return
+    assistant.data = finalText
+  })
+}
+
 // Apply the server's `message_patch` to the local projection only. `/generate/chat`
 // persists assembly-time chat-var deltas itself, so the browser no longer replays
 // them as `PATCH .../scriptstate` commands. `applyServerMessagePatch` still writes
@@ -442,13 +477,13 @@ export async function assembleServerBackedSendChat(args: {
   durable?: boolean
 }): Promise<ServerBackedAssemblyResult> {
   const restorationGuard = captureServerBackedRestorationGuard(args.currentChat.id)
-  // `resolveServerPromptAssembly` (the gate's classifier) has already verified
-  // the structural precondition — for `mode === 'send'` the last message is a
-  // text user message — before routing here, so the old silent `unavailable`
-  // escape is gone. We only re-derive `userMessage` to populate the request body.
+  // `resolveServerPromptAssembly` has already verified that a send ends in a
+  // text user or assistant row. A user tail supplies the submitted text; an
+  // assistant tail is Original's empty-send dispatch and appends no user row.
   const mode = serverChatMode(args)
   const lastMessage = args.currentChat.message.at(-1)
   const userMessage = mode === 'send' && lastMessage?.role === 'user' ? lastMessage.data : undefined
+  const emptySend = mode === 'send' && lastMessage?.role === 'char'
 
   args.setProcessStage(1)
   args.stageTimings.stage1Start = Date.now()
@@ -459,6 +494,9 @@ export async function assembleServerBackedSendChat(args: {
   }
   if (typeof userMessage === 'string') {
     input.userMessage = userMessage
+  }
+  if (emptySend) {
+    input.emptySend = true
   }
   if (mode === 'send' && args.syntheticSayNothing === true) {
     input.syntheticSayNothing = true
@@ -778,8 +816,17 @@ export async function applyServerBackedTerminal(args: {
   }
 
   if (args.terminal.status === 'cancelled') {
-    const target = targetFromPayloadOrContext(args.terminal.done?.postGeneration?.messagePatch, contextTarget)
+    const postGeneration = args.terminal.done?.postGeneration
+    const target = targetFromPayloadOrContext(postGeneration?.messagePatch, contextTarget)
     const generationId = args.generationInfo.generationId ?? ''
+    applyCancelledTerminalSnapshot({
+      selectedChar: args.selectedChar,
+      selectedChat: args.selectedChat,
+      target,
+      generationId,
+      postGeneration,
+      streamProjection: args.streamProjection,
+    })
     if (target.chatId && generationId) clearGenerationPersistence(target.chatId, generationId)
     return {
       status: 'cancelled',
