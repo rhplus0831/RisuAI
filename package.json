@@ -21,6 +21,7 @@
     "test:gates:audit": "cross-env RISU_TEST_INCLUDE_GATES=true vitest run src/lib/_audit",
     "test:gates:perf": "cross-env RISU_TEST_INCLUDE_GATES=true vitest run src/ts/__tests__/renderCostHarness.test.ts src/ts/__tests__/sendCloneCountProbe.test.ts",
     "test:server": "vitest run --config server/fastify/vitest.config.ts",
+    "test:compat-harness": "tsx test/compat-harness/run.ts",
     "test:smoke": "pnpm smoke:fastify-browser",
     "test:all": "sh -c 'pnpm format:check; format=$?; pnpm check; check=$?; pnpm check:server; serverCheck=$?; pnpm test:frontend; frontend=$?; pnpm test:gates; gates=$?; pnpm coverage:ui-map; uiCoverage=$?; pnpm test:server; server=$?; pnpm test:smoke; smoke=$?; exit $((format || check || serverCheck || frontend || gates || uiCoverage || server || smoke))'",
     "coverage:all": "sh -c 'pnpm coverage:frontend; frontend=$?; pnpm coverage:backend; backend=$?; exit $((frontend || backend))'",
