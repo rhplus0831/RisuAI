@@ -18,6 +18,7 @@ import {
 import type { ServerToolDefinition } from '../../../../src/ts/process/request/serverToolProtocol.js'
 import { openAIToolDefinitions, parseOpenAIToolCalls } from './serverTools.js'
 import { extractApiResponseMetadata, mergeApiResponseMetadata } from './apiMetadata.js'
+import { normalizeLegacyOpenAIModelId } from '../../../../src/ts/model/legacyOpenAIModelAliases.js'
 
 export interface OpenAIRequest {
   model: string
@@ -150,7 +151,7 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
     value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
 
   return {
-    model: input.model,
+    model: normalizeLegacyOpenAIModelId(input.model),
     messages: input.messages,
     apiKey,
     baseUrl,

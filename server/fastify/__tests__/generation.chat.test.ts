@@ -1609,6 +1609,22 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       characters: [
         {
           ...fixtureDatabase.characters[0],
+          customscript: [
+            {
+              id: 'unsupported-emo-one',
+              comment: 'unsupported emotion effect one',
+              in: 'completed reply',
+              out: '@@emo joy',
+              type: 'editoutput',
+            },
+            {
+              id: 'unsupported-emo-two',
+              comment: 'unsupported emotion effect two',
+              in: 'completed reply',
+              out: '@@emo calm',
+              type: 'editoutput',
+            },
+          ],
           triggerscript: [
             {
               comment: 'unsupported server effects',
@@ -1670,6 +1686,10 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         context: { kind: 'unsupported_trigger_effect', effectType: 'command' },
       },
       {
+        message: 'Trigger effect "@@emo" is unsupported on this server and was skipped.',
+        context: { kind: 'unsupported_trigger_effect', effectType: '@@emo' },
+      },
+      {
         message: 'Trigger effect "v2RunLLM" is unsupported on this server and was skipped.',
         context: { kind: 'unsupported_trigger_effect', effectType: 'v2RunLLM' },
       },
@@ -1677,6 +1697,9 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(JSON.stringify(events.find((event) => event.type === 'prompt')?.data.formated ?? [])).not.toContain(
       'MUTATED-DESCRIPTION',
     )
+    expect(
+      warnings.filter((warning) => (warning.context as { effectType?: unknown } | undefined)?.effectType === '@@emo'),
+    ).toHaveLength(1)
 
     const bootstrap = await harness.app.inject({
       method: 'GET',

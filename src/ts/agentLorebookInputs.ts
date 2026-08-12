@@ -1,5 +1,6 @@
 import type { AgentLorebookInput } from './agentPresetRecords'
 import type { Chat, character, loreBook } from './storage/database.svelte'
+import { safeStructuredClone } from './polyfill'
 
 export const AGENT_ONLY_LOREBOOK_EXTENSION_KEY = 'risu_agent_only'
 
@@ -27,6 +28,19 @@ export function isAgentOnlyLorebookEntry(entry: loreBook | undefined | null): bo
   if (entry.agentOnly === true) return true
   const extensions = entry.extentions as Record<string, unknown> | undefined
   return extensions?.[AGENT_ONLY_LOREBOOK_EXTENSION_KEY] === true
+}
+
+/** Project Agent-only entries as inert data for Original Risu exports. */
+export function lorebookEntriesForOriginalRisuExport(entries: readonly loreBook[]): loreBook[] {
+  return entries.map((entry) => {
+    const exported = safeStructuredClone(entry)
+    if (isAgentOnlyLorebookEntry(exported)) {
+      exported.alwaysActive = false
+      exported.key = ''
+      exported.secondkey = ''
+    }
+    return exported
+  })
 }
 
 export function resolveAgentLorebookInput(

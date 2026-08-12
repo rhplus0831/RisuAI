@@ -11,7 +11,7 @@ import {
   defaultJailbreak,
   defaultMainPrompt,
 } from './defaultPrompts'
-import { alertError, alertNormal } from '../alert'
+import { alertError, alertNormal, alertSelect } from '../alert'
 import { registerAlertDatabaseAccessor } from '../alertDatabase'
 import type { NAISettings } from '../process/models/nai'
 import { prebuiltNAIpresets, prebuiltPresets } from '../process/templates/templates'
@@ -154,6 +154,7 @@ import {
   createExtractedPromptPreset,
   databaseKeyForModelPresetField,
   findEquivalentModelPreset,
+  hasModelPresetOnlyFields,
   MODEL_PRESET_FIELDS,
   PROMPT_PRESET_FIELDS,
   PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS,
@@ -4158,6 +4159,12 @@ export interface Database {
   banCharacterset: string[]
   showPromptComparison: boolean
   hypaV3: boolean
+  memoryAlgorithmType?: string
+  supaModelType?: string
+  hypaMemory?: boolean
+  hypav2?: boolean
+  hanuraiEnable?: boolean
+  legacyMemoryMigrationNoticeDismissed?: boolean
   hypaV3Settings: HypaV3Settings // legacy
   hypaV3Presets: HypaV3Preset[]
   hypaV3PresetId: number
@@ -7151,9 +7158,25 @@ export async function importPreset(
       return reportPresetImportOutcome(await addImportedPromptPreset(pr))
     }
     pre.name ??= 'Imported'
-    // Prompt Settings imports are intentionally prompt-only. Legacy preset files
-    // may contain provider/model-selection fields; addImportedPromptPreset filters
-    // those fields out instead of creating or changing a model preset.
+    if (hasModelPresetOnlyFields(importedSource)) {
+      const importedRecord = importedSource as Record<string, unknown>
+      const primaryModel =
+        typeof importedRecord.aiModel === 'string' && importedRecord.aiModel.trim()
+          ? importedRecord.aiModel
+          : language.legacyPresetModelNotSpecified
+      const auxiliaryModel =
+        typeof importedRecord.subModel === 'string' && importedRecord.subModel.trim()
+          ? importedRecord.subModel
+          : language.legacyPresetModelNotSpecified
+      const selection = await alertSelect(
+        [language.legacyPresetImportModelAndPrompt, language.legacyPresetImportPromptOnly],
+        language.legacyPresetImportChoice(f.name, primaryModel, auxiliaryModel),
+      )
+      if (selection === null) return null
+      if (selection === '0') {
+        return reportPresetImportOutcome(await addImportedLegacyPreset(pre))
+      }
+    }
     return reportPresetImportOutcome(await addImportedPromptPreset(pre))
   } catch {
     alertError(language.errors.noData)

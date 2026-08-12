@@ -1867,6 +1867,24 @@ const languageKoreanBase = {
 
 export const languageKorean = {
   ...languageKoreanBase,
+  characterImportDroppedArchiveEntry: (fileName: string) => `압축 파일: ${fileName}`,
+  characterImportDroppedInlineAsset: (index: number, name: string) =>
+    `인라인 에셋 data.assets[${index}]${name ? ` (${name})` : ''}`,
+  characterImportIncomplete: (details: string) =>
+    `캐릭터를 가져왔지만 다음의 용량 초과 콘텐츠는 제외되었습니다:\n${details}`,
+  characterImportFailedAfterDroppedContent: (details: string) =>
+    `읽을 수 있는 캐릭터 카드를 가져오지 못했습니다. 다음의 용량 초과 콘텐츠는 제외되었습니다:\n${details}`,
+  backupImportSkippedBlocks: (blocks: string[]) =>
+    `지원되는 백업 콘텐츠는 가져왔습니다. 다음의 독립 블록은 건너뛰었습니다:\n${blocks.map((block) => `- ${block}`).join('\n')}`,
+  legacyPresetImportChoice: (fileName: string, primaryModel: string, auxiliaryModel: string) =>
+    `“${fileName}” 파일에는 이전 방식의 모델 라우팅도 포함되어 있습니다.\n\n기본 모델: ${primaryModel}\n보조 모델: ${auxiliaryModel}\n\n모델 라우팅도 함께 가져올까요, 아니면 프롬프트 설정만 유지할까요?`,
+  legacyPresetImportModelAndPrompt: '모델 라우팅과 프롬프트 가져오기',
+  legacyPresetImportPromptOnly: '프롬프트 설정만 유지',
+  legacyPresetModelNotSpecified: '지정되지 않음',
+  regexEmotionEffectUnsupportedOnServer: '이 서버에서는 지원되지 않습니다: @@emo는 보존되지만 생성 중에는 건너뜁니다.',
+  dismissNotice: '확인',
+  legacyMemoryMigrationNotice: (algorithms: string) =>
+    `이전 메모리 설정을 변경해야 합니다\n\n이 서버 기반 버전에서는 선택된 다음 메모리 모드가 더 이상 실행되지 않습니다: ${algorithms}.\n\n설정에서 유지 관리되는 Hypa V3 메모리로 전환하세요. 이 알림은 데이터베이스마다 한 번만 표시됩니다.`,
   generationReattachFailure: {
     message: '이 답장은 아직 생성 중일 수 있지만 이 기기에서 다시 연결하지 못했습니다.',
     lastError: (error: string) => `마지막 연결 오류: ${error}`,
@@ -1990,6 +2008,7 @@ export const languageKorean = {
     ...languageKoreanBase.errors,
     settingsSaveFailed: '설정을 저장할 수 없습니다. 다시 시도하세요.',
     sendContextPersistenceFailed: '생성 전에 채팅 설정을 저장할 수 없습니다. 다시 시도하세요.',
+    replyStillSaving: '이전 답변을 아직 저장하는 중입니다. 잠시 기다린 후 다시 시도하세요.',
     chatImportTooLarge: '이 채팅에는 안전하게 가져오기에는 너무 큰 메타데이터나 단일 메시지가 있습니다.',
     toolFollowupRequestFailed: '도구 실행 후 모델 응답을 가져오지 못했습니다',
     ollamaCloudToolPostRequired: 'Ollama Cloud 도구 프록시는 본문이 있는 POST 요청만 허용합니다',

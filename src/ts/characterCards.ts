@@ -51,12 +51,7 @@ import { type CharacterCardV3, type LorebookEntry } from '@risuai/ccardlib'
 import { reencodeImage } from './process/files/inlays'
 import { PngChunk } from './pngChunk'
 import type { OnnxModelFiles } from './process/transformers'
-import {
-  CharXImporter,
-  CharXWriter,
-  DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES,
-  formatCharXEntrySizeLimit,
-} from './process/processzip'
+import { CharXImporter, CharXWriter, DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES } from './process/processzip'
 import {
   exportModule,
   importRisuModuleData,
@@ -85,30 +80,42 @@ import {
 import { serverAssetIdFromReference } from './server/assets'
 
 export const hubURL = '/api/v1/hub'
-export const CHARACTER_CARD_INCOMPLETE_IMPORT_ERROR = 'character_card_incomplete_import'
-
 export interface CharacterImportProcessOptions {
   charXMaxEntrySizeBytes?: number
   dataUriMaxBase64Length?: number
+}
+
+export interface CharacterImportCompletenessReport {
+  droppedArchiveEntries: string[]
+  droppedInlineAssets: Array<{ index: number; name: string }>
 }
 
 export type CharacterImportOutcome =
   | (Extract<CharacterMutationOutcome, { status: 'accepted' }> & { characterId: string })
   | Exclude<CharacterMutationOutcome, { status: 'accepted' }>
 
-function incompleteCharXImportError(importer: CharXImporter): Error {
-  const files = importer.excludedFiles.map((fileName) => JSON.stringify(fileName)).join(', ')
-  return new Error(
-    `${CHARACTER_CARD_INCOMPLETE_IMPORT_ERROR}: entries exceeded the ` +
-      `${formatCharXEntrySizeLimit(importer.maxEntrySizeBytes)} per-entry limit: ${files}`,
-  )
+function createCharacterImportCompletenessReport(): CharacterImportCompletenessReport {
+  return { droppedArchiveEntries: [], droppedInlineAssets: [] }
 }
 
-function oversizedDataUriImportError(index: number, maxBase64Length: number): Error {
-  return new Error(
-    `${CHARACTER_CARD_INCOMPLETE_IMPORT_ERROR}: data.assets[${index}] exceeds the ` +
-      `${formatCharXEntrySizeLimit(maxBase64Length)} inline data-URI limit`,
-  )
+function hasDroppedCharacterContent(report: CharacterImportCompletenessReport): boolean {
+  return report.droppedArchiveEntries.length > 0 || report.droppedInlineAssets.length > 0
+}
+
+function wasArchiveEntryDropped(report: CharacterImportCompletenessReport, fileName: string): boolean {
+  return report.droppedArchiveEntries.includes(fileName)
+}
+
+function characterImportCompletenessMessage(report: CharacterImportCompletenessReport, imported: boolean): string {
+  const details = [
+    ...report.droppedArchiveEntries.map((fileName) => language.characterImportDroppedArchiveEntry(fileName)),
+    ...report.droppedInlineAssets.map(({ index, name }) => language.characterImportDroppedInlineAsset(index, name)),
+  ]
+    .map((detail) => `- ${detail}`)
+    .join('\n')
+  return imported
+    ? language.characterImportIncomplete(details)
+    : language.characterImportFailedAfterDroppedContent(details)
 }
 
 function rewritePrebuiltAssetExcludeReference(risuai: unknown, sourceReference: string, targetReference: string): void {
@@ -171,11 +178,22 @@ async function appendImportedCharacter(
   return outcome.status === 'accepted' ? { ...outcome, characterId } : outcome
 }
 
-function reportCharacterImportOutcome(outcome: CharacterImportOutcome): CharacterImportOutcome {
+function reportCharacterImportOutcome(
+  outcome: CharacterImportOutcome,
+  completenessReport = createCharacterImportCompletenessReport(),
+): CharacterImportOutcome {
   if (outcome.status === 'accepted') {
-    alertNormal(language.importedCharacter)
+    if (hasDroppedCharacterContent(completenessReport)) {
+      alertError(characterImportCompletenessMessage(completenessReport, true))
+    } else {
+      alertNormal(language.importedCharacter)
+    }
   } else if (outcome.status === 'queued') {
-    alertNormal(language.characterImportQueued)
+    if (hasDroppedCharacterContent(completenessReport)) {
+      alertError(`${characterImportCompletenessMessage(completenessReport, true)}\n\n${language.characterImportQueued}`)
+    } else {
+      alertNormal(language.characterImportQueued)
+    }
   } else {
     const detail = outcome.result.status === 'error' ? outcome.result.error : ''
     alertError(detail ? `${language.characterImportFailed}\n${detail}` : language.characterImportFailed)
@@ -242,13 +260,22 @@ export async function importCharacterProcess(
   options: CharacterImportProcessOptions = {},
 ): Promise<CharacterImportOutcome | null | undefined> {
   const dataUriMaxBase64Length = options.dataUriMaxBase64Length ?? DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES
+  const completenessReport = createCharacterImportCompletenessReport()
   if (f.name.endsWith('json')) {
     if (f.data instanceof ReadableStream) {
       return null
     }
     const data = f.data instanceof Uint8Array ? f.data : new Uint8Array(await f.data.arrayBuffer())
     const da = JSON.parse(Buffer.from(data).toString('utf-8'))
-    const imported = await importCharacterCardSpec(da, undefined, 'normal', {}, undefined, dataUriMaxBase64Length)
+    const imported = await importCharacterCardSpec(
+      da,
+      undefined,
+      'normal',
+      {},
+      undefined,
+      dataUriMaxBase64Length,
+      completenessReport,
+    )
     if (imported) {
       return imported
     }
@@ -277,13 +304,20 @@ export async function importCharacterProcess(
     } catch (error) {
       completionError = error
     }
-    if (importer.excludedFiles.length > 0) {
-      throw incompleteCharXImportError(importer)
+    completenessReport.droppedArchiveEntries.push(...importer.excludedFiles)
+    if (completionError) {
+      if (hasDroppedCharacterContent(completenessReport)) {
+        alertError(characterImportCompletenessMessage(completenessReport, false))
+      }
+      throw completionError
     }
-    if (completionError) throw completionError
     const cardData = importer.cardData
     if (!cardData) {
-      alertError(language.errors.noData)
+      alertError(
+        hasDroppedCharacterContent(completenessReport)
+          ? characterImportCompletenessMessage(completenessReport, false)
+          : language.errors.noData,
+      )
       return
     }
     const card: CharacterCardV3 = JSON.parse(cardData)
@@ -305,7 +339,15 @@ export async function importCharacterProcess(
         lorebook = md.lorebook
       }
     }
-    return await importCharacterCardSpec(card, undefined, 'normal', importer.assets, lorebook, dataUriMaxBase64Length)
+    return await importCharacterCardSpec(
+      card,
+      undefined,
+      'normal',
+      importer.assets,
+      lorebook,
+      dataUriMaxBase64Length,
+      completenessReport,
+    )
   }
 
   if (!f.name.endsWith('png')) {
@@ -766,6 +808,7 @@ async function importCharacterCardSpec(
   assetDict: { [key: string]: string } = {},
   overrideLorebook?: loreBook[],
   dataUriMaxBase64Length = DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES,
+  completenessReport = createCharacterImportCompletenessReport(),
 ): Promise<CharacterImportOutcome | null> {
   if (!card || (card.spec !== 'chara_card_v2' && card.spec !== 'chara_card_v3')) {
     return null
@@ -811,6 +854,7 @@ async function importCharacterCardSpec(
           const key = risuext.emotions[i][1].replace('__asset:', '')
           const imgp = assetDict[key]
           if (!imgp) {
+            if (wasArchiveEntryDropped(completenessReport, key)) continue
             throw new Error('Error while importing, asset ' + key + ' not found')
           }
           importedEmotions[i] = [risuext.emotions[i][0], imgp]
@@ -858,6 +902,7 @@ async function importCharacterCardSpec(
           const key = sourceReference.replace('__asset:', '')
           const imgp = assetDict[key]
           if (!imgp) {
+            if (wasArchiveEntryDropped(completenessReport, key)) continue
             throw new Error('Error while importing, asset ' + key + ' not found')
           }
           importedAdditionalAssets[i] = [risuext.additionalAssets[i][0], imgp, fileName]
@@ -897,9 +942,12 @@ async function importCharacterCardSpec(
         const key = risuext.notificationImage.replace('__asset:', '')
         const imgp = assetDict[key]
         if (!imgp) {
-          throw new Error('Error while importing, asset ' + key + ' not found')
+          if (!wasArchiveEntryDropped(completenessReport, key)) {
+            throw new Error('Error while importing, asset ' + key + ' not found')
+          }
+        } else {
+          notificationImage = imgp
         }
-        notificationImage = imgp
       } else {
         const [savedNotificationImage] = await saveAssets([
           {
@@ -927,6 +975,10 @@ async function importCharacterCardSpec(
           const rkey = risuext.vits[key].replace('__asset:', '')
           const imgp = assetDict[rkey]
           if (!imgp) {
+            if (wasArchiveEntryDropped(completenessReport, rkey)) {
+              delete risuext.vits[key]
+              continue
+            }
             throw new Error('Error while importing, asset ' + rkey + ' not found')
           }
           risuext.vits[key] = imgp
@@ -944,7 +996,7 @@ async function importCharacterCardSpec(
         risuext.vits[vitsUploads[i].key] = savedVitsAssets[i]
       }
 
-      if (keys.length > 0) {
+      if (Object.keys(risuext.vits).length > 0) {
         vits = {
           name: 'Imported VITS',
           files: risuext.vits,
@@ -979,6 +1031,7 @@ async function importCharacterCardSpec(
           const key = data.assets[i].uri.replace('__asset:', '')
           const assetId = assetDict[key]
           if (!assetId) {
+            if (wasArchiveEntryDropped(completenessReport, key)) continue
             throw new Error('Error while importing, asset ' + key + ' not found')
           }
           resolvedAssetUris[i] = assetId
@@ -988,6 +1041,7 @@ async function importCharacterCardSpec(
           const key = data.assets[i].uri.replace('embeded://', '')
           const assetId = assetDict[key]
           if (!assetId) {
+            if (wasArchiveEntryDropped(completenessReport, key)) continue
             throw new Error('Error while importing, asset ' + key + ' not found')
           }
           resolvedAssetUris[i] = assetId
@@ -999,14 +1053,15 @@ async function importCharacterCardSpec(
             // bytes by convention; PNG default is acceptable.
             dataUriUploads.push({ targetIndex: i, data: Buffer.from(b64, 'base64') })
           } else {
-            throw oversizedDataUriImportError(i, dataUriMaxBase64Length)
+            completenessReport.droppedInlineAssets.push({ index: i, name: data.assets[i].name ?? '' })
           }
         } else {
           continue
         }
       }
 
-      const savedDataUriAssets = await saveAssets(dataUriUploads.map((asset) => ({ data: asset.data })))
+      const savedDataUriAssets =
+        dataUriUploads.length > 0 ? await saveAssets(dataUriUploads.map((asset) => ({ data: asset.data }))) : []
       for (let i = 0; i < dataUriUploads.length; i++) {
         resolvedAssetUris[dataUriUploads[i].targetIndex] = savedDataUriAssets[i]
       }
@@ -1172,7 +1227,7 @@ async function importCharacterCardSpec(
     char.modification_date = card.data.modification_date ?? 0
   }
 
-  return reportCharacterImportOutcome(await appendImportedCharacter(char, previous))
+  return reportCharacterImportOutcome(await appendImportedCharacter(char, previous), completenessReport)
 }
 
 function convertCharbook(arg: {
@@ -1306,13 +1361,13 @@ function createBaseV2(char: character) {
     ext.risu_agent_only = agentOnly
 
     charBook.push({
-      keys: agentOnly && !lore.key ? [] : lore.key.split(',').map((r) => r.trim()),
-      secondary_keys: lore.selective ? lore.secondkey.split(',').map((r) => r.trim()) : undefined,
+      keys: agentOnly ? [] : lore.key.split(',').map((r) => r.trim()),
+      secondary_keys: agentOnly ? [] : lore.selective ? lore.secondkey.split(',').map((r) => r.trim()) : undefined,
       content: lore.content,
       extensions: ext,
       enabled: true,
       insertion_order: lore.insertorder,
-      constant: lore.alwaysActive,
+      constant: agentOnly ? false : lore.alwaysActive,
       selective: lore.selective,
       name: lore.comment,
       comment: lore.comment,
@@ -1321,9 +1376,8 @@ function createBaseV2(char: character) {
       folder: lore.folder,
     })
   }
-  char.loreExt ??= {}
-
-  char.loreExt.risu_fullWordMatching = char.loreSettings?.fullWordMatching ?? false
+  const exportedLoreExtensions = structuredClone(char.loreExt ?? {})
+  exportedLoreExtensions.risu_fullWordMatching = char.loreSettings?.fullWordMatching ?? false
 
   const card: CharacterCardV2Risu = {
     spec: 'chara_card_v2',
@@ -1343,7 +1397,7 @@ function createBaseV2(char: character) {
         scan_depth: char.loreSettings?.scanDepth,
         token_budget: char.loreSettings?.tokenBudget,
         recursive_scanning: char.loreSettings?.recursiveScanning,
-        extensions: char.loreExt ?? {},
+        extensions: exportedLoreExtensions,
         entries: charBook,
       },
       tags: char.tags ?? [],
@@ -1790,13 +1844,13 @@ export function createBaseV3(char: character) {
 
     charBook.push({
       ...({
-        keys: agentOnly && !lore.key ? [] : lore.key.split(',').map((r) => r.trim()),
-        secondary_keys: lore.selective ? lore.secondkey.split(',').map((r) => r.trim()) : undefined,
+        keys: agentOnly ? [] : lore.key.split(',').map((r) => r.trim()),
+        secondary_keys: agentOnly ? [] : lore.selective ? lore.secondkey.split(',').map((r) => r.trim()) : undefined,
         content: lore.content,
         extensions: ext,
         enabled: true,
         insertion_order: lore.insertorder,
-        constant: lore.alwaysActive,
+        constant: agentOnly ? false : lore.alwaysActive,
         selective: lore.selective,
         name: lore.comment,
         comment: lore.comment,
@@ -1807,9 +1861,8 @@ export function createBaseV3(char: character) {
       folder: lore.folder,
     })
   }
-  char.loreExt ??= {}
-
-  char.loreExt.risu_fullWordMatching = char.loreSettings?.fullWordMatching ?? false
+  const exportedLoreExtensions = structuredClone(char.loreExt ?? {})
+  exportedLoreExtensions.risu_fullWordMatching = char.loreSettings?.fullWordMatching ?? false
 
   const card: CharacterCardV3 = {
     spec: 'chara_card_v3',
@@ -1829,7 +1882,7 @@ export function createBaseV3(char: character) {
         scan_depth: char.loreSettings?.scanDepth,
         token_budget: char.loreSettings?.tokenBudget,
         recursive_scanning: char.loreSettings?.recursiveScanning,
-        extensions: char.loreExt ?? {},
+        extensions: exportedLoreExtensions,
         entries: charBook,
       },
       tags: char.tags ?? [],

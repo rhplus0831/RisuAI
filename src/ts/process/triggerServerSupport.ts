@@ -5,6 +5,7 @@
  * persistent character/persona/lorebook data.
  */
 export const serverUnsupportedTriggerEffectTypes: ReadonlySet<string> = new Set([
+  '@@emo',
   'command',
   'extractRegex',
   'showAlert',
@@ -46,6 +47,10 @@ export const serverUnsupportedTriggerEffectTypes: ReadonlySet<string> = new Set(
   'v2UpdateChatAt',
   'v2Wait',
 ])
+
+export function serverUnsupportedRegexEffectType(output: unknown): '@@emo' | null {
+  return typeof output === 'string' && output.startsWith('@@emo ') ? '@@emo' : null
+}
 
 export function isServerUnsupportedTriggerEffectType(type: string): boolean {
   return serverUnsupportedTriggerEffectTypes.has(type)

@@ -42,6 +42,7 @@ import { replayPendingMutations } from '../server/pendingMutationReplay'
 import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
 import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
 import { alertStore } from '../stores.svelte'
+import { resolveAlertSelection } from '../alert'
 import { language } from '../../lang'
 
 interface CapturedFetch {
@@ -140,6 +141,12 @@ async function waitForState(assertion: () => void): Promise<void> {
     }
   }
   throw lastError
+}
+
+async function resolvePresetImportChoice(selection: number | null): Promise<void> {
+  await vi.waitFor(() => expect(get(alertStore).type).toBe('select'))
+  const dialog = get(alertStore)
+  expect(resolveAlertSelection(dialog.dialogOwner, selection)).toBe(true)
 }
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
@@ -301,13 +308,14 @@ describe('importPreset warm-path logging (L37)', () => {
     }
   })
 
-  it('imports a full legacy binary preset as prompt-only and excludes its model selection', async () => {
+  it('lets a full legacy binary preset stay prompt-only and names both routed models', async () => {
     const calls = stubCommandFetch()
     const file = await buildRisupresetFile({
       id: 'legacy-source-id',
       name: 'Legacy Full',
       apiType: 'openai',
       aiModel: 'gpt-4o',
+      subModel: 'gpt-4o-mini',
       openrouterRequestModel: 'openai/gpt-4o',
       temperature: 42,
       maxContext: 16000,
@@ -315,7 +323,15 @@ describe('importPreset warm-path logging (L37)', () => {
       jailbreak: 'Legacy jailbreak',
     })
 
-    await importPreset({ name: 'legacy-full.risupreset', data: file })
+    const importing = importPreset({ name: 'legacy-full.risupreset', data: file })
+    await vi.waitFor(() => {
+      expect(get(alertStore)).toMatchObject({ type: 'select' })
+      expect(get(alertStore).msg).toContain('legacy-full.risupreset')
+      expect(get(alertStore).msg).toContain('gpt-4o')
+      expect(get(alertStore).msg).toContain('gpt-4o-mini')
+    })
+    await resolvePresetImportChoice(1)
+    await expect(importing).resolves.toBe('applied')
 
     expect(getResourceDatabase().modelPresets).toHaveLength(0)
     expect(getResourceDatabase().promptPresets).toHaveLength(1)
@@ -345,6 +361,62 @@ describe('importPreset warm-path logging (L37)', () => {
     expect(promptCommand.body.preset).not.toHaveProperty('aiModel')
     expect(promptCommand.body.preset).not.toHaveProperty('openrouterRequestModel')
     expect(promptCommand.body.preset).not.toHaveProperty('overrideModelParameters')
+  })
+
+  it('imports both halves of a full legacy preset when legacy routing is selected', async () => {
+    const calls = stubCommandFetch()
+    const file = await buildRisupresetFile({
+      name: 'Legacy Routing',
+      apiType: 'openai',
+      aiModel: 'gpt4o',
+      subModel: 'gpt4om',
+      openrouterRequestModel: 'openai/gpt-4o',
+      mainPrompt: 'Legacy prompt',
+      temperature: 37,
+    })
+
+    const importing = importPreset({ name: 'legacy-routing.risup', data: file })
+    await resolvePresetImportChoice(0)
+    await expect(importing).resolves.toBe('applied')
+
+    expect(getResourceDatabase().modelPresets).toHaveLength(1)
+    expect(getResourceDatabase().modelPresets[0]).toMatchObject({
+      name: 'Legacy Routing',
+      apiType: 'openai',
+      aiModel: 'gpt4o',
+      subModel: 'gpt4om',
+      openrouterRequestModel: 'openai/gpt-4o',
+    })
+    expect(getResourceDatabase().promptPresets).toHaveLength(1)
+    expect(getResourceDatabase().promptPresets[0]).toMatchObject({
+      name: 'Legacy Routing',
+      mainPrompt: 'Legacy prompt',
+      temperature: 37,
+      overrideModelParameters: true,
+    })
+    await vi.waitFor(() => {
+      expect(calls.filter((call) => call.url.endsWith('/model-presets'))).toHaveLength(1)
+      expect(calls.filter((call) => call.url.endsWith('/prompt-presets'))).toHaveLength(1)
+    })
+  })
+
+  it('cancels a model-bearing preset import without writing either half', async () => {
+    const calls = stubCommandFetch()
+    const file = await buildRisupresetFile({
+      name: 'Already Profiled',
+      apiType: 'openai',
+      aiModel: 'gpt4o',
+      subModel: 'gpt4om',
+      mainPrompt: 'Do not import',
+    })
+
+    const importing = importPreset({ name: 'already-profiled.risupreset', data: file })
+    await resolvePresetImportChoice(null)
+    await expect(importing).resolves.toBeNull()
+
+    expect(getResourceDatabase().modelPresets).toEqual([])
+    expect(getResourceDatabase().promptPresets).toEqual([])
+    expect(calls.filter((call) => call.url.includes('/commands/'))).toEqual([])
   })
 
   it('imports a modern prompt export with blank redacted fields as prompt-only', async () => {

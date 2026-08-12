@@ -154,6 +154,7 @@ import {
 import { setSettingsRuntimeProjectionHook } from './server/settingsRuntimeProjectionHooks'
 import { updateHeightMode } from './gui/heightMode'
 import { normalizeLegacyCustomBackgroundSetting } from './server/customBackgroundSetting'
+import { showLegacyMemoryMigrationNoticeIfNeeded } from './process/legacyMemoryMigrationNotice'
 import {
   reconcilePendingRecoveredGenerationEffects,
   setPendingRecoveredGenerationEffects,
@@ -359,6 +360,7 @@ export async function loadWebInitialDatabase() {
   await startServerResourceEvents({ replayPendingMutations: false })
   serverResourceRuntimeReplayEnabled = true
   normalizeLegacyCustomBackgroundSetting()
+  showLegacyMemoryMigrationNoticeIfNeeded()
 }
 
 /**

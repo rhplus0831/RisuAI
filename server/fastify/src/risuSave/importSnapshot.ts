@@ -75,6 +75,11 @@ export interface RisuSaveImportUnsupportedReference {
   kind: RisuSaveUnsupportedReferenceKind
 }
 
+export interface RisuSaveImportSkippedBlock {
+  name: string
+  type: 'CHAT'
+}
+
 export interface RisuSaveImportSnapshot {
   envelope: RisuSaveEnvelopeKind
   database: JsonRecord
@@ -82,6 +87,7 @@ export interface RisuSaveImportSnapshot {
   greetingTranslations: GreetingTranslationRow[]
   incompleteChatCount: number
   unsupportedReferences: RisuSaveImportUnsupportedReference[]
+  skippedBlocks: RisuSaveImportSkippedBlock[]
 }
 
 export interface UnsupportedGroupCharacterSummary {
@@ -136,6 +142,7 @@ export function decodeRisuSaveImportSnapshot(
       envelope,
       ...normalizeImportDatabase(decodeEnvelopeAsValidation(() => decodeLegacyRisuSaveEnvelope(data, options))),
       unsupportedReferences: [],
+      skippedBlocks: [],
     }
   }
 
@@ -147,10 +154,12 @@ export function decodeRisuSaveImportSnapshot(
   if (decoded.unsupportedReferences.some((reference) => reference.kind === 'cache-only')) {
     throw new ValidationError(RISUSAVE_INCOMPLETE_BLOCKS_ERROR)
   }
+  const assembled = assembleBlockDatabase(decoded.blocks)
   return {
     envelope,
-    ...normalizeImportDatabase(assembleBlockDatabase(decoded.blocks)),
+    ...normalizeImportDatabase(assembled.database),
     unsupportedReferences: decoded.unsupportedReferences,
+    skippedBlocks: assembled.skippedBlocks,
   }
 }
 
@@ -181,12 +190,20 @@ export function normalizeRisuSaveSnapshotDatabase(database: unknown): JsonRecord
   return normalizeImportDatabaseShape(database)
 }
 
-function assembleBlockDatabase(blocks: ReturnType<typeof decodeRisuSaveBlockEnvelope>['blocks']): JsonRecord {
+function assembleBlockDatabase(blocks: ReturnType<typeof decodeRisuSaveBlockEnvelope>['blocks']): {
+  database: JsonRecord
+  skippedBlocks: RisuSaveImportSkippedBlock[]
+} {
   const database: JsonRecord = {}
+  const skippedBlocks: RisuSaveImportSkippedBlock[] = []
   let sawRoot = false
 
   for (const block of blocks) {
     if (block.unsupportedReference) continue
+    if (block.type === RisuSaveBlockType.CHAT) {
+      skippedBlocks.push({ name: block.name, type: 'CHAT' })
+      continue
+    }
     if (block.content === null) {
       throw new ValidationError(`RISUSAVE block ${block.name} has no content`)
     }
@@ -205,8 +222,6 @@ function assembleBlockDatabase(blocks: ReturnType<typeof decodeRisuSaveBlockEnve
         }
         database.characters.push(readJsonObject(parsed, `${block.name} block`))
         break
-      case RisuSaveBlockType.CHAT:
-        throw new UnsupportedStandaloneChatBlocksError()
       case RisuSaveBlockType.BOTPRESET:
         database.botPresets = readJsonArray(parsed, `${block.name} block`)
         break
@@ -247,7 +262,7 @@ function assembleBlockDatabase(blocks: ReturnType<typeof decodeRisuSaveBlockEnve
     throw new ValidationError('RISUSAVE block save must include a root block')
   }
 
-  return database
+  return { database, skippedBlocks }
 }
 
 function normalizeImportDatabase(database: unknown): RisuSaveImportDatabaseNormalization {

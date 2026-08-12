@@ -61,6 +61,7 @@ describe('Fastify backup storage gates', () => {
       revision: 2,
       discardedPendingMutations: 0,
       assetReport: cleanAssetReport,
+      skippedBlocks: [],
     })
 
     await expect(loadBackupFromDevice()).resolves.toBe('ok')
@@ -77,6 +78,7 @@ describe('Fastify backup storage gates', () => {
       revision: 2,
       discardedPendingMutations: 0,
       assetReport: { referencedCount: 2, missingCount: 1, orphanedCount: 0 },
+      skippedBlocks: [],
     })
 
     await expect(loadBackupFromDevice()).resolves.toBe('ok')
@@ -93,12 +95,37 @@ describe('Fastify backup storage gates', () => {
       revision: 2,
       discardedPendingMutations: 0,
       assetReport: { referencedCount: 2, missingCount: 0, orphanedCount: 1 },
+      skippedBlocks: [],
     })
 
     await expect(loadBackupFromDevice()).resolves.toBe('ok')
 
     expect(alertState.alertNormal).toHaveBeenCalledOnce()
     expect(alertState.alertNormal).toHaveBeenCalledWith(language.backupImportSuccessWithAssetCaveats(0, 1))
+    expect(alertState.alertError).not.toHaveBeenCalled()
+  })
+
+  it('names every skipped standalone CHAT block after salvaging supported backup content', async () => {
+    selectBackupFile()
+    serverBackupState.importServerBundle.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      discardedPendingMutations: 0,
+      assetReport: cleanAssetReport,
+      skippedBlocks: [
+        { name: 'chat/alice', type: 'CHAT' },
+        { name: 'chat/bob', type: 'CHAT' },
+      ],
+    })
+
+    await expect(loadBackupFromDevice()).resolves.toBe('ok')
+
+    expect(alertState.alertNormal).toHaveBeenCalledWith(
+      `${language.backupImportSuccess}\n\n${language.backupImportSkippedBlocks([
+        'chat/alice (CHAT)',
+        'chat/bob (CHAT)',
+      ])}`,
+    )
     expect(alertState.alertError).not.toHaveBeenCalled()
   })
 
@@ -109,6 +136,7 @@ describe('Fastify backup storage gates', () => {
       revision: 2,
       discardedPendingMutations: 1,
       assetReport: cleanAssetReport,
+      skippedBlocks: [],
     })
 
     await expect(loadBackupFromDevice()).resolves.toBe('ok')
@@ -144,6 +172,7 @@ describe('Fastify backup storage gates', () => {
       revision: 2,
       discardedPendingMutations: 1,
       assetReport: { referencedCount: 2, missingCount: 1, orphanedCount: 1 },
+      skippedBlocks: [],
     })
 
     await expect(loadBackupFromDevice()).resolves.toBe('ok')

@@ -2,6 +2,7 @@ import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult } from './frames.js'
 import { extractApiResponseMetadata } from './apiMetadata.js'
 import { readBoundedBodyJson } from './body.js'
+import { normalizeLegacyOpenAIModelId } from '../../../../src/ts/model/legacyOpenAIModelAliases.js'
 
 export interface OpenAILegacyInstructRequest {
   model: string
@@ -94,7 +95,7 @@ export function resolveOpenAILegacyInstructRequest(input: ResolveInput): OpenAIL
     Array.isArray(input.stop) && input.stop.every((s) => typeof s === 'string') ? (input.stop as string[]) : undefined
 
   return {
-    model: input.model,
+    model: normalizeLegacyOpenAIModelId(input.model),
     prompt: flattenForLegacyInstruct(input.messages as RawChatMessage[]),
     apiKey: input.apiKey,
     baseUrl,

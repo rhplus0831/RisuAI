@@ -15,6 +15,13 @@ export const languageEnglish = {
   characterImportQueued:
     'The imported character is saved on this device and queued. It has not been accepted by the server and will retry automatically.',
   characterImportFailed: 'The imported character could not be saved. The provisional character was removed.',
+  characterImportDroppedArchiveEntry: (fileName: string) => `Archive file: ${fileName}`,
+  characterImportDroppedInlineAsset: (index: number, name: string) =>
+    `Inline asset data.assets[${index}]${name ? ` (${name})` : ''}`,
+  characterImportIncomplete: (details: string) =>
+    `Character imported, but the following oversized content was dropped:\n${details}`,
+  characterImportFailedAfterDroppedContent: (details: string) =>
+    `No readable character card could be imported. The following oversized content was dropped:\n${details}`,
   mutationStatusQueued: 'Queued',
   mutationStatusFailed: 'Save failed',
   messageMutationPending: 'Saving message change…',
@@ -1197,6 +1204,8 @@ export const languageEnglish = {
     }
     return `Local backup loaded, but ${caveats.join(' and ')}.`
   },
+  backupImportSkippedBlocks: (blocks: string[]) =>
+    `The supported backup content was imported. These standalone blocks were skipped:\n${blocks.map((block) => `- ${block}`).join('\n')}`,
   pasteAuthCode: 'Please copy the auth code from popup and paste it in here:',
   others: 'Others',
   presets: 'Presets',
@@ -1227,6 +1236,11 @@ export const languageEnglish = {
   missingRecommendedModelPreset: (id: string) => `Missing model preset: ${id}`,
   legacyBotPresets: 'Legacy bot presets',
   legacyBotPresetMigration: 'Legacy bot preset migration',
+  legacyPresetImportChoice: (fileName: string, primaryModel: string, auxiliaryModel: string) =>
+    `“${fileName}” also contains legacy model routing.\n\nPrimary model: ${primaryModel}\nAuxiliary model: ${auxiliaryModel}\n\nImport that model routing too, or keep only the prompt settings?`,
+  legacyPresetImportModelAndPrompt: 'Import model routing and prompt',
+  legacyPresetImportPromptOnly: 'Keep prompt settings only',
+  legacyPresetModelNotSpecified: 'Not specified',
   noLegacyBotPresets: 'No legacy bot presets',
   extractModelAndPrompt: 'Extract model and prompt',
   extractModelOnly: 'Model',
@@ -1796,6 +1810,8 @@ export const languageEnglish = {
   triggerEffectSendAI: 'Resend AI',
   triggerEffectUnsupportedOnServer:
     'Unsupported on this server: this imported effect is preserved but has no effect during generation.',
+  regexEmotionEffectUnsupportedOnServer:
+    'Unsupported on this server: @@emo is preserved but is skipped during generation.',
   triggerConfigurationUnsupportedDiagnostic: (effectTypes: string[], cbsCallbacks: string[]) =>
     `This configuration contains server-unsupported definitions. They are preserved but blocked during generation.${effectTypes.length > 0 ? ` Effects: ${effectTypes.join(', ')}.` : ''}${cbsCallbacks.length > 0 ? ` CBS callbacks: ${cbsCallbacks.join(', ')}.` : ''}`,
   triggerImportUnsupportedDiagnostic: (effectTypes: string[], cbsCallbacks: string[]) =>
@@ -1813,6 +1829,9 @@ export const languageEnglish = {
   input: 'Input',
   select: 'Select',
   options: 'Options',
+  dismissNotice: 'Dismiss',
+  legacyMemoryMigrationNotice: (algorithms: string) =>
+    `Legacy memory migration required\n\nThese selected memory modes no longer run in this server-backed version: ${algorithms}.\n\nSwitch to the maintained Hypa V3 memory in settings. This notice appears once for this database.`,
   alertContent: 'Alert Content',
   lowLevelAccessConfirm:
     'This content uses Low Level Access. which means this content can access the AI model and your storage directly. Do you really want to import this content?',

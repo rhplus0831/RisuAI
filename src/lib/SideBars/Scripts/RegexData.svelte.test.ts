@@ -11,6 +11,7 @@ vi.mock('src/lang', () => ({
     hotkeyDesc: { popupEditor: 'Popup Editor' },
     remove: 'Remove',
     removeConfirm: 'Remove ',
+    regexEmotionEffectUnsupportedOnServer: '@@emo is unsupported on this server.',
   },
 }))
 
@@ -153,6 +154,28 @@ describe('RegexData deletion', () => {
 })
 
 describe('RegexData action accessibility', () => {
+  it('annotates @@emo output as a preserved server-unsupported effect', async () => {
+    component = mount(RegexData, {
+      target,
+      props: {
+        value: {
+          id: 'emotion-effect',
+          comment: 'Emotion effect',
+          in: 'happy',
+          out: '@@emo joy',
+          type: 'editoutput',
+        } as customscript,
+        idx: 0,
+      },
+    })
+
+    target.querySelector<HTMLButtonElement>('button.endflex')?.click()
+    await tick()
+
+    const annotation = target.querySelector('[data-risu-server-unsupported-regex-effect="@@emo"]')
+    expect(annotation?.textContent).toContain('@@emo is unsupported on this server.')
+  })
+
   it('names row deletion and exposes expansion and flag selection state', async () => {
     const value = {
       id: 'script-a',

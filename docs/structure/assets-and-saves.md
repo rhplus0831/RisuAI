@@ -159,10 +159,10 @@ header when present; UI-facing wrappers live in `src/ts/storage/backup.ts`.
 
 Whole-database `.risu`, bundle, and legacy `.bin` imports reject group
 characters atomically with `422 unsupported-group-characters`. Block-envelope
-saves that contain standalone `CHAT` blocks are also rejected
-atomically with `422 unsupported-standalone-chat-blocks`; the browser maps that
-code to a localized compatibility diagnostic. Import does not convert those
-blocks or replace any live data. Exported whole-database saves contain raw
+saves that contain standalone `CHAT` blocks import all supported blocks, skip
+each standalone chat block, and return its exact name and type in
+`importReport.skippedBlocks`. The browser includes every skipped block in the
+localized completion report. Exported whole-database saves contain raw
 credential-bearing settings, including shared
 provider API keys and Vertex private keys; treat these files as secrets. The
 Settings UI requires the localized secret-warning confirmation before requesting
@@ -183,17 +183,20 @@ Portable client formats outside whole-database saves remain browser workflows:
 | `src/ts/storage/database.svelte.ts`                                                              | Legacy and split preset exchange, including `.risup`.             |
 | `src/ts/process/lorebook.svelte.ts`, `src/ts/process/scripts.ts`, `src/ts/translator/presets.ts` | Lorebook, regex-script, and `.risutl` translator-preset exchange. |
 
-Prompt Settings imports are prompt-only: legacy files may carry provider or
-model-selection fields, but import filters those fields and never creates or
-changes a model preset.
+Prompt Settings imports inspect the unmerged legacy payload. Pure prompt files
+remain prompt-only without interruption. When a file carries standalone
+provider/model-routing fields, a localized dialog names its primary and
+auxiliary models and lets the user import both model and prompt halves, keep
+only the prompt half, or cancel without writing either half.
 
 ### Character Cards
 
-`CharXImporter` incrementally decodes `.charx` and JPEG-embedded CharX ZIPs. A
-browser import fails closed when the importer reports any excluded entry, so an
-entry that expands beyond 50 MiB rejects the whole character import rather than
-producing a partial card. Oversized inline data-URI assets also throw instead of
-being skipped. Internally, completed assets flush at 32 items or the 8 MiB batch
+`CharXImporter` incrementally decodes `.charx` and JPEG-embedded CharX ZIPs.
+Entries that expand beyond 50 MiB and oversized inline data-URI assets are
+dropped while readable card content is imported. The completion alert names
+every dropped archive path and every inline `data.assets[index]` item; missing
+assets that were not named by that size report remain hard errors. Internally,
+completed assets flush at 32 items or the 8 MiB batch
 target, and ZIP input pauses while retained decoded asset bytes exceed the
 32 MiB queue target. Because thresholds are checked after accepting an entry,
 one otherwise valid entry can exceed a batch or queue target up to the 50 MiB
@@ -201,7 +204,7 @@ per-entry cap. The shared asset helper then applies its four-worker hashing,
 existence probing, deduplication, timeout, retry, and upload-chunk rules described
 above. `src/ts/process/processzip.test.ts` guards the entry cap,
 high-asset-count batching, queue backpressure, and representative valid output;
-`src/ts/characterCards.pngImport.test.ts` guards the fail-closed card result.
+`src/ts/characterCards.pngImport.test.ts` guards salvage and exact reporting.
 
 CharX asset writes finish before the imported character is dispatched through
 the command path. They are content-addressed and deduplicated, but are not
@@ -230,6 +233,9 @@ state repair accepts these imported compatibility values, while new Agent-only
 command payloads keep the stricter no-activation validation. The SQLite command
 side links back here from
 [Data And Events](data-and-events.md#revision-contract).
+Card and standalone lorebook export project Agent-only entries as inert for
+Original Risu by clearing both activation-key sets and disabling Always Active.
+That projection is export-only and never mutates the stored entry.
 
 ### Chats And Datasets
 

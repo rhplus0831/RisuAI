@@ -35,6 +35,10 @@ vi.mock('./pendingBridgeFlushRegistry', () => ({
   resetRegisteredPendingBridgeOwnershipState: bridgeResetSpies.resetRegisteredPendingBridgeOwnershipState,
 }))
 
+vi.mock('../process/legacyMemoryMigrationNotice', () => ({
+  showLegacyMemoryMigrationNoticeIfNeeded: vi.fn(),
+}))
+
 vi.mock('./durableMutationDispatch', () => ({
   countRegisteredDurableMutationSettlements: settlementSpies.countRegisteredDurableMutationSettlements,
   discardRegisteredDurableMutationSettlements: settlementSpies.discardRegisteredDurableMutationSettlements,
@@ -468,7 +472,13 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
     const event = { type: 'state.imported', resource: 'state', revision: 21 }
     const backupFetch = makeBackupFetch((url) => {
       if (url === '/api/v1/import/bundle') {
-        return { revision: 21, event, assetReport: cleanAssetReport, ...replacementOwnership }
+        return {
+          revision: 21,
+          event,
+          assetReport: cleanAssetReport,
+          importReport: { skippedBlocks: [{ name: 'standalone-chat', type: 'CHAT' }] },
+          ...replacementOwnership,
+        }
       }
       return { revision: 22 }
     })
@@ -481,6 +491,7 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
       discardedPendingMutations: 0,
       event,
       assetReport: cleanAssetReport,
+      skippedBlocks: [{ name: 'standalone-chat', type: 'CHAT' }],
     })
     expect(resourceRefreshSpies.forceServerDatabaseReplacementRefresh).toHaveBeenCalledWith('bundle-restore')
     expect(ownershipSpies.preparePendingMutationOutbox).toHaveBeenCalledWith({
@@ -517,6 +528,7 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
       revision: 21,
       discardedPendingMutations: 0,
       assetReport,
+      skippedBlocks: [],
     })
     expect(resourceRefreshSpies.forceServerDatabaseReplacementRefresh).toHaveBeenCalledWith('bundle-restore')
   })
@@ -640,6 +652,7 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
       discardedPendingMutations: 0,
       event,
       assetReport: cleanAssetReport,
+      skippedBlocks: [],
     })
 
     expect(FakeXMLHttpRequest.instances).toHaveLength(1)

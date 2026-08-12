@@ -190,4 +190,7 @@ runtime, native/mobile wrapper runtime modes, legacy `public/sw.js`
 share/file-handler/offline service-worker behavior, and standalone
 SupaMemory/Hypa V2/Hanurai engines. `HypaProcessorV2` remains an active helper
 inside maintained Hypa V3 logic, and `supaMemory` field/key/memo names remain
-active compatibility names for that maintained path.
+active compatibility names for that maintained path. A persisted, dismissible
+once-per-database notice names any selected retired SupaMemory, legacy
+HypaMemory, Hypa V2, Hanurai, or experimental Hypa V3 mode and directs the user
+to maintained Hypa V3.

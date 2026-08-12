@@ -196,6 +196,27 @@ const MODEL_PRESET_FIELD_BY_DATABASE_KEY: Record<string, ModelPresetField> = MOD
 const PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELD_SET = new Set<string>(PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS)
 const PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELD_SET = new Set<string>(PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS)
 const PROMPT_PRESET_MODEL_OVERRIDE_FIELD_SET = new Set<string>(PROMPT_PRESET_MODEL_OVERRIDE_FIELDS)
+const MODEL_PRESET_ONLY_FIELDS = MODEL_PRESET_FIELDS.filter(
+  (field) => !PROMPT_PRESET_MODEL_OVERRIDE_FIELD_SET.has(field),
+)
+
+/**
+ * Detect a legacy/full preset before preset defaults are merged into it.
+ * Prompt exports may carry model-parameter overrides, so only standalone
+ * model/connection fields count here.
+ */
+export function hasModelPresetOnlyFields(source: unknown): boolean {
+  if (!isRecord(source)) return false
+  return MODEL_PRESET_ONLY_FIELDS.some((field) => {
+    if (!Object.prototype.hasOwnProperty.call(source, field)) return false
+    const value = source[field]
+    if (value === null || value === undefined) return false
+    if (typeof value === 'string') return value.trim().length > 0
+    if (Array.isArray(value)) return value.length > 0
+    if (typeof value === 'object') return Object.keys(value).length > 0
+    return true
+  })
+}
 
 export function extractModelPresetFields(source: unknown): JsonRecord {
   return pickPresetFields(source, MODEL_PRESET_FIELDS)

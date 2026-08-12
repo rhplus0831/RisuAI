@@ -92,14 +92,20 @@ export async function loadBackupFromDevice(options: BackupOperationOptions = {})
     const assetResult = hasAssetCaveats
       ? language.backupImportSuccessWithAssetCaveats(result.assetReport.missingCount, result.assetReport.orphanedCount)
       : language.backupImportSuccess
+    const importResult =
+      result.skippedBlocks.length > 0
+        ? `${assetResult}\n\n${language.backupImportSkippedBlocks(
+            result.skippedBlocks.map((block) => `${block.name} (${block.type})`),
+          )}`
+        : assetResult
     if (result.discardedPendingMutations > 0) {
       alertError(
-        hasAssetCaveats
-          ? `${assetResult}\n\n${language.backupQueuedChangesDiscarded}`
+        hasAssetCaveats || result.skippedBlocks.length > 0
+          ? `${importResult}\n\n${language.backupQueuedChangesDiscarded}`
           : language.backupQueuedChangesDiscarded,
       )
     } else {
-      alertNormal(assetResult)
+      alertNormal(importResult)
     }
     return 'ok'
   } else if (result.status === 'unsupported-chat-blocks') {

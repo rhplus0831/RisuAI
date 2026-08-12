@@ -100,8 +100,9 @@ to find companion files and tests.
   [Provider Credentials](docs/structure/providers-and-models.md#provider-credentials)
   and [Assets And Saves](docs/structure/assets-and-saves.md).
 - Durable content must not be silently discarded. Whole-database imports reject
-  unsupported group characters atomically, CharX rejects excluded or oversized
-  entries instead of committing a partial card, and generation finalization
+  unsupported group characters atomically; unsupported standalone CHAT blocks
+  and oversized optional card assets are salvaged only with an exact completeness
+  report; and generation finalization
   rejects a transcript target changed since assembly while retries preserve the
   same snapshot fence. See [Assets And Saves](docs/structure/assets-and-saves.md#character-cards)
   and [Generation And Background Work](docs/structure/backend.md#generation-and-background-work).

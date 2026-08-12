@@ -757,14 +757,23 @@ describe('repository .risu bundle import route', () => {
     }
   })
 
-  it('rejects standalone CHAT blocks with a friendly diagnostic and leaves existing data untouched', async () => {
+  it('salvages supported bundle blocks and reports skipped standalone CHAT blocks', async () => {
     persistLiveDatabase(harness.dataDir)
     const before = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
     const databaseBytes = encodeRisuSaveBlockEnvelope([
       {
         name: 'root',
         type: RisuSaveBlockType.ROOT,
-        data: JSON.stringify({ version: 2, __directory: ['standalone-chat'] }),
+        data: JSON.stringify({
+          version: 2,
+          tag: 'salvaged-bundle',
+          __directory: ['supported-character', 'standalone-chat'],
+        }),
+      },
+      {
+        name: 'supported-character',
+        type: RisuSaveBlockType.CHARACTER_WITHOUT_CHAT,
+        data: JSON.stringify({ chaId: 'bundle-char', name: 'Bundle Character', chats: [] }),
       },
       {
         name: 'standalone-chat',
@@ -781,22 +790,25 @@ describe('repository .risu bundle import route', () => {
       payload: upload.payload,
     })
 
-    expect(imported.statusCode).toBe(422)
-    expect(imported.json()).toEqual({
-      code: 'unsupported-standalone-chat-blocks',
-      error:
-        'This save stores chats in standalone CHAT blocks, which this version of RisuAI cannot import. ' +
-        'Nothing was imported, and the active database was not changed.',
+    expect(imported.statusCode).toBe(200)
+    expect(imported.json()).toMatchObject({
+      importReport: {
+        skippedBlocks: [{ name: 'standalone-chat', type: 'CHAT' }],
+      },
+      assetReport: { orphanedCount: 1 },
+      bundleReport: { includedAssetCount: 1, assetsCreated: true },
     })
 
     const after = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
-    expect(after.json()).toMatchObject({
-      revision: before.json().revision,
-      databaseLineage: before.json().databaseLineage,
-      database: before.json().database,
+    expect(after.json().database).toMatchObject({
+      tag: 'salvaged-bundle',
+      characters: [expect.objectContaining({ chaId: 'bundle-char', name: 'Bundle Character' })],
     })
-    expect(listBackups(harness.dataDir)).toEqual([])
-    await expectNoImportedAssetSideEffects(harness)
+    expect(after.json().database.tag).not.toBe(before.json().database.tag)
+    expect(listBackups(harness.dataDir)).toHaveLength(1)
+    const importedAsset = await authedInject({ method: 'GET', url: `/api/v1/assets/${ASSET_ID}` })
+    expect(importedAsset.statusCode).toBe(200)
+    expect(harness.commandEvents.list().map((event) => event.type)).toContain('state.imported')
   })
 
   it('canonicalizes original-backup media references with non-sha256 record names', async () => {

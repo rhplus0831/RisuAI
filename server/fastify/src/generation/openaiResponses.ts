@@ -4,6 +4,7 @@ import { extractApiResponseMetadata } from './apiMetadata.js'
 import { readBoundedBodyText } from './body.js'
 import { appendOpenAIResponsesToolRounds, parseOpenAIResponsesToolCalls } from './serverTools.js'
 import type { ServerToolRound } from '../../../../src/ts/process/request/serverToolProtocol.js'
+import { normalizeLegacyOpenAIModelId } from '../../../../src/ts/model/legacyOpenAIModelAliases.js'
 
 export interface OpenAIResponsesRequest {
   model: string
@@ -190,7 +191,7 @@ export function resolveOpenAIResponsesRequest(input: ResolveInput): OpenAIRespon
   const store = typeof input.store === 'boolean' ? input.store : undefined
 
   return {
-    model: input.model,
+    model: normalizeLegacyOpenAIModelId(input.model),
     input: appendOpenAIResponsesToolRounds(
       buildResponseInput(input.messages as RawChatMessage[], {
         developerRole: input.developerRole === true,

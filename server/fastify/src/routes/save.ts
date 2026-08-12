@@ -122,6 +122,7 @@ export function registerSaveRoutes(
           importReport: {
             incompleteChatCount: snapshot.incompleteChatCount,
             unsupportedReferenceCount: snapshot.unsupportedReferences.length,
+            ...(snapshot.skippedBlocks.length > 0 ? { skippedBlocks: snapshot.skippedBlocks } : {}),
           },
           assetReport,
         }
@@ -236,6 +237,7 @@ export function registerSaveRoutes(
         importReport: {
           incompleteChatCount: snapshot.incompleteChatCount,
           unsupportedReferenceCount: snapshot.unsupportedReferences.length,
+          ...(snapshot.skippedBlocks.length > 0 ? { skippedBlocks: snapshot.skippedBlocks } : {}),
         },
         assetReport,
         bundleReport: {

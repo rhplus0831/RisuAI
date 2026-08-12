@@ -24,9 +24,9 @@ import {
   type LorebookStateSnapshot,
   type ScopedLorebookMutationOperation,
 } from '../server/lorebookBridge.svelte'
+import { isAgentOnlyLorebookEntry, lorebookEntriesForOriginalRisuExport } from '../agentLorebookInputs'
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { ensureCharacterLorebookHydrated } from '../server/chatMessageHydration.svelte'
-import { isAgentOnlyLorebookEntry } from '../agentLorebookInputs'
 import { risuChatParser } from '../parser/parser.svelte'
 
 // Scoped pre-edit rollback for the discrete lorebook editor actions below
@@ -1024,7 +1024,7 @@ export async function exportLoreBook(mode: 'global' | 'local' | 'sglobal') {
       JSON.stringify({
         type: 'risu',
         ver: 1,
-        data: lore,
+        data: lorebookEntriesForOriginalRisuExport(lore),
       }),
       'utf-8',
     )

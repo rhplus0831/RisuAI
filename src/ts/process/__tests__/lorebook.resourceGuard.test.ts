@@ -18,7 +18,7 @@ vi.mock('../../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'lorebook-projection-token',
 }))
 
-const downloadFile = vi.hoisted(() => vi.fn(async () => undefined))
+const downloadFile = vi.hoisted(() => vi.fn(async (_filename: string, _data: Uint8Array) => undefined))
 
 vi.mock('../../globalApi.svelte', async (importActual) => ({
   ...(await importActual<typeof import('../../globalApi.svelte')>()),
@@ -384,5 +384,37 @@ describe('global lorebook durable writes under the resource guard', () => {
     await vi.waitFor(() => {
       expect(entryComments(getDatabase().characters[0].globalLore)).toEqual(['During Picker Edit'])
     })
+  })
+
+  it('exports standalone Agent-only lorebook entries as inert without mutating stored entries', async () => {
+    withTrustedResourceWrite(() => {
+      getDatabase().loreBook[0].data = [
+        {
+          id: 'agent-only-export',
+          key: 'live-key',
+          secondkey: 'live-secondary',
+          insertorder: 100,
+          comment: 'Agent Notes',
+          content: 'private context',
+          mode: 'normal',
+          alwaysActive: true,
+          selective: true,
+          agentOnly: true,
+        },
+      ]
+    })
+    const storedBefore = safeStructuredClone(getDatabase().loreBook[0].data)
+
+    await exportLoreBook('sglobal')
+
+    const bytes = downloadFile.mock.calls[0]?.[1] as Uint8Array
+    const exported = JSON.parse(Buffer.from(bytes).toString('utf-8'))
+    expect(exported.data[0]).toMatchObject({
+      key: '',
+      secondkey: '',
+      alwaysActive: false,
+      agentOnly: true,
+    })
+    expect(getDatabase().loreBook[0].data).toEqual(storedBefore)
   })
 })

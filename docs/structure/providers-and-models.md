@@ -244,6 +244,10 @@ Kobold and Ooba legacy use the fixed `## Instruction` / `## User` /
 and `gpt2` choices and otherwise a generic `role: content` form. Fastify does
 not run the browser's other instruct templates or custom Jinja engine; the
 OpenRouter **Use Instruction Prompt** toggle remains unsupported server-side.
+Kobold replaces only a root/one-character URL path with `/api/v1/generate`;
+longer user-supplied paths are posted verbatim. OpenAI-family adapters normalize
+legacy selector aliases such as `gpt4o` to their provider IDs only at the wire
+boundary, while stored selections retain their legacy IDs.
 
 Provider adapters remove prompt-only metadata and convert supported media.
 OpenAI/Anthropic conversion is centralized in

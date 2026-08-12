@@ -155,6 +155,11 @@ vi.mock('src/lang', () => ({
     importedCharacter: 'Imported character',
     characterImportQueued: 'Imported character queued',
     characterImportFailed: 'Imported character failed',
+    characterImportDroppedArchiveEntry: (fileName: string) => `Archive file: ${fileName}`,
+    characterImportDroppedInlineAsset: (index: number, name: string) =>
+      `Inline asset data.assets[${index}]${name ? ` (${name})` : ''}`,
+    characterImportIncomplete: (details: string) => `Character imported with dropped content:\n${details}`,
+    characterImportFailedAfterDroppedContent: (details: string) => `Character import failed:\n${details}`,
     inputCardPassword: 'Card password',
     lowLevelAccessConfirm: 'Low-level access?',
     successExport: 'Exported',
@@ -254,13 +259,7 @@ vi.mock('./storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: vi.fn(async () => 'test-token'),
 }))
 
-import {
-  CHARACTER_CARD_INCOMPLETE_IMPORT_ERROR,
-  createBaseV3,
-  exportCharacterCard,
-  importCharacter,
-  importCharacterProcess,
-} from './characterCards'
+import { createBaseV3, exportCharacterCard, importCharacter, importCharacterProcess } from './characterCards'
 import { PngChunk } from './pngChunk'
 import { DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES } from './process/processzip'
 
@@ -605,7 +604,7 @@ describe('PNG character card import', () => {
     expect(characterCommandState.dispatchCreateCharacter).toHaveBeenCalledOnce()
   })
 
-  it('rejects a CharX whose module exceeds an injected entry bound', async () => {
+  it('salvages a CharX whose oversized module is dropped and reports its exact path', async () => {
     const card = characterCardFixture('Oversized Module')
     const cardBytes = Buffer.from(JSON.stringify(card))
     const maxEntrySizeBytes = cardBytes.byteLength
@@ -619,16 +618,37 @@ describe('PNG character card import', () => {
         { name: 'oversized-module.charx', data: archive },
         { charXMaxEntrySizeBytes: maxEntrySizeBytes },
       ),
-    ).rejects.toThrow(
-      `${CHARACTER_CARD_INCOMPLETE_IMPORT_ERROR}: entries exceeded the ${maxEntrySizeBytes} bytes per-entry limit: "module.risum"`,
-    )
+    ).resolves.toMatchObject({ status: 'accepted' })
 
-    expect(dbState.db.characters).toEqual([])
-    expect(characterCommandState.dispatchCreateCharacter).not.toHaveBeenCalled()
+    expect(dbState.db.characters).toHaveLength(1)
+    expect(dbState.db.characters[0].name).toBe('Oversized Module')
+    expect(characterCommandState.dispatchCreateCharacter).toHaveBeenCalledOnce()
+    expect(alertState.alertError).toHaveBeenCalledWith(expect.stringContaining('module.risum'))
     expect(alertState.alertNormal).not.toHaveBeenCalled()
   })
 
-  it('rejects a declared card asset that exceeds the injected entry bound', async () => {
+  it('reports every oversized CharX entry while importing the readable card', async () => {
+    const card = characterCardFixture('Multiple Oversized Entries')
+    const cardBytes = Buffer.from(JSON.stringify(card))
+    const maxEntrySizeBytes = cardBytes.byteLength
+    const archive = createCharXArchive({
+      'card.json': cardBytes,
+      'module.risum': new Uint8Array(maxEntrySizeBytes + 1),
+      'assets/also-too-large.png': new Uint8Array(maxEntrySizeBytes + 2),
+    })
+
+    await importCharacterProcess(
+      { name: 'multiple-oversized.charx', data: archive },
+      { charXMaxEntrySizeBytes: maxEntrySizeBytes },
+    )
+
+    const report = String(alertState.alertError.mock.calls[0]?.[0])
+    expect(report).toContain('module.risum')
+    expect(report).toContain('assets/also-too-large.png')
+    expect(dbState.db.characters).toHaveLength(1)
+  })
+
+  it('salvages readable card data when a declared oversized asset is dropped', async () => {
     const card = characterCardFixture('Oversized Asset')
     card.data.assets = [{ type: 'emotion', uri: 'embeded://assets/oversized.png', name: 'oversized', ext: 'png' }]
     const cardBytes = Buffer.from(JSON.stringify(card))
@@ -643,14 +663,16 @@ describe('PNG character card import', () => {
         { name: 'oversized-asset.charx', data: archive },
         { charXMaxEntrySizeBytes: maxEntrySizeBytes },
       ),
-    ).rejects.toThrow('"assets/oversized.png"')
+    ).resolves.toMatchObject({ status: 'accepted' })
 
-    expect(dbState.db.characters).toEqual([])
-    expect(characterCommandState.dispatchCreateCharacter).not.toHaveBeenCalled()
+    expect(dbState.db.characters).toHaveLength(1)
+    expect(dbState.db.characters[0].emotionImages).toEqual([])
+    expect(characterCommandState.dispatchCreateCharacter).toHaveBeenCalledOnce()
+    expect(alertState.alertError).toHaveBeenCalledWith(expect.stringContaining('assets/oversized.png'))
     expect(alertState.alertNormal).not.toHaveBeenCalled()
   })
 
-  it('treats an oversized inline data-URI asset as a hard import failure', async () => {
+  it('drops an oversized inline data-URI asset and reports its exact index and name', async () => {
     const card = characterCardFixture('Oversized Data URI')
     card.data.assets = [
       {
@@ -664,13 +686,13 @@ describe('PNG character card import', () => {
 
     await expect(
       importCharacterProcess({ name: 'oversized-inline.charx', data: archive }, { dataUriMaxBase64Length: 7 }),
-    ).rejects.toThrow(
-      `${CHARACTER_CARD_INCOMPLETE_IMPORT_ERROR}: data.assets[0] exceeds the 7 bytes inline data-URI limit`,
-    )
+    ).resolves.toMatchObject({ status: 'accepted' })
 
-    expect(dbState.db.characters).toEqual([])
+    expect(dbState.db.characters).toHaveLength(1)
+    expect(dbState.db.characters[0].emotionImages).toEqual([])
     expect(globalApiState.saveAssets).not.toHaveBeenCalled()
-    expect(characterCommandState.dispatchCreateCharacter).not.toHaveBeenCalled()
+    expect(characterCommandState.dispatchCreateCharacter).toHaveBeenCalledOnce()
+    expect(alertState.alertError).toHaveBeenCalledWith(expect.stringContaining('data.assets[0] (oversized-inline)'))
     expect(alertState.alertNormal).not.toHaveBeenCalled()
   })
 
@@ -718,7 +740,7 @@ describe('PNG character card import', () => {
     expect(characterCommandState.dispatchCreateCharacter).toHaveBeenCalledWith(imported, expect.any(Object))
   })
 
-  it('surfaces excluded CharX entries through the importCharacter alert boundary', async () => {
+  it('surfaces salvaged CharX entries through the importCharacter alert boundary', async () => {
     const cardBytes = Buffer.from(JSON.stringify(characterCardFixture('Alert Boundary')))
     const archive = concatBytes([
       storedLocalFile('module.risum', new Uint8Array(), DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES + 1, 0),
@@ -727,15 +749,13 @@ describe('PNG character card import', () => {
     const selectedFile = Object.assign(archive, { name: 'oversized-module.charx' })
     filePickerState.selectFileByDom.mockResolvedValueOnce([selectedFile])
 
-    await expect(importCharacter()).resolves.toMatchObject({ status: 'failed' })
+    await expect(importCharacter()).resolves.toMatchObject({ status: 'accepted' })
 
     expect(alertState.alertError).toHaveBeenCalledOnce()
-    const surfacedError = alertState.alertError.mock.calls[0][0] as Error
-    expect(surfacedError.message).toContain(CHARACTER_CARD_INCOMPLETE_IMPORT_ERROR)
-    expect(surfacedError.message).toContain('"module.risum"')
-    expect(surfacedError.message).toContain('50 MiB')
-    expect(dbState.db.characters).toEqual([])
-    expect(characterCommandState.dispatchCreateCharacter).not.toHaveBeenCalled()
+    const surfacedReport = String(alertState.alertError.mock.calls[0][0])
+    expect(surfacedReport).toContain('module.risum')
+    expect(dbState.db.characters).toHaveLength(1)
+    expect(characterCommandState.dispatchCreateCharacter).toHaveBeenCalledOnce()
     expect(alertState.alertNormal).not.toHaveBeenCalled()
   })
 })
@@ -807,7 +827,7 @@ describe('character card export assets', () => {
     ])
   })
 
-  it('exports Agent-only lorebook entries without erasing preserved activation fields', async () => {
+  it('exports Agent-only lorebook entries as inert without mutating the character', async () => {
     const char = createExportCharacter()
     char.globalLore = [
       {
@@ -838,15 +858,16 @@ describe('character card export assets', () => {
       },
     ]
     globalApiState.readImage.mockImplementation(async (key: string) => readExportFixtureAsset(key))
+    const originalLore = structuredClone(char.globalLore)
 
     await exportCharacterCard(char, 'json', { spec: 'v2' })
 
     const exportedBytes = globalApiState.downloadFile.mock.calls[0][1] as Uint8Array
     const entries = JSON.parse(Buffer.from(exportedBytes).toString('utf-8')).data.character_book.entries
     expect(entries[0]).toMatchObject({
-      keys: ['must-be-preserved'],
-      secondary_keys: ['also-preserved'],
-      constant: true,
+      keys: [],
+      secondary_keys: [],
+      constant: false,
       selective: true,
       extensions: { risu_agent_only: true },
     })
@@ -856,10 +877,11 @@ describe('character card export assets', () => {
       selective: false,
       extensions: { risu_agent_only: true },
     })
-    expect(entries[1].secondary_keys).toBeUndefined()
+    expect(entries[1].secondary_keys).toEqual([])
+    expect(char.globalLore).toEqual(originalLore)
   })
 
-  it('preserves Agent-only activation fields in v3 card output', () => {
+  it('neutralizes Agent-only activation fields in v3 card output without changing internal state', () => {
     const char = createExportCharacter()
     char.globalLore = [
       {
@@ -877,14 +899,16 @@ describe('character card export assets', () => {
       },
     ]
 
+    const originalLore = structuredClone(char.globalLore)
     expect(createBaseV3(char).data.character_book?.entries[0]).toMatchObject({
-      keys: ['/must-be-preserved/'],
-      secondary_keys: ['also-preserved'],
-      constant: true,
+      keys: [],
+      secondary_keys: [],
+      constant: false,
       selective: true,
       use_regex: true,
       extensions: { risu_agent_only: true },
     })
+    expect(char.globalLore).toEqual(originalLore)
   })
 })
 

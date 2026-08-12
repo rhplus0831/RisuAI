@@ -140,7 +140,8 @@ value-free digest certificates; a contract-specific fallback may return full
 canonical state when the certificate is unavailable.
 Imported Agent-only lore entries can retain their author activation fields as a
 compatibility exception; [Character Cards](assets-and-saves.md#character-cards)
-owns that import and persistence contract.
+owns that import and persistence contract. Portable exports neutralize those
+fields on cloned output only, leaving this persisted compatibility state intact.
 This compact local-effect acknowledgement is a third artifact, separate from
 both the browser outbox intent and the server mutation receipt: it only certifies
 that already-visible optimistic state can advance without a GET.

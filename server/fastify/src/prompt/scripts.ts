@@ -21,6 +21,7 @@ import {
 import { expandVariables, type ExpandContext } from './variables.js'
 import { getActiveModules, getModuleRegexScripts } from './modules.js'
 import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
+import { serverUnsupportedRegexEffectType } from '../../../../src/ts/process/triggerServerSupport.js'
 
 /**
  * Regex script processor ported from `src/ts/process/scripts.ts`
@@ -414,7 +415,11 @@ function applyOne(
     // Reset before any downstream use of the same regex object.
     reg.lastIndex = 0
     if (matched) {
-      if (outScript.startsWith('@@emo ')) return data
+      const unsupportedEffectType = serverUnsupportedRegexEffectType(outScript)
+      if (unsupportedEffectType) {
+        ctx.unsupportedTriggerEffectTypes?.add(unsupportedEffectType)
+        return data
+      }
       if (outScript.startsWith('@@inject') || actions.includes('inject')) {
         return applyInject(currentChat, chatID, data, reg, mutationHooks)
       }
@@ -566,7 +571,11 @@ async function applyOneAsync(
     const matched = await testBoundedRegexWithCompatibility(reg, data, 'customscript action source', options)
     if (!isComplexBoundedRegex(reg)) reg.lastIndex = 0
     if (matched) {
-      if (outScript.startsWith('@@emo ')) return data
+      const unsupportedEffectType = serverUnsupportedRegexEffectType(outScript)
+      if (unsupportedEffectType) {
+        ctx.unsupportedTriggerEffectTypes?.add(unsupportedEffectType)
+        return data
+      }
       if (outScript.startsWith('@@inject') || actions.includes('inject')) {
         return applyInjectAsync(currentChat, chatID, data, reg, options, mutationHooks)
       }

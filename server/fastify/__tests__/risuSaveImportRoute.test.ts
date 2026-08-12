@@ -1120,7 +1120,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(imported.json().importReport).not.toHaveProperty('unsupportedReferences')
   })
 
-  it('rejects standalone CHAT blocks before replacing the live database', async () => {
+  it('salvages supported blocks and reports every skipped standalone CHAT block', async () => {
     const seeded = await authedInject({
       method: 'POST',
       url: '/api/v1/import/risusave',
@@ -1139,7 +1139,16 @@ describe('Phase 9-8a multipart .risu import route', () => {
         {
           name: 'root',
           type: RisuSaveBlockType.ROOT,
-          data: JSON.stringify({ version: 2, __directory: ['standalone-chat'] }),
+          data: JSON.stringify({
+            version: 2,
+            tag: 'salvaged-block-save',
+            __directory: ['supported-character', 'standalone-chat'],
+          }),
+        },
+        {
+          name: 'supported-character',
+          type: RisuSaveBlockType.CHARACTER_WITHOUT_CHAT,
+          data: JSON.stringify({ chaId: 'salvaged-char', name: 'Salvaged Character', chats: [] }),
         },
         {
           name: 'standalone-chat',
@@ -1156,21 +1165,23 @@ describe('Phase 9-8a multipart .risu import route', () => {
       payload: upload.payload,
     })
 
-    expect(imported.statusCode).toBe(422)
-    expect(imported.json()).toEqual({
-      code: 'unsupported-standalone-chat-blocks',
-      error:
-        'This save stores chats in standalone CHAT blocks, which this version of RisuAI cannot import. ' +
-        'Nothing was imported, and the active database was not changed.',
+    expect(imported.statusCode).toBe(200)
+    expect(imported.json()).toMatchObject({
+      revision: 2,
+      importReport: {
+        incompleteChatCount: 0,
+        unsupportedReferenceCount: 0,
+        skippedBlocks: [{ name: 'standalone-chat', type: 'CHAT' }],
+      },
     })
     const after = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
-    expect(after.json()).toMatchObject({
-      revision: before.json().revision,
-      databaseLineage: before.json().databaseLineage,
-      database: before.json().database,
+    expect(after.json().database).toMatchObject({
+      tag: 'salvaged-block-save',
+      characters: [expect.objectContaining({ chaId: 'salvaged-char', name: 'Salvaged Character' })],
     })
-    expect(listBackups(harness.dataDir)).toEqual([])
-    expect(harness.commandEvents.list()).toEqual([seeded.json().event])
+    expect(after.json().database.tag).not.toBe(before.json().database.tag)
+    expect(listBackups(harness.dataDir)).toHaveLength(1)
+    expect(harness.commandEvents.list()).toHaveLength(2)
   })
 
   it('rejects a block upload truncated exactly after a complete block before taking a snapshot', async () => {

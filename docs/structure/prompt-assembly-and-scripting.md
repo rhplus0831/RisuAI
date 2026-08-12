@@ -343,6 +343,10 @@ dedicated V2 JSON import reports them without changing the imported rows, and
 the browser presents runtime compatibility warnings visibly as well as retaining
 them in the generation result.
 
+The same catalog includes regex-script `@@emo` output. Matching scripts preserve
+their rows and leave text unchanged, add one `@@emo` warning per generation,
+and show an annotation beside the regex output editor.
+
 This boundary is specific to V2 trigger effects. It does not make the durable
 Lua setters above unsupported. Keep the two compatibility surfaces distinct in
 tests and documentation. Safety regressions are covered by

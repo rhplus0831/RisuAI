@@ -113,6 +113,23 @@ describe('applyOobaSystemHoist', () => {
 })
 
 describe('resolveOpenAIRequest', () => {
+  it.each([
+    ['gpt4o', 'gpt-4o'],
+    ['gpt4om', 'gpt-4o-mini'],
+    ['gpt4o-chatgpt', 'chatgpt-4o-latest'],
+    ['gpt35', 'gpt-3.5-turbo'],
+    ['gpt4_1106', 'gpt-4-1106-preview'],
+    ['custom-model', 'custom-model'],
+  ])('normalizes legacy OpenAI model selector %s to %s before the request', (selected, wireModel) => {
+    const resolved = resolveOpenAIRequest({
+      model: selected,
+      messages: [],
+      apiKey: 'sk-x',
+      signal: new AbortController().signal,
+    })
+    expect(resolved?.model).toBe(wireModel)
+  })
+
   it('allows missing apiKey for optional-auth compatible endpoints', () => {
     const r = resolveOpenAIRequest({
       model: 'gpt-4o',
