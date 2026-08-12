@@ -242,12 +242,14 @@ The body is overflow-hidden and full-height, and `#app` uses `overflow: clip`.
 mount, preventing focus, `scrollIntoView`, custom CSS, or automation from moving
 the fixed shell. While a text editor is focused,
 `src/ts/gui/visualViewportCoordinator.ts` sizes and offsets the app shell from
-`window.visualViewport`; the guard continues to reset horizontal drift but
-temporarily yields vertical ownership to the browser. Scroll application
-content through inner containers, not `window` or the document root. For
-clipping, double scrollbars, or invisible content, inspect `src/styles.css`,
-route-branch height classes, and child `min-w-0`/overflow constraints. The two
-coordinators have focused unit coverage.
+`window.visualViewport`. It waits for stable keyboard-animation coordinates,
+uses `pageTop` rather than a layout-relative offset, and applies a transform
+only while the visual viewport is panned. The guard continues to reset
+horizontal drift but temporarily yields vertical ownership to the browser.
+Scroll application content through inner containers, not `window` or the
+document root. For clipping, double scrollbars, or invisible content, inspect
+`src/styles.css`, route-branch height classes, and child `min-w-0`/overflow
+constraints. The two coordinators have focused unit and browser coverage.
 
 ## Mobile And Lite
 

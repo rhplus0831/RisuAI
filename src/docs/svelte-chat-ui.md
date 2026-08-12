@@ -141,10 +141,13 @@ width across `chatScreenWidth`, viewport changes, and safe-area insets. Normal
 and translated textareas clamp to a 44-pixel minimum.
 
 While a text editor is focused, `visualViewportCoordinator.ts` publishes the
-visual viewport height and top offset to the app shell. The document scroll
-guard yields vertical ownership during that interval, preventing iOS focus
-scrolling from fighting the user's gesture, and resumes its normal root reset
-after the keyboard settles.
+visual viewport height and page position to the app shell. Viewport events are
+sampled only after a short settle window and two animation frames because iOS
+WebKit can report transient keyboard-animation coordinates. The shell is
+translated only when the visual viewport has actually panned. The document
+scroll guard yields vertical ownership during that interval, preventing iOS
+focus scrolling from fighting the user's gesture, and resumes its normal root
+reset after the keyboard settles.
 
 ## Generation And Loading States
 

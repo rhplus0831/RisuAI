@@ -24,6 +24,12 @@ declare global {
     __RISU_FASTIFY_STORAGE_WRITE_AUDIT__?: {
       records: StorageAuditRecord[]
     }
+    __RISU_SET_MOCK_VISUAL_VIEWPORT__?: (state: {
+      event?: 'resize' | 'scroll'
+      height?: number
+      offsetTop?: number
+      pageTop?: number
+    }) => void
   }
 }
 
@@ -404,6 +410,103 @@ test('core chat controls and blocking alerts remain accessible across responsive
       caret: 'hide',
     })
   }
+})
+
+test('mobile composer ignores transient keyboard viewport coordinates', async ({ page }) => {
+  const database = browserSmokeDatabase()
+  database.inputHooks = [{ id: 'draft-smoke', name: 'Draft Smoke', prompt: '', type: 'draft' }]
+  const character = (database.characters as Array<{ chats: Array<Record<string, unknown>> }>)[0]
+  character.chats[0].selectedDraftHookId = 'draft-smoke'
+  await importDatabase(harness.app, browserSmokeAssertion, database)
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.addInitScript(() => {
+    const state = {
+      height: window.innerHeight,
+      offsetTop: 0,
+      pageTop: 0,
+    }
+    const visualViewport = new EventTarget()
+    Object.defineProperties(visualViewport, {
+      height: { configurable: true, get: () => state.height },
+      offsetTop: { configurable: true, get: () => state.offsetTop },
+      pageTop: { configurable: true, get: () => state.pageTop },
+    })
+    Object.defineProperty(window, 'visualViewport', {
+      configurable: true,
+      value: visualViewport,
+    })
+    window.__RISU_SET_MOCK_VISUAL_VIEWPORT__ = (next) => {
+      if (next.height !== undefined) state.height = next.height
+      if (next.offsetTop !== undefined) state.offsetTop = next.offsetTop
+      if (next.pageTop !== undefined) state.pageTop = next.pageTop
+      if (next.event) visualViewport.dispatchEvent(new Event(next.event))
+    }
+  })
+  await page.goto(harness.baseUrl)
+  await waitForBrowserSmokeLoaded(page)
+  await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.selectCharacter(0))
+
+  const chatRow = page.locator('[data-risu-chat-id="chat-smoke"]').first()
+  const mobileRecentChat = page.getByRole('button', { name: /Open most recent chat Smoke Chat/ })
+  await expect.poll(async () => (await chatRow.isVisible()) || (await mobileRecentChat.isVisible())).toBe(true)
+  if (await chatRow.isVisible()) {
+    await chatRow.locator('button[data-risu-chat-action="select"]').click()
+  } else {
+    await mobileRecentChat.click()
+  }
+
+  const composer = page.getByTestId('default-chat-composer')
+  await expect(page.getByTestId('default-chat-draft-input')).toBeVisible()
+  await composer.focus()
+  await expect(page.locator('html')).toHaveAttribute('data-risu-visual-viewport-active', 'true')
+  await expect
+    .poll(() => page.locator('html').evaluate((node) => node.style.getPropertyValue('--risu-visual-viewport-height')))
+    .toBe('844px')
+
+  const initialComposerTop = await composer.evaluate((node) => node.getBoundingClientRect().top)
+  await page.evaluate(() => {
+    window.__RISU_SET_MOCK_VISUAL_VIEWPORT__?.({ event: 'resize', height: 80, offsetTop: 0, pageTop: 0 })
+  })
+  await page.waitForTimeout(20)
+
+  expect(
+    await page.locator('html').evaluate((node) => node.style.getPropertyValue('--risu-visual-viewport-height')),
+  ).toBe('844px')
+  expect(
+    Math.abs((await composer.evaluate((node) => node.getBoundingClientRect().top)) - initialComposerTop),
+  ).toBeLessThan(1)
+
+  await page.evaluate(() => {
+    window.__RISU_SET_MOCK_VISUAL_VIEWPORT__?.({ height: 417, offsetTop: 380, pageTop: 380 })
+  })
+  await expect
+    .poll(() =>
+      page.locator('html').evaluate((node) => ({
+        height: node.style.getPropertyValue('--risu-visual-viewport-height'),
+        pageTop: node.style.getPropertyValue('--risu-visual-viewport-page-top'),
+      })),
+    )
+    .toEqual({ height: '417px', pageTop: '380px' })
+
+  const keyboardGeometry = await page.evaluate(() => {
+    const composerElement = document.querySelector<HTMLElement>('[data-testid="default-chat-composer"]')
+    const dock = document.querySelector<HTMLElement>('[data-default-chat-composer-dock]')
+    const shell = document.querySelector<HTMLElement>('[data-risu-visual-viewport-shell]')
+    if (!composerElement || !dock || !shell) return null
+    const composerRect = composerElement.getBoundingClientRect()
+    const dockRect = dock.getBoundingClientRect()
+    const shellRect = shell.getBoundingClientRect()
+    return {
+      composerTop: composerRect.top,
+      dockBottom: dockRect.bottom,
+      shellBottom: shellRect.bottom,
+      shellMidpoint: shellRect.top + shellRect.height / 2,
+    }
+  })
+  expect(keyboardGeometry).not.toBeNull()
+  expect(keyboardGeometry!.composerTop).toBeGreaterThan(keyboardGeometry!.shellMidpoint)
+  expect(Math.abs(keyboardGeometry!.dockBottom - keyboardGeometry!.shellBottom)).toBeLessThanOrEqual(1)
 })
 
 test('prompt presets and model profiles reorder from an immediate mobile touch drag', async ({ browser }) => {
