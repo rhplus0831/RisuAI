@@ -372,6 +372,93 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     expect(getRerollBuffer()).toEqual([])
   })
 
+  it('recreates a half-streaming placeholder removed before the cancelled snapshot arrives', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    target.message = [{ role: 'user', data: 'question', chatId: 'user-1' } as Message]
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'cancelled',
+        done: {
+          outcome: 'cancelled',
+          result: 'raw partial',
+          postGeneration: {
+            messageId: 'gen-half-stop',
+            finalText: 'processed partial',
+          },
+        },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-half-stop', model: 'test-model' },
+      streamProjection: {
+        chatId: 'chat-target',
+        messageId: 'gen-half-stop',
+        generationId: 'gen-half-stop',
+        previousData: '',
+        ownedData: '',
+        appended: true,
+        detached: false,
+        messageIndex: 1,
+      },
+    })
+
+    expect(result.status).toBe('cancelled')
+    expect(target.message).toHaveLength(2)
+    expect(target.message[1]).toMatchObject({
+      role: 'char',
+      chatId: 'gen-half-stop',
+      data: 'processed partial',
+      saying: 'char-stable',
+      generationInfo: { generationId: 'gen-half-stop', model: 'test-model' },
+    })
+  })
+
+  it('keeps a processed failed partial instead of applying the pre-generation restoration', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    target.message[0].data = 'raw failed partial'
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'error',
+        error: 'provider exploded',
+        restoration: makeRestoration('chat-target'),
+        done: {
+          result: 'raw failed partial',
+          postGeneration: {
+            messageId: 'gen-stable',
+            finalText: 'processed failed partial',
+          },
+        },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+      streamProjection: {
+        chatId: 'chat-target',
+        messageId: 'gen-stable',
+        generationId: 'gen-stable',
+        previousData: '',
+        ownedData: 'raw failed partial',
+        appended: true,
+      },
+    })
+
+    expect(result.status).toBe('failed')
+    expect(target.message).toHaveLength(1)
+    expect(target.message[0].data).toBe('processed failed partial')
+    expect(target.scriptstate).toBeUndefined()
+    expect(hydrationMock.hydrate).not.toHaveBeenCalled()
+  })
+
   it('discards a late inlay completion after a newer message edit intent', async () => {
     const { char, target } = seedReorderedTerminalChats()
     const completion = deferred<string>()

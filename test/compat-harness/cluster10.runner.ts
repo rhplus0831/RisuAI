@@ -38,13 +38,14 @@ const OUTPUT_PATH = process.env.COMPAT_HARNESS_CLUSTER10_OUTPUT
 const cluster10: Cluster10Artifact = {
   schemaVersion: 1,
   replayCapCanonicalTerminal: {
-    reproduced: false,
+    healthy: false,
     retainedEventTypes: [],
     clientStatus: 'not-run',
     canonicalTerminalResult: '',
+    clientDisplayedResult: '',
   },
   retriedExtendContinueDuplicate: {
-    reproduced: false,
+    healthy: false,
     afterFirstAttempt: '',
     duringRetry: '',
     canonicalTerminalResult: '',
@@ -107,6 +108,7 @@ function extendRequest(
     type: 'streaming',
     result: stream,
     continueDisposition: 'extend',
+    continueBase: 'Seed answer.',
   } as Extract<requestDataResponse, { type: 'streaming' }>
 }
 
@@ -141,7 +143,7 @@ function retryFixtureCharacter(): character {
   } as unknown as character
 }
 
-describe('cluster 10 fault-seam reproductions', () => {
+describe('cluster 10 fault-seam regressions', () => {
   let originalFetch: typeof globalThis.fetch
 
   afterEach(() => {
@@ -154,7 +156,7 @@ describe('cluster 10 fault-seam reproductions', () => {
     await writeFile(OUTPUT_PATH, `${JSON.stringify(cluster10, null, 2)}\n`, 'utf8')
   })
 
-  it('replay event cap can evict prompt while the canonical terminal remains recoverable', async () => {
+  it('consumes the canonical terminal when replay caps evict prompt readiness', async () => {
     originalFetch = globalThis.fetch
     const snapshotDir = mkdtempSync(resolve(tmpdir(), 'risu-compat-replay-'))
     const registry = new JobRegistry({
@@ -198,22 +200,30 @@ describe('cluster 10 fault-seam reproductions', () => {
       job.id,
     )
     const parsedTerminal = JSON.parse(terminal!) as { result: string }
+    let clientDisplayedResult = ''
+    let terminalStatus = ''
+    if (result.status === 'ok' && result.req.type === 'streaming') {
+      const first = await result.req.result.getReader().read()
+      clientDisplayedResult = first.value ? Object.values(first.value)[0] : ''
+      terminalStatus = (await result.terminal).status
+    }
     cluster10.replayCapCanonicalTerminal = {
-      reproduced: result.status === 'error' && result.error === 'stream ended without a prompt event',
+      healthy: result.status === 'ok' && clientDisplayedResult === parsedTerminal.result && terminalStatus === 'done',
       retainedEventTypes: frames.map(eventType),
       clientStatus: result.status,
       ...(result.status === 'error' ? { clientError: result.error } : {}),
       canonicalTerminalResult: parsedTerminal.result,
+      clientDisplayedResult,
     }
 
-    expect(cluster10.replayCapCanonicalTerminal.reproduced).toBe(true)
+    expect(cluster10.replayCapCanonicalTerminal.healthy).toBe(true)
     expect(frames.map(eventType)).not.toContain('prompt')
     expect(parsedTerminal.result).toBe('Canonical terminal reply.')
     registry.cleanup(job.id)
     rmSync(snapshotDir, { recursive: true, force: true })
   })
 
-  it('retrying an extend-continue reattach captures the partial as a new prefix', async () => {
+  it('retrying an extend-continue reattach keeps the immutable original prefix', async () => {
     const currentChar = retryFixtureCharacter()
     setDatabase({ characters: [currentChar] } as Database)
     selectedCharID.set(0)
@@ -242,7 +252,10 @@ describe('cluster 10 fault-seam reproductions', () => {
     await expect(failedAttempt).rejects.toThrow('injected reattach transport failure')
     const afterFirstAttempt = target().data
 
-    await consumeStreamResponse({ ...base, req: extendRequest(oneChunkStream(' Continued reply.', false)) })
+    const retriedAttempt = await consumeStreamResponse({
+      ...base,
+      req: extendRequest(oneChunkStream(' Continued reply.', false)),
+    })
     const duringRetry = target().data
     const canonicalTerminalResult = 'Seed answer. Continued reply.'
     withTrustedResourceWrite(() => {
@@ -251,13 +264,14 @@ describe('cluster 10 fault-seam reproductions', () => {
     const afterCanonicalTerminal = target().data
 
     cluster10.retriedExtendContinueDuplicate = {
-      reproduced: duringRetry === 'Seed answer. Continued reply. Continued reply.',
+      healthy: duringRetry === canonicalTerminalResult,
       afterFirstAttempt,
       duringRetry,
       canonicalTerminalResult,
       afterCanonicalTerminal,
     }
-    expect(cluster10.retriedExtendContinueDuplicate.reproduced).toBe(true)
+    expect(cluster10.retriedExtendContinueDuplicate.healthy).toBe(true)
+    expect(retriedAttempt.projection.detached).toBe(false)
     expect(afterCanonicalTerminal).toBe(canonicalTerminalResult)
   })
 })

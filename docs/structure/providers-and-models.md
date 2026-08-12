@@ -158,6 +158,13 @@ Important runtime contracts include:
   `src/ts/process/halfStreamingProgress.ts` computes throughput. Agent Preset
   steps deliberately disable both streaming modes; see
   [Agents And Presets](agents-and-presets.md#provider-dispatch-and-history).
+  Stop retains a non-empty buffered partial: server-backed streams reconcile the
+  processed persisted snapshot, while local-provider streams apply the partial
+  through client editoutput before cleanup.
+- Provider stream failures before any token keep the current no-row behavior.
+  Once tokens have arrived, the accumulated partial runs through the
+  editoutput-only interrupted-result pipeline and is retained as a failed
+  assistant row; the pre-generation transcript is not restored over it.
 - `FASTIFY_TOKENIZER_OPTIONS` in `src/ts/model/tokenizerOptions.ts` is the
   portable tokenizer catalog. Runtime override wins over runtime default, then
   the Custom API provider choice. Fastify loads the matching implementation

@@ -48,6 +48,7 @@ import type {
   ServerChatGenerationProjection,
   ServerChatGenerationPersistenceDisposition,
   ServerChatMessagePatch,
+  ServerChatPostGeneration,
   ServerChatRestoration,
   ServerChatSideEffect,
   ServerChatWarning,
@@ -684,7 +685,9 @@ export async function requestServerChatGeneration(
     ? registerGenerationOperationViewer(authoritativeOperationStream.operationId, () => {
         operationCancellationRequested = true
         operationStopDetached = true
-        viewerAbortController.abort()
+        // Stop owns the durable operation, but this viewer still owns the
+        // visible transcript. Keep consuming until the canonical cancelled
+        // terminal arrives so its processed snapshot can be applied locally.
       })
     : () => undefined
   const cancelDurableOnAbort = (): void => {
@@ -860,6 +863,7 @@ export async function requestServerChatGeneration(
           ...(replayGapTruncated ? { replayGapTruncated: true } : {}),
           ...(replayGapPending ? { replayGapPending: true } : {}),
           ...(info.continueDisposition ? { continueDisposition: info.continueDisposition } : {}),
+          ...(typeof info.continueBase === 'string' ? { continueBase: info.continueBase } : {}),
         }
         resolveReadyOnce({
           status: 'ok',
@@ -875,8 +879,8 @@ export async function requestServerChatGeneration(
 
       const settleAborted = (): void => {
         cancelDurableOnAbort()
-        // Operation Stop detaches this viewer after staging, but the exact job
-        // remains locally owned until operation reconciliation proves terminal.
+        // If a legacy/transport path still settles locally during operation
+        // Stop, keep the exact job owned until reconciliation proves terminal.
         if (!operationStopDetached) forgetActiveGenerationJob(durableJobId)
         resolveReadyOnce({ status: 'aborted' })
         resolveTerminalOnce({ status: 'error', error: 'Aborted', ...reattachOutcomeFields('aborted'), warnings })
@@ -1110,6 +1114,21 @@ export async function requestServerChatGeneration(
                     data.generationProjection && typeof data.generationProjection === 'object'
                       ? (data.generationProjection as unknown as ServerChatGenerationProjection)
                       : undefined
+                  const retainedResult = typeof data.result === 'string' ? data.result : undefined
+                  const postGeneration =
+                    data.postGeneration && typeof data.postGeneration === 'object'
+                      ? (data.postGeneration as unknown as ServerChatPostGeneration)
+                      : undefined
+                  if (retainedResult !== undefined) {
+                    const previousTokenResult = tokenResult
+                    tokenResult = retainedResult
+                    if (halfStreaming || tokenResult !== previousTokenResult || replayGapPending) {
+                      enqueueToken({ [streamKey]: tokenResult })
+                    }
+                  }
+                  if (typeof postGeneration?.revision === 'number') {
+                    setCachedServerCommandRevision(postGeneration.revision)
+                  }
                   applyGenerationOperationSseEvent({ ...data, type: 'error', jobId: durableJobId })
                   resolveReadyOnce({
                     status: 'error',
@@ -1126,6 +1145,16 @@ export async function requestServerChatGeneration(
                     restoration,
                     ...(persistenceDisposition ? { persistenceDisposition } : {}),
                     ...(generationProjection ? { generationProjection } : {}),
+                    ...(retainedResult !== undefined || postGeneration
+                      ? {
+                          done: {
+                            ...(retainedResult !== undefined ? { result: retainedResult } : {}),
+                            ...(postGeneration ? { postGeneration } : {}),
+                            ...(typeof info?.generationId === 'string' ? { generationId: info.generationId } : {}),
+                            ...(info?.generationInfo ? { generationInfo: info.generationInfo } : {}),
+                          },
+                        }
+                      : {}),
                     sideEffects,
                     warnings,
                   })
@@ -1148,6 +1177,25 @@ export async function requestServerChatGeneration(
                     } catch (error) {
                       settleTransportError(error instanceof Error ? error.message : String(error), 'terminal_failure')
                       return
+                    }
+                  }
+                  if (replayGapTruncated && (!prompt || !info)) {
+                    const generation = coerceGenerationInfo(info, donePayload)
+                    if (generation) {
+                      prompt ??= {}
+                      info ??= {
+                        generationId: generation.generationId,
+                        generationInfo: { ...generation.generationInfo },
+                        ...(donePayload.halfStreaming === true ? { halfStreaming: true } : {}),
+                        ...(donePayload.continueDisposition
+                          ? { continueDisposition: donePayload.continueDisposition }
+                          : {}),
+                        ...(typeof donePayload.continueBase === 'string'
+                          ? { continueBase: donePayload.continueBase }
+                          : {}),
+                      }
+                      halfStreaming = info.halfStreaming === true
+                      maybeResolveReady()
                     }
                   }
                   const terminalClosesReplayGap = replayGapPending

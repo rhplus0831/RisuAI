@@ -61,14 +61,15 @@ export interface CompatDiffArtifact {
 export interface Cluster10Artifact {
   schemaVersion: 1
   replayCapCanonicalTerminal: {
-    reproduced: boolean
+    healthy: boolean
     retainedEventTypes: string[]
     clientStatus: string
     clientError?: string
     canonicalTerminalResult: string
+    clientDisplayedResult: string
   }
   retriedExtendContinueDuplicate: {
-    reproduced: boolean
+    healthy: boolean
     afterFirstAttempt: string
     duringRetry: string
     canonicalTerminalResult: string

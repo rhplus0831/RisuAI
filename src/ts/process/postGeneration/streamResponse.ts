@@ -66,6 +66,10 @@ export interface StreamMessageProjection {
   previousData: string
   ownedData: string
   appended: boolean
+  /** Stream ownership was lost to a newer projection or user mutation. */
+  detached?: boolean
+  /** Original generated-row slot, used when half-stream Stop removed its placeholder. */
+  messageIndex?: number
   /** The stream crossed an explicit durable replay gap before terminal reconciliation. */
   gapTruncated?: boolean
 }
@@ -132,8 +136,12 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
   if (extendsContinue) {
     msgIndex -= 1
     const continueTarget = initialMessages[msgIndex]
-    prefix = continueTarget?.data ?? ''
-    lastStreamOwnedData = prefix
+    const visibleContinueData = continueTarget?.data ?? ''
+    prefix = typeof req.continueBase === 'string' ? req.continueBase : visibleContinueData
+    // A retried reattach can begin while the row already displays this
+    // generation's prior partial. That visible value is still stream-owned;
+    // only the composition prefix must come from the immutable server base.
+    lastStreamOwnedData = visibleContinueData
     streamTargetMessageId = continueTarget?.chatId
     if (!streamTargetMessageId) anonymousStreamTarget = continueTarget
   } else {
@@ -325,6 +333,12 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
     if (halfStreaming && streamCompleted && !streamAborted && !abortSignal.aborted) {
       renderCoalescer.notify()
     }
+    if (halfStreaming && result.length > 0 && (streamAborted || abortSignal.aborted) && skipEditOutput !== true) {
+      // Local providers have no server terminal snapshot to reconcile. Apply
+      // their buffered partial through the normal client editoutput path before
+      // abort cleanup decides whether the placeholder is empty.
+      renderCoalescer.notify()
+    }
     await renderCoalescer.settle()
   } finally {
     abortSignal.removeEventListener('abort', abortReader)
@@ -357,6 +371,8 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
       previousData: preStreamData,
       ownedData: lastStreamOwnedData,
       appended: appendedGeneratedMessage,
+      detached: streamDetached,
+      messageIndex: msgIndex,
       gapTruncated: req.replayGapTruncated === true,
     },
   }

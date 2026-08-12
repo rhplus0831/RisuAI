@@ -5370,7 +5370,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(done.postGeneration?.revision).toBe(2)
   })
 
-  it('H1: durable DELETE cancel uses abort terminal path without post-generation', async () => {
+  it('H1: durable DELETE cancel persists an editoutput-processed partial without completion-only effects', async () => {
     let providerSawAbort = false
     await restartHarness({
       dispatchProvider: ({ signal }) => {
@@ -5400,6 +5400,15 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, {
       ...(dbWithServerDispatch({
+        customscript: [
+          {
+            in: 'partial reply',
+            out: 'processed cancelled reply',
+            type: 'editoutput',
+            flag: '',
+            ableFlag: false,
+          },
+        ],
         triggerscript: [
           {
             comment: '',
@@ -5453,7 +5462,11 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       expect(doneFrames[0]?.data).toMatchObject({
         outcome: 'cancelled',
         result: 'partial reply',
-        postGeneration: { revision: expect.any(Number), messageId: jobId },
+        postGeneration: {
+          revision: expect.any(Number),
+          messageId: jobId,
+          finalText: 'processed cancelled reply',
+        },
       })
       expect(observerEvents.some((event) => event.type === 'side_effect')).toBe(false)
       expect(providerSawAbort).toBe(true)
@@ -5472,6 +5485,11 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       })
       expect(bootstrap.statusCode).toBe(200)
       expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toBeUndefined()
+      expect((await persistedMessages(assertion)).at(-1)).toMatchObject({
+        role: 'char',
+        data: 'processed cancelled reply',
+        chatId: jobId,
+      })
     } finally {
       submitController.abort()
       observerController?.abort()
@@ -6450,8 +6468,15 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
     expect(res.statusCode).toBe(200)
     const events = parseEvents(res.body)
-    expect(events.find((event) => event.type === 'info')?.data.continueDisposition).toBe('extend')
-    expect(doneFrame(events).postGeneration?.revision).toBe(2)
+    expect(events.find((event) => event.type === 'info')?.data).toMatchObject({
+      continueDisposition: 'extend',
+      continueBase: 'Once upon a time',
+    })
+    expect(doneFrame(events)).toMatchObject({
+      continueDisposition: 'extend',
+      continueBase: 'Once upon a time',
+      postGeneration: { revision: 2 },
+    })
 
     const persisted = await persistedMessages(assertion)
     // Extended the SAME assistant row (chatId preserved); no duplicate appended.
@@ -7200,11 +7225,17 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       'error',
       'done',
     ])
-    expect(events.at(-2)).toEqual({
+    expect(events.at(-2)).toMatchObject({
       type: 'error',
       data: {
         error: 'provider exploded',
         reason: 'provider_stream_exception',
+        result: 'partial',
+        postGeneration: {
+          revision: expect.any(Number),
+          messageId: expect.any(String),
+          finalText: 'partial',
+        },
         restoration: {
           chatId: 'chat-1',
           characterId: 'char-1',
@@ -7216,9 +7247,47 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
     expect(events.at(-1)?.type).toBe('done')
     expect(typeof events.at(-1)?.data.generationId).toBe('string')
+    expect(events.at(-1)?.data).toMatchObject({
+      result: 'partial',
+      postGeneration: { finalText: 'partial' },
+    })
+    expect((await readPersistedMessages(assertion)).filter((message) => message.role === 'char')).toEqual([
+      expect.objectContaining({ data: 'partial' }),
+    ])
   })
 
-  it('surfaces a provider error frame after streamed tokens without retrying or persisting partial output', async () => {
+  it('keeps the transcript unchanged when a provider stream fails before its first token', async () => {
+    await restartHarness({
+      dispatchProvider: () => {
+        async function* source(): AsyncGenerator<CompletionStreamFrame> {
+          throw new Error('provider failed before tokens')
+        }
+        return source()
+      },
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, fixtureDatabase)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+
+    const error = parseEvents(res.body).find((event) => event.type === 'error')
+    expect(error?.data).toMatchObject({
+      error: 'provider failed before tokens',
+      reason: 'provider_dispatch_exception',
+      restoration: { chatId: 'chat-1', characterId: 'char-1', messages: [] },
+    })
+    expect(error?.data).not.toHaveProperty('result')
+    expect(error?.data).not.toHaveProperty('postGeneration')
+    expect((await readPersistedMessages(assertion)).filter((message) => message.role === 'char')).toEqual([])
+  })
+
+  it('surfaces a provider error frame after streamed tokens without retrying and retains the failed partial', async () => {
     const dispatchProvider = vi.fn(() =>
       (async function* (): AsyncGenerator<CompletionStreamFrame> {
         yield { kind: 'token', content: 'partial' }
@@ -7228,7 +7297,17 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     await restartHarness({ dispatchProvider })
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, {
-      ...fixtureDatabase,
+      ...(dbWithServerDispatch({
+        customscript: [
+          {
+            in: 'partial',
+            out: 'processed failed partial',
+            type: 'editoutput',
+            flag: '',
+            ableFlag: false,
+          },
+        ],
+      }) as Record<string, unknown>),
       requestRetrys: 2,
       useStreaming: true,
     })
@@ -7248,6 +7327,12 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       error: 'Overloaded',
       reason: 'provider_stream_error_frame',
       code: 'overloaded_error',
+      result: 'partial',
+      postGeneration: {
+        revision: expect.any(Number),
+        messageId: expect.any(String),
+        finalText: 'processed failed partial',
+      },
       restoration: {
         chatId: 'chat-1',
         characterId: 'char-1',
@@ -7255,7 +7340,9 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       },
     })
     expect(events.at(-1)?.type).toBe('done')
-    expect((await readPersistedMessages(assertion)).filter((message) => message.role === 'char')).toEqual([])
+    expect((await readPersistedMessages(assertion)).filter((message) => message.role === 'char')).toEqual([
+      expect.objectContaining({ data: 'processed failed partial' }),
+    ])
   })
 })
 

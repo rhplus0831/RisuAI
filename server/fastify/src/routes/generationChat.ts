@@ -76,7 +76,11 @@ import {
 import { risuEscape, risuUnescape } from '../../../../src/ts/parser/risuChatParserHelpers.js'
 import { ServerLuaFailureError } from '../prompt/luaRuntime.js'
 import { isAgentPresetGenerationError, type AgentPresetProgressReporter } from '../prompt/agentPresetExecution.js'
-import { emitProviderChunks, type ProviderPostGenerationResult } from '../prompt/providerTransport.js'
+import {
+  emitProviderChunks,
+  type ProviderFailurePostGenerationResult,
+  type ProviderPostGenerationResult,
+} from '../prompt/providerTransport.js'
 import { tokenize } from '../prompt/tokens.js'
 import { tokenizerEncodingFromDb } from '../prompt/tokenizerConfig.js'
 import { promptSummaryMetricFields, summarizePromptRows, type PromptRowsSummary } from '../prompt/promptSummary.js'
@@ -1763,9 +1767,9 @@ function findContinueRow(state: AssemblyState): Message | undefined {
 }
 
 /**
- * Mode-aware RAW assistant message (no post-gen derivation) + replace target,
- * shared by the post-gen derivation-failure fallback and the streaming-cancel
- * persist. Extend-style `continue` keeps the captured row id; append-style
+ * Mode-aware RAW assistant message (no post-gen derivation) + replace target
+ * for the successful-turn derivation-failure fallback. Interrupted streams do
+ * not use this fallback. Extend-style `continue` keeps the captured row id; append-style
  * `continue` creates a generation-owned row from the say-nothing boundary;
  * `regenerate` replaces the target (`regenerateMessageId`) only when that target
  * existed at assembly start; `send` appends a fresh row keyed by `generationId`.
@@ -1933,10 +1937,10 @@ function completionSha256(text: string): string {
 
 /**
  * Run server post-generation derivation and resolve the mode-aware assistant
- * message plus replace target, with a raw-text fallback when derivation throws.
- * Shared by inline and durable finalization; they differ only in error surfacing.
- * A `postGen` of `undefined` signals the derivation threw (the raw fallback is in
- * use).
+ * message plus replace target, with a raw-text fallback when successful-turn
+ * derivation throws. Interrupted partials reject persistence instead: cancel
+ * and failure paths must never durably fall back to unprocessed text. A
+ * `postGen` of `undefined` signals the successful-turn raw fallback is in use.
  */
 async function resolvePostGenerationResult(args: {
   state: AssemblyState
@@ -1951,6 +1955,8 @@ async function resolvePostGenerationResult(args: {
   emit?: (event: PromptChatEvent) => void
   generationTrace?: GenerationTraceOptions
   metricContext?: PromptAssemblyMetricContext
+  /** Run only the editoutput-compatible interrupted-result path. */
+  partial?: boolean
 }): Promise<{
   postGen?: Awaited<ReturnType<typeof runServerPostGeneration>>
   postGenError?: string
@@ -1977,6 +1983,7 @@ async function resolvePostGenerationResult(args: {
       promptInfo: args.promptInfo,
       luaTrace,
       luaProgress,
+      ...(args.partial ? { partial: true } : {}),
       agentPresetProgress: args.emit
         ? (progress) => args.emit?.({ type: 'agent_preset_progress', ...progress })
         : undefined,
@@ -2016,18 +2023,6 @@ async function resolvePostGenerationResult(args: {
       targetSnapshot,
     }
   } catch (err) {
-    // Derivation threw: persist the raw provider text so the result is not lost.
-    const raw = buildRawModeMessage({
-      input: args.input,
-      continueDisposition: args.state.continueDisposition,
-      initialMessages: args.state.initialMessages,
-      continueRow,
-      text: args.completionText,
-      generationId: args.generationId,
-      generationInfo: args.generationInfo,
-      promptInfo: args.promptInfo,
-      removeIncompleteResponse: args.state.database.removeIncompleteResponse,
-    })
     const error = errorMessage(err, 'server post-generation derivation failed')
     const metricError = safePostGenerationFallbackMetricError(err, 'server post-generation derivation failed')
     await emitPostGenerationLuaTraceMetric({
@@ -2040,6 +2035,37 @@ async function resolvePostGenerationResult(args: {
       dataDir: args.dataDir,
       generationTrace: args.generationTrace,
       metricContext: args.metricContext,
+    })
+    if (args.partial) {
+      emitProtocolMetric('generation_post_generation_fallback', {
+        fallbackType: 'interrupted_result_not_persisted',
+        generationId: args.generationId,
+        chatId: args.input.chatId,
+        characterId: args.input.characterId,
+        mode: args.input.mode,
+        targetSnapshotKind: targetSnapshot?.kind,
+        targetSnapshotTranscriptLength: targetSnapshot?.transcriptLength,
+        completionLength: args.completionText.length,
+        completionBytes: Buffer.byteLength(args.completionText, 'utf8'),
+        completionSha256: completionSha256(args.completionText),
+        error: metricError,
+        source: classifyPostGenerationFallbackSource(err),
+        ...luaFailureFallbackMetricFields(err),
+      })
+      throw err
+    }
+    // Successful-turn compatibility keeps the existing raw fallback so a
+    // completion is not lost when completion-only derivation fails.
+    const raw = buildRawModeMessage({
+      input: args.input,
+      continueDisposition: args.state.continueDisposition,
+      initialMessages: args.state.initialMessages,
+      continueRow,
+      text: args.completionText,
+      generationId: args.generationId,
+      generationInfo: args.generationInfo,
+      promptInfo: args.promptInfo,
+      removeIncompleteResponse: args.state.database.removeIncompleteResponse,
     })
     emitProtocolMetric('generation_post_generation_fallback', {
       fallbackType: 'raw_provider_text',
@@ -2474,6 +2500,10 @@ async function streamAssembly(
           stopSending: false,
           prompt: result.prompt,
         }
+        const extendContinueBase =
+          successfulResult.state?.input.mode === 'continue' && successfulResult.state.continueDisposition === 'extend'
+            ? (findContinueRow(successfulResult.state)?.data ?? '')
+            : undefined
         const generationId = randomUUID()
         const shouldDispatch = shouldDispatchProvider(input, database)
         const generationInfo =
@@ -2517,7 +2547,10 @@ async function streamAssembly(
           generationId: shouldDispatch ? generationId : undefined,
           generationInfo,
           ...(successfulResult.state?.input.mode === 'continue'
-            ? { continueDisposition: successfulResult.state.continueDisposition }
+            ? {
+                continueDisposition: successfulResult.state.continueDisposition,
+                ...(extendContinueBase !== undefined ? { continueBase: extendContinueBase } : {}),
+              }
             : {}),
           // Present only when a chat-var write actually persisted, so the browser
           // reconciles its cached command revision; omitted otherwise.
@@ -2580,7 +2613,17 @@ async function streamAssembly(
                 if (stageTiming) {
                   stageTiming.stage3 = Date.now() - providerStartedAt
                 }
-                return { generationId, generationInfo }
+                return {
+                  generationId,
+                  generationInfo,
+                  ...(database.halfStreaming === true ? { halfStreaming: true } : {}),
+                  ...(successfulResult.state?.input.mode === 'continue'
+                    ? {
+                        continueDisposition: successfulResult.state.continueDisposition,
+                        ...(extendContinueBase !== undefined ? { continueBase: extendContinueBase } : {}),
+                      }
+                    : {}),
+                }
               },
               sideEffects: (texts) =>
                 database.ttsAutoSpeech
@@ -2591,6 +2634,23 @@ async function streamAssembly(
                     }))
                   : [],
               errorRestoration: () => successfulResult.restoration,
+              failurePostGeneration: (completionText) =>
+                successfulResult.state
+                  ? persistFailedPartialResult({
+                      state: successfulResult.state,
+                      db,
+                      dataDir,
+                      eventSink,
+                      input,
+                      text: completionText,
+                      generationId,
+                      generationInfo,
+                      promptInfo: successfulResult.prompt.promptInfo,
+                      emit,
+                      generationTrace,
+                      metricContext,
+                    })
+                  : Promise.resolve(undefined),
               postGeneration: (completionText, alternateTexts) =>
                 successfulResult.state
                   ? buildPostGenerationFrame({
@@ -4258,15 +4318,28 @@ async function buildDurablePostGeneration(args: {
   }
 }
 
+function buildInterruptedPostGenerationFrame(args: {
+  revision: number
+  postGen: Awaited<ReturnType<typeof runServerPostGeneration>> | undefined
+  messageId: string | undefined
+  finalText: string
+  persistence: AppliedGenerationScriptMutations
+}): PostGenerationFrame {
+  return {
+    ...buildPostGenerationFrameBody(args.revision, args.postGen, args.messageId, undefined, args.persistence),
+    // Interrupted terminals always need an exact row snapshot, even when
+    // editoutput happened to leave the text unchanged.
+    finalText: args.finalText,
+  }
+}
+
 /**
- * On a **streaming** cancel, persist accumulated-so-far provider text **raw**:
- * no post-gen pass over a truncated turn, mode-aware via `buildRawModeMessage`,
- * and idempotent on `generationId`. A non-streaming cancel persists nothing.
- * The phase-aware result controls the terminal frame for any attached or later
- * reattached observer; a partial result is never reported as saved without either
- * a committed message or a confirmed replayable journal row.
+ * On a streaming cancel, run the accumulated provider text through the narrow
+ * editoutput-compatible partial path, then persist it mode-aware and
+ * idempotently. Completion-only Agent Preset/output-trigger effects remain
+ * success-only. A non-streaming cancel persists nothing.
  */
-function persistRawCancelledResult(args: {
+async function persistCancelledPartialResult(args: {
   db: DatabaseSync
   dataDir: string
   eventSink: CommandEventSink
@@ -4277,7 +4350,15 @@ function persistRawCancelledResult(args: {
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
   text: string
-}): { outcome: GenerationFinalizationOutcome; messageId: string | undefined; finalText: string } {
+  emit?: (event: PromptChatEvent) => void
+  generationTrace?: GenerationTraceOptions
+  metricContext?: PromptAssemblyMetricContext
+}): Promise<{
+  outcome: GenerationFinalizationOutcome
+  messageId: string | undefined
+  finalText: string | undefined
+  postGen: Awaited<ReturnType<typeof runServerPostGeneration>> | undefined
+}> {
   const operationLineage = generationOperationLineageForJob(args.job)
   if (operationLineage) {
     try {
@@ -4288,19 +4369,45 @@ function persistRawCancelledResult(args: {
       // nonessential provider-finished timestamp cannot be recorded.
     }
   }
-  const targetSnapshot = captureGenerationFinalizationTargetSnapshot(args.input, args.state)
-  const continueRow = args.input.mode === 'continue' ? findContinueRow(args.state) : undefined
-  const raw = buildRawModeMessage({
-    input: args.input,
-    continueDisposition: args.state.continueDisposition,
-    initialMessages: args.state.initialMessages,
-    continueRow,
-    text: args.text,
-    generationId: args.generationId,
-    generationInfo: args.generationInfo,
-    promptInfo: args.promptInfo,
-    removeIncompleteResponse: args.state.database.removeIncompleteResponse,
-  })
+  let resolved: Awaited<ReturnType<typeof resolvePostGenerationResult>>
+  try {
+    resolved = await resolvePostGenerationResult({
+      state: args.state,
+      input: args.input,
+      completionText: args.text,
+      generationId: args.generationId,
+      generationInfo: args.generationInfo,
+      promptInfo: args.promptInfo,
+      dataDir: args.dataDir,
+      durable: true,
+      emit: args.emit,
+      generationTrace: args.generationTrace,
+      metricContext: args.metricContext,
+      partial: true,
+    })
+  } catch (error) {
+    return {
+      outcome: {
+        kind: 'unconfirmed',
+        error,
+        journalConfirmed: false,
+        authoritativeCommitted: false,
+        cleanupComplete: false,
+      },
+      messageId: undefined,
+      finalText: undefined,
+      postGen: undefined,
+    }
+  }
+  const {
+    postGen,
+    message,
+    targetMessageId,
+    chatVarMutations,
+    characterFieldMutations,
+    localLoreMutation,
+    targetSnapshot,
+  } = resolved
   const outcome = queueAndPersistGenerationFinalization({
     db: args.db,
     dataDir: args.dataDir,
@@ -4310,16 +4417,101 @@ function persistRawCancelledResult(args: {
       ...generationFinalizationLineageForJob(args.job, 'cancelled'),
       chatId: args.input.chatId,
       mode: finalizationModeFromInput(args.input),
-      message: raw.message,
-      chatVarMutations: [],
-      ...(raw.targetMessageId ? { targetMessageId: raw.targetMessageId } : {}),
+      message,
+      chatVarMutations,
+      characterFieldMutations,
+      localLoreMutation,
+      ...(targetMessageId ? { targetMessageId } : {}),
       ...(targetSnapshot ? { targetSnapshot } : {}),
     },
   })
   return {
     outcome,
-    messageId: raw.targetMessageId ?? raw.message.chatId,
-    finalText: raw.message.data,
+    messageId: targetMessageId ?? message.chatId,
+    finalText: message.data,
+    postGen,
+  }
+}
+
+/** Persist a post-token provider failure while keeping the operation failed. */
+async function persistFailedPartialResult(args: {
+  db: DatabaseSync
+  dataDir: string
+  eventSink: CommandEventSink
+  state: AssemblyState
+  input: AssembleInput
+  generationId: string
+  generationInfo: Record<string, unknown>
+  promptInfo?: Record<string, unknown>
+  text: string
+  emit?: (event: PromptChatEvent) => void
+  generationTrace?: GenerationTraceOptions
+  metricContext?: PromptAssemblyMetricContext
+}): Promise<ProviderFailurePostGenerationResult | undefined> {
+  if (args.text.length === 0) return undefined
+  const {
+    postGen,
+    message,
+    targetMessageId,
+    chatVarMutations,
+    characterFieldMutations,
+    localLoreMutation,
+    targetSnapshot,
+  } = await resolvePostGenerationResult({
+    state: args.state,
+    input: args.input,
+    completionText: args.text,
+    generationId: args.generationId,
+    generationInfo: args.generationInfo,
+    promptInfo: args.promptInfo,
+    dataDir: args.dataDir,
+    durable: true,
+    emit: args.emit,
+    generationTrace: args.generationTrace,
+    metricContext: args.metricContext,
+    partial: true,
+  })
+  const finalization = queueAndPersistGenerationFinalization({
+    db: args.db,
+    dataDir: args.dataDir,
+    eventSink: args.eventSink,
+    attempt: {
+      generationId: args.generationId,
+      chatId: args.input.chatId,
+      mode: finalizationModeFromInput(args.input),
+      message,
+      chatVarMutations,
+      characterFieldMutations,
+      localLoreMutation,
+      ...(targetMessageId ? { targetMessageId } : {}),
+      ...(targetSnapshot ? { targetSnapshot } : {}),
+    },
+  })
+  const generationProjection = {
+    characterId: args.input.characterId,
+    chatId: args.input.chatId,
+    generationId: args.generationId,
+    mode: finalizationModeFromInput(args.input),
+    ...(targetMessageId ? { targetMessageId } : {}),
+  }
+  if (finalization.kind === 'unconfirmed' || finalization.kind === 'rejected') {
+    return { persistenceDisposition: finalization.kind, generationProjection }
+  }
+  if (finalization.kind === 'queued') {
+    return {
+      frame: { messageId: targetMessageId ?? message.chatId, finalText: message.data },
+      persistenceDisposition: 'queued',
+      generationProjection,
+    }
+  }
+  return {
+    frame: buildInterruptedPostGenerationFrame({
+      revision: finalization.persistence.revision,
+      postGen,
+      messageId: targetMessageId ?? message.chatId,
+      finalText: message.data,
+      persistence: finalization.persistence,
+    }),
   }
 }
 
@@ -4329,6 +4521,8 @@ function settleGenerationOperationWithoutResultOnce(args: {
   failureCode: string
   failurePhase: string
   lastError?: string
+  /** A retained failed partial makes retrying the same accepted source unsafe. */
+  terminal?: boolean
 }): GenerationOperationProjection | undefined {
   const lineage = generationOperationLineageForJob(args.job)
   if (!lineage) return undefined
@@ -4341,7 +4535,7 @@ function settleGenerationOperationWithoutResultOnce(args: {
       operationId: lineage.operationId,
       expectedState: operation.state,
       expectedStateVersion: operation.stateVersion,
-      nextState: 'retryable',
+      nextState: args.terminal ? 'terminal_failed' : 'retryable',
       failureCode: args.failureCode,
       failurePhase: args.failurePhase,
       ...(args.lastError ? { lastError: args.lastError } : {}),
@@ -4372,6 +4566,7 @@ function settleGenerationOperationWithoutResult(args: {
   failureCode: string
   failurePhase: string
   lastError?: string
+  terminal?: boolean
 }): GenerationOperationProjection | undefined {
   try {
     return settleGenerationOperationWithoutResultOnce(args)
@@ -4528,6 +4723,10 @@ async function runGenerationJob(args: {
           prompt: result.prompt,
         }
         const shouldDispatch = shouldDispatchProvider(input, database)
+        const extendContinueBase =
+          successfulResult.state?.input.mode === 'continue' && successfulResult.state.continueDisposition === 'extend'
+            ? (findContinueRow(successfulResult.state)?.data ?? '')
+            : undefined
         const generationInfo: Record<string, unknown> | undefined =
           shouldDispatch && database
             ? {
@@ -4590,7 +4789,10 @@ async function runGenerationJob(args: {
           generationId: shouldDispatch ? generationId : undefined,
           generationInfo,
           ...(successfulResult.state?.input.mode === 'continue'
-            ? { continueDisposition: successfulResult.state.continueDisposition }
+            ? {
+                continueDisposition: successfulResult.state.continueDisposition,
+                ...(extendContinueBase !== undefined ? { continueBase: extendContinueBase } : {}),
+              }
             : {}),
           revision: persistedRevision,
         })
@@ -4657,7 +4859,17 @@ async function runGenerationJob(args: {
                 if (stageTiming) {
                   stageTiming.stage3 = Date.now() - providerStartedAt
                 }
-                return { generationId, generationInfo }
+                return {
+                  generationId,
+                  generationInfo,
+                  ...(database.halfStreaming === true ? { halfStreaming: true } : {}),
+                  ...(successfulResult.state?.input.mode === 'continue'
+                    ? {
+                        continueDisposition: successfulResult.state.continueDisposition,
+                        ...(extendContinueBase !== undefined ? { continueBase: extendContinueBase } : {}),
+                      }
+                    : {}),
+                }
               },
               sideEffects: (texts) =>
                 database.ttsAutoSpeech
@@ -4668,6 +4880,23 @@ async function runGenerationJob(args: {
                     }))
                   : [],
               errorRestoration: () => successfulResult.restoration,
+              failurePostGeneration: (completionText) =>
+                successfulResult.state
+                  ? persistFailedPartialResult({
+                      state: successfulResult.state,
+                      db,
+                      dataDir,
+                      eventSink,
+                      input,
+                      text: completionText,
+                      generationId,
+                      generationInfo,
+                      promptInfo: successfulResult.prompt.promptInfo,
+                      emit,
+                      generationTrace,
+                      metricContext,
+                    })
+                  : Promise.resolve(undefined),
               postGeneration: (completionText, alternateTexts) => {
                 if (!successfulResult.state) return Promise.resolve(undefined)
                 // Stamp stage3 BEFORE the persist so the server-written message's
@@ -4698,12 +4927,17 @@ async function runGenerationJob(args: {
             })
             terminalDoneEmitted = transportResult.status !== 'aborted'
             if (transportResult.status === 'error') {
+              const retainedFailedPartial =
+                transportResult.failurePostGeneration?.frame !== undefined &&
+                transportResult.failurePostGeneration.persistenceDisposition !== 'rejected' &&
+                transportResult.failurePostGeneration.persistenceDisposition !== 'unconfirmed'
               settleGenerationOperationWithoutResult({
                 db,
                 job,
                 failureCode: 'provider_failed',
                 failurePhase: 'provider',
                 lastError: lastTerminalError,
+                terminal: retainedFailedPartial,
               })
             }
             const abortedOperation = operationLineage
@@ -4726,6 +4960,7 @@ async function runGenerationJob(args: {
               let cancelTargetMessageId: string | undefined
               let cancelPersistedMessageId: string | undefined
               let cancelPersistedFinalText: string | undefined
+              let cancelPostGen: Awaited<ReturnType<typeof runServerPostGeneration>> | undefined
               if (transportResult.result.length > 0 && successfulResult.state) {
                 cancelTargetMessageId =
                   input.mode === 'regenerate'
@@ -4733,7 +4968,7 @@ async function runGenerationJob(args: {
                     : input.mode === 'continue' && successfulResult.state.continueDisposition === 'extend'
                       ? findContinueRow(successfulResult.state)?.chatId
                       : undefined
-                const cancelPersisted = persistRawCancelledResult({
+                const cancelPersisted = await persistCancelledPartialResult({
                   db,
                   dataDir,
                   eventSink,
@@ -4744,10 +4979,14 @@ async function runGenerationJob(args: {
                   generationInfo,
                   promptInfo: successfulResult.prompt.promptInfo,
                   text: transportResult.result,
+                  emit,
+                  generationTrace,
+                  metricContext,
                 })
                 cancelFinalization = cancelPersisted.outcome
                 cancelPersistedMessageId = cancelPersisted.messageId
                 cancelPersistedFinalText = cancelPersisted.finalText
+                cancelPostGen = cancelPersisted.postGen
               }
               if (
                 cancelFinalization?.kind === 'unconfirmed' ||
@@ -4800,6 +5039,15 @@ async function runGenerationJob(args: {
                   error: errorMessage(cancelFinalization.error, 'failed to persist the cancelled generation result'),
                   reason: 'generation_cancel_persistence_failed',
                   persistenceDisposition: cancelFinalization.kind,
+                  result: transportResult.result,
+                  ...(cancelFinalization.kind === 'queued' && cancelPersistedFinalText !== undefined
+                    ? {
+                        postGeneration: {
+                          messageId: cancelPersistedMessageId,
+                          finalText: cancelPersistedFinalText,
+                        },
+                      }
+                    : {}),
                   generationProjection: {
                     characterId: input.characterId,
                     chatId: input.chatId,
@@ -4842,22 +5090,34 @@ async function runGenerationJob(args: {
                   cancelFinalization?.kind === 'persisted' || cancelFinalization?.kind === 'committed_cleanup_pending'
                     ? cancelFinalization.persistence.revision
                     : undefined
-                // Emit a terminal frame so a *reattached* observer's stream ends cleanly
-                // (the canceller already aborted its own reader). `emitProviderChunks`
-                // emits nothing on abort, so without this a viewer sees the stream cut
-                // with no done/error and reports a spurious "stream ended" error.
+                // Emit a canonical terminal frame so the cancelling viewer and
+                // any reattached observers end cleanly and reconcile the exact
+                // persisted partial. `emitProviderChunks` emits nothing on abort.
                 emit({
                   type: 'done',
                   outcome: 'cancelled',
                   result: transportResult.result,
                   generationId,
                   generationInfo,
+                  ...(database.halfStreaming === true ? { halfStreaming: true } : {}),
+                  ...(successfulResult.state?.input.mode === 'continue'
+                    ? {
+                        continueDisposition: successfulResult.state.continueDisposition,
+                        ...(extendContinueBase !== undefined ? { continueBase: extendContinueBase } : {}),
+                      }
+                    : {}),
                   ...(persistedRevision !== undefined
                     ? {
-                        postGeneration: {
-                          ...buildPostGenerationFrameBody(persistedRevision, undefined, cancelPersistedMessageId),
-                          ...(cancelPersistedFinalText !== undefined ? { finalText: cancelPersistedFinalText } : {}),
-                        },
+                        postGeneration:
+                          cancelPersistedFinalText !== undefined && cancelFinalization
+                            ? buildInterruptedPostGenerationFrame({
+                                revision: persistedRevision,
+                                postGen: cancelPostGen,
+                                messageId: cancelPersistedMessageId,
+                                finalText: cancelPersistedFinalText,
+                                persistence: cancelFinalization.persistence,
+                              })
+                            : undefined,
                       }
                     : {}),
                   ...(cleanupPending ? { persistenceDisposition: 'committed_cleanup_pending' as const } : {}),

@@ -71,6 +71,8 @@ export interface InfoEvent {
   generationInfo?: Record<string, unknown>
   /** Server-selected Continue row behavior. Absent for non-Continue/older servers. */
   continueDisposition?: 'append' | 'extend'
+  /** Immutable pre-generation assistant text used to render extend-Continue replays. */
+  continueBase?: string
   /**
    * The chat revision after the route persisted the assembly-time chat-var
    * delta. Present only when a persisting mode actually wrote `chatVarMutations`;
@@ -273,6 +275,10 @@ export interface ErrorEvent {
   statusText?: string
   code?: string
   restoration?: ServerChatRestoration
+  /** Raw accumulated provider text retained after a post-token failure. */
+  result?: string
+  /** Exact processed partial-row snapshot retained after a post-token failure. */
+  postGeneration?: ServerChatPostGeneration
   persistenceDisposition?: Exclude<ServerChatGenerationPersistenceDisposition, 'committed_cleanup_pending'>
   generationProjection?: ServerChatGenerationProjection
 }
@@ -303,8 +309,8 @@ export interface ServerChatAgentPresetError {
 /**
  * Server terminal message reconciliation, mirroring `PostGenerationFrame` in
  * the server `sseEvents.ts`. Completed generations can carry the derivation
- * fields; cancelled generations can carry the exact persisted partial-row text
- * with its identity and revision. The browser otherwise applies success-only
+ * fields; interrupted generations can carry the exact processed persisted
+ * partial-row text with its identity and revision. The browser otherwise applies success-only
  * fields only on completion.
  */
 export interface ServerChatPostGeneration {
@@ -358,6 +364,12 @@ export interface DoneEvent {
   alternates?: string[]
   generationId?: string
   generationInfo?: Record<string, unknown>
+  /** Terminal fallback for replay windows whose `info` frame was evicted. */
+  halfStreaming?: boolean
+  /** Terminal fallback for replay windows whose `info` frame was evicted. */
+  continueDisposition?: 'append' | 'extend'
+  /** Immutable extend-Continue base when the replay window lost `info`. */
+  continueBase?: string
   /** Server terminal message reconciliation. See {@link ServerChatPostGeneration}. */
   postGeneration?: ServerChatPostGeneration
   persistenceDisposition?: 'committed_cleanup_pending'

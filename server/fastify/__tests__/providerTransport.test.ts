@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
 import { emitProviderChunks } from '../src/prompt/providerTransport.js'
 import type { PromptChatEvent } from '../src/prompt/sseEvents.js'
@@ -206,8 +206,8 @@ describe('emitProviderChunks', () => {
 
     expect(events).toEqual([
       { type: 'token', content: 'partial' },
-      { type: 'error', error: 'provider exploded', reason: 'provider_stream_exception' },
-      { type: 'done' },
+      { type: 'error', error: 'provider exploded', reason: 'provider_stream_exception', result: 'partial' },
+      { type: 'done', result: 'partial' },
     ])
     expect(result).toEqual({ status: 'error', result: 'partial' })
   })
@@ -234,10 +234,57 @@ describe('emitProviderChunks', () => {
         status: 500,
         statusText: 'Bad Gateway',
         code: 'upstream_500',
+        result: 'partial',
       },
-      { type: 'done' },
+      { type: 'done', result: 'partial' },
     ])
     expect(result).toEqual({ status: 'error', result: 'partial' })
+  })
+
+  it('finalizes a post-token failure once and carries its processed partial on both terminal frames', async () => {
+    const events: PromptChatEvent[] = []
+    const failurePostGeneration = vi.fn(async (partial: string) => ({
+      frame: {
+        revision: 7,
+        messageId: 'generation-a',
+        finalText: `processed ${partial}`,
+      },
+      persistenceDisposition: 'queued' as const,
+      generationProjection: {
+        characterId: 'character-a',
+        chatId: 'chat-a',
+        generationId: 'generation-a',
+        mode: 'send' as const,
+        targetMessageId: 'generation-a',
+      },
+    }))
+
+    async function* failing(): AsyncGenerator<CompletionStreamFrame> {
+      yield { kind: 'token', content: 'partial' }
+      throw new Error('provider exploded')
+    }
+
+    const result = await emitProviderChunks(failing(), (event) => events.push(event), undefined, {
+      failurePostGeneration,
+    })
+
+    expect(failurePostGeneration).toHaveBeenCalledOnce()
+    expect(failurePostGeneration).toHaveBeenCalledWith('partial')
+    expect(events.at(-2)).toMatchObject({
+      type: 'error',
+      result: 'partial',
+      persistenceDisposition: 'queued',
+      postGeneration: { messageId: 'generation-a', finalText: 'processed partial' },
+    })
+    expect(events.at(-1)).toMatchObject({
+      type: 'done',
+      result: 'partial',
+      postGeneration: { messageId: 'generation-a', finalText: 'processed partial' },
+    })
+    expect(result.failurePostGeneration).toMatchObject({
+      persistenceDisposition: 'queued',
+      frame: { messageId: 'generation-a', finalText: 'processed partial' },
+    })
   })
 
   it.each([

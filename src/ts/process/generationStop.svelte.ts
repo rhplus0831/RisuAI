@@ -8,8 +8,8 @@ export const abortChat = writable(false)
 
 /**
  * Route an explicit composer Stop to the exact protocol operation whenever one
- * owns the active chat. The generation viewer remains attached until the
- * durable cancellation intent has been staged by the operation controller.
+ * owns the active chat. The generation viewer remains attached through the
+ * canonical cancelled terminal so its persisted snapshot can be reconciled.
  */
 export function abortActiveGeneration(): void {
   abortChat.set(true)

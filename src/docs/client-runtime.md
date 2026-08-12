@@ -315,9 +315,13 @@ boundedly reattaches after an unrequested SSE EOF/read failure, rebuilding
 replayed token deltas from zero and deduplicating replayed non-token effects.
 Because that replay window may contain only a token suffix, a durable
 `done.result` replaces the accumulator as the last cumulative raw snapshot
-before stream closure. An additive cancelled outcome still reconciles the
-persisted partial projection, but bypasses output listeners, IGP, notifications,
-emotion work, rerolls, resend, terminal TTS/inlay work, and completion sound.
+before stream closure. After an explicit replay gap, the canonical terminal can
+also establish readiness when hard caps evicted `prompt` or `info`. Extend-mode
+Continue carries its immutable pre-generation base in `info` and the terminal
+fallback, so an outer reattach retry cannot capture its already-rendered partial
+as a new prefix. An additive cancelled outcome still reconciles the persisted
+partial projection, but bypasses output listeners, IGP, notifications, emotion
+work, rerolls, resend, terminal TTS/inlay work, and completion sound.
 Foreground, page-show, and online lifecycle probes refresh bootstrap job
 metadata so a mounted mobile tab can recover even when its original connection
 was discarded before the id reached JavaScript. Terminal `postGeneration` data
@@ -337,6 +341,12 @@ token frames use cumulative server-tokenized `generatedTokens` and
 provider-dispatch `elapsedMs` when present, preserving throughput across
 gateway-batched chunks, with frame counting as the older server fallback. The
 buffered text is enqueued once on `done`.
+Stop keeps a server-backed half-stream viewer attached until the raw buffered
+partial and cancelled terminal arrive, then reconciles the exact processed
+persisted snapshot. As a fallback, reconciliation can recreate a placeholder
+already removed by abort cleanup. A local-provider half-stream has no server
+terminal, so its buffered partial is applied through client editoutput before
+abort cleanup.
 
 Generation persistence failures also carry a browser reconciliation contract.
 A terminal `persistenceDisposition: rejected` or `unconfirmed` clears the

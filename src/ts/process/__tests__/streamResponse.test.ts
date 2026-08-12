@@ -130,6 +130,7 @@ function streamingReq(
     halfStreaming?: boolean
     halfStreamingProgressManaged?: boolean
     replayGapTruncated?: boolean
+    continueBase?: string
   } = {},
 ): requestDataResponse & { type: 'streaming' } {
   return { type: 'streaming', result: stream, ...options } as requestDataResponse & { type: 'streaming' }
@@ -227,6 +228,31 @@ describe('consumeStreamResponse', () => {
     expect(processScriptFullSpy).toHaveBeenCalledOnce()
   })
 
+  it('half-streaming keeps a local-provider partial when Stop aborts before closure', async () => {
+    const currentChar = seed()
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(
+      callArgs(streamingReq(stream, { halfStreaming: true }), currentChar, ctrl.signal),
+    )
+
+    push({ msgKey: 'buffered local partial' })
+    await vi.waitFor(() => expect(get(halfStreamingProgress)[0]?.generatedTokens).toBe(1))
+    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('')
+
+    ctrl.abort()
+    close()
+
+    const out = await promise
+    expect(out.streamAborted).toBe(true)
+    expect(testDatabaseState.db.characters[0].chats[0].message[1]).toMatchObject({
+      role: 'char',
+      data: 'buffered local partial',
+      chatId: 'gen-1',
+    })
+    expect(processScriptFullSpy).toHaveBeenCalledWith(currentChar, 'buffered local partial', 'editoutput', 1)
+  })
+
   it('single chunk: pushes initial message, writes processed data, returns lastResponseChunk', async () => {
     const currentChar = seed()
     const { stream, push, close } = makeControlledStream()
@@ -293,6 +319,30 @@ describe('consumeStreamResponse', () => {
     expect(out.msgIndex).toBe(1)
     expect(processScriptFullSpy).toHaveBeenCalledWith(currentChar, 'partialextra', 'editoutput', 1)
     expect(testDatabaseState.db.characters[0].chats[0].message).toHaveLength(2)
+  })
+
+  it('uses the immutable continue base when a retried reattach already displays the partial', async () => {
+    const currentChar = seed()
+    testDatabaseState.db.characters[0].chats[0].message.push({
+      role: 'char',
+      data: 'Seed answer. Continued reply.',
+      chatId: 'continue-target',
+    })
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(
+      callArgs(streamingReq(stream, { continueBase: 'Seed answer.' }), currentChar, ctrl.signal, {
+        arg: { continue: true },
+        skipEditOutput: true,
+      }),
+    )
+
+    push({ msgKey: ' Continued reply.' })
+    close()
+    const out = await promise
+
+    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('Seed answer. Continued reply.')
+    expect(out.projection.detached).toBe(false)
   })
 
   it('append-style continue creates a generation-owned row behind the prior assistant', async () => {

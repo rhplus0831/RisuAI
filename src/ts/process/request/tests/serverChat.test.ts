@@ -856,6 +856,47 @@ describe('requestServerChat', () => {
     ])
   })
 
+  it('consumes a canonical terminal after a replay gap evicts prompt and info readiness', async () => {
+    const controlled = controlledGenerationStream()
+    vi.stubGlobal('fetch', async () => controlled.response)
+
+    const pending = requestServerChatGeneration({ ...baseInput, mode: 'continue' }, null, 'job-terminal-gap')
+    controlled.send('replay_gap', {
+      reason: 'replay_budget_exceeded',
+      jobId: 'job-terminal-gap',
+      evictedEvents: 2,
+      evictedBytes: 2_500_000,
+    })
+    controlled.send('done', {
+      result: 'Canonical terminal reply.',
+      generationId: 'generation-terminal-gap',
+      generationInfo: { generationId: 'generation-terminal-gap', model: 'test-model' },
+      continueDisposition: 'extend',
+      continueBase: 'Existing answer.',
+    })
+    controlled.close()
+
+    const served = await pending
+    expect(served.status).toBe('ok')
+    if (served.status !== 'ok' || served.req.type !== 'streaming') return
+    expect(served.prompt).toEqual({})
+    expect(served.info).toMatchObject({
+      generationId: 'generation-terminal-gap',
+      continueDisposition: 'extend',
+      continueBase: 'Existing answer.',
+    })
+    expect(served.req.continueBase).toBe('Existing answer.')
+    await expect(served.req.result.getReader().read()).resolves.toEqual({
+      done: false,
+      value: { 'generation-terminal-gap': 'Canonical terminal reply.' },
+    })
+    await expect(served.terminal).resolves.toMatchObject({
+      status: 'done',
+      reattachOutcome: 'completed',
+      done: { result: 'Canonical terminal reply.' },
+    })
+  })
+
   it.each([
     { mode: 'send' as const, changed: false },
     { mode: 'send' as const, changed: true },
@@ -1931,26 +1972,18 @@ describe('requestServerChatGeneration durable cancel-on-abort', () => {
     })
   })
 
-  it('routes protocol-v1 owner abort through the operation controller before detaching its viewer', async () => {
+  it('keeps the protocol-v1 Stop viewer attached through the canonical cancelled terminal', async () => {
     let detachViewer: (() => void) | undefined
     let viewerSignal: AbortSignal | null | undefined
     generationOperationMocks.registerViewer.mockImplementation((_operationId, detach) => {
       detachViewer = detach
       return () => undefined
     })
-    generationOperationMocks.stopOperation.mockImplementation(async () => ({ status: 'acknowledged' }))
+    const wire = controlledGenerationStream()
     vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
       viewerSignal = init?.signal
-      return new Response(
-        new ReadableStream<Uint8Array>({
-          start() {
-            // Remain open until the operation controller detaches the viewer.
-          },
-        }),
-        { status: 200, headers: { 'content-type': 'text/event-stream' } },
-      )
+      return wire.response
     })
-    const owner = new AbortController()
     const stream = {
       operationId: '11111111-1111-4111-8111-111111111111',
       acceptedMessageId: '22222222-2222-4222-8222-222222222222',
@@ -1959,21 +1992,43 @@ describe('requestServerChatGeneration durable cancel-on-abort', () => {
       projectionEpoch: 4,
       href: '/api/v1/generation-operations/11111111-1111-4111-8111-111111111111/stream?attemptNo=1&jobId=job-operation-a&projectionEpoch=4',
     }
-    const pending = requestServerChatGeneration(baseInput, owner.signal, undefined, stream)
+    const pending = requestServerChatGeneration(baseInput, null, undefined, stream)
     await vi.waitFor(() => expect(generationOperationMocks.registerViewer).toHaveBeenCalled())
-
-    owner.abort()
-    await vi.waitFor(() => {
-      expect(generationOperationMocks.stopOperation).toHaveBeenCalledWith(stream.operationId)
+    wire.send('prompt', { messages: [{ role: 'user', content: 'hi' }] })
+    wire.send('info', {
+      generationId: stream.jobId,
+      generationInfo: { generationId: stream.jobId, model: 'm' },
+      halfStreaming: true,
     })
-    expect(viewerSignal?.aborted).toBe(false)
+    const served = await pending
+    expect(served.status).toBe('ok')
+    if (served.status !== 'ok' || served.req.type !== 'streaming') return
 
     detachViewer?.()
-    await expect(pending).resolves.toMatchObject({ status: 'aborted' })
-    expect(viewerSignal?.aborted).toBe(true)
-    expect(get(activeGenerationJobs)).toEqual([
-      expect.objectContaining({ jobId: stream.jobId, operationId: stream.operationId }),
-    ])
+    expect(viewerSignal?.aborted).toBe(false)
+    wire.send('done', {
+      outcome: 'cancelled',
+      result: 'raw partial',
+      generationId: stream.jobId,
+      generationInfo: { generationId: stream.jobId, model: 'm' },
+      postGeneration: {
+        revision: 9,
+        messageId: stream.jobId,
+        finalText: 'processed partial',
+      },
+    })
+    const reader = served.req.result.getReader()
+    await expect(reader.read()).resolves.toEqual({ done: false, value: { [stream.jobId]: 'raw partial' } })
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined })
+    await expect(served.terminal).resolves.toMatchObject({
+      status: 'cancelled',
+      done: {
+        result: 'raw partial',
+        postGeneration: { revision: 9, messageId: stream.jobId, finalText: 'processed partial' },
+      },
+    })
+    expect(viewerSignal?.aborted).toBe(false)
+    expect(get(activeGenerationJobs)).toEqual([])
   })
 
   it('refreshes typed stale-attempt authority and reattaches the current exact operation attempt', async () => {

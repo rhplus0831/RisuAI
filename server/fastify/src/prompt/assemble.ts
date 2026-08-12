@@ -2552,6 +2552,12 @@ export interface ServerPostGenerationInput {
    * choices against the same context/order as retained multiline generation.
    */
   beforeOutputTrigger?: (alternateState: AssemblyState) => Promise<void>
+  /**
+   * Retain an interrupted provider result using only the streaming-visible
+   * `editoutput` pipeline. Cancellation and post-token failures must not run
+   * completion-only Agent Preset/output-trigger effects.
+   */
+  partial?: boolean
 }
 
 /** Result of {@link runServerPostGeneration}. */
@@ -3121,6 +3127,26 @@ export async function runServerPostGeneration(
   if (state.database.removeIncompleteResponse) {
     editedText = trimUntilPunctuation(editedText)
   }
+
+  if (input.partial) {
+    appendAssistantRow(state, editedText, input, isContinue, continueIndex)
+    const mutations = buildMutationPayload(state)
+    const changed =
+      mutations.varChanged ||
+      mutations.chatVarMutations.length > 0 ||
+      (mutations.characterFieldMutations?.length ?? 0) > 0 ||
+      mutations.localLoreMutation !== undefined
+    const warnings = takeServerCompatibilityWarnings(state)
+    return {
+      finalText: editedText,
+      textChanged: editedText !== reformatted,
+      mutations,
+      resendChat: false,
+      changed,
+      ...(warnings.length > 0 ? { warnings } : {}),
+    }
+  }
+
   const alternateAgentPreset = cloneAgentPresetRuntime(state.agentPreset)
   const agentPresetAfterMain = await runAgentPresetAfterMainStage(state, editedText, input.agentPresetProgress)
   attachAgentPresetDiagnostics(input.generationInfo, state)

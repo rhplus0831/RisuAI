@@ -338,11 +338,12 @@ async function reconcileRejectedGenerationProjection(args: {
   }
 }
 
-function applyCancelledTerminalSnapshot(args: {
+function applyInterruptedTerminalSnapshot(args: {
   selectedChar: number
   selectedChat: number
   target: ServerBackedStableChatTarget
   generationId: string
+  generationInfo: MessageGenerationInfo
   postGeneration?: ServerChatPostGeneration
   streamProjection?: StreamMessageProjection
 }): void {
@@ -368,8 +369,30 @@ function applyCancelledTerminalSnapshot(args: {
         : undefined) ?? findGeneratedAssistantMessage(resolution.chat, args.generationId)
     // Reconcile only the row still owned by this stream. A user edit that landed
     // after the last token must win over the cancelled terminal snapshot.
-    if (!assistant || assistant.data !== projection.ownedData) return
-    assistant.data = finalText
+    if (assistant) {
+      if (assistant.data !== projection.ownedData) return
+      assistant.data = finalText
+      return
+    }
+    // Half-streaming Stop can remove its still-empty generated placeholder
+    // before the cancelled terminal arrives. Recreate only that known-owned
+    // append; detached/user-mutated streams must never resurrect a row.
+    if (!projection.appended || projection.detached) return
+    const messageId = args.postGeneration?.messageId ?? projection.messageId ?? args.generationId
+    if (!messageId || resolution.chat.message.some((message) => message.chatId === messageId)) return
+    const restored: Message = {
+      role: 'char',
+      data: finalText,
+      chatId: messageId,
+      saying: resolution.character.chaId,
+      time: Date.now(),
+      generationInfo: args.generationInfo,
+    }
+    const index = Math.min(
+      Math.max(projection.messageIndex ?? resolution.chat.message.length, 0),
+      resolution.chat.message.length,
+    )
+    resolution.chat.message.splice(index, 0, restored)
   })
 }
 
@@ -761,7 +784,21 @@ export async function applyServerBackedTerminal(args: {
     const restorationIsFresh =
       !args.restorationGuard ||
       (target.chatId === args.restorationGuard.chatId && isServerBackedRestorationGuardFresh(args.restorationGuard))
-    if (args.terminal.restoration && restorationIsFresh) {
+    const retainedPartial =
+      typeof args.terminal.done?.postGeneration?.finalText === 'string' &&
+      args.terminal.persistenceDisposition !== 'rejected' &&
+      args.terminal.persistenceDisposition !== 'unconfirmed'
+    if (retainedPartial) {
+      applyInterruptedTerminalSnapshot({
+        selectedChar: args.selectedChar,
+        selectedChat: args.selectedChat,
+        target,
+        generationId: args.generationInfo.generationId ?? '',
+        generationInfo: args.generationInfo,
+        postGeneration: args.terminal.done?.postGeneration,
+        streamProjection: args.streamProjection,
+      })
+    } else if (args.terminal.restoration && restorationIsFresh) {
       withTrustedResourceWrite(() => {
         const resolution = resolveServerBackedLiveChat({
           selectedChar: args.selectedChar,
@@ -819,11 +856,12 @@ export async function applyServerBackedTerminal(args: {
     const postGeneration = args.terminal.done?.postGeneration
     const target = targetFromPayloadOrContext(postGeneration?.messagePatch, contextTarget)
     const generationId = args.generationInfo.generationId ?? ''
-    applyCancelledTerminalSnapshot({
+    applyInterruptedTerminalSnapshot({
       selectedChar: args.selectedChar,
       selectedChat: args.selectedChat,
       target,
       generationId,
+      generationInfo: args.generationInfo,
       postGeneration,
       streamProjection: args.streamProjection,
     })

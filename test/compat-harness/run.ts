@@ -139,7 +139,7 @@ try {
     )
   }
   console.log(
-    `Compatibility harness ${UPDATE ? 'updated' : 'matched'}: ${diff.summary.totalCells} cells, ${diff.summary.divergentCells} baseline/current divergences; cluster 10 claims reproduced=${cluster10.replayCapCanonicalTerminal.reproduced && cluster10.retriedExtendContinueDuplicate.reproduced}.`,
+    `Compatibility harness ${UPDATE ? 'updated' : 'matched'}: ${diff.summary.totalCells} cells, ${diff.summary.divergentCells} baseline/current divergences; cluster 10 regressions healthy=${cluster10.replayCapCanonicalTerminal.healthy && cluster10.retriedExtendContinueDuplicate.healthy}.`,
   )
 } finally {
   rmSync(scratch, { recursive: true, force: true })

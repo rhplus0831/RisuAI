@@ -74,6 +74,8 @@ export interface InfoEvent {
   generationInfo?: Record<string, unknown>
   /** Server-selected Continue row behavior. Absent for non-Continue/older servers. */
   continueDisposition?: 'append' | 'extend'
+  /** Immutable pre-generation assistant text used to render extend-Continue replays. */
+  continueBase?: string
   /**
    * The clamped response token budget (`finalizeRequestBudget`). This is a
    * budget, not a completion count, so it is surfaced separately rather than
@@ -143,6 +145,10 @@ export interface ErrorEvent {
   statusText?: string
   code?: string
   restoration?: unknown
+  /** Raw accumulated provider text retained after a post-token failure. */
+  result?: string
+  /** Exact processed partial-row snapshot retained after a post-token failure. */
+  postGeneration?: PostGenerationFrame
   persistenceDisposition?: Exclude<GenerationPersistenceDisposition, 'committed_cleanup_pending'>
   generationProjection?: {
     characterId: string
@@ -183,8 +189,8 @@ export interface PostGenerationFrame {
    * The `editoutput`'d + run-var'd assistant text (server-owned final text). The
    * browser writes it onto the just-streamed assistant message in place of its
    * own copy (it no longer runs `editoutput` on the server path). On completion
-   * it is present only when the pass changed the text; on cancellation it is the
-   * exact persisted raw snapshot.
+   * it is present only when the pass changed the text; on an interrupted stream
+   * it is the exact editoutput-processed persisted snapshot.
    */
   finalText?: string
   /**
@@ -239,6 +245,12 @@ export interface DoneEvent {
   alternates?: string[]
   generationId?: string
   generationInfo?: Record<string, unknown>
+  /** Terminal fallback for replay windows whose `info` frame was evicted. */
+  halfStreaming?: boolean
+  /** Terminal fallback for replay windows whose `info` frame was evicted. */
+  continueDisposition?: 'append' | 'extend'
+  /** Immutable extend-Continue base when the replay window lost `info`. */
+  continueBase?: string
   /** Server terminal message reconciliation. See {@link PostGenerationFrame}. */
   postGeneration?: PostGenerationFrame
   /** The message committed, but finalization-journal cleanup still needs a retry sweep. */

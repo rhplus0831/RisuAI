@@ -114,6 +114,8 @@ export type requestDataResponse =
       replayGapPending?: boolean
       /** Server-selected row behavior for Continue. */
       continueDisposition?: 'append' | 'extend'
+      /** Immutable pre-generation assistant text for extend-Continue replay rendering. */
+      continueBase?: string
       special?: {
         emotion?: string
       }

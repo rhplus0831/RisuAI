@@ -240,8 +240,9 @@ not ordinary browser `/commands/*` resource endpoints:
   message remains a successful result if cleanup needs a later sweep. Historical
   targeted rows with no snapshot are terminalized as `stalled_legacy`, retained,
   and never replayed. Active durable jobs themselves are process-local reattach
-  state. Cancel uses the same phase-aware boundary when persisting
-  streamed-so-far text. Prompt and hook execution is owned by
+  state. Cancel and post-token failure use the same phase-aware boundary when
+  persisting streamed-so-far text after the editoutput-only interrupted-result
+  pass. Prompt and hook execution is owned by
   [Prompt Assembly And Scripting](prompt-assembly-and-scripting.md).
 - Raw message translation uses
   `POST /api/v1/commands/messages/:messageId/translate`: the server detaches the
@@ -383,9 +384,11 @@ revision cache after server-owned persistence. Durable jobs buffer protected
 replay events (`prompt`, de-duplicated `info`, `message_patch`, `side_effect`,
 de-duplicated `agent_preset_progress`, `post_generation_progress`, `warning`,
 `error`, and `done`) with 512-event and 2 MiB soft trimming targets;
-protected-only buffers may exceed them. Trimming drops unprotected frames and
-stops once only protected frames remain. They emit viewer heartbeat
-comments and can persist streamed-so-far text through raw cancel/finalization
+hard caps can eventually evict readiness frames after unprotected and
+nonessential frames are exhausted. An additive `replay_gap` makes that loss
+explicit; a canonical terminal snapshot can close the gap even when `prompt`
+or `info` readiness was evicted. They emit viewer heartbeat comments and can
+persist streamed-so-far text through processed interrupted-result finalization
 retry paths. Bootstrap `activeGenerationJobs` exposes
 running durable jobs, including mode and regenerate message id when relevant,
 while `activeMessageTranslations` exposes running plus bounded recent terminal

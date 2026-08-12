@@ -1,20 +1,20 @@
 {
   "schemaVersion": 1,
   "replayCapCanonicalTerminal": {
-    "reproduced": true,
+    "healthy": true,
     "retainedEventTypes": [
       "replay_gap",
       "info",
       "done"
     ],
-    "clientStatus": "error",
-    "clientError": "stream ended without a prompt event",
-    "canonicalTerminalResult": "Canonical terminal reply."
+    "clientStatus": "ok",
+    "canonicalTerminalResult": "Canonical terminal reply.",
+    "clientDisplayedResult": "Canonical terminal reply."
   },
   "retriedExtendContinueDuplicate": {
-    "reproduced": true,
+    "healthy": true,
     "afterFirstAttempt": "Seed answer. Continued reply.",
-    "duringRetry": "Seed answer. Continued reply. Continued reply.",
+    "duringRetry": "Seed answer. Continued reply.",
     "canonicalTerminalResult": "Seed answer. Continued reply.",
     "afterCanonicalTerminal": "Seed answer. Continued reply."
   }

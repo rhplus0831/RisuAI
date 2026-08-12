@@ -259,6 +259,12 @@ multi-generation derivation happen before a frame is authoritative. Automatic
 translation is owned by the
 [translation guide](translation-and-input-hooks.md#generated-message-auto-translation).
 
+Interrupted streams take a narrower branch. Cancellation and post-token failure
+apply steps 1–2 once to the accumulated partial and persist that exact text, but
+do not run Agent Preset after-main, run-variable, output-trigger, translation,
+or other completion-only effects. Incremental display remains raw on
+server-backed streams.
+
 `dispatchProviderWithPolicies()` in
 `server/fastify/src/routes/generationChat.ts` runs the request trigger for every
 actual attempt. Failures before the first token can use same-profile retries and

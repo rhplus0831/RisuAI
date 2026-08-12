@@ -248,9 +248,14 @@ per-job and 16 MiB registry-wide frame-memory budgets. Semantic eviction emits
 an additive `replay_gap`; complete terminal payloads spill to an ephemeral
 authenticated file side channel when they cannot stay in the frame window, and
 remain fetchable until the job's terminal retention expires.
-Durable cancellation persists any streamed-so-far raw row mode-aware, then
-emits a protected `done` with additive `outcome: 'cancelled'`; older terminal
-frames without an outcome remain completed by default.
+Durable cancellation applies the editoutput-only interrupted-result pipeline to
+any streamed-so-far text, persists that processed row mode-aware, then emits a
+protected `done` with additive `outcome: 'cancelled'`. The token stream and
+`done.result` remain raw; `done.postGeneration.finalText` is the exact persisted
+snapshot. Older terminal frames without an outcome remain completed by default.
+Provider failures before the first token retain no assistant row. Failures after
+tokens use the same processed partial snapshot and keep it as a failed assistant
+row instead of restoring the pre-generation transcript.
 Before writing a result, finalization compares the live transcript with the
 assembly-time target snapshot; a stale append/replace target is rejected rather
 than overwriting newer chat state. Script-side chat-variable, character-field,
@@ -271,6 +276,10 @@ cumulative tokenizer-aware `generatedTokens` plus provider-dispatch
 `elapsedMs`. This lets the browser keep progress live while deferring visible
 provider text until the terminal frame. The browser coordinator is documented
 in [Client Runtime](../../src/docs/client-runtime.md#generation-client).
+On Stop, server-backed streams keep the cancelling viewer attached through the
+cancelled terminal and can recreate a half-stream placeholder already removed
+by local cleanup; local-provider streams, which have no server terminal, flush
+their buffered partial through client editoutput before cleanup.
 
 `buildApp()` creates separate process-local registries for proxy streams,
 durable generations, message translations, and greeting translations. The
