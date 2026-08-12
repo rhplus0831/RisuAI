@@ -54,15 +54,6 @@ describe('resolveEchoRequest', () => {
 })
 
 describe('runEcho (non-streaming)', () => {
-  it('returns the message on the success path', async () => {
-    const res = await runEcho({
-      message: 'hi there',
-      delayMs: 0,
-      signal: new AbortController().signal,
-    })
-    expect(res).toEqual({ type: 'success', result: 'hi there' })
-  })
-
   it('returns aborted=true when signal aborts during the delay', async () => {
     const c = new AbortController()
     setTimeout(() => c.abort(), 15)

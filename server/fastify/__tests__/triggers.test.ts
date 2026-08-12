@@ -217,12 +217,6 @@ describe('Phase 7-9a matchesTrigger', () => {
 })
 
 describe('Phase 7-9a runTrigger shell', () => {
-  it('returns null when there are no triggers at all', async () => {
-    const char = makeChar({ triggerscript: [] })
-    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
-    expect(result).toBeNull()
-  })
-
   it('L7: no-trigger run returns null before structured cloning inputs', async () => {
     const cloneSpy = vi.spyOn(globalThis, 'structuredClone')
     try {

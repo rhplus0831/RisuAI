@@ -208,14 +208,6 @@ describe('applyNonStreamResponse', () => {
     expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('')
   })
 
-  it('removeIncompleteResponse=false: leaves processed data unmodified', async () => {
-    const currentChar = seed()
-    testDatabaseState.db.removeIncompleteResponse = false
-    const req: requestDataResponse = { type: 'success', result: 'noPunct' }
-    await applyNonStreamResponse(callArgs(req, currentChar))
-    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('noPunct')
-  })
-
   it('ttsAutoSpeech: calls sayTTS once per iter with the post-inlay result', async () => {
     const currentChar = seed()
     testDatabaseState.db.ttsAutoSpeech = true

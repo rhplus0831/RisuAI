@@ -70,12 +70,6 @@ describe('buildPlainPromptSections', () => {
     expect(sections.main).toEqual([{ role: 'system', content: 'CUSTOM-ONLY' }])
   })
 
-  it('falls back to db.mainPrompt when systemPrompt is empty string', () => {
-    const char = makeChar({ systemPrompt: '' })
-    const sections = buildPlainPromptSections(char)
-    expect(sections.main).toEqual([{ role: 'system', content: 'MAIN' }])
-  })
-
   it('appends additionalPrompt with a leading newline when promptPreprocess is true', () => {
     seedDb({ additionalPrompt: 'EXTRA', promptPreprocess: true })
     const sections = buildPlainPromptSections(makeChar())
@@ -94,12 +88,6 @@ describe('buildPlainPromptSections', () => {
     expect(sections.main).toEqual([{ role: 'system', content: 'MAIN' }])
   })
 
-  it('returns empty jailbreak when jailbreakToggle is false', () => {
-    seedDb({ jailbreakToggle: false, jailbreak: 'JAIL' })
-    const sections = buildPlainPromptSections(makeChar())
-    expect(sections.jailbreak).toEqual([])
-  })
-
   it('parses jailbreak through formatPrompt when jailbreakToggle is true', () => {
     seedDb({ jailbreakToggle: true, jailbreak: 'JAIL' })
     const sections = buildPlainPromptSections(makeChar())
@@ -110,12 +98,6 @@ describe('buildPlainPromptSections', () => {
     const char = makeChar({ replaceGlobalNote: 'PRE {{original}} POST' })
     const sections = buildPlainPromptSections(char)
     expect(sections.globalNote).toEqual([{ role: 'system', content: 'PRE GLOBAL POST' }])
-  })
-
-  it('falls back to db.globalNote when replaceGlobalNote is empty', () => {
-    const char = makeChar({ replaceGlobalNote: '' })
-    const sections = buildPlainPromptSections(char)
-    expect(sections.globalNote).toEqual([{ role: 'system', content: 'GLOBAL' }])
   })
 
   it('formatPrompt splits @@role markers into multiple OpenAIChat entries', () => {

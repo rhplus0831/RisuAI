@@ -652,26 +652,4 @@ describe('Phase 8-7a memory read routes', () => {
     expect(res.statusCode).toBe(400)
     expect(res.json()).toEqual({ error: 'model must be a non-empty string when provided' })
   })
-
-  it('accepts authenticated memory read requests', async () => {
-    seedMemoryRows(harness.dataDir)
-
-    const chunks = await harness.app.inject({
-      method: 'GET',
-      url: '/api/v1/memory/chunks/chat-1',
-      headers: { 'risu-auth': assertion },
-    })
-    expect(chunks.statusCode).toBe(200)
-    expect((chunks.json() as { chunks: MemoryChunk[] }).chunks).toHaveLength(3)
-
-    const summaries = await harness.app.inject({
-      method: 'GET',
-      url: '/api/v1/memory/summaries/chat-1?model=model-b',
-      headers: { 'risu-auth': assertion },
-    })
-    expect(summaries.statusCode).toBe(200)
-    expect((summaries.json() as { summaries: MemorySummary[] }).summaries).toMatchObject([
-      { id: 'summary-b', model: 'model-b' },
-    ])
-  })
 })

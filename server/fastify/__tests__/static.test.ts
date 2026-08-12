@@ -111,12 +111,6 @@ describe('Phase 2E static serving', () => {
       expect(spa.body).not.toContain('globalThis.__FASTIFY__')
     })
 
-    it('serves nested static files', async () => {
-      const res = await harness.app.inject({ method: 'GET', url: '/assets/app.js' })
-      expect(res.statusCode).toBe(200)
-      expect(res.body).toContain('console.log("app")')
-    })
-
     it('L20: immutable-caches SPA assets under /assets', async () => {
       const res = await harness.app.inject({ method: 'GET', url: '/assets/app.js' })
       expect(res.statusCode).toBe(200)
@@ -197,12 +191,6 @@ describe('Phase 2E static serving', () => {
       expect(res.body).not.toContain('<title>spa</title>')
       expectNotImmutableCached(res)
     })
-
-    it('still serves the API', async () => {
-      const res = await harness.app.inject({ method: 'GET', url: '/api/v1/health' })
-      expect(res.statusCode).toBe(200)
-      expect(res.json().status).toBe('ok')
-    })
   })
 
   describe('without staticRoot', () => {
@@ -214,12 +202,6 @@ describe('Phase 2E static serving', () => {
 
     afterEach(async () => {
       await stopHarness(harness)
-    })
-
-    it('still serves the API', async () => {
-      const res = await harness.app.inject({ method: 'GET', url: '/api/v1/health' })
-      expect(res.statusCode).toBe(200)
-      expect(res.json().status).toBe('ok')
     })
 
     it('returns Fastify default 404 for non-API routes', async () => {

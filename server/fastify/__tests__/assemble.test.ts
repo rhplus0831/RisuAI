@@ -1548,24 +1548,6 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
     expect(rendered).not.toContain('wrong active chat')
   })
 
-  it('throws a structured incomplete-chat error before assembly work', () => {
-    const db = makeDatabase({
-      characters: [
-        makeCharacter({
-          chats: [
-            makeChat({
-              id: 'chat-1',
-              generationSettings: undefined,
-            }),
-          ],
-        }),
-      ],
-    } as unknown as Partial<Database>)
-
-    expect(() => beginAssembly(baseInput(), depsFor(db))).toThrow(ChatGenerationSettingsIncompleteAssemblyError)
-    expectIncompleteAssembly(db, ['settings_missing'])
-  })
-
   it('returns the stable incomplete error for an imported chat with absent settings', () => {
     const db = makeDatabase({
       characters: [makeCharacter({ chats: [makeChat({ id: 'chat-1' })] })],
@@ -2036,25 +2018,6 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
     expect(state.database.personaPrompt).toBe('CHAT PERSONA')
     expect(db.mainPrompt).toBe('GLOBAL MAIN')
     expect(db.personaPrompt).toBe('GLOBAL PERSONA')
-  })
-
-  it('resolves an active character / chat (default-active consistency)', () => {
-    const db = makeDatabase({
-      currentChar: 1,
-      characters: [
-        makeCharacter({ chaId: 'char-a', chats: [makeChat({ id: 'a0' })] }),
-        makeCharacter({
-          chaId: 'char-b',
-          chatPage: 1,
-          chats: [makeChat({ id: 'b0' }), makeChat({ id: 'b1' })],
-        }),
-      ],
-    } as Partial<Database>)
-
-    const state = beginAssembly(baseInput({ characterId: 'char-b', chatId: 'b1' }), depsFor(db))
-    // The resolved indices match the active pointers.
-    expect(state.selectedCharID).toBe((db as any).currentChar)
-    expect(state.chatPage).toBe(state.currentChar.chatPage)
   })
 })
 

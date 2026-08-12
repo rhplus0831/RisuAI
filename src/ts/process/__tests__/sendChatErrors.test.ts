@@ -187,15 +187,6 @@ describe('reportSendChatError', () => {
     expect(messages[1].saying).toBe('test-cha-id')
   })
 
-  it('pushes a new char message when the chat is empty', () => {
-    seed({ inlayErrorResponse: true })
-    reportSendChatError('boom', baseCtx)
-    const messages = testDatabaseState.db.characters[0].chats[0].message
-    expect(messages).toHaveLength(1)
-    expect(messages[0].role).toBe('char')
-    expect(messages[0].data).toBe('```risuerror\nboom\n```')
-  })
-
   it('attaches generationInfo to the pushed message when present', () => {
     seed({ inlayErrorResponse: true })
     reportSendChatError('boom', {

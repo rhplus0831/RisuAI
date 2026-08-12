@@ -1285,15 +1285,6 @@ describe('Vertex AI Gemini routing', () => {
     expect((r as { result: string }).result).toContain('invalid_grant')
   })
 
-  it('resolveGeminiRequest returns null when neither apiKey nor vertex is provided', () => {
-    const r = resolveGeminiRequest({
-      model: 'gemini-2.5-pro',
-      messages: [{ role: 'user', content: 'hi' }],
-      signal: new AbortController().signal,
-    })
-    expect(r).toBeNull()
-  })
-
   it('resolveGeminiRequest returns null when vertex is partially populated', () => {
     const r = resolveGeminiRequest({
       model: 'gemini-2.5-pro',

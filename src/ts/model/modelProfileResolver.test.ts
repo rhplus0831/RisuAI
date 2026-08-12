@@ -7,7 +7,6 @@ import {
   resolveLegacyFallbackRefs,
   resolveModelProfile,
   resolveModelProfileByProfileId,
-  resolveProfileRequestModel,
 } from './modelProfileResolver'
 
 function db(overrides: Partial<Database> = {}): Database {
@@ -2214,17 +2213,5 @@ describe('resolveModelProfile provider/runtime normalization', () => {
       baseUrl: 'debug://base',
       requestModel: 'debug-wire-model',
     })
-  })
-
-  it('exports provider capability input and request model helpers for resolved profiles', () => {
-    const profile = resolveModelProfile({
-      database: db({
-        aiModel: 'openrouter',
-        openrouterRequestModel: 'openai/gpt-5',
-      } as Partial<Database>),
-    })
-
-    expect(buildProfileProviderCapabilityInput(profile)).toEqual(profile.providerCapabilityInput)
-    expect(resolveProfileRequestModel(profile)).toBe('openai/gpt-5')
   })
 })

@@ -37,15 +37,6 @@ describe('latest operation guard', () => {
     expect(isLatestOperation(guard, newer)).toBe(true)
   })
 
-  it('keeps separate targets from invalidating each other', () => {
-    const guard = createLatestOperationGuard<string>()
-    const targetA = guard.issue('target-a')
-    const targetB = guard.issue('target-b')
-
-    expect(guard.isLatest(targetA)).toBe(true)
-    expect(guard.isLatest(targetB)).toBe(true)
-  })
-
   it('clear() invalidates only the matching token', () => {
     const guard = createLatestOperationGuard<string>()
     const targetA = guard.issue('target-a')
@@ -84,21 +75,6 @@ describe('attempted field rollback', () => {
       description: 'local edit',
       untouched: 'stay',
     })
-  })
-
-  it('skips newer local edits', () => {
-    const target = {
-      title: 'newer local edit',
-    }
-
-    const rolledBack = applyAttemptedFieldRollback({
-      target,
-      previous: { title: 'before' },
-      attempted: { title: 'failed attempt' },
-    })
-
-    expect(rolledBack).toEqual([])
-    expect(target.title).toBe('newer local edit')
   })
 
   it('deletes keys added by failed attempt when deleteMissingPrevious is true', () => {

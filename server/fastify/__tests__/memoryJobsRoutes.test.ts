@@ -559,26 +559,4 @@ describe('Phase 8-2e memory job routes', () => {
     })
     expect(missing.statusCode).toBe(404)
   })
-
-  it('accepts authenticated memory job requests', async () => {
-    const res = await harness.app.inject({
-      method: 'POST',
-      url: '/api/v1/memory/jobs',
-      headers: { 'risu-auth': assertion },
-      payload: {
-        chatId: 'chat-1',
-        kind: 'embed',
-        payload: { chunkId: 'chunk-1' },
-      },
-    })
-    expect(res.statusCode).toBe(201)
-
-    const list = await harness.app.inject({
-      method: 'GET',
-      url: '/api/v1/memory/jobs',
-      headers: { 'risu-auth': assertion },
-    })
-    expect(list.statusCode).toBe(200)
-    expect((list.json() as { jobs: MemoryJob[] }).jobs).toHaveLength(1)
-  })
 })

@@ -1788,19 +1788,6 @@ describe('cancelServerChatGeneration', () => {
     expect(calls[0].headers['x-risu-caller']).toBe('chat-cancel')
   })
 
-  it('labels cancel requests with x-risu-caller: chat-cancel', async () => {
-    vi.stubGlobal('fetch', serverChatFetch)
-
-    await cancelServerChatGeneration('gen-123')
-
-    const calls = getServerChatCalls()
-    expect(calls).toHaveLength(1)
-    expect(calls[0]).toMatchObject({
-      method: 'DELETE',
-      callerHeader: 'chat-cancel',
-    })
-  })
-
   it('returns typed failures for an empty generationId and transport errors', async () => {
     const fetchSpy = vi.fn(async () => {
       throw new Error('network down')

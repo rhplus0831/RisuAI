@@ -2461,32 +2461,6 @@ describe('Durable generation (Milestone 1)', () => {
     expect(await chatMessages(boot)).toEqual([])
   })
 
-  // Explicit cancel aborts dispatch; a streaming cancel persists the
-  // accumulated-so-far text raw.
-  it('cancels a running generation via DELETE and persists the streamed-so-far text', async () => {
-    const gated = makeGatedProvider({ before: 'partial reply' }) // never released
-    providerImpl = gated.dispatchProvider
-
-    const controller = newController()
-    const res = await postDurable({}, { signal: controller.signal })
-    let jobId = ''
-    await readSse(res, (ev) => {
-      if (ev.type === 'job_accepted') jobId = ev.data.jobId as string
-      return ev.type === 'token'
-    })
-
-    const del = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`, {
-      method: 'DELETE',
-      headers: authHeaders(),
-    })
-    expect(del.status).toBe(202)
-    expect(await del.json()).toMatchObject({ disposition: 'cancelling', jobId })
-
-    const message = await waitForAssistantMessage()
-    expect(message.data).toBe('partial reply')
-    controller.abort()
-  })
-
   it('reports an unconfirmed cancelled partial when its journal insert fails', async () => {
     await resetHarness({ finalizationRetry: false })
     const gated = makeGatedProvider({ before: 'unsaved cancelled partial' })

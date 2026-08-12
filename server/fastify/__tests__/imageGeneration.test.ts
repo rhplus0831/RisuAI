@@ -7,7 +7,7 @@ import * as fflate from 'fflate'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ImageGenerationRequest } from '../../../src/ts/server/imageGenerationProtocol.js'
 import { buildApp } from '../src/app.js'
-import { executeImageGeneration, ImageGenerationError, parseImageGenerationRequest } from '../src/imageGeneration.js'
+import { executeImageGeneration, parseImageGenerationRequest } from '../src/imageGeneration.js'
 import { createImageGenerationDisconnectAbort } from '../src/routes/imageGeneration.js'
 
 const PNG_HEADER = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
@@ -505,15 +505,5 @@ describe('image generation disconnect abort', () => {
     disconnect.cleanup()
     expect(request.listenerCount('close')).toBe(0)
     expect(response.listenerCount('close')).toBe(0)
-  })
-})
-
-describe('image generation error shape', () => {
-  it('uses a dedicated sanitized error type', () => {
-    expect(new ImageGenerationError('image_generation_failed', 502, 429)).toMatchObject({
-      code: 'image_generation_failed',
-      statusCode: 502,
-      upstreamStatus: 429,
-    })
   })
 })

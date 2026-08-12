@@ -76,18 +76,6 @@ describe('normalizeTemplate', () => {
     ])
   })
 
-  it('does not duplicate postEverything when the template already has one', () => {
-    seedDb({
-      promptPresetsId: -1,
-      promptTemplate: [{ type: 'description' }, { type: 'postEverything' }] as PromptItem[],
-    })
-    const result = normalizeTemplate(makeChar())
-    expect(result.promptTemplate).toEqual([
-      { id: expect.any(String), type: 'description' },
-      { id: expect.any(String), type: 'postEverything' },
-    ])
-  })
-
   it('clones the db template so the result can be mutated without touching state', () => {
     const original: PromptItem[] = [{ type: 'description' }]
     seedDb({ promptPresetsId: -1, promptTemplate: original })

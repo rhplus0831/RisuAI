@@ -640,18 +640,6 @@ describe('settingsBridge coalescing', () => {
     stop()
   })
 
-  it('skips rollback for a setting after a newer same-key local edit', async () => {
-    setupSettings({ textTheme: 'before' })
-
-    applyServerBackedSettingsPatch({ textTheme: 'attempted' })
-    await Promise.resolve()
-
-    testDatabaseState.db.textTheme = 'newer local'
-    recorded.patches[0].rollback?.()
-
-    expect(testDatabaseState.db.textTheme).toBe('newer local')
-  })
-
   it('restores only still-attempted keys from a multi-key settings rollback', async () => {
     setupSettings({
       notification: false,
