@@ -7,7 +7,8 @@ import { initHotkey } from './ts/hotkey'
 import { installRouter } from './ts/router'
 import { mount } from 'svelte'
 import { installFastifyBrowserSmokeHook } from './ts/server/browserSmoke'
-import { installViewportScrollGuard } from './ts/gui/viewportScrollGuard'
+import { installViewportScrollGuard, resetViewportScroll } from './ts/gui/viewportScrollGuard'
+import { installVisualViewportCoordinator } from './ts/gui/visualViewportCoordinator'
 import {
   installPushNotificationForegroundCleanup,
   installPushNotificationNavigationListener,
@@ -23,6 +24,7 @@ window.addEventListener('vite:preloadError', (event) => {
 installRouter()
 installPushNotificationNavigationListener()
 installPushNotificationForegroundCleanup()
+installVisualViewportCoordinator({ onRelease: resetViewportScroll })
 installViewportScrollGuard()
 let app = mount(App, {
   target: document.getElementById('app'),

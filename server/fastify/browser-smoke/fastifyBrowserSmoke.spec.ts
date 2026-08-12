@@ -350,13 +350,40 @@ test('core chat controls and blocking alerts remain accessible across responsive
     }
 
     const composer = page.getByTestId('default-chat-composer')
+    const composerDock = page.locator('[data-default-chat-composer-dock]')
+    const transcript = page.locator('[data-default-chat-transcript]')
     await expect(composer).toBeVisible()
+    await expect(composerDock).toBeVisible()
+    await expect(transcript).toBeVisible()
+    await expect(composerDock.locator('[data-testid="default-chat-composer"]')).toHaveCount(1)
+    await expect(transcript.locator('[data-testid="default-chat-composer"]')).toHaveCount(0)
     await expect(composer).toHaveAccessibleName(/.+/)
     await expect(page.getByTestId('default-chat-send-button')).toHaveAccessibleName(/.+/)
     await expect(page.getByTestId('default-chat-menu-button')).toHaveAccessibleName(/.+/)
     await expect(page.locator('button button')).toHaveCount(0)
 
     await composer.focus()
+    await expect(page.locator('html')).toHaveAttribute('data-risu-visual-viewport-active', 'true')
+    const chatGeometry = await page.evaluate(() => {
+      const dock = document.querySelector<HTMLElement>('[data-default-chat-composer-dock]')
+      const transcriptElement = document.querySelector<HTMLElement>('[data-default-chat-transcript]')
+      const shell = document.querySelector<HTMLElement>('[data-risu-visual-viewport-shell]')
+      if (!dock || !transcriptElement || !shell) return null
+      const dockRect = dock.getBoundingClientRect()
+      const transcriptRect = transcriptElement.getBoundingClientRect()
+      const shellRect = shell.getBoundingClientRect()
+      return {
+        dockBottom: dockRect.bottom,
+        shellBottom: shellRect.bottom,
+        transcriptBottom: transcriptRect.bottom,
+        transcriptOverflowY: getComputedStyle(transcriptElement).overflowY,
+        dockTop: dockRect.top,
+      }
+    })
+    expect(chatGeometry).not.toBeNull()
+    expect(chatGeometry!.transcriptOverflowY).toBe('auto')
+    expect(Math.abs(chatGeometry!.dockBottom - chatGeometry!.shellBottom)).toBeLessThanOrEqual(1)
+    expect(chatGeometry!.transcriptBottom).toBeLessThanOrEqual(chatGeometry!.dockTop + 1)
     await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.showAlert('Accessibility smoke alert'))
     const dialog = page.getByRole('dialog')
     await expect(dialog).toBeVisible()

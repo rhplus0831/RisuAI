@@ -1,3 +1,5 @@
+import { isTextEntryElement, isVisualViewportAdjustmentActive } from './visualViewportCoordinator'
+
 /**
  * The app shell renders inside a fixed, non-scrolling viewport: `body` uses
  * `overflow: hidden`, and no app code scrolls the document root. The root can
@@ -13,9 +15,10 @@ export function installViewportScrollGuard(): void {
   window.addEventListener('scroll', resetViewportScroll)
 }
 
-function resetViewportScroll(): void {
+export function resetViewportScroll(): void {
   const scroller = document.scrollingElement
   if (!scroller) return
-  if (scroller.scrollTop !== 0) scroller.scrollTop = 0
   if (scroller.scrollLeft !== 0) scroller.scrollLeft = 0
+  if (isVisualViewportAdjustmentActive() || isTextEntryElement(document.activeElement)) return
+  if (scroller.scrollTop !== 0) scroller.scrollTop = 0
 }

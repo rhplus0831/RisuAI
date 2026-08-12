@@ -352,17 +352,9 @@ describe('server-backed data-driven settings', () => {
     })
   })
 
-  it('exposes the default-enabled floating chat input under Accessibility', () => {
-    const item = accessibilitySettingsItems.find((candidate) => candidate.id === 'acc.floatingChatInput')
-
-    expect(item).toMatchObject({
-      type: 'check',
-      labelKey: 'floatingChatInput',
-      helpKey: 'floatingChatInput',
-      bindKey: 'floatingChatInput',
-    })
-    expect(item?.getValue?.({ floatingChatInput: undefined } as never)).toBe(true)
-    expect(item?.getValue?.({ floatingChatInput: false } as never)).toBe(false)
+  it('does not expose retired composer-position settings under Accessibility', () => {
+    expect(accessibilitySettingsItems.some((candidate) => candidate.id === 'acc.fixedChatTextarea')).toBe(false)
+    expect(accessibilitySettingsItems.some((candidate) => candidate.id === 'acc.floatingChatInput')).toBe(false)
   })
 
   it('exposes the default-off global additional-parameters opt-in under Accessibility', () => {

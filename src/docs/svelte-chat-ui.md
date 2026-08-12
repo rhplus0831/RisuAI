@@ -116,7 +116,7 @@ match-selection, delete-confirmation, and failure dialogs share the modal focus
 and backdrop actions; stale target guards prevent a result from applying after
 the active message changes.
 
-## Composer And Floating Composer
+## Composer Dock And Mobile Viewport
 
 The composer owns five reload-recoverable fields: message, translated message,
 attached files, reviewed Draft output, and BTW output.
@@ -125,24 +125,26 @@ lineage/writer-scoped `sessionStorage`. Only an accepted save for the exact
 draft generation clears recovery. The complete storage contract is in
 [Client Runtime](client-runtime.md#draft-recovery-stores).
 
-When `floatingChatInput` is enabled (the default) and `fixedChatTextarea` is
-off, scrolling farther than the greater of 24 pixels or half the normal
-composer height promotes the existing composer into an expanded floating
-overlay. The user can collapse it to an icon, reopen it, return to the bottom,
-or hide it. Chat changes and disabling the preference clear the floating state;
-opening, hiding, and toggling views preserve the current draft.
+The composer is a persistent dock outside the reverse transcript scroller.
+Scrolling, paging, deep jumps, and auto-scroll continue to operate on the
+transcript container, so they cannot move or reparent the composer. Draft-hook
+output, BTW output, translation, attachments, stickers, suggestions, and
+generation controls remain in the dock and keep their transcript-scoped state.
 
-If the active chat has a selected Draft hook and a nonblank reviewed Draft, the
-floating composer initially shows that Draft read-only and replaces Send with a
-Convert toggle. Convert exposes the editable original message; edits remain
-authoritative across toggles and after closing the overlay.
+`fixedChatTextarea` and `floatingChatInput` remain accepted in persisted data
+for compatibility with older saves, but they no longer alter composer layout
+and are not exposed as Accessibility controls.
 
 `DefaultChatScreen.svelte` measures the rendered content column with
-`ResizeObserver`. The normal and floating composers, trigger, and overflow menus
-use its width and inline-end variables across `chatScreenWidth`, custom fixed
-containing blocks, viewport changes, and safe-area insets. Normal and translated
-textareas clamp to a 44-pixel minimum and remeasure after the floating overlay
-opens.
+`ResizeObserver`. The transcript, composer dock, and overflow menu share that
+width across `chatScreenWidth`, viewport changes, and safe-area insets. Normal
+and translated textareas clamp to a 44-pixel minimum.
+
+While a text editor is focused, `visualViewportCoordinator.ts` publishes the
+visual viewport height and top offset to the app shell. The document scroll
+guard yields vertical ownership during that interval, preventing iOS focus
+scrolling from fighting the user's gesture, and resumes its normal root reset
+after the keyboard settles.
 
 ## Generation And Loading States
 

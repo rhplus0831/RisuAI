@@ -20,8 +20,6 @@
     XIcon,
     BrainIcon,
     ArrowDown,
-    EyeOffIcon,
-    PencilLineIcon,
     PinIcon,
     SparkleIcon,
     TriangleAlertIcon,
@@ -225,17 +223,9 @@
   let toggleStickers: boolean = $state(false)
   let fileInput: string[] = $state([])
   let showNewMessageButton = $state(false)
-  let showFloatingInputButton = $state(false)
-  let floatingInputOpen = $state(false)
-  let floatingInputCollapsed = $state(false)
-  let floatingDraftShowsOriginal = $state(false)
-  let floatingInputButton: HTMLButtonElement | null = $state(null)
-  let chatScreenRoot: HTMLDivElement | null = $state(null)
   let chatScrollContainer: HTMLDivElement | null = $state(null)
-  let composerRow: HTMLDivElement | null = $state(null)
   let chatContentRenderedWidth: number | null = $state(null)
   let chatContentInlineEnd: number | null = $state(null)
-  let chatContentFixedInlineEnd: number | null = $state(null)
   let refreshChatContentGeometry = () => {}
   let chatsInstance: any = $state()
   let isScrollingToMessage = $state(false)
@@ -367,21 +357,6 @@
     if (!selectedId) return undefined
     return draftHooks.find((hook) => hook.id === selectedId)
   })
-  let floatingDraftConversionActive = $derived(
-    floatingInputOpen && Boolean(selectedDraftHook) && draftText.trim().length > 0,
-  )
-  let floatingDraftPreviewVisible = $derived(floatingDraftConversionActive && !floatingDraftShowsOriginal)
-  let floatingComposerValue = $derived(floatingDraftPreviewVisible ? draftText : messageInput)
-  let floatingDraftConversionWasActive = false
-
-  $effect(() => {
-    const active = floatingDraftConversionActive
-    if (!active || !floatingDraftConversionWasActive) {
-      floatingDraftShowsOriginal = false
-    }
-    floatingDraftConversionWasActive = active
-  })
-
   let showDraftArea = $derived(Boolean(selectedDraftHook || draftText.length > 0 || btwText.length > 0))
   let canContinueFromMenu = $derived(currentChat.length >= 2 && currentChat[currentChat.length - 1]?.role === 'char')
   let currentChatGenerationActivity = $derived(
@@ -595,17 +570,6 @@
     chatsInstance?.scrollToLatestMessage()
   }
 
-  function floatingInputEnabled(): boolean {
-    return getDatabase().floatingChatInput !== false && !getDatabase().fixedChatTextarea
-  }
-
-  function toggleFloatingDraftConversion(): void {
-    if (!floatingDraftConversionActive) return
-
-    floatingDraftShowsOriginal = !floatingDraftShowsOriginal
-    void tick().then(updateInputSize)
-  }
-
   function trackChatContentGeometry(node: HTMLElement, configuredWidth: number) {
     let currentConfiguredWidth = configuredWidth
 
@@ -616,15 +580,8 @@
 
       const renderedWidth = Math.min(Math.max(currentConfiguredWidth, 0), availableWidth)
       const inlineEnd = Math.max(0, (availableWidth - renderedWidth) / 2)
-      const contentRight = rect.left + node.clientLeft + availableWidth - inlineEnd
-      const fixedContainingRight = customStyle.includes('backdrop-filter')
-        ? (chatScreenRoot?.getBoundingClientRect().right ?? window.innerWidth)
-        : window.innerWidth
-      const fixedInlineEnd = Math.max(0, fixedContainingRight - contentRight)
-
       if (chatContentRenderedWidth !== renderedWidth) chatContentRenderedWidth = renderedWidth
       if (chatContentInlineEnd !== inlineEnd) chatContentInlineEnd = inlineEnd
-      if (chatContentFixedInlineEnd !== fixedInlineEnd) chatContentFixedInlineEnd = fixedInlineEnd
     }
 
     refreshChatContentGeometry = measure
@@ -650,85 +607,6 @@
         if (refreshChatContentGeometry === measure) refreshChatContentGeometry = () => {}
       },
     }
-  }
-
-  function updateFloatingInputForScroll(chatTarget: HTMLElement): void {
-    if (!floatingInputEnabled()) {
-      showFloatingInputButton = false
-      floatingInputOpen = false
-      floatingInputCollapsed = false
-      return
-    }
-
-    const distanceFromBottom = Math.max(0, -chatTarget.scrollTop)
-    if (distanceFromBottom <= 1) {
-      const wasFloating = floatingInputOpen
-      showFloatingInputButton = false
-      floatingInputOpen = false
-      if (wasFloating) openMenu = false
-      return
-    }
-
-    if (floatingInputOpen) return
-
-    const composerHeight = composerRow?.getBoundingClientRect().height ?? 0
-    const revealThreshold = Math.max(24, composerHeight / 2)
-    if (distanceFromBottom < revealThreshold) {
-      showFloatingInputButton = false
-      return
-    }
-
-    if (floatingInputCollapsed) {
-      showFloatingInputButton = true
-      return
-    }
-
-    void openFloatingInput(false)
-  }
-
-  async function openFloatingInput(focusInput = true): Promise<void> {
-    if (!floatingInputEnabled()) return
-
-    const scrollContainer = chatScrollContainer
-    const preservedScrollTop = scrollContainer?.scrollTop
-    refreshChatContentGeometry()
-    floatingInputCollapsed = false
-    floatingInputOpen = true
-    showFloatingInputButton = false
-    await tick()
-    if (!floatingInputOpen || scrollContainer !== chatScrollContainer) return
-
-    updateInputSize()
-    refreshChatContentGeometry()
-
-    if (preservedScrollTop !== undefined && scrollContainer) {
-      scrollContainer.scrollTop = preservedScrollTop
-    }
-    if (focusInput) inputEle?.focus({ preventScroll: true })
-  }
-
-  async function hideFloatingInput(): Promise<void> {
-    const preservedScrollTop = chatScrollContainer?.scrollTop
-    openMenu = false
-    floatingInputCollapsed = true
-    floatingInputOpen = false
-    showFloatingInputButton = true
-    await tick()
-
-    floatingInputButton?.focus({ preventScroll: true })
-    if (preservedScrollTop !== undefined && chatScrollContainer) {
-      chatScrollContainer.scrollTop = preservedScrollTop
-    }
-  }
-
-  async function goToBottomFromFloatingInput(): Promise<void> {
-    openMenu = false
-    floatingInputOpen = false
-    showFloatingInputButton = false
-    await tick()
-    scrollToBottom()
-    if (chatScrollContainer) chatScrollContainer.scrollTop = 0
-    inputEle?.focus({ preventScroll: true })
   }
 
   function getActiveTranscriptWindowIdentity(): string | null {
@@ -1224,23 +1102,12 @@
     activeTranscriptWindowConfiguredPages = configuredChatLoadPages
     transcriptWindowConfigurationRun += 1
     loadPages = configuredChatLoadPages
-    showFloatingInputButton = false
-    floatingInputOpen = false
-    floatingInputCollapsed = false
     openMenu = false
     untrack(() => restoreComposerDraft(nextIdentity))
 
     if (previousIdentity !== null) {
       resetTranscriptWindowForChatSwitch()
     }
-  })
-
-  $effect(() => {
-    if (floatingInputEnabled()) return
-
-    showFloatingInputButton = false
-    floatingInputOpen = false
-    floatingInputCollapsed = false
   })
 
   $effect(() => {
@@ -1525,7 +1392,6 @@
         return
       }
       draftText = nextDraft
-      floatingDraftShowsOriginal = false
       markComposerDraftChanged('draft')
       updateInputSizeAll()
     } catch (error) {
@@ -2215,7 +2081,6 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  bind:this={chatScreenRoot}
   class="w-full h-full relative"
   style={customStyle}
   onclick={() => {
@@ -2278,21 +2143,6 @@
       </button>
     {/if}
   {/if}
-  {#if showFloatingInputButton && floatingInputEnabled() && !floatingInputOpen}
-    <button
-      bind:this={floatingInputButton}
-      type="button"
-      data-testid="floating-chat-input-button"
-      aria-label={language.openFloatingChatInput}
-      title={language.openFloatingChatInput}
-      class="floating-chat-input-button absolute bottom-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-blue-500 text-white shadow-lg transition-colors hover:bg-blue-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400"
-      style={`--chat-content-inline-end: ${chatContentInlineEnd ? chatContentInlineEnd - 8 : 16}px`}
-      onclick={() => void openFloatingInput()}>
-      <span class="relative flex h-6 w-6 items-center justify-center" aria-hidden="true">
-        <PencilLineIcon size={22} />
-      </span>
-    </button>
-  {/if}
   {#if isScrollingToMessage}
     <div
       class="absolute inset-0 z-50 flex items-center justify-center bg-black/50 text-white text-xl font-bold backdrop-blur-sm">
@@ -2352,386 +2202,165 @@
     </div>
   {:else}
     <div
-      bind:this={chatScrollContainer}
       use:trackChatContentGeometry={getDatabase().chatScreenWidth ?? 900}
-      class="h-full w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen"
-      class:fastify-chat-theme={getDatabase().theme === 'fastify'}
-      style={`--chat-screen-width: ${getDatabase().chatScreenWidth ?? 900}px; --chat-content-rendered-width: ${chatContentRenderedWidth === null ? 'min(var(--chat-screen-width), 100%)' : `${chatContentRenderedWidth}px`}; --chat-content-inline-end: ${chatContentInlineEnd ?? 8}px; --chat-content-fixed-inline-end: ${chatContentFixedInlineEnd ?? 16}px`}
-      data-default-chat-screen-width
-      onscroll={(e) => {
-        //@ts-expect-error scrollHeight/clientHeight/scrollTop don't exist on EventTarget, but target is HTMLElement here
-        const scrolled = e.target.scrollHeight - e.target.clientHeight + e.target.scrollTop
-        if (
-          scrolled < 100 &&
-          getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message
-            .length > loadPages
-        ) {
-          void expandTranscriptWindow(loadPages + getAdditionalChatLoadPages(getDatabase()))
-        }
-        const chatTarget = e.target as HTMLElement
-        const chatsContainer = chatTarget.querySelector<HTMLElement>('[data-default-chat-chats-container]')
-        const lastEl = chatsContainer?.firstElementChild
-        const isAtBottom = lastEl
-          ? lastEl.getBoundingClientRect().top <= chatTarget.getBoundingClientRect().bottom + 100
-          : true
-        if (isAtBottom) {
-          showNewMessageButton = false
-        }
-        updateFloatingInputForScroll(chatTarget)
-      }}>
-      {#if composerDraftPersistenceError}
-        <div
-          class="chat-screen-content-width mb-2 rounded-md border border-draculared p-3 text-sm text-draculared"
-          role="alert"
-          data-testid="composer-draft-persistence-error">
-          {composerDraftPersistenceError}
-        </div>
-      {/if}
-      {#if currentChatStopFailed && currentChatGenerationCancellation}
-        <div
-          class="chat-screen-content-width mb-2 flex flex-col gap-2 rounded-md border border-draculared p-3 text-sm text-draculared"
-          role="alert"
-          data-testid="generation-stop-failed"
-          data-generation-operation-id={currentChatGenerationCancellation.operationId}>
-          <p>{language.generationStop.failed}</p>
-          {#if currentChatGenerationCancellation.error}
-            <p class="break-words text-textcolor2">{currentChatGenerationCancellation.error}</p>
-          {/if}
-          <div class="flex flex-wrap gap-2">
-            <button
-              type="button"
-              class="rounded-md border border-draculared px-3 py-1.5 transition-colors hover:bg-draculared hover:text-white"
-              data-testid="generation-stop-retry"
-              onclick={retryGenerationStop}>
-              {language.generationStop.retry}
-            </button>
-            <button
-              type="button"
-              class="rounded-md border border-darkborderc px-3 py-1.5 text-textcolor transition-colors hover:border-textcolor hover:bg-selected"
-              data-testid="generation-stop-refresh"
-              onclick={refreshGenerationStop}>
-              {language.generationReattachFailure.refresh}
-            </button>
+      class="relative flex h-full min-h-0 w-full flex-col-reverse"
+      style={`--chat-screen-width: ${getDatabase().chatScreenWidth ?? 900}px; --chat-content-rendered-width: ${chatContentRenderedWidth === null ? 'min(var(--chat-screen-width), 100%)' : `${chatContentRenderedWidth}px`}; --chat-content-inline-end: ${chatContentInlineEnd ?? 8}px`}
+      data-default-chat-screen-width>
+      <section
+        class="composer-dock flex w-full shrink-0 flex-col-reverse items-center overflow-y-auto overscroll-contain bg-bgcolor/95"
+        data-default-chat-composer-dock>
+        {#if composerDraftPersistenceError}
+          <div
+            class="chat-screen-content-width mb-2 rounded-md border border-draculared p-3 text-sm text-draculared"
+            role="alert"
+            data-testid="composer-draft-persistence-error">
+            {composerDraftPersistenceError}
           </div>
-        </div>
-      {:else if currentChatStoppedFinalizing}
-        <div
-          class="chat-screen-content-width mb-2 rounded-md border border-yellow-500 bg-yellow-500/10 p-3 text-sm text-textcolor"
-          role="status"
-          data-testid="generation-stop-saving-partial">
-          {language.generationStop.savingStoppedPartial}
-        </div>
-      {:else if currentChatGenerationCancellation?.disposition === 'completion_finalizing'}
-        <div
-          class="chat-screen-content-width mb-2 rounded-md border border-yellow-500 bg-yellow-500/10 p-3 text-sm text-textcolor"
-          role="status"
-          data-testid="generation-stop-completion-saving">
-          {language.generationPersistenceQueued}
-        </div>
-      {/if}
-      {#if currentChatDeadGeneration}
-        <div
-          class="chat-screen-content-width mb-2 flex flex-col gap-2 rounded-md border border-yellow-500 bg-yellow-500/10 p-3 text-sm text-textcolor"
-          role="alert"
-          data-testid="generation-reattach-failure"
-          data-generation-job-id={currentChatDeadGeneration.jobId}>
-          <div class="flex items-start gap-2">
-            <TriangleAlertIcon class="mt-0.5 shrink-0 text-yellow-500" size={18} aria-hidden="true" />
-            <div class="min-w-0">
-              <p>{language.generationReattachFailure.message}</p>
-              {#if currentChatDeadGeneration.lastError}
-                <p class="mt-1 break-words text-textcolor2" data-testid="generation-reattach-last-error">
-                  {language.generationReattachFailure.lastError(currentChatDeadGeneration.lastError)}
-                </p>
+        {/if}
+        {#if currentChatStopFailed && currentChatGenerationCancellation}
+          <div
+            class="chat-screen-content-width mb-2 flex flex-col gap-2 rounded-md border border-draculared p-3 text-sm text-draculared"
+            role="alert"
+            data-testid="generation-stop-failed"
+            data-generation-operation-id={currentChatGenerationCancellation.operationId}>
+            <p>{language.generationStop.failed}</p>
+            {#if currentChatGenerationCancellation.error}
+              <p class="break-words text-textcolor2">{currentChatGenerationCancellation.error}</p>
+            {/if}
+            <div class="flex flex-wrap gap-2">
+              <button
+                type="button"
+                class="rounded-md border border-draculared px-3 py-1.5 transition-colors hover:bg-draculared hover:text-white"
+                data-testid="generation-stop-retry"
+                onclick={retryGenerationStop}>
+                {language.generationStop.retry}
+              </button>
+              <button
+                type="button"
+                class="rounded-md border border-darkborderc px-3 py-1.5 text-textcolor transition-colors hover:border-textcolor hover:bg-selected"
+                data-testid="generation-stop-refresh"
+                onclick={refreshGenerationStop}>
+                {language.generationReattachFailure.refresh}
+              </button>
+            </div>
+          </div>
+        {:else if currentChatStoppedFinalizing}
+          <div
+            class="chat-screen-content-width mb-2 rounded-md border border-yellow-500 bg-yellow-500/10 p-3 text-sm text-textcolor"
+            role="status"
+            data-testid="generation-stop-saving-partial">
+            {language.generationStop.savingStoppedPartial}
+          </div>
+        {:else if currentChatGenerationCancellation?.disposition === 'completion_finalizing'}
+          <div
+            class="chat-screen-content-width mb-2 rounded-md border border-yellow-500 bg-yellow-500/10 p-3 text-sm text-textcolor"
+            role="status"
+            data-testid="generation-stop-completion-saving">
+            {language.generationPersistenceQueued}
+          </div>
+        {/if}
+        {#if currentChatDeadGeneration}
+          <div
+            class="chat-screen-content-width mb-2 flex flex-col gap-2 rounded-md border border-yellow-500 bg-yellow-500/10 p-3 text-sm text-textcolor"
+            role="alert"
+            data-testid="generation-reattach-failure"
+            data-generation-job-id={currentChatDeadGeneration.jobId}>
+            <div class="flex items-start gap-2">
+              <TriangleAlertIcon class="mt-0.5 shrink-0 text-yellow-500" size={18} aria-hidden="true" />
+              <div class="min-w-0">
+                <p>{language.generationReattachFailure.message}</p>
+                {#if currentChatDeadGeneration.lastError}
+                  <p class="mt-1 break-words text-textcolor2" data-testid="generation-reattach-last-error">
+                    {language.generationReattachFailure.lastError(currentChatDeadGeneration.lastError)}
+                  </p>
+                {/if}
+              </div>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button
+                type="button"
+                class="rounded-md border border-yellow-500 px-3 py-1.5 transition-colors hover:bg-yellow-500 hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={reattachRecoveryAction !== null}
+                aria-busy={reattachRecoveryAction?.jobId === currentChatDeadGeneration.jobId &&
+                  reattachRecoveryAction.action === 'retry'}
+                data-testid="generation-reattach-retry"
+                onclick={() => void runReattachRecoveryAction(currentChatDeadGeneration!.jobId, 'retry')}>
+                {language.generationReattachFailure.retry}
+              </button>
+              <button
+                type="button"
+                class="rounded-md border border-yellow-500 px-3 py-1.5 transition-colors hover:bg-yellow-500 hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={reattachRecoveryAction !== null}
+                aria-busy={reattachRecoveryAction?.jobId === currentChatDeadGeneration.jobId &&
+                  reattachRecoveryAction.action === 'refresh'}
+                data-testid="generation-reattach-refresh"
+                onclick={() => void runReattachRecoveryAction(currentChatDeadGeneration!.jobId, 'refresh')}>
+                {language.generationReattachFailure.refresh}
+              </button>
+              <button
+                type="button"
+                class="rounded-md border border-draculared px-3 py-1.5 text-draculared transition-colors hover:bg-draculared hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={reattachRecoveryAction !== null}
+                aria-busy={reattachRecoveryAction?.jobId === currentChatDeadGeneration.jobId &&
+                  reattachRecoveryAction.action === 'stop'}
+                data-testid="generation-reattach-stop"
+                onclick={() => void runReattachRecoveryAction(currentChatDeadGeneration!.jobId, 'stop')}>
+                {language.generationReattachFailure.stop}
+              </button>
+            </div>
+          </div>
+        {/if}
+        {#each currentAcceptedSendRecoveries as recovery (recovery.id)}
+          <div
+            class="chat-screen-content-width mb-2 flex items-center gap-3 rounded-md border border-draculared p-3 text-sm text-draculared"
+            role="alert"
+            data-testid="accepted-send-recovery"
+            data-generation-operation-id={recovery.operationId}>
+            <div>
+              <p>
+                {recovery.operationState === 'abandoned'
+                  ? language.acceptedSendRecovery.abandoned
+                  : recovery.cause === 'generation_in_progress'
+                    ? language.acceptedSendRecovery.generationInProgress
+                    : language.acceptedSendRecovery.generationFailed}
+              </p>
+              {#if recovery.providerMayHaveRun}
+                <p class="mt-1 text-textcolor2">{language.acceptedSendRecovery.providerMayHaveRun}</p>
               {/if}
             </div>
-          </div>
-          <div class="flex flex-wrap gap-2">
             <button
               type="button"
-              class="rounded-md border border-yellow-500 px-3 py-1.5 transition-colors hover:bg-yellow-500 hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={reattachRecoveryAction !== null}
-              aria-busy={reattachRecoveryAction?.jobId === currentChatDeadGeneration.jobId &&
-                reattachRecoveryAction.action === 'retry'}
-              data-testid="generation-reattach-retry"
-              onclick={() => void runReattachRecoveryAction(currentChatDeadGeneration!.jobId, 'retry')}>
-              {language.generationReattachFailure.retry}
-            </button>
-            <button
-              type="button"
-              class="rounded-md border border-yellow-500 px-3 py-1.5 transition-colors hover:bg-yellow-500 hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={reattachRecoveryAction !== null}
-              aria-busy={reattachRecoveryAction?.jobId === currentChatDeadGeneration.jobId &&
-                reattachRecoveryAction.action === 'refresh'}
-              data-testid="generation-reattach-refresh"
-              onclick={() => void runReattachRecoveryAction(currentChatDeadGeneration!.jobId, 'refresh')}>
-              {language.generationReattachFailure.refresh}
-            </button>
-            <button
-              type="button"
-              class="rounded-md border border-draculared px-3 py-1.5 text-draculared transition-colors hover:bg-draculared hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={reattachRecoveryAction !== null}
-              aria-busy={reattachRecoveryAction?.jobId === currentChatDeadGeneration.jobId &&
-                reattachRecoveryAction.action === 'stop'}
-              data-testid="generation-reattach-stop"
-              onclick={() => void runReattachRecoveryAction(currentChatDeadGeneration!.jobId, 'stop')}>
-              {language.generationReattachFailure.stop}
+              class="ml-auto shrink-0 rounded-md border border-draculared px-3 py-1.5 text-sm transition-colors hover:bg-draculared hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={recovery.retrying}
+              aria-busy={recovery.retrying}
+              data-testid="accepted-send-retry"
+              onclick={() => void retryAcceptedChatSend(recovery.id)}>
+              {recovery.retrying ? language.acceptedSendRecovery.retrying : language.acceptedSendRecovery.retry}
             </button>
           </div>
-        </div>
-      {/if}
-      {#each currentAcceptedSendRecoveries as recovery (recovery.id)}
-        <div
-          class="chat-screen-content-width mb-2 flex items-center gap-3 rounded-md border border-draculared p-3 text-sm text-draculared"
-          role="alert"
-          data-testid="accepted-send-recovery"
-          data-generation-operation-id={recovery.operationId}>
-          <div>
-            <p>
-              {recovery.operationState === 'abandoned'
-                ? language.acceptedSendRecovery.abandoned
-                : recovery.cause === 'generation_in_progress'
-                  ? language.acceptedSendRecovery.generationInProgress
-                  : language.acceptedSendRecovery.generationFailed}
-            </p>
-            {#if recovery.providerMayHaveRun}
-              <p class="mt-1 text-textcolor2">{language.acceptedSendRecovery.providerMayHaveRun}</p>
-            {/if}
-          </div>
-          <button
-            type="button"
-            class="ml-auto shrink-0 rounded-md border border-draculared px-3 py-1.5 text-sm transition-colors hover:bg-draculared hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={recovery.retrying}
-            aria-busy={recovery.retrying}
-            data-testid="accepted-send-retry"
-            onclick={() => void retryAcceptedChatSend(recovery.id)}>
-            {recovery.retrying ? language.acceptedSendRecovery.retrying : language.acceptedSendRecovery.retry}
-          </button>
-        </div>
-      {/each}
-      <div
-        bind:this={composerRow}
-        data-floating-chat-input={floatingInputOpen ? 'true' : undefined}
-        class="{floatingInputOpen
-          ? 'floating-chat-composer'
-          : getDatabase().fixedChatTextarea
-            ? 'sticky pt-2 pb-2 right-0 bottom-0 bg-bgcolor'
-            : 'mt-2 mb-2'} chat-screen-content-width flex items-stretch w-full"
-        style={getDatabase().fixedChatTextarea || floatingInputOpen ? 'z-index:29;' : ''}>
-        {#if getDatabase().useChatSticker}
-          <button
-            type="button"
-            aria-label={language.stickers}
-            aria-pressed={toggleStickers}
-            onclick={() => {
-              toggleStickers = !toggleStickers
-            }}
-            class={'ml-4 bg-textcolor2 flex justify-center items-center  w-12 h-12 rounded-md hover:bg-blue-500 transition-colors ' +
-              (toggleStickers ? 'text-green-500' : 'text-textcolor')}>
-            <Laugh />
-          </button>
-        {/if}
-
-        <textarea
-          data-testid="default-chat-composer"
-          aria-label={language.messageInput}
-          class="peer text-input-area focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-transparent rounded-md rounded-r-none input-text text-xl grow border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full placeholder:text-sm"
-          class:ml-4={getDatabase().useChatSticker}
-          value={floatingComposerValue}
-          readonly={floatingDraftPreviewVisible}
-          bind:this={inputEle}
-          onkeydown={(e) => {
-            if (!floatingDraftPreviewVisible && shouldSendFromComposerKeydown(e)) {
-              send()
-              e.preventDefault()
-            }
-            if (!floatingDraftPreviewVisible && e.key.toLocaleLowerCase() === 'm' && e.ctrlKey) {
-              reroll()
-              e.preventDefault()
-            }
-          }}
-          onpaste={(e) => {
-            if (floatingDraftPreviewVisible) {
-              e.preventDefault()
-              return
-            }
-            void handleComposerPaste(e)
-          }}
-          oninput={(e) => {
-            if (floatingDraftPreviewVisible) {
-              e.currentTarget.value = draftText
-              return
-            }
-            messageInput = e.currentTarget.value
-            markComposerDraftChanged('message')
-            updateInputSizeAll()
-            updateInputTransateMessage(false)
-          }}
-          style:height={inputHeight}></textarea>
-
-        {#if currentChatDeadGeneration}
-          <button
-            type="button"
-            data-testid="default-chat-cancel-button"
-            aria-label={language.generationReattachFailure.stop}
-            class="peer-focus:border-textcolor flex justify-center border-y border-yellow-500 items-center p-3 text-yellow-500 hover:bg-yellow-500 hover:text-black transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={reattachRecoveryAction !== null}
-            onclick={() => void runReattachRecoveryAction(currentChatDeadGeneration!.jobId, 'stop')}
-            style:height={inputHeight}>
-            <TriangleAlertIcon aria-hidden="true" />
-          </button>
-        {:else if currentChatOwnsGeneration || hookRunActive}
-          <button
-            data-testid="default-chat-cancel-button"
-            aria-label={currentChatStopPending
-              ? language.generationStop.stopping
-              : currentChatStopFailed
-                ? language.generationStop.retry
-                : language.cancelGeneration}
-            aria-busy={currentChatStopPending}
-            disabled={currentChatStopPending || currentChatStoppedFinalizing}
-            class="peer-focus:border-textcolor flex justify-center gap-2 border-y border-darkborderc items-center text-textcolor p-3 hover:bg-blue-500 hover:text-white transition-colors disabled:cursor-not-allowed disabled:opacity-70"
-            onclick={abortChat}
-            style:height={inputHeight}>
-            {#if currentChatStopFailed}
-              <TriangleAlertIcon size={18} aria-hidden="true" />
-            {:else}
-              <div class="risu-ongoing-pulse loadmove chat-process-stage-{visibleChatProcessStage}"></div>
-            {/if}
-            {#if currentChatStopPending}
-              <span class="whitespace-nowrap text-sm">{language.generationStop.stopping}</span>
-            {:else if currentChatStopFailed}
-              <span class="whitespace-nowrap text-sm">{language.generationStop.retry}</span>
-            {/if}
-          </button>
-        {:else if floatingDraftConversionActive}
-          <button
-            type="button"
-            data-testid="default-chat-convert-button"
-            aria-label={language.inputHookConvert}
-            aria-pressed={floatingDraftShowsOriginal}
-            title={language.inputHookConvert}
-            onclick={toggleFloatingDraftConversion}
-            class="flex justify-center border-y border-darkborderc items-center text-textcolor p-3 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors"
-            style:height={inputHeight}>
-            <RefreshCcwIcon />
-          </button>
-        {:else}
-          <button
-            data-testid="default-chat-send-button"
-            aria-label={language.hotkeyDesc.send}
-            onclick={send}
-            disabled={currentChatOwnsGeneration}
-            class="flex justify-center border-y border-darkborderc items-center text-textcolor p-3 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors button-icon-send disabled:cursor-not-allowed disabled:opacity-50"
-            style:height={inputHeight}>
-            <Send />
-          </button>
-        {/if}
-        {#if getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
-          <button
-            bind:this={chatMenuButton}
-            type="button"
-            data-testid="default-chat-menu-button"
-            aria-label={language.menu}
-            aria-expanded={openMenu}
-            aria-haspopup="menu"
-            aria-controls="default-chat-overflow-menu"
-            onclick={toggleChatMenu}
-            class="peer-focus:border-textcolor flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
-            style:height={inputHeight}>
-            <MenuIcon />
-          </button>
-        {:else}
-          <button
-            type="button"
-            aria-label={language.addEmptyMessage}
-            onclick={() => appendCurrentChatEmptyCharMessage()}
-            class="peer-focus:border-textcolor flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
-            style:height={inputHeight}>
-            <Plus />
-          </button>
-        {/if}
-      </div>
-
-      {#if showDraftArea && getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
-        <div
-          class="chat-screen-content-width flex flex-col gap-2 rounded-md border border-darkborderc bg-darkbg/50 px-2 py-1.5 text-textcolor"
-          data-testid="default-chat-draft-area"
-          data-risu-draft-hook-pending={doingDraftHook}
-          data-risu-btw-hook-pending={doingBtwHook}>
-          {#if btwText.length > 0}
-            <div class="flex flex-col gap-1 rounded-md border border-darkborderc bg-darkbg/50 px-2 py-1.5">
-              <div class="flex items-center gap-2">
-                <span class="text-xs font-medium text-textcolor2">{language.inputHookBtwResult}</span>
-                <button
-                  type="button"
-                  data-testid="default-chat-btw-dismiss"
-                  class="ml-auto text-textcolor2 transition-colors hover:text-draculared"
-                  aria-label={language.inputHookBtwDismiss}
-                  title={language.inputHookBtwDismiss}
-                  onclick={dismissBtwResult}>
-                  <XIcon size={16} />
-                </button>
-              </div>
-              <div class="whitespace-pre-wrap break-words text-sm" data-testid="default-chat-btw-result">
-                {btwText}
-              </div>
-            </div>
+        {/each}
+        <div class="chat-screen-content-width mt-2 mb-2 flex w-full items-stretch" data-default-chat-composer-row>
+          {#if getDatabase().useChatSticker}
+            <button
+              type="button"
+              aria-label={language.stickers}
+              aria-pressed={toggleStickers}
+              onclick={() => {
+                toggleStickers = !toggleStickers
+              }}
+              class={'ml-4 bg-textcolor2 flex justify-center items-center  w-12 h-12 rounded-md hover:bg-blue-500 transition-colors ' +
+                (toggleStickers ? 'text-green-500' : 'text-textcolor')}>
+              <Laugh />
+            </button>
           {/if}
 
-          <label for="default-chat-draft-input" class="text-xs font-medium text-textcolor2">
-            {language.inputHookDraftLabel}
-          </label>
           <textarea
-            id="default-chat-draft-input"
-            data-testid="default-chat-draft-input"
-            class="w-full min-w-0 resize-none overflow-y-hidden rounded-md border border-darkborderc bg-transparent p-2 text-base text-textcolor outline-hidden transition-colors placeholder:text-sm focus:border-textcolor"
-            bind:value={draftText}
-            bind:this={draftInputEle}
-            oninput={() => {
-              markComposerDraftChanged('draft')
-              updateDraftInputSize()
-            }}
-            placeholder={language.inputHookDraftPlaceholder}
-            style:height={draftInputHeight}></textarea>
-
-          <div class="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              data-testid="default-chat-btw-button"
-              aria-busy={doingBtwHook}
-              disabled={currentChatOwnsGeneration || currentChatPreparingSend || hookRunActive}
-              class="rounded-md border border-darkborderc px-3 py-2 text-sm transition-colors hover:border-textcolor hover:bg-selected disabled:cursor-not-allowed disabled:opacity-50"
-              onclick={() => (showBtwHookDialog = true)}>
-              {#if doingBtwHook}<LoaderCircleIcon size={16} class="risu-ongoing-pulse inline animate-spin" />{/if}
-              {language.inputHookBtw}
-            </button>
-            <button
-              type="button"
-              data-testid="default-chat-draft-send"
-              disabled={draftText.trim().length === 0 ||
-                currentChatOwnsGeneration ||
-                currentChatPreparingSend ||
-                hookRunActive}
-              class="ml-auto flex items-center gap-2 rounded-md border border-darkborderc px-3 py-2 text-sm transition-colors hover:border-textcolor hover:bg-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-              onclick={sendDraft}>
-              <Send size={18} />
-              <span>{language.inputHookSendDraft}</span>
-            </button>
-          </div>
-        </div>
-      {/if}
-      {#if getDatabase().useAutoTranslateInput && getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
-        <div class="chat-screen-content-width flex items-center mt-2 mb-2">
-          <label for="messageInputTranslate" class="text-textcolor ml-4">
-            <LanguagesIcon />
-          </label>
-          <textarea
+            data-testid="default-chat-composer"
             aria-label={language.messageInput}
-            id="messageInputTranslate"
-            class="text-textcolor rounded-md p-2 min-w-0 bg-transparent input-text text-xl grow ml-4 mr-2 border-darkbutton resize-none focus:bg-selected overflow-y-hidden overflow-x-hidden max-w-full"
-            bind:value={messageInputTranslate}
-            bind:this={inputTranslateEle}
+            class="peer text-input-area focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-transparent rounded-md rounded-r-none input-text text-xl grow border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full placeholder:text-sm"
+            class:ml-4={getDatabase().useChatSticker}
+            bind:value={messageInput}
+            bind:this={inputEle}
             onkeydown={(e) => {
               if (shouldSendFromComposerKeydown(e)) {
                 send()
@@ -2742,245 +2371,444 @@
                 e.preventDefault()
               }
             }}
-            oninput={() => {
-              markComposerDraftChanged('translation')
-              updateInputSizeAll()
-              updateInputTransateMessage(true)
+            onpaste={(e) => {
+              void handleComposerPaste(e)
             }}
-            placeholder={language.enterMessageForTranslateToEnglish}
-            style:height={inputTranslateHeight}></textarea>
-        </div>
-      {/if}
-
-      {#if fileInput.length > 0}
-        <div
-          class="chat-screen-content-width flex items-center ml-4 flex-wrap p-2 m-2 border-darkborderc border rounded-md">
-          {#each fileInput as file, i}
-            {#await getInlayAsset(file) then inlayAsset}
-              <div class="relative">
-                {#if !inlayAsset}
-                  <div
-                    class="w-48 h-24 border border-darkborderc rounded-md flex items-center justify-center text-textcolor2">
-                    Missing file
-                  </div>
-                {:else if inlayAsset.type === 'image'}
-                  <img src={inlayAsset.data} alt="Inlay" class="max-w-48 max-h-48 border border-darkborderc" />
-                {:else if inlayAsset.type === 'video'}
-                  <video controls class="max-w-48 max-h-48 border border-darkborderc">
-                    <source src={inlayAsset.data} type="video/mp4" />
-                    <track kind="captions" />
-                    Your browser does not support the video tag.
-                  </video>
-                {:else if inlayAsset.type === 'audio'}
-                  <audio controls class="max-w-48 max-h-24 border border-darkborderc">
-                    <source src={inlayAsset.data} type="audio/mpeg" />
-                    Your browser does not support the audio tag.
-                  </audio>
-                {:else}
-                  <div class="max-w-24 max-h-24">{file}</div>
-                {/if}
-                <button
-                  type="button"
-                  aria-label={`${language.remove}: ${file}`}
-                  class="absolute -right-1 -top-1 p-1 bg-darkbg text-textcolor rounded-md transition-colors hover:text-draculared focus:text-draculared"
-                  onclick={() => {
-                    fileInput.splice(i, 1)
-                    markComposerDraftChanged('files')
-                    updateInputSizeAll()
-                  }}>
-                  <XIcon size={18} />
-                </button>
-              </div>
-            {/await}
-          {/each}
-        </div>
-      {/if}
-
-      {#if toggleStickers}
-        <div class="chat-screen-content-width ml-4 flex flex-wrap">
-          <AssetInput
-            {currentCharacter}
-            onSelect={(additionalAsset) => {
-              let fileType = 'img'
-              if (additionalAsset.length > 2 && additionalAsset[2]) {
-                const fileExtension = additionalAsset[2]
-                if (fileExtension === 'mp4' || fileExtension === 'webm') fileType = 'video'
-                else if (fileExtension === 'mp3' || fileExtension === 'wav') fileType = 'audio'
-              }
-              messageInput += `<span class='notranslate' translate='no'>{{${fileType}::${additionalAsset[0]}}}</span> *${additionalAsset[0]} added*`
+            oninput={() => {
               markComposerDraftChanged('message')
               updateInputSizeAll()
-            }} />
-        </div>
-      {/if}
+              updateInputTransateMessage(false)
+            }}
+            style:height={inputHeight}></textarea>
 
-      {#if getDatabase().useAutoSuggestions}
-        <Suggestion
-          messageInput={(msg) => {
-            messageInput =
-              (getDatabase().subModel === 'textgen_webui' ||
-                getDatabase().subModel === 'mancer' ||
-                getDatabase().subModel.startsWith('local_')) &&
-              getDatabase().autoSuggestClean
-                ? msg.replace(/ +\(.+?\) *$| - [^"'*]*?$/, '')
-                : msg
-            markComposerDraftChanged('message')
-          }}
-          {send}
-          isGenerationActive={currentChatOwnsGeneration} />
-      {/if}
-
-      {#if chatPanelStore.length > 0}
-        <div class="chat-screen-content-width my-2 flex flex-col gap-2">
-          {#each chatPanelStore as panel (`${panel.pluginName}:${panel.id}`)}
-            <section
-              class={`rounded-md border border-darkborderc bg-darkbg/80 p-3 text-textcolor ${panel.className ?? ''}`}
-              data-plugin-chat-panel={panel.id}>
-              {@html panel.html}
-            </section>
-          {/each}
-        </div>
-      {/if}
-
-      {#if getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message?.[0]?.data?.startsWith(coldStorageHeader)}
-        {#await preLoadChat($selectedCharID, getDatabase().characters[$selectedCharID].chatPage)}
-          <div class="chat-screen-content-width w-full flex justify-center text-textcolor2 italic mb-12">
-            {language.loadingChatData}
-          </div>
-        {:then recovered}
-          {#if !recovered}
-            <div class="chat-screen-content-width w-full flex justify-center text-red-400 italic mb-12" role="alert">
-              {language.errors.coldStorageRecoveryFailed}
-              ({getDatabase().characters[$selectedCharID].chats[
-                getDatabase().characters[$selectedCharID].chatPage
-              ].message[0].data.slice(coldStorageHeader.length)})
-            </div>
+          {#if currentChatDeadGeneration}
+            <button
+              type="button"
+              data-testid="default-chat-cancel-button"
+              aria-label={language.generationReattachFailure.stop}
+              class="peer-focus:border-textcolor flex justify-center border-y border-yellow-500 items-center p-3 text-yellow-500 hover:bg-yellow-500 hover:text-black transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={reattachRecoveryAction !== null}
+              onclick={() => void runReattachRecoveryAction(currentChatDeadGeneration!.jobId, 'stop')}
+              style:height={inputHeight}>
+              <TriangleAlertIcon aria-hidden="true" />
+            </button>
+          {:else if currentChatOwnsGeneration || hookRunActive}
+            <button
+              data-testid="default-chat-cancel-button"
+              aria-label={currentChatStopPending
+                ? language.generationStop.stopping
+                : currentChatStopFailed
+                  ? language.generationStop.retry
+                  : language.cancelGeneration}
+              aria-busy={currentChatStopPending}
+              disabled={currentChatStopPending || currentChatStoppedFinalizing}
+              class="peer-focus:border-textcolor flex justify-center gap-2 border-y border-darkborderc items-center text-textcolor p-3 hover:bg-blue-500 hover:text-white transition-colors disabled:cursor-not-allowed disabled:opacity-70"
+              onclick={abortChat}
+              style:height={inputHeight}>
+              {#if currentChatStopFailed}
+                <TriangleAlertIcon size={18} aria-hidden="true" />
+              {:else}
+                <div class="risu-ongoing-pulse loadmove chat-process-stage-{visibleChatProcessStage}"></div>
+              {/if}
+              {#if currentChatStopPending}
+                <span class="whitespace-nowrap text-sm">{language.generationStop.stopping}</span>
+              {:else if currentChatStopFailed}
+                <span class="whitespace-nowrap text-sm">{language.generationStop.retry}</span>
+              {/if}
+            </button>
+          {:else}
+            <button
+              data-testid="default-chat-send-button"
+              aria-label={language.hotkeyDesc.send}
+              onclick={send}
+              disabled={currentChatOwnsGeneration}
+              class="flex justify-center border-y border-darkborderc items-center text-textcolor p-3 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors button-icon-send disabled:cursor-not-allowed disabled:opacity-50"
+              style:height={inputHeight}>
+              <Send />
+            </button>
           {/if}
-        {/await}
-      {:else}
-        {#if chatFoldedStateMessageIndex.index !== -1}
-          <div class="chat-screen-content-width w-full flex justify-center max-w-full p-4">
-            <Button
-              className="max-w-xl w-full"
-              onclick={async () => {
-                const foldedTarget = chatFoldedState.data
-                const foldedMessageIndex = chatFoldedStateMessageIndex.index
-                if (!foldedTarget || foldedMessageIndex < 0) return
-                const nextLoadPages = getLoadPagesForMessageJump(loadPages, currentChat.length, foldedMessageIndex)
-                const expanded = await expandTranscriptWindow(nextLoadPages, false)
-                const liveFoldedTarget = chatFoldedState.data
-                if (
-                  !expanded ||
-                  chatFoldedStateMessageIndex.index !== foldedMessageIndex ||
-                  !liveFoldedTarget ||
-                  liveFoldedTarget.targetCharacterId !== foldedTarget.targetCharacterId ||
-                  liveFoldedTarget.targetChatId !== foldedTarget.targetChatId ||
-                  liveFoldedTarget.targetMessageId !== foldedTarget.targetMessageId
-                ) {
-                  return
+          {#if getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
+            <button
+              bind:this={chatMenuButton}
+              type="button"
+              data-testid="default-chat-menu-button"
+              aria-label={language.menu}
+              aria-expanded={openMenu}
+              aria-haspopup="menu"
+              aria-controls="default-chat-overflow-menu"
+              onclick={toggleChatMenu}
+              class="peer-focus:border-textcolor flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
+              style:height={inputHeight}>
+              <MenuIcon />
+            </button>
+          {:else}
+            <button
+              type="button"
+              aria-label={language.addEmptyMessage}
+              onclick={() => appendCurrentChatEmptyCharMessage()}
+              class="peer-focus:border-textcolor flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
+              style:height={inputHeight}>
+              <Plus />
+            </button>
+          {/if}
+        </div>
+
+        {#if showDraftArea && getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
+          <div
+            class="chat-screen-content-width flex flex-col gap-2 rounded-md border border-darkborderc bg-darkbg/50 px-2 py-1.5 text-textcolor"
+            data-testid="default-chat-draft-area"
+            data-risu-draft-hook-pending={doingDraftHook}
+            data-risu-btw-hook-pending={doingBtwHook}>
+            {#if btwText.length > 0}
+              <div class="flex flex-col gap-1 rounded-md border border-darkborderc bg-darkbg/50 px-2 py-1.5">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-medium text-textcolor2">{language.inputHookBtwResult}</span>
+                  <button
+                    type="button"
+                    data-testid="default-chat-btw-dismiss"
+                    class="ml-auto text-textcolor2 transition-colors hover:text-draculared"
+                    aria-label={language.inputHookBtwDismiss}
+                    title={language.inputHookBtwDismiss}
+                    onclick={dismissBtwResult}>
+                    <XIcon size={16} />
+                  </button>
+                </div>
+                <div class="whitespace-pre-wrap break-words text-sm" data-testid="default-chat-btw-result">
+                  {btwText}
+                </div>
+              </div>
+            {/if}
+
+            <label for="default-chat-draft-input" class="text-xs font-medium text-textcolor2">
+              {language.inputHookDraftLabel}
+            </label>
+            <textarea
+              id="default-chat-draft-input"
+              data-testid="default-chat-draft-input"
+              class="w-full min-w-0 resize-none overflow-y-hidden rounded-md border border-darkborderc bg-transparent p-2 text-base text-textcolor outline-hidden transition-colors placeholder:text-sm focus:border-textcolor"
+              bind:value={draftText}
+              bind:this={draftInputEle}
+              oninput={() => {
+                markComposerDraftChanged('draft')
+                updateDraftInputSize()
+              }}
+              placeholder={language.inputHookDraftPlaceholder}
+              style:height={draftInputHeight}></textarea>
+
+            <div class="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                data-testid="default-chat-btw-button"
+                aria-busy={doingBtwHook}
+                disabled={currentChatOwnsGeneration || currentChatPreparingSend || hookRunActive}
+                class="rounded-md border border-darkborderc px-3 py-2 text-sm transition-colors hover:border-textcolor hover:bg-selected disabled:cursor-not-allowed disabled:opacity-50"
+                onclick={() => (showBtwHookDialog = true)}>
+                {#if doingBtwHook}<LoaderCircleIcon size={16} class="risu-ongoing-pulse inline animate-spin" />{/if}
+                {language.inputHookBtw}
+              </button>
+              <button
+                type="button"
+                data-testid="default-chat-draft-send"
+                disabled={draftText.trim().length === 0 ||
+                  currentChatOwnsGeneration ||
+                  currentChatPreparingSend ||
+                  hookRunActive}
+                class="ml-auto flex items-center gap-2 rounded-md border border-darkborderc px-3 py-2 text-sm transition-colors hover:border-textcolor hover:bg-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                onclick={sendDraft}>
+                <Send size={18} />
+                <span>{language.inputHookSendDraft}</span>
+              </button>
+            </div>
+          </div>
+        {/if}
+        {#if getDatabase().useAutoTranslateInput && getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
+          <div class="chat-screen-content-width flex items-center mt-2 mb-2">
+            <label for="messageInputTranslate" class="text-textcolor ml-4">
+              <LanguagesIcon />
+            </label>
+            <textarea
+              aria-label={language.messageInput}
+              id="messageInputTranslate"
+              class="text-textcolor rounded-md p-2 min-w-0 bg-transparent input-text text-xl grow ml-4 mr-2 border-darkbutton resize-none focus:bg-selected overflow-y-hidden overflow-x-hidden max-w-full"
+              bind:value={messageInputTranslate}
+              bind:this={inputTranslateEle}
+              onkeydown={(e) => {
+                if (shouldSendFromComposerKeydown(e)) {
+                  send()
+                  e.preventDefault()
                 }
-                chatFoldedState.data = null
-                chatFoldedStateMessageIndex.index = -1
-                loadPages = Math.max(loadPages, nextLoadPages)
-              }}>
-              {language.loadMore}
-            </Button>
+                if (e.key.toLocaleLowerCase() === 'm' && e.ctrlKey) {
+                  reroll()
+                  e.preventDefault()
+                }
+              }}
+              oninput={() => {
+                markComposerDraftChanged('translation')
+                updateInputSizeAll()
+                updateInputTransateMessage(true)
+              }}
+              placeholder={language.enterMessageForTranslateToEnglish}
+              style:height={inputTranslateHeight}></textarea>
           </div>
         {/if}
 
-        <div class="chat-screen-content-width" data-default-chat-agent-progress-column>
-          <AgentPresetProgress />
-        </div>
-        <div class="chat-screen-content-width" data-default-chat-post-generation-progress-column>
-          <PostGenerationScriptProgress characterId={currentCharacter.chaId} chatId={currentChatId} />
-        </div>
+        {#if fileInput.length > 0}
+          <div
+            class="chat-screen-content-width flex items-center ml-4 flex-wrap p-2 m-2 border-darkborderc border rounded-md">
+            {#each fileInput as file, i}
+              {#await getInlayAsset(file) then inlayAsset}
+                <div class="relative">
+                  {#if !inlayAsset}
+                    <div
+                      class="w-48 h-24 border border-darkborderc rounded-md flex items-center justify-center text-textcolor2">
+                      Missing file
+                    </div>
+                  {:else if inlayAsset.type === 'image'}
+                    <img src={inlayAsset.data} alt="Inlay" class="max-w-48 max-h-48 border border-darkborderc" />
+                  {:else if inlayAsset.type === 'video'}
+                    <video controls class="max-w-48 max-h-48 border border-darkborderc">
+                      <source src={inlayAsset.data} type="video/mp4" />
+                      <track kind="captions" />
+                      Your browser does not support the video tag.
+                    </video>
+                  {:else if inlayAsset.type === 'audio'}
+                    <audio controls class="max-w-48 max-h-24 border border-darkborderc">
+                      <source src={inlayAsset.data} type="audio/mpeg" />
+                      Your browser does not support the audio tag.
+                    </audio>
+                  {:else}
+                    <div class="max-w-24 max-h-24">{file}</div>
+                  {/if}
+                  <button
+                    type="button"
+                    aria-label={`${language.remove}: ${file}`}
+                    class="absolute -right-1 -top-1 p-1 bg-darkbg text-textcolor rounded-md transition-colors hover:text-draculared focus:text-draculared"
+                    onclick={() => {
+                      fileInput.splice(i, 1)
+                      markComposerDraftChanged('files')
+                      updateInputSizeAll()
+                    }}>
+                    <XIcon size={18} />
+                  </button>
+                </div>
+              {/await}
+            {/each}
+          </div>
+        {/if}
 
-        <div class="contents" data-default-chat-chats-container>
-          <Chats
-            bind:this={chatsInstance}
-            messages={currentChat}
-            {loadPages}
-            onReroll={reroll}
-            {unReroll}
-            onNewReroll={newReroll}
-            onSelectRerollCandidate={selectRerollCandidate}
-            rerollTarget={currentRerollTarget}
-            {currentCharacter}
-            {currentUsername}
-            {userIcon}
-            {userIconPortrait}
-            isGenerationActive={currentChatOwnsGeneration}
-            generationStage={currentChatGenerationStage}
-            bind:hasNewUnreadMessage={showNewMessageButton} />
-        </div>
+        {#if toggleStickers}
+          <div class="chat-screen-content-width ml-4 flex flex-wrap">
+            <AssetInput
+              {currentCharacter}
+              onSelect={(additionalAsset) => {
+                let fileType = 'img'
+                if (additionalAsset.length > 2 && additionalAsset[2]) {
+                  const fileExtension = additionalAsset[2]
+                  if (fileExtension === 'mp4' || fileExtension === 'webm') fileType = 'video'
+                  else if (fileExtension === 'mp3' || fileExtension === 'wav') fileType = 'audio'
+                }
+                messageInput += `<span class='notranslate' translate='no'>{{${fileType}::${additionalAsset[0]}}}</span> *${additionalAsset[0]} added*`
+                markComposerDraftChanged('message')
+                updateInputSizeAll()
+              }} />
+          </div>
+        {/if}
 
-        <!-- A bootstrap shell strips firstMessage/alternateGreetings (not in
+        {#if getDatabase().useAutoSuggestions}
+          <Suggestion
+            messageInput={(msg) => {
+              messageInput =
+                (getDatabase().subModel === 'textgen_webui' ||
+                  getDatabase().subModel === 'mancer' ||
+                  getDatabase().subModel.startsWith('local_')) &&
+                getDatabase().autoSuggestClean
+                  ? msg.replace(/ +\(.+?\) *$| - [^"'*]*?$/, '')
+                  : msg
+              markComposerDraftChanged('message')
+            }}
+            {send}
+            isGenerationActive={currentChatOwnsGeneration} />
+        {/if}
+      </section>
+
+      <div
+        bind:this={chatScrollContainer}
+        class="default-chat-screen relative flex min-h-0 w-full flex-1 flex-col-reverse overflow-y-auto"
+        class:fastify-chat-theme={getDatabase().theme === 'fastify'}
+        data-default-chat-transcript
+        onscroll={(e) => {
+          //@ts-expect-error scrollHeight/clientHeight/scrollTop don't exist on EventTarget, but target is HTMLElement here
+          const scrolled = e.target.scrollHeight - e.target.clientHeight + e.target.scrollTop
+          if (
+            scrolled < 100 &&
+            getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message
+              .length > loadPages
+          ) {
+            void expandTranscriptWindow(loadPages + getAdditionalChatLoadPages(getDatabase()))
+          }
+          const chatTarget = e.target as HTMLElement
+          const chatsContainer = chatTarget.querySelector<HTMLElement>('[data-default-chat-chats-container]')
+          const lastEl = chatsContainer?.firstElementChild
+          const isAtBottom = lastEl
+            ? lastEl.getBoundingClientRect().top <= chatTarget.getBoundingClientRect().bottom + 100
+            : true
+          if (isAtBottom) {
+            showNewMessageButton = false
+          }
+        }}>
+        {#if chatPanelStore.length > 0}
+          <div class="chat-screen-content-width my-2 flex flex-col gap-2">
+            {#each chatPanelStore as panel (`${panel.pluginName}:${panel.id}`)}
+              <section
+                class={`rounded-md border border-darkborderc bg-darkbg/80 p-3 text-textcolor ${panel.className ?? ''}`}
+                data-plugin-chat-panel={panel.id}>
+                {@html panel.html}
+              </section>
+            {/each}
+          </div>
+        {/if}
+
+        {#if getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message?.[0]?.data?.startsWith(coldStorageHeader)}
+          {#await preLoadChat($selectedCharID, getDatabase().characters[$selectedCharID].chatPage)}
+            <div class="chat-screen-content-width w-full flex justify-center text-textcolor2 italic mb-12">
+              {language.loadingChatData}
+            </div>
+          {:then recovered}
+            {#if !recovered}
+              <div class="chat-screen-content-width w-full flex justify-center text-red-400 italic mb-12" role="alert">
+                {language.errors.coldStorageRecoveryFailed}
+                ({getDatabase().characters[$selectedCharID].chats[
+                  getDatabase().characters[$selectedCharID].chatPage
+                ].message[0].data.slice(coldStorageHeader.length)})
+              </div>
+            {/if}
+          {/await}
+        {:else}
+          {#if chatFoldedStateMessageIndex.index !== -1}
+            <div class="chat-screen-content-width w-full flex justify-center max-w-full p-4">
+              <Button
+                className="max-w-xl w-full"
+                onclick={async () => {
+                  const foldedTarget = chatFoldedState.data
+                  const foldedMessageIndex = chatFoldedStateMessageIndex.index
+                  if (!foldedTarget || foldedMessageIndex < 0) return
+                  const nextLoadPages = getLoadPagesForMessageJump(loadPages, currentChat.length, foldedMessageIndex)
+                  const expanded = await expandTranscriptWindow(nextLoadPages, false)
+                  const liveFoldedTarget = chatFoldedState.data
+                  if (
+                    !expanded ||
+                    chatFoldedStateMessageIndex.index !== foldedMessageIndex ||
+                    !liveFoldedTarget ||
+                    liveFoldedTarget.targetCharacterId !== foldedTarget.targetCharacterId ||
+                    liveFoldedTarget.targetChatId !== foldedTarget.targetChatId ||
+                    liveFoldedTarget.targetMessageId !== foldedTarget.targetMessageId
+                  ) {
+                    return
+                  }
+                  chatFoldedState.data = null
+                  chatFoldedStateMessageIndex.index = -1
+                  loadPages = Math.max(loadPages, nextLoadPages)
+                }}>
+                {language.loadMore}
+              </Button>
+            </div>
+          {/if}
+
+          <div class="chat-screen-content-width" data-default-chat-agent-progress-column>
+            <AgentPresetProgress />
+          </div>
+          <div class="chat-screen-content-width" data-default-chat-post-generation-progress-column>
+            <PostGenerationScriptProgress characterId={currentCharacter.chaId} chatId={currentChatId} />
+          </div>
+
+          <div class="contents" data-default-chat-chats-container>
+            <Chats
+              bind:this={chatsInstance}
+              messages={currentChat}
+              {loadPages}
+              onReroll={reroll}
+              {unReroll}
+              onNewReroll={newReroll}
+              onSelectRerollCandidate={selectRerollCandidate}
+              rerollTarget={currentRerollTarget}
+              {currentCharacter}
+              {currentUsername}
+              {userIcon}
+              {userIconPortrait}
+              isGenerationActive={currentChatOwnsGeneration}
+              generationStage={currentChatGenerationStage}
+              bind:hasNewUnreadMessage={showNewMessageButton} />
+          </div>
+
+          <!-- A bootstrap shell strips firstMessage/alternateGreetings (not in
              BOOTSTRAP_CHARACTER_SHELL_FIELDS); skip the greeting render until the
              row hydrates so the unguarded `alternateGreetings.length` reads below
              cannot throw on the correct lazy-shell state. -->
-        {#if !isServerCharacterShell(currentCharacter) && getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message.length <= loadPages}
-          <Chat
-            character={currentDisplayCharacter}
-            greetingTarget={greetingTranslationTarget}
-            translation={greetingTranslation}
-            name={getCharacterDisplayName(getDatabase().characters[$selectedCharID])}
-            message={getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
-              .fmIndex === -1
-              ? getDatabase().characters[$selectedCharID].firstMessage
-              : getDatabase().characters[$selectedCharID].alternateGreetings[
+          {#if !isServerCharacterShell(currentCharacter) && getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message.length <= loadPages}
+            <Chat
+              character={currentDisplayCharacter}
+              greetingTarget={greetingTranslationTarget}
+              translation={greetingTranslation}
+              name={getCharacterDisplayName(getDatabase().characters[$selectedCharID])}
+              message={getDatabase().characters[$selectedCharID].chats[
+                getDatabase().characters[$selectedCharID].chatPage
+              ].fmIndex === -1
+                ? getDatabase().characters[$selectedCharID].firstMessage
+                : getDatabase().characters[$selectedCharID].alternateGreetings[
+                    getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
+                      .fmIndex
+                  ]}
+              role="char"
+              img={getCharImage(getDatabase().characters[$selectedCharID].image, 'css')}
+              idx={-1}
+              altGreeting={getDatabase().characters[$selectedCharID].alternateGreetings.length > 0}
+              largePortrait={getDatabase().characters[$selectedCharID].largePortrait}
+              firstMessage={true}
+              onReroll={() => {
+                const cha = getDatabase().characters[$selectedCharID]
+                const chat =
                   getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
-                    .fmIndex
-                ]}
-            role="char"
-            img={getCharImage(getDatabase().characters[$selectedCharID].image, 'css')}
-            idx={-1}
-            altGreeting={getDatabase().characters[$selectedCharID].alternateGreetings.length > 0}
-            largePortrait={getDatabase().characters[$selectedCharID].largePortrait}
-            firstMessage={true}
-            onReroll={() => {
-              const cha = getDatabase().characters[$selectedCharID]
-              const chat =
-                getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
-              if (chat.fmIndex >= cha.alternateGreetings.length - 1) {
-                updateGreetingIndex(-1)
-              } else {
-                updateGreetingIndex(chat.fmIndex + 1)
-              }
-            }}
-            unReroll={() => {
-              const cha = getDatabase().characters[$selectedCharID]
-              const chat =
-                getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
-              if (chat.fmIndex === -1) {
-                updateGreetingIndex(cha.alternateGreetings.length - 1)
-              } else {
-                updateGreetingIndex(chat.fmIndex - 1)
-              }
-            }}
-            isLastMemory={false}
-            currentPage={(getDatabase().characters[$selectedCharID].chats[
-              getDatabase().characters[$selectedCharID].chatPage
-            ].fmIndex ?? -1) + 2}
-            totalPages={getDatabase().characters[$selectedCharID].alternateGreetings.length + 1} />
-          {#if aiLawApplies() && getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message.length === 0}
-            <div
-              class="chat-screen-content-width ml-auto mr-auto mt-4 text-textcolor2 italic max-w-2/3 wrap-break-word text-center">
-              {language.aiGenerationWarning}
-            </div>
-          {/if}
-          {#if !getDatabase().characters[$selectedCharID].removedQuotes && getDatabase().characters[$selectedCharID].creatorNotes.length >= 2}
-            <CreatorQuote
-              quote={getDatabase().characters[$selectedCharID].creatorNotes}
-              onRemove={() => {
-                const cha = getCharacterByIndex($selectedCharID, { snapshot: true })
-                cha.removedQuotes = true
-                setCharacterByIndex($selectedCharID, cha)
-              }} />
+                if (chat.fmIndex >= cha.alternateGreetings.length - 1) {
+                  updateGreetingIndex(-1)
+                } else {
+                  updateGreetingIndex(chat.fmIndex + 1)
+                }
+              }}
+              unReroll={() => {
+                const cha = getDatabase().characters[$selectedCharID]
+                const chat =
+                  getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
+                if (chat.fmIndex === -1) {
+                  updateGreetingIndex(cha.alternateGreetings.length - 1)
+                } else {
+                  updateGreetingIndex(chat.fmIndex - 1)
+                }
+              }}
+              isLastMemory={false}
+              currentPage={(getDatabase().characters[$selectedCharID].chats[
+                getDatabase().characters[$selectedCharID].chatPage
+              ].fmIndex ?? -1) + 2}
+              totalPages={getDatabase().characters[$selectedCharID].alternateGreetings.length + 1} />
+            {#if aiLawApplies() && getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message.length === 0}
+              <div
+                class="chat-screen-content-width ml-auto mr-auto mt-4 text-textcolor2 italic max-w-2/3 wrap-break-word text-center">
+                {language.aiGenerationWarning}
+              </div>
+            {/if}
+            {#if !getDatabase().characters[$selectedCharID].removedQuotes && getDatabase().characters[$selectedCharID].creatorNotes.length >= 2}
+              <CreatorQuote
+                quote={getDatabase().characters[$selectedCharID].creatorNotes}
+                onRemove={() => {
+                  const cha = getCharacterByIndex($selectedCharID, { snapshot: true })
+                  cha.removedQuotes = true
+                  setCharacterByIndex($selectedCharID, cha)
+                }} />
+            {/if}
           {/if}
         {/if}
-      {/if}
+      </div>
 
-      {#if openMenu && floatingInputOpen}
+      {#if openMenu}
         <div
           bind:this={chatMenuElement}
           id="default-chat-overflow-menu"
@@ -2988,56 +2816,7 @@
           role="menu"
           tabindex="-1"
           aria-label={language.menu}
-          class="chat-overflow-menu chat-overflow-menu-fixed fixed bottom-16 z-[51] max-h-[calc(100dvh-5rem)] max-w-[calc(100vw-1rem)] overflow-y-auto overscroll-contain p-5 bg-darkbg flex flex-col gap-3 text-textcolor rounded-md"
-          style:bottom={`calc(min(${inputHeight}, 40dvh, 18rem) + 2rem)`}
-          onkeydown={handleChatMenuKeydown}
-          onclick={(e) => {
-            e.stopPropagation()
-          }}>
-          <button
-            type="button"
-            role="menuitem"
-            data-default-chat-menu-item
-            data-testid="floating-chat-input-go-to-bottom"
-            class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors"
-            onclick={() => void goToBottomFromFloatingInput()}>
-            <ArrowDown />
-            <span class="ml-2">{language.goToBottom}</span>
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            data-default-chat-menu-item
-            data-testid="floating-chat-input-hide"
-            class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors"
-            onclick={() => void hideFloatingInput()}>
-            <EyeOffIcon />
-            <span class="ml-2">{language.hideInput}</span>
-          </button>
-          <button
-            type="button"
-            role="menuitemcheckbox"
-            aria-checked={currentChatRecord?.pinned === true}
-            data-default-chat-menu-item
-            data-testid="floating-chat-pin-button"
-            disabled={pinMutationPending}
-            class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors disabled:cursor-not-allowed disabled:text-textcolor2"
-            onclick={() => void toggleCurrentChatPin()}>
-            <PinIcon />
-            <span class="ml-2">{currentChatRecord?.pinned ? language.unpinChat : language.pinChat}</span>
-          </button>
-        </div>
-      {:else if openMenu}
-        <div
-          bind:this={chatMenuElement}
-          id="default-chat-overflow-menu"
-          data-testid="default-chat-overflow-menu"
-          role="menu"
-          tabindex="-1"
-          aria-label={language.menu}
-          class="chat-overflow-menu {getDatabase().fixedChatTextarea
-            ? 'chat-overflow-menu-fixed fixed'
-            : 'absolute'} bottom-16 max-h-[calc(100dvh-5rem)] max-w-[calc(100vw-1rem)] overflow-y-auto overscroll-contain p-5 bg-darkbg flex flex-col gap-3 text-textcolor rounded-md"
+          class="chat-overflow-menu absolute bottom-16 max-h-[calc(100dvh-5rem)] max-w-[calc(100vw-1rem)] overflow-y-auto overscroll-contain p-5 bg-darkbg flex flex-col gap-3 text-textcolor rounded-md"
           onkeydown={handleChatMenuKeydown}
           onclick={(e) => {
             e.stopPropagation()
@@ -3244,35 +3023,14 @@
 {/if}
 
 <style>
-  .floating-chat-input-button {
-    right: max(var(--chat-content-inline-end, 1rem), env(safe-area-inset-right));
-  }
-
-  .floating-chat-composer {
-    position: fixed;
-    right: max(var(--chat-content-fixed-inline-end, 1rem), env(safe-area-inset-right));
-    bottom: max(1rem, env(safe-area-inset-bottom));
-    width: min(var(--chat-content-rendered-width, var(--chat-screen-width, 900px)), calc(100vw - 2rem));
-    margin: 0;
-    padding: 0.5rem;
-    border: 1px solid var(--risu-theme-darkborderc);
-    border-radius: 0.75rem;
-    background: var(--risu-theme-bgcolor);
-    box-shadow: 0 1rem 2.5rem rgb(0 0 0 / 35%);
-    z-index: 50 !important;
+  .composer-dock {
+    max-height: min(60%, 32rem);
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   .chat-overflow-menu {
     right: max(var(--chat-content-inline-end, 0.5rem), env(safe-area-inset-right));
-  }
-
-  .chat-overflow-menu-fixed {
-    right: max(var(--chat-content-fixed-inline-end, 1rem), env(safe-area-inset-right));
-  }
-
-  .floating-chat-composer textarea[data-testid='default-chat-composer'] {
-    max-height: min(40dvh, 18rem);
-    overflow-y: auto;
+    z-index: 51;
   }
 
   .chat-process-stage-1 {

@@ -226,12 +226,11 @@ durable custom scheme are documented in
 
 `chatScreenWidth` becomes `--chat-screen-width` and constrains transcript and
 composer content without changing the outer shell. `DefaultChatScreen.svelte`
-also publishes `--chat-content-rendered-width`, `--chat-content-inline-end`, and
-`--chat-content-fixed-inline-end` for floating/fixed composer elements. Ordinary
-content-width rows use `chat-screen-content-width`. Preserve those contracts;
-hard-coded viewport offsets drift with narrow content or a custom fixed
-containing block. Chat geometry belongs to
-[Chat UI](svelte-chat-ui.md#composer-and-floating-composer).
+also publishes `--chat-content-rendered-width` and
+`--chat-content-inline-end` for the dock and menu. Ordinary content-width rows
+use `chat-screen-content-width`. Preserve those contracts; hard-coded viewport
+offsets drift with narrow content. Chat geometry belongs to
+[Chat UI](svelte-chat-ui.md#composer-dock-and-mobile-viewport).
 
 Reduced Motion is a durable Accessibility setting, not an operating-system
 media-query preference. Bootstrap and settings effects call
@@ -241,10 +240,14 @@ the root class.
 The body is overflow-hidden and full-height, and `#app` uses `overflow: clip`.
 `src/ts/gui/viewportScrollGuard.ts` pins the document root at the origin before
 mount, preventing focus, `scrollIntoView`, custom CSS, or automation from moving
-the fixed shell. Scroll inner containers only; never scroll `window` or the
-document root. For clipping, double scrollbars, or invisible content, inspect
-`src/styles.css`, route-branch height classes, and child `min-w-0`/overflow
-constraints. The guard is covered by `src/ts/gui/viewportScrollGuard.test.ts`.
+the fixed shell. While a text editor is focused,
+`src/ts/gui/visualViewportCoordinator.ts` sizes and offsets the app shell from
+`window.visualViewport`; the guard continues to reset horizontal drift but
+temporarily yields vertical ownership to the browser. Scroll application
+content through inner containers, not `window` or the document root. For
+clipping, double scrollbars, or invisible content, inspect `src/styles.css`,
+route-branch height classes, and child `min-w-0`/overflow constraints. The two
+coordinators have focused unit coverage.
 
 ## Mobile And Lite
 

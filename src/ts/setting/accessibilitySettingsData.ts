@@ -64,22 +64,6 @@ export const accessibilitySettingsItems: SettingItem[] = [
     keywords: ['send', 'enter', 'keyboard', 'submit'],
   },
   {
-    id: 'acc.fixedChatTextarea',
-    type: 'check',
-    labelKey: 'fixedChatTextarea',
-    bindKey: 'fixedChatTextarea',
-    keywords: ['fixed', 'chat', 'textarea', 'input'],
-  },
-  {
-    id: 'acc.floatingChatInput',
-    type: 'check',
-    labelKey: 'floatingChatInput',
-    helpKey: 'floatingChatInput',
-    bindKey: 'floatingChatInput',
-    getValue: (db) => db.floatingChatInput ?? true,
-    keywords: ['floating', 'chat', 'input', 'composer', 'accessibility'],
-  },
-  {
     id: 'acc.clickToEdit',
     type: 'check',
     labelKey: 'clickToEdit',

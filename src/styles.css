@@ -368,6 +368,13 @@ body {
   overflow: clip;
 }
 
+html[data-risu-visual-viewport-active='true'] [data-risu-visual-viewport-shell] {
+  position: relative;
+  top: var(--risu-visual-viewport-offset-top, 0px);
+  height: var(--risu-visual-viewport-height) !important;
+  max-height: var(--risu-visual-viewport-height);
+}
+
 /* Block the async gap between a writer-loss frame and the takeover dialog
    mounting. The alert overlay opts back in so Refresh/Stay Offline remain the
    only pointer-accessible actions until the user decides. */
