@@ -389,14 +389,37 @@
       ? $activeChatGenerations.find((activity) => activity.kind === 'message' && activity.chatId === currentChatId)
       : undefined,
   )
+  let currentChatGenerationJob = $derived(
+    currentChatId ? $activeGenerationJobs.find((job) => job.chatId === currentChatId) : undefined,
+  )
   let currentChatGenerationCancellation = $derived.by(() => {
     if (!currentChatId) return undefined
-    return $generationOperationCancellations.filter((control) => control.target?.chatId === currentChatId).at(-1)
+    const controls = $generationOperationCancellations.filter((control) => control.target?.chatId === currentChatId)
+    const liveOperationId = currentChatGenerationActivity?.operationId ?? currentChatGenerationJob?.operationId
+    if (liveOperationId) {
+      return controls.filter((control) => control.operationId === liveOperationId).at(-1)
+    }
+    if (currentChatGenerationJob) {
+      return controls.filter((control) => control.jobId === currentChatGenerationJob.jobId).at(-1)
+    }
+    if (currentChatGenerationActivity) {
+      return controls
+        .filter(
+          (control) =>
+            control.state !== 'stopped_finalizing' &&
+            control.state !== 'settled_cancelled' &&
+            control.state !== 'settled_completed' &&
+            control.state !== 'settled_nonrunning',
+        )
+        .at(-1)
+    }
+    return controls.at(-1)
   })
   let currentChatGenerationOperationId = $derived.by(() => {
     void $generationOperationProjections
     return (
       currentChatGenerationActivity?.operationId ??
+      currentChatGenerationJob?.operationId ??
       currentChatGenerationCancellation?.operationId ??
       findGenerationOperationIdForTarget(captureActiveChatTarget())
     )
@@ -420,7 +443,7 @@
     Boolean(
       !currentChatCancellationReleasesGenerationClaim &&
       (currentChatGenerationActivity ||
-        (currentChatId && $activeGenerationJobs.some((job) => job.chatId === currentChatId)) ||
+        currentChatGenerationJob ||
         currentChatGenerationCancellation?.state === 'none' ||
         currentChatStopPending ||
         currentChatStopFailed),

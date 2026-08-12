@@ -270,9 +270,9 @@ describe('generation operation startup reconciliation', () => {
         },
         {
           operation_id: 'stopping',
-          state: 'cancelled',
+          state: 'abandoned',
           current_attempt_no: null,
-          failure_code: null,
+          failure_code: 'server_restarted',
           provider_may_have_run: 0,
           result_message_id: null,
         },
@@ -291,7 +291,7 @@ describe('generation operation startup reconciliation', () => {
         { operation_id: 'missing-journal', status: 'abandoned' },
         { operation_id: 'owned-undispatched', status: 'abandoned' },
         { operation_id: 'persisted-result', status: 'completed' },
-        { operation_id: 'stopping', status: 'cancelled' },
+        { operation_id: 'stopping', status: 'abandoned' },
       ])
       expect(verify.prepare("SELECT COUNT(*) AS count FROM messages WHERE uid = 'user-accepted'").get()).toEqual({
         count: 1,
@@ -315,6 +315,12 @@ describe('generation operation startup reconciliation', () => {
           providerMayHaveRun: true,
         }),
         expect.objectContaining({ operationId: 'journal', state: 'finalizing' }),
+        expect.objectContaining({
+          operationId: 'stopping',
+          state: 'abandoned',
+          recoveryDisposition: 'retryable',
+          failureCode: 'server_restarted',
+        }),
         expect.objectContaining({
           operationId: 'persisted-result',
           state: 'completed',

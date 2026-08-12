@@ -9,6 +9,7 @@ import {
   GENERATION_FINALIZATION_RETRY_MAX_DELAY_MS,
   GENERATION_FINALIZATION_STALLED_FAILURE_THRESHOLD,
   enqueueGenerationFinalizationRetry,
+  findUncommittedGenerationFinalizationForChat,
   generationFinalizationRetryBackoffMs,
   listGenerationFinalizationRetryProjections,
   listPendingGenerationFinalizationRetries,
@@ -84,6 +85,9 @@ describe('generation finalization retry scheduling', () => {
         provisionalMessage: expect.objectContaining({ data: 'reply generation-stalled' }),
       }),
     ])
+    expect(findUncommittedGenerationFinalizationForChat(db, 'chat-a')).toEqual({
+      generationId: 'generation-stalled',
+    })
     expect(
       db
         .prepare('SELECT status FROM generation_finalization_retries WHERE generation_id = ?')
@@ -103,6 +107,7 @@ describe('generation finalization retry scheduling', () => {
     markGenerationFinalizationRetryFailure(db, 'generation-legacy', 'stalled_legacy', true)
 
     expect(listPendingGenerationFinalizationRetries(db, { now: '2100-01-01T00:00:00.000Z' })).toEqual([])
+    expect(findUncommittedGenerationFinalizationForChat(db, 'chat-a')).toBeUndefined()
     expect(listGenerationFinalizationRetryProjections(db)).toEqual([
       expect.objectContaining({
         generationId: 'generation-legacy',
@@ -128,5 +133,6 @@ describe('generation finalization retry scheduling', () => {
       }),
     ])
     expect(listGenerationFinalizationRetryProjections(db)[0]).not.toHaveProperty('provisionalMessage')
+    expect(findUncommittedGenerationFinalizationForChat(db, 'chat-a')).toBeUndefined()
   })
 })

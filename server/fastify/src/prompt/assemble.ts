@@ -206,6 +206,10 @@ export interface AssembleInput {
   mode: 'send' | 'continue' | 'preview' | 'preview_prompt' | 'regenerate'
   regenerateMessageId?: string
   userMessage?: string
+  /** Durable identity of a protocol-v1 accepted user row already in the transcript. */
+  acceptedMessageId?: string
+  /** Retry-only: the accepted row's submit-time input hooks already committed. */
+  reuseAcceptedSubmitTransforms?: boolean
   /** Original-compatible send from an assistant tail without appending a user row. */
   emptySend?: boolean
   /** Client-created empty-send sentinel; skips only submit-time input hooks. */
@@ -1028,7 +1032,18 @@ function appendUserMessageRow(state: AssemblyState): void {
   const messages = (state.currentChat.message ??= [])
   const lastIndex = messages.length - 1
   const lastMessage = messages[lastIndex]
-  if (lastMessage?.role === 'user' && lastMessage.data === userMessage && (lastMessage.name ?? null) === null) {
+  const acceptedTailMatches =
+    typeof state.input.acceptedMessageId === 'string' &&
+    lastMessage?.role === 'user' &&
+    lastMessage.chatId === state.input.acceptedMessageId
+  if (acceptedTailMatches && state.input.reuseAcceptedSubmitTransforms === true) {
+    syncWorkingTranscript(state)
+    return
+  }
+  if (
+    acceptedTailMatches ||
+    (lastMessage?.role === 'user' && lastMessage.data === userMessage && (lastMessage.name ?? null) === null)
+  ) {
     const message = {
       ...structuredClone(lastMessage),
       chatId: lastMessage.chatId ?? randomUUID(),
@@ -1053,7 +1068,7 @@ function appendUserMessageRow(state: AssemblyState): void {
     role: 'user',
     data: userMessage,
     time: Date.now(),
-    chatId: randomUUID(),
+    chatId: state.input.acceptedMessageId ?? randomUUID(),
     name: null as unknown as undefined,
   } as Message
   const index = messages.length
@@ -1097,10 +1112,11 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
   const lastIndex = messages.length - 1
   const lastMessage = messages[lastIndex]
   const lastIsNewUser =
-    typeof rawUserMessage === 'string' &&
     lastMessage?.role === 'user' &&
-    lastMessage.data === rawUserMessage &&
-    (lastMessage.name ?? null) === null
+    ((typeof state.input.acceptedMessageId === 'string' && lastMessage.chatId === state.input.acceptedMessageId) ||
+      (typeof rawUserMessage === 'string' &&
+        lastMessage.data === rawUserMessage &&
+        (lastMessage.name ?? null) === null))
   const priorMessages = lastIsNewUser ? messages.slice(0, lastIndex) : messages.slice()
 
   const triggerCtx: TriggerRunContext = {
@@ -2445,9 +2461,11 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
       state.input.mode === 'send' &&
       (state.input.emptySend === true ||
         (state.input.syntheticSayNothing === true && state.input.userMessage === '*says nothing*'))
-    if (!bypassInputHooks) await runInputTrigger(state)
+    const reuseAcceptedSubmitTransforms =
+      state.input.mode === 'send' && state.input.reuseAcceptedSubmitTransforms === true
+    if (!bypassInputHooks && !reuseAcceptedSubmitTransforms) await runInputTrigger(state)
     appendUserMessageRow(state)
-    if (!bypassInputHooks) await applyEditInput(state)
+    if (!bypassInputHooks && !reuseAcceptedSubmitTransforms) await applyEditInput(state)
     captureSubmitTranscript(state)
     applyCurrentChatRunVars(state)
   })

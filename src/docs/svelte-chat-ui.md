@@ -72,6 +72,9 @@ expensive rerenders often start at that memo boundary.
 message, and generation ids. `Chat.svelte` renders queued, transiently stalled,
 terminal, and quarantined legacy indicators on that exact row; committed rows
 whose journal cleanup remains pending are not described as provisional.
+`DefaultChatScreen.svelte` likewise matches Stop controls to the exact active
+operation or job. A settled control retained from an older send cannot hide Stop
+for a newer live continue or regenerate job.
 
 Message HTML crosses parser output, translation, custom HTML templates, inlays,
 additional/module assets, and optional partial edit. Parser code lives under

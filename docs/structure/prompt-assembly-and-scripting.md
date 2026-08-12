@@ -35,6 +35,11 @@ and exposes active jobs through bootstrap. SQLite-backed finalization retries
 protect idempotency and reject stale chat/message/script-state targets. Inline
 non-durable SSE remains for tests and tool-style callers.
 
+Protocol-v1 send assembly carries the accepted user-message id through prompt
+construction. An explicit operation retry recognizes that exact transcript row
+and reuses its committed submit transforms, so changed `editinput` text cannot
+cause the row or input-trigger effects to be applied a second time.
+
 `/api/v1/generate/preview-prompt` performs the same assembly and readiness
 checks without provider dispatch. It can return ordinary HTTP errors because
 SSE headers are not committed. Chat assembly errors become terminal SSE error

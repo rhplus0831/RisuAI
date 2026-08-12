@@ -154,6 +154,7 @@ export const languageEnglish = {
     toomuchtoken: 'Error: The minimum required token is greater than the Max Context Size.',
     settingsSaveFailed: 'Settings could not be saved. Please try again.',
     sendContextPersistenceFailed: 'Chat setup could not be saved before generation. Please try again.',
+    replyStillSaving: 'The previous reply is still saving. Please wait a moment and try again.',
     hypaContextTruncationAcknowledgementFailed:
       'Your choice to continue without Hypa Memory could not be saved for this chat. Please try again.',
     chatImportTooLarge: 'This chat contains metadata or a single message that is too large to import safely.',

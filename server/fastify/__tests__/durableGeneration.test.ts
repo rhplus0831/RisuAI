@@ -1385,7 +1385,30 @@ describe('Durable generation (Milestone 1)', () => {
     })
   })
 
-  it('replays one explicit retry attempt without retargeting or redispatching', async () => {
+  it('replays one explicit retry without re-appending or re-running committed submit transforms', async () => {
+    const database = structuredClone(fixtureDatabase) as JsonRecord
+    const character = (database.characters as JsonRecord[])[0]!
+    character.triggerscript = [
+      {
+        comment: '',
+        type: 'input',
+        conditions: [],
+        effect: [
+          {
+            type: 'triggerlua',
+            code: `
+              function onInput(id)
+                addChat(id, 'char', 'INPUT-ONCE')
+              end
+              listenEdit('editInput', function(id, data)
+                return data .. ' [EDIT-ONCE]'
+              end)
+            `,
+          },
+        ],
+      },
+    ]
+    await seedDatabase(database)
     let providerCalls = 0
     providerImpl = () => {
       providerCalls += 1
@@ -1406,6 +1429,12 @@ describe('Durable generation (Milestone 1)', () => {
       return status.operation.state === 'retryable' ? status : undefined
     })
     expect(providerCalls).toBe(1)
+    expect(
+      (await chatMessages(await bootstrap())).map((message) => [message.role, message.data, message.chatId]),
+    ).toEqual([
+      ['char', 'INPUT-ONCE', expect.any(String)],
+      ['user', 'atomic hello [EDIT-ONCE]', acceptedMessageId],
+    ])
 
     const retryGate = makeGatedProvider({ before: 'retried', after: ' once' })
     providerImpl = (context) => {
@@ -1456,6 +1485,12 @@ describe('Durable generation (Milestone 1)', () => {
       operation: { currentAttempt: { attemptNo: 2, retryRequestId, jobId: retryJobId } },
     })
     expect(providerCalls).toBe(2)
+    expect(
+      (await chatMessages(await bootstrap())).map((message) => [message.role, message.data, message.chatId]),
+    ).toEqual([
+      ['char', 'INPUT-ONCE', expect.any(String)],
+      ['user', 'atomic hello [EDIT-ONCE]', acceptedMessageId],
+    ])
 
     const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
     try {
@@ -2471,6 +2506,7 @@ describe('Durable generation (Milestone 1)', () => {
     const response = await postDurable({}, { signal: controller.signal })
     const initialEvents = await readSse(response, (event) => event.type === 'token')
     const jobId = jobIdFromEvents(initialEvents)
+    const operationId = initialEvents.find((event) => event.type === 'job_accepted')?.data.operationId as string
     const observer = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
       headers: authHeaders(),
     })
@@ -2507,6 +2543,16 @@ describe('Durable generation (Milestone 1)', () => {
       journalConfirmed: false,
       authoritativeCommitted: false,
     })
+    const operationDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(
+        operationDb
+          .prepare('SELECT state, failure_code AS failureCode FROM generation_operations WHERE operation_id = ?')
+          .get(operationId),
+      ).toEqual({ state: 'abandoned', failureCode: 'cancel_finalization_journal_unconfirmed' })
+    } finally {
+      operationDb.close()
+    }
     controller.abort()
   })
 
@@ -2541,12 +2587,72 @@ describe('Durable generation (Milestone 1)', () => {
     ])
     expect((await chatMessages(await bootstrap())).some((message) => message.role === 'char')).toBe(false)
 
+    const blockedAuthority = await operationAuthority()
+    const blockedOperationId = randomUUID()
+    const blockedMessageId = randomUUID()
+    const blocked = await postAtomicOperation(
+      blockedAuthority.databaseLineage,
+      atomicSendRequest({
+        operationId: blockedOperationId,
+        acceptedMessageId: blockedMessageId,
+        baseRevision: blockedAuthority.revision,
+        text: 'must wait for the previous reply',
+      }),
+    )
+    expect(blocked.status).toBe(409)
+    expect(await blocked.json()).toMatchObject({
+      error: 'generation_finalization_pending',
+      generationId: jobId,
+      message: expect.stringContaining('reply is still saving'),
+    })
+    const legacyBlocked = await postDurable(
+      { userMessage: 'legacy send must also wait' },
+      { writerSession: 'writer-a' },
+    )
+    expect(legacyBlocked.status).toBe(409)
+    expect(await legacyBlocked.json()).toMatchObject({
+      error: 'generation_finalization_pending',
+      generationId: jobId,
+      reason: expect.stringContaining('reply is still saving'),
+    })
+    const blockedDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(blockedDb.prepare('SELECT COUNT(*) AS count FROM messages WHERE uid = ?').get(blockedMessageId)).toEqual({
+        count: 0,
+      })
+    } finally {
+      blockedDb.close()
+    }
+
     executeDatabase('DROP TRIGGER fail_cancel_message_insert')
     expect(retryQueuedFinalizationsOnce()).toEqual({ attempted: 1, persisted: 1, terminal: 0, retryable: 0 })
     expect(generationFinalizationRetryRows()).toEqual([])
     expect((await chatMessages(await bootstrap())).find((message) => message.role === 'char')?.data).toBe(
       'queued cancelled partial',
     )
+
+    providerImpl = () =>
+      (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'next reply' }
+        yield { kind: 'done', finishReason: 'stop' }
+      })()
+    const releasedAuthority = await operationAuthority()
+    const releasedOperationId = randomUUID()
+    const releasedMessageId = randomUUID()
+    const released = await postAtomicOperation(
+      releasedAuthority.databaseLineage,
+      atomicSendRequest({
+        operationId: releasedOperationId,
+        acceptedMessageId: releasedMessageId,
+        baseRevision: releasedAuthority.revision,
+        text: 'now the next send can start',
+      }),
+    )
+    expect(released.status).toBe(201)
+    await waitFor(async () => {
+      const status = await operationStatus(releasedOperationId)
+      return status.operation.state === 'completed' ? status : undefined
+    })
     controller.abort()
   })
 
@@ -3310,6 +3416,81 @@ describe('Durable generation (Milestone 1)', () => {
     } finally {
       if (localDataDirKept) rmSync(localDataDirKept, { recursive: true, force: true })
       localDataDirKept = null
+    }
+  })
+
+  it('lets an acknowledged stopping runner persist its partial before graceful shutdown closes SQLite', async () => {
+    const gated = makeGatedProvider({ before: 'partial stopped during shutdown' })
+    providerImpl = gated.dispatchProvider
+    let markCancelPersistenceStarted!: () => void
+    const cancelPersistenceStarted = new Promise<void>((resolve) => {
+      markCancelPersistenceStarted = resolve
+    })
+    let releaseCancelPersistence!: () => void
+    const cancelPersistenceGate = new Promise<void>((resolve) => {
+      releaseCancelPersistence = resolve
+    })
+    durableLifecycleHook = async (transition) => {
+      if (transition !== 'cancel_persistence_started') return
+      markCancelPersistenceStarted()
+      await cancelPersistenceGate
+    }
+
+    const local = await startHarness()
+    let localClosed = false
+    try {
+      const { assertion: localAssertion } = await setupAuthedClient(local.app)
+      await seedDatabaseForHarness(local, localAssertion, fixtureDatabase)
+      const controller = newController()
+      const response = await fetch(`${local.baseUrl}/api/v1/generate/chat`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'risu-auth': localAssertion },
+        body: JSON.stringify({
+          chatId: 'chat-1',
+          characterId: 'char-1',
+          mode: 'send',
+          userMessage: 'hi',
+          durable: true,
+        }),
+        signal: controller.signal,
+      })
+      const initialEvents = await readSse(response, (event) => event.type === 'token')
+      const jobId = jobIdFromEvents(initialEvents)
+      const operationId = initialEvents.find((event) => event.type === 'job_accepted')?.data.operationId as string
+
+      const cancellation = await fetch(`${local.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`, {
+        method: 'DELETE',
+        headers: { 'risu-auth': localAssertion },
+      })
+      expect(cancellation.status).toBe(202)
+      await cancelPersistenceStarted
+
+      const close = local.app.close()
+      releaseCancelPersistence()
+      await close
+      localClosed = true
+
+      const db = new DatabaseSync(path.join(local.dataDir, 'risu.db'), { readOnly: true })
+      try {
+        expect(
+          db
+            .prepare("SELECT data FROM messages WHERE chat_id = 'chat-1' AND role = 'char' ORDER BY seq DESC LIMIT 1")
+            .get(),
+        ).toEqual({ data: 'partial stopped during shutdown' })
+        expect(
+          db
+            .prepare(
+              'SELECT state, result_message_id AS resultMessageId FROM generation_operations WHERE operation_id = ?',
+            )
+            .get(operationId),
+        ).toEqual({ state: 'cancelled', resultMessageId: jobId })
+      } finally {
+        db.close()
+      }
+    } finally {
+      releaseCancelPersistence?.()
+      if (!localClosed) await local.app.close()
+      rmSync(local.dataDir, { recursive: true, force: true })
     }
   })
 

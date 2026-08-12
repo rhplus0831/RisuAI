@@ -69,7 +69,11 @@ import {
 
 const CHAT_ENDPOINT = '/api/v1/generate/chat'
 const INCOMPLETE_CHAT_GENERATION_SETTINGS_ERROR = 'chat_generation_settings_incomplete'
-const HUMAN_REASON_ERROR_CODES = new Set(['generation_in_progress', 'generation_job_not_found'])
+const HUMAN_REASON_ERROR_CODES = new Set([
+  'generation_in_progress',
+  'generation_job_not_found',
+  'generation_finalization_pending',
+])
 const REQUEST_UID_HEADER = 'X-Request-UID'
 const DURABLE_JOB_ID_HEADER = 'X-Risu-Generation-Job-ID'
 const DURABLE_STREAM_RECONNECT_DELAYS_MS = [0, 250, 500, 1_000, 2_000, 4_000] as const

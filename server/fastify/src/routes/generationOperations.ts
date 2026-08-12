@@ -59,6 +59,7 @@ import {
   type GenerationChatRouteOptions,
 } from './generationChat.js'
 import type { GenerationTraceOptions } from '../generation/generationTraceSidecar.js'
+import { findUncommittedGenerationFinalizationForChat } from '../generationFinalizationRetry.js'
 
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 
@@ -361,6 +362,13 @@ function acceptSubmitTransaction(args: {
       )
       .get(args.databaseLineage, request.chatId) as { operationId: string } | undefined
     if (liveClaim) throw new OperationHttpError(409, 'generation_in_progress', { operationId: liveClaim.operationId })
+    const pendingFinalization = findUncommittedGenerationFinalizationForChat(db, request.chatId)
+    if (pendingFinalization) {
+      throw new OperationHttpError(409, 'generation_finalization_pending', {
+        generationId: pendingFinalization.generationId,
+        message: 'The previous reply is still saving. Try again when it finishes.',
+      })
+    }
 
     const { revision: currentRevision } = getSchemaState(db)
     if (request.baseRevision !== currentRevision) throw new RevisionMismatchError(currentRevision)
@@ -445,16 +453,18 @@ function acceptSubmitTransaction(args: {
 function intentAssembleInput(
   operation: GenerationOperationProjection,
   intent: GenerationOperationIntent,
+  reuseAcceptedSubmitTransforms = false,
 ): {
   input: AssembleInput
   chatBody: ChatRequestBody
 } {
-  return assembleInputForIntent(intent, operation.acceptedRevision)
+  return assembleInputForIntent(intent, operation.acceptedRevision, reuseAcceptedSubmitTransforms)
 }
 
 function assembleInputForIntent(
   intent: GenerationOperationIntent,
   acceptedRevision: number | undefined,
+  reuseAcceptedSubmitTransforms = false,
 ): { input: AssembleInput; chatBody: ChatRequestBody } {
   const body: ChatRequestBody = {
     chatId: intent.chatId,
@@ -471,7 +481,12 @@ function assembleInputForIntent(
     clientCapabilities: intent.generation.clientCapabilities,
     expectedRevision: acceptedRevision,
   }
-  return { input: toChatGenerationAssembleInput(body), chatBody: body }
+  const input = toChatGenerationAssembleInput(body)
+  if (intent.mode === 'send' && intent.acceptedMessageId) {
+    input.acceptedMessageId = intent.acceptedMessageId
+    if (reuseAcceptedSubmitTransforms) input.reuseAcceptedSubmitTransforms = true
+  }
+  return { input, chatBody: body }
 }
 
 function streamProjection(operation: GenerationOperationProjection): { href: string } | undefined {
@@ -493,6 +508,7 @@ function launchCommittedOperation(args: {
   retryRequestId: string
   dataDir: string
   eventSink: CommandEventSink
+  reuseAcceptedSubmitTransforms?: boolean
 }): GenerationOperationProjection {
   let operation = args.operation
   if (operation.state === 'accepted' || operation.state === 'retryable' || operation.state === 'abandoned') {
@@ -515,7 +531,7 @@ function launchCommittedOperation(args: {
   }
   if (operation.state !== 'launching') return operation
   if (operation.currentAttempt?.serverInstanceId !== args.dependencies.serverInstanceId) return operation
-  const { input, chatBody } = intentAssembleInput(operation, args.intent)
+  const { input, chatBody } = intentAssembleInput(operation, args.intent, args.reuseAcceptedSubmitTransforms)
   try {
     return launchGenerationOperation({
       operation,
@@ -942,6 +958,7 @@ export function registerGenerationOperationRoutes(
             retryRequestId,
             dataDir,
             eventSink,
+            reuseAcceptedSubmitTransforms: true,
           })
         }
         return reply.code(createdAttempt ? 202 : 200).send(operationResponse(operation))

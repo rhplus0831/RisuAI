@@ -253,6 +253,10 @@ any streamed-so-far text, persists that processed row mode-aware, then emits a
 protected `done` with additive `outcome: 'cancelled'`. The token stream and
 `done.result` remain raw; `done.postGeneration.finalText` is the exact persisted
 snapshot. Older terminal frames without an outcome remain completed by default.
+Shutdown does not terminalize an operation while that cancellation snapshot is
+still being persisted. If a restart finds an unjournaled `stopping` operation,
+it recovers it as retryable abandoned work rather than claiming cancellation
+completed and losing the partial.
 Provider failures before the first token retain no assistant row. Failures after
 tokens use the same processed partial snapshot and keep it as a failed assistant
 row instead of restoring the pre-generation transcript.
@@ -269,6 +273,11 @@ failure is `rejected`; and a result that committed before journal cleanup failed
 finishes successfully with `committed_cleanup_pending`. Retry sweeps quarantine
 restored continue/regenerate rows that lack an assembly snapshot as retained
 `stalled_legacy` terminal history instead of replaying them.
+Generation admission checks this journal inside the same write transaction as
+operation acceptance. While a replayable finalization still owns a chat tail,
+new protocol and legacy generations receive `generation_finalization_pending`;
+the fence releases after commit or terminal failure. Cleanup-only journal rows
+whose result already committed do not hold the fence.
 
 Half-streaming is also a route/SSE contract. An `info` frame marks
 `halfStreaming: true`; token frames keep their normal text delta and add

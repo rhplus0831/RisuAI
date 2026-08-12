@@ -54,7 +54,7 @@ const ALLOWED_TRANSITIONS: Readonly<Record<GenerationOperationState, ReadonlySet
   accepted: new Set(['launching', 'cancelled', 'abandoned', 'invalidated']),
   launching: new Set(['owned_by_job', 'retryable', 'terminal_failed', 'cancelled', 'abandoned', 'invalidated']),
   owned_by_job: new Set(['stopping', 'finalizing', 'retryable', 'terminal_failed', 'abandoned', 'invalidated']),
-  stopping: new Set(['finalizing', 'cancelled', 'invalidated']),
+  stopping: new Set(['finalizing', 'cancelled', 'abandoned', 'invalidated']),
   finalizing: new Set(['completed', 'cancelled', 'terminal_failed', 'abandoned', 'invalidated']),
   retryable: new Set(['launching', 'cancelled', 'invalidated']),
   abandoned: new Set(['launching', 'cancelled', 'invalidated']),
@@ -86,6 +86,7 @@ const ATTEMPT_STATUS_BY_TRANSITION: Readonly<
   stopping: {
     finalizing: 'finalizing',
     cancelled: 'cancelled',
+    abandoned: 'abandoned',
     invalidated: 'terminal_failed',
   },
   finalizing: {
@@ -1298,13 +1299,16 @@ function reconcileGenerationOperationsLocked(
     if (operation.state === 'stopping') {
       decisions.push({
         operation,
-        state: 'cancelled',
-        ...(attempt ? { attemptStatus: 'cancelled' } : {}),
+        state: 'abandoned',
+        ...(attempt ? { attemptStatus: 'abandoned' } : {}),
         desiredTerminalOutcome: null,
-        failureCode: null,
-        terminal: true,
+        failureCode: 'server_restarted',
+        providerMayHaveRun:
+          operation.provider_may_have_run === 1 ||
+          (attempt !== undefined && attempt.provider_dispatch_started_at !== null),
+        terminal: false,
       })
-      cancelledOperationCount += 1
+      abandonedOperationCount += 1
       if (attempt) protectedAttempts.add(attemptKey(attempt.operation_id, attempt.attempt_no))
       continue
     }

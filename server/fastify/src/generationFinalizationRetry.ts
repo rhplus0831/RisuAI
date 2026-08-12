@@ -418,7 +418,11 @@ export function listPendingGenerationFinalizationRetries(
     .slice(0, boundedLimit)
 }
 
-function listGenerationFinalizationRetryRows(db: DatabaseSync): GenerationFinalizationRetryRow[] {
+function listGenerationFinalizationRetryRows(
+  db: DatabaseSync,
+  options: { pendingChatId?: string } = {},
+): GenerationFinalizationRetryRow[] {
+  const where = options.pendingChatId === undefined ? '' : "WHERE chat_id = ? AND status = 'pending'"
   return db
     .prepare(
       `
@@ -445,10 +449,13 @@ function listGenerationFinalizationRetryRows(db: DatabaseSync): GenerationFinali
           created_at,
           updated_at
         FROM generation_finalization_retries
+        ${where}
         ORDER BY created_at ASC, generation_id ASC
       `,
     )
-    .all() as unknown as GenerationFinalizationRetryRow[]
+    .all(
+      ...(options.pendingChatId === undefined ? [] : [options.pendingChatId]),
+    ) as unknown as GenerationFinalizationRetryRow[]
 }
 
 function parseGenerationFinalizationAttempt(row: GenerationFinalizationRetryRow): GenerationFinalizationAttempt {
@@ -506,6 +513,25 @@ function finalizationAlreadyCommitted(rows: readonly Message[], attempt: Generat
   return rows.length > snapshot.transcriptLength
     ? rowMatchesMessage(rows[snapshot.transcriptLength], attempt.message)
     : false
+}
+
+/**
+ * Return unfinished authoritative finalization work that still owns the chat's
+ * transcript tail. A journal retained only because cleanup failed after the
+ * result committed does not fence a later generation.
+ */
+export function findUncommittedGenerationFinalizationForChat(
+  db: DatabaseSync,
+  chatId: string,
+): { generationId: string } | undefined {
+  const rows = getChatMessages(db, chatId) as unknown as Message[]
+  for (const row of listGenerationFinalizationRetryRows(db, { pendingChatId: chatId })) {
+    const attempt = parseGenerationFinalizationAttempt(row)
+    if (!finalizationAlreadyCommitted(rows, attempt)) {
+      return { generationId: attempt.generationId }
+    }
+  }
+  return undefined
 }
 
 function finalizationTargetIsFresh(rows: readonly Message[], attempt: GenerationFinalizationAttempt): boolean {

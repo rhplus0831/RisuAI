@@ -245,6 +245,44 @@ describe('generation operation client', () => {
     expect(replayBody).toMatchObject({ operationId, acceptedMessageId: messageId })
   })
 
+  it('treats a pending-finalization admission error as a typed terminal rejection', async () => {
+    const rollback = vi.fn()
+    operationMocks.appendOptimistic.mockReturnValueOnce({ status: 'ok', rollback })
+    const staged = await stageAcceptedSendGenerationOperation({
+      target: { selectedCharID: 0, chatPage: 0, characterId: 'character-a', chatId: 'chat-a' },
+      message: 'wait for the prior reply',
+      generation: {
+        syntheticSayNothing: false,
+        resetMessages: false,
+        inlayAssetRefs: [],
+        clientContext: {},
+        clientCapabilities: {},
+      },
+    })
+    if ('status' in staged) throw new Error(staged.error)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              error: 'generation_finalization_pending',
+              message: 'The previous reply is still saving.',
+            }),
+            { status: 409 },
+          ),
+      ),
+    )
+
+    await expect(submitStagedAcceptedSendOperation(staged)).resolves.toEqual({
+      status: 'rejected',
+      error: 'The previous reply is still saving.',
+      code: 'generation_finalization_pending',
+    })
+    expect(operationMocks.discard).toHaveBeenCalledWith(staged.handle)
+    expect(rollback).toHaveBeenCalledTimes(1)
+  })
+
   it('persists Stop before dispatch, exposes acknowledgement failure, and retries the same control', async () => {
     const rollback = vi.fn()
     operationMocks.appendOptimistic.mockReturnValueOnce({ status: 'ok', rollback })

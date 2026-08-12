@@ -1352,6 +1352,7 @@ function shouldDiscardOperationFailure(code: string | undefined, status: number)
     code === 'operation_id_conflict' ||
     code === 'message_id_conflict' ||
     code === 'generation_in_progress' ||
+    code === 'generation_finalization_pending' ||
     code === 'operation_intent_missing' ||
     code === 'operation_not_retryable' ||
     code === 'operation_state_conflict' ||

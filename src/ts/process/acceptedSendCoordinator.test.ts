@@ -4,6 +4,7 @@ import type { ActiveChatTarget, ChatMutationFinalOutcome } from '../chatCommands
 
 const coordinatorMocks = vi.hoisted(() => ({
   alertConfirm: vi.fn(),
+  alertError: vi.fn(),
   clearController: vi.fn(),
   controller: new AbortController(),
   createController: vi.fn(),
@@ -34,9 +35,12 @@ vi.mock('../storage/database.svelte', () => ({
 }))
 
 vi.mock('../persona', () => ({ flushPendingSelectedPersonaUpdate: vi.fn(async () => undefined) }))
-vi.mock('../alert', () => ({ alertConfirm: coordinatorMocks.alertConfirm }))
+vi.mock('../alert', () => ({ alertConfirm: coordinatorMocks.alertConfirm, alertError: coordinatorMocks.alertError }))
 vi.mock('../../lang', () => ({
-  language: { acceptedSendRecovery: { providerMayHaveRunConfirm: 'confirm retry' } },
+  language: {
+    acceptedSendRecovery: { providerMayHaveRunConfirm: 'confirm retry' },
+    errors: { replyStillSaving: 'reply still saving' },
+  },
 }))
 vi.mock('./serverBackedSendChat', () => ({ collectServerInlayAssetRefs: vi.fn(async () => []) }))
 vi.mock('./request/clientContext', () => ({ readBrowserClientContext: vi.fn(() => ({})) }))
@@ -121,6 +125,34 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 describe('accepted send coordinator', () => {
+  it('shows a typed notice when a prior reply finalization still fences the chat', async () => {
+    const staged = {
+      request: { acceptedMessageId: 'message-blocked' },
+      target: target(),
+      intent: {},
+      handle: {},
+      optimisticMessage: {},
+      rollbackOptimisticAppend: vi.fn(),
+    }
+    coordinatorMocks.stageAcceptedSendGenerationOperation.mockResolvedValueOnce(staged)
+    coordinatorMocks.submitStagedAcceptedSendOperation.mockResolvedValueOnce({
+      status: 'rejected',
+      code: 'generation_finalization_pending',
+      error: 'generation_finalization_pending',
+    })
+    const onAppendFailed = vi.fn()
+
+    await expect(
+      coordinateAcceptedChatSend({
+        target: target(),
+        message: { role: 'user', data: 'wait for the prior reply' },
+        onAppendFailed,
+      }),
+    ).resolves.toEqual({ status: 'append_failed' })
+    expect(coordinatorMocks.alertError).toHaveBeenCalledWith('reply still saving')
+    expect(onAppendFailed).not.toHaveBeenCalled()
+  })
+
   it('submits a standard accepted send atomically and reconciles exact completion lineage', async () => {
     const staged = {
       request: { acceptedMessageId: 'message-atomic' },

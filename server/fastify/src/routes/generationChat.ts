@@ -111,6 +111,7 @@ import {
   GENERATION_FINALIZATION_LEGACY_SNAPSHOT_ERROR,
   deleteGenerationFinalizationRetry,
   enqueueGenerationFinalizationRetry,
+  findUncommittedGenerationFinalizationForChat,
   listPendingGenerationFinalizationRetries,
   markGenerationFinalizationRetryFailure,
   type GenerationFinalizationAttempt,
@@ -136,12 +137,12 @@ import {
   GenerationOperationAttemptConflictError,
   assertGenerationOperationDispatchable,
   completeGenerationOperationFinalizationInTransaction,
-  createGenerationOperation,
   getGenerationOperationProjection,
   generationOperationRequestFingerprint,
+  insertGenerationOperationInTransaction,
   markGenerationOperationProviderDispatchFinished,
   markGenerationOperationProviderDispatchStarted,
-  reserveGenerationOperationAttempt,
+  reserveGenerationOperationAttemptInTransaction,
   transitionGenerationOperation,
   type GenerationOperationLineage,
   type GenerationOperationProjection,
@@ -259,9 +260,14 @@ export interface GenerationChatRouteOptions {
   viewerHeartbeatMs?: number
   /** Deterministic lifecycle seam for fault-injection tests. */
   onDurableLifecycleTransition?: (
-    transition: 'registered' | 'viewer_write_started' | 'viewer_attached' | 'runner_tracked',
+    transition:
+      | 'registered'
+      | 'viewer_write_started'
+      | 'viewer_attached'
+      | 'runner_tracked'
+      | 'cancel_persistence_started',
     job: StreamJob,
-  ) => void
+  ) => void | Promise<void>
 }
 
 export interface GenerationFinalizationRetryLogger {
@@ -4543,15 +4549,17 @@ function settleGenerationOperationWithoutResultOnce(args: {
       runnerSettledAt: new Date().toISOString(),
     })
   } else if (operation.state === 'stopping') {
+    const cancellationPersistenceUnconfirmed = args.failureCode === 'cancel_finalization_journal_unconfirmed'
     transitioned = transitionGenerationOperation(args.db, {
       databaseLineage: lineage.databaseLineage,
       operationId: lineage.operationId,
       expectedState: 'stopping',
       expectedStateVersion: operation.stateVersion,
-      nextState: 'cancelled',
+      nextState: cancellationPersistenceUnconfirmed ? 'abandoned' : 'cancelled',
       failureCode: args.failureCode === 'user_stop' ? null : args.failureCode,
       failurePhase: args.failurePhase,
       ...(args.lastError ? { lastError: args.lastError } : {}),
+      ...(cancellationPersistenceUnconfirmed ? { providerMayHaveRun: true } : {}),
       runnerSettledAt: new Date().toISOString(),
     })
   }
@@ -4962,6 +4970,7 @@ async function runGenerationJob(args: {
               let cancelPersistedFinalText: string | undefined
               let cancelPostGen: Awaited<ReturnType<typeof runServerPostGeneration>> | undefined
               if (transportResult.result.length > 0 && successfulResult.state) {
+                await options.onDurableLifecycleTransition?.('cancel_persistence_started', job)
                 cancelTargetMessageId =
                   input.mode === 'regenerate'
                     ? input.regenerateMessageId
@@ -5301,36 +5310,58 @@ function startDurableGeneration(args: {
   try {
     const writerSessionId = readWriterSessionHeader(req) ?? 'legacy'
     const writerEpoch = getDatabaseWriterMetadata(args.db).epoch
+    const databaseLineage = getDatabaseLineage(args.db)
     const operationId = randomUUID()
-    const accepted = createGenerationOperation(args.db, {
-      databaseLineage: getDatabaseLineage(args.db),
-      operationId,
-      protocolVersion: 0,
-      requestOrigin: 'legacy',
-      creatorWriterSessionId: writerSessionId,
-      creatorWriterEpoch: writerEpoch,
-      bindingServerInstanceId: args.serverInstanceId,
-      characterId: input.characterId,
-      chatId: input.chatId,
-      mode: finalizationModeFromInput(input),
-      targetMessageId: input.mode === 'regenerate' ? input.regenerateMessageId : null,
-      requestFingerprint: generationOperationRequestFingerprint({ input, legacy: true }),
-      intent: { input, legacy: true },
-      acceptedRevision: getSchemaState(args.db).revision,
-      state: 'accepted',
-    })
-    const reservation = reserveGenerationOperationAttempt(args.db, {
-      databaseLineage: getDatabaseLineage(args.db),
-      operationId,
-      expectedState: 'accepted',
-      expectedStateVersion: accepted.stateVersion,
-      retryRequestId: operationId,
-      jobId: randomUUID(),
-      serverInstanceId: args.serverInstanceId,
-      actorWriterSessionId: writerSessionId,
-      actorWriterEpoch: writerEpoch,
-      launchRevision: accepted.acceptedRevision ?? getSchemaState(args.db).revision,
-    })
+    let reservation: ReturnType<typeof reserveGenerationOperationAttemptInTransaction>
+    args.db.exec('BEGIN IMMEDIATE')
+    let transactionOpen = true
+    try {
+      const pendingFinalization = findUncommittedGenerationFinalizationForChat(args.db, input.chatId)
+      if (pendingFinalization) {
+        args.db.exec('ROLLBACK')
+        transactionOpen = false
+        reply.code(409).send({
+          error: 'generation_finalization_pending',
+          reason: 'The previous reply is still saving. Try again when it finishes.',
+          generationId: pendingFinalization.generationId,
+        })
+        return
+      }
+      const accepted = insertGenerationOperationInTransaction(args.db, {
+        databaseLineage,
+        operationId,
+        protocolVersion: 0,
+        requestOrigin: 'legacy',
+        creatorWriterSessionId: writerSessionId,
+        creatorWriterEpoch: writerEpoch,
+        bindingServerInstanceId: args.serverInstanceId,
+        characterId: input.characterId,
+        chatId: input.chatId,
+        mode: finalizationModeFromInput(input),
+        targetMessageId: input.mode === 'regenerate' ? input.regenerateMessageId : null,
+        requestFingerprint: generationOperationRequestFingerprint({ input, legacy: true }),
+        intent: { input, legacy: true },
+        acceptedRevision: getSchemaState(args.db).revision,
+        state: 'accepted',
+      })
+      reservation = reserveGenerationOperationAttemptInTransaction(args.db, {
+        databaseLineage,
+        operationId,
+        expectedState: 'accepted',
+        expectedStateVersion: accepted.stateVersion,
+        retryRequestId: operationId,
+        jobId: randomUUID(),
+        serverInstanceId: args.serverInstanceId,
+        actorWriterSessionId: writerSessionId,
+        actorWriterEpoch: writerEpoch,
+        launchRevision: accepted.acceptedRevision ?? getSchemaState(args.db).revision,
+      })
+      args.db.exec('COMMIT')
+      transactionOpen = false
+    } catch (error) {
+      if (transactionOpen) args.db.exec('ROLLBACK')
+      throw error
+    }
     if (reservation.status !== 'applied') throw new Error('legacy generation attempt reservation failed')
     const launched = launchGenerationOperation({
       operation: reservation.operation,

@@ -293,24 +293,14 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
             providerMayHaveRun: operation.providerMayHaveRun,
             runnerSettledAt: new Date().toISOString(),
           })
-        } else if (operation?.state === 'stopping') {
-          transitionGenerationOperation(db, {
-            databaseLineage: job.databaseLineage,
-            operationId: job.operationId,
-            expectedState: 'stopping',
-            expectedStateVersion: operation.stateVersion,
-            nextState: 'cancelled',
-            failureCode: 'server_shutdown',
-            failurePhase: 'shutdown',
-            runnerSettledAt: new Date().toISOString(),
-          })
         }
       }
       generationJobRegistry.registry.deleteJob(job.id, 'server_shutdown')
     }
-    // Detached generation runners were just system-aborted after their durable
-    // operation fence was committed. Wait for them to settle before closing the
-    // database; shutdown must not be projected as a user cancellation.
+    // Detached runners were just system-aborted. Owned work was marked
+    // abandoned above; an already-stopping user cancellation keeps its durable
+    // state until the runner commits its partial (or a replayable journal)
+    // before the database closes.
     await generationJobRegistry.settleRunners()
     generationJobRegistry.registry.dispose()
     db.close()

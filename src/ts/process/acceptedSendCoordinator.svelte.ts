@@ -12,7 +12,7 @@ import { chatGenerationTargetKey } from './generationActivity.svelte'
 import type { Message } from '../storage/database.svelte'
 import { getDatabase } from '../storage/database.svelte'
 import { flushPendingSelectedPersonaUpdate } from '../persona'
-import { alertConfirm } from '../alert'
+import { alertConfirm, alertError } from '../alert'
 import { language } from '../../lang'
 import { collectServerInlayAssetRefs } from './serverBackedSendChat'
 import { readBrowserClientContext } from './request/clientContext'
@@ -350,6 +350,10 @@ async function coordinateAtomicAcceptedChatSend(
     // The complete intent and optimistic row remain durable. Bootstrap/outbox
     // replay will project the eventual acceptance without appending again.
     return { status: 'generation_failed', cause: 'generation_failed' }
+  }
+  if (submitted.status === 'rejected' && submitted.code === 'generation_finalization_pending') {
+    alertError(language.errors.replyStillSaving)
+    return { status: 'append_failed' }
   }
   if (submitted.status !== 'accepted' || submitted.response.append?.disposition !== 'accepted') {
     notifyAppendFailed(input.onAppendFailed)

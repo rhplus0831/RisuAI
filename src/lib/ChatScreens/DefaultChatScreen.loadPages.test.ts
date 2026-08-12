@@ -728,6 +728,35 @@ afterEach(() => {
 })
 
 describe('DefaultChatScreen acknowledged Stop lifecycle', () => {
+  it('keeps Stop available for a newer live Continue after an older Stop settled', async () => {
+    seedDatabase([2])
+    generationOperationCancellations.set([
+      {
+        operationId: '11111111-1111-4111-8111-111111111111',
+        target: captureActiveChatTargetForTest()!,
+        state: 'settled_cancelled',
+        disposition: 'cancelled',
+        operationState: 'cancelled',
+      },
+    ])
+    activeGenerationJobs.set([
+      {
+        chatId: 'chat-0',
+        jobId: 'continue-job',
+        operationId: '22222222-2222-4222-8222-222222222222',
+        mode: 'continue',
+      },
+    ])
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-cancel-button"]')).toBeTruthy()
+      expect(target.querySelector('[data-testid="default-chat-send-button"]')).toBeNull()
+    })
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-cancel-button"]')!.click()
+    expect(loadPageMocks.abortActiveGeneration).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps Stopping visible until authority responds, then exposes retry and stopped-partial saving states', async () => {
     seedDatabase([1])
     mountScreen()
