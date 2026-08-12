@@ -474,20 +474,30 @@ test('mobile composer ignores transient keyboard viewport coordinates', async ({
     await page.locator('html').evaluate((node) => node.style.getPropertyValue('--risu-visual-viewport-height')),
   ).toBe('844px')
   expect(
+    await page.locator('html').evaluate((node) => ({
+      pageTop: node.style.getPropertyValue('--risu-visual-viewport-page-top'),
+      shifted: node.hasAttribute('data-risu-visual-viewport-shifted'),
+    })),
+  ).toEqual({ pageTop: '', shifted: false })
+  expect(
     Math.abs((await composer.evaluate((node) => node.getBoundingClientRect().top)) - initialComposerTop),
   ).toBeLessThan(1)
 
   await page.evaluate(() => {
     window.__RISU_SET_MOCK_VISUAL_VIEWPORT__?.({ height: 417, offsetTop: 380, pageTop: 380 })
+    const scroller = document.scrollingElement
+    if (scroller) scroller.scrollTop = 267
   })
   await expect
     .poll(() =>
       page.locator('html').evaluate((node) => ({
         height: node.style.getPropertyValue('--risu-visual-viewport-height'),
         pageTop: node.style.getPropertyValue('--risu-visual-viewport-page-top'),
+        shifted: node.hasAttribute('data-risu-visual-viewport-shifted'),
+        scrollTop: document.scrollingElement?.scrollTop ?? null,
       })),
     )
-    .toEqual({ height: '417px', pageTop: '380px' })
+    .toEqual({ height: '417px', pageTop: '', shifted: false, scrollTop: 0 })
 
   const keyboardGeometry = await page.evaluate(() => {
     const composerElement = document.querySelector<HTMLElement>('[data-testid="default-chat-composer"]')
@@ -500,11 +510,18 @@ test('mobile composer ignores transient keyboard viewport coordinates', async ({
     return {
       composerTop: composerRect.top,
       dockBottom: dockRect.bottom,
+      shellTop: shellRect.top,
       shellBottom: shellRect.bottom,
+      shellHeight: shellRect.height,
       shellMidpoint: shellRect.top + shellRect.height / 2,
+      shellTransform: getComputedStyle(shell).transform,
     }
   })
   expect(keyboardGeometry).not.toBeNull()
+  expect(Math.abs(keyboardGeometry!.shellTop)).toBeLessThanOrEqual(1)
+  expect(Math.abs(keyboardGeometry!.shellHeight - 417)).toBeLessThanOrEqual(1)
+  expect(Math.abs(keyboardGeometry!.shellBottom - 417)).toBeLessThanOrEqual(1)
+  expect(keyboardGeometry!.shellTransform).toBe('none')
   expect(keyboardGeometry!.composerTop).toBeGreaterThan(keyboardGeometry!.shellMidpoint)
   expect(Math.abs(keyboardGeometry!.dockBottom - keyboardGeometry!.shellBottom)).toBeLessThanOrEqual(1)
 })

@@ -1,6 +1,6 @@
 # Svelte Chat UI Guide
 
-Last audited: 2026-08-09.
+Last audited: 2026-08-13.
 
 This guide owns the visible chat frame, transcript, message rows, composer
 variants, generation/loading feedback, and in-chat confirmations. Return to the
@@ -140,14 +140,23 @@ and are not exposed as Accessibility controls.
 width across `chatScreenWidth`, viewport changes, and safe-area insets. Normal
 and translated textareas clamp to a 44-pixel minimum.
 
-While a text editor is focused, `visualViewportCoordinator.ts` publishes the
-visual viewport height and page position to the app shell. Viewport events are
-sampled only after a short settle window and two animation frames because iOS
-WebKit can report transient keyboard-animation coordinates. The shell is
-translated only when the visual viewport has actually panned. The document
-scroll guard yields vertical ownership during that interval, preventing iOS
-focus scrolling from fighting the user's gesture, and resumes its normal root
-reset after the keyboard settles.
+While a text editor is focused, `visualViewportCoordinator.ts` publishes only
+the visual viewport height to the app shell. The shell stays at page origin and
+is never translated from `pageTop` or `offsetTop`; the composer dock therefore
+lands at the bottom of the keyboard-reduced shell. Viewport events are
+coalesced for 50 milliseconds and applied across paint boundaries, then
+revalidated 250 and 700 milliseconds after the last event so late iOS height
+settling converges. After each height application the coordinator invokes the
+document scroll guard, which pins root scroll to zero. The guard yields vertical
+ownership only during the focused pre-adjustment window and resumes enforcement
+as soon as the reduced-height shell is active. Focusout still holds the height
+for 700 milliseconds before release.
+
+`index.html` requests `interactive-widget=resizes-content`, allowing supporting
+Android browsers to reduce the layout viewport directly; iOS ignores the key
+and uses the same height-only coordinator. To observe real-device pan channels,
+enable the passive viewport overlay with `?risuViewportDebug=1` or the
+`risu-viewport-debug=1` local-storage flag. It never changes viewport state.
 
 ## Generation And Loading States
 

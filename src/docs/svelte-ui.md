@@ -1,6 +1,6 @@
 # Svelte UI Guide
 
-Last audited: 2026-08-09.
+Last audited: 2026-08-13.
 
 This guide owns the Svelte application shell, routing, shared frontend
 platform behavior, localization, styling, responsive behavior, and Playground.
@@ -40,7 +40,7 @@ CSS, and plugin execution.
 | Path | Role |
 | ---- | ---- |
 | `index.html` | Mounts `#app` and loads `/src/main.ts`. |
-| `src/main.ts` | Installs the preload-error alert, router, push listeners, and viewport guard; mounts `App.svelte`; starts bootstrap and hotkeys; then removes `#preloading`. |
+| `src/main.ts` | Installs the preload-error alert, router, push listeners, and viewport coordinators; mounts `App.svelte`; conditionally lazy-loads viewport diagnostics; starts bootstrap and hotkeys; then removes `#preloading`. |
 | `src/App.svelte` | Main render switch, responsive sidebar dialog, app-level file drop, route effects, and global overlay host. |
 | `src/styles.css` | Tailwind v4 import, theme defaults, full-height shell, global chat text CSS, and compatibility base rules. |
 | `src/ts/bootstrap.ts` | Loads Fastify resources and starts hydration, events, bridges, and UI-derived CSS state. |
@@ -241,11 +241,24 @@ The body is overflow-hidden and full-height, and `#app` uses `overflow: clip`.
 `src/ts/gui/viewportScrollGuard.ts` pins the document root at the origin before
 mount, preventing focus, `scrollIntoView`, custom CSS, or automation from moving
 the fixed shell. While a text editor is focused,
-`src/ts/gui/visualViewportCoordinator.ts` sizes and offsets the app shell from
-`window.visualViewport`. It waits for stable keyboard-animation coordinates,
-uses `pageTop` rather than a layout-relative offset, and applies a transform
-only while the visual viewport is panned. The guard continues to reset
-horizontal drift but temporarily yields vertical ownership to the browser.
+`src/ts/gui/visualViewportCoordinator.ts` applies only
+`window.visualViewport.height` to the app shell; it never consumes page/offset
+coordinates and never transforms the focused editor's ancestors. A 50
+millisecond coalescing sample plus trailing 250 and 700 millisecond validations
+converges after late iOS height updates. Once a height is active, the coordinator
+calls the sanctioned guard reset after the style frame and the guard enforces
+root `scrollTop = 0` again. Only the focused pre-adjustment window yields
+vertical ownership; horizontal drift is always reset. `index.html` also requests
+`interactive-widget=resizes-content` so supporting Android browsers resize the
+layout viewport themselves.
+
+The passive `viewportDebugOverlay.ts` is lazy-loaded only when
+`?risuViewportDebug=1` is present or local storage contains
+`risu-viewport-debug=1`. It reports visual-viewport coordinates, root scroll,
+applied height, focus, and recent viewport/focus events without altering either
+coordinator. `window.__RISU_VIEWPORT_DEBUG_DUMP__()` returns its ring buffer as
+JSON for remote-inspector copying.
+
 Scroll application content through inner containers, not `window` or the
 document root. For clipping, double scrollbars, or invisible content, inspect
 `src/styles.css`, route-branch height classes, and child `min-w-0`/overflow

@@ -3,8 +3,14 @@ import { installVisualViewportCoordinator, isTextEntryElement } from './visualVi
 
 class MockVisualViewport extends EventTarget {
   height = 420
-  offsetTop = 160
-  pageTop = 240
+
+  get offsetTop(): number {
+    throw new Error('The height-only coordinator must not sample offsetTop')
+  }
+
+  get pageTop(): number {
+    throw new Error('The height-only coordinator must not sample pageTop')
+  }
 }
 
 describe('visual viewport coordinator', () => {
@@ -22,6 +28,11 @@ describe('visual viewport coordinator', () => {
 
   const flushStableAdjustment = () => {
     flushAnimationFrame()
+    flushAnimationFrame()
+  }
+
+  const flushAdjustmentAndReset = () => {
+    flushStableAdjustment()
     flushAnimationFrame()
   }
 
@@ -54,9 +65,12 @@ describe('visual viewport coordinator', () => {
     vi.unstubAllGlobals()
   })
 
-  it('sizes and offsets the app shell from a stable visual viewport reading while a text editor is focused', () => {
-    const onRelease = vi.fn()
-    cleanup = installVisualViewportCoordinator({ onRelease })
+  it('applies only the visual viewport height and resets root scroll after the style frame', () => {
+    const onApply = vi.fn(() => {
+      expect(document.documentElement.getAttribute('data-risu-visual-viewport-active')).toBe('true')
+      expect(document.documentElement.style.getPropertyValue('--risu-visual-viewport-height')).toBe('420px')
+    })
+    cleanup = installVisualViewportCoordinator({ onApply })
     const textarea = document.createElement('textarea')
     document.body.append(textarea)
 
@@ -64,34 +78,62 @@ describe('visual viewport coordinator', () => {
     flushStableAdjustment()
 
     expect(document.documentElement.getAttribute('data-risu-visual-viewport-active')).toBe('true')
-    expect(document.documentElement.getAttribute('data-risu-visual-viewport-shifted')).toBe('')
     expect(document.documentElement.style.getPropertyValue('--risu-visual-viewport-height')).toBe('420px')
-    expect(document.documentElement.style.getPropertyValue('--risu-visual-viewport-page-top')).toBe('240px')
+    expect(document.documentElement.hasAttribute('data-risu-visual-viewport-shifted')).toBe(false)
+    expect(document.documentElement.style.getPropertyValue('--risu-visual-viewport-page-top')).toBe('')
+    expect(onApply).not.toHaveBeenCalled()
 
-    // WebKit can expose an early, incorrect coordinate from the viewport event.
-    // Do not project that transient value into the app shell.
+    flushAnimationFrame()
+    expect(onApply).toHaveBeenCalledOnce()
+
+    visualViewport.dispatchEvent(new Event('scroll'))
+    vi.advanceTimersByTime(50)
+    flushAdjustmentAndReset()
+
+    expect(document.documentElement.style.getPropertyValue('--risu-visual-viewport-height')).toBe('420px')
+    expect(document.documentElement.hasAttribute('data-risu-visual-viewport-shifted')).toBe(false)
+    expect(document.documentElement.style.getPropertyValue('--risu-visual-viewport-page-top')).toBe('')
+  })
+
+  it('revalidates at 250ms and 700ms so late viewport height settling converges', () => {
+    const onApply = vi.fn()
+    cleanup = installVisualViewportCoordinator({ onApply })
+    const textarea = document.createElement('textarea')
+    document.body.append(textarea)
+    textarea.focus()
+    flushAdjustmentAndReset()
+    onApply.mockClear()
+
     visualViewport.height = 80
-    visualViewport.pageTop = 0
     visualViewport.dispatchEvent(new Event('resize'))
     vi.advanceTimersByTime(49)
-
     expect(document.documentElement.style.getPropertyValue('--risu-visual-viewport-height')).toBe('420px')
-    expect(document.documentElement.style.getPropertyValue('--risu-visual-viewport-page-top')).toBe('240px')
+
+    vi.advanceTimersByTime(1)
+    flushAdjustmentAndReset()
+    expect(document.documentElement.style.getPropertyValue('--risu-visual-viewport-height')).toBe('80px')
 
     visualViewport.height = 360
-    visualViewport.pageTop = 300
-    vi.advanceTimersByTime(1)
-    flushStableAdjustment()
-
+    vi.advanceTimersByTime(200)
+    flushAdjustmentAndReset()
     expect(document.documentElement.style.getPropertyValue('--risu-visual-viewport-height')).toBe('360px')
-    expect(document.documentElement.style.getPropertyValue('--risu-visual-viewport-page-top')).toBe('300px')
 
-    visualViewport.pageTop = 320
-    window.dispatchEvent(new Event('scroll'))
-    vi.advanceTimersByTime(50)
-    flushStableAdjustment()
+    visualViewport.height = 333
+    vi.advanceTimersByTime(450)
+    flushAdjustmentAndReset()
+    expect(document.documentElement.style.getPropertyValue('--risu-visual-viewport-height')).toBe('333px')
+    expect(onApply).toHaveBeenCalledTimes(3)
+    expect(document.documentElement.hasAttribute('data-risu-visual-viewport-shifted')).toBe(false)
+    expect(document.documentElement.style.getPropertyValue('--risu-visual-viewport-page-top')).toBe('')
+  })
 
-    expect(document.documentElement.style.getPropertyValue('--risu-visual-viewport-page-top')).toBe('320px')
+  it('holds the height adjustment through focusout settling and invokes the release callback unchanged', () => {
+    const onRelease = vi.fn()
+    cleanup = installVisualViewportCoordinator({ onRelease })
+    const textarea = document.createElement('textarea')
+    document.body.append(textarea)
+    textarea.focus()
+    flushAdjustmentAndReset()
 
     textarea.blur()
     vi.advanceTimersByTime(699)
@@ -99,23 +141,10 @@ describe('visual viewport coordinator', () => {
 
     vi.advanceTimersByTime(1)
     expect(document.documentElement.hasAttribute('data-risu-visual-viewport-active')).toBe(false)
-    expect(document.documentElement.hasAttribute('data-risu-visual-viewport-shifted')).toBe(false)
     expect(document.documentElement.style.getPropertyValue('--risu-visual-viewport-height')).toBe('')
+    expect(document.documentElement.hasAttribute('data-risu-visual-viewport-shifted')).toBe(false)
     expect(document.documentElement.style.getPropertyValue('--risu-visual-viewport-page-top')).toBe('')
     expect(onRelease).toHaveBeenCalledOnce()
-  })
-
-  it('falls back to layout scroll plus offsetTop when pageTop is unavailable', () => {
-    visualViewport.pageTop = Number.NaN
-    vi.stubGlobal('scrollY', 40)
-    cleanup = installVisualViewportCoordinator()
-    const textarea = document.createElement('textarea')
-    document.body.append(textarea)
-
-    textarea.focus()
-    flushStableAdjustment()
-
-    expect(document.documentElement.style.getPropertyValue('--risu-visual-viewport-page-top')).toBe('200px')
   })
 
   it('recognizes only controls that can summon a software text keyboard', () => {

@@ -1,6 +1,6 @@
 # Project Structure
 
-Last audited: 2026-08-11.
+Last audited: 2026-08-13.
 
 Use this file to orient yourself in the Fastify-only RisuAI codebase. The
 supported toolchain is Node.js 24 or newer with pnpm. Choose the guide for your
@@ -64,7 +64,7 @@ records past decisions and is not authoritative.
 
 | Path | Responsibility |
 | ---- | -------------- |
-| `index.html` -> `src/main.ts` | Installs browser coordinators, mounts the application, starts `loadData()`, and removes the preloader. |
+| `index.html` -> `src/main.ts` | Requests resize-content keyboard behavior, installs height-only visual-viewport/root-scroll coordination and optional viewport diagnostics, mounts the application, starts `loadData()`, and removes the preloader. |
 | `src/App.svelte` | Svelte application shell, top-level render routing, overlays, and selected-character visibility guard. |
 | `src/ts/bootstrap.ts` | Auth/writer bootstrap, recovery preparation, resource hydration/invalidation, plugin/runtime setup, and active-work reattachment. |
 | `public/service-worker.js` | Web Push display, notification-click navigation, and client messaging. |

@@ -1,14 +1,34 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+const coordinatorState = vi.hoisted(() => ({ adjustmentActive: false }))
+
+vi.mock('./visualViewportCoordinator', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./visualViewportCoordinator')>()
+  return {
+    ...actual,
+    isVisualViewportAdjustmentActive: () => coordinatorState.adjustmentActive,
+  }
+})
+
 import { installViewportScrollGuard } from './viewportScrollGuard'
 
 describe('viewport scroll guard', () => {
+  afterEach(() => {
+    coordinatorState.adjustmentActive = false
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    document.body.replaceChildren()
+    const scroller = document.scrollingElement as HTMLElement
+    scroller.scrollTop = 0
+    scroller.scrollLeft = 0
+  })
+
   it('resets a document root scroll back to the origin', () => {
     installViewportScrollGuard()
 
     const scroller = document.scrollingElement as HTMLElement
     scroller.scrollTop = 267
     scroller.scrollLeft = 12
-    document.dispatchEvent(new Event('scroll', { bubbles: true }))
+    window.dispatchEvent(new Event('scroll'))
 
     expect(scroller.scrollTop).toBe(0)
     expect(scroller.scrollLeft).toBe(0)
@@ -20,14 +40,12 @@ describe('viewport scroll guard', () => {
     const inner = document.createElement('div')
     document.body.appendChild(inner)
     inner.scrollTop = 40
-    // Element scroll events do not bubble; dispatch on the element itself.
     inner.dispatchEvent(new Event('scroll'))
 
     expect(inner.scrollTop).toBe(40)
-    inner.remove()
   })
 
-  it('allows keyboard-driven vertical document movement while a text editor is focused', () => {
+  it('allows only pre-adjustment keyboard pan while a text editor is focused', () => {
     installViewportScrollGuard()
     const textarea = document.createElement('textarea')
     document.body.append(textarea)
@@ -36,10 +54,25 @@ describe('viewport scroll guard', () => {
     const scroller = document.scrollingElement as HTMLElement
     scroller.scrollTop = 267
     scroller.scrollLeft = 12
-    document.dispatchEvent(new Event('scroll', { bubbles: true }))
+    window.dispatchEvent(new Event('scroll'))
 
     expect(scroller.scrollTop).toBe(267)
     expect(scroller.scrollLeft).toBe(0)
-    textarea.remove()
+  })
+
+  it('resumes vertical enforcement once the focused editor has a viewport adjustment', () => {
+    installViewportScrollGuard()
+    const textarea = document.createElement('textarea')
+    document.body.append(textarea)
+    textarea.focus()
+    coordinatorState.adjustmentActive = true
+
+    const scroller = document.scrollingElement as HTMLElement
+    scroller.scrollTop = 267
+    scroller.scrollLeft = 12
+    window.dispatchEvent(new Event('scroll'))
+
+    expect(scroller.scrollTop).toBe(0)
+    expect(scroller.scrollLeft).toBe(0)
   })
 })

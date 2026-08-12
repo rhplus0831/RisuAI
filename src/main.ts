@@ -9,6 +9,7 @@ import { mount } from 'svelte'
 import { installFastifyBrowserSmokeHook } from './ts/server/browserSmoke'
 import { installViewportScrollGuard, resetViewportScroll } from './ts/gui/viewportScrollGuard'
 import { installVisualViewportCoordinator } from './ts/gui/visualViewportCoordinator'
+import { installViewportDebugOverlayIfEnabled } from './ts/gui/viewportDebugOverlayGate'
 import {
   installPushNotificationForegroundCleanup,
   installPushNotificationNavigationListener,
@@ -24,10 +25,13 @@ window.addEventListener('vite:preloadError', (event) => {
 installRouter()
 installPushNotificationNavigationListener()
 installPushNotificationForegroundCleanup()
-installVisualViewportCoordinator({ onRelease: resetViewportScroll })
+installVisualViewportCoordinator({ onApply: resetViewportScroll, onRelease: resetViewportScroll })
 installViewportScrollGuard()
 let app = mount(App, {
   target: document.getElementById('app'),
+})
+void installViewportDebugOverlayIfEnabled().catch((error) => {
+  console.error('Failed to install viewport diagnostics', error)
 })
 if (import.meta.env.VITE_FASTIFY_BROWSER_SMOKE === 'TRUE') {
   installFastifyBrowserSmokeHook()

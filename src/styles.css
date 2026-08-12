@@ -373,10 +373,6 @@ html[data-risu-visual-viewport-active='true'] [data-risu-visual-viewport-shell] 
   max-height: var(--risu-visual-viewport-height);
 }
 
-html[data-risu-visual-viewport-shifted='true'] [data-risu-visual-viewport-shell] {
-  transform: translate3d(0, var(--risu-visual-viewport-page-top), 0);
-}
-
 /* Block the async gap between a writer-loss frame and the takeover dialog
    mounting. The alert overlay opts back in so Refresh/Stay Offline remain the
    only pointer-accessible actions until the user decides. */
