@@ -513,8 +513,8 @@ function seedDatabase(messageCounts: number[]) {
   } as unknown as Database)
 }
 
-function mountScreen() {
-  component = mount(DefaultChatScreen, { target })
+function mountScreen(props: { customStyle?: string } = {}) {
+  component = mount(DefaultChatScreen, { target, props })
 }
 
 async function settle() {
@@ -1001,7 +1001,7 @@ describe('DefaultChatScreen floating action accessibility', () => {
     expect(newMessageButton.title).toBe('newMessage')
   })
 
-  it('keeps the default composer in transcript flow while preserving drafts across transcript scrolling', async () => {
+  it('moves the same composer surface past the reveal threshold and returns it to flow at the bottom', async () => {
     seedDatabase([2])
     const hook = { id: 'draft-hook', name: 'Draft Hook', type: 'draft' as const, prompt: 'prompt' }
     getResourceDatabase().inputHooks = [hook]
@@ -1013,33 +1013,141 @@ describe('DefaultChatScreen floating action accessibility', () => {
     const draft = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-draft-input"]')!
     const flow = target.querySelector<HTMLElement>('[data-default-chat-composer-flow]')!
     const transcript = target.querySelector<HTMLElement>('[data-default-chat-transcript]')!
+    const composerRow = target.querySelector<HTMLElement>('[data-default-chat-composer-row]')!
+    composerRow.getBoundingClientRect = () =>
+      ({
+        top: 0,
+        bottom: 120,
+        left: 0,
+        right: 500,
+        width: 500,
+        height: 120,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }) as DOMRect
 
     composer.value = 'Original text'
     composer.dispatchEvent(new Event('input', { bubbles: true }))
     draft.value = 'Reviewed Draft text'
     draft.dispatchEvent(new Event('input', { bubbles: true }))
 
-    transcript.scrollTop = -80
+    transcript.scrollTop = -59
     transcript.dispatchEvent(new Event('scroll'))
     await settle()
 
-    expect(transcript.scrollTop).toBe(-80)
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeNull()
+
+    transcript.scrollTop = -61
+    transcript.dispatchEvent(new Event('scroll'))
+    await settle()
+
+    expect(transcript.scrollTop).toBe(-61)
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBe(flow)
+    expect(flow.classList).toContain('floating-chat-composer')
     expect(flow.contains(composer)).toBe(true)
+    expect(flow.contains(draft)).toBe(true)
     expect(transcript.contains(composer)).toBe(true)
     expect(target.querySelector('[data-default-chat-composer-dock]')).toBeNull()
-    expect(composer.closest('[data-default-chat-composer-row]')?.classList).toContain('mt-2')
-    expect(composer.closest('[data-default-chat-composer-row]')?.classList).toContain('mb-2')
     expect(target.querySelector('[data-testid="floating-chat-input-button"]')).toBeNull()
-    expect(target.querySelector('[data-testid="default-chat-send-button"]')).toBeTruthy()
+    expect(composer.value).toBe('Reviewed Draft text')
+    expect(composer.readOnly).toBe(true)
+    expect(draft.value).toBe('Reviewed Draft text')
+
+    transcript.scrollTop = 0
+    transcript.dispatchEvent(new Event('scroll'))
+    await settle()
+
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeNull()
+    expect(flow.classList).not.toContain('floating-chat-composer')
+    expect(target.querySelector('[data-testid="floating-chat-input-button"]')).toBeNull()
+    expect(target.querySelector('[data-testid="default-chat-composer"]')).toBe(composer)
     expect(composer.value).toBe('Original text')
     expect(composer.readOnly).toBe(false)
     expect(draft.value).toBe('Reviewed Draft text')
   })
 
-  it('uses the external composer dock only when fixed positioning is enabled', async () => {
+  it('collapses to the pencil without changing scroll and reopens before going to the bottom', async () => {
+    seedDatabase([2])
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy())
+    const transcript = target.querySelector<HTMLElement>('[data-default-chat-transcript]')!
+    const composer = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+
+    composer.value = 'unfinished draft'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    transcript.scrollTop = -80
+    transcript.dispatchEvent(new Event('scroll'))
+    await settle()
+
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeTruthy()
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-menu-button"]')!.click()
+    await settle()
+
+    expect(target.querySelector('[data-testid="floating-chat-input-go-to-bottom"]')).toBeTruthy()
+    expect(target.querySelector('[data-testid="floating-chat-input-hide"]')).toBeTruthy()
+    expect(target.querySelector('[data-testid="default-chat-overflow-menu"]')?.classList).toContain(
+      'chat-overflow-menu-fixed',
+    )
+
+    target.querySelector<HTMLButtonElement>('[data-testid="floating-chat-input-hide"]')!.click()
+    await settle()
+
+    expect(transcript.scrollTop).toBe(-80)
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeNull()
+    const floatingButton = target.querySelector<HTMLButtonElement>('[data-testid="floating-chat-input-button"]')
+    expect(floatingButton).toBeTruthy()
+    expect(floatingButton?.getAttribute('aria-label')).toBe('openFloatingChatInput')
+    expect(floatingButton?.title).toBe('openFloatingChatInput')
+    expect(document.activeElement).toBe(floatingButton)
+    expect(composer.value).toBe('unfinished draft')
+
+    transcript.scrollTop = -120
+    transcript.dispatchEvent(new Event('scroll'))
+    await settle()
+
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeNull()
+    expect(target.querySelector('[data-testid="floating-chat-input-button"]')).toBe(floatingButton)
+
+    floatingButton!.click()
+    await settle()
+
+    expect(transcript.scrollTop).toBe(-120)
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeTruthy()
+    expect(target.querySelector('[data-testid="floating-chat-input-button"]')).toBeNull()
+    expect(document.activeElement).toBe(composer)
+
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-menu-button"]')!.click()
+    await settle()
+    target.querySelector<HTMLButtonElement>('[data-testid="floating-chat-input-go-to-bottom"]')!.click()
+    await settle()
+
+    expect(transcript.scrollTop).toBe(0)
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeNull()
+    expect(target.querySelector('[data-testid="floating-chat-input-button"]')).toBeNull()
+    expect(composer.value).toBe('unfinished draft')
+  })
+
+  it('keeps the composer in flow when the floating input toggle is off', async () => {
+    seedDatabase([2])
+    getResourceDatabase().floatingChatInput = false
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-default-chat-composer-flow]')).toBeTruthy())
+    const transcript = target.querySelector<HTMLElement>('[data-default-chat-transcript]')!
+    transcript.scrollTop = -80
+    transcript.dispatchEvent(new Event('scroll'))
+    await settle()
+
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeNull()
+    expect(target.querySelector('[data-testid="floating-chat-input-button"]')).toBeNull()
+  })
+
+  it('uses the external composer dock and gates floating even when its toggle is on', async () => {
     seedDatabase([2])
     getResourceDatabase().fixedChatTextarea = true
-    getResourceDatabase().floatingChatInput = false
+    getResourceDatabase().floatingChatInput = true
     mountScreen()
 
     await waitFor(() => expect(target.querySelector('[data-default-chat-composer-dock]')).toBeTruthy())
@@ -1055,6 +1163,12 @@ describe('DefaultChatScreen floating action accessibility', () => {
     expect(target.querySelector('[data-default-chat-composer-flow]')).toBeNull()
     expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
 
+    transcript.scrollTop = -80
+    transcript.dispatchEvent(new Event('scroll'))
+    await settle()
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeNull()
+    expect(target.querySelector('[data-testid="floating-chat-input-button"]')).toBeNull()
+
     target.querySelector<HTMLButtonElement>('[data-testid="default-chat-menu-button"]')!.click()
     await settle()
 
@@ -1063,9 +1177,10 @@ describe('DefaultChatScreen floating action accessibility', () => {
     expect(menu.classList).toContain('absolute')
   })
 
-  it('treats an undefined fixed composer preference as in-flow mode', async () => {
+  it('treats missing fixed and floating preferences as default-on in-flow floating mode', async () => {
     seedDatabase([2])
     delete (getResourceDatabase() as Partial<Database>).fixedChatTextarea
+    delete (getResourceDatabase() as Partial<Database>).floatingChatInput
     mountScreen()
 
     await waitFor(() => expect(target.querySelector('[data-default-chat-composer-flow]')).toBeTruthy())
@@ -1074,6 +1189,11 @@ describe('DefaultChatScreen floating action accessibility', () => {
     const composer = target.querySelector<HTMLElement>('[data-testid="default-chat-composer"]')!
     expect(transcript.contains(composer)).toBe(true)
     expect(target.querySelector('[data-default-chat-composer-dock]')).toBeNull()
+
+    transcript.scrollTop = -80
+    transcript.dispatchEvent(new Event('scroll'))
+    await settle()
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeTruthy()
   })
 
   it('names attachment removal for the selected attachment', async () => {
@@ -1206,6 +1326,7 @@ describe('DefaultChatScreen content width', () => {
     expect(screen.style.getPropertyValue('--chat-screen-width')).toBe('500px')
     expect(screen.style.getPropertyValue('--chat-content-rendered-width')).toBe('500px')
     expect(screen.style.getPropertyValue('--chat-content-inline-end')).toBe('150px')
+    expect(screen.style.getPropertyValue('--chat-content-fixed-inline-end')).toBe(`${window.innerWidth - 750}px`)
     const dock = target.querySelector<HTMLElement>('[data-default-chat-composer-dock]')!
     const transcriptPane = target.querySelector<HTMLElement>('[data-default-chat-transcript]')!
     expect(composerRow).toBeTruthy()
@@ -1228,6 +1349,48 @@ describe('DefaultChatScreen content width', () => {
     expect(screen.style.getPropertyValue('--chat-screen-width')).toBe('1240px')
     expect(screen.style.getPropertyValue('--chat-content-rendered-width')).toBe('800px')
     expect(screen.style.getPropertyValue('--chat-content-inline-end')).toBe('0px')
+    expect(screen.style.getPropertyValue('--chat-content-fixed-inline-end')).toBe(`${window.innerWidth - 900}px`)
+  })
+
+  it('measures fixed inline placement from a custom backdrop-filter containing block', async () => {
+    seedDatabase([1])
+    getResourceDatabase().chatScreenWidth = 500
+    mountScreen({ customStyle: 'backdrop-filter: blur(4px);' })
+
+    await waitFor(() => expect(target.querySelector('[data-default-chat-screen-width]')).toBeTruthy())
+
+    const chatRoot = target.querySelector<HTMLElement>('[data-default-chat-fixed-containing-block="chat-root"]')!
+    const screen = target.querySelector<HTMLElement>('[data-default-chat-screen-width]')!
+    Object.defineProperty(screen, 'clientWidth', { configurable: true, value: 800 })
+    screen.getBoundingClientRect = () =>
+      ({
+        top: 0,
+        bottom: 600,
+        left: 100,
+        right: 900,
+        width: 800,
+        height: 600,
+        x: 100,
+        y: 0,
+        toJSON: () => ({}),
+      }) as DOMRect
+    chatRoot.getBoundingClientRect = () =>
+      ({
+        top: 0,
+        bottom: 600,
+        left: 50,
+        right: 850,
+        width: 800,
+        height: 600,
+        x: 50,
+        y: 0,
+        toJSON: () => ({}),
+      }) as DOMRect
+
+    window.dispatchEvent(new Event('resize'))
+    await tick()
+
+    expect(screen.style.getPropertyValue('--chat-content-fixed-inline-end')).toBe('100px')
   })
 })
 

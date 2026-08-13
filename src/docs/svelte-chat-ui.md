@@ -131,22 +131,29 @@ suggestions, and generation controls. `fixedChatTextarea` chooses where that
 surface renders. A true value renders the snippet in the persistent dock outside
 the reverse transcript scroller. A false or missing value renders it as the
 first child of that scroller, which places it at the content bottom in normal
-flow; scrolling toward older messages moves the entire surface out of view.
-Switching modes may remount the snippet, but its transcript-scoped state remains
-owned by `DefaultChatScreen.svelte` and its recovery store.
+flow. With `floatingChatInput` enabled (the default), scrolling far enough toward
+older messages temporarily restyles that same mounted surface as a fixed
+floating card; returning to the bottom restores flow. Explicitly hiding the card
+leaves a pencil reveal button until it is reopened. The fixed dock always gates
+floating presentation off. Switching fixed/in-flow modes may remount the
+snippet, but its transcript-scoped state remains owned by
+`DefaultChatScreen.svelte` and its recovery store.
 
 The dock is a nonshrinking sibling of the transcript and caps unusually tall
 composer content with its own scroll area. It has no independent background
 fill: the chat column's text-screen overlay tints the transcript and composer
-uniformly. `floatingChatInput` remains accepted in persisted data only for
-compatibility and is not exposed as an Accessibility control.
+uniformly. Accessibility exposes both the baseline `fixedChatTextarea` placement
+and the default-on `floatingChatInput` companion for in-flow mode.
 
 `DefaultChatScreen.svelte` measures the rendered content column with
 `ResizeObserver`. The transcript, active composer surface, and overflow menu
 share that width across `chatScreenWidth`, viewport changes, and safe-area
 insets. In-flow menus are positioned inside the transcript containing block;
-dock-mode menus retain the column-root containing block. Normal and translated
-textareas clamp to a 44-pixel minimum.
+dock-mode menus retain the column-root containing block. Floating cards and
+menus use `--chat-content-fixed-inline-end`; its measurement accounts for custom
+`backdrop-filter`, which makes the chat root the containing block for fixed
+descendants. Normal and translated textareas clamp to a 44-pixel minimum, while
+the floating textarea is capped at `min(40dvh, 18rem)`.
 
 While a text editor is focused, `visualViewportCoordinator.ts` publishes only
 the visual viewport height to the app shell. The shell stays at page origin and
@@ -154,9 +161,14 @@ is never translated from `pageTop` or `offsetTop`. The dock therefore lands at
 the bottom of the keyboard-reduced shell. In-flow mode relies on the reverse
 transcript scroller staying at `scrollTop = 0` while its height contracts, so a
 focused composer at the content bottom also remains above the keyboard. If the
-user then scrolls toward history while the keyboard is open, the composer moves
-off-screen with the content by design. Viewport events are
-coalesced for 50 milliseconds and applied across paint boundaries, then
+user then scrolls toward history while the keyboard is open and floating input
+is enabled, the same composer becomes a floating card. Window-fixed cards add
+the difference between the layout viewport and
+`--risu-visual-viewport-height` to their bottom inset; the custom
+`backdrop-filter` containing-block case is already shell-relative and does not
+add that offset. The card and collapsed pencil therefore stay inside the
+keyboard-reduced shell. Viewport events are coalesced for 50 milliseconds and
+applied across paint boundaries, then
 revalidated 250 and 700 milliseconds after the last event so late iOS height
 settling converges. After each height application the coordinator invokes the
 document scroll guard, which pins root scroll to zero. The guard yields vertical

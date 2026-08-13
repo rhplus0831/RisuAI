@@ -23,6 +23,8 @@
     PinIcon,
     SparkleIcon,
     TriangleAlertIcon,
+    EyeOffIcon,
+    PencilLineIcon,
   } from '@lucide/svelte'
   import {
     selectedCharID,
@@ -223,9 +225,17 @@
   let toggleStickers: boolean = $state(false)
   let fileInput: string[] = $state([])
   let showNewMessageButton = $state(false)
+  let showFloatingInputButton = $state(false)
+  let floatingInputOpen = $state(false)
+  let floatingInputCollapsed = $state(false)
+  let floatingDraftShowsOriginal = $state(false)
+  let floatingInputButton: HTMLButtonElement | null = $state(null)
+  let chatScreenRoot: HTMLDivElement | null = $state(null)
   let chatScrollContainer: HTMLDivElement | null = $state(null)
+  let composerRow: HTMLDivElement | null = $state(null)
   let chatContentRenderedWidth: number | null = $state(null)
   let chatContentInlineEnd: number | null = $state(null)
+  let chatContentFixedInlineEnd: number | null = $state(null)
   let refreshChatContentGeometry = () => {}
   let chatsInstance: any = $state()
   let isScrollingToMessage = $state(false)
@@ -357,6 +367,21 @@
     if (!selectedId) return undefined
     return draftHooks.find((hook) => hook.id === selectedId)
   })
+  let floatingDraftConversionActive = $derived(
+    floatingInputOpen && Boolean(selectedDraftHook) && draftText.trim().length > 0,
+  )
+  let floatingDraftPreviewVisible = $derived(floatingDraftConversionActive && !floatingDraftShowsOriginal)
+  let floatingComposerValue = $derived(floatingDraftPreviewVisible ? draftText : messageInput)
+  let floatingDraftConversionWasActive = false
+
+  $effect(() => {
+    const active = floatingDraftConversionActive
+    if (!active || !floatingDraftConversionWasActive) {
+      floatingDraftShowsOriginal = false
+    }
+    floatingDraftConversionWasActive = active
+  })
+
   let showDraftArea = $derived(Boolean(selectedDraftHook || draftText.length > 0 || btwText.length > 0))
   let canContinueFromMenu = $derived(currentChat.length >= 2 && currentChat[currentChat.length - 1]?.role === 'char')
   let currentChatGenerationActivity = $derived(
@@ -570,6 +595,17 @@
     chatsInstance?.scrollToLatestMessage()
   }
 
+  function floatingInputEnabled(): boolean {
+    return getDatabase().floatingChatInput !== false && !getDatabase().fixedChatTextarea
+  }
+
+  function toggleFloatingDraftConversion(): void {
+    if (!floatingDraftConversionActive) return
+
+    floatingDraftShowsOriginal = !floatingDraftShowsOriginal
+    void tick().then(updateInputSize)
+  }
+
   function trackChatContentGeometry(node: HTMLElement, configuredWidth: number) {
     let currentConfiguredWidth = configuredWidth
 
@@ -580,8 +616,15 @@
 
       const renderedWidth = Math.min(Math.max(currentConfiguredWidth, 0), availableWidth)
       const inlineEnd = Math.max(0, (availableWidth - renderedWidth) / 2)
+      const contentRight = rect.left + node.clientLeft + availableWidth - inlineEnd
+      const fixedContainingRight = customStyle.includes('backdrop-filter')
+        ? (chatScreenRoot?.getBoundingClientRect().right ?? window.innerWidth)
+        : window.innerWidth
+      const fixedInlineEnd = Math.max(0, fixedContainingRight - contentRight)
+
       if (chatContentRenderedWidth !== renderedWidth) chatContentRenderedWidth = renderedWidth
       if (chatContentInlineEnd !== inlineEnd) chatContentInlineEnd = inlineEnd
+      if (chatContentFixedInlineEnd !== fixedInlineEnd) chatContentFixedInlineEnd = fixedInlineEnd
     }
 
     refreshChatContentGeometry = measure
@@ -607,6 +650,85 @@
         if (refreshChatContentGeometry === measure) refreshChatContentGeometry = () => {}
       },
     }
+  }
+
+  function updateFloatingInputForScroll(chatTarget: HTMLElement): void {
+    if (!floatingInputEnabled()) {
+      showFloatingInputButton = false
+      floatingInputOpen = false
+      floatingInputCollapsed = false
+      return
+    }
+
+    const distanceFromBottom = Math.max(0, -chatTarget.scrollTop)
+    if (distanceFromBottom <= 1) {
+      const wasFloating = floatingInputOpen
+      showFloatingInputButton = false
+      floatingInputOpen = false
+      if (wasFloating) openMenu = false
+      return
+    }
+
+    if (floatingInputOpen) return
+
+    const composerHeight = composerRow?.getBoundingClientRect().height ?? 0
+    const revealThreshold = Math.max(24, composerHeight / 2)
+    if (distanceFromBottom < revealThreshold) {
+      showFloatingInputButton = false
+      return
+    }
+
+    if (floatingInputCollapsed) {
+      showFloatingInputButton = true
+      return
+    }
+
+    void openFloatingInput(false)
+  }
+
+  async function openFloatingInput(focusInput = true): Promise<void> {
+    if (!floatingInputEnabled()) return
+
+    const scrollContainer = chatScrollContainer
+    const preservedScrollTop = scrollContainer?.scrollTop
+    refreshChatContentGeometry()
+    floatingInputCollapsed = false
+    floatingInputOpen = true
+    showFloatingInputButton = false
+    await tick()
+    if (!floatingInputOpen || scrollContainer !== chatScrollContainer) return
+
+    updateInputSize()
+    refreshChatContentGeometry()
+
+    if (preservedScrollTop !== undefined && scrollContainer) {
+      scrollContainer.scrollTop = preservedScrollTop
+    }
+    if (focusInput) inputEle?.focus({ preventScroll: true })
+  }
+
+  async function hideFloatingInput(): Promise<void> {
+    const preservedScrollTop = chatScrollContainer?.scrollTop
+    openMenu = false
+    floatingInputCollapsed = true
+    floatingInputOpen = false
+    showFloatingInputButton = true
+    await tick()
+
+    floatingInputButton?.focus({ preventScroll: true })
+    if (preservedScrollTop !== undefined && chatScrollContainer) {
+      chatScrollContainer.scrollTop = preservedScrollTop
+    }
+  }
+
+  async function goToBottomFromFloatingInput(): Promise<void> {
+    openMenu = false
+    floatingInputOpen = false
+    showFloatingInputButton = false
+    await tick()
+    scrollToBottom()
+    if (chatScrollContainer) chatScrollContainer.scrollTop = 0
+    inputEle?.focus({ preventScroll: true })
   }
 
   function getActiveTranscriptWindowIdentity(): string | null {
@@ -1102,12 +1224,23 @@
     activeTranscriptWindowConfiguredPages = configuredChatLoadPages
     transcriptWindowConfigurationRun += 1
     loadPages = configuredChatLoadPages
+    showFloatingInputButton = false
+    floatingInputOpen = false
+    floatingInputCollapsed = false
     openMenu = false
     untrack(() => restoreComposerDraft(nextIdentity))
 
     if (previousIdentity !== null) {
       resetTranscriptWindowForChatSwitch()
     }
+  })
+
+  $effect(() => {
+    if (floatingInputEnabled()) return
+
+    showFloatingInputButton = false
+    floatingInputOpen = false
+    floatingInputCollapsed = false
   })
 
   $effect(() => {
@@ -2081,8 +2214,10 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+  bind:this={chatScreenRoot}
   class="w-full h-full relative"
   style={customStyle}
+  data-default-chat-fixed-containing-block={customStyle.includes('backdrop-filter') ? 'chat-root' : 'viewport'}
   onclick={() => {
     closeChatMenu()
   }}>
@@ -2142,6 +2277,21 @@
         <span>{language.newMessage}</span>
       </button>
     {/if}
+  {/if}
+  {#if showFloatingInputButton && floatingInputEnabled() && !floatingInputOpen}
+    <button
+      bind:this={floatingInputButton}
+      type="button"
+      data-testid="floating-chat-input-button"
+      aria-label={language.openFloatingChatInput}
+      title={language.openFloatingChatInput}
+      class="floating-chat-input-button absolute bottom-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-blue-500 text-white shadow-lg transition-colors hover:bg-blue-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400"
+      style={`--chat-content-inline-end: ${chatContentInlineEnd ? chatContentInlineEnd - 8 : 16}px`}
+      onclick={() => void openFloatingInput()}>
+      <span class="relative flex h-6 w-6 items-center justify-center" aria-hidden="true">
+        <PencilLineIcon size={22} />
+      </span>
+    </button>
   {/if}
   {#if isScrollingToMessage}
     <div
@@ -2204,15 +2354,17 @@
     <div
       use:trackChatContentGeometry={getDatabase().chatScreenWidth ?? 900}
       class="relative flex h-full min-h-0 w-full flex-col-reverse"
-      style={`--chat-screen-width: ${getDatabase().chatScreenWidth ?? 900}px; --chat-content-rendered-width: ${chatContentRenderedWidth === null ? 'min(var(--chat-screen-width), 100%)' : `${chatContentRenderedWidth}px`}; --chat-content-inline-end: ${chatContentInlineEnd ?? 8}px`}
+      style={`--chat-screen-width: ${getDatabase().chatScreenWidth ?? 900}px; --chat-content-rendered-width: ${chatContentRenderedWidth === null ? 'min(var(--chat-screen-width), 100%)' : `${chatContentRenderedWidth}px`}; --chat-content-inline-end: ${chatContentInlineEnd ?? 8}px; --chat-content-fixed-inline-end: ${chatContentFixedInlineEnd ?? 16}px`}
       data-default-chat-screen-width>
       {#snippet composerSurface(docked: boolean)}
         <section
           class="flex w-full shrink-0 flex-col-reverse items-center"
           class:composer-dock={docked}
           class:composer-flow={!docked}
-          class:overflow-y-auto={docked}
-          class:overscroll-contain={docked}
+          class:floating-chat-composer={!docked && floatingInputOpen}
+          class:overflow-y-auto={docked || floatingInputOpen}
+          class:overscroll-contain={docked || floatingInputOpen}
+          data-floating-chat-input={!docked && floatingInputOpen ? 'true' : undefined}
           data-default-chat-composer-dock={docked ? '' : undefined}
           data-default-chat-composer-flow={docked ? undefined : ''}>
           {#if composerDraftPersistenceError}
@@ -2345,7 +2497,11 @@
               </button>
             </div>
           {/each}
-          <div class="chat-screen-content-width mt-2 mb-2 flex w-full items-stretch" data-default-chat-composer-row>
+          <div
+            bind:this={composerRow}
+            class="chat-screen-content-width mt-2 mb-2 flex w-full items-stretch"
+            style:z-index={floatingInputOpen ? 29 : undefined}
+            data-default-chat-composer-row>
             {#if getDatabase().useChatSticker}
               <button
                 type="button"
@@ -2365,22 +2521,32 @@
               aria-label={language.messageInput}
               class="peer text-input-area focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-transparent rounded-md rounded-r-none input-text text-xl grow border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full placeholder:text-sm"
               class:ml-4={getDatabase().useChatSticker}
-              bind:value={messageInput}
+              value={floatingComposerValue}
+              readonly={floatingDraftPreviewVisible}
               bind:this={inputEle}
               onkeydown={(e) => {
-                if (shouldSendFromComposerKeydown(e)) {
+                if (!floatingDraftPreviewVisible && shouldSendFromComposerKeydown(e)) {
                   send()
                   e.preventDefault()
                 }
-                if (e.key.toLocaleLowerCase() === 'm' && e.ctrlKey) {
+                if (!floatingDraftPreviewVisible && e.key.toLocaleLowerCase() === 'm' && e.ctrlKey) {
                   reroll()
                   e.preventDefault()
                 }
               }}
               onpaste={(e) => {
+                if (floatingDraftPreviewVisible) {
+                  e.preventDefault()
+                  return
+                }
                 void handleComposerPaste(e)
               }}
-              oninput={() => {
+              oninput={(e) => {
+                if (floatingDraftPreviewVisible) {
+                  e.currentTarget.value = draftText
+                  return
+                }
+                messageInput = e.currentTarget.value
                 markComposerDraftChanged('message')
                 updateInputSizeAll()
                 updateInputTransateMessage(false)
@@ -2421,6 +2587,18 @@
                 {:else if currentChatStopFailed}
                   <span class="whitespace-nowrap text-sm">{language.generationStop.retry}</span>
                 {/if}
+              </button>
+            {:else if floatingDraftConversionActive}
+              <button
+                type="button"
+                data-testid="default-chat-convert-button"
+                aria-label={language.inputHookConvert}
+                aria-pressed={floatingDraftShowsOriginal}
+                title={language.inputHookConvert}
+                onclick={toggleFloatingDraftConversion}
+                class="flex justify-center border-y border-darkborderc items-center text-textcolor p-3 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors"
+                style:height={inputHeight}>
+                <RefreshCcwIcon />
               </button>
             {:else}
               <button
@@ -2666,6 +2844,7 @@
           if (isAtBottom) {
             showNewMessageButton = false
           }
+          updateFloatingInputForScroll(chatTarget)
         }}>
         {#if !getDatabase().fixedChatTextarea}
           {@render composerSurface(false)}
@@ -2835,11 +3014,38 @@
           role="menu"
           tabindex="-1"
           aria-label={language.menu}
-          class="chat-overflow-menu absolute bottom-16 max-h-[calc(100dvh-5rem)] max-w-[calc(100vw-1rem)] overflow-y-auto overscroll-contain p-5 bg-darkbg flex flex-col gap-3 text-textcolor rounded-md"
+          class="chat-overflow-menu {floatingInputOpen
+            ? 'chat-overflow-menu-fixed fixed'
+            : 'absolute bottom-16'} max-h-[calc(100dvh-5rem)] max-w-[calc(100vw-1rem)] overflow-y-auto overscroll-contain p-5 bg-darkbg flex flex-col gap-3 text-textcolor rounded-md"
+          style:bottom={floatingInputOpen
+            ? `calc(var(--chat-visual-viewport-fixed-bottom-offset, 0px) + min(${inputHeight}, 40dvh, 18rem) + 2rem)`
+            : undefined}
           onkeydown={handleChatMenuKeydown}
           onclick={(e) => {
             e.stopPropagation()
           }}>
+          {#if floatingInputOpen}
+            <button
+              type="button"
+              role="menuitem"
+              data-default-chat-menu-item
+              data-testid="floating-chat-input-go-to-bottom"
+              class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors"
+              onclick={() => void goToBottomFromFloatingInput()}>
+              <ArrowDown />
+              <span class="ml-2">{language.goToBottom}</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              data-default-chat-menu-item
+              data-testid="floating-chat-input-hide"
+              class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors"
+              onclick={() => void hideFloatingInput()}>
+              <EyeOffIcon />
+              <span class="ml-2">{language.hideInput}</span>
+            </button>
+          {/if}
           <!-- svelte-ignore block_empty -->
           {#if getDatabase().characters[$selectedCharID].ttsMode && getDatabase().characters[$selectedCharID].ttsMode !== 'none'}
             <button
@@ -2871,7 +3077,7 @@
             role="menuitemcheckbox"
             aria-checked={currentChatRecord?.pinned === true}
             data-default-chat-menu-item
-            data-testid="default-chat-pin-button"
+            data-testid={floatingInputOpen ? 'floating-chat-pin-button' : 'default-chat-pin-button'}
             disabled={pinMutationPending}
             class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors disabled:cursor-not-allowed disabled:text-textcolor2"
             onclick={() => void toggleCurrentChatPin()}>
@@ -3046,14 +3252,60 @@
 {/if}
 
 <style>
+  [data-default-chat-fixed-containing-block] {
+    --chat-visual-viewport-fixed-bottom-offset: 0px;
+  }
+
+  /* iOS leaves the layout viewport tall while the app shell is clamped to the
+     visual viewport. Window-fixed descendants need the difference as a bottom
+     offset; custom backdrop-filter makes this chat root the fixed containing
+     block already, so that variant deliberately keeps a zero offset. */
+  :global(html[data-risu-visual-viewport-active='true']) [data-default-chat-fixed-containing-block='viewport'] {
+    --chat-visual-viewport-fixed-bottom-offset: max(0px, calc(100vh - var(--risu-visual-viewport-height)));
+  }
+
   .composer-dock {
     max-height: min(60%, 32rem);
     padding-bottom: env(safe-area-inset-bottom);
   }
 
+  .floating-chat-input-button {
+    right: max(var(--chat-content-inline-end, 1rem), env(safe-area-inset-right));
+    bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+
+  .floating-chat-composer {
+    position: fixed;
+    right: max(var(--chat-content-fixed-inline-end, 1rem), env(safe-area-inset-right));
+    bottom: calc(var(--chat-visual-viewport-fixed-bottom-offset, 0px) + max(1rem, env(safe-area-inset-bottom)));
+    width: min(var(--chat-content-rendered-width, var(--chat-screen-width, 900px)), calc(100vw - 2rem));
+    max-height: calc(100dvh - 2rem);
+    margin: 0;
+    padding: 0.5rem;
+    border: 1px solid var(--risu-theme-darkborderc);
+    border-radius: 0.75rem;
+    background: var(--risu-theme-bgcolor);
+    box-shadow: 0 1rem 2.5rem rgb(0 0 0 / 35%);
+    z-index: 50 !important;
+  }
+
   .chat-overflow-menu {
     right: max(var(--chat-content-inline-end, 0.5rem), env(safe-area-inset-right));
     z-index: 51;
+  }
+
+  .chat-overflow-menu-fixed {
+    right: max(var(--chat-content-fixed-inline-end, 1rem), env(safe-area-inset-right));
+  }
+
+  :global(html[data-risu-visual-viewport-active='true']) .floating-chat-composer,
+  :global(html[data-risu-visual-viewport-active='true']) .chat-overflow-menu-fixed {
+    max-height: calc(var(--risu-visual-viewport-height) - 2rem);
+  }
+
+  .floating-chat-composer textarea[data-testid='default-chat-composer'] {
+    max-height: min(40dvh, 18rem);
+    overflow-y: auto;
   }
 
   .chat-process-stage-1 {

@@ -416,7 +416,9 @@ test('core chat controls and blocking alerts remain accessible across responsive
   }
 })
 
-test('mobile in-flow composer stays above the keyboard at bottom and scrolls with the transcript', async ({ page }) => {
+test('mobile in-flow composer floats above the stable keyboard viewport and restores flow controls', async ({
+  page,
+}) => {
   const database = browserSmokeDatabase()
   database.inputHooks = [{ id: 'draft-smoke', name: 'Draft Smoke', prompt: '', type: 'draft' }]
   const character = (
@@ -561,27 +563,77 @@ test('mobile in-flow composer stays above the keyboard at bottom and scrolls wit
   expect(keyboardGeometry!.composerBottom).toBeLessThanOrEqual(keyboardGeometry!.transcriptBottom)
   expect(keyboardGeometry!.transcriptBottom - keyboardGeometry!.composerBottom).toBeLessThanOrEqual(16)
 
+  await composer.fill('Floating keyboard draft')
+
   await expect
     .poll(() =>
       transcript.evaluate((node) => {
         node.scrollTop = -Math.min(240, Math.max(0, node.scrollHeight - node.clientHeight))
+        node.dispatchEvent(new Event('scroll'))
         return node.scrollTop
       }),
     )
     .toBeLessThan(-40)
+  const floatingCard = page.locator('[data-floating-chat-input="true"]')
+  await expect(floatingCard).toBeVisible()
+  await expect(floatingCard).toHaveClass(/floating-chat-composer/)
   await expect(composer).toBeFocused()
+  await expect(composer).toHaveValue('Floating keyboard draft')
 
-  const scrolledGeometry = await page.evaluate(() => {
-    const composerElement = document.querySelector<HTMLElement>('[data-testid="default-chat-composer"]')
-    const transcriptElement = document.querySelector<HTMLElement>('[data-default-chat-transcript]')
-    if (!composerElement || !transcriptElement) return null
+  const floatingGeometry = await page.evaluate(() => {
+    const card = document.querySelector<HTMLElement>('[data-floating-chat-input="true"]')
+    const shell = document.querySelector<HTMLElement>('[data-risu-visual-viewport-shell]')
+    if (!card || !shell) return null
+    const cardRect = card.getBoundingClientRect()
+    const shellRect = shell.getBoundingClientRect()
     return {
-      composerTop: composerElement.getBoundingClientRect().top,
-      transcriptBottom: transcriptElement.getBoundingClientRect().bottom,
+      cardTop: cardRect.top,
+      cardBottom: cardRect.bottom,
+      shellTop: shellRect.top,
+      shellBottom: shellRect.bottom,
     }
   })
-  expect(scrolledGeometry).not.toBeNull()
-  expect(scrolledGeometry!.composerTop).toBeGreaterThanOrEqual(scrolledGeometry!.transcriptBottom)
+  expect(floatingGeometry).not.toBeNull()
+  expect(floatingGeometry!.cardTop).toBeGreaterThanOrEqual(floatingGeometry!.shellTop)
+  expect(floatingGeometry!.cardBottom).toBeLessThanOrEqual(floatingGeometry!.shellBottom)
+
+  await page.getByTestId('default-chat-menu-button').click()
+  await expect(page.getByTestId('floating-chat-input-go-to-bottom')).toBeVisible()
+  await expect(page.getByTestId('floating-chat-input-hide')).toBeVisible()
+  await expect(page.getByTestId('default-chat-overflow-menu')).toHaveClass(/chat-overflow-menu-fixed/)
+  const preservedScrollTop = await transcript.evaluate((node) => node.scrollTop)
+  await page.getByTestId('floating-chat-input-hide').click()
+
+  const floatingButton = page.getByTestId('floating-chat-input-button')
+  await expect(floatingCard).toHaveCount(0)
+  await expect(floatingButton).toBeVisible()
+  await expect(floatingButton).toBeFocused()
+  expect(await transcript.evaluate((node) => node.scrollTop)).toBe(preservedScrollTop)
+  const floatingButtonGeometry = await floatingButton.evaluate((button) => {
+    const shell = document.querySelector<HTMLElement>('[data-risu-visual-viewport-shell]')
+    if (!shell) return null
+    return {
+      buttonBottom: button.getBoundingClientRect().bottom,
+      shellBottom: shell.getBoundingClientRect().bottom,
+    }
+  })
+  expect(floatingButtonGeometry).not.toBeNull()
+  expect(floatingButtonGeometry!.buttonBottom).toBeLessThanOrEqual(floatingButtonGeometry!.shellBottom)
+
+  await floatingButton.click()
+  await expect(floatingCard).toBeVisible()
+  await expect(composer).toBeFocused()
+  await expect(composer).toHaveValue('Floating keyboard draft')
+  expect(await transcript.evaluate((node) => node.scrollTop)).toBe(preservedScrollTop)
+
+  await page.getByTestId('default-chat-menu-button').click()
+  await page.getByTestId('floating-chat-input-go-to-bottom').click()
+  await expect(floatingCard).toHaveCount(0)
+  await expect(floatingButton).toHaveCount(0)
+  await expect(transcript).toHaveJSProperty('scrollTop', 0)
+  await expect(transcript.locator('[data-default-chat-composer-flow]')).toHaveCount(1)
+  await expect(composer).toBeFocused()
+  await expect(composer).toHaveValue('Floating keyboard draft')
 })
 
 test('prompt presets and model profiles reorder from an immediate mobile touch drag', async ({ browser }) => {

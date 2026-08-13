@@ -352,13 +352,21 @@ describe('server-backed data-driven settings', () => {
     })
   })
 
-  it('exposes fixed composer positioning but not the retired floating input under Accessibility', () => {
+  it('exposes fixed and default-on floating composer positioning under Accessibility', () => {
     expect(accessibilitySettingsItems.find((candidate) => candidate.id === 'acc.fixedChatTextarea')).toMatchObject({
       type: 'check',
       labelKey: 'fixedChatTextarea',
       bindKey: 'fixedChatTextarea',
     })
-    expect(accessibilitySettingsItems.some((candidate) => candidate.id === 'acc.floatingChatInput')).toBe(false)
+    const floatingInput = accessibilitySettingsItems.find((candidate) => candidate.id === 'acc.floatingChatInput')
+    expect(floatingInput).toMatchObject({
+      type: 'check',
+      labelKey: 'floatingChatInput',
+      helpKey: 'floatingChatInput',
+      bindKey: 'floatingChatInput',
+    })
+    expect(floatingInput?.getValue?.({ floatingChatInput: undefined } as never)).toBe(true)
+    expect(floatingInput?.getValue?.({ floatingChatInput: false } as never)).toBe(false)
   })
 
   it('exposes the default-off global additional-parameters opt-in under Accessibility', () => {

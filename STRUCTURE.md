@@ -64,7 +64,7 @@ records past decisions and is not authoritative.
 
 | Path | Responsibility |
 | ---- | -------------- |
-| `index.html` -> `src/main.ts` | Requests resize-content keyboard behavior, installs height-only visual-viewport/root-scroll coordination and optional viewport diagnostics, mounts the application, starts `loadData()`, and removes the preloader. |
+| `index.html` -> `src/main.ts` | Requests resize-content keyboard behavior, installs height-only visual-viewport/root-scroll coordination used by docked, in-flow, and floating composer presentations, mounts the application, starts `loadData()`, and removes the preloader. |
 | `src/App.svelte` | Svelte application shell, top-level render routing, overlays, and selected-character visibility guard. |
 | `src/ts/bootstrap.ts` | Auth/writer bootstrap, recovery preparation, resource hydration/invalidation, plugin/runtime setup, and active-work reattachment. |
 | `public/service-worker.js` | Web Push display, notification-click navigation, and client messaging. |
