@@ -2,11 +2,7 @@
   "schemaVersion": 1,
   "replayCapCanonicalTerminal": {
     "healthy": true,
-    "retainedEventTypes": [
-      "replay_gap",
-      "info",
-      "done"
-    ],
+    "retainedEventTypes": ["replay_gap", "info", "done"],
     "clientStatus": "ok",
     "canonicalTerminalResult": "Canonical terminal reply.",
     "clientDisplayedResult": "Canonical terminal reply."
