@@ -15,7 +15,7 @@ records past decisions and is not authoritative.
 | Change Fastify composition, auth, route policy, workers, timers, or Web Push | [Backend Map](docs/structure/backend.md#route-family-index) |
 | Change SQLite, revisions, active-writer rules, command events, or command-event SSE | [Data And Events](docs/structure/data-and-events.md#resource-persistence-and-event-ordering) |
 | Change browser resources, hydration, caches, invalidation, or durable mutations | [Server Resources And Bridges](docs/structure/server-resources-and-bridges.md#hydration-workflows), then [Client Runtime](src/docs/client-runtime.md#server-resources-and-durable-mutations) |
-| Change reload-durable composer or module-editor draft recovery | [Client Runtime](src/docs/client-runtime.md#draft-recovery-stores), then [Svelte Chat UI](src/docs/svelte-chat-ui.md#composer-dock-and-mobile-viewport) |
+| Change reload-durable composer or module-editor draft recovery | [Client Runtime](src/docs/client-runtime.md#draft-recovery-stores), then [Svelte Chat UI](src/docs/svelte-chat-ui.md#composer-layout-modes-and-mobile-viewport) |
 | Change chat, transcript, message, composer, or generation UI | [Svelte Chat UI](src/docs/svelte-chat-ui.md#chat-surface-ownership) |
 | Change sidebars, routes, chat lists, character selection, or reordering UI | [Svelte Navigation UI](src/docs/svelte-navigation-ui.md#sidebar-and-route-ownership) |
 | Change settings routing, data-driven rows, authoring pages, or provider panels | [Svelte Settings UI](src/docs/svelte-settings-ui.md#shell-and-routed-pages) |

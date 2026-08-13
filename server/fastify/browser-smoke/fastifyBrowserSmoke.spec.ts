@@ -336,6 +336,10 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
 })
 
 test('core chat controls and blocking alerts remain accessible across responsive viewports', async ({ page }) => {
+  const database = browserSmokeDatabase()
+  database.fixedChatTextarea = true
+  await importDatabase(harness.app, browserSmokeAssertion, database)
+
   for (const viewport of [
     { name: 'desktop', width: 1280, height: 800 },
     { name: 'mobile', width: 390, height: 844 },
@@ -412,11 +416,20 @@ test('core chat controls and blocking alerts remain accessible across responsive
   }
 })
 
-test('mobile composer ignores transient keyboard viewport coordinates', async ({ page }) => {
+test('mobile in-flow composer stays above the keyboard at bottom and scrolls with the transcript', async ({ page }) => {
   const database = browserSmokeDatabase()
   database.inputHooks = [{ id: 'draft-smoke', name: 'Draft Smoke', prompt: '', type: 'draft' }]
-  const character = (database.characters as Array<{ chats: Array<Record<string, unknown>> }>)[0]
+  const character = (
+    database.characters as Array<{
+      chats: Array<Record<string, unknown> & { message?: Array<Record<string, unknown>> }>
+    }>
+  )[0]
   character.chats[0].selectedDraftHookId = 'draft-smoke'
+  character.chats[0].message = Array.from({ length: 24 }, (_, index) => ({
+    chatId: `keyboard-message-${index}`,
+    role: index % 2 === 0 ? 'user' : 'char',
+    data: `Keyboard viewport message ${index}: ${'scrollable transcript content '.repeat(12)}`,
+  }))
   await importDatabase(harness.app, browserSmokeAssertion, database)
 
   await page.setViewportSize({ width: 390, height: 844 })
@@ -457,14 +470,31 @@ test('mobile composer ignores transient keyboard viewport coordinates', async ({
   }
 
   const composer = page.getByTestId('default-chat-composer')
+  const transcript = page.locator('[data-default-chat-transcript]')
   await expect(page.getByTestId('default-chat-draft-input')).toBeVisible()
+  await expect(page.locator('.chat-message-container', { hasText: 'Keyboard viewport message 23:' })).toHaveCount(1)
+  await expect(page.locator('[data-default-chat-composer-dock]')).toHaveCount(0)
+  await expect(transcript.locator('[data-testid="default-chat-composer"]')).toHaveCount(1)
+  await expect
+    .poll(() =>
+      transcript.evaluate((node) => {
+        node.scrollTop = 0
+        const composerElement = node.querySelector<HTMLElement>('[data-testid="default-chat-composer"]')
+        if (!composerElement) return null
+        return {
+          composerBottom: composerElement.getBoundingClientRect().bottom,
+          scrollTop: node.scrollTop,
+          transcriptBottom: node.getBoundingClientRect().bottom,
+        }
+      }),
+    )
+    .toEqual(expect.objectContaining({ scrollTop: 0 }))
   await composer.focus()
   await expect(page.locator('html')).toHaveAttribute('data-risu-visual-viewport-active', 'true')
   await expect
     .poll(() => page.locator('html').evaluate((node) => node.style.getPropertyValue('--risu-visual-viewport-height')))
     .toBe('844px')
 
-  const initialComposerTop = await composer.evaluate((node) => node.getBoundingClientRect().top)
   await page.evaluate(() => {
     window.__RISU_SET_MOCK_VISUAL_VIEWPORT__?.({ event: 'resize', height: 80, offsetTop: 0, pageTop: 0 })
   })
@@ -479,9 +509,10 @@ test('mobile composer ignores transient keyboard viewport coordinates', async ({
       shifted: node.hasAttribute('data-risu-visual-viewport-shifted'),
     })),
   ).toEqual({ pageTop: '', shifted: false })
-  expect(
-    Math.abs((await composer.evaluate((node) => node.getBoundingClientRect().top)) - initialComposerTop),
-  ).toBeLessThan(1)
+
+  await transcript.evaluate((node) => {
+    node.scrollTop = 0
+  })
 
   await page.evaluate(() => {
     window.__RISU_SET_MOCK_VISUAL_VIEWPORT__?.({ height: 417, offsetTop: 380, pageTop: 380 })
@@ -501,15 +532,17 @@ test('mobile composer ignores transient keyboard viewport coordinates', async ({
 
   const keyboardGeometry = await page.evaluate(() => {
     const composerElement = document.querySelector<HTMLElement>('[data-testid="default-chat-composer"]')
-    const dock = document.querySelector<HTMLElement>('[data-default-chat-composer-dock]')
+    const transcriptElement = document.querySelector<HTMLElement>('[data-default-chat-transcript]')
     const shell = document.querySelector<HTMLElement>('[data-risu-visual-viewport-shell]')
-    if (!composerElement || !dock || !shell) return null
+    if (!composerElement || !transcriptElement || !shell) return null
     const composerRect = composerElement.getBoundingClientRect()
-    const dockRect = dock.getBoundingClientRect()
+    const transcriptRect = transcriptElement.getBoundingClientRect()
     const shellRect = shell.getBoundingClientRect()
     return {
       composerTop: composerRect.top,
-      dockBottom: dockRect.bottom,
+      composerBottom: composerRect.bottom,
+      transcriptBottom: transcriptRect.bottom,
+      transcriptScrollTop: transcriptElement.scrollTop,
       shellTop: shellRect.top,
       shellBottom: shellRect.bottom,
       shellHeight: shellRect.height,
@@ -523,7 +556,32 @@ test('mobile composer ignores transient keyboard viewport coordinates', async ({
   expect(Math.abs(keyboardGeometry!.shellBottom - 417)).toBeLessThanOrEqual(1)
   expect(keyboardGeometry!.shellTransform).toBe('none')
   expect(keyboardGeometry!.composerTop).toBeGreaterThan(keyboardGeometry!.shellMidpoint)
-  expect(Math.abs(keyboardGeometry!.dockBottom - keyboardGeometry!.shellBottom)).toBeLessThanOrEqual(1)
+  expect(Math.abs(keyboardGeometry!.transcriptBottom - keyboardGeometry!.shellBottom)).toBeLessThanOrEqual(1)
+  expect(keyboardGeometry!.transcriptScrollTop).toBe(0)
+  expect(keyboardGeometry!.composerBottom).toBeLessThanOrEqual(keyboardGeometry!.transcriptBottom)
+  expect(keyboardGeometry!.transcriptBottom - keyboardGeometry!.composerBottom).toBeLessThanOrEqual(16)
+
+  await expect
+    .poll(() =>
+      transcript.evaluate((node) => {
+        node.scrollTop = -Math.min(240, Math.max(0, node.scrollHeight - node.clientHeight))
+        return node.scrollTop
+      }),
+    )
+    .toBeLessThan(-40)
+  await expect(composer).toBeFocused()
+
+  const scrolledGeometry = await page.evaluate(() => {
+    const composerElement = document.querySelector<HTMLElement>('[data-testid="default-chat-composer"]')
+    const transcriptElement = document.querySelector<HTMLElement>('[data-default-chat-transcript]')
+    if (!composerElement || !transcriptElement) return null
+    return {
+      composerTop: composerElement.getBoundingClientRect().top,
+      transcriptBottom: transcriptElement.getBoundingClientRect().bottom,
+    }
+  })
+  expect(scrolledGeometry).not.toBeNull()
+  expect(scrolledGeometry!.composerTop).toBeGreaterThanOrEqual(scrolledGeometry!.transcriptBottom)
 })
 
 test('prompt presets and model profiles reorder from an immediate mobile touch drag', async ({ browser }) => {

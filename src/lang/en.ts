@@ -1410,7 +1410,7 @@ export const languageEnglish = {
   reducedMotion: 'Reduce Motion',
   hypaV3ProgressOpenChatOnly: 'Show Full Memory Progress for Open Chat Only',
   sendWithEnter: 'Send with Enter Key',
-  fixedChatTextarea: 'Fixed at the bottom of the chat window(When unchecked, Shift + Enter changes to send a message.)',
+  fixedChatTextarea: 'Fixed at the bottom of the chat window',
   floatingChatInput: 'Floating Chat Input',
   openFloatingChatInput: 'Open floating chat input',
   goToBottom: 'Go to bottom',

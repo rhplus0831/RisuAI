@@ -227,10 +227,10 @@ durable custom scheme are documented in
 `chatScreenWidth` becomes `--chat-screen-width` and constrains transcript and
 composer content without changing the outer shell. `DefaultChatScreen.svelte`
 also publishes `--chat-content-rendered-width` and
-`--chat-content-inline-end` for the dock and menu. Ordinary content-width rows
-use `chat-screen-content-width`. Preserve those contracts; hard-coded viewport
-offsets drift with narrow content. Chat geometry belongs to
-[Chat UI](svelte-chat-ui.md#composer-dock-and-mobile-viewport).
+`--chat-content-inline-end` for either composer mode and its menu. Ordinary
+content-width rows use `chat-screen-content-width`. Preserve those contracts;
+hard-coded viewport offsets drift with narrow content. Chat geometry belongs to
+[Chat UI](svelte-chat-ui.md#composer-layout-modes-and-mobile-viewport).
 
 Reduced Motion is a durable Accessibility setting, not an operating-system
 media-query preference. Bootstrap and settings effects call
@@ -250,7 +250,10 @@ calls the sanctioned guard reset after the style frame and the guard enforces
 root `scrollTop = 0` again. Only the focused pre-adjustment window yields
 vertical ownership; horizontal drift is always reset. `index.html` also requests
 `interactive-widget=resizes-content` so supporting Android browsers resize the
-layout viewport themselves.
+layout viewport themselves. Composer layout stays component-owned: dock mode is
+an outer flex sibling, while the default in-flow mode remains the first item in
+the reverse transcript scroller and stays bottom-pinned when that shell height
+contracts.
 
 The passive `viewportDebugOverlay.ts` is lazy-loaded only when
 `?risuViewportDebug=1` is present or local storage contains

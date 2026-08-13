@@ -855,6 +855,12 @@ describe('DefaultChatScreen accepted-send recovery projection', () => {
     expect(target.textContent).toContain('acceptedSendAbandoned')
     expect(target.textContent).toContain('acceptedSendProviderMayHaveRun')
     expect(target.querySelectorAll('[data-testid="accepted-send-retry"]')).toHaveLength(2)
+    const flow = target.querySelector<HTMLElement>('[data-default-chat-composer-flow]')!
+    expect(
+      [...target.querySelectorAll('[data-testid="accepted-send-recovery"]')].every((recovery) =>
+        flow.contains(recovery),
+      ),
+    ).toBe(true)
   })
 })
 
@@ -885,6 +891,7 @@ describe('DefaultChatScreen overflow menu accessibility', () => {
     expect(menu?.className).toContain('max-w-[calc(100vw-1rem)]')
     expect(menu?.classList).toContain('chat-overflow-menu')
     expect(menu?.classList).not.toContain('chat-overflow-menu-fixed')
+    expect(target.querySelector('[data-default-chat-transcript]')?.contains(menu)).toBe(true)
 
     const items = Array.from(menu!.querySelectorAll<HTMLButtonElement>('[data-default-chat-menu-item]'))
     expect(items.length).toBeGreaterThan(0)
@@ -994,7 +1001,7 @@ describe('DefaultChatScreen floating action accessibility', () => {
     expect(newMessageButton.title).toBe('newMessage')
   })
 
-  it('keeps the docked composer outside the transcript while preserving drafts across transcript scrolling', async () => {
+  it('keeps the default composer in transcript flow while preserving drafts across transcript scrolling', async () => {
     seedDatabase([2])
     const hook = { id: 'draft-hook', name: 'Draft Hook', type: 'draft' as const, prompt: 'prompt' }
     getResourceDatabase().inputHooks = [hook]
@@ -1004,7 +1011,7 @@ describe('DefaultChatScreen floating action accessibility', () => {
     await waitFor(() => expect(target.querySelector('[data-testid="default-chat-draft-input"]')).toBeTruthy())
     const composer = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
     const draft = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-draft-input"]')!
-    const dock = target.querySelector<HTMLElement>('[data-default-chat-composer-dock]')!
+    const flow = target.querySelector<HTMLElement>('[data-default-chat-composer-flow]')!
     const transcript = target.querySelector<HTMLElement>('[data-default-chat-transcript]')!
 
     composer.value = 'Original text'
@@ -1017,8 +1024,11 @@ describe('DefaultChatScreen floating action accessibility', () => {
     await settle()
 
     expect(transcript.scrollTop).toBe(-80)
-    expect(dock.contains(composer)).toBe(true)
-    expect(transcript.contains(composer)).toBe(false)
+    expect(flow.contains(composer)).toBe(true)
+    expect(transcript.contains(composer)).toBe(true)
+    expect(target.querySelector('[data-default-chat-composer-dock]')).toBeNull()
+    expect(composer.closest('[data-default-chat-composer-row]')?.classList).toContain('mt-2')
+    expect(composer.closest('[data-default-chat-composer-row]')?.classList).toContain('mb-2')
     expect(target.querySelector('[data-testid="floating-chat-input-button"]')).toBeNull()
     expect(target.querySelector('[data-testid="default-chat-send-button"]')).toBeTruthy()
     expect(composer.value).toBe('Original text')
@@ -1026,7 +1036,7 @@ describe('DefaultChatScreen floating action accessibility', () => {
     expect(draft.value).toBe('Reviewed Draft text')
   })
 
-  it('ignores legacy floating and fixed positioning values because the composer is always docked', async () => {
+  it('uses the external composer dock only when fixed positioning is enabled', async () => {
     seedDatabase([2])
     getResourceDatabase().fixedChatTextarea = true
     getResourceDatabase().floatingChatInput = false
@@ -1035,9 +1045,35 @@ describe('DefaultChatScreen floating action accessibility', () => {
     await waitFor(() => expect(target.querySelector('[data-default-chat-composer-dock]')).toBeTruthy())
 
     const row = target.querySelector<HTMLElement>('[data-default-chat-composer-row]')!
+    const screen = target.querySelector<HTMLElement>('[data-default-chat-screen-width]')!
+    const dock = target.querySelector<HTMLElement>('[data-default-chat-composer-dock]')!
+    const transcript = target.querySelector<HTMLElement>('[data-default-chat-transcript]')!
     expect(row.classList).not.toContain('sticky')
     expect(row.classList).not.toContain('fixed')
+    expect(dock.parentElement).toBe(screen)
+    expect(transcript.contains(row)).toBe(false)
+    expect(target.querySelector('[data-default-chat-composer-flow]')).toBeNull()
     expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-menu-button"]')!.click()
+    await settle()
+
+    const menu = target.querySelector<HTMLElement>('[data-testid="default-chat-overflow-menu"]')!
+    expect(menu.parentElement).toBe(screen)
+    expect(menu.classList).toContain('absolute')
+  })
+
+  it('treats an undefined fixed composer preference as in-flow mode', async () => {
+    seedDatabase([2])
+    delete (getResourceDatabase() as Partial<Database>).fixedChatTextarea
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-default-chat-composer-flow]')).toBeTruthy())
+
+    const transcript = target.querySelector<HTMLElement>('[data-default-chat-transcript]')!
+    const composer = target.querySelector<HTMLElement>('[data-testid="default-chat-composer"]')!
+    expect(transcript.contains(composer)).toBe(true)
+    expect(target.querySelector('[data-default-chat-composer-dock]')).toBeNull()
   })
 
   it('names attachment removal for the selected attachment', async () => {
@@ -1137,6 +1173,7 @@ describe('DefaultChatScreen content width', () => {
   it('centers the transcript and composer in one reactively sized fixed-width column', async () => {
     seedDatabase([1])
     getResourceDatabase().chatScreenWidth = 500
+    getResourceDatabase().fixedChatTextarea = true
     mountScreen()
 
     await waitFor(() => {

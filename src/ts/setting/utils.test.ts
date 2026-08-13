@@ -352,8 +352,12 @@ describe('server-backed data-driven settings', () => {
     })
   })
 
-  it('does not expose retired composer-position settings under Accessibility', () => {
-    expect(accessibilitySettingsItems.some((candidate) => candidate.id === 'acc.fixedChatTextarea')).toBe(false)
+  it('exposes fixed composer positioning but not the retired floating input under Accessibility', () => {
+    expect(accessibilitySettingsItems.find((candidate) => candidate.id === 'acc.fixedChatTextarea')).toMatchObject({
+      type: 'check',
+      labelKey: 'fixedChatTextarea',
+      bindKey: 'fixedChatTextarea',
+    })
     expect(accessibilitySettingsItems.some((candidate) => candidate.id === 'acc.floatingChatInput')).toBe(false)
   })
 

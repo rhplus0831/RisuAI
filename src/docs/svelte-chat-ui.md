@@ -116,7 +116,7 @@ match-selection, delete-confirmation, and failure dialogs share the modal focus
 and backdrop actions; stale target guards prevent a result from applying after
 the active message changes.
 
-## Composer Dock And Mobile Viewport
+## Composer Layout Modes And Mobile Viewport
 
 The composer owns five reload-recoverable fields: message, translated message,
 attached files, reviewed Draft output, and BTW output.
@@ -125,25 +125,37 @@ lineage/writer-scoped `sessionStorage`. Only an accepted save for the exact
 draft generation clears recovery. The complete storage contract is in
 [Client Runtime](client-runtime.md#draft-recovery-stores).
 
-The composer is a persistent dock outside the reverse transcript scroller.
-Scrolling, paging, deep jumps, and auto-scroll continue to operate on the
-transcript container, so they cannot move or reparent the composer. Draft-hook
-output, BTW output, translation, attachments, stickers, suggestions, and
-generation controls remain in the dock and keep their transcript-scoped state.
+One Svelte snippet owns the composer row, draft-persistence and generation
+recovery banners, Draft/BTW output, translation, attachments, stickers,
+suggestions, and generation controls. `fixedChatTextarea` chooses where that
+surface renders. A true value renders the snippet in the persistent dock outside
+the reverse transcript scroller. A false or missing value renders it as the
+first child of that scroller, which places it at the content bottom in normal
+flow; scrolling toward older messages moves the entire surface out of view.
+Switching modes may remount the snippet, but its transcript-scoped state remains
+owned by `DefaultChatScreen.svelte` and its recovery store.
 
-`fixedChatTextarea` and `floatingChatInput` remain accepted in persisted data
-for compatibility with older saves, but they no longer alter composer layout
-and are not exposed as Accessibility controls.
+The dock is a nonshrinking sibling of the transcript and caps unusually tall
+composer content with its own scroll area. It has no independent background
+fill: the chat column's text-screen overlay tints the transcript and composer
+uniformly. `floatingChatInput` remains accepted in persisted data only for
+compatibility and is not exposed as an Accessibility control.
 
 `DefaultChatScreen.svelte` measures the rendered content column with
-`ResizeObserver`. The transcript, composer dock, and overflow menu share that
-width across `chatScreenWidth`, viewport changes, and safe-area insets. Normal
-and translated textareas clamp to a 44-pixel minimum.
+`ResizeObserver`. The transcript, active composer surface, and overflow menu
+share that width across `chatScreenWidth`, viewport changes, and safe-area
+insets. In-flow menus are positioned inside the transcript containing block;
+dock-mode menus retain the column-root containing block. Normal and translated
+textareas clamp to a 44-pixel minimum.
 
 While a text editor is focused, `visualViewportCoordinator.ts` publishes only
 the visual viewport height to the app shell. The shell stays at page origin and
-is never translated from `pageTop` or `offsetTop`; the composer dock therefore
-lands at the bottom of the keyboard-reduced shell. Viewport events are
+is never translated from `pageTop` or `offsetTop`. The dock therefore lands at
+the bottom of the keyboard-reduced shell. In-flow mode relies on the reverse
+transcript scroller staying at `scrollTop = 0` while its height contracts, so a
+focused composer at the content bottom also remains above the keyboard. If the
+user then scrolls toward history while the keyboard is open, the composer moves
+off-screen with the content by design. Viewport events are
 coalesced for 50 milliseconds and applied across paint boundaries, then
 revalidated 250 and 700 milliseconds after the last event so late iOS height
 settling converges. After each height application the coordinator invokes the
