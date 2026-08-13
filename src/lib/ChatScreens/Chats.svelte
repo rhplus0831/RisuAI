@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
+  import { tick, untrack } from 'svelte'
   import { getDatabase, type character, type Message } from 'src/ts/storage/database.svelte'
   import Chat from './Chat.svelte'
   import { getCharImage } from 'src/ts/characters'
@@ -47,6 +47,7 @@
     userIcon,
     loadPages,
     userIconPortrait,
+    scrollContainer = null,
     isGenerationActive = false,
     generationStage = 0,
     hasNewUnreadMessage = $bindable(false),
@@ -62,12 +63,14 @@
     userIcon: string
     loadPages: number
     userIconPortrait?: boolean
+    scrollContainer?: HTMLDivElement | null
     isGenerationActive?: boolean
     generationStage?: number
     hasNewUnreadMessage?: boolean
   } = $props()
 
   let chatBody: HTMLDivElement
+  let latestMessageScrollSpacerHeight = $state(0)
   let activeHalfStreamingTokensPerSecond = $derived.by(() => {
     const currentChatId = getCurrentChatRoomId()
     const progress = $halfStreamingProgress.find(
@@ -139,29 +142,103 @@
   // unconditionally would leave the chat with no visible swipe controls.
   const dynaIconRowKey = $derived(chatRows.find((row) => !row.message.isComment)?.key ?? null)
 
+  function getLatestMessageElement(): HTMLElement | null {
+    return chatBody?.querySelector<HTMLElement>(':scope > .chat-message-container') ?? null
+  }
+
   function checkIfAtBottom() {
-    if (!chatBody || !chatBody.parentElement) return true
-    const sc = chatBody.parentElement
-    const lastEl = chatBody.firstElementChild
+    if (!scrollContainer) return true
+    const lastEl = getLatestMessageElement()
     if (!lastEl) return true
     const rect = lastEl.getBoundingClientRect()
-    const scRect = sc.getBoundingClientRect()
+    const scRect = scrollContainer.getBoundingClientRect()
     return rect.top <= scRect.bottom + 100
   }
 
-  export const scrollToLatestMessage = () => {
-    if (!chatBody) return
-    hasNewUnreadMessage = false
-    const element = chatBody.firstElementChild
-    if (element) {
-      scrollElementToContainerStart(element, chatBody.parentElement)
+  let latestMessageAlignmentRun = 0
+  let isAligningLatestMessage = false
+
+  async function alignLatestMessageToStart(chatRoomId: string, revalidateAfterLayout = true): Promise<void> {
+    const run = ++latestMessageAlignmentRun
+    isAligningLatestMessage = true
+    if (run !== latestMessageAlignmentRun || getCurrentChatRoomId() !== chatRoomId || !scrollContainer) {
+      if (run === latestMessageAlignmentRun) isAligningLatestMessage = false
+      return
     }
+
+    // Measure from the reverse scroller's bottom position. When the newest row
+    // is shorter than the available viewport, this spacer consumes only the
+    // otherwise unreachable distance needed to place the row at the top. The
+    // composer and other trailing surfaces remain visible when they already fit.
+    scrollContainer.scrollTop = 0
+    const latestMessage = getLatestMessageElement()
+    if (!latestMessage) {
+      isAligningLatestMessage = false
+      return
+    }
+
+    const messageTop = latestMessage.getBoundingClientRect().top
+    const scrollportTop = scrollContainer.getBoundingClientRect().top + scrollContainer.clientTop
+    const messageOffset = messageTop - scrollportTop
+    const requiredScrollSpace = Math.max(0, latestMessageScrollSpacerHeight + messageOffset)
+    if (Number.isFinite(requiredScrollSpace) && requiredScrollSpace !== latestMessageScrollSpacerHeight) {
+      latestMessageScrollSpacerHeight = requiredScrollSpace
+      await tick()
+    }
+
+    if (run !== latestMessageAlignmentRun || getCurrentChatRoomId() !== chatRoomId || !scrollContainer) {
+      if (run === latestMessageAlignmentRun) isAligningLatestMessage = false
+      return
+    }
+
+    const currentLatestMessage = getLatestMessageElement()
+    if (currentLatestMessage) {
+      scrollElementToContainerStart(currentLatestMessage, scrollContainer)
+    }
+
+    if (!revalidateAfterLayout) {
+      isAligningLatestMessage = false
+      return
+    }
+
+    // Composer textareas and parsed message content can finish measuring after
+    // the first render. Let the initial programmatic scroll event settle, then
+    // remeasure once without overriding any scroll the user performs meanwhile.
+    await new Promise<void>((resolve) => {
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve())
+      else setTimeout(resolve, 0)
+    })
+    if (run !== latestMessageAlignmentRun || getCurrentChatRoomId() !== chatRoomId) return
+
+    isAligningLatestMessage = false
+    await new Promise<void>((resolve) => setTimeout(resolve, 50))
+    if (run !== latestMessageAlignmentRun || getCurrentChatRoomId() !== chatRoomId) return
+
+    await alignLatestMessageToStart(chatRoomId, false)
+  }
+
+  export const scrollToLatestMessage = () => {
+    hasNewUnreadMessage = false
+    const chatRoomId = getCurrentChatRoomId()
+    if (chatRoomId) void alignLatestMessageToStart(chatRoomId)
+  }
+
+  export const cancelLatestMessageAlignment = () => {
+    pendingEntryChatRoomId = null
+    latestMessageAlignmentRun += 1
+    isAligningLatestMessage = false
+  }
+
+  export const handleTranscriptScroll = () => {
+    if (isAligningLatestMessage) return
+    cancelLatestMessageAlignment()
   }
 
   let previousLength = 0
   let previousChatRoomId: string | null = null
   let previousMessageIds: (string | null)[] = []
   let wasAtBottomBeforeUpdate = true
+  let pendingEntryChatRoomId: string | null = null
 
   $effect.pre(() => {
     chatRows
@@ -173,6 +250,9 @@
     const currentChatRoomId = getCurrentChatRoomId()
     const isSameChat = currentChatRoomId === previousChatRoomId
     if (didChatOwnerChange(previousChatRoomId, currentChatRoomId)) {
+      latestMessageAlignmentRun += 1
+      isAligningLatestMessage = false
+      pendingEntryChatRoomId = currentChatRoomId
       hasNewUnreadMessage = false
       replaceAutomaticTranslationMessageIds([])
     } else {
@@ -194,18 +274,24 @@
       ])
     }
 
+    // A chat can first render as a message-less hydration shell. Keep the
+    // entry alignment pending until its newest persisted row reaches the DOM.
+    if (currentChatRoomId && pendingEntryChatRoomId === currentChatRoomId && chatRows.length > 0 && scrollContainer) {
+      pendingEntryChatRoomId = null
+      void alignLatestMessageToStart(currentChatRoomId)
+    }
+
     // Only auto-scroll if it's the same chat and new messages were added
     if (isSameChat && messages.length > previousLength) {
       const lastMsg = messages[messages.length - 1]
       const database = getDatabase()
       if (lastMsg && lastMsg.role === 'char' && database.autoScrollToNewMessage) {
         if (wasAtBottomBeforeUpdate || database.alwaysScrollToNewMessage) {
-          const element = chatBody.firstElementChild
-          if (element) {
-            setTimeout(() => {
-              scrollElementToContainerStart(element, chatBody.parentElement)
-            }, 700)
-          }
+          setTimeout(() => {
+            if (getCurrentChatRoomId() === currentChatRoomId) {
+              void alignLatestMessageToStart(currentChatRoomId)
+            }
+          }, 700)
         } else {
           hasNewUnreadMessage = true
         }
@@ -218,6 +304,14 @@
 </script>
 
 <div class="chat-screen-content-width flex flex-col-reverse" bind:this={chatBody}>
+  {#if chatRows.length > 0}
+    <div
+      class="shrink-0"
+      data-latest-message-scroll-spacer
+      aria-hidden="true"
+      style={`height: ${latestMessageScrollSpacerHeight}px`}>
+    </div>
+  {/if}
   {#each chatRows as row (row.key)}
     <div class="chat-message-container" data-risu-dyna-icons={row.key === dynaIconRowKey ? 'true' : undefined}>
       <Chat

@@ -60,6 +60,11 @@ current. `DefaultChatScreen.loadPages.test.ts`, `src/ts/chatLoadPages.test.ts`,
 `src/ts/setting/advancedSettingsData.test.ts`, and
 `src/ts/server/chatMessageHydration.test.ts` guard this boundary.
 
+On chat entry, `Chats.svelte` waits for the newest persisted row to render and
+aligns that row's start with the transcript scrollport's start. A measured
+trailing spacer supplies only the reverse-scroll range needed for short newest
+rows; empty chats retain their ordinary greeting/composer layout.
+
 ## Message Rendering
 
 `Chat.svelte` owns each persisted row's controls and display state.

@@ -428,7 +428,10 @@ test('mobile in-flow composer opens from a button above the stable keyboard view
   character.chats[0].message = Array.from({ length: 24 }, (_, index) => ({
     chatId: `keyboard-message-${index}`,
     role: index % 2 === 0 ? 'user' : 'char',
-    data: `Keyboard viewport message ${index}: ${'scrollable transcript content '.repeat(12)}`,
+    data:
+      index === 23
+        ? 'Keyboard viewport message 23: newest short message'
+        : `Keyboard viewport message ${index}: ${'scrollable transcript content '.repeat(12)}`,
   }))
   await importDatabase(harness.app, browserSmokeAssertion, database)
 
@@ -471,8 +474,23 @@ test('mobile in-flow composer opens from a button above the stable keyboard view
 
   const composer = page.getByTestId('default-chat-composer')
   const transcript = page.locator('[data-default-chat-transcript]')
+  const latestMessage = page.locator('.chat-message-container', {
+    hasText: 'Keyboard viewport message 23: newest short message',
+  })
   await expect(page.getByTestId('default-chat-draft-input')).toBeVisible()
-  await expect(page.locator('.chat-message-container', { hasText: 'Keyboard viewport message 23:' })).toHaveCount(1)
+  await expect(latestMessage).toHaveCount(1)
+  await expect
+    .poll(() =>
+      latestMessage.evaluate((node) => {
+        const transcriptElement = document.querySelector<HTMLElement>('[data-default-chat-transcript]')
+        if (!transcriptElement) return Number.POSITIVE_INFINITY
+        return Math.abs(
+          node.getBoundingClientRect().top -
+            (transcriptElement.getBoundingClientRect().top + transcriptElement.clientTop),
+        )
+      }),
+    )
+    .toBeLessThanOrEqual(1)
   await expect(page.locator('[data-default-chat-composer-dock]')).toHaveCount(0)
   await expect(transcript.locator('[data-testid="default-chat-composer"]')).toHaveCount(1)
   await expect

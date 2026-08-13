@@ -712,7 +712,8 @@
     floatingInputOpen = false
     showFloatingInputButton = false
     await tick()
-    scrollToBottom()
+    chatsInstance?.cancelLatestMessageAlignment()
+    showNewMessageButton = false
     if (chatScrollContainer) chatScrollContainer.scrollTop = 0
     inputEle?.focus({ preventScroll: true })
   }
@@ -2810,6 +2811,7 @@
         class:fastify-chat-theme={getDatabase().theme === 'fastify'}
         data-default-chat-transcript
         onscroll={(e) => {
+          chatsInstance?.handleTranscriptScroll()
           //@ts-expect-error scrollHeight/clientHeight/scrollTop don't exist on EventTarget, but target is HTMLElement here
           const scrolled = e.target.scrollHeight - e.target.clientHeight + e.target.scrollTop
           if (
@@ -2904,6 +2906,7 @@
               bind:this={chatsInstance}
               messages={currentChat}
               {loadPages}
+              scrollContainer={chatScrollContainer}
               onReroll={reroll}
               {unReroll}
               onNewReroll={newReroll}
