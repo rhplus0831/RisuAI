@@ -416,9 +416,7 @@ test('core chat controls and blocking alerts remain accessible across responsive
   }
 })
 
-test('mobile in-flow composer floats above the stable keyboard viewport and restores flow controls', async ({
-  page,
-}) => {
+test('mobile in-flow composer opens from a button above the stable keyboard viewport', async ({ page }) => {
   const database = browserSmokeDatabase()
   database.inputHooks = [{ id: 'draft-smoke', name: 'Draft Smoke', prompt: '', type: 'draft' }]
   const character = (
@@ -575,6 +573,11 @@ test('mobile in-flow composer floats above the stable keyboard viewport and rest
     )
     .toBeLessThan(-40)
   const floatingCard = page.locator('[data-floating-chat-input="true"]')
+  const floatingButton = page.getByTestId('floating-chat-input-button')
+  await expect(floatingCard).toHaveCount(0)
+  await expect(floatingButton).toBeVisible()
+
+  await floatingButton.click()
   await expect(floatingCard).toBeVisible()
   await expect(floatingCard).toHaveClass(/floating-chat-composer/)
   await expect(composer).toBeFocused()
@@ -604,7 +607,6 @@ test('mobile in-flow composer floats above the stable keyboard viewport and rest
   const preservedScrollTop = await transcript.evaluate((node) => node.scrollTop)
   await page.getByTestId('floating-chat-input-hide').click()
 
-  const floatingButton = page.getByTestId('floating-chat-input-button')
   await expect(floatingCard).toHaveCount(0)
   await expect(floatingButton).toBeVisible()
   await expect(floatingButton).toBeFocused()

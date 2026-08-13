@@ -132,10 +132,11 @@ surface renders. A true value renders the snippet in the persistent dock outside
 the reverse transcript scroller. A false or missing value renders it as the
 first child of that scroller, which places it at the content bottom in normal
 flow. With `floatingChatInput` enabled (the default), scrolling far enough toward
-older messages temporarily restyles that same mounted surface as a fixed
-floating card; returning to the bottom restores flow. Explicitly hiding the card
-leaves a pencil reveal button until it is reopened. The fixed dock always gates
-floating presentation off. Switching fixed/in-flow modes may remount the
+older messages reveals a pencil button in the bottom-right. Activating the
+button temporarily restyles that same mounted surface as a fixed floating card;
+returning to the bottom restores flow, and explicitly hiding the card returns
+to the pencil button. The fixed dock always gates floating presentation off.
+Switching fixed/in-flow modes may remount the
 snippet, but its transcript-scoped state remains owned by
 `DefaultChatScreen.svelte` and its recovery store.
 
@@ -162,11 +163,12 @@ the bottom of the keyboard-reduced shell. In-flow mode relies on the reverse
 transcript scroller staying at `scrollTop = 0` while its height contracts, so a
 focused composer at the content bottom also remains above the keyboard. If the
 user then scrolls toward history while the keyboard is open and floating input
-is enabled, the same composer becomes a floating card. Window-fixed cards add
-the difference between the layout viewport and
+is enabled, the bottom-right pencil appears; activating it turns the same
+composer into a floating card. Window-fixed cards add the difference between
+the layout viewport and
 `--risu-visual-viewport-height` to their bottom inset; the custom
 `backdrop-filter` containing-block case is already shell-relative and does not
-add that offset. The card and collapsed pencil therefore stay inside the
+add that offset. The card and pencil button therefore stay inside the
 keyboard-reduced shell. Viewport events are coalesced for 50 milliseconds and
 applied across paint boundaries, then
 revalidated 250 and 700 milliseconds after the last event so late iOS height

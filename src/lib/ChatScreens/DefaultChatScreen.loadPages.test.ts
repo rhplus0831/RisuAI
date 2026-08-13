@@ -1001,7 +1001,7 @@ describe('DefaultChatScreen floating action accessibility', () => {
     expect(newMessageButton.title).toBe('newMessage')
   })
 
-  it('moves the same composer surface past the reveal threshold and returns it to flow at the bottom', async () => {
+  it('reveals the floating button past the threshold and moves the same composer after activation', async () => {
     seedDatabase([2])
     const hook = { id: 'draft-hook', name: 'Draft Hook', type: 'draft' as const, prompt: 'prompt' }
     getResourceDatabase().inputHooks = [hook]
@@ -1043,6 +1043,14 @@ describe('DefaultChatScreen floating action accessibility', () => {
     await settle()
 
     expect(transcript.scrollTop).toBe(-61)
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeNull()
+    const floatingButton = target.querySelector<HTMLButtonElement>('[data-testid="floating-chat-input-button"]')
+    expect(floatingButton).toBeTruthy()
+
+    floatingButton!.click()
+    await settle()
+
+    expect(transcript.scrollTop).toBe(-61)
     expect(target.querySelector('[data-floating-chat-input="true"]')).toBe(flow)
     expect(flow.classList).toContain('floating-chat-composer')
     expect(flow.contains(composer)).toBe(true)
@@ -1067,7 +1075,7 @@ describe('DefaultChatScreen floating action accessibility', () => {
     expect(draft.value).toBe('Reviewed Draft text')
   })
 
-  it('collapses to the pencil without changing scroll and reopens before going to the bottom', async () => {
+  it('opens from the pencil without changing scroll and returns to it when hidden', async () => {
     seedDatabase([2])
     mountScreen()
 
@@ -1081,6 +1089,16 @@ describe('DefaultChatScreen floating action accessibility', () => {
     transcript.dispatchEvent(new Event('scroll'))
     await settle()
 
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeNull()
+    const floatingButton = target.querySelector<HTMLButtonElement>('[data-testid="floating-chat-input-button"]')
+    expect(floatingButton).toBeTruthy()
+    expect(floatingButton?.getAttribute('aria-label')).toBe('openFloatingChatInput')
+    expect(floatingButton?.title).toBe('openFloatingChatInput')
+
+    floatingButton!.click()
+    await settle()
+
+    expect(transcript.scrollTop).toBe(-80)
     expect(target.querySelector('[data-floating-chat-input="true"]')).toBeTruthy()
     target.querySelector<HTMLButtonElement>('[data-testid="default-chat-menu-button"]')!.click()
     await settle()
@@ -1096,11 +1114,9 @@ describe('DefaultChatScreen floating action accessibility', () => {
 
     expect(transcript.scrollTop).toBe(-80)
     expect(target.querySelector('[data-floating-chat-input="true"]')).toBeNull()
-    const floatingButton = target.querySelector<HTMLButtonElement>('[data-testid="floating-chat-input-button"]')
-    expect(floatingButton).toBeTruthy()
-    expect(floatingButton?.getAttribute('aria-label')).toBe('openFloatingChatInput')
-    expect(floatingButton?.title).toBe('openFloatingChatInput')
-    expect(document.activeElement).toBe(floatingButton)
+    const reopenedFloatingButton = target.querySelector<HTMLButtonElement>('[data-testid="floating-chat-input-button"]')
+    expect(reopenedFloatingButton).toBeTruthy()
+    expect(document.activeElement).toBe(reopenedFloatingButton)
     expect(composer.value).toBe('unfinished draft')
 
     transcript.scrollTop = -120
@@ -1108,9 +1124,9 @@ describe('DefaultChatScreen floating action accessibility', () => {
     await settle()
 
     expect(target.querySelector('[data-floating-chat-input="true"]')).toBeNull()
-    expect(target.querySelector('[data-testid="floating-chat-input-button"]')).toBe(floatingButton)
+    expect(target.querySelector('[data-testid="floating-chat-input-button"]')).toBe(reopenedFloatingButton)
 
-    floatingButton!.click()
+    reopenedFloatingButton!.click()
     await settle()
 
     expect(transcript.scrollTop).toBe(-120)
@@ -1193,7 +1209,8 @@ describe('DefaultChatScreen floating action accessibility', () => {
     transcript.scrollTop = -80
     transcript.dispatchEvent(new Event('scroll'))
     await settle()
-    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeTruthy()
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeNull()
+    expect(target.querySelector('[data-testid="floating-chat-input-button"]')).toBeTruthy()
   })
 
   it('names attachment removal for the selected attachment', async () => {

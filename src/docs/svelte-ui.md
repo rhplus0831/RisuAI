@@ -254,10 +254,11 @@ vertical ownership; horizontal drift is always reset. `index.html` also requests
 layout viewport themselves. Composer layout stays component-owned: dock mode is
 an outer flex sibling, while the default in-flow mode remains the first item in
 the reverse transcript scroller and stays bottom-pinned when that shell height
-contracts. When default-on `floatingChatInput` promotes the in-flow surface to a
-fixed card, component CSS offsets window-fixed positioning by the layout/visual
-viewport height difference; the `backdrop-filter` containing-block variant is
-already relative to the clamped shell.
+contracts. When default-on `floatingChatInput` reveals its bottom-right button
+and the user opens the in-flow surface as a fixed card, component CSS offsets
+window-fixed positioning by the layout/visual viewport height difference; the
+`backdrop-filter` containing-block variant is already relative to the clamped
+shell.
 
 The passive `viewportDebugOverlay.ts` is lazy-loaded only when
 `?risuViewportDebug=1` is present or local storage contains

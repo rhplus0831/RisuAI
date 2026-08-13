@@ -227,7 +227,6 @@
   let showNewMessageButton = $state(false)
   let showFloatingInputButton = $state(false)
   let floatingInputOpen = $state(false)
-  let floatingInputCollapsed = $state(false)
   let floatingDraftShowsOriginal = $state(false)
   let floatingInputButton: HTMLButtonElement | null = $state(null)
   let chatScreenRoot: HTMLDivElement | null = $state(null)
@@ -656,7 +655,6 @@
     if (!floatingInputEnabled()) {
       showFloatingInputButton = false
       floatingInputOpen = false
-      floatingInputCollapsed = false
       return
     }
 
@@ -673,26 +671,15 @@
 
     const composerHeight = composerRow?.getBoundingClientRect().height ?? 0
     const revealThreshold = Math.max(24, composerHeight / 2)
-    if (distanceFromBottom < revealThreshold) {
-      showFloatingInputButton = false
-      return
-    }
-
-    if (floatingInputCollapsed) {
-      showFloatingInputButton = true
-      return
-    }
-
-    void openFloatingInput(false)
+    showFloatingInputButton = distanceFromBottom >= revealThreshold
   }
 
-  async function openFloatingInput(focusInput = true): Promise<void> {
+  async function openFloatingInput(): Promise<void> {
     if (!floatingInputEnabled()) return
 
     const scrollContainer = chatScrollContainer
     const preservedScrollTop = scrollContainer?.scrollTop
     refreshChatContentGeometry()
-    floatingInputCollapsed = false
     floatingInputOpen = true
     showFloatingInputButton = false
     await tick()
@@ -704,13 +691,12 @@
     if (preservedScrollTop !== undefined && scrollContainer) {
       scrollContainer.scrollTop = preservedScrollTop
     }
-    if (focusInput) inputEle?.focus({ preventScroll: true })
+    inputEle?.focus({ preventScroll: true })
   }
 
   async function hideFloatingInput(): Promise<void> {
     const preservedScrollTop = chatScrollContainer?.scrollTop
     openMenu = false
-    floatingInputCollapsed = true
     floatingInputOpen = false
     showFloatingInputButton = true
     await tick()
@@ -1226,7 +1212,6 @@
     loadPages = configuredChatLoadPages
     showFloatingInputButton = false
     floatingInputOpen = false
-    floatingInputCollapsed = false
     openMenu = false
     untrack(() => restoreComposerDraft(nextIdentity))
 
@@ -1240,7 +1225,6 @@
 
     showFloatingInputButton = false
     floatingInputOpen = false
-    floatingInputCollapsed = false
   })
 
   $effect(() => {
