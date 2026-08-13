@@ -2207,7 +2207,7 @@
       style={`--chat-screen-width: ${getDatabase().chatScreenWidth ?? 900}px; --chat-content-rendered-width: ${chatContentRenderedWidth === null ? 'min(var(--chat-screen-width), 100%)' : `${chatContentRenderedWidth}px`}; --chat-content-inline-end: ${chatContentInlineEnd ?? 8}px`}
       data-default-chat-screen-width>
       <section
-        class="composer-dock flex w-full shrink-0 flex-col-reverse items-center overflow-y-auto overscroll-contain bg-bgcolor/95"
+        class="composer-dock flex w-full shrink-0 flex-col-reverse items-center overflow-y-auto overscroll-contain"
         data-default-chat-composer-dock>
         {#if composerDraftPersistenceError}
           <div
