@@ -35,6 +35,11 @@ many contained bots are active. Route navigation remains available while those
 generations continue in the background. Exhausted observers take priority over
 the healthy spinner and use a warning treatment on pinned chats, character and
 collapsed-folder aggregates, and the exact row in `SideChatList.svelte`.
+Completed background replies add a session-scoped unread marker keyed by stable
+chat ID. The marker appears on chat rows and pinned chats and aggregates onto
+character avatars and collapsed character folders. Opening the chat or moving
+its transcript to the latest message clears it; warning and active-generation
+states take visual priority while they are present.
 
 On wide layouts `src/App.svelte` mounts the sidebar beside chat. On responsive
 layouts the app mounts it as a focus-trapped dialog when `sideBarStore` is open;

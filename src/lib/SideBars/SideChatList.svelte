@@ -69,6 +69,8 @@
   import { generationJobLifecycles } from 'src/ts/process/reattach'
   import { collectExhaustedGenerationChatIds } from './sidebarMultitasking'
   import GenerationIndicator from './GenerationIndicator.svelte'
+  import UnreadIndicator from './UnreadIndicator.svelte'
+  import { markChatRead, unreadChatIds } from 'src/ts/process/chatUnread.svelte'
 
   interface Props {
     chara: character
@@ -327,6 +329,7 @@
 
   function activateChatRow(index: number): void {
     if (editMode) return
+    markChatRead(chara.chats[index]?.id)
     selectChat(index)
     reloadGuiDisplay()
   }
@@ -1546,6 +1549,7 @@
                       data-risu-chat-reattach-warning={chat.id && reattachWarningChatIds.has(chat.id)
                         ? 'true'
                         : undefined}
+                      data-risu-chat-unread={chat.id && $unreadChatIds.has(chat.id) ? 'true' : undefined}
                       aria-busy={isChatStructurePending(chat.id)}
                       class="risu-chats relative flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
                       class:bg-selected={index === chara.chatPage}
@@ -1576,6 +1580,10 @@
                         <GenerationIndicator
                           state="warning"
                           label={language.generationReattachFailure.sidebarWarning(chat.name)}
+                          onActivate={() => activateChatRow(index)} />
+                      {:else if chat.id && $unreadChatIds.has(chat.id)}
+                        <UnreadIndicator
+                          label={`${language.newMessage}: ${chat.name}`}
                           onActivate={() => activateChatRow(index)} />
                       {/if}
                       <div class="ml-auto flex shrink-0 justify-end">
@@ -1679,6 +1687,7 @@
               data-risu-chat-selected={index === chara.chatPage ? 'true' : 'false'}
               data-risu-chat-mutation-status={structureMutationForTarget('chat', chat.id)?.status ?? ''}
               data-risu-chat-reattach-warning={chat.id && reattachWarningChatIds.has(chat.id) ? 'true' : undefined}
+              data-risu-chat-unread={chat.id && $unreadChatIds.has(chat.id) ? 'true' : undefined}
               aria-busy={isChatStructurePending(chat.id)}
               class="relative flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
               class:bg-selected={index === chara.chatPage}
@@ -1709,6 +1718,10 @@
                 <GenerationIndicator
                   state="warning"
                   label={language.generationReattachFailure.sidebarWarning(chat.name)}
+                  onActivate={() => activateChatRow(index)} />
+              {:else if chat.id && $unreadChatIds.has(chat.id)}
+                <UnreadIndicator
+                  label={`${language.newMessage}: ${chat.name}`}
                   onActivate={() => activateChatRow(index)} />
               {/if}
               <div class="ml-auto flex shrink-0 justify-end">

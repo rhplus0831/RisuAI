@@ -475,6 +475,8 @@ import type { Chat, ChatFolder, character } from 'src/ts/storage/database.svelte
 import { restoreChatRowMetadata } from 'src/ts/chatCommands'
 import { language } from 'src/lang'
 import { generationJobLifecycles } from 'src/ts/process/reattach'
+import { markChatUnread, resetChatUnreadForTests, unreadChatIds } from 'src/ts/process/chatUnread.svelte'
+import { get } from 'svelte/store'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -704,6 +706,7 @@ describe('SideChatList DOM contract harness', () => {
     sidebarMocks.resetCommandHarness()
     vi.clearAllMocks()
     generationJobLifecycles.set({})
+    resetChatUnreadForTests()
   })
 
   afterEach(() => {
@@ -717,6 +720,7 @@ describe('SideChatList DOM contract harness', () => {
     selectedCharID.set(-1)
     setDatabaseLite({} as never)
     generationJobLifecycles.set({})
+    resetChatUnreadForTests()
   })
 
   it('renders seeded root and folder chat rows with selected and folder selectors', async () => {
@@ -763,6 +767,32 @@ describe('SideChatList DOM contract harness', () => {
     expect(warning?.getAttribute('aria-label')).toBe('Connection lost: Foldered Chat')
     expect(rowByChatId('chat-root-a').dataset.risuChatReattachWarning).toBeUndefined()
     expect(rowByChatId('chat-root-a').querySelector('[data-risu-generation-indicator]')).toBeNull()
+  })
+
+  it('marks unread root and folder chats and clears the exact chat when it is opened', async () => {
+    seedSidebarDatabase()
+    markChatUnread('chat-foldered')
+    markChatUnread('chat-root-b')
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    const folderedRow = rowByChatId('chat-foldered')
+    const rootRow = rowByChatId('chat-root-b')
+    const folderedIndicator = folderedRow.querySelector<HTMLElement>('[data-risu-unread-indicator]')
+    expect(folderedRow.dataset.risuChatUnread).toBe('true')
+    expect(rootRow.dataset.risuChatUnread).toBe('true')
+    expect(folderedIndicator?.getAttribute('role')).toBe('status')
+    expect(folderedIndicator?.getAttribute('aria-label')).toBe(`${language.newMessage}: Foldered Chat`)
+    expect(rowByChatId('chat-root-a').dataset.risuChatUnread).toBeUndefined()
+    expect(rowByChatId('chat-root-a').querySelector('[data-risu-unread-indicator]')).toBeNull()
+
+    selectButtonForRow(rootRow).click()
+    await tick()
+
+    expect(get(unreadChatIds)).toEqual(new Set(['chat-foldered']))
+    expect(rootRow.dataset.risuChatUnread).toBeUndefined()
+    expect(rootRow.querySelector('[data-risu-unread-indicator]')).toBeNull()
   })
 
   it('renders a chat with an orphaned folder reference in the root list', async () => {

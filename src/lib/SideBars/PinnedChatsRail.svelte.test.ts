@@ -22,6 +22,7 @@ vi.mock('src/ts/router', async () => {
 import PinnedChatsRail from './PinnedChatsRail.svelte'
 import { currentRoute } from 'src/ts/router'
 import type { PinnedChatItem } from './sidebarMultitasking'
+import { language } from 'src/lang'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -151,5 +152,28 @@ describe('PinnedChatsRail current route', () => {
 
     warning!.click()
     expect(onOpen).toHaveBeenCalledWith(pinnedChats[0])
+  })
+
+  it('renders an accessible unread indicator for the exact pinned chat', async () => {
+    const onOpen = vi.fn()
+    component = mount(PinnedChatsRail, {
+      target,
+      props: {
+        items: pinnedChats,
+        generatingChatIds: new Set<string>(),
+        unreadChatIds: new Set(['chat-b']),
+        rounded: false,
+        onOpen,
+      },
+    })
+    await tick()
+
+    expect(pinnedRow('chat-a').querySelector('[data-risu-unread-indicator]')).toBeNull()
+    const indicator = pinnedRow('chat-b').querySelector<HTMLElement>('[data-risu-unread-indicator]')
+    expect(indicator?.getAttribute('role')).toBe('status')
+    expect(indicator?.getAttribute('aria-label')).toBe(`${language.newMessage}: Beta Chat`)
+
+    indicator!.click()
+    expect(onOpen).toHaveBeenCalledWith(pinnedChats[1])
   })
 })

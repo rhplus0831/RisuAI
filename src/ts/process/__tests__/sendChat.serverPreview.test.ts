@@ -117,6 +117,7 @@ import {
   preparePendingMutationOutbox,
   resetPendingMutationOutboxForTests,
 } from '../../server/pendingMutationOutbox'
+import { resetChatUnreadForTests, setVisibleChat, unreadChatIds } from '../chatUnread.svelte'
 
 const testDatabaseState = {
   get db() {
@@ -144,11 +145,13 @@ beforeEach(() => {
   alertState.confirmations = []
   alertState.confirmationResult = true
   contextCommandRevision = 1
+  resetChatUnreadForTests()
 })
 
 afterEach(() => {
   while (cleanups.length > 0) cleanups.pop()!()
   vi.unstubAllGlobals()
+  resetChatUnreadForTests()
 })
 
 function markActiveChatGenerationSettingsReady(): void {
@@ -1120,6 +1123,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
 
   it('plays the completion sound when a successful generation finishes after navigation', async () => {
     await seedEcho()
+    const backgroundChatId = testDatabaseState.db.characters[0].chats[0].id!
     setServerChatDispatchResult('background reply', {
       model: 'echo_model',
       generationId: 'uuid-background',
@@ -1155,6 +1159,26 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
 
     await expect(sendPromise).resolves.toBe(true)
     expect(messageCompletionSoundState.play).toHaveBeenCalledOnce()
+    expect(get(unreadChatIds)).toEqual(new Set([backgroundChatId]))
+  })
+
+  it('does not mark a completed reply unread while its chat is visible', async () => {
+    await seedEcho()
+    const character = testDatabaseState.db.characters[0]
+    const chatId = character.chats[0].id!
+    setVisibleChat(chatId)
+    setServerChatDispatchResult('visible reply', {
+      model: 'echo_model',
+      generationId: 'uuid-visible',
+      inputTokens: 7,
+      outputTokens: 50,
+      maxContext: 4000,
+    })
+    vi.stubGlobal('fetch', serverChatWithContextFetch)
+
+    await expect(chatModule.sendChat(-1)).resolves.toBe(true)
+
+    expect(get(unreadChatIds)).toEqual(new Set())
   })
 
   it('streams a server-dispatched send without receiving assembled prompt rows', async () => {

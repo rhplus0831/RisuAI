@@ -59,6 +59,7 @@ import {
   skippedGenerationEffect,
 } from './generationEffectLedger'
 import type { ServerGenerationEffectLedgerRef } from './request/serverChatEvents'
+import { isChatVisible, markChatUnread } from './chatUnread.svelte'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -667,6 +668,9 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
         : skippedGenerationEffect('not_configured'),
     )
     if (attachesDurableGeneration) reattachOutcome = { status: 'completed' }
+    if (!arg.preview && !arg.previewPrompt && generationTarget.chatId && !isChatVisible(generationTarget.chatId)) {
+      markChatUnread(generationTarget.chatId)
+    }
     return true
   } finally {
     if (ownsGenerationActivity && generationActivity) {

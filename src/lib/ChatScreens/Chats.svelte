@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick, untrack } from 'svelte'
+  import { onDestroy, tick, untrack } from 'svelte'
   import { getDatabase, type character, type Message } from 'src/ts/storage/database.svelte'
   import Chat from './Chat.svelte'
   import { getCharImage } from 'src/ts/characters'
@@ -26,6 +26,7 @@
   } from 'src/ts/process/generatedMessageTranslationEligibility'
   import { newlyAppendedMessageIds } from './newMessageTranslationEligibility'
   import type { ActiveChatTarget } from 'src/ts/chatCommands'
+  import { clearVisibleChat, markChatRead, markChatUnread, setVisibleChat } from 'src/ts/process/chatUnread.svelte'
 
   const getCurrentChatRoomId = () => {
     const charId = get(selectedCharID)
@@ -220,6 +221,7 @@
   export const scrollToLatestMessage = () => {
     hasNewUnreadMessage = false
     const chatRoomId = getCurrentChatRoomId()
+    markChatRead(chatRoomId)
     if (chatRoomId) void alignLatestMessageToStart(chatRoomId)
   }
 
@@ -239,6 +241,11 @@
   let previousMessageIds: (string | null)[] = []
   let wasAtBottomBeforeUpdate = true
   let pendingEntryChatRoomId: string | null = null
+  let visibleChatRoomId: string | null = null
+
+  onDestroy(() => {
+    clearVisibleChat(visibleChatRoomId)
+  })
 
   $effect.pre(() => {
     chatRows
@@ -250,10 +257,14 @@
     const currentChatRoomId = getCurrentChatRoomId()
     const isSameChat = currentChatRoomId === previousChatRoomId
     if (didChatOwnerChange(previousChatRoomId, currentChatRoomId)) {
+      clearVisibleChat(visibleChatRoomId)
+      setVisibleChat(currentChatRoomId)
+      visibleChatRoomId = currentChatRoomId
       latestMessageAlignmentRun += 1
       isAligningLatestMessage = false
       pendingEntryChatRoomId = currentChatRoomId
       hasNewUnreadMessage = false
+      markChatRead(currentChatRoomId)
       replaceAutomaticTranslationMessageIds([])
     } else {
       const residentMessageIds = new Set(messages.map((message) => message.chatId).filter((id): id is string => !!id))
@@ -294,6 +305,7 @@
           }, 700)
         } else {
           hasNewUnreadMessage = true
+          markChatUnread(currentChatRoomId)
         }
       }
     }

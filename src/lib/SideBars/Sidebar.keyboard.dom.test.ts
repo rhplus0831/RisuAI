@@ -74,6 +74,7 @@ import {
   beginChatGenerationActivity,
   resetChatGenerationActivitiesForTests,
 } from 'src/ts/process/generationActivity.svelte'
+import { markChatUnread, resetChatUnreadForTests } from 'src/ts/process/chatUnread.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -199,6 +200,7 @@ beforeEach(() => {
   DynamicGUI.set(false)
   botMakerMode.set(false)
   resetChatGenerationActivitiesForTests()
+  resetChatUnreadForTests()
   seedSidebarDatabase()
 })
 
@@ -212,6 +214,7 @@ afterEach(() => {
   selectedCharID.set(-1)
   setDatabaseLite({} as never)
   resetChatGenerationActivitiesForTests()
+  resetChatUnreadForTests()
 })
 
 describe('Sidebar character keyboard activation', () => {
@@ -388,6 +391,31 @@ describe('Sidebar generation indicator pointer activation', () => {
 
     expect(sidebarKeyboardMocks.navigate).toHaveBeenCalledTimes(1)
     expect(sidebarKeyboardMocks.navigate).toHaveBeenCalledWith('/character/char-a/chat-a')
+  })
+})
+
+describe('Sidebar unread indicator pointer activation', () => {
+  it('aggregates unread state onto the character and the exact pinned chat', async () => {
+    seedPinnedSidebarDatabase()
+    markChatUnread('chat-a')
+    component = mount(Sidebar, { target })
+    await tick()
+
+    const avatar = target.querySelector<HTMLElement>('[data-char-id="char-a"]')
+    const characterRow = avatar?.closest<HTMLElement>('[draggable="true"]')
+    const characterIndicator = characterRow?.querySelector<HTMLElement>('[data-risu-unread-indicator]')
+    const pinnedIndicator = target.querySelector<HTMLElement>(
+      '[data-risu-pinned-chat="chat-a"] [data-risu-unread-indicator]',
+    )
+    expect(characterIndicator?.getAttribute('title')).toBe(`${language.newMessage}: Alpha`)
+    expect(pinnedIndicator?.getAttribute('title')).toBe(`${language.newMessage}: Pinned Alpha`)
+
+    pinnedIndicator!.click()
+    await tick()
+
+    expect(sidebarKeyboardMocks.navigate).toHaveBeenCalledOnce()
+    expect(sidebarKeyboardMocks.navigate).toHaveBeenCalledWith('/character/char-a/chat-a')
+    expect(target.querySelector('[data-risu-unread-indicator]')).toBeNull()
   })
 })
 

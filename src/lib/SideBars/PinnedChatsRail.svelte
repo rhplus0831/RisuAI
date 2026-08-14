@@ -3,6 +3,7 @@
   import { getCharImage } from 'src/ts/characters'
   import { currentRoute } from 'src/ts/router'
   import GenerationIndicator from './GenerationIndicator.svelte'
+  import UnreadIndicator from './UnreadIndicator.svelte'
   import SidebarAvatar from './SidebarAvatar.svelte'
   import type { PinnedChatItem } from './sidebarMultitasking'
 
@@ -10,12 +11,21 @@
     items: readonly PinnedChatItem[]
     generatingChatIds: ReadonlySet<string>
     warningChatIds?: ReadonlySet<string>
+    unreadChatIds?: ReadonlySet<string>
     rounded: boolean
     onOpen: (item: PinnedChatItem) => void
     isInert?: boolean
   }
 
-  let { items, generatingChatIds, warningChatIds = new Set(), rounded, onOpen, isInert = false }: Props = $props()
+  let {
+    items,
+    generatingChatIds,
+    warningChatIds = new Set(),
+    unreadChatIds = new Set(),
+    rounded,
+    onOpen,
+    isInert = false,
+  }: Props = $props()
 </script>
 
 {#if items.length > 0}
@@ -53,6 +63,8 @@
           <GenerationIndicator
             label={`${language.generatingMessage}: ${item.chatName}`}
             onActivate={() => onOpen(item)} />
+        {:else if unreadChatIds.has(item.chatId)}
+          <UnreadIndicator label={`${language.newMessage}: ${item.chatName}`} onActivate={() => onOpen(item)} />
         {/if}
       </div>
     {/each}

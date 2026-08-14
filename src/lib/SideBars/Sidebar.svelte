@@ -76,6 +76,8 @@
   } from './sidebarMultitasking'
   import { activeChatGenerations } from 'src/ts/process/generationActivity.svelte'
   import { activeGenerationJobs, generationJobLifecycles } from 'src/ts/process/reattach'
+  import { markChatRead, unreadChatIds } from 'src/ts/process/chatUnread.svelte'
+  import UnreadIndicator from './UnreadIndicator.svelte'
   let sideBarMode = $state(0)
   let editMode = $state(false)
   let menuMode = $state(0)
@@ -396,6 +398,7 @@
   }
 
   function openPinnedChat(item: PinnedChatItem): void {
+    markChatRead(item.chatId)
     reseter()
     navigate(characterRoutePath(item.characterId, item.chatId))
   }
@@ -419,6 +422,14 @@
 
   function characterFolderHasReattachWarning(indexes: readonly number[]): boolean {
     return characterFolderHasGeneratingChat(indexes, getDatabase().characters, warningChatIds)
+  }
+
+  function characterHasUnreadChat(index: number): boolean {
+    return characterHasGeneratingChat(getDatabase().characters?.[index], $unreadChatIds)
+  }
+
+  function characterFolderHasUnreadChat(indexes: readonly number[]): boolean {
+    return characterFolderHasGeneratingChat(indexes, getDatabase().characters, $unreadChatIds)
   }
 
   function sidebarItemPosition(item: SidebarCharacterListItem): DragData | null {
@@ -626,6 +637,7 @@
       items={pinnedChats}
       {generatingChatIds}
       {warningChatIds}
+      unreadChatIds={$unreadChatIds}
       rounded={IconRounded}
       onOpen={openPinnedChat} />
   </div>
@@ -682,6 +694,7 @@
       items={pinnedChats}
       {generatingChatIds}
       {warningChatIds}
+      unreadChatIds={$unreadChatIds}
       rounded={IconRounded}
       onOpen={openNarrowPinnedChat}
       isInert={menuMode === 1} />
@@ -805,6 +818,16 @@
               onActivate={() => {
                 if (char.type === 'folder') void toggleCharacterFolder(char)
               }} />
+          {:else if char.type === 'normal' && characterHasUnreadChat(char.index)}
+            <UnreadIndicator
+              label={`${language.newMessage}: ${char.name}`}
+              onActivate={() => openCharacterRoute(char.index)} />
+          {:else if char.type === 'folder' && !openFolders.includes(char.id) && characterFolderHasUnreadChat(char.folder.map((item) => item.index))}
+            <UnreadIndicator
+              label={`${language.newMessage}: ${char.name}`}
+              onActivate={() => {
+                if (char.type === 'folder') void toggleCharacterFolder(char)
+              }} />
           {/if}
         </div>
         {#if char.type === 'folder' && openFolders.includes(char.id)}
@@ -878,6 +901,10 @@
                   {:else if characterIsGenerating(char2.index)}
                     <GenerationIndicator
                       label={`${language.generatingMessage}: ${char2.name}`}
+                      onActivate={() => openCharacterRoute(char2.index)} />
+                  {:else if characterHasUnreadChat(char2.index)}
+                    <UnreadIndicator
+                      label={`${language.newMessage}: ${char2.name}`}
                       onActivate={() => openCharacterRoute(char2.index)} />
                   {/if}
                 </div>
