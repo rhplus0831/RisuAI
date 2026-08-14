@@ -252,6 +252,13 @@ body {
   height: var(--risu-height-size);
 }
 
+/* Paint the document canvas explicitly: during mobile keyboard transitions
+   WebKit can briefly expose area outside the document, which otherwise renders
+   as the platform backdrop (pure black on iOS PWAs) instead of the theme. */
+html {
+  background-color: var(--risu-theme-bgcolor);
+}
+
 .chattext p {
   color: var(--FontColorStandard);
 }

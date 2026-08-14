@@ -518,9 +518,10 @@ test('mobile in-flow composer opens from a button above the stable keyboard view
   })
   await page.waitForTimeout(20)
 
+  await expect(page.locator('html')).not.toHaveAttribute('data-risu-visual-viewport-active')
   expect(
     await page.locator('html').evaluate((node) => node.style.getPropertyValue('--risu-visual-viewport-height')),
-  ).toBe('844px')
+  ).toBe('')
   expect(
     await page.locator('html').evaluate((node) => ({
       pageTop: node.style.getPropertyValue('--risu-visual-viewport-page-top'),
@@ -578,6 +579,42 @@ test('mobile in-flow composer opens from a button above the stable keyboard view
   expect(keyboardGeometry!.transcriptScrollTop).toBe(0)
   expect(keyboardGeometry!.composerBottom).toBeLessThanOrEqual(keyboardGeometry!.transcriptBottom)
   expect(keyboardGeometry!.transcriptBottom - keyboardGeometry!.composerBottom).toBeLessThanOrEqual(16)
+
+  expect(await page.evaluate(() => window.localStorage.getItem('risu-keyboard-viewport-height:portrait'))).toBe('417')
+  await composer.blur()
+  await page.waitForTimeout(725)
+  await expect(page.locator('html')).not.toHaveAttribute('data-risu-visual-viewport-active')
+  await page.evaluate(() => {
+    window.__RISU_SET_MOCK_VISUAL_VIEWPORT__?.({ height: 844, offsetTop: 0, pageTop: 0 })
+  })
+
+  const immediatePreLift = await composer.evaluate((node) => {
+    const scroller = document.scrollingElement
+    if (scroller) scroller.scrollTop = 267
+    node.focus()
+    const root = document.documentElement
+    return {
+      active: root.getAttribute('data-risu-visual-viewport-active'),
+      height: root.style.getPropertyValue('--risu-visual-viewport-height'),
+      scrollTop: scroller?.scrollTop ?? null,
+    }
+  })
+  expect(immediatePreLift).toEqual({ active: 'true', height: '417px', scrollTop: 0 })
+
+  const preLiftDuringMotion = await page.evaluate(() => {
+    window.__RISU_SET_MOCK_VISUAL_VIEWPORT__?.({ event: 'resize', height: 417, offsetTop: 380, pageTop: 380 })
+    const root = document.documentElement
+    return {
+      active: root.getAttribute('data-risu-visual-viewport-active'),
+      height: root.style.getPropertyValue('--risu-visual-viewport-height'),
+    }
+  })
+  expect(preLiftDuringMotion).toEqual({ active: 'true', height: '417px' })
+  await page.waitForTimeout(300)
+  await expect(page.locator('html')).toHaveAttribute('data-risu-visual-viewport-active', 'true')
+  await expect
+    .poll(() => page.locator('html').evaluate((node) => node.style.getPropertyValue('--risu-visual-viewport-height')))
+    .toBe('417px')
 
   await composer.fill('Floating keyboard draft')
 

@@ -11,9 +11,10 @@ import { isTextEntryElement, isVisualViewportAdjustmentActive } from './visualVi
  * position at the origin instead. Inner scroll containers are unaffected
  * because element scroll events do not bubble to the window.
  *
- * A focused text entry may retain browser reveal scroll only until the visual
- * viewport coordinator has applied its reduced shell height. Once active, the
- * input is visible at root scroll zero and vertical enforcement resumes.
+ * A cache-miss text entry may retain browser reveal scroll while the visual
+ * viewport coordinator's settle latch is inactive. A cached keyboard height
+ * activates the shell synchronously; otherwise enforcement resumes when the
+ * measured shell height settles.
  */
 export function installViewportScrollGuard(): void {
   window.addEventListener('scroll', resetViewportScroll)

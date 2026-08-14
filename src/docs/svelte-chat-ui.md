@@ -174,14 +174,25 @@ the layout viewport and
 `--risu-visual-viewport-height` to their bottom inset; the custom
 `backdrop-filter` containing-block case is already shell-relative and does not
 add that offset. The card and pencil button therefore stay inside the
-keyboard-reduced shell. Viewport events are coalesced for 50 milliseconds and
-applied across paint boundaries, then
-revalidated 250 and 700 milliseconds after the last event so late iOS height
-settling converges. After each height application the coordinator invokes the
-document scroll guard, which pins root scroll to zero. The guard yields vertical
-ownership only during the focused pre-adjustment window and resumes enforcement
-as soon as the reduced-height shell is active. Focusout still holds the height
-for 700 milliseconds before release.
+keyboard-reduced shell. After a focused viewport settles more than 100 pixels
+below the full window height, the coordinator caches that height in device-local
+storage under an orientation-specific portrait or landscape key. On a later
+focus with no current adjustment, a sane cached height is applied synchronously
+before the keyboard reveal and the document scroll guard is notified through
+the normal apply path. This pre-lift usually places the composer inside the
+future keyboard viewport before WebKit needs to pan it.
+
+Initial focus and every viewport geometry event also restart a 275-millisecond
+stability latch. A cache-miss session stays unclamped while geometry is moving;
+a pre-lifted session keeps its cached clamp active and uses motion only to
+restart the timer. The settled measurement then reconciles any cache drift and
+updates the cache when it still represents a real keyboard-sized reduction. A
+stale pre-lift used with a hardware keyboard is restored to the measured full
+height at this checkpoint. The coordinator then invokes the document scroll
+guard to pin root scroll to zero. A 700-millisecond trailing validation catches
+late iOS drift. Focusout continues to hold the last applied height for 700
+milliseconds before release, while keyboard-close events use the same stability
+debounce.
 
 `index.html` requests `interactive-widget=resizes-content`, allowing supporting
 Android browsers to reduce the layout viewport directly; iOS ignores the key

@@ -244,12 +244,22 @@ mount, preventing focus, `scrollIntoView`, custom CSS, or automation from moving
 the fixed shell. While a text editor is focused,
 `src/ts/gui/visualViewportCoordinator.ts` applies only
 `window.visualViewport.height` to the app shell; it never consumes page/offset
-coordinates and never transforms the focused editor's ancestors. A 50
-millisecond coalescing sample plus trailing 250 and 700 millisecond validations
-converges after late iOS height updates. Once a height is active, the coordinator
-calls the sanctioned guard reset after the style frame and the guard enforces
-root `scrollTop = 0` again. Only the focused pre-adjustment window yields
-vertical ownership; horizontal drift is always reset. `index.html` also requests
+coordinates and never transforms the focused editor's ancestors. A settled
+focused height whose full-window delta exceeds 100 pixels is cached under
+`risu-keyboard-viewport-height:portrait` or
+`risu-keyboard-viewport-height:landscape`. On a later focus with no current
+adjustment, a sane cached height is applied synchronously so the composer is
+already inside the expected keyboard viewport. Storage failures are ignored.
+
+Initial focus and viewport events still restart a 275-millisecond quiet-window
+latch. Geometry motion unlatches a cache-miss session so WebKit owns the reveal;
+a pre-lifted session remains clamped while the timer restarts. The settled pass
+reconciles the measured height and refreshes a real keyboard-height cache. It
+also restores the full measured height after a stale pre-lift with a hardware
+keyboard. Once settled, the coordinator calls the sanctioned guard reset after
+the style frame and the guard enforces root `scrollTop = 0` again. A trailing
+700-millisecond validation catches late coordinate drift. The focused settling
+window yields vertical ownership; horizontal drift is always reset. `index.html` also requests
 `interactive-widget=resizes-content` so supporting Android browsers resize the
 layout viewport themselves. Composer layout stays component-owned: dock mode is
 an outer flex sibling, while the default in-flow mode remains the first item in

@@ -45,7 +45,7 @@ describe('viewport scroll guard', () => {
     expect(inner.scrollTop).toBe(40)
   })
 
-  it('allows only pre-adjustment keyboard pan while a text editor is focused', () => {
+  it('allows keyboard pan while the focused editor settle latch is inactive', () => {
     installViewportScrollGuard()
     const textarea = document.createElement('textarea')
     document.body.append(textarea)
