@@ -84,6 +84,7 @@ import { LLMFlags, LLMFormat, LLMTokenizer } from '../model/types'
 import { changeLanguage, language as activeLanguage } from '../../lang'
 import { SETTINGS_BRIDGE_MUTATION_KEY } from '../server/settingsMutationKey'
 import { defaultColorScheme } from '../gui/colorscheme'
+import { MASKED_PROVIDER_SECRET } from '../providerSecretMask'
 
 interface CapturedFetch {
   url: string
@@ -1202,6 +1203,52 @@ describe('mergeServerResourceCharacterRow', () => {
 })
 
 describe('preset command rollback (L21)', () => {
+  it.each([
+    {
+      kind: 'model' as const,
+      presetId: 'model-a',
+      presetPath: '/model-presets/model-a',
+    },
+    {
+      kind: 'prompt' as const,
+      presetId: 'prompt-a',
+      presetPath: '/prompt-presets/prompt-a',
+    },
+  ])('preserves masked projected credentials when updating the selected $kind preset', async (testCase) => {
+    seedPresetDatabase({
+      providerCredentials: [
+        {
+          id: 'credential-api',
+          name: 'OpenAI',
+          type: 'apiKey',
+          apiKey: MASKED_PROVIDER_SECRET,
+        },
+      ],
+      modelPresets: [makePreset('model-a', 'Model A') as unknown as ModelPreset],
+      modelPresetsId: 0,
+      promptPresets: [makePreset('prompt-a', 'Prompt A') as unknown as PromptPreset],
+      promptPresetsId: 0,
+    })
+    setCachedServerCommandRevision(100)
+    const calls = stubSuccessfulSplitPresetCommands()
+
+    if (testCase.kind === 'model') updateModelPreset(0, { temperature: 22 })
+    else updatePromptPreset(0, { mainPrompt: 'edited prompt' })
+
+    expect(getDatabase().providerCredentials).toEqual([
+      {
+        id: 'credential-api',
+        name: 'OpenAI',
+        type: 'apiKey',
+        apiKey: MASKED_PROVIDER_SECRET,
+      },
+    ])
+
+    flushPendingSplitPresetPatch(testCase.kind, testCase.presetId)
+    await waitForPresetCommand(calls, testCase.presetPath)
+    expect(getDatabase().providerCredentials).toHaveLength(1)
+  })
+
   it('applies a prompt preset legacy regex alias when presetRegex is empty', async () => {
     const liveRegex = [{ id: 'live-regex', in: 'hi', out: 'LIVE', type: 'editinput' }]
     const selectedRegex = [{ id: 'selected-regex', in: 'hi', out: 'SELECTED', type: 'editinput' }]

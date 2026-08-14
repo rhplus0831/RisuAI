@@ -38,7 +38,11 @@ import {
   type ModelProfileRecordRuntimeOptions,
   type ModelRoleProfileMap,
 } from '../model/modelProfileRecords'
-import { normalizeProviderCredentials, type ProviderCredentialRecord } from '../model/providerCredentialRecords'
+import {
+  normalizeProjectedProviderCredentials,
+  normalizeProviderCredentials,
+  type ProviderCredentialRecord,
+} from '../model/providerCredentialRecords'
 import {
   normalizeAgentConfiguration,
   normalizeAgentPresetDefaultId,
@@ -231,8 +235,12 @@ function normalizeModelProfileSettings(
       'providerCredentials' | 'modelProfiles' | 'modelProfileOrder' | 'modelRoleProfiles' | 'modelRuntimeDefaults'
     >
   >,
+  providerCredentialSource: 'persisted' | 'projection' = 'persisted',
 ): void {
-  data.providerCredentials = normalizeProviderCredentials(data.providerCredentials)
+  data.providerCredentials =
+    providerCredentialSource === 'projection'
+      ? normalizeProjectedProviderCredentials(data.providerCredentials)
+      : normalizeProviderCredentials(data.providerCredentials)
   data.modelProfiles = normalizeModelProfiles(data.modelProfiles)
   data.modelProfileOrder = normalizeModelProfileOrder(data.modelProfileOrder, data.modelProfiles)
   data.modelRoleProfiles = normalizeModelRoleProfiles(data.modelRoleProfiles)
@@ -6702,7 +6710,7 @@ export function applyModelPresetFieldsToDatabase(db: Database, preset: ModelPres
   applySplitPresetFieldsToDatabase(db, preset, MODEL_PRESET_FIELDS, MODEL_PRESET_DATABASE_KEY_OVERRIDES)
   applyPromptPresetFieldsToDatabase(db, db.promptPresets?.[db.promptPresetsId])
   normalizeModelRoleSettings(db)
-  normalizeModelProfileSettings(db)
+  normalizeModelProfileSettings(db, 'projection')
   db.fallbackModels = normalizeLegacyFallbackModels(db.fallbackModels)
   normalizeSeperateParameters(db)
 }
@@ -6725,7 +6733,7 @@ export function applyPromptPresetFieldsToDatabase(db: Database, preset: PromptPr
     MODEL_PRESET_DATABASE_KEY_OVERRIDES,
   )
   normalizeModelRoleSettings(db)
-  normalizeModelProfileSettings(db)
+  normalizeModelProfileSettings(db, 'projection')
   db.fallbackModels = normalizeLegacyFallbackModels(db.fallbackModels)
   normalizeSeperateParameters(db)
 }
