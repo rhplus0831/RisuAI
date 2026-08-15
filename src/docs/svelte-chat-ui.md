@@ -65,9 +65,12 @@ aligns that row's start with the transcript scrollport's start. A measured
 trailing spacer supplies only the reverse-scroll range needed for short newest
 rows. While the transcript remains pinned to the newest content, a
 `ResizeObserver` remeasures that spacer as the newest row grows or shrinks so a
-streaming placeholder cannot leave stale blank space behind. Manual scrolling
-away from the newest content cancels that live alignment; empty chats retain
-their ordinary greeting/composer layout.
+previously aligned row cannot leave stale blank space behind. A newly appended
+empty assistant placeholder instead stays at the reverse scroller's natural
+end throughout that streaming turn, avoiding a delayed loading-indicator jump
+to the top; chat-entry and explicit new-message alignment remain available.
+Manual scrolling away from the newest content cancels live alignment; empty
+chats retain their ordinary greeting/composer layout.
 
 ## Message Rendering
 

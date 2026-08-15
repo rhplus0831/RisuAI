@@ -78,6 +78,7 @@
   let latestMessageResizeMeasureQueued = false
   let latestMessageResizeMeasureVersion = 0
   let latestMessageAlignmentPinned = false
+  let latestMessageNaturalEndKey: string | null = null
   let chatsComponentDestroyed = false
   let activeHalfStreamingTokensPerSecond = $derived.by(() => {
     const currentChatId = getCurrentChatRoomId()
@@ -154,6 +155,18 @@
     return chatBody?.querySelector<HTMLElement>(':scope > .chat-message-container') ?? null
   }
 
+  function getLatestMessageAlignmentKey(): string | null {
+    const chatRoomId = getCurrentChatRoomId()
+    const messageIndex = messages.length - 1
+    const message = messages[messageIndex]
+    if (!chatRoomId || !message) return null
+    return message.chatId ? `${chatRoomId}:id:${message.chatId}` : `${chatRoomId}:index:${messageIndex}`
+  }
+
+  function latestMessageUsesNaturalEnd(): boolean {
+    return latestMessageNaturalEndKey !== null && latestMessageNaturalEndKey === getLatestMessageAlignmentKey()
+  }
+
   function checkIfAtBottom() {
     if (!scrollContainer) return true
     const lastEl = getLatestMessageElement()
@@ -172,6 +185,7 @@
 
   function scheduleLatestMessageResizeMeasure(): void {
     if (latestMessageResizeMeasureQueued || chatsComponentDestroyed) return
+    if (latestMessageUsesNaturalEnd()) return
     if (!latestMessageAlignmentPinned && !transcriptIsAtLatestPosition()) return
 
     latestMessageResizeMeasureQueued = true
@@ -182,6 +196,7 @@
         chatsComponentDestroyed ||
         version !== latestMessageResizeMeasureVersion ||
         latestMessageResizeTarget !== getLatestMessageElement() ||
+        latestMessageUsesNaturalEnd() ||
         (!latestMessageAlignmentPinned && !transcriptIsAtLatestPosition())
       ) {
         return
@@ -208,8 +223,8 @@
     if (!target || typeof ResizeObserver === 'undefined') return
 
     // Streaming text and late parser/media layout can outlive the initial
-    // alignment revalidation. Follow only the newest row, and stop as soon as
-    // the user scrolls away from the latest position.
+    // alignment revalidation. Follow only a newest row that was deliberately
+    // aligned, and stop as soon as the user scrolls away from it.
     latestMessageResizeObserver = new ResizeObserver(() => {
       if (target !== latestMessageResizeTarget) return
       const nextHeight = target.getBoundingClientRect().height
@@ -222,6 +237,7 @@
   }
 
   async function alignLatestMessageToStart(chatRoomId: string, revalidateAfterLayout = true): Promise<void> {
+    if (latestMessageUsesNaturalEnd()) return
     const run = ++latestMessageAlignmentRun
     isAligningLatestMessage = true
     if (run !== latestMessageAlignmentRun || getCurrentChatRoomId() !== chatRoomId || !scrollContainer) {
@@ -285,7 +301,10 @@
     hasNewUnreadMessage = false
     const chatRoomId = getCurrentChatRoomId()
     markChatRead(chatRoomId)
-    if (chatRoomId) void alignLatestMessageToStart(chatRoomId)
+    if (chatRoomId) {
+      latestMessageNaturalEndKey = null
+      void alignLatestMessageToStart(chatRoomId)
+    }
   }
 
   export const cancelLatestMessageAlignment = () => {
@@ -298,7 +317,7 @@
   export const handleTranscriptScroll = () => {
     if (isAligningLatestMessage) return
     if (transcriptIsAtLatestPosition()) {
-      latestMessageAlignmentPinned = true
+      latestMessageAlignmentPinned = !latestMessageUsesNaturalEnd()
       return
     }
     cancelLatestMessageAlignment()
@@ -335,6 +354,7 @@
       latestMessageAlignmentRun += 1
       isAligningLatestMessage = false
       latestMessageAlignmentPinned = false
+      latestMessageNaturalEndKey = null
       pendingEntryChatRoomId = currentChatRoomId
       hasNewUnreadMessage = false
       markChatRead(currentChatRoomId)
@@ -369,14 +389,39 @@
     if (isSameChat && messages.length > previousLength) {
       const lastMsg = messages[messages.length - 1]
       const database = getDatabase()
-      if (lastMsg && lastMsg.role === 'char' && database.autoScrollToNewMessage) {
-        if (wasAtBottomBeforeUpdate || database.alwaysScrollToNewMessage) {
+      if (lastMsg && lastMsg.role === 'char') {
+        const latestMessageKey = getLatestMessageAlignmentKey()
+        const isAssistantPlaceholder = lastMsg.data === '' && latestMessageKey !== null
+        const shouldFollowLatest =
+          database.autoScrollToNewMessage && (wasAtBottomBeforeUpdate || database.alwaysScrollToNewMessage)
+
+        if (isAssistantPlaceholder) {
+          // A newly appended empty assistant row is the generation placeholder.
+          // Keep it at the reverse scroller's natural end instead of manufacturing
+          // enough trailing space to pull the loading indicator to the viewport top.
+          latestMessageNaturalEndKey = latestMessageKey
+          latestMessageAlignmentRun += 1
+          isAligningLatestMessage = false
+          latestMessageAlignmentPinned = false
+          latestMessageScrollSpacerHeight = 0
+          void tick().then(() => {
+            if (
+              shouldFollowLatest &&
+              getCurrentChatRoomId() === currentChatRoomId &&
+              getLatestMessageAlignmentKey() === latestMessageKey &&
+              scrollContainer
+            ) {
+              scrollContainer.scrollTop = 0
+            }
+          })
+        } else if (shouldFollowLatest) {
+          latestMessageNaturalEndKey = null
           setTimeout(() => {
-            if (getCurrentChatRoomId() === currentChatRoomId) {
+            if (getCurrentChatRoomId() === currentChatRoomId && getLatestMessageAlignmentKey() === latestMessageKey) {
               void alignLatestMessageToStart(currentChatRoomId)
             }
           }, 700)
-        } else {
+        } else if (database.autoScrollToNewMessage) {
           hasNewUnreadMessage = true
           markChatUnread(currentChatRoomId)
         }

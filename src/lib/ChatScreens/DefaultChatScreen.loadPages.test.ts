@@ -1259,6 +1259,99 @@ describe('DefaultChatScreen floating action accessibility', () => {
   })
 })
 
+describe('DefaultChatScreen latest-message alignment', () => {
+  it('keeps a newly appended empty assistant turn at the natural end while it starts streaming', async () => {
+    const resizeObservers: Array<{
+      callback: ResizeObserverCallback
+      observer: ResizeObserver
+      targets: Set<Element>
+    }> = []
+
+    class TestResizeObserver implements ResizeObserver {
+      readonly targets = new Set<Element>()
+      readonly record: (typeof resizeObservers)[number]
+
+      constructor(callback: ResizeObserverCallback) {
+        this.record = { callback, observer: this, targets: this.targets }
+        resizeObservers.push(this.record)
+      }
+
+      observe(target: Element) {
+        this.targets.add(target)
+      }
+
+      unobserve(target: Element) {
+        this.targets.delete(target)
+      }
+
+      disconnect() {
+        this.targets.clear()
+      }
+    }
+
+    vi.stubGlobal('ResizeObserver', TestResizeObserver)
+    seedDatabase([2])
+    getResourceDatabase().autoScrollToNewMessage = true
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('.chat-message-container')).toBeTruthy())
+    const transcript = target.querySelector<HTMLElement>('[data-default-chat-transcript]')!
+    transcript.getBoundingClientRect = () =>
+      ({
+        top: 0,
+        bottom: 600,
+        left: 0,
+        right: 600,
+        width: 600,
+        height: 600,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }) as DOMRect
+
+    getResourceDatabase().characters[0].chats[0].message.push({
+      chatId: 'streaming-placeholder-message',
+      role: 'char',
+      data: '',
+    })
+
+    await waitFor(() => {
+      expect(target.querySelectorAll('.chat-message-container')).toHaveLength(3)
+    })
+    const placeholderRow = target.querySelector<HTMLElement>('.chat-message-container')!
+    const spacer = target.querySelector<HTMLElement>('[data-latest-message-scroll-spacer]')!
+    let placeholderHeight = 80
+    placeholderRow.getBoundingClientRect = () =>
+      ({
+        top: 320,
+        bottom: 320 + placeholderHeight,
+        left: 0,
+        right: 600,
+        width: 600,
+        height: placeholderHeight,
+        x: 0,
+        y: 320,
+        toJSON: () => ({}),
+      }) as DOMRect
+
+    await new Promise((resolve) => setTimeout(resolve, 750))
+    await settle()
+    expect(spacer.style.height).toBe('0px')
+    expect(transcript.scrollTop).toBe(0)
+
+    getResourceDatabase().characters[0].chats[0].message[2].data = 'Partial streamed response'
+    await settle()
+    placeholderHeight = 180
+    const messageResizeObserver = resizeObservers.find(({ targets }) => targets.has(placeholderRow))
+    expect(messageResizeObserver).toBeTruthy()
+    messageResizeObserver!.callback([], messageResizeObserver!.observer)
+    await settle()
+
+    expect(spacer.style.height).toBe('0px')
+    expect(transcript.scrollTop).toBe(0)
+  })
+})
+
 describe('DefaultChatScreen dynamic icon anchor', () => {
   it('anchors the swipe controls on the newest row by default', async () => {
     seedDatabase([3])
