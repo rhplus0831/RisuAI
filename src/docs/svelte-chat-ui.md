@@ -131,6 +131,25 @@ match-selection, delete-confirmation, and failure dialogs share the modal focus
 and backdrop actions; stale target guards prevent a result from applying after
 the active message changes.
 
+Partial edits route to the text layer the touched block renders from
+("edit what you see"): the original message, the persisted raw translation in
+translated view, or either side of a bilingual pair
+(`src/lib/ChatScreens/partialEditLayer.ts` resolves the layer; bilingual pair
+wrappers and cross-side drag selections are rejected). Translation-layer saves
+persist through the same message-translation patch as the manual translation
+editor, and a result that trims to nothing removes the translation.
+Original-layer partial saves deliberately keep the persisted translation
+(unlike whole-message edit mode, which still nulls raw translations), so a
+line fix under translated or bilingual display never drops the translation.
+Freshness guards compare against the corresponding live layer text.
+
+On touch devices, a long-press on a block
+(`src/lib/ChatScreens/partialEditTouchTrigger.ts`, gated by the same
+block-partial-edit setting) reveals the hover edit/delete buttons, swallows
+the synthetic click that follows release, and suppresses native long-press
+text selection inside the message body while the gesture is active. Outside
+taps dismiss the buttons via a macrotask-attached listener.
+
 ## Composer Layout Modes And Mobile Viewport
 
 The composer owns five reload-recoverable fields: message, translated message,

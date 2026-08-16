@@ -1169,6 +1169,22 @@
     }
   }
 
+  // Returns null only when no scoped snapshot exists for the target; a null
+  // *dispatched* value still reports failure through the mutation observer.
+  function dispatchTranslationUpdate(
+    target: TranslationMessageTarget,
+    nextTranslation: MessageTranslation | null,
+  ): { dispatched: ReturnType<typeof dispatchUpdateMessageScoped> } | null {
+    const previous = translationScopedSnapshot(target)
+    if (!previous.chat) return null
+    applyLocalTranslation(target, nextTranslation)
+    const save = dispatchUpdateMessageScoped(target.messageId, { translation: nextTranslation }, previous, {
+      optimisticPatchAlreadyApplied: true,
+    })
+    observeMessageMutation(save)
+    return { dispatched: save }
+  }
+
   async function saveServerTranslationEdit() {
     const target = editTranslationTarget ?? captureTranslationMessageTarget()
     const existing = target
@@ -1187,16 +1203,11 @@
       text: editTranslationText,
       updatedAt: Date.now(),
     }
-    const previous = translationScopedSnapshot(target)
-    if (!previous.chat) return
-    applyLocalTranslation(target, nextTranslation)
+    const outcome = dispatchTranslationUpdate(target, nextTranslation)
+    if (!outcome) return
     editTranslationMode = false
     editTranslationTarget = null
-    const save = dispatchUpdateMessageScoped(target.messageId, { translation: nextTranslation }, previous, {
-      optimisticPatchAlreadyApplied: true,
-    })
-    observeMessageMutation(save)
-    const result = await save
+    const result = await outcome.dispatched
     if (saveOperation !== translationEditOperation) return
     if (result && !isSameTranslation(findLiveMessageByTarget(target)?.translation, nextTranslation)) {
       if (isRenderingTranslationMessageTarget(target)) {
@@ -1204,6 +1215,28 @@
         editTranslationTarget = target
       }
     }
+  }
+
+  // Partial-edit save path for the translation layer. Mirrors the manual
+  // translation editor's persistence; a result that trims to nothing removes
+  // the translation instead of storing empty text.
+  function persistTranslationTextEdit(target: TranslationMessageTarget, nextText: string): void {
+    const existing = liveRawTranslationForTarget(target)
+    if (!existing) return
+    translationEditOperation += 1
+    if (nextText === existing.text) return
+    const nextTranslation: MessageTranslation | null =
+      nextText.trim().length === 0
+        ? null
+        : {
+            ...existing,
+            text: nextText,
+            updatedAt: Date.now(),
+          }
+    // `translated` stays as-is: with the translation removed the display falls
+    // back to the original by itself, and a failed save that rolls the
+    // translation back then reappears without the user re-toggling.
+    dispatchTranslationUpdate(target, nextTranslation)
   }
 
   async function rm(e: MouseEvent, rec?: boolean) {
@@ -1269,6 +1302,7 @@
       const chatPage = character?.chatPage
       const chat = chatPage !== undefined && chatPage !== null ? character?.chats?.[chatPage] : undefined
       const liveMessage = chat?.message?.[idx]
+      const liveTranslation = liveMessage?.translation
       const freshness = resolveFreshPartialEditSave(
         e.detail,
         liveMessage && chat
@@ -1277,18 +1311,31 @@
               chatId: chat.id,
               messageId: liveMessage.chatId,
               data: liveMessage.data,
+              translationText:
+                liveTranslation?.source === 'raw' && typeof liveTranslation.text === 'string'
+                  ? liveTranslation.text
+                  : null,
             }
           : null,
       )
 
       if (!freshness.ok || !chat || !liveMessage) return
 
+      if (freshness.detail.layer === 'translation') {
+        const target = captureTranslationMessageTarget()
+        if (!target) return
+        persistTranslationTextEdit(target, freshness.detail.newData)
+        return
+      }
+
       const previous = currentChatScopedSnapshot()
       const nextData = freshness.detail.newData
       message = nextData
       const messageId = liveMessage.chatId
-      const patch = sourceEditPatch(liveMessage, nextData)
-      invalidateTranslationUiForSourceEdit(patch)
+      // Line-level original edits keep any persisted translation: the reader
+      // chose to edit the source while viewing the translation, so the
+      // translation is assistive and must not be dropped or re-fetched.
+      const patch: Pick<Message, 'data'> = { data: nextData }
       if (canUseServerCommands()) {
         if (messageId) {
           observeMessageMutation(dispatchUpdateMessageScoped(messageId, patch, previous))
@@ -1304,7 +1351,6 @@
         Object.assign(liveMessage, patch)
         observeMessageMutation(dispatchUpdateMessageScoped(localMessageId, patch, previous))
       }
-      displaya(nextData)
     }
   }
 
@@ -1481,6 +1527,15 @@
       sentenceBreaks: paragraphBreakBySentences ? { sentencesPerParagraph: paragraphBreakSentenceCount } : undefined,
     })
   })
+  // Partial edit routes each edited block to the text layer it renders from;
+  // these mirror the displayMessage branches above.
+  let partialEditTranslationText = $derived.by(() => {
+    if (!translated) return null
+    return activeRawTranslation()?.text ?? null
+  })
+  let partialEditBilingualActive = $derived(
+    partialEditTranslationText !== null && currentLiveChat()?.bilingualDisplay === true,
+  )
   let normalizedGenerationStage = $derived(normalizeChatGenerationLoadingStage(generationStage))
   let generationLoadingText = $derived(language[getChatGenerationLoadingLanguageKey(normalizedGenerationStage)])
   let generationLoadingProgress = $derived(getChatGenerationLoadingProgress(normalizedGenerationStage))
@@ -2238,6 +2293,8 @@
           {bodyRoot}
           blockEditEnabled={getDatabase().enableBlockPartialEdit}
           dragEditEnabled={getDatabase().enableDragPartialEdit}
+          translationText={partialEditTranslationText}
+          bilingualActive={partialEditBilingualActive}
           on:save={handlePartialEditSave} />
       {/if}
     </span>

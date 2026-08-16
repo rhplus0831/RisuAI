@@ -839,4 +839,133 @@ describe('Chat parser dependencies', () => {
     expect(dispatchUpdateMessageScoped).not.toHaveBeenCalled()
     expect(getResourceDatabase().characters[0].chats[0].message[0].data).toBe('newer live data')
   })
+
+  function stubPartialEditEnvironment() {
+    vi.stubGlobal('IntersectionObserver', VisibleIntersectionObserver)
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(1)
+      return 1
+    })
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: vi.fn(),
+    })
+  }
+
+  function makeRawTranslation(text: string) {
+    return {
+      source: 'raw' as const,
+      text,
+      sourceHash: 'source-hash',
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'google' as const,
+      settingsHash: 'settings-hash',
+      updatedAt: 1,
+    }
+  }
+
+  async function openPartialEditOnFirstBlock() {
+    const bodyRoot = target.querySelector<HTMLElement>('.chattext')
+    const block = target.querySelector<HTMLElement>('.chattext .risu-chat')
+    expect(bodyRoot).not.toBeNull()
+    expect(block).not.toBeNull()
+    setRect(bodyRoot!, 20, 80, 260, 60)
+    setRect(block!, 20, 80, 260, 60)
+    vi.spyOn(document, 'elementFromPoint').mockImplementation((x: number, y: number) => {
+      const rect = block!.getBoundingClientRect()
+      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+        return block
+      }
+      return null
+    })
+
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 40, clientY: 100, bubbles: true }))
+    await settle()
+    document.querySelector<HTMLButtonElement>('.partial-edit-btn-edit')?.click()
+    await settle()
+
+    const textarea = document.querySelector<HTMLTextAreaElement>('.partial-edit-textarea')
+    expect(textarea).not.toBeNull()
+    return { block: block!, textarea: textarea! }
+  }
+
+  it('routes translation-view partial edits to the persisted translation and keeps the original', async () => {
+    stubPartialEditEnvironment()
+
+    const rows = makeRows(1)
+    chatParserMocks.risuChatParser.mockImplementation((message: string) => message)
+    seedDatabase(rows)
+    withTrustedResourceWrite(() => {
+      const db = getResourceDatabase()
+      db.enableBlockPartialEdit = true
+      db.translator = 'ko'
+      db.translatorType = 'google'
+      db.characters[0].chats[0].autoTranslate = true
+      db.characters[0].chats[0].message[0].translation = makeRawTranslation('translated body line')
+    })
+    mountHarness(rows)
+    await settle()
+
+    const { block, textarea } = await openPartialEditOnFirstBlock()
+    expect(block.textContent).toContain('translated body line')
+    expect(textarea.value).toBe('translated body line')
+
+    textarea.value = 'polished translation line'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    vi.mocked(dispatchUpdateMessageScoped).mockClear()
+    document.querySelector<HTMLButtonElement>('.partial-edit-save-btn')?.click()
+    await settle()
+
+    const liveMessage = getResourceDatabase().characters[0].chats[0].message[0]
+    expect(liveMessage.data).toBe('visible message 0')
+    expect(liveMessage.translation?.text).toBe('polished translation line')
+
+    const call = vi.mocked(dispatchUpdateMessageScoped).mock.calls.at(-1)
+    expect(call?.[0]).toBe('row-0')
+    expect(call?.[1]).toMatchObject({
+      translation: { source: 'raw', text: 'polished translation line' },
+    })
+    expect(call?.[1]).not.toHaveProperty('data')
+  })
+
+  it('keeps the persisted translation when an original-layer partial edit saves', async () => {
+    stubPartialEditEnvironment()
+    chatParserMocks.canUseServerCommands.mockReturnValue(true)
+
+    const rows = makeRows(1)
+    chatParserMocks.risuChatParser.mockImplementation((message: string) => message)
+    seedDatabase(rows)
+    withTrustedResourceWrite(() => {
+      const db = getResourceDatabase()
+      db.enableBlockPartialEdit = true
+      db.characters[0].chats[0].message[0].translation = makeRawTranslation('translated body line')
+    })
+    mountHarness(rows)
+    await settle()
+
+    const { block, textarea } = await openPartialEditOnFirstBlock()
+    expect(block.textContent).toContain('visible message 0')
+    expect(textarea.value).toBe('visible message 0')
+
+    textarea.value = 'visible edited 0'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    vi.mocked(dispatchUpdateMessageScoped).mockClear()
+    document.querySelector<HTMLButtonElement>('.partial-edit-save-btn')?.click()
+    await settle()
+
+    // The dispatched patch must touch only the original text: the persisted
+    // translation survives line-level original edits.
+    const call = vi.mocked(dispatchUpdateMessageScoped).mock.calls.at(-1)
+    expect(call?.[0]).toBe('row-0')
+    expect(call?.[1]).toEqual({ data: 'visible edited 0' })
+
+    const liveMessage = getResourceDatabase().characters[0].chats[0].message[0]
+    expect(liveMessage.translation?.text).toBe('translated body line')
+  })
 })

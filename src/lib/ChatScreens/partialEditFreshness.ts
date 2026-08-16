@@ -1,4 +1,5 @@
 import type { RangeResult } from 'src/ts/parser/partialEdit'
+import type { PartialEditLayer } from './partialEditLayer'
 
 export type PartialEditMode = 'edit' | 'delete'
 
@@ -7,6 +8,7 @@ export interface PartialEditSaveDetail {
   sourceData: string
   sourceRange: RangeResult
   mode: PartialEditMode
+  layer: PartialEditLayer
   chatIndex: number
   chatId?: string
   messageId?: string
@@ -17,6 +19,7 @@ export interface PartialEditLiveMessageState {
   chatId?: string | null
   messageId?: string | null
   data?: string | null
+  translationText?: string | null
 }
 
 export type PartialEditFreshnessFailureReason =
@@ -25,6 +28,7 @@ export type PartialEditFreshnessFailureReason =
   | 'chat-id-changed'
   | 'message-id-changed'
   | 'source-data-changed'
+  | 'translation-missing'
 
 export type PartialEditFreshnessResolution =
   | { ok: true; detail: PartialEditSaveDetail }
@@ -52,6 +56,16 @@ export function resolveFreshPartialEditSave(
 
   if (normalizeOptionalId(live.messageId) !== normalizeOptionalId(detail.messageId)) {
     return { ok: false, reason: 'message-id-changed' }
+  }
+
+  if (detail.layer === 'translation') {
+    if (typeof live.translationText !== 'string') {
+      return { ok: false, reason: 'translation-missing' }
+    }
+    if (live.translationText !== detail.sourceData) {
+      return { ok: false, reason: 'source-data-changed' }
+    }
+    return { ok: true, detail }
   }
 
   if (live.data !== detail.sourceData) {

@@ -16,6 +16,7 @@ function makeDetail(overrides: Partial<PartialEditSaveDetail> = {}): PartialEdit
       confidence: 1,
     },
     mode: 'edit',
+    layer: 'original',
     chatIndex: 2,
     chatId: 'chat-a',
     messageId: 'message-a',
@@ -81,6 +82,43 @@ describe('resolveFreshPartialEditSave', () => {
     expect(resolveFreshPartialEditSave(detail, { ...live, messageId: 'message-a' })).toEqual({
       ok: false,
       reason: 'message-id-changed',
+    })
+  })
+
+  it('compares translation-layer saves against the live translation text', () => {
+    const detail = makeDetail({ layer: 'translation', sourceData: 'translated source' })
+    const live = makeLive({ data: 'alpha newer omega', translationText: 'translated source' })
+
+    expect(resolveFreshPartialEditSave(detail, live)).toEqual({
+      ok: true,
+      detail,
+    })
+  })
+
+  it('rejects translation-layer saves when the translation changed or vanished', () => {
+    const detail = makeDetail({ layer: 'translation', sourceData: 'translated source' })
+
+    expect(resolveFreshPartialEditSave(detail, makeLive({ translationText: 'retranslated text' }))).toEqual({
+      ok: false,
+      reason: 'source-data-changed',
+    })
+    expect(resolveFreshPartialEditSave(detail, makeLive({ translationText: null }))).toEqual({
+      ok: false,
+      reason: 'translation-missing',
+    })
+    expect(resolveFreshPartialEditSave(detail, makeLive())).toEqual({
+      ok: false,
+      reason: 'translation-missing',
+    })
+  })
+
+  it('ignores translation drift for original-layer saves', () => {
+    const detail = makeDetail()
+    const live = makeLive({ translationText: 'retranslated text' })
+
+    expect(resolveFreshPartialEditSave(detail, live)).toEqual({
+      ok: true,
+      detail,
     })
   })
 })

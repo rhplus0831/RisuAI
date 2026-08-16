@@ -7,7 +7,7 @@
     bodyRoot: HTMLElement
     isEditing: () => boolean
     getCurrentHoveredBlock: () => HTMLElement | null
-    hasTextContent: (el: HTMLElement) => boolean
+    isEditableBlock: (el: HTMLElement) => boolean
     isMouseOnBlockButton: (mouseX: number, mouseY: number) => boolean
     isMouseInButtonZone: (mouseX: number, mouseY: number, block: HTMLElement) => boolean
     showBlockButton: (block: HTMLElement) => void
@@ -77,7 +77,7 @@
     if (!block) return null
 
     for (const controller of sharedBlockHoverControllers) {
-      if (isControllerEligible(controller) && controller.bodyRoot.contains(block) && controller.hasTextContent(block)) {
+      if (isControllerEligible(controller) && controller.bodyRoot.contains(block) && controller.isEditableBlock(block)) {
         return { controller, block }
       }
     }
@@ -92,7 +92,7 @@
       for (const blockCandidate of blocks) {
         const block = blockCandidate as HTMLElement
         if (!controller.isMouseInButtonZone(mouseX, mouseY, block)) continue
-        if (!controller.hasTextContent(block)) continue
+        if (!controller.isEditableBlock(block)) continue
 
         const rect = block.getBoundingClientRect()
         const checkX = rect.left + rect.width / 2
@@ -195,6 +195,13 @@
     type RangeResultWithContext,
   } from 'src/ts/parser/partialEdit'
   import type { PartialEditMode, PartialEditSaveDetail } from './partialEditFreshness'
+  import {
+    resolvePartialEditLayer,
+    resolveRangePartialEditLayer,
+    type PartialEditDisplayMode,
+    type PartialEditLayer,
+  } from './partialEditLayer'
+  import { attachPartialEditTouchTrigger } from './partialEditTouchTrigger'
   import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
@@ -206,6 +213,8 @@
     bodyRoot: HTMLElement | null
     blockEditEnabled?: boolean
     dragEditEnabled?: boolean
+    translationText?: string | null
+    bilingualActive?: boolean
   }
 
   let {
@@ -216,7 +225,18 @@
     bodyRoot,
     blockEditEnabled = false,
     dragEditEnabled = false,
+    translationText = null,
+    bilingualActive = false,
   }: Props = $props()
+
+  let displayMode: PartialEditDisplayMode = $derived(
+    typeof translationText !== 'string' ? 'original' : bilingualActive ? 'bilingual' : 'translation',
+  )
+
+  function layerSourceData(layer: PartialEditLayer): string | null {
+    if (layer === 'translation') return typeof translationText === 'string' ? translationText : null
+    return messageData
+  }
 
   const dispatch = createEventDispatcher<{
     save: PartialEditSaveDetail
@@ -237,6 +257,7 @@
   type MatchingMode = PartialEditMode | null
   interface MatchingState {
     mode: MatchingMode
+    layer: PartialEditLayer
     targetElement: HTMLElement | null
     originalHTML: string
     sourceData: string
@@ -249,6 +270,7 @@
   function createEmptyMatchingState(): MatchingState {
     return {
       mode: null,
+      layer: 'original',
       targetElement: null,
       originalHTML: '',
       sourceData: '',
@@ -272,13 +294,18 @@
 
   let matchingState = $state<MatchingState>(createEmptyMatchingState())
   let activeOperation = $state<CapturedPartialEditOperation | null>(null)
+  let editModalTitle = $derived(
+    activeOperation?.layer === 'translation' ? language.editTranslation : language.partialEdit.editModalTitle,
+  )
 
   function captureOperation(mode: PartialEditMode, match: RangeResult): CapturedPartialEditOperation {
     const sourceRange = cloneRange(match)
+    const layer = matchingState.layer
     const operation = {
-      sourceData: matchingState.sourceData || messageData,
+      sourceData: matchingState.sourceData || layerSourceData(layer) || messageData,
       sourceRange,
       mode,
+      layer,
       chatIndex,
       chatId: normalizeOptionalId(chatId),
       messageId: normalizeOptionalId(messageId),
@@ -302,6 +329,7 @@
 
   let dragButtonWrapper: HTMLDivElement | null = null
   let currentDragSelectedText: string = ''
+  let currentDragLayer: PartialEditLayer = 'original'
 
   let isInViewport = $state(false)
   let isBlockActive = $derived(blockEditEnabled && isInViewport)
@@ -311,6 +339,15 @@
     const clone = el.cloneNode(true) as HTMLElement
     clone.querySelectorAll('button').forEach((btn) => btn.remove())
     return !!clone.textContent?.trim()
+  }
+
+  // A block is only editable when it also resolves to a single text layer;
+  // bilingual pair wrappers span both layers and are rejected.
+  function isEditableBlock(el: HTMLElement): boolean {
+    if (!hasTextContent(el)) return false
+    const layer = resolvePartialEditLayer(el, displayMode)
+    if (layer === null) return false
+    return layerSourceData(layer) !== null
   }
 
   function actionTargetSummary(text: string): string {
@@ -343,11 +380,15 @@
   function revealModalReturnFocus(): void {
     if (modalReturnBlock?.isConnected && blockButtonWrapper?.contains(modalReturnFocus)) {
       showBlockButton(modalReturnBlock)
+      armTouchDismissal()
       return
     }
 
     const wrapper = modalReturnFocus?.closest<HTMLElement>('.partial-edit-btn-wrapper')
-    if (wrapper?.isConnected) wrapper.style.display = 'flex'
+    if (wrapper?.isConnected) {
+      wrapper.style.display = 'flex'
+      armTouchDismissal()
+    }
   }
 
   function hasOpenPartialEditModal(): boolean {
@@ -512,17 +553,20 @@
       dragButtonWrapper.style.display = 'none'
     }
     currentDragSelectedText = ''
+    currentDragLayer = 'original'
   }
 
   function findAndProcessMatches(
     mode: PartialEditMode,
+    layer: PartialEditLayer,
     elementOrText: HTMLElement | string,
     proceedCallback: (match: RangeResultWithContext) => void,
   ) {
-    if (!elementOrText || !messageData) return
+    const sourceData = layerSourceData(layer)
+    if (!elementOrText || !sourceData) return
 
-    const sourceData = messageData
     matchingState.mode = mode
+    matchingState.layer = layer
     matchingState.sourceData = sourceData
 
     const options =
@@ -562,22 +606,26 @@
 
   function startBlockEdit() {
     if (!currentHoveredBlock) return
-    findAndProcessMatches('edit', currentHoveredBlock, proceedWithEdit)
+    const layer = resolvePartialEditLayer(currentHoveredBlock, displayMode)
+    if (layer === null) return
+    findAndProcessMatches('edit', layer, currentHoveredBlock, proceedWithEdit)
   }
 
   function startBlockDelete() {
     if (!currentHoveredBlock) return
-    findAndProcessMatches('delete', currentHoveredBlock, proceedWithDelete)
+    const layer = resolvePartialEditLayer(currentHoveredBlock, displayMode)
+    if (layer === null) return
+    findAndProcessMatches('delete', layer, currentHoveredBlock, proceedWithDelete)
   }
 
   function startDragEdit() {
     if (!currentDragSelectedText) return
-    findAndProcessMatches('edit', currentDragSelectedText, proceedWithEdit)
+    findAndProcessMatches('edit', currentDragLayer, currentDragSelectedText, proceedWithEdit)
   }
 
   function startDragDelete() {
     if (!currentDragSelectedText) return
-    findAndProcessMatches('delete', currentDragSelectedText, proceedWithDelete)
+    findAndProcessMatches('delete', currentDragLayer, currentDragSelectedText, proceedWithDelete)
   }
 
   function proceedWithEdit(match: RangeResultWithContext) {
@@ -765,7 +813,7 @@
       bodyRoot: root,
       isEditing: () => isEditing,
       getCurrentHoveredBlock: () => currentHoveredBlock,
-      hasTextContent,
+      isEditableBlock,
       isMouseOnBlockButton,
       isMouseInButtonZone,
       showBlockButton,
@@ -789,6 +837,60 @@
     return () => {
       unregisterHoverController()
       root.removeEventListener('mouseleave', handleLeave)
+    }
+  })
+
+  // Touch trigger: long-press reveals the same block buttons hover would.
+  let touchDismissTimer: ReturnType<typeof setTimeout> | null = null
+
+  function handleTouchDismissPointerDown(e: PointerEvent) {
+    const target = e.target as Node | null
+    if (target && (blockButtonWrapper?.contains(target) || currentHoveredBlock?.contains(target))) return
+    removeTouchDismissal()
+    if (!isEditing && !hasOpenPartialEditModal()) hideBlockButton()
+  }
+
+  function removeTouchDismissal() {
+    if (touchDismissTimer !== null) {
+      clearTimeout(touchDismissTimer)
+      touchDismissTimer = null
+    }
+    document.removeEventListener('pointerdown', handleTouchDismissPointerDown, true)
+  }
+
+  // Attach the outside-tap listener on a macrotask: attaching same-tick would
+  // let the microtask queue drain mid-dispatch of the triggering tap and
+  // dismiss the buttons immediately.
+  function armTouchDismissal() {
+    removeTouchDismissal()
+    touchDismissTimer = setTimeout(() => {
+      touchDismissTimer = null
+      document.addEventListener('pointerdown', handleTouchDismissPointerDown, true)
+    }, 0)
+  }
+
+  $effect(() => {
+    const root = bodyRoot
+    if (!root || !isBlockActive) return
+
+    const detachTouchTrigger = attachPartialEditTouchTrigger({
+      bodyRoot: root,
+      resolveBlock: (clientX, clientY) => {
+        if (isEditing || hasOpenPartialEditModal()) return null
+        const elementAtPoint = document.elementFromPoint(clientX, clientY)
+        const block = elementAtPoint?.closest(SELECTOR) as HTMLElement | null
+        if (!block || !root.contains(block) || !isEditableBlock(block)) return null
+        return block
+      },
+      onLongPress: (block) => {
+        showBlockButton(block)
+        armTouchDismissal()
+      },
+    })
+
+    return () => {
+      detachTouchTrigger()
+      removeTouchDismissal()
     }
   })
 
@@ -830,6 +932,13 @@
           return
         }
 
+        const layer = resolveRangePartialEditLayer(range, displayMode)
+        if (layer === null || layerSourceData(layer) === null) {
+          hideDragButton()
+          return
+        }
+
+        currentDragLayer = layer
         currentDragSelectedText = selectedText
         showDragButton(rect)
       }, 150)
@@ -860,6 +969,7 @@
 
   onDestroy(() => {
     clearEditSetupTimers()
+    removeTouchDismissal()
     if (blockButtonWrapper) {
       blockButtonWrapper.remove()
       blockButtonWrapper = null
@@ -1036,7 +1146,7 @@
       onkeydown={(event) => handleModalKeydown(event, handleCancel)}>
       <div class="partial-edit-header">
         <h2 id="partial-edit-title-{chatIndex}" class="partial-edit-title">
-          {language.partialEdit.editModalTitle}
+          {editModalTitle}
         </h2>
         <div class="partial-match-meta">
           <span class="partial-match-hint">
@@ -1052,7 +1162,7 @@
         bind:value={editText}
         data-modal-initial-focus
         class="partial-edit-textarea"
-        aria-label={language.partialEdit.editModalTitle}
+        aria-label={editModalTitle}
         onkeydown={handleEditTextareaKeydown}
         oninput={adjustHeight}
         style:font-size="{0.875 * (getDatabase().zoomsize / 100)}rem"
