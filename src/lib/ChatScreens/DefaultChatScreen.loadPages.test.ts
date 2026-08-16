@@ -387,6 +387,12 @@ import {
   resetHalfStreamingProgressForTests,
 } from 'src/ts/process/halfStreamingProgress'
 import { createBranchComment } from './branchComment'
+import {
+  beginChatGenerationActivity,
+  finishChatGenerationActivity,
+  resetChatGenerationActivitiesForTests,
+} from 'src/ts/process/generationActivity.svelte'
+import { resetChatUnreadForTests, unreadChatIds } from 'src/ts/process/chatUnread.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -562,6 +568,93 @@ function createDeferred<T>() {
   return { promise, resolve, reject }
 }
 
+function installResizeObserverHarness() {
+  const records: Array<{
+    callback: ResizeObserverCallback
+    observer: ResizeObserver
+    targets: Set<Element>
+  }> = []
+
+  class TestResizeObserver implements ResizeObserver {
+    readonly targets = new Set<Element>()
+    readonly record: (typeof records)[number]
+
+    constructor(callback: ResizeObserverCallback) {
+      this.record = { callback, observer: this, targets: this.targets }
+      records.push(this.record)
+    }
+
+    observe(target: Element) {
+      this.targets.add(target)
+    }
+
+    unobserve(target: Element) {
+      this.targets.delete(target)
+    }
+
+    disconnect() {
+      this.targets.clear()
+    }
+  }
+
+  vi.stubGlobal('ResizeObserver', TestResizeObserver)
+  return {
+    records,
+    notify(target: Element) {
+      for (const record of records) {
+        if (record.targets.has(target)) record.callback([], record.observer)
+      }
+    },
+  }
+}
+
+function geometryRect(top: number, bottom: number, width = 600): DOMRect {
+  return {
+    top,
+    bottom,
+    left: 0,
+    right: width,
+    width,
+    height: bottom - top,
+    x: 0,
+    y: top,
+    toJSON: () => ({}),
+  } as DOMRect
+}
+
+function stubLatestMessageGeometry(input: {
+  transcript: HTMLElement
+  row: HTMLElement
+  spacer: HTMLElement
+  clientHeight: () => number
+  rowHeight: () => number
+  trailingHeight: () => number
+}) {
+  const { transcript, row, spacer, clientHeight, rowHeight, trailingHeight } = input
+  Object.defineProperty(transcript, 'clientHeight', { configurable: true, get: clientHeight })
+  Object.defineProperty(transcript, 'clientTop', { configurable: true, value: 0 })
+  transcript.getBoundingClientRect = () => geometryRect(0, clientHeight())
+
+  const contentEnd = transcript.firstElementChild
+  if (!(contentEnd instanceof HTMLElement)) throw new Error('Expected in-scroller trailing content')
+  contentEnd.getBoundingClientRect = () => {
+    const bottom = clientHeight() - transcript.scrollTop
+    return geometryRect(bottom - trailingHeight(), bottom)
+  }
+  spacer.getBoundingClientRect = () => {
+    const height = Number.parseFloat(spacer.style.height) || 0
+    const bottom = clientHeight() - transcript.scrollTop - trailingHeight()
+    return geometryRect(bottom - height, bottom)
+  }
+  row.getBoundingClientRect = () => {
+    const spacerHeight = Number.parseFloat(spacer.style.height) || 0
+    const bottom = clientHeight() - transcript.scrollTop - trailingHeight() - spacerHeight
+    return geometryRect(bottom - rowHeight(), bottom)
+  }
+
+  return contentEnd
+}
+
 function expectedActiveTarget(characterIndex: number) {
   return expect.objectContaining({
     selectedCharID: characterIndex,
@@ -647,6 +740,8 @@ function findButtonByText(text: string): HTMLButtonElement | undefined {
 }
 
 beforeEach(() => {
+  resetChatGenerationActivitiesForTests()
+  resetChatUnreadForTests()
   resetGenerationOperationClientForTests()
   resetAcceptedSendCoordinatorForTests()
   resetInputHookActivitiesForTests()
@@ -725,6 +820,8 @@ afterEach(() => {
   activeGenerationJobs.set([])
   generationJobLifecycles.set({})
   resetGenerationOperationClientForTests()
+  resetChatGenerationActivitiesForTests()
+  resetChatUnreadForTests()
 })
 
 describe('DefaultChatScreen acknowledged Stop lifecycle', () => {
@@ -1261,37 +1358,10 @@ describe('DefaultChatScreen floating action accessibility', () => {
 
 describe('DefaultChatScreen latest-message alignment', () => {
   it('keeps a newly appended empty assistant turn at the natural end while it starts streaming', async () => {
-    const resizeObservers: Array<{
-      callback: ResizeObserverCallback
-      observer: ResizeObserver
-      targets: Set<Element>
-    }> = []
-
-    class TestResizeObserver implements ResizeObserver {
-      readonly targets = new Set<Element>()
-      readonly record: (typeof resizeObservers)[number]
-
-      constructor(callback: ResizeObserverCallback) {
-        this.record = { callback, observer: this, targets: this.targets }
-        resizeObservers.push(this.record)
-      }
-
-      observe(target: Element) {
-        this.targets.add(target)
-      }
-
-      unobserve(target: Element) {
-        this.targets.delete(target)
-      }
-
-      disconnect() {
-        this.targets.clear()
-      }
-    }
-
-    vi.stubGlobal('ResizeObserver', TestResizeObserver)
+    const resizeObservers = installResizeObserverHarness()
     seedDatabase([2])
     getResourceDatabase().autoScrollToNewMessage = true
+    const generation = beginChatGenerationActivity({ target: captureActiveChatTargetForTest()!, kind: 'message' })!
     mountScreen()
 
     await waitFor(() => expect(target.querySelector('.chat-message-container')).toBeTruthy())
@@ -1321,18 +1391,14 @@ describe('DefaultChatScreen latest-message alignment', () => {
     const placeholderRow = target.querySelector<HTMLElement>('.chat-message-container')!
     const spacer = target.querySelector<HTMLElement>('[data-latest-message-scroll-spacer]')!
     let placeholderHeight = 80
-    placeholderRow.getBoundingClientRect = () =>
-      ({
-        top: 320,
-        bottom: 320 + placeholderHeight,
-        left: 0,
-        right: 600,
-        width: 600,
-        height: placeholderHeight,
-        x: 0,
-        y: 320,
-        toJSON: () => ({}),
-      }) as DOMRect
+    stubLatestMessageGeometry({
+      transcript,
+      row: placeholderRow,
+      spacer,
+      clientHeight: () => 600,
+      rowHeight: () => placeholderHeight,
+      trailingHeight: () => 100,
+    })
 
     await new Promise((resolve) => setTimeout(resolve, 750))
     await settle()
@@ -1342,13 +1408,196 @@ describe('DefaultChatScreen latest-message alignment', () => {
     getResourceDatabase().characters[0].chats[0].message[2].data = 'Partial streamed response'
     await settle()
     placeholderHeight = 180
-    const messageResizeObserver = resizeObservers.find(({ targets }) => targets.has(placeholderRow))
-    expect(messageResizeObserver).toBeTruthy()
-    messageResizeObserver!.callback([], messageResizeObserver!.observer)
+    expect(resizeObservers.records.some(({ targets }) => targets.has(placeholderRow))).toBe(true)
+    resizeObservers.notify(placeholderRow)
     await settle()
 
     expect(spacer.style.height).toBe('0px')
     expect(transcript.scrollTop).toBe(0)
+    expect(generation).toBeTruthy()
+  })
+
+  it('shrinks a stale spacer after an unpinned row grows and the user returns to the latest position', async () => {
+    const resizeObservers = installResizeObserverHarness()
+    seedDatabase([2])
+    getResourceDatabase().autoScrollToNewMessage = true
+    getResourceDatabase().floatingChatInput = false
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('.chat-message-container')).toBeTruthy())
+    const transcript = target.querySelector<HTMLElement>('[data-default-chat-transcript]')!
+    const initialRow = target.querySelector<HTMLElement>('.chat-message-container')!
+    const initialSpacer = target.querySelector<HTMLElement>('[data-latest-message-scroll-spacer]')!
+    let latestRowHeight = 80
+    stubLatestMessageGeometry({
+      transcript,
+      row: initialRow,
+      spacer: initialSpacer,
+      clientHeight: () => 600,
+      rowHeight: () => latestRowHeight,
+      trailingHeight: () => 100,
+    })
+
+    getResourceDatabase().characters[0].chats[0].message.push({
+      chatId: 'short-latest-message',
+      role: 'char',
+      data: 'Short response',
+    })
+    await waitFor(() => expect(target.querySelectorAll('.chat-message-container')).toHaveLength(3))
+
+    const latestRow = target.querySelector<HTMLElement>('.chat-message-container')!
+    const spacer = target.querySelector<HTMLElement>('[data-latest-message-scroll-spacer]')!
+    stubLatestMessageGeometry({
+      transcript,
+      row: latestRow,
+      spacer,
+      clientHeight: () => 600,
+      rowHeight: () => latestRowHeight,
+      trailingHeight: () => 100,
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 750))
+    await waitFor(() => expect(spacer.style.height).toBe('420px'))
+
+    transcript.scrollTop = -200
+    transcript.dispatchEvent(new Event('scroll'))
+    await settle()
+
+    latestRowHeight = 300
+    resizeObservers.notify(latestRow)
+    await settle()
+    expect(spacer.style.height).toBe('420px')
+
+    transcript.scrollTop = 0
+    transcript.dispatchEvent(new Event('scroll'))
+    await waitFor(() => expect(spacer.style.height).toBe('200px'))
+    expect(latestRow.getBoundingClientRect().top).toBe(0)
+  })
+
+  it('exits natural-end mode and aligns the completed generated row when following the latest message', async () => {
+    const resizeObservers = installResizeObserverHarness()
+    seedDatabase([2])
+    getResourceDatabase().autoScrollToNewMessage = true
+    getResourceDatabase().floatingChatInput = false
+    const generation = beginChatGenerationActivity({ target: captureActiveChatTargetForTest()!, kind: 'message' })!
+    mountScreen()
+    await waitFor(() => expect(target.querySelector('.chat-message-container')).toBeTruthy())
+
+    getResourceDatabase().characters[0].chats[0].message.push({
+      chatId: 'completed-placeholder-message',
+      role: 'char',
+      data: '',
+    })
+    await waitFor(() => expect(target.querySelectorAll('.chat-message-container')).toHaveLength(3))
+
+    const transcript = target.querySelector<HTMLElement>('[data-default-chat-transcript]')!
+    const latestRow = target.querySelector<HTMLElement>('.chat-message-container')!
+    const spacer = target.querySelector<HTMLElement>('[data-latest-message-scroll-spacer]')!
+    let latestRowHeight = 80
+    stubLatestMessageGeometry({
+      transcript,
+      row: latestRow,
+      spacer,
+      clientHeight: () => 600,
+      rowHeight: () => latestRowHeight,
+      trailingHeight: () => 100,
+    })
+    expect(spacer.style.height).toBe('0px')
+
+    getResourceDatabase().characters[0].chats[0].message[2].data = 'Finished generated response'
+    latestRowHeight = 180
+    resizeObservers.notify(latestRow)
+    await settle()
+    expect(spacer.style.height).toBe('0px')
+
+    finishChatGenerationActivity(generation.id)
+    await waitFor(() => expect(spacer.style.height).toBe('320px'))
+
+    expect(transcript.scrollTop).toBe(0)
+    expect(latestRow.getBoundingClientRect().top).toBe(0)
+    expect(get(unreadChatIds).has('chat-0')).toBe(false)
+  })
+
+  it('exits natural-end mode without scrolling and flags unread when generation completes away from latest', async () => {
+    const resizeObservers = installResizeObserverHarness()
+    seedDatabase([2])
+    getResourceDatabase().autoScrollToNewMessage = true
+    getResourceDatabase().floatingChatInput = false
+    const generation = beginChatGenerationActivity({ target: captureActiveChatTargetForTest()!, kind: 'message' })!
+    mountScreen()
+    await waitFor(() => expect(target.querySelector('.chat-message-container')).toBeTruthy())
+
+    getResourceDatabase().characters[0].chats[0].message.push({
+      chatId: 'unfollowed-placeholder-message',
+      role: 'char',
+      data: '',
+    })
+    await waitFor(() => expect(target.querySelectorAll('.chat-message-container')).toHaveLength(3))
+
+    const transcript = target.querySelector<HTMLElement>('[data-default-chat-transcript]')!
+    const latestRow = target.querySelector<HTMLElement>('.chat-message-container')!
+    const spacer = target.querySelector<HTMLElement>('[data-latest-message-scroll-spacer]')!
+    let latestRowHeight = 80
+    stubLatestMessageGeometry({
+      transcript,
+      row: latestRow,
+      spacer,
+      clientHeight: () => 600,
+      rowHeight: () => latestRowHeight,
+      trailingHeight: () => 100,
+    })
+
+    getResourceDatabase().characters[0].chats[0].message[2].data = 'Finished while reading history'
+    latestRowHeight = 180
+    resizeObservers.notify(latestRow)
+    await settle()
+
+    transcript.scrollTop = -150
+    transcript.dispatchEvent(new Event('scroll'))
+    await settle()
+    finishChatGenerationActivity(generation.id)
+    await waitFor(() => expect(spacer.style.height).toBe('320px'))
+
+    expect(transcript.scrollTop).toBe(-150)
+    expect(latestRow.getBoundingClientRect().top).toBe(150)
+    expect(get(unreadChatIds).has('chat-0')).toBe(true)
+    expect(findButtonByText('newMessage')).toBeTruthy()
+  })
+
+  it('derives composer-aware spacer geometry and clamps it when the newest row fills the scrollport', async () => {
+    const resizeObservers = installResizeObserverHarness()
+    seedDatabase([2])
+    getResourceDatabase().floatingChatInput = false
+    mountScreen()
+    await waitFor(() => expect(target.querySelector('.chat-message-container')).toBeTruthy())
+
+    const transcript = target.querySelector<HTMLElement>('[data-default-chat-transcript]')!
+    const latestRow = target.querySelector<HTMLElement>('.chat-message-container')!
+    const spacer = target.querySelector<HTMLElement>('[data-latest-message-scroll-spacer]')!
+    let scrollportHeight = 600
+    let latestRowHeight = 180
+    const trailingHeight = 120
+    const contentEnd = stubLatestMessageGeometry({
+      transcript,
+      row: latestRow,
+      spacer,
+      clientHeight: () => scrollportHeight,
+      rowHeight: () => latestRowHeight,
+      trailingHeight: () => trailingHeight,
+    })
+    expect(contentEnd).toBe(target.querySelector('[data-default-chat-composer-flow]'))
+
+    resizeObservers.notify(transcript)
+    await waitFor(() => expect(spacer.style.height).toBe('300px'))
+
+    scrollportHeight = 500
+    resizeObservers.notify(transcript)
+    await waitFor(() => expect(spacer.style.height).toBe('200px'))
+
+    latestRowHeight = 420
+    resizeObservers.notify(latestRow)
+    await waitFor(() => expect(spacer.style.height).toBe('0px'))
+    expect(latestRow.getBoundingClientRect().top).toBe(0)
   })
 })
 
