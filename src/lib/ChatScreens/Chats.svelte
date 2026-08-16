@@ -78,6 +78,7 @@
   let scrollContainerResizeObserver: ResizeObserver | null = null
   let scrollContainerResizeTarget: HTMLElement | null = null
   let latestMessageGeometryMeasureQueued = false
+  let latestMessageGeometryMeasureSawRowResize = false
   let latestMessageGeometryMeasureVersion = 0
   let latestMessageGeometryKey: string | null = null
   let latestMessageAlignmentPinned = false
@@ -259,6 +260,8 @@
     const version = latestMessageGeometryMeasureVersion
     const measure = () => {
       latestMessageGeometryMeasureQueued = false
+      const sawRowResize = latestMessageGeometryMeasureSawRowResize
+      latestMessageGeometryMeasureSawRowResize = false
       if (
         chatsComponentDestroyed ||
         version !== latestMessageGeometryMeasureVersion ||
@@ -269,7 +272,13 @@
       }
 
       const chatRoomId = getCurrentChatRoomId()
-      if (latestMessageAlignmentPinned && !latestMessageUsesNaturalEnd() && chatRoomId) {
+      // A scrollport-only resize (the mobile keyboard opening or closing) must
+      // not move a transcript resting at its natural end: re-asserting start
+      // alignment scrolls away from the end whenever the newest row overflows
+      // the scrollport. Newest-row resizes still re-align so a growing row
+      // keeps its start pinned at the top.
+      const shouldRealign = sawRowResize || !transcriptIsAtLatestPosition()
+      if (latestMessageAlignmentPinned && !latestMessageUsesNaturalEnd() && chatRoomId && shouldRealign) {
         void alignLatestMessageToStart(chatRoomId)
       } else {
         recomputeLatestMessageGeometry()
@@ -288,11 +297,13 @@
     latestMessageResizeTarget = target
     latestMessageGeometryMeasureVersion += 1
     latestMessageGeometryMeasureQueued = false
+    latestMessageGeometryMeasureSawRowResize = false
 
     if (!target || typeof ResizeObserver === 'undefined') return true
 
     latestMessageResizeObserver = new ResizeObserver(() => {
       if (target !== latestMessageResizeTarget) return
+      latestMessageGeometryMeasureSawRowResize = true
       scheduleLatestMessageGeometryMeasure()
     })
     latestMessageResizeObserver.observe(target)
@@ -307,6 +318,7 @@
     scrollContainerResizeTarget = target
     latestMessageGeometryMeasureVersion += 1
     latestMessageGeometryMeasureQueued = false
+    latestMessageGeometryMeasureSawRowResize = false
 
     if (!target || typeof ResizeObserver === 'undefined') return true
 

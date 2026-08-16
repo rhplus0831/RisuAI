@@ -1599,6 +1599,51 @@ describe('DefaultChatScreen latest-message alignment', () => {
     await waitFor(() => expect(spacer.style.height).toBe('0px'))
     expect(latestRow.getBoundingClientRect().top).toBe(0)
   })
+
+  it('keeps the natural-end position when only the scrollport resizes around an overflowing newest row', async () => {
+    const resizeObservers = installResizeObserverHarness()
+    seedDatabase([2])
+    getResourceDatabase().floatingChatInput = false
+    mountScreen()
+    await waitFor(() => expect(target.querySelector('.chat-message-container')).toBeTruthy())
+
+    const transcript = target.querySelector<HTMLElement>('[data-default-chat-transcript]')!
+    const latestRow = target.querySelector<HTMLElement>('.chat-message-container')!
+    const spacer = target.querySelector<HTMLElement>('[data-latest-message-scroll-spacer]')!
+    let scrollportHeight = 600
+    stubLatestMessageGeometry({
+      transcript,
+      row: latestRow,
+      spacer,
+      clientHeight: () => scrollportHeight,
+      rowHeight: () => 700,
+      trailingHeight: () => 100,
+    })
+
+    resizeObservers.notify(transcript)
+    await settle()
+    expect(spacer.style.height).toBe('0px')
+    expect(transcript.scrollTop).toBe(0)
+
+    transcript.dispatchEvent(new Event('scroll'))
+    await settle()
+
+    // The virtual keyboard opening shrinks only the scrollport.
+    scrollportHeight = 400
+    resizeObservers.notify(transcript)
+    await settle()
+    expect(spacer.style.height).toBe('0px')
+    expect(transcript.scrollTop).toBe(0)
+    expect(latestRow.getBoundingClientRect().bottom).toBe(300)
+
+    // The keyboard closing restores the original scrollport height.
+    scrollportHeight = 600
+    resizeObservers.notify(transcript)
+    await settle()
+    expect(spacer.style.height).toBe('0px')
+    expect(transcript.scrollTop).toBe(0)
+    expect(latestRow.getBoundingClientRect().bottom).toBe(500)
+  })
 })
 
 describe('DefaultChatScreen dynamic icon anchor', () => {
