@@ -10,9 +10,9 @@ import { getModuleRegexScripts } from '../process/modules'
 import { getActivePromptPresetRegexScripts } from '../process/promptPresetRegex'
 import { getNodetextToSentence, sleep } from '../util'
 import { processScriptFull } from '../process/scripts'
+import { playCompletionDing } from '../process/messageCompletionSound'
 import { resolveModelProfile, resolveModelProfileByProfileId } from '../model/modelProfileResolver'
 import localforage from 'localforage'
-import sendSound from '../../etc/send.mp3'
 import { providerOperationCredential, requestProviderOperation } from '../server/providerOperations'
 import { resolveTranslatorPipeline, runTranslatorPipeline, translatorPipelineSignature } from './pipeline'
 import { stripInternalReasoning } from '../process/internalReasoning'
@@ -880,8 +880,7 @@ export async function translateHTML(
     const from = db.translatorInputLanguage
     const r = await translateLLM(html, { to: tr, from: from, regenerate })
     if (db.playMessageOnTranslateEnd) {
-      const audio = new Audio(sendSound)
-      audio.play().catch(() => {})
+      playCompletionDing()
     }
 
     return cacheTranslateHTMLResult(sendTextAsIs ? r : applyEdittransRegex(r, charArg, alwaysExistChar))
