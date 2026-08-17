@@ -819,6 +819,83 @@ describe('summarize memory job handler', () => {
     }
   })
 
+  it('uses the memory role from the model preset bound to the target chat', async () => {
+    const dataDir = makeDataDir()
+    const db = openDatabase(dataDir)
+    try {
+      writePersistedWithMessages(db, dataDir, {
+        _version: 4,
+        database: {
+          ...database(),
+          modelRoles: { memory: 'gpt4om' },
+          modelPresetsId: 0,
+          promptPresetsId: 0,
+          modelPresets: [
+            {
+              id: 'model-global',
+              name: 'Global model',
+              modelRoles: { memory: 'gpt4om' },
+            },
+            {
+              id: 'model-chat',
+              name: 'Chat model',
+              modelRoles: { memory: 'gpt41-mini' },
+            },
+          ],
+          promptPresets: [{ id: 'prompt-chat', name: 'Chat prompt' }],
+          characters: [
+            {
+              chaId: 'char-1',
+              type: 'character',
+              name: 'Tess',
+              chats: [
+                {
+                  id: 'chat-1',
+                  name: 'main',
+                  generationSettings: {
+                    configured: true,
+                    modelPresetId: 'model-chat',
+                    promptPresetId: 'prompt-chat',
+                  },
+                  message: [{ role: 'user', data: 'hello' }],
+                },
+              ],
+            },
+          ],
+        },
+        assets: [],
+      } as never)
+      seedChunkAndJob(db)
+      const summarize = vi.fn(async () => ({ text: 'chat-bound summary', tokens: 7 }))
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          summarize: createSummarizeMemoryJobBatchHandler({ db, dataDir, summarize }),
+        },
+      })
+
+      await assertScopedLoadOnHotPath(() => worker.tick(), {
+        allowTables: ['hypa_v3_presets'],
+      })
+
+      expect(summarize).toHaveBeenCalledOnce()
+      const [, request] = (summarize.mock.calls as any[][])[0]
+      expect(request).toMatchObject({
+        provider: 'openai',
+        model: 'gpt41-mini',
+        options: { openai: { apiKey: 'sk-test' } },
+      })
+      expect(listMemorySummaries(db, { chatId: 'chat-1' })).toEqual([
+        expect.objectContaining({
+          text: 'chat-bound summary',
+          metadata: expect.objectContaining({ providerModel: 'gpt41-mini' }),
+        }),
+      ])
+    } finally {
+      db.close()
+    }
+  })
+
   it('L18: an unknown chat fails with the same chat-not-found error through the scoped loader', async () => {
     const dataDir = makeDataDir()
     const db = openDatabase(dataDir)

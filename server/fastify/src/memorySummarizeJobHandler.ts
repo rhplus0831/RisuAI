@@ -24,6 +24,7 @@ import {
   tryBeginRequestHistory,
   type RequestHistoryContext,
 } from './requestHistory.js'
+import { applyEffectivePresetComposition } from '../../../src/ts/presetSplit.js'
 
 export interface SummarizeMemoryJobHandlerOptions {
   db: DatabaseSync
@@ -58,6 +59,10 @@ interface DatabaseLike {
 
 interface ChatLike {
   id?: unknown
+  generationSettings?: {
+    modelPresetId?: string
+    promptPresetId?: string
+  }
 }
 
 export function createSummarizeMemoryJobHandler(
@@ -71,7 +76,7 @@ export function createSummarizeMemoryJobHandler(
       throw new Error(`summarize handler received ${job.kind} job`)
     }
 
-    const database = loadDatabase(opts)
+    const database = resolveChatBoundMemoryDatabase(loadDatabase(opts, job.chatId), job.chatId)
     const settings = resolveHypaV3Settings(database)
     const result = await executeSummarizeJob({
       opts,
@@ -94,7 +99,7 @@ export function createSummarizeMemoryJobBatchHandler(opts: SummarizeMemoryJobHan
   const acquireRateLimit = createSummaryRateLimiter(opts)
 
   return async (firstJob, context): Promise<void> => {
-    const database = loadDatabase(opts)
+    const database = resolveChatBoundMemoryDatabase(loadDatabase(opts, firstJob.chatId), firstJob.chatId)
     const settings = resolveHypaV3Settings(database)
     const maxConcurrent = Math.max(1, settings.summarizationMaxConcurrent)
     const jobs = [firstJob]
@@ -399,18 +404,52 @@ function parseSummarizePayload(payload: unknown): HypaV3SummarizeJobPayload {
   }
 }
 
-function loadDatabase(opts: SummarizeMemoryJobHandlerOptions): Database {
-  // Memory-job-scoped read settings + hypa presets + chat-id
-  // stubs only — `assertChatExists` needs chat ids, never chat payloads.
+function loadDatabase(opts: SummarizeMemoryJobHandlerOptions, chatId: string): Database {
+  // The default scoped read keeps only the target chat's generation settings
+  // and bound model/prompt preset rows; sibling chats remain id-only stubs.
   const database = opts.loadDatabase
     ? opts.loadDatabase()
     : opts.dataDir
-      ? loadPersistedDatabaseForMemoryJob(opts.db, opts.dataDir)
+      ? loadPersistedDatabaseForMemoryJob(opts.db, opts.dataDir, chatId)
       : null
   if (!isRecord(database)) {
     throw new Error('persisted database is missing')
   }
   return database as unknown as Database
+}
+
+function resolveChatBoundMemoryDatabase(database: Database, chatId: string): Database {
+  const chat = findChatById(database, chatId)
+  const modelPresetId = chat?.generationSettings?.modelPresetId?.trim()
+  if (!modelPresetId) return database
+
+  const modelPreset = database.modelPresets?.find((preset) => preset?.id === modelPresetId)
+  if (!modelPreset) {
+    throw new Error(`model preset ${modelPresetId} bound to chat ${chatId} was not found`)
+  }
+
+  const promptPresetId = chat?.generationSettings?.promptPresetId?.trim()
+  const promptPreset = promptPresetId
+    ? database.promptPresets?.find((preset) => preset?.id === promptPresetId)
+    : undefined
+  if (promptPresetId && !promptPreset) {
+    throw new Error(`prompt preset ${promptPresetId} bound to chat ${chatId} was not found`)
+  }
+  const effectiveDatabase = structuredClone(database) as Database
+  applyEffectivePresetComposition(effectiveDatabase as unknown as Record<string, unknown>, {
+    modelPreset,
+    promptPreset,
+    scope: 'model-runtime',
+  })
+  return effectiveDatabase
+}
+
+function findChatById(database: Database, chatId: string): ChatLike | undefined {
+  for (const character of database.characters ?? []) {
+    const chat = character.chats?.find((candidate) => candidate.id === chatId)
+    if (chat) return chat
+  }
+  return undefined
 }
 
 function resolveHypaV3Settings(database: Database): HypaV3Settings {

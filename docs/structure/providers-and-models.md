@@ -397,8 +397,10 @@ visible retention behavior are additionally pinned by
 - Compatibility profiles without `providerId` can run when inference plus the
   capability table is sufficient. Unsupported explicit provider ids remain
   preserved placeholders and block active generation.
-- Memory summaries resolve the memory-role profile, but embeddings remain on
-  the separate Hypa/Voyage/custom contract; provider deadlines are bounded by
+- Memory summaries resolve the memory-role profile from the current model and
+  prompt presets bound to the owning chat; chats without a durable binding
+  retain the global/legacy fallback. Embeddings remain on the separate
+  Hypa/Voyage/custom contract; provider deadlines are bounded by
   `server/fastify/src/memoryProviderDeadline.ts`. Prompt-facing behavior is in
   [Prompt Assembly And Scripting](prompt-assembly-and-scripting.md#hypa-v3-memory-phase).
 - `customModels` / `xcustom:::` remains separate from first-class Custom API

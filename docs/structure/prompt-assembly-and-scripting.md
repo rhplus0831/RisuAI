@@ -203,7 +203,10 @@ for the same chunk. Deletion tombstones prevent startup import from restoring a
 removed legacy row.
 
 Memory summaries use the memory-role profile and profile-owned provider
-options. Embeddings remain outside chat profiles on the separate
+options after applying the originating chat's current model preset and any
+prompt-preset model-role overrides. Existing queued jobs remain compatible
+because the worker resolves those durable chat bindings by `chatId` at
+execution time. Embeddings remain outside chat profiles on the separate
 Hypa/Voyage/custom model contract in
 `server/fastify/src/memoryEmbeddingModel.ts`. Detailed memory storage/routes
 remain backend/data ownership; this section owns only prompt-facing behavior.

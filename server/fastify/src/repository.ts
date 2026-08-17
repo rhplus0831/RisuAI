@@ -1863,21 +1863,23 @@ export function hydrateAssemblyModuleBodies(db: DatabaseSync, database: unknown)
 }
 
 /**
- * Memory-job-scoped database read. The embed/summarize batch
- * handlers read only settings-level fields (the hypa settings/presets/keys
- * and the summary-model routing fields) plus chat EXISTENCE
- * (`assertChatExists`), so they must not pay `loadPersisted`'s whole
+ * Memory-job-scoped database read. Both worker handlers read settings-level
+ * fields (the hypa settings/presets/keys and model-routing fields); summarize
+ * additionally requests the target chat's generation-settings references.
+ * Summaries resolve the memory role from the model/prompt presets bound to that
+ * chat, so load those two rows without hydrating either whole collection. The
+ * path still must not pay `loadPersisted`'s whole
  * characters+chats payload parse, its 9-collection-table parse, or the
  * assets metadata scan on every batch. Load the settings row, override
- * `hypaV3Presets` from its table (the only collection the memory paths
- * read), and stub `characters` to id-only chat rows.
+ * `hypaV3Presets` from its table, and keep every non-target chat as an id-only
+ * stub.
  *
  * States the scoped read cannot serve fall back to the broad loader so
  * behavior stays identical: an uninitialized settings table returns the same
  * `null`, and a pre-extraction database (no character rows but an embedded
  * `characters` array in the settings JSON) keeps its embedded fallback.
  */
-export function loadPersistedDatabaseForMemoryJob(db: DatabaseSync, dataDir: string): unknown {
+export function loadPersistedDatabaseForMemoryJob(db: DatabaseSync, dataDir: string, chatId?: string): unknown {
   const settings = loadSettingsFromSqlite(db)
   if (settings === null) return loadPersisted(db, dataDir).database
 
@@ -1891,10 +1893,20 @@ export function loadPersistedDatabaseForMemoryJob(db: DatabaseSync, dataDir: str
   const chatRows = db
     .prepare('SELECT id, character_id FROM chats ORDER BY character_id, position')
     .all() as unknown as Array<Pick<ChatRow, 'id' | 'character_id'>>
+  const targetChatRow = chatId
+    ? (db.prepare('SELECT id, character_id, data_json FROM chats WHERE id = ?').get(chatId) as unknown as
+        | Pick<ChatRow, 'id' | 'character_id' | 'data_json'>
+        | undefined)
+    : undefined
+  const parsedTargetChat = targetChatRow ? parseStoredChatRow(targetChatRow.data_json) : null
   const chatsByCharId = new Map<string, Array<{ id: string }>>()
   for (const row of chatRows) {
     const list = chatsByCharId.get(row.character_id) ?? []
-    list.push({ id: row.id })
+    list.push(
+      row.id === chatId && isRecord(parsedTargetChat)
+        ? ({ ...parsedTargetChat, id: row.id } as { id: string })
+        : { id: row.id },
+    )
     chatsByCharId.set(row.character_id, list)
   }
   settings.characters = charRows.map((row) => ({
@@ -1910,7 +1922,33 @@ export function loadPersistedDatabaseForMemoryJob(db: DatabaseSync, dataDir: str
   if (presetRows.length > 0) {
     settings.hypaV3Presets = presetRows.map((row) => JSON.parse(row.data_json))
   }
+
+  if (isRecord(parsedTargetChat) && isRecord(parsedTargetChat.generationSettings)) {
+    const modelPresetId = parsedTargetChat.generationSettings.modelPresetId
+    const promptPresetId = parsedTargetChat.generationSettings.promptPresetId
+    if (typeof modelPresetId === 'string' && modelPresetId.trim()) {
+      const modelPreset = loadMemoryJobBoundPreset(db, 'model_presets', modelPresetId)
+      if (modelPreset) settings.modelPresets = [modelPreset]
+    }
+    if (typeof promptPresetId === 'string' && promptPresetId.trim()) {
+      const promptPreset = loadMemoryJobBoundPreset(db, 'prompt_presets', promptPresetId)
+      if (promptPreset) settings.promptPresets = [promptPreset]
+    }
+  }
   return settings
+}
+
+function loadMemoryJobBoundPreset(
+  db: DatabaseSync,
+  tableName: 'model_presets' | 'prompt_presets',
+  presetId: string,
+): Record<string, unknown> | null {
+  const row = db
+    .prepare(`SELECT data_json FROM ${tableName} WHERE json_extract(data_json, '$.id') = ? LIMIT 1`)
+    .get(presetId) as { data_json: string } | undefined
+  if (!row) return null
+  const preset = JSON.parse(row.data_json) as unknown
+  return isRecord(preset) ? preset : null
 }
 
 /**
