@@ -1,6 +1,6 @@
 # Data And Events
 
-Last audited: 2026-08-09.
+Last audited: 2026-08-17.
 
 Fastify owns authoritative application state. The browser reads authenticated
 REST resources and sends revision-checked commands or explicit server-owned
@@ -168,34 +168,11 @@ The user-facing export, confirmation, and exact-export fence are owned by
 
 Command-event resources should be as narrow as practical. Default drafts live
 in `COMMAND_EVENT_CATALOG`; composite constants and route-local overrides select
-narrower or cross-resource keys where needed. The browser invalidator maps both
-current and retained compatibility keys to authoritative reads. Model-profile
-and provider-credential events target the `models` group, Agent/use/preset events
-target `agents`, greeting-translation events target one character projection,
-and unknown or underspecified keys force broad recovery. Treat
+narrower or cross-resource keys where needed. Treat
 `server/fastify/src/commands/events.ts` and
-`src/ts/server/resourceInvalidation.ts` as the paired source of truth rather
-than copying the full key inventory here.
-
-Grouped settings events reread `/api/v1/settings/:group`; broader settings-like
-events reread `/api/v1/settings`. Collection events reread the owning
-`/api/v1/collections/:name`. These cache-capable reads prefer authenticated
-hash-aware POSTs and fall back to their full GET forms. Character
-selection/order events use narrow pointer resources, while structural character
-events reread the list or one row.
-Message/transcript events reread the complete affected chat body; an
-unambiguous generation event rereads only its changed suffix. Character
-lorebook events use the single or bulk lorebook endpoint. Greeting-translation
-events reread `/api/v1/characters/:characterId/greeting-translations` with a
-minimum revision. `asset` and explicit
-revision-only events advance the applied revision without an application-data
-read. `inlayCatalog` events reread `GET /api/v1/inlay-assets`. Broad
-`state`/`lorebook` events, unknown resources, missing required owner ids, and
-revision gaps fall back to a common-revision refresh of settings, collections,
-characters, and the inlay catalog, clear greeting projections, and refresh
-runtime job metadata. Plugin storage is always applied as a
-complete map, with pending local operations replayed over the incoming value
-until their commands settle.
+`src/ts/server/resourceInvalidation.ts` as the paired source of truth. The
+complete event-to-read mapping and its broad-recovery fallback live in
+[Event Invalidation And Recovery](server-resources-and-bridges.md#event-invalidation-and-recovery).
 
 Character list and row responses omit message bodies and, when
 `enableLorebookStubs` is true, character lorebooks. Resource application keeps
@@ -347,9 +324,10 @@ cache-cap, shell/body, and stale-response workflow belongs to
 
 `GET /api/v1/events` sends a `writer` frame with the current
 `{ sessionId, epoch }` state (`sessionId` is null before the first writer is
-latched), then a connected comment, replays SQLite `command_events` for cursor
-reconnects, then streams
-live command-sink, memory, and writer-change events. Writer frames have no
+latched), a connected comment, and a `memory_snapshot` frame with the current
+memory stream/version/job projections. It then replays SQLite `command_events`
+for cursor reconnects and streams live command-sink, memory, and writer-change
+events. Writer and memory-snapshot frames have no
 revision semantics and are never replayed. Clients subscribe with
 `sinceRevision` or `Last-Event-ID`; replay gaps return
 `409 event_replay_unavailable`, after which the browser performs a read-only

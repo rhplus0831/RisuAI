@@ -1,6 +1,6 @@
 # Testing And Operations
 
-Last audited: 2026-08-09.
+Last audited: 2026-08-17.
 
 Use `pnpm` for package scripts. Node.js is declared as `>=24.0.0`. The package
 is root-only; there is no `server/fastify/package.json`. `package.json` does not
@@ -27,6 +27,7 @@ pin a `packageManager`; the lockfile is pnpm lockfile v9.
 | `pnpm test:gates:audit`            | Run UI-audit gate tests.                                                                                                                                                      |
 | `pnpm test:gates:perf`             | Run render-cost and clone-count gates.                                                                                                                                        |
 | `pnpm test:server`                 | Run Fastify/server Vitest tests.                                                                                                                                              |
+| `pnpm test:compat-harness`         | Compare pinned local/Fastify generation matrices against a prepared pre-Fastify worktree; opt-in and not part of `test:all`.                                                 |
 | `pnpm test:smoke`                  | Alias for `pnpm smoke:fastify-browser`.                                                                                                                                       |
 | `pnpm test:all`                    | Run format, Svelte, strict server/browser-smoke TypeScript, frontend tests, explicit gates, the UI coverage gate, server tests, and browser smoke; preserve any failing lane. |
 | `pnpm coverage:ui-map`             | Run the focused UI coverage gate and write reports to `coverage/ui-map`.                                                                                                      |
@@ -156,6 +157,7 @@ disables Fastify static serving.
 | Frontend coverage           | `pnpm coverage:frontend`, `vitest.config.ts`                                            | `happy-dom` | Broad coverage over `src/**/*.{ts,svelte}` and `util/**/*.ts`; reports under `coverage/frontend`.                          |
 | UI coverage map             | `pnpm coverage:ui-map`, `vitest.config.ts`                                              | `happy-dom` | Focused UI integration tests mapped over `src/lib/ChatScreens`, `src/lib/Others`, `src/lib/SideBars`, and `src/ts/server`. |
 | Fastify/server tests        | `pnpm test:server` or `pnpm api:test`, `server/fastify/vitest.config.ts`                | Node        | `server/fastify/__tests__/**/*.test.ts`.                                                                                   |
+| Compatibility harness      | `pnpm test:compat-harness`, `test/compat-harness/*.vitest.config.ts`                    | Node        | Golden pre-Fastify/current generation matrix plus focused replay/continue regressions; opt-in and outside `test:all`.      |
 | Backend coverage            | `pnpm coverage:backend`, `server/fastify/vitest.config.ts`                              | Node        | Broad coverage over `server/fastify/src/**/*.ts`; reports under `coverage/backend`.                                        |
 | Browser smoke               | `pnpm smoke:fastify-browser` or `pnpm test:smoke`, `playwright.fastify-smoke.config.ts` | Chromium    | `server/fastify/browser-smoke/`; specs start an in-process Fastify app on a random port serving `dist`.                    |
 
@@ -164,6 +166,12 @@ Pick the smallest command that covers the changed area. On a fresh machine, run
 `server/fastify/__tests__/README.md` is the maintained topical map for the flat
 Fastify test directory; use it to find command/persistence, generation, memory,
 provider, job, asset/import, and platform/route coverage.
+
+The compatibility harness requires the pinned baseline worktree and its
+dependencies at the path declared in `test/compat-harness/run.ts`. Set
+`UPDATE_COMPAT_HARNESS=1` only when intentionally refreshing its tracked golden
+artifacts. It is excluded from `pnpm test:all` because that external worktree is
+not a normal checkout prerequisite.
 
 Config details: root Vitest uses the threads pool, `happy-dom`, browser resolve
 conditions, the `src` alias, and `vitest.setup.ts` to mock `katex` and install

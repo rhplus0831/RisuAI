@@ -1,6 +1,6 @@
 # Svelte Chat UI Guide
 
-Last audited: 2026-08-13.
+Last audited: 2026-08-17.
 
 This guide owns the visible chat frame, transcript, message rows, composer
 variants, generation/loading feedback, and in-chat confirmations. Return to the
@@ -331,6 +331,8 @@ Start with `src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts`,
 `src/lib/ChatScreens/Chat.customHtml.test.ts`,
 `src/lib/ChatScreens/PartialEditController.sharedHover.test.ts`,
 `src/lib/ChatScreens/partialEditFreshness.test.ts`,
+`src/lib/ChatScreens/partialEditLayer.test.ts`,
+`src/lib/ChatScreens/partialEditTouchTrigger.test.ts`,
 `src/lib/ChatScreens/chatButtonTriggerFreshness.test.ts`,
 `src/lib/ChatScreens/Suggestion.svelte.test.ts`, and
 `src/lib/ChatScreens/newMessageTranslationEligibility.test.ts`.

@@ -1,6 +1,6 @@
 # Test Suite Guide
 
-Last audited: 2026-08-09.
+Last audited: 2026-08-17.
 
 This documentation groups the current suite by protected product behavior. Treat `package.json` and the runner configuration files as the source of truth for commands and discovery; this guide intentionally avoids snapshot case counts and pass totals, which become stale whenever tests are added or parameterized matrices change.
 
@@ -51,6 +51,7 @@ The main weakness is integration depth rather than raw case count. Most frontend
 | `pnpm test:gates:perf`   | The two named render/clone performance probes                                                                 |
 | `pnpm test:gates:audit`  | The two mounted visible-state audit gates under `src/lib/_audit`                                             |
 | `pnpm test:server`       | Node/Fastify/SQLite tests discovered by `server/fastify/vitest.config.ts`                                     |
+| `pnpm test:compat-harness` | Opt-in golden comparison with the pinned pre-Fastify worktree; requires the external baseline and is not in `test:all` |
 | `pnpm test:smoke`        | Serial Chromium tests under `server/fastify/browser-smoke`                                                    |
 | `pnpm test:all`          | The quality-workflow aggregate: formatting, both type checks, frontend, gates, UI map, server, and smoke      |
 | `pnpm coverage:frontend` | Broad frontend report, including gates; not part of `test:all`                                                |

@@ -1,6 +1,6 @@
 # Svelte Navigation UI Guide
 
-Last audited: 2026-08-09.
+Last audited: 2026-08-17.
 
 This guide owns the sidebar, navigation controls, character and chat selection,
 character configuration, and list organization.

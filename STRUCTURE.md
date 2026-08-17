@@ -1,6 +1,6 @@
 # Project Structure
 
-Last audited: 2026-08-13.
+Last audited: 2026-08-17.
 
 Use this file to orient yourself in the Fastify-only RisuAI codebase. The
 supported toolchain is Node.js 24 or newer with pnpm. Choose the guide for your
@@ -9,33 +9,24 @@ records past decisions and is not authoritative.
 
 ## Choose By Task
 
-| Task | Read next |
-| ---- | --------- |
-| Locate unfamiliar code | [Architecture Index](docs/structure/README.md) and [Domain Glossary](docs/structure/domain-glossary.md#cross-layer-ownership) |
-| Change Fastify composition, auth, route policy, workers, timers, or Web Push | [Backend Map](docs/structure/backend.md#route-family-index) |
-| Change SQLite, revisions, active-writer rules, command events, or command-event SSE | [Data And Events](docs/structure/data-and-events.md#resource-persistence-and-event-ordering) |
-| Change browser resources, hydration, caches, invalidation, or durable mutations | [Server Resources And Bridges](docs/structure/server-resources-and-bridges.md#hydration-workflows), then [Client Runtime](src/docs/client-runtime.md#server-resources-and-durable-mutations) |
-| Change reload-durable composer or module-editor draft recovery | [Client Runtime](src/docs/client-runtime.md#draft-recovery-stores), then [Svelte Chat UI](src/docs/svelte-chat-ui.md#composer-layout-modes-and-mobile-viewport) |
-| Change chat, transcript, message, composer, or generation UI | [Svelte Chat UI](src/docs/svelte-chat-ui.md#chat-surface-ownership) |
-| Change sidebars, routes, chat lists, character selection, or reordering UI | [Svelte Navigation UI](src/docs/svelte-navigation-ui.md#sidebar-and-route-ownership) |
-| Change settings routing, data-driven rows, authoring pages, or provider panels | [Svelte Settings UI](src/docs/svelte-settings-ui.md#shell-and-routed-pages) |
-| Change shared controls, accessibility, modal focus, or focus restoration | [Svelte Settings UI](src/docs/svelte-settings-ui.md#shared-controls-and-focus) |
-| Change the app shell, styling/themes, responsive/Lite behavior, or Playground | [Svelte UI](src/docs/svelte-ui.md) |
-| Change frontend localization or language settings | [Svelte UI](src/docs/svelte-ui.md#localization) and [Svelte Settings UI](src/docs/svelte-settings-ui.md#data-driven-rows) |
-| Change model profiles, credentials, providers, capabilities, or runtime options | [Providers And Models](docs/structure/providers-and-models.md#model-profiles-and-role-resolution), then [Svelte Settings UI](src/docs/svelte-settings-ui.md#model-profiles-and-provider-panels) for editor behavior |
-| Change prompt configuration, assembly order, templates, lorebook injection, or budget gates | [Prompt Assembly And Scripting](docs/structure/prompt-assembly-and-scripting.md#effective-configuration-and-assembly-order), then [Svelte Settings UI](src/docs/svelte-settings-ui.md#agent-and-prompt-authoring) for editor behavior |
-| Change Hypa V3 memory selection, summaries, embeddings, or memory jobs | [Prompt Assembly And Scripting](docs/structure/prompt-assembly-and-scripting.md#hypa-v3-memory-phase) and [Backend Map](docs/structure/backend.md#generation-and-background-work) |
-| Change CBS/history parsing, regex scripts, triggers, or Lua runtime behavior | [Prompt Assembly And Scripting](docs/structure/prompt-assembly-and-scripting.md#cbs-variables-and-history) and its [Lua Runtime](docs/structure/prompt-assembly-and-scripting.md#lua-runtime) section |
-| Change translator presets, translation caches/jobs, or automatic translation | [Translation And Input Hooks](docs/structure/translation-and-input-hooks.md#translator-preset-pipeline), [Svelte Settings UI](src/docs/svelte-settings-ui.md#data-driven-rows), and [Svelte Chat UI](src/docs/svelte-chat-ui.md#message-rendering) |
-| Change Draft/BTW input-hook authoring, model selection, or execution | [Translation And Input Hooks](docs/structure/translation-and-input-hooks.md#draft-and-btw-input-hooks), [Svelte Settings UI](src/docs/svelte-settings-ui.md#input-hook-authoring), and [Svelte Chat UI](src/docs/svelte-chat-ui.md#input-hook-chat-controls) |
-| Change Agents, Agent Presets, prepared inputs, dependencies, or output composition | [Agents And Presets](docs/structure/agents-and-presets.md#selection-and-readiness), then [Svelte Settings UI](src/docs/svelte-settings-ui.md#agent-and-prompt-authoring) for editor behavior |
-| Diagnose runtime traces, generation telemetry, or LLM request history | [Testing And Operations](docs/structure/testing-and-operations.md#request-and-generation-tracing) and [Providers And Models](docs/structure/providers-and-models.md#llm-request-history) |
-| Change modules, plugins, network permissions, or MCP | [Plugins And MCP](docs/structure/plugins-and-mcp.md) |
-| Change assets, the inlay catalog, `.risu`/CharX/chat exchange, post-export reset, backups, or Realm conversion | [Assets And Saves](docs/structure/assets-and-saves.md), then [Server Resources And Bridges](docs/structure/server-resources-and-bridges.md#collection-and-cache-bounds) for browser catalog reads |
-| Run or extend checks, local dev, or CI | [Testing And Operations](docs/structure/testing-and-operations.md#tests-and-checks) and the [Test Suite Guide](docs/tests/README.md) |
-| Trace data-dependent rendering or UI ownership | [Data-Driven UI Inventory](docs/data-driven-ui.md#cross-cutting-trace-guides) |
-| Classify generated, vendored, compatibility-only, or removed paths | [Generated Files And Legacy Caveats](docs/structure/generated-and-legacy.md) |
-| Port an upstream RisuAI change into this fork | [Upstream Sync](docs/upstream-sync/README.md) and the current sweep ledger there |
+| Task area | Read next |
+| --------- | --------- |
+| Unfamiliar code or cross-layer ownership | [Architecture Index](docs/structure/README.md) and [Domain Glossary](docs/structure/domain-glossary.md#cross-layer-ownership) |
+| Fastify composition, routes, generation operations/effects, jobs, timers, tracing, or Web Push | [Backend Map](docs/structure/backend.md) |
+| SQLite, revisions, active writer, command events, or SSE | [Data And Events](docs/structure/data-and-events.md) |
+| Browser resources, hydration, cache/invalidation, bridges, durable mutations, or recovery | [Server Resources And Bridges](docs/structure/server-resources-and-bridges.md), then [Client Runtime](src/docs/client-runtime.md) |
+| Chat, transcript, message, composer, generation UI, drafts, viewport behavior, or completion audio | [Svelte Chat UI](src/docs/svelte-chat-ui.md), then [Client Runtime](src/docs/client-runtime.md#generation-client) for durable generation |
+| Sidebars, routes, chat lists, character selection, or reordering | [Svelte Navigation UI](src/docs/svelte-navigation-ui.md) |
+| Settings, shared controls/accessibility, localization, authoring pages, or provider panels | [Svelte Settings UI](src/docs/svelte-settings-ui.md) and [Svelte UI](src/docs/svelte-ui.md#localization) |
+| App shell, styling/themes, responsive/Lite behavior, Playground, or data-dependent rendering | [Svelte UI](src/docs/svelte-ui.md) and [Data-Driven UI Inventory](docs/data-driven-ui.md) |
+| Model profiles, credentials, providers, capabilities, runtime options, or request history | [Providers And Models](docs/structure/providers-and-models.md) |
+| Prompt assembly, templates, lorebook/Hypa memory, CBS, regex, triggers, or Lua | [Prompt Assembly And Scripting](docs/structure/prompt-assembly-and-scripting.md) |
+| Translation, translator presets/caches/jobs, or Draft/BTW input hooks | [Translation And Input Hooks](docs/structure/translation-and-input-hooks.md) |
+| Agents, Agent Presets, prepared inputs, dependencies, or output composition | [Agents And Presets](docs/structure/agents-and-presets.md) |
+| Modules, plugins, permissions, or MCP | [Plugins And MCP](docs/structure/plugins-and-mcp.md) |
+| Assets, inlay catalog, `.risu`/CharX/chat exchange, backups, reset, or Realm conversion | [Assets And Saves](docs/structure/assets-and-saves.md) |
+| Tests, compatibility harness, local dev, CI, generated paths, or removed paths | [Testing And Operations](docs/structure/testing-and-operations.md), [Test Suite Guide](docs/tests/README.md), and [Generated And Legacy](docs/structure/generated-and-legacy.md) |
+| Upstream fork maintenance | [Upstream Sync](docs/upstream-sync/README.md) and its current sweep ledger |
 
 ## Repository Map
 
@@ -47,13 +38,12 @@ records past decisions and is not authoritative.
 | `index.html`, `vite.config.ts`, `src/` | Svelte 5 SPA, Vite configuration, browser runtime, UI, language packs, and bundled client data. |
 | `server/fastify/` | Fastify API and tests, including SQLite persistence and provider execution; it has no separate package manifest. |
 | `STRUCTURE.md`, `docs/structure/`, `src/docs/` | Current architecture and implementation guides. Start at the [Architecture Index](docs/structure/README.md). |
-| `docs/tests/`, `docs/data-driven-ui.md` | Current test-discovery and data-dependent UI inventories. |
-| `docs/upstream-sync/` | Current fork-maintenance procedure and per-sweep ledger for upstream changes. |
+| `docs/tests/`, `docs/data-driven-ui.md`, `docs/upstream-sync/` | Test discovery, data-dependent UI, and fork-maintenance guides. |
 | `.archived-docs/` | Closed workstreams and dated reports, including the message-generation parity audit. Do not infer current behavior from them. |
+| `test/compat-harness/` | Opt-in golden compatibility comparison against the pinned pre-Fastify worktree; it is not part of `pnpm test:all`. |
 | `public/` | Static application sources copied or served by Vite, including the service worker and vendor/tokenizer payloads. |
 | `resources/` | Retained packaging artwork; the current Vite/Fastify build does not consume it. |
 | `util/` | Full-stack dev runners, database analyzer, tsserver wrapper, API-flag runner, and userscript bridge. |
-| `scripts/` | Local helper-script area; currently empty. |
 | `tsconfig*.json`, `vitest*.ts`, `playwright*.ts` | TypeScript, Vitest, and Playwright configuration. |
 | `.github/workflows/quality.yml` | Node 24 CI for pull requests and `main`; runs `pnpm test:all`. |
 | `.claude/`, `.vscode/`, `.npmrc`, `.gitattributes`, `.gitignore`, `.ignore` | Agent tooling, editor, package-manager, Git, and search policy. |
@@ -64,7 +54,8 @@ records past decisions and is not authoritative.
 
 | Path | Responsibility |
 | ---- | -------------- |
-| `index.html` -> `src/main.ts` | Requests resize-content keyboard behavior, installs height-only visual-viewport/root-scroll coordination used by docked, in-flow, and floating composer presentations, mounts the application, starts `loadData()`, and removes the preloader. |
+| `index.html` | Declares the app mount/preloader, loads `src/main.ts`, and requests `interactive-widget=resizes-content`. |
+| `src/main.ts` | Installs routing, push listeners, viewport coordination, root-scroll protection, and shared completion-audio priming; mounts the app, starts bootstrap/hotkeys, and removes the preloader. |
 | `src/App.svelte` | Svelte application shell, top-level render routing, overlays, and selected-character visibility guard. |
 | `src/ts/bootstrap.ts` | Auth/writer bootstrap, recovery preparation, resource hydration/invalidation, plugin/runtime setup, and active-work reattachment. |
 | `public/service-worker.js` | Web Push display, notification-click navigation, and client messaging. |
@@ -80,31 +71,25 @@ to find companion files and tests.
 
 ## Repository-Wide Invariants
 
-- The live application runtime is Fastify-only. Native-wrapper/mobile runtime
-  modes, browser-local authoritative persistence, peer sync, Drive sync, and
-  other non-Fastify modes are not live. Responsive mobile web UI remains
-  supported. See [Generated Files And Legacy Caveats](docs/structure/generated-and-legacy.md).
-- Fastify-owned SQLite rows, content-addressed asset bytes, and compatibility
-  files are authoritative. The browser resource cache is disposable and
-  hash-verified; the encrypted mutation outbox retains pending intent, while
-  scoped recovery drafts retain editing state. None is an independent browser
-  database or offline truth. See the [Cache Protocol](docs/structure/server-resources-and-bridges.md#cache-protocol).
+- The live runtime is Fastify-only; responsive mobile web remains supported.
+  Native wrappers, browser-local authoritative persistence, peer sync, and Drive
+  sync are not live. See [Generated And Legacy](docs/structure/generated-and-legacy.md).
+- Fastify SQLite rows, content-addressed assets, and compatibility files are
+  authoritative. Browser caches are disposable; the encrypted outbox and scoped
+  drafts retain pending intent or edits, not an independent offline database.
+  See the [Cache Protocol](docs/structure/server-resources-and-bridges.md#cache-protocol).
 - Normal revision-tracked domain writes use command mutations and global
   revision ordering. Server-owned exceptions are listed in
   [Data And Events](docs/structure/data-and-events.md#server-owned-exceptions).
-- Persisted provider credentials are resolved server-side and masked before
-  browser projections are hashed or returned. Typed provider/media operations
-  may accept only their operation-specific one-shot drafts. Whole-database
-  saves contain raw credentials and must be treated as secrets; the Settings
-  ZIP-bundle export requires explicit secret-warning confirmation. See
+- Persisted credentials are resolved server-side and masked in browser
+  projections. Only typed operations may accept one-shot drafts. Whole-database
+  saves contain raw credentials and must be treated as secrets. See
   [Provider Credentials](docs/structure/providers-and-models.md#provider-credentials)
   and [Assets And Saves](docs/structure/assets-and-saves.md).
-- Durable content must not be silently discarded. Whole-database imports reject
-  unsupported group characters atomically; unsupported standalone CHAT blocks
-  and oversized optional card assets are salvaged only with an exact completeness
-  report; and generation finalization
-  rejects a transcript target changed since assembly while retries preserve the
-  same snapshot fence. See [Assets And Saves](docs/structure/assets-and-saves.md#character-cards)
+- Durable content must not be silently discarded. Imports either reject
+  unsupported content atomically or report exact salvage, and generation
+  finalization fences the assembly-time transcript snapshot. See
+  [Assets And Saves](docs/structure/assets-and-saves.md#character-cards)
   and [Generation And Background Work](docs/structure/backend.md#generation-and-background-work).
 - Mutation-facing UI must distinguish `accepted`, `queued`, and `failed`. A
   queued mutation is retained intent, not server acceptance; preserve newer

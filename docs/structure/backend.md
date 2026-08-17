@@ -1,6 +1,6 @@
 # Backend Map
 
-Last audited: 2026-08-09.
+Last audited: 2026-08-17.
 
 The backend is the Fastify server under `server/fastify`. This guide owns its
 composition root, route policy, request-path boundaries, process-local jobs,
@@ -26,7 +26,9 @@ wired through those boundaries.
 | `server/fastify/src/routeManifest.ts`                                                   | Source of truth for route auth, active-writer, streaming, and exception classifications.                                                                                              |
 | `server/fastify/src/routeRateLimits.ts`                                                 | Per-route rate-limit presets.                                                                                                                                                         |
 | `server/fastify/src/protocolMetrics.ts`, `requestTrace.ts`                              | Opt-in protocol metrics, command table-write capture, and API request traces.                                                                                                         |
-| `server/fastify/src/generationJobs.ts`, `generationFinalizationRetry.ts`                | Process-local durable chat jobs, replay/reattach state, and SQLite-backed finalization retry rows.                                                                                    |
+| `server/fastify/src/generationOperations.ts`, `routes/generationOperations.ts`         | SQLite-backed send/continue/regenerate operation and attempt state, atomic acceptance, projection fencing, cancellation, retry, and stream attachment.                              |
+| `server/fastify/src/generationJobs.ts`, `generationFinalizationRetry.ts`                | Process-local chat runners, replay/reattach state, and SQLite-backed finalization retry rows.                                                                                        |
+| `server/fastify/src/generationEffects.ts`, `routes/generationEffects.ts`               | Per-generation effect ledger plus authenticated claim, lease, receipt, and recovery reads.                                                                                           |
 | `server/fastify/src/requestHistory.ts`, `routes/requestHistory.ts`                      | Byte-bounded provider-attempt diagnostics, count/total-byte pruning, authenticated reads, and active-writer deletion.                                                                  |
 | `server/fastify/src/messageTranslationJobs.ts`, `greetingTranslationJobs.ts`            | Separate process-local registries for running and bounded recent terminal message/greeting translation recovery exposed through runtime bootstrap.                                    |
 | `server/fastify/src/translation/`                                                       | Google, DeepL, DeepLX, and LLM translation, translator pipelines, normalized greeting storage, and generated-message automatic follow-up.                                               |
@@ -66,9 +68,10 @@ and atomically imports a valid legacy `data/db.json` when present. Prior-install
 evidence without `risu.db` refuses startup unless
 `RISU_API_ALLOW_MISSING_DATABASE=1`; invalid legacy envelopes are quarantined,
 while malformed JSON remains in place and stops startup for operator repair.
-It then starts the memory worker, creates command/memory event buses, creates
-proxy, durable-generation, message-translation, and greeting-translation
-registries, and starts its owned worker/GC/retry timers. Startup also calls
+It then reconciles persisted generation operations/effects, starts the memory
+worker, creates command/memory event buses, creates proxy, generation,
+message-translation, and greeting-translation registries, and starts its owned
+worker/GC/retry timers. Startup also calls
 `bootPromptVariables()` so server-side CBS/chat-var parsing is wired before
 prompt assembly. When `RISU_API_TRACE_MODE` is `agent` or `human`, request
 tracing adds `X-Request-UID` and writes API traces under
@@ -110,14 +113,14 @@ bulk asset uploads `180/min`, and generation submit `60/min`.
 
 | Family                | Registrars                                                                                                                        | Notes                                                                                                                                                                                                                                                                                                                                                                                     |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Health/auth/bootstrap | `health.ts`, `auth.ts`, `bootstrap.ts`                                                                                            | Health/status/setup/login plus authenticated runtime-only bootstrap; writer intent latches the active writer, while the response carries initialization/revision/schema metadata, active generation jobs, and separate running/recent-terminal message and greeting translation recovery entries.                                                                                       |
-| Resources/events      | `resourceReads.ts`, `events.ts`                                                                                                   | Root and targeted REST resources, greeting translations, the inlay catalog, bounded lazy/bulk hydration, replayable command SSE, and live memory SSE.                                                                                                                                                                                                                                    |
+| Health/auth/bootstrap | `health.ts`, `auth.ts`, `bootstrap.ts`                                                                                            | Health/status/setup/login plus runtime bootstrap; writer intent latches the active writer, while the response carries revision/lineage, generation operation/job/finalization/effect recovery, and message/greeting translation state.                                                                                                                                                      |
+| Resources/events      | `resourceReads.ts`, `events.ts`                                                                                                   | Root and targeted REST resources, greeting translations, the inlay catalog, bounded lazy/bulk hydration, replayable command SSE, and initial/live memory state.                                                                                                                                                                                                                          |
 | Commands              | `commands.ts` plus `commands/`                                                                                                    | First-run initialization plus revision-checked domain mutations, including shared provider credentials, standalone Agents/Agent Presets, and atomic character-owned chat reset. Hot paths accept sparse object/row/definition patches and return contract-specific canonical state or digest-backed receipts when optimistic state can be acknowledged safely.                         |
 | Assets/saves/backups  | `assets.ts`, `save.ts`, `realmImport.ts`, `backups.ts`                                                                            | Content-addressed assets, `.risu`/bundle/local-backup import/export, Realm import, and snapshots. Detailed persistence contracts live in [Assets And Saves](assets-and-saves.md).                                                                                                                                            |
-| Push notifications    | `pushNotifications.ts`                                                                                                            | Web Push VAPID public-key lookup plus authenticated subscription create/delete routes; durable subscriptions live in SQLite while generated VAPID keys live in `data/__web_push_vapid_keys.json`.                                                                                                                                                                                         |
+| Push notifications    | `pushNotifications.ts`                                                                                                            | Web Push VAPID lookup plus authenticated subscription create/delete. Environment keys override the generated key file; initialization failure disables delivery, and 404/410 responses delete expired SQLite subscriptions.                                                                                                                                                              |
 | Provider/media ops    | `providerOperations.ts`, `embeddingOperations.ts`, `tts.ts`, `imageGeneration.ts`, `openAITranscription.ts`, `mcpOAuthRefresh.ts` | Authenticated, bounded provider/media operations and the MCP OAuth refresh route. MCP transport, credential, identity, and egress behavior is canonical in [Plugins And MCP](plugins-and-mcp.md).                                                                                                                             |
 | Proxy/compatibility   | `proxy.ts`, `streamJobs.ts`, `hub.ts`, `legacyStorage.ts`                                                                         | Generic proxy/stream jobs, retained hub passthrough, `/api/v1/storage/*` compatibility bytes, and the public auth crypto helper.                                                                                                                                                                                                                                                          |
-| Generation            | `generation.ts`, `generationChat.ts`                                                                                              | Completion route, server-assembled chat generation, preview prompt, internal chat generation settings/profile/Agent Preset readiness preflight, durable reattach/cancel.                                                                                                                                                                                                                  |
+| Generation            | `generation.ts`, `generationChat.ts`, `generationOperations.ts`, `generationEffects.ts`                                           | Completion/preview, server-assembled chat generation, SQLite-backed operation acceptance/retry/cancel/stream attachment, and post-generation effect claims/receipts.                                                                                                                                                                                                                       |
 | Memory                | `memoryJobs.ts`, `memoryReads.ts`                                                                                                 | Queue/cancel/list jobs plus chunk/summary reads and active-writer summary edit/delete routes.                                                                                                                                                                                                                                                                                             |
 | Request history       | `requestHistory.ts`                                                                                                               | Authenticated summary/detail reads and active-writer deletion for byte-bounded provider-attempt diagnostics; pruning is operational state outside domain revisions.                                                                                                                                                                                                                        |
 
@@ -233,6 +236,17 @@ locked SSE taxonomy, runs post-generation work, and finalizes persistence.
 `/api/v1/generate/completion` is the lower-level completion boundary;
 `/api/v1/generate/preview-prompt` assembles without provider dispatch.
 
+The normal send/continue/regenerate protocol enters through
+`routes/generationOperations.ts`. It atomically records a lineage- and
+writer-scoped operation, accepts the user row when applicable, and reserves a
+numbered attempt before attaching that attempt to a process-local runner.
+Projection epochs plus operation/attempt/job identifiers fence status reads,
+stream attachment, cancellation, and explicit retries. On startup,
+`reconcileGenerationOperationsAtStartup()` turns interrupted ownership into an
+honest retryable, abandoned, cancelled, or terminal state before routes start.
+The older `/api/v1/generate/chat` boundary remains the lower-level chat runner
+used by the operation protocol and compatibility callers.
+
 Prompt construction and scripting are canonical in
 [Prompt Assembly And Scripting](prompt-assembly-and-scripting.md); provider and
 profile behavior in [Providers And Models](providers-and-models.md); Agent and
@@ -253,6 +267,16 @@ any streamed-so-far text, persists that processed row mode-aware, then emits a
 protected `done` with additive `outcome: 'cancelled'`. The token stream and
 `done.result` remain raw; `done.postGeneration.finalText` is the exact persisted
 snapshot. Older terminal frames without an outcome remain completed by default.
+
+Successful persisted results create a `generationEffects.ts` ledger for IGP,
+plugin output, automatic translation, notification, TTS, completion sound, and
+emotion-image state. Effects are durable, ephemeral, or recomputed.
+Authenticated routes provide idempotent claim, lease, and receipt handling:
+expired durable claims may be reclaimed, while ephemeral effects are skipped
+during late recovery. Startup reconciles pre-ledger completed operations, and
+the completion-effect retry sweep resumes pending server-owned automatic
+translation. Browser execution and late recovery are documented in
+[Client Runtime](../../src/docs/client-runtime.md#generation-client).
 Shutdown does not terminalize an operation while that cancellation snapshot is
 still being persisted. If a restart finds an unjournaled `stopping` operation,
 it recovers it as retryable abandoned work rather than claiming cancellation

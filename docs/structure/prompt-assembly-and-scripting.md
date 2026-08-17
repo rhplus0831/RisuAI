@@ -1,6 +1,6 @@
 # Prompt Assembly And Scripting
 
-Last audited: 2026-08-09.
+Last audited: 2026-08-17.
 
 This guide owns server prompt construction, CBS and history variables,
 lorebook and memory injection, prompt-template precedence, generation
@@ -20,20 +20,24 @@ from the [architecture index](README.md) for cross-cutting ownership.
 
 ## Generation Surfaces
 
-`/api/v1/generate/chat` is the normal server-assembled surface. The browser
-sends raw chat inputs; Fastify resolves effective settings and profiles,
-assembles the prompt, runs provider policy, streams chat frames, derives the
-final message, and persists it. The browser bridge is
+Normal send, continue, and regenerate start at
+`/api/v1/generation-operations`. The operation route accepts the durable intent
+and applicable user row atomically, then launches the lower-level
+`/api/v1/generate/chat` runner. That runner resolves effective settings and
+profiles, assembles the prompt, runs provider policy, streams chat frames,
+derives the final message, and persists it. The browser bridge is
 `src/ts/process/serverBackedSendChat.ts`; route and provider owners are
-`server/fastify/src/routes/generationChat.ts` and
+`server/fastify/src/routes/generationOperations.ts`, `generationChat.ts`, and
 `server/fastify/src/prompt/chatDispatch.ts`.
 
-Durable send, continue, and regenerate are the application path.
-`server/fastify/src/generationJobs.ts` keeps process-local jobs, emits
-`job_accepted`, buffers replayable frames, supports reattach and cancellation,
-and exposes active jobs through bootstrap. SQLite-backed finalization retries
+SQLite operation/attempt state survives process loss and records honest startup
+recovery. `server/fastify/src/generationJobs.ts` owns each process-local runner,
+emits `job_accepted`, buffers replayable frames, and supports stream attachment
+and cancellation while that runner exists. SQLite-backed finalization retries
 protect idempotency and reject stale chat/message/script-state targets. Inline
-non-durable SSE remains for tests and tool-style callers.
+non-durable chat SSE remains for tests and tool-style callers; operation, job,
+and effect lifecycles are canonical in
+[Backend Generation](backend.md#generation-and-background-work).
 
 Protocol-v1 send assembly carries the accepted user-message id through prompt
 construction. An explicit operation retry recognizes that exact transcript row
@@ -266,6 +270,10 @@ retry, character Escape Output, ordered provider/profile retry, and buffered
 multi-generation derivation happen before a frame is authoritative. Automatic
 translation is owned by the
 [translation guide](translation-and-input-hooks.md#generated-message-auto-translation).
+The SQLite generation-effect ledger does not change this logical order. It
+records which server/client completion effects may run, be receipted, or be
+recovered after persistence; that delivery contract is canonical in
+[Backend Generation And Background Work](backend.md#generation-and-background-work).
 
 Interrupted streams take a narrower branch. Cancellation and post-token failure
 apply steps 1–2 once to the accumulated partial and persist that exact text, but

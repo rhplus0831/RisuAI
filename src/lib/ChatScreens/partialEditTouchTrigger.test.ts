@@ -212,9 +212,7 @@ describe('attachPartialEditTouchTrigger', () => {
     attach()
     press(40, 40)
     // A different touch id ends while ours (id 0) is still down.
-    window.dispatchEvent(
-      touchEvent('touchend', [{ x: 40, y: 40, id: 0 }], true, [{ x: 200, y: 300, id: 1 }]),
-    )
+    window.dispatchEvent(touchEvent('touchend', [{ x: 40, y: 40, id: 0 }], true, [{ x: 200, y: 300, id: 1 }]))
     vi.advanceTimersByTime(500)
     expect(onLongPress).toHaveBeenCalledWith(block)
   })

@@ -1,6 +1,6 @@
 # Client Runtime Guide
 
-Last audited: 2026-08-09.
+Last audited: 2026-08-17.
 
 This file covers browser TypeScript coordinators that influence visible Svelte
 UI. For component ownership and UI triage, start with the
@@ -44,17 +44,17 @@ Endpoint, credential, provider, limit, and result contracts belong in
 
 ## Startup Sequence
 
-`src/main.ts` installs the router, push-notification navigation listener, and
-document-root viewport scroll guard before mounting `App.svelte`. It then
-optionally installs the Fastify browser smoke hook, calls `loadData()`,
-initializes hotkeys, and removes the preloading element.
+`src/main.ts` installs the router, push-notification listeners, viewport/root
+scroll coordinators, and shared completion-audio priming before mounting
+`App.svelte`. It then optionally installs the Fastify browser smoke hook, calls
+`loadData()`, initializes hotkeys, and removes the preloading element.
 
 `loadData()` in `src/ts/bootstrap.ts` performs the visible startup work:
 
 1. Adopt the sole pending-mutation writer identity, if one exists, then fetch
    `/api/v1/bootstrap` for initialization, revision, database-lineage/writer
-   metadata, active generation jobs, and message/greeting translation recovery
-   entries.
+   metadata, generation operation/job projections, writer-scoped
+   finalization/effect recovery, and message/greeting translation entries.
 2. If bootstrap reports `initialized: false`, issue the initialization command.
    The server's transactional classifier accepts only genuinely empty state and
    rejects conflict state. The winning client reuses the returned revision;
@@ -75,9 +75,10 @@ initializes hotkeys, and removes the preloading element.
    already-resident lorebook coverage, and hydrate the selected prompt-template
    owner before caching the common resource revision.
 6. Enable guarded resource writes and command-event reconciliation.
-7. Seed active generation jobs, writer-scoped generation-finalization journal
-   state, and separate message/greeting translation recovery state; then start
-   their refreshers and durable generation reattach.
+7. Seed generation operations/jobs, writer-scoped generation-finalization and
+   pending-effect state, and separate message/greeting translation recovery;
+   then start operation reconciliation, effect recovery, refreshers, and live
+   runner reattach.
 8. Start chat-message hydration, fetch the active chat body, start bridge patch
    lifecycle flushing, and subscribe to server events.
 9. Initialize the push coordinator and reconcile both enabled and disabled
@@ -278,12 +279,18 @@ Important files:
   `src/ts/process/index.svelte.ts` owns the high-level `sendChat` coordinator;
   `doingChat`, `chatProcessStage`, and `activeGenerationTarget` remain aggregate
   compatibility projections rather than the per-chat UI source of truth.
+- `src/ts/server/generationOperations.ts` owns protocol-v1 atomic
+  send/continue/regenerate acceptance, encrypted outbox replay, optimistic user
+  rows, operation projections, attempt-fenced streams, cancellation, retries,
+  and bootstrap reconciliation. The lower-level chat endpoint remains the
+  compatibility path when the server does not advertise this protocol.
 - `src/ts/process/request/providerCapability.ts` and
   `src/ts/process/request/serverPromptAssembly.ts` decide whether the selected
   request can run on the server.
 - `src/ts/process/serverBackedSendChat.ts` builds server requests, maps legacy
-  inlay ids to server asset refs, calls `/api/v1/generate/chat` or the preview
-  route, applies server message patches, and returns terminal data.
+  inlay ids to server asset refs, selects the advertised generation-operation
+  protocol or lower-level `/api/v1/generate/chat` path, applies server message
+  patches, and returns terminal data.
 - `src/ts/process/request/serverChat.ts` parses chat SSE frames:
   `job_accepted`, stage, prompt, patch, info, token, side-effect,
   `agent_preset_progress`, `post_generation_progress`, warning, error, and
@@ -300,6 +307,9 @@ Important files:
   transport error. Bootstrap reconciliation removes absent jobs and rehydrates
   their exact transcripts; manual Retry, Refresh, and Stop operations remain
   job-ID scoped.
+- `src/ts/process/generationEffectLedger.ts` claims and receipts client effects
+  for the exact persisted generation. `recoveredGenerationEffects.ts` retries
+  missing durable effects after bootstrap; late ephemeral effects are skipped.
 
 Before prompt assembly or provider fetch, `sendChat` awaits the character-owned
 maintenance batch from `sendChatContext.ts`, the pending chat generation-settings
@@ -329,9 +339,13 @@ can advance the revision cache, apply a server-owned `messagePatch`, render the
 inlay screen over `finalText`, request `resendChat`, or surface an Agent Preset
 error as a failed terminal result. Generation results are persisted server-side,
 so the browser suppresses the old generation-result command in server-backed
-paths. The configured message-completion sound is emitted once from this
-successful terminal lifecycle, rather than from the currently selected chat
+paths. The configured message-completion sound is emitted once through its
+ledgered successful terminal lifecycle, rather than from the selected chat
 component, so background and reattached generations retain the same behavior.
+`messageCompletionSound.ts` reuses one bundled-audio element and
+`installCompletionSoundPriming()` primes it synchronously on pointer or keyboard
+activation for mobile autoplay policy. LLM translation-end audio reuses the
+same element through `playCompletionDing()` instead of creating a second player.
 
 When an `info` frame carries `halfStreaming: true`,
 `src/ts/process/request/serverChat.ts` marks the stream as half-streaming and

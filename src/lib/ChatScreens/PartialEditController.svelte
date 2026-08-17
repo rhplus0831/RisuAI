@@ -77,7 +77,11 @@
     if (!block) return null
 
     for (const controller of sharedBlockHoverControllers) {
-      if (isControllerEligible(controller) && controller.bodyRoot.contains(block) && controller.isEditableBlock(block)) {
+      if (
+        isControllerEligible(controller) &&
+        controller.bodyRoot.contains(block) &&
+        controller.isEditableBlock(block)
+      ) {
         return { controller, block }
       }
     }

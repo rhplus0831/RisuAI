@@ -1,6 +1,6 @@
 # Svelte UI Guide
 
-Last audited: 2026-08-13.
+Last audited: 2026-08-17.
 
 This guide owns the Svelte application shell, routing, shared frontend
 platform behavior, localization, styling, responsive behavior, and Playground.
@@ -40,7 +40,7 @@ CSS, and plugin execution.
 | Path | Role |
 | ---- | ---- |
 | `index.html` | Mounts `#app` and loads `/src/main.ts`. |
-| `src/main.ts` | Installs the preload-error alert, router, push listeners, and viewport coordinators; mounts `App.svelte`; conditionally lazy-loads viewport diagnostics; starts bootstrap and hotkeys; then removes `#preloading`. |
+| `src/main.ts` | Installs the preload-error alert, router, push listeners, viewport coordinators, and shared completion-audio priming; mounts `App.svelte`; conditionally loads viewport diagnostics; starts bootstrap/hotkeys; removes `#preloading`. |
 | `src/App.svelte` | Main render switch, responsive sidebar dialog, app-level file drop, route effects, and global overlay host. |
 | `src/styles.css` | Tailwind v4 import, theme defaults, full-height shell, global chat text CSS, and compatibility base rules. |
 | `src/ts/bootstrap.ts` | Loads Fastify resources and starts hydration, events, bridges, and UI-derived CSS state. |

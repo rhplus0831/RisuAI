@@ -1,6 +1,6 @@
 # Providers And Models
 
-Last audited: 2026-08-09.
+Last audited: 2026-08-17.
 
 This guide owns browser model metadata, durable model profiles and credentials,
 server-owned provider operations, provider dispatch, runtime options, capability
@@ -96,6 +96,11 @@ presets, loadouts, and older callers. Preservation runs through
 `src/ts/model/modelPresetSnapshots.ts`,
 `src/ts/promptPresetModelOverrides.svelte.ts`, `src/ts/presetSplit.ts`, and
 `server/fastify/src/commands/splitPresets.ts` plus `src/ts/loadout.ts`.
+Applying model or prompt presets operates on a masked browser projection, so
+`applyModelPresetFieldsToDatabase()` and `applyPromptPresetFieldsToDatabase()`
+must use `normalizeProjectedProviderCredentials()` rather than persisted-secret
+normalization. This preserves credential row identity and masked values instead
+of treating the projection as a raw credential replacement.
 Model-profile UI ownership is in the
 [Svelte Settings UI guide](../../src/docs/svelte-settings-ui.md).
 
@@ -397,12 +402,10 @@ visible retention behavior are additionally pinned by
 - Compatibility profiles without `providerId` can run when inference plus the
   capability table is sufficient. Unsupported explicit provider ids remain
   preserved placeholders and block active generation.
-- Memory summaries resolve the memory-role profile from the current model and
-  prompt presets bound to the owning chat; chats without a durable binding
-  retain the global/legacy fallback. Embeddings remain on the separate
-  Hypa/Voyage/custom contract; provider deadlines are bounded by
-  `server/fastify/src/memoryProviderDeadline.ts`. Prompt-facing behavior is in
+- Memory-role profile and preset resolution is canonical in
   [Prompt Assembly And Scripting](prompt-assembly-and-scripting.md#hypa-v3-memory-phase).
+  Embeddings remain on the separate Hypa/Voyage/custom contract; provider
+  deadlines are bounded by `server/fastify/src/memoryProviderDeadline.ts`.
 - `customModels` / `xcustom:::` remains separate from first-class Custom API
   profiles.
 - Retained retired settings must not be mistaken for live controls. See

@@ -1,6 +1,6 @@
 # Svelte Settings UI Guide
 
-Last audited: 2026-08-09.
+Last audited: 2026-08-17.
 
 This guide owns settings navigation, data-driven rows, shared controls,
 authoring editors, model-profile presentation, and visible settings persistence
@@ -306,6 +306,12 @@ create/edit/delete presentation, masked-secret rotation, and profile-reference
 deletion checks. `src/ts/model/providerCredentialRecords.ts` owns credential
 schema/projection normalization; durable credential and profile mutation helpers
 live in `src/ts/model/modelProfileMutations.ts`.
+
+Model and prompt preset application operates on the masked resource projection.
+`src/ts/storage/database.svelte.ts` therefore normalizes projected credentials
+without replacing their preserved masked values; preset selection must not be
+treated as a raw credential import. The server-side credential contract is in
+[Providers And Models](../../docs/structure/providers-and-models.md#provider-credentials).
 
 `src/lib/Setting/Pages/Model/ModelRuntimeDefaultsEditor.svelte` edits
 `Database.modelRuntimeDefaults` with explicit Edit/Save/Cancel/Reset and a

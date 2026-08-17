@@ -1,6 +1,6 @@
 # Source Docs
 
-Last audited: 2026-08-09.
+Last audited: 2026-08-17.
 
 These five guides are the current frontend and browser-runtime documentation
 for work under `src/`. Start with the narrowest owner instead of duplicating a
@@ -12,7 +12,7 @@ contract in a neighboring guide.
 | [`svelte-chat-ui.md`](svelte-chat-ui.md) | Chat frame, transcript and message rendering, composer variants, generation/loading feedback, and in-chat confirmations. |
 | [`svelte-navigation-ui.md`](svelte-navigation-ui.md) | Sidebar, character folders, character/chat selection and configuration, and list reordering. |
 | [`svelte-settings-ui.md`](svelte-settings-ui.md) | Settings routing, data-driven rows, shared controls, authoring editors, model-profile UI, and visible persistence states. |
-| [`client-runtime.md`](client-runtime.md) | Browser startup, resources, hydration, durable mutations and recovery, generation reattach, and server-operation adapters. |
+| [`client-runtime.md`](client-runtime.md) | Browser startup, resources, hydration, durable mutations/recovery, generation operations/effects/reattach, completion audio, and server-operation adapters. |
 
 Continue with the canonical focused architecture guide for cross-layer
 contracts:

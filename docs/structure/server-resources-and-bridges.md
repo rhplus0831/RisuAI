@@ -1,6 +1,6 @@
 # Server Resources And Bridges
 
-Last audited: 2026-08-09.
+Last audited: 2026-08-17.
 
 This guide owns the Fastify-to-browser resource boundary: root and targeted REST
 reads, hash-verified cache substitution, lazy body hydration, invalidation and
@@ -17,9 +17,10 @@ recovery, durable command dispatch, and compatibility bridges. Start from the
 - `fetchServerBootstrap()` sends writer intent to `GET /api/v1/bootstrap`.
   Bootstrap is deliberately runtime-only metadata: initialization state,
   revision/schema version, database lineage, durable writer epoch, the
-  pre-takeover writer verdict, asset base URL, running generation jobs, and
-  running plus bounded recent terminal message/greeting translations. It does
-  not carry durable application data.
+  pre-takeover writer verdict, asset base URL, generation-operation protocol and
+  projections, running generation jobs, writer-scoped finalization/effect
+  recovery, and running plus bounded recent terminal message/greeting
+  translations. It does not carry durable application data.
 - When bootstrap reports `initialized: false`, the browser attempts
   `POST /api/v1/commands/state/initialize`. The server re-runs the classifier in
   the command transaction and accepts only genuinely empty state; conflicting
@@ -49,9 +50,10 @@ recovery, durable command dispatch, and compatibility bridges. Start from the
   enabling normal command/event reconciliation; legacy preset bodies remain
   on-demand.
 - Startup seeds the known-server and applied-resource revision cursors, enables
-  the resource write guard, records runtime jobs, starts active-generation and
-  message/greeting translation recovery, starts active-chat hydration, installs the
-  bridge lifecycle flush, and subscribes to `/api/v1/events`.
+  the resource write guard, records operation/job projections, starts
+  generation reattach and pending-effect recovery, starts message/greeting
+  translation recovery and active-chat hydration, installs the bridge lifecycle
+  flush, and subscribes to `/api/v1/events`.
 - Command success reconciliation and foreign command SSE events both flow through the
   same serialized resource path. Contiguous response-confirmed optimistic
   effects can advance their resource fences without a read; authoritative reads
@@ -76,11 +78,14 @@ recovery, durable command dispatch, and compatibility bridges. Start from the
 | `src/ts/server/promptTemplateHydration.ts`                 | Fetches the template owned by a selected or explicitly requested prompt preset.                                                      |
 | `src/ts/server/messageTranslationJobs.ts`                  | Tracks detached manual or generated-message translation rows from bootstrap and refresh polling.                                     |
 | `src/ts/server/greetingTranslations.svelte.ts`             | Character-scoped greeting projection, source/settings fencing, manual translation, refresh, and job recovery.                        |
+| `src/ts/server/generationOperations.ts`                    | Operation protocol negotiation, outbox-backed acceptance/cancellation, attempt streams, projections, retries, and bootstrap recovery. |
+| `src/ts/process/generationEffectLedger.ts`                 | Claims, leases, and receipts exact-generation client effects.                                                                        |
+| `src/ts/process/recoveredGenerationEffects.ts`             | Reconciles pending durable/recomputed effects and permanently skips late ephemeral effects after bootstrap.                           |
 | `src/ts/server/settingsGroups.ts`                          | Browser settings-group ownership, including the `sidebar` membership projection.                                                     |
 | `src/ts/process/serverGeneratedMessageTranslation.ts`      | Applies translation results embedded in generation completion and seeds the shared translation-job state for running/failure UI.     |
 | `src/ts/process/generatedMessageTranslationEligibility.ts` | Prevents the older rendered-row auto trigger from duplicating server-owned generated-message translation.                            |
 | `src/ts/server/inlayCatalog.ts`                            | Standalone browser projection and revision-aware writes for inlay metadata.                                                          |
-| `src/ts/process/reattach.ts`                               | Reattaches running durable generation jobs reported by bootstrap.                                                                    |
+| `src/ts/process/reattach.ts`                               | Reattaches running generation-operation attempts reported by bootstrap.                                                              |
 | `src/ts/server/draftRecoveryScope.ts`                      | Shared database-lineage/writer-session scope for non-authoritative editing recovery.                                                  |
 | `src/lib/ChatScreens/DefaultChatScreen.composerDrafts.ts`  | Bounded per-transcript composer recovery in `sessionStorage`.                                                                         |
 | `src/ts/server/moduleEditorDraftStore.ts`                  | Separately encrypted, bounded IndexedDB recovery for module-editor drafts.                                                            |
@@ -245,13 +250,15 @@ and generation/message/greeting job metadata refreshes through read-only
 bootstrap.
 
 Server replay is backed by SQLite `command_events` and retained for
-`COMMAND_EVENT_HISTORY_LIMIT` revisions. The server subscribes to live command
-events before replay, queues live events that arrive during the replay flush,
-then switches to live delivery. Heartbeats and memory-event fanout begin only
-after replay succeeds, and slow-consumer overflow tears down the stream. Memory
-events are live progress notifications and are not replayed; they update Hypa
-V3 job/progress UI through `memoryJobEvents.ts` rather than refreshing database
-resources.
+`COMMAND_EVENT_HISTORY_LIMIT` revisions. After the writer frame and connected
+comment, every successful connection receives an initial `memory_snapshot`
+frame before command replay; `memoryJobEvents.ts` uses it to seed current Hypa
+V3 job/progress state. The server subscribes to live command events before
+replay, queues live events that arrive during the replay flush, then switches to
+live delivery. Heartbeats and live memory-event fanout begin only after replay
+succeeds, and slow-consumer overflow tears down the stream. Memory progress is
+not replayed and does not invalidate database resources. The full SSE ordering
+contract is in [Data And Events](data-and-events.md#sse-and-streaming).
 
 ## Read And Hydration Endpoints
 
@@ -425,8 +432,8 @@ that affect rendered state should follow the visible-state policy in
 
 | File                               | Role                                                                                                                                                                                 |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `bridgeFlush.ts`                   | Flushes pending bridge patches on `pagehide` / hidden visibility with `keepalive`.                                                                                                   |
-| `pendingBridgeFlushRegistry.ts`    | Registers lazily loaded/component-owned pending writes for page-exit and owner-targeted flushes without importing every feature at bootstrap.                                        |
+| `bridgeFlush.ts`                   | Directly imports and flushes every built-in bridge on `pagehide` / hidden visibility with `keepalive`, then also invokes registered extension owners.                                 |
+| `pendingBridgeFlushRegistry.ts`    | Registers bridge flush/reset callbacks for owner-targeted calls and dynamically loaded owners. Most built-in bridges register here as well as being covered by `bridgeFlush.ts`.      |
 | `settingsBridge.svelte.ts`         | Debounced settings groups through `PATCH /commands/settings/:group`, equality-noop suppression, rollback-aware patches.                                                              |
 | `characterBridge.svelte.ts`        | Character profile/draft bridging through `PATCH /commands/characters/:id`.                                                                                                           |
 | `chatBridge.svelte.ts`             | Chat metadata and chat-folder bridging through `PATCH /commands/chats/:id` and chat-folder routes.                                                                                   |
