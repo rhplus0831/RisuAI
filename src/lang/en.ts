@@ -523,7 +523,7 @@ export const languageEnglish = {
       '- **Playground**: Embedding testing in Playground',
     keepSessionAlive:
       'Keeps the tab active and prevents the session from expiring due to inactivity in browsers. This may require refresh to take effect.\n\n' +
-      '- **Via Sound**: Plays a silent audio at regular intervals to keep the session alive. This method is known as most compatible and effective in most browsers.\n',
+      '- **Via Sound**: Continuously plays nearly silent audio to keep the session alive. Because this keeps the browser audio session in use, it may reduce, pause, or otherwise interfere with audio from other applications. Use it only when needed.\n',
     reSummarizationPrompt:
       'The prompt used when merging multiple selected summaries into one via bulk edit. If blank, the default prompt is used.',
     hypaV3MemoryTokensRatio:

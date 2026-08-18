@@ -268,7 +268,7 @@ export const languageChineseTraditional = {
     hypaV3EmbeddingRequestsPerMinute: '用於相似性搜尋的每分鐘最大嵌入模型請求數。',
     hypaV3EmbeddingMaxConcurrent: '用於相似性搜尋的最大同時嵌入模型請求數。',
     keepSessionAlive:
-      '使分頁保持活躍狀態，防止因閒置而在瀏覽器中過期。可能需要重新整理後才能生效。\n\n- **透過音效**：定期播放靜音音訊以保持工作階段活躍。此方法在大多數瀏覽器中相容性最佳且最有效。',
+      '使分頁保持活躍狀態，防止因閒置而在瀏覽器中過期。可能需要重新整理後才能生效。\n\n- **透過音效**：持續播放幾乎無聲的音訊以保持工作階段活躍。此功能會持續使用瀏覽器的音訊工作階段，因此可能降低其他應用程式的音量、暫停或干擾其音訊。僅在需要時使用。',
     localNetworkModeDesc:
       '透過 Fastify 伺服器路由私有/區域網路模型 URL，而非透過瀏覽器直接抓取。\n\n**用途**\n- 避免瀏覽器的私有網路/CORS 限制\n- 降低本機推斷首個 Token 生成緩慢時的逾時風險\n\n**運作方式**\n- 僅在啟用「本機網路模式」且目標 URL 被偵測為本機或私有位址時套用\n- 串流回應優先使用 `/api/v1/proxy/stream-jobs` 中繼\n- 非串流回應使用 `/api/v1/proxy/fetch` 中繼\n\n**限制**\n- 僅適用於 OpenAI 相容的請求路徑\n- 請使用由 Fastify 提供服務的 Risuai URL，才能讓此功能生效',
   },

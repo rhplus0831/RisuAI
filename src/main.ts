@@ -10,7 +10,7 @@ import { installFastifyBrowserSmokeHook } from './ts/server/browserSmoke'
 import { installViewportScrollGuard, resetViewportScroll } from './ts/gui/viewportScrollGuard'
 import { installVisualViewportCoordinator } from './ts/gui/visualViewportCoordinator'
 import { installViewportDebugOverlayIfEnabled } from './ts/gui/viewportDebugOverlayGate'
-import { installCompletionSoundPriming } from './ts/process/messageCompletionSound'
+import { installCompletionAudioUnlock } from './ts/process/messageCompletionSound'
 import {
   installPushNotificationForegroundCleanup,
   installPushNotificationNavigationListener,
@@ -29,7 +29,7 @@ installPushNotificationNavigationListener()
 installPushNotificationForegroundCleanup()
 installVisualViewportCoordinator({ onApply: resetViewportScroll, onRelease: resetViewportScroll })
 installViewportScrollGuard()
-installCompletionSoundPriming()
+installCompletionAudioUnlock()
 let app = mount(App, {
   target: document.getElementById('app'),
 })

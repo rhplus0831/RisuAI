@@ -45,7 +45,7 @@ Endpoint, credential, provider, limit, and result contracts belong in
 ## Startup Sequence
 
 `src/main.ts` installs the router, push-notification listeners, viewport/root
-scroll coordinators, and shared completion-audio priming before mounting
+scroll coordinators, and shared completion-audio context unlocking before mounting
 `App.svelte`. It then optionally installs the Fastify browser smoke hook, calls
 `loadData()`, initializes hotkeys, and removes the preloading element.
 
@@ -353,10 +353,15 @@ so the browser suppresses the old generation-result command in server-backed
 paths. The configured message-completion sound is emitted once through its
 ledgered successful terminal lifecycle, rather than from the selected chat
 component, so background and reattached generations retain the same behavior.
-`messageCompletionSound.ts` reuses one bundled-audio element and
-`installCompletionSoundPriming()` primes it synchronously on pointer or keyboard
-activation for mobile autoplay policy. LLM translation-end audio reuses the
-same element through `playCompletionDing()` instead of creating a second player.
+`messageCompletionSound.ts` lazily shares one decoded bundled-audio buffer and
+`AudioContext`. `installCompletionAudioUnlock()` resumes and prepares that
+context from an eligible pointer or keyboard activation without starting an
+audio source, then suspends it while idle. Each actual generation- or
+translation-completion ding uses a disposable `AudioBufferSourceNode`; ended or
+superseded nodes are disconnected and the context is suspended again. Browsers
+without Web Audio construct an `HTMLAudioElement` only for actual playback and
+unload it afterward. Web Push remains the independent background-notification
+path and is not enabled by completion-audio settings.
 
 When an `info` frame carries `halfStreaming: true`,
 `src/ts/process/request/serverChat.ts` marks the stream as half-streaming and
