@@ -4620,7 +4620,7 @@ describe('resource event reconnect backoff', () => {
     expect(eventApi.subscribe).toHaveBeenCalledTimes(2)
   })
 
-  it('resubscribes when the browser comes online or returns to the foreground', async () => {
+  it('resubscribes on online, visibility, pageshow, and focus recovery', async () => {
     await loadWebInitialDatabase()
     expect(pendingMutationApi.replay).toHaveBeenCalledTimes(1)
 
@@ -4629,8 +4629,12 @@ describe('resource event reconnect backoff', () => {
     await vi.waitFor(() => expect(pendingMutationApi.replay).toHaveBeenCalledTimes(2))
     document.dispatchEvent(new Event('visibilitychange'))
     await vi.waitFor(() => expect(eventApi.subscribe).toHaveBeenCalledTimes(3))
+    window.dispatchEvent(new Event('pageshow'))
+    await vi.waitFor(() => expect(eventApi.subscribe).toHaveBeenCalledTimes(4))
+    window.dispatchEvent(new Event('focus'))
+    await vi.waitFor(() => expect(eventApi.subscribe).toHaveBeenCalledTimes(5))
 
-    expect(eventApi.unsubscribe).toHaveBeenCalledTimes(2)
+    expect(eventApi.unsubscribe).toHaveBeenCalledTimes(4)
   })
 
   it('refreshes and resubscribes when a conflict proves the applied projection is behind', async () => {

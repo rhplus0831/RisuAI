@@ -226,8 +226,8 @@ export interface ServerBootstrapRuntime {
 }
 
 export type ServerBootstrapResult =
-  | { status: 'ok'; bootstrap: ServerBootstrapRuntime }
-  | { status: 'error'; error: string }
+  | { status: 'ok'; bootstrap: ServerBootstrapRuntime; requestUid?: string }
+  | { status: 'error'; error: string; requestUid?: string }
   | { status: 'unavailable' }
 
 export function canUseServerBootstrap(): boolean {
@@ -277,6 +277,7 @@ async function fetchServerBootstrapWithMode(input: {
     const message = err instanceof Error ? err.message : String(err)
     return { status: 'error', error: `Network error: ${message}` }
   }
+  const requestUid = response.headers.get('X-Request-UID') || undefined
 
   let body: unknown = null
   try {
@@ -289,6 +290,7 @@ async function fetchServerBootstrapWithMode(input: {
     return {
       status: 'error',
       error: errorMessageFromBody(body, `HTTP ${response.status}`),
+      ...(requestUid ? { requestUid } : {}),
     }
   }
 
@@ -336,6 +338,7 @@ async function fetchServerBootstrapWithMode(input: {
   return {
     status: 'ok',
     bootstrap,
+    ...(requestUid ? { requestUid } : {}),
   }
 }
 

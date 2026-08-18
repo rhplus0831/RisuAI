@@ -1,6 +1,6 @@
 # Server Resources And Bridges
 
-Last audited: 2026-08-17.
+Last audited: 2026-08-18.
 
 This guide owns the Fastify-to-browser resource boundary: root and targeted REST
 reads, hash-verified cache substitution, lazy body hydration, invalidation and
@@ -54,6 +54,14 @@ recovery, durable command dispatch, and compatibility bridges. Start from the
   generation reattach and pending-effect recovery, starts message/greeting
   translation recovery and active-chat hydration, installs the bridge lifecycle
   flush, and subscribes to `/api/v1/events`.
+- Generation recovery treats the lineage-scoped operation projection as durable
+  authority. Active jobs are live attachment hints and local activities are
+  observer state. Runtime read-only bootstrap probes are epoch-fenced and
+  bounded; a foreground probe may supersede an older suspended request while
+  preserving the last successfully applied projection on failure. Terminal or
+  expired jobs are not cleared until their affected transcript has been
+  authoritatively hydrated, and the snapshot's finalization/effect projections
+  are reconciled in the same recovery pass.
 - Command success reconciliation and foreign command SSE events both flow through the
   same serialized resource path. Contiguous response-confirmed optimistic
   effects can advance their resource fences without a read; authoritative reads
@@ -71,6 +79,7 @@ recovery, durable command dispatch, and compatibility bridges. Start from the
 | `src/ts/server/resourceState.svelte.ts`                    | Svelte resource owners, per-slice revisions/status/errors, and the aggregate compatibility view.                                     |
 | `src/ts/server/resourceInvalidation.ts`                    | Initial/full reads, event-to-endpoint planning, targeted reads, revision checks, and applies.                                        |
 | `src/ts/server/resourceRefresh.ts`                         | Coalesced complete refresh for replay gaps, restores, and other broad recovery paths.                                                |
+| `src/ts/server/lifecycleRecovery.ts`                       | One coalesced visibility/page-show/online/focus dispatcher shared by generation and resource recovery.                              |
 | `src/ts/server/commands.ts`                                | One global browser mutation queue, command response decoding, local-effect capture, and reconciliation batching.                     |
 | `src/ts/server/hydrationReads.ts`                          | Browser wrappers for chat, lorebook, legacy-preset, and prompt-template bodies.                                                      |
 | `src/ts/server/chatMessageHydration.svelte.ts`             | Active/ranged/bulk chat hydration and character-lorebook hydration.                                                                  |
@@ -183,7 +192,7 @@ or Realm completion without making an unapplied event look complete. Clean
 closes and stream errors reconnect with exponential backoff plus jitter, capped
 at 30 seconds. A malformed command frame forces a complete resource refresh
 before reconnect. Every frame resets a 60-second silence watchdog;
-visibility/online recovery reconnects immediately, successful reconnect
+visibility/page-show/online/focus recovery reconnects immediately, successful reconnect
 retriggers current-scope outbox replay, and foreign writer frames enter the
 takeover flow. Server writer/memory frames are live-only; only command events
 are persisted and replayed.
@@ -469,11 +478,15 @@ Server protocol metrics are opt-in with `RISU_PROTOCOL_METRICS=1` (also accepts
 `true`, `yes`, or `on`). Browser protocol debug logs are opt-in with
 `localStorage.setItem('risu:protocol-debug', '1')` or `'true'`. Browser diagnostics include
 complete-resource-refresh reasons, hydration concurrency and stale-drop
-counters, asset byte-read fanout counters, and server event-stream frame/byte,
+counters, asset byte-read fanout counters, bounded generation-recovery events
+and counters, and server event-stream frame/byte,
 lifetime, and close-reason metrics. Memory job SSE and refresh paths
 gate updates through ordering checks, record terminal jobs, and suppress stale
 or non-active terminal refresh updates. Relevant files include
 `server/fastify/src/protocolMetrics.ts`,
 `src/ts/server/protocolDiagnostics.ts`, `src/ts/server/assets.ts`,
 `chatMessageHydration.svelte.ts`, `memoryJobRefresh.ts`, and
-`resourceRefresh.ts`.
+`resourceRefresh.ts`. Generation recovery diagnostics contain only trigger,
+recovery epoch, operation/attempt/job identifiers, state transitions,
+disposition, and request UID; they never contain prompts, generated text,
+credentials, or bodies.

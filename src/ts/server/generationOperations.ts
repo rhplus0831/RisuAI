@@ -41,6 +41,7 @@ import {
   type GenerationOperationProjection,
   type ServerBootstrapRuntime,
 } from './bootstrap'
+import { recordGenerationRecoveryEvent } from './protocolDiagnostics'
 
 const GENERATION_OPERATIONS_ENDPOINT = '/api/v1/generation-operations'
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
@@ -57,18 +58,28 @@ export interface GenerationOperationGenerationIntent {
   clientCapabilities: Record<string, unknown>
 }
 
-export interface GenerationOperationSubmitRequest extends Record<string, unknown> {
+interface GenerationOperationSubmitRequestBase extends Record<string, unknown> {
   protocolVersion: 1
   operationId: string
   baseRevision: number
   characterId: string
   chatId: string
-  mode: 'send'
-  acceptedMessageId: string
-  message: Record<string, unknown> & { role?: 'user' | 'char'; data?: string; chatId?: string }
   draftGeneration: unknown
   generation: GenerationOperationGenerationIntent
 }
+
+export type GenerationOperationSubmitRequest = GenerationOperationSubmitRequestBase &
+  (
+    | {
+        mode: 'send'
+        acceptedMessageId: string
+        message: Record<string, unknown> & { role?: 'user' | 'char'; data?: string; chatId?: string }
+      }
+    | {
+        mode: 'continue' | 'regenerate'
+        targetMessageId: string
+      }
+  )
 
 export interface GenerationOperationStreamDescriptor {
   operationId: string
@@ -136,11 +147,18 @@ export type GenerationOperationCancellationResult =
 
 export interface StagedAcceptedSendOperation {
   target: ActiveChatTarget
-  request: GenerationOperationSubmitRequest
+  request: GenerationOperationSubmitRequest & { mode: 'send' }
   intent: DurableMutationIntent & { kind: 'generation-operation-submit' }
   handle: PendingMutationHandle
   optimisticMessage: Message
   rollbackOptimisticAppend: () => void
+}
+
+export interface StagedTargetedGenerationOperation {
+  target: ActiveChatTarget
+  request: GenerationOperationSubmitRequest & { mode: 'continue' | 'regenerate' }
+  intent: DurableMutationIntent & { kind: 'generation-operation-submit' }
+  handle: PendingMutationHandle
 }
 
 export type GenerationOperationDispatchResult =
@@ -165,9 +183,14 @@ interface GenerationOperationCancellationRuntime {
   intent?: DurableMutationIntent & { kind: 'generation-operation-cancel' }
   inFlight?: Promise<GenerationOperationCancellationResult>
   rollbackOptimisticAppend?: () => void
-  viewerDetachers: Set<() => void>
+  viewers: Set<GenerationOperationViewer>
   reconcileAttempt: number
   reconcileTimer?: ReturnType<typeof setTimeout>
+}
+
+interface GenerationOperationViewer {
+  onStop: () => void
+  onRetire: () => void
 }
 
 const cancellationRuntimeByOperationId = new Map<string, GenerationOperationCancellationRuntime>()
@@ -234,7 +257,7 @@ function targetMatches(left: ActiveChatTarget | undefined, right: ActiveChatTarg
 function cancellationRuntime(operationId: string): GenerationOperationCancellationRuntime {
   let runtime = cancellationRuntimeByOperationId.get(operationId)
   if (!runtime) {
-    runtime = { viewerDetachers: new Set(), reconcileAttempt: 0 }
+    runtime = { viewers: new Set(), reconcileAttempt: 0 }
     cancellationRuntimeByOperationId.set(operationId, runtime)
   }
   return runtime
@@ -334,9 +357,14 @@ export function findGenerationOperationIdForTarget(target: ActiveChatTarget | nu
   return undefined
 }
 
-export function registerGenerationOperationViewer(operationId: string, detach: () => void): () => void {
+export function registerGenerationOperationViewer(
+  operationId: string,
+  onStop: () => void,
+  onRetire: () => void = onStop,
+): () => void {
   const runtime = cancellationRuntime(operationId)
-  runtime.viewerDetachers.add(detach)
+  const viewer = { onStop, onRetire }
+  runtime.viewers.add(viewer)
   const state = cancellationByOperationId(operationId)?.state
   if (
     state === 'stop_sending' ||
@@ -346,21 +374,35 @@ export function registerGenerationOperationViewer(operationId: string, detach: (
     state === 'settled_completed' ||
     state === 'settled_nonrunning'
   ) {
-    queueMicrotask(detach)
+    queueMicrotask(onStop)
   }
-  return () => runtime.viewerDetachers.delete(detach)
+  return () => runtime.viewers.delete(viewer)
 }
 
 function detachGenerationOperationViewers(operationId: string): void {
   const runtime = cancellationRuntime(operationId)
-  for (const detach of [...runtime.viewerDetachers]) {
+  for (const viewer of [...runtime.viewers]) {
     try {
-      detach()
+      viewer.onStop()
     } catch (error) {
       console.error(error)
     }
   }
-  runtime.viewerDetachers.clear()
+  runtime.viewers.clear()
+}
+
+/** Retire stale local observers without changing durable operation state. */
+export function retireGenerationOperationViewers(operationId: string): void {
+  const runtime = cancellationRuntimeByOperationId.get(operationId)
+  if (!runtime) return
+  for (const viewer of [...runtime.viewers]) {
+    try {
+      viewer.onRetire()
+    } catch (error) {
+      console.error(error)
+    }
+  }
+  runtime.viewers.clear()
 }
 
 function operationIntentForSubmit(request: GenerationOperationSubmitRequest): DurableMutationIntent & {
@@ -432,7 +474,7 @@ export async function stageAcceptedSendGenerationOperation(input: {
     typeof input.message === 'string'
       ? { role: 'user', data: input.message, time: Date.now(), chatId: acceptedMessageId }
       : { ...cloneJson(input.message), chatId: acceptedMessageId }
-  const request: GenerationOperationSubmitRequest = {
+  const request: GenerationOperationSubmitRequest & { mode: 'send' } = {
     protocolVersion: 1,
     operationId,
     baseRevision,
@@ -464,6 +506,44 @@ export async function stageAcceptedSendGenerationOperation(input: {
     optimisticMessage,
     rollbackOptimisticAppend: optimistic.rollback,
   }
+}
+
+export async function stageTargetedGenerationOperation(input: {
+  target: ActiveChatTarget
+  mode: 'continue' | 'regenerate'
+  targetMessageId: string
+  draftGeneration?: unknown
+  generation: GenerationOperationGenerationIntent
+}): Promise<StagedTargetedGenerationOperation | { status: 'error'; error: string }> {
+  if (!input.target.characterId || !input.target.chatId) {
+    return { status: 'error', error: 'The active chat has no durable server identity.' }
+  }
+  if (!input.targetMessageId) {
+    return { status: 'error', error: 'The generation target has no durable message identity.' }
+  }
+  const baseRevision = peekCachedServerCommandRevision() ?? (await getServerCommandBaseRevision())
+  if (baseRevision === null) return { status: 'error', error: 'The server revision is unavailable.' }
+
+  const operationId = createProtocolUuid()
+  const request: GenerationOperationSubmitRequest & { mode: 'continue' | 'regenerate' } = {
+    protocolVersion: 1,
+    operationId,
+    baseRevision,
+    characterId: input.target.characterId,
+    chatId: input.target.chatId,
+    mode: input.mode,
+    targetMessageId: input.targetMessageId,
+    draftGeneration: cloneJson(input.draftGeneration ?? null),
+    generation: cloneJson(input.generation),
+  }
+  const intent = operationIntentForSubmit(request)
+  const handle = stagePendingMutation(`generation-operation-submit:${operationId}`, intent)
+  const persistence = await handle.ready
+  if (persistence !== 'persisted') {
+    return { status: 'error', error: 'The generation operation could not be staged durably.' }
+  }
+  trackLocalGenerationOperation(operationId, input.target, () => undefined)
+  return { target: { ...input.target }, request, intent, handle }
 }
 
 function errorMessage(body: unknown, response: Response): string {
@@ -577,19 +657,41 @@ export function generationOperationStreamForActiveJob(
   return generationOperationStreamDescriptor({ operation })
 }
 
-/** Apply a typed error-body projection and expose its current exact stream, if any. */
-export function reconcileGenerationOperationErrorBody(body: unknown): {
-  operation?: GenerationOperationProjection
-  stream?: GenerationOperationStreamDescriptor
-} {
+export type GenerationOperationErrorAuthority =
+  | { disposition: 'unresolved' }
+  | {
+      disposition: 'redirected'
+      operation: GenerationOperationProjection
+      stream: GenerationOperationStreamDescriptor
+    }
+  | {
+      disposition: 'terminal' | 'finalizing' | 'recoverable' | 'nonlive'
+      operation: GenerationOperationProjection
+    }
+
+/** Apply a typed error-body projection and classify its durable authority. */
+export function reconcileGenerationOperationErrorBody(body: unknown): GenerationOperationErrorAuthority {
   const operation = operationFromBody(body)
-  if (!operation) return {}
+  if (!operation) return { disposition: 'unresolved' }
   applyGenerationOperationProjection(operation, undefined, 'stale_reattach')
   const stream =
     operation.state === 'owned_by_job' || operation.state === 'stopping'
       ? generationOperationStreamDescriptor({ operation })
       : undefined
-  return { operation, ...(stream ? { stream } : {}) }
+  if (stream) return { disposition: 'redirected', operation, stream }
+  if (
+    operation.state === 'completed' ||
+    operation.state === 'cancelled' ||
+    operation.state === 'terminal_failed' ||
+    operation.state === 'invalidated'
+  ) {
+    return { disposition: 'terminal', operation }
+  }
+  if (operation.state === 'finalizing') return { disposition: 'finalizing', operation }
+  if (operation.state === 'retryable' || operation.state === 'abandoned') {
+    return { disposition: 'recoverable', operation }
+  }
+  return { disposition: 'nonlive', operation }
 }
 
 function clearCancellationReconcileTimer(operationId: string): void {
@@ -749,8 +851,19 @@ function applyGenerationOperationBootstrapState(
   configureGenerationOperationProtocol(runtime.generationOperationProtocol, runtime.databaseLineage)
   const epoch = runtime.generationOperationProjectionEpoch ?? 0
   if (epoch < generationOperationProjectionEpoch) return false
+  const previousOperations = get(generationOperationProjections)
   generationOperationProjectionEpoch = epoch
-  const operations = runtime.generationOperations ?? []
+  const operations = (runtime.generationOperations ?? []).map((operation) => {
+    const previous = previousOperations.find((candidate) => candidate.operationId === operation.operationId)
+    if (!previous) return operation
+    if (
+      previous.projectionEpoch > operation.projectionEpoch ||
+      (previous.projectionEpoch === operation.projectionEpoch && previous.stateVersion > operation.stateVersion)
+    ) {
+      return previous
+    }
+    return operation
+  })
   generationOperationProjections.set([...operations])
   applyAcceptedSendBootstrapProjection(operations, runtime.activeGenerationJobs ?? [], epoch)
   for (const operation of operations) syncGenerationOperationCancellationProjection(operation)
@@ -772,6 +885,15 @@ function operationFromSseEvent(data: Record<string, unknown>): GenerationOperati
   }
   const previous = get(generationOperationProjections).find((operation) => operation.operationId === data.operationId)
   if (!previous) return undefined
+  if (Number.isSafeInteger(data.attemptNo) && typeof data.jobId === 'string' && previous.currentAttempt) {
+    const attemptNo = data.attemptNo as number
+    if (
+      attemptNo < previous.currentAttempt.attemptNo ||
+      (attemptNo === previous.currentAttempt.attemptNo && data.jobId !== previous.currentAttempt.jobId)
+    ) {
+      return undefined
+    }
+  }
   const operation: GenerationOperationProjection = {
     ...previous,
     stateVersion: data.operationStateVersion as number,
@@ -1462,6 +1584,17 @@ export async function submitStagedAcceptedSendOperation(
   return result
 }
 
+export async function submitStagedTargetedGenerationOperation(
+  staged: StagedTargetedGenerationOperation,
+): Promise<GenerationOperationDispatchResult> {
+  const result = await dispatchPendingGenerationOperation(staged.handle, staged.intent)
+  if (result.status === 'rejected') {
+    updateGenerationOperationCancellation(staged.request.operationId, () => null)
+    cancellationRuntimeByOperationId.delete(staged.request.operationId)
+  }
+  return result
+}
+
 export async function readGenerationOperationStatus(
   operationId: string,
   signal?: AbortSignal,
@@ -1476,11 +1609,19 @@ export async function readGenerationOperationStatus(
   } catch (error) {
     return { status: 'retained', error: error instanceof Error ? error.message : String(error) }
   }
+  const requestUid = response.headers.get('X-Request-UID') || undefined
   let body: unknown = null
   try {
     body = await response.json()
   } catch {}
   if (!response.ok) {
+    recordGenerationRecoveryEvent({
+      trigger: 'operation_status',
+      recoveryEpoch: 0,
+      disposition: errorCode(body) ?? `http_${response.status}`,
+      operationId,
+      requestUid,
+    })
     return {
       status: 'rejected',
       error: errorMessage(body, response),

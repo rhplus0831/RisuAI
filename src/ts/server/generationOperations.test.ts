@@ -74,14 +74,18 @@ vi.mock('./bootstrap', () => ({
 import {
   applyGenerationOperationBootstrap,
   applyGenerationOperationProjection,
+  applyGenerationOperationSseEvent,
   dispatchGenerationOperationPendingReplay,
   generationOperationCancellations,
   generationOperationProjections,
+  reconcileGenerationOperationErrorBody,
   reconcileGenerationOperationTranscriptHydration,
   resetGenerationOperationClientForTests,
   stageAcceptedSendGenerationOperation,
+  stageTargetedGenerationOperation,
   stopGenerationOperation,
   submitStagedAcceptedSendOperation,
+  submitStagedTargetedGenerationOperation,
 } from './generationOperations'
 
 const operationId = '11111111-1111-4111-8111-111111111111'
@@ -243,6 +247,39 @@ describe('generation operation client', () => {
     const replayBody = JSON.parse(fetchMock.mock.calls[1][1].body as string)
     expect(replayBody).toEqual(firstBody)
     expect(replayBody).toMatchObject({ operationId, acceptedMessageId: messageId })
+  })
+
+  it('stages continue and regenerate as operation-addressed targets without appending a message', async () => {
+    const staged = await stageTargetedGenerationOperation({
+      target: { selectedCharID: 0, chatPage: 0, characterId: 'character-a', chatId: 'chat-a' },
+      mode: 'continue',
+      targetMessageId: 'assistant-a',
+      draftGeneration: { sequence: 9 },
+      generation: {
+        syntheticSayNothing: false,
+        resetMessages: false,
+        inlayAssetRefs: [],
+        clientContext: {},
+        clientCapabilities: {},
+      },
+    })
+    if ('status' in staged) throw new Error(staged.error)
+
+    expect(staged.request).toMatchObject({
+      operationId,
+      mode: 'continue',
+      targetMessageId: 'assistant-a',
+      draftGeneration: { sequence: 9 },
+    })
+    expect(staged.request).not.toHaveProperty('message')
+    expect(staged.request).not.toHaveProperty('acceptedMessageId')
+    expect(operationMocks.appendOptimistic).not.toHaveBeenCalled()
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify(responseBody()), { status: 200 })),
+    )
+    await expect(submitStagedTargetedGenerationOperation(staged)).resolves.toMatchObject({ status: 'accepted' })
   })
 
   it('treats a pending-finalization admission error as a typed terminal rejection', async () => {
@@ -523,6 +560,95 @@ describe('generation operation client', () => {
       operations: [newerOperation],
       source: 'pageshow',
     })
+  })
+
+  it('keeps a newer per-operation state version when a bootstrap reuses the global epoch', () => {
+    const newerOperation = {
+      ...responseBody().operation,
+      stateVersion: 8,
+      projectionEpoch: 41,
+      currentAttempt: {
+        ...responseBody().operation.currentAttempt!,
+        attemptNo: 2,
+        jobId: 'job-current',
+      },
+    }
+    const staleOperation = {
+      ...newerOperation,
+      stateVersion: 7,
+      currentAttempt: {
+        ...newerOperation.currentAttempt,
+        attemptNo: 1,
+        jobId: 'job-stale',
+      },
+    }
+
+    applyGenerationOperationBootstrap({
+      initialized: true,
+      revision: 8,
+      databaseLineage: 'database-a',
+      generationOperationProtocol: { version: 1 },
+      generationOperationProjectionEpoch: 41,
+      generationOperations: [newerOperation],
+      activeGenerationJobs: [],
+    })
+    applyGenerationOperationBootstrap({
+      initialized: true,
+      revision: 8,
+      databaseLineage: 'database-a',
+      generationOperationProtocol: { version: 1 },
+      generationOperationProjectionEpoch: 41,
+      generationOperations: [staleOperation],
+      activeGenerationJobs: [],
+    })
+
+    expect(get(generationOperationProjections)).toEqual([newerOperation])
+    expect(operationMocks.setActiveJobs).toHaveBeenLastCalledWith([], {
+      projectionEpoch: 41,
+      operations: [newerOperation],
+      source: 'bootstrap',
+    })
+  })
+
+  it('ignores a stale SSE frame from an older operation attempt', () => {
+    const current = {
+      ...responseBody().operation,
+      stateVersion: 8,
+      projectionEpoch: 41,
+      currentAttempt: {
+        ...responseBody().operation.currentAttempt!,
+        attemptNo: 2,
+        jobId: 'job-current',
+      },
+    }
+    applyGenerationOperationProjection(current)
+
+    applyGenerationOperationSseEvent({
+      type: 'done',
+      operationId,
+      operationState: 'completed',
+      operationStateVersion: 9,
+      projectionEpoch: 42,
+      attemptNo: 1,
+      jobId: 'job-stale',
+    })
+
+    expect(get(generationOperationProjections)).toEqual([current])
+  })
+
+  it.each([
+    ['completed', 'terminal'],
+    ['cancelled', 'terminal'],
+    ['terminal_failed', 'terminal'],
+    ['invalidated', 'terminal'],
+    ['finalizing', 'finalizing'],
+    ['retryable', 'recoverable'],
+    ['abandoned', 'recoverable'],
+    ['accepted', 'nonlive'],
+  ] as const)('classifies stale-attempt %s authority as %s', (state, disposition) => {
+    const operation = { ...responseBody(state).operation, currentAttempt: undefined }
+
+    expect(reconcileGenerationOperationErrorBody({ operation })).toMatchObject({ disposition, operation })
   })
 
   it('routes transcript hydration through the shared lifecycle reconciler', () => {

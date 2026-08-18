@@ -5619,6 +5619,15 @@ export function registerGenerationChatRoutes(
     async (req, reply) => {
       if (!(await requireAuth(authState, req, reply))) return
       const job = generationJobs.registry.get(req.params.id)
+      emitProtocolMetric(
+        'generation_compatibility_stream_attach',
+        {
+          found: Boolean(job),
+          jobId: req.params.id,
+          ...(job?.operationId ? { operationId: job.operationId } : {}),
+        },
+        req.log,
+      )
       if (!job) {
         reply.code(404).send({
           error: 'generation_job_not_found',

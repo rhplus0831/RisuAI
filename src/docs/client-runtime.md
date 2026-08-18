@@ -1,6 +1,6 @@
 # Client Runtime Guide
 
-Last audited: 2026-08-17.
+Last audited: 2026-08-18.
 
 This file covers browser TypeScript coordinators that influence visible Svelte
 UI. For component ownership and UI triage, start with the
@@ -298,15 +298,19 @@ Important files:
   `AgentPresetProgress.svelte` and `PostGenerationScriptProgress.svelte`.
 - `src/ts/process/halfStreamingProgress.ts` owns half-streaming token counts and
   throughput for the active character/chat/generation target.
-- `src/ts/process/reattach.ts` uses bootstrap `activeGenerationJobs`, including
-  job mode and regenerate target when present, to reattach open chats to
-  durable server jobs. Reattach is keyed by job id, so jobs for different chats
-  can remain attached concurrently as the user navigates. Its separate
-  `generationJobLifecycles` projection records attached, retrying,
-  exhausted-dead, completed, and cancelled observation state plus the last
-  transport error. Bootstrap reconciliation removes absent jobs and rehydrates
-  their exact transcripts; manual Retry, Refresh, and Stop operations remain
-  job-ID scoped.
+- `src/ts/process/reattach.ts` coordinates background recovery by durable
+  `(databaseLineage, operationId)` authority. `jobId` and `attemptNo` remain
+  expiring stream descriptors, while local viewer/activity state is only an
+  observation projection. Foreground bootstrap reads have a bounded deadline
+  and recovery epoch: visibility, page-show, online, and focus wakeups coalesce,
+  supersede pre-suspension reads, and reject late responses. A successful probe
+  re-arms the exact live attempt and can retire its old browser viewer without
+  issuing Stop. Absent jobs are cleared only after strict transcript hydration;
+  pending finalization/effect recovery comes from the same bootstrap snapshot.
+  `generationJobLifecycles` records attached, retrying, exhausted-dead,
+  completed, and cancelled observer state plus the last transport error. Retry,
+  Refresh, and Stop resolve a stale control through its recorded operation/chat
+  lineage to the current exact authority.
 - `src/ts/process/generationEffectLedger.ts` claims and receipts client effects
   for the exact persisted generation. `recoveredGenerationEffects.ts` retries
   missing durable effects after bootstrap; late ephemeral effects are skipped.
@@ -318,10 +322,12 @@ gate aborts the send before server assembly. For “send never reached fetch,”
 inspect `setupSendChatContext`, `waitForPendingChatGenerationSettingsSave`, and
 `flushPendingSelectedPersonaUpdate` before debugging the provider adapter.
 
-Durable sends such as send, continue, and regenerate set `durable: true` when
-allowed. Disconnect detaches from durable jobs; abort/cancel uses the durable
-DELETE path when a job exists. The live adapter retains the accepted job id and
-boundedly reattaches after an unrequested SSE EOF/read failure, rebuilding
+Durable sends such as send, continue, and regenerate use operation-addressed
+streams when protocol v1 is advertised; job-ID-only attachment remains a
+compatibility fallback. Disconnect is an observation failure and does not imply
+generation failure. Explicit Stop uses the exact operation (or the compatibility
+job when no operation exists). The live adapter performs one immediate,
+replay-aware reopen after an unrequested SSE EOF/read failure, rebuilding
 replayed token deltas from zero and deduplicating replayed non-token effects.
 Because that replay window may contain only a token suffix, a durable
 `done.result` replaces the accumulator as the last cumulative raw snapshot
@@ -332,9 +338,14 @@ fallback, so an outer reattach retry cannot capture its already-rendered partial
 as a new prefix. An additive cancelled outcome still reconciles the persisted
 partial projection, but bypasses output listeners, IGP, notifications, emotion
 work, rerolls, resend, terminal TTS/inlay work, and completion sound.
-Foreground, page-show, and online lifecycle probes refresh bootstrap job
-metadata so a mounted mobile tab can recover even when its original connection
-was discarded before the id reached JavaScript. Terminal `postGeneration` data
+Foreground visibility, page-show, online, and focus probes refresh operation,
+job, finalization, transcript, and pending-effect authority so a mounted mobile
+tab can recover even when its original connection was discarded before the id
+reached JavaScript. A stale-attempt response redirects only to an exact newer
+live descriptor; terminal/non-live responses and compatibility 404s force
+authority and transcript reconciliation before observer UI is settled. Viewer
+transport failures never use the ordinary provider-error/inlay path until
+durable authority proves a terminal generation failure. Terminal `postGeneration` data
 can advance the revision cache, apply a server-owned `messagePatch`, render the
 inlay screen over `finalText`, request `resendChat`, or surface an Agent Preset
 error as a failed terminal result. Generation results are persisted server-side,

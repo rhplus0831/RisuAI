@@ -69,6 +69,7 @@ import {
   resetLorebookHydration,
 } from './server/lorebookBridge.svelte'
 import { startActiveGenerationReattach, triggerOpenChatGenerationReattach } from './process/reattach'
+import { subscribeBrowserLifecycleRecovery } from './server/lifecycleRecovery'
 import {
   setGenerationFinalizationPersistences,
   startGenerationFinalizationPersistenceRefresh,
@@ -587,16 +588,7 @@ function isCurrentServerResourceEventEpoch(eventEpoch: number): boolean {
 
 function ensureServerResourceRecoveryListeners(): void {
   if (stopServerResourceRecoveryListeners || typeof window === 'undefined' || typeof document === 'undefined') return
-  const handleVisibilityChange = () => {
-    if (document.visibilityState === 'visible') restartServerResourceEvents()
-  }
-  const handleOnline = () => restartServerResourceEvents()
-  document.addEventListener('visibilitychange', handleVisibilityChange)
-  window.addEventListener('online', handleOnline)
-  stopServerResourceRecoveryListeners = () => {
-    document.removeEventListener('visibilitychange', handleVisibilityChange)
-    window.removeEventListener('online', handleOnline)
-  }
+  stopServerResourceRecoveryListeners = subscribeBrowserLifecycleRecovery(() => restartServerResourceEvents())
 }
 
 function restartServerResourceEvents(): void {

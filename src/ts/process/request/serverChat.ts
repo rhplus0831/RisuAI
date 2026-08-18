@@ -66,6 +66,7 @@ import {
   registerGenerationOperationViewer,
   stopGenerationOperation,
 } from '../../server/generationOperations'
+import { recordGenerationRecoveryEvent } from '../../server/protocolDiagnostics'
 
 const CHAT_ENDPOINT = '/api/v1/generate/chat'
 const INCOMPLETE_CHAT_GENERATION_SETTINGS_ERROR = 'chat_generation_settings_incomplete'
@@ -76,14 +77,38 @@ const HUMAN_REASON_ERROR_CODES = new Set([
 ])
 const REQUEST_UID_HEADER = 'X-Request-UID'
 const DURABLE_JOB_ID_HEADER = 'X-Risu-Generation-Job-ID'
-const DURABLE_STREAM_RECONNECT_DELAYS_MS = [0, 250, 500, 1_000, 2_000, 4_000] as const
-const MAX_DURABLE_STREAM_RECONNECT_CYCLES = 8
+// The recovery coordinator owns retry/backoff. The adapter performs one
+// immediate replay-aware reopen so short read-boundary failures stay invisible.
+const DURABLE_STREAM_RECONNECT_DELAYS_MS = [0] as const
+const MAX_DURABLE_STREAM_RECONNECT_CYCLES = 1
 export const SERVER_CHAT_CLIENT_CAPABILITIES = {
   compactPromptEvent: true,
   promptMetadataOnly: true,
   omitDuplicateDoneResult: true,
   hypaContextTruncationConfirmation: true,
 } as const
+
+const durableGenerationViewerRetirers = new Map<string, Set<() => void>>()
+
+/** Retire local viewers for an exact job without issuing durable cancellation. */
+export function retireGenerationJobViewers(jobId: string): void {
+  const viewers = durableGenerationViewerRetirers.get(jobId)
+  if (!viewers) return
+  durableGenerationViewerRetirers.delete(jobId)
+  for (const retire of [...viewers]) retire()
+}
+
+function registerGenerationJobViewer(jobId: string, retire: () => void): () => void {
+  if (!jobId) return () => undefined
+  const viewers = durableGenerationViewerRetirers.get(jobId) ?? new Set<() => void>()
+  viewers.add(retire)
+  durableGenerationViewerRetirers.set(jobId, viewers)
+  return () => {
+    const current = durableGenerationViewerRetirers.get(jobId)
+    current?.delete(retire)
+    if (current?.size === 0) durableGenerationViewerRetirers.delete(jobId)
+  }
+}
 
 function showServerCompatibilityWarning(warning: ServerChatWarning): void {
   const context = warning.context
@@ -225,9 +250,11 @@ function httpErrorCode(value: unknown): string | undefined {
     truncationConfirmationCode(value) ??
     (value === GENERATION_IN_PROGRESS_FAILURE_CAUSE
       ? GENERATION_IN_PROGRESS_FAILURE_CAUSE
-      : value === 'stale_generation_attempt'
+      : value === 'generation_job_not_found'
         ? value
-        : undefined)
+        : value === 'stale_generation_attempt'
+          ? value
+          : undefined)
   )
 }
 
@@ -464,11 +491,34 @@ async function openChatResponse(
       staleAttemptRedirects < 3
     ) {
       const authority = reconcileGenerationOperationErrorBody(body)
-      if (authority.stream?.operationId === operationStream.operationId) {
+      if (authority.disposition === 'redirected' && authority.stream.operationId === operationStream.operationId) {
+        recordGenerationRecoveryEvent(
+          {
+            trigger: 'stream_open',
+            recoveryEpoch: 0,
+            disposition: 'stale_attempt_redirect',
+            operationId: authority.operation.operationId,
+            attemptNo: authority.stream.attemptNo,
+            jobId: authority.stream.jobId,
+            requestUid,
+          },
+          'stale_attempt_redirect',
+        )
         return openChatResponse(input, signal, undefined, authority.stream, staleAttemptRedirects + 1)
       }
     }
     debugServerChat('server-chat-response-error', { requestUid, status: response.status, error: reason })
+    if (operationStream || reattachJobId) {
+      recordGenerationRecoveryEvent({
+        trigger: 'stream_open',
+        recoveryEpoch: 0,
+        disposition: code ?? `http_${response.status}`,
+        ...(operationStream?.operationId ? { operationId: operationStream.operationId } : {}),
+        ...(operationStream?.attemptNo !== undefined ? { attemptNo: operationStream.attemptNo } : {}),
+        jobId: operationStream?.jobId ?? reattachJobId!,
+        requestUid,
+      })
+    }
     return {
       status: 'error',
       error: reason,
@@ -519,8 +569,10 @@ async function fetchDurableTerminalSnapshot(
 
 function classifyReattachOpenError(error: {
   httpStatus?: number
+  code?: string
   retryable?: boolean
 }): GenerationReattachOutcomeStatus {
+  if (error.code === 'stale_generation_attempt') return 'authority_reconciliation_required'
   if (error.httpStatus === 404) return 'missing_job'
   return error.retryable === true ? 'retryable_transport_failure' : 'terminal_failure'
 }
@@ -683,16 +735,34 @@ export async function requestServerChatGeneration(
   let cancelledDurableJobId = ''
   const viewerAbortController = new AbortController()
   let consumerDetached = false
+  let observerSuperseded = false
   let operationStopDetached = false
   let operationCancellationRequested = false
+  let observedJobId = ''
+  let unregisterGenerationJobViewer = () => undefined
+  const retireObserver = (): void => {
+    if (observerSuperseded) return
+    observerSuperseded = true
+    viewerAbortController.abort()
+  }
+  const observeJobId = (jobId: string): void => {
+    if (!jobId || observedJobId === jobId) return
+    unregisterGenerationJobViewer()
+    observedJobId = jobId
+    unregisterGenerationJobViewer = registerGenerationJobViewer(jobId, retireObserver)
+  }
   const unregisterGenerationOperationViewer = authoritativeOperationStream
-    ? registerGenerationOperationViewer(authoritativeOperationStream.operationId, () => {
-        operationCancellationRequested = true
-        operationStopDetached = true
-        // Stop owns the durable operation, but this viewer still owns the
-        // visible transcript. Keep consuming until the canonical cancelled
-        // terminal arrives so its processed snapshot can be applied locally.
-      })
+    ? registerGenerationOperationViewer(
+        authoritativeOperationStream.operationId,
+        () => {
+          operationCancellationRequested = true
+          operationStopDetached = true
+          // Stop owns the durable operation, but this viewer still owns the
+          // visible transcript. Keep consuming until the canonical cancelled
+          // terminal arrives so its processed snapshot can be applied locally.
+        },
+        retireObserver,
+      )
     : () => undefined
   const cancelDurableOnAbort = (): void => {
     // Protocol-v1 Stop is addressed before a job ID exists and stages its own
@@ -715,7 +785,9 @@ export async function requestServerChatGeneration(
   const stopWatchingAbort = (): void => {
     signal?.removeEventListener('abort', onOwnerAbort)
     unregisterGenerationOperationViewer()
+    unregisterGenerationJobViewer()
   }
+  observeJobId(durableJobId)
   if (signal?.aborted) {
     onOwnerAbort()
   } else {
@@ -730,9 +802,16 @@ export async function requestServerChatGeneration(
   )
   if (opened.status !== 'ok') {
     stopWatchingAbort()
-    if (opened.status === 'aborted' && reattachJobId) forgetActiveGenerationJob(reattachJobId)
+    if (opened.status === 'aborted' && reattachJobId && !observerSuperseded) forgetActiveGenerationJob(reattachJobId)
     clearAgentPresetProgress(agentPresetSession)
     clearPostGenerationProgress(postGenerationSession)
+    if (opened.status === 'aborted' && observerSuperseded) {
+      return {
+        status: 'error',
+        error: 'The previous generation observer was replaced by foreground recovery.',
+        reattachOutcome: 'observer_superseded',
+      }
+    }
     return opened.status === 'error'
       ? {
           status: 'error',
@@ -785,6 +864,7 @@ export async function requestServerChatGeneration(
   // accepts the response, so Stop can cancel a job even while its first body
   // bytes are still delayed by the network.
   durableJobId ||= opened.response.headers.get(DURABLE_JOB_ID_HEADER)?.trim() ?? ''
+  observeJobId(durableJobId)
   const reattachOutcomeFields = (
     status: GenerationReattachOutcomeStatus,
   ): { reattachOutcome: GenerationReattachOutcomeStatus } | Record<string, never> =>
@@ -882,6 +962,16 @@ export async function requestServerChatGeneration(
       }
 
       const settleAborted = (): void => {
+        if (observerSuperseded) {
+          const error = 'The previous generation observer was replaced by foreground recovery.'
+          resolveReadyOnce({ status: 'error', error, reattachOutcome: 'observer_superseded' })
+          resolveTerminalOnce({ status: 'error', error, reattachOutcome: 'observer_superseded', warnings })
+          clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
+          clearHalfStreaming()
+          closeTokenStream()
+          stopWatchingAbort()
+          return
+        }
         cancelDurableOnAbort()
         // If a legacy/transport path still settles locally during operation
         // Stop, keep the exact job owned until reconciliation proves terminal.
@@ -935,6 +1025,7 @@ export async function requestServerChatGeneration(
           if (next.status === 'ok') {
             authoritativeOperationStream = next.operationStream ?? authoritativeOperationStream
             durableJobId = authoritativeOperationStream?.jobId ?? durableJobId
+            observeJobId(durableJobId)
             operationLineage = authoritativeOperationStream ?? operationLineage
             // Rebuild from the retained replay window so re-sent deltas do not
             // duplicate text rendered before mobile suspension. A replay_gap
@@ -955,7 +1046,6 @@ export async function requestServerChatGeneration(
           if (next.status === 'aborted') return next
           lastError = next.error
           reattachOutcome = classifyReattachOpenError(next)
-          if (next.httpStatus === 404) forgetActiveGenerationJob(durableJobId)
           if (next.retryable === false) break
         }
         return { status: 'error', error: lastError, reattachOutcome }
@@ -972,6 +1062,7 @@ export async function requestServerChatGeneration(
               switch (frame.event) {
                 case 'job_accepted':
                   if (typeof data.jobId === 'string') durableJobId = data.jobId
+                  observeJobId(durableJobId)
                   operationLineage = {
                     ...operationLineage,
                     ...(typeof data.operationId === 'string' ? { operationId: data.operationId } : {}),
@@ -1179,7 +1270,10 @@ export async function requestServerChatGeneration(
                       )
                       donePayload = { ...snapshotPayload, ...donePayload }
                     } catch (error) {
-                      settleTransportError(error instanceof Error ? error.message : String(error), 'terminal_failure')
+                      settleTransportError(
+                        error instanceof Error ? error.message : String(error),
+                        authoritativeOperationStream ? 'authority_reconciliation_required' : 'missing_job',
+                      )
                       return
                     }
                   }

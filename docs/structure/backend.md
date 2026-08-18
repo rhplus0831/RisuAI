@@ -1,6 +1,6 @@
 # Backend Map
 
-Last audited: 2026-08-17.
+Last audited: 2026-08-18.
 
 The backend is the Fastify server under `server/fastify`. This guide owns its
 composition root, route policy, request-path boundaries, process-local jobs,
@@ -245,7 +245,14 @@ stream attachment, cancellation, and explicit retries. On startup,
 `reconcileGenerationOperationsAtStartup()` turns interrupted ownership into an
 honest retryable, abandoned, cancelled, or terminal state before routes start.
 The older `/api/v1/generate/chat` boundary remains the lower-level chat runner
-used by the operation protocol and compatibility callers.
+used by the operation protocol and compatibility callers. A durable operation
+projection is authoritative across process restarts; its `jobId`, numbered
+attempt, replay buffer, and terminal snapshot file are process-local observation
+mechanisms. An expired job therefore requires operation/status plus exact
+transcript reconciliation, not a generation-failure inference. A
+`stale_generation_attempt` response either redirects to the exact current live
+attempt or returns terminal/non-live operation authority for that same
+reconciliation path.
 
 Prompt construction and scripting are canonical in
 [Prompt Assembly And Scripting](prompt-assembly-and-scripting.md); provider and
@@ -327,6 +334,12 @@ terminal-retention sweep, polls on a 1-second default idle interval, and later
 sweeps terminal retention hourly by default. Shutdown stops the memory worker
 and timers, removes registry jobs, settles generation runners, and only then
 closes SQLite.
+
+Compatibility job-stream use is measured by the opt-in
+`generation_compatibility_stream_attach` protocol metric, including whether the
+job still existed and its operation ID when present. Client recovery events are
+metadata-only and retain `X-Request-UID` for correlation with server traces;
+request tracing remains a separate, body-capable diagnostic facility.
 
 The Hypa V3 memory worker is constructed with summarize/embed handlers, starts
 before routes, and exposes its queue/read surfaces through `memoryJobs.ts` and

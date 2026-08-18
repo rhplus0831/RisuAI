@@ -124,6 +124,7 @@ export interface BuildAppOptions {
 export interface BuiltApp {
   app: FastifyInstance
   config: AppConfig
+  generationJobs: GenerationJobRegistry
 }
 
 function isPathWithin(parent: string, child: string): boolean {
@@ -489,5 +490,5 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     })
   }
 
-  return { app, config }
+  return { app, config, generationJobs: generationJobRegistry }
 }

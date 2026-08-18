@@ -11,6 +11,7 @@ import type {
   GenerationChatRouteOptions,
 } from '../src/routes/generationChat.js'
 import type { StreamJob } from '../src/streamJobs.js'
+import type { GenerationJobRegistry } from '../src/generationJobs.js'
 import { setupBrowserSmokeAuth } from './auth.js'
 
 interface ProviderPlan {
@@ -91,6 +92,10 @@ class ControlledProvider {
 
   viewerStarts(chatId: string): number {
     return this.viewerStartsByChat.get(chatId) ?? 0
+  }
+
+  latestJob(chatId: string): StreamJob | undefined {
+    return this.jobsByChat.get(chatId)?.at(-1)
   }
 
   release(chatId: string, callNo = 1): void {
@@ -203,6 +208,7 @@ class ControlledProvider {
 
 class LifecycleHarness {
   app!: FastifyInstance
+  generationJobs!: GenerationJobRegistry
   readonly dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-lifecycle-matrix-'))
   readonly provider = new ControlledProvider()
   baseUrl = ''
@@ -257,6 +263,11 @@ class LifecycleHarness {
     )
   }
 
+  expireLatestJob(chatId: string): boolean {
+    const job = this.provider.latestJob(chatId)
+    return job ? this.generationJobs.registry.deleteJob(job.id, new Error('browser smoke replay expiry')) : false
+  }
+
   private async startApp(port: number): Promise<void> {
     process.env.LOG_LEVEL = 'silent'
     const built = await buildApp({
@@ -285,6 +296,7 @@ class LifecycleHarness {
       },
     })
     this.app = built.app
+    this.generationJobs = built.generationJobs
     await this.app.listen({ host: '127.0.0.1', port })
     const address = this.app.server.address()
     if (!address || typeof address === 'string') throw new Error('Lifecycle browser-smoke harness did not bind')
@@ -311,6 +323,7 @@ const chats = {
   stopDesktop: 'chat-stop-desktop',
   stopMobile: 'chat-stop-mobile',
   transport: 'chat-transport',
+  preservedExpired: 'chat-preserved-expired',
   concurrentA: 'chat-concurrent-a',
   concurrentB: 'chat-concurrent-b',
   finalization: 'chat-finalization',
@@ -499,6 +512,36 @@ test('viewer transport loss reconnects boundedly and terminal snapshot stays can
   await expectTerminalTruth(page, chatId, userText, reply, 'completed', operation.operationId)
   expect(harness.provider.calls(chatId)).toBe(1)
   expect(harness.provider.viewerStarts(chatId)).toBe(2)
+})
+
+test('preserved runtime reconciles completion after its observer and replay job expire', async ({ page }) => {
+  test.setTimeout(45_000)
+  const chatId = chats.preservedExpired
+  const userText = 'preserved runtime expiry request'
+  const partial = 'Background completion'
+  const reply = `${partial} survived`
+  harness.provider.configure(chatId, { chunks: [partial, ' survived'], holdAfterChunk: 1 })
+
+  await bootChat(page, chatId)
+  await sendMessage(page, userText)
+  const operation = await expectRunningTruth(page, chatId, userText, partial)
+
+  await page.context().setOffline(true)
+  try {
+    expect(harness.provider.severCurrentViewers(chatId)).toBeGreaterThanOrEqual(1)
+    harness.provider.release(chatId)
+    await expect.poll(() => harness.provider.latestJob(chatId)?.done, { timeout: 15_000 }).toBe(true)
+    expect(harness.expireLatestJob(chatId)).toBe(true)
+  } finally {
+    await page.context().setOffline(false)
+  }
+
+  await dispatchLifecycleRecoveryEvents(page)
+  await expectTerminalTruth(page, chatId, userText, reply, 'completed', operation.operationId)
+  await expect(page.getByTestId('generation-reattach-failure')).toHaveCount(0)
+  await expect(page.getByTestId('accepted-send-recovery')).toHaveCount(0)
+  await expect(page.locator('.default-chat-screen .risu-error')).toHaveCount(0)
+  expect(harness.provider.calls(chatId)).toBe(1)
 })
 
 test('two concurrent chats keep stable-target UI, recovery, and jobs isolated', async ({ page }) => {

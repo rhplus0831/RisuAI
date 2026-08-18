@@ -19,8 +19,9 @@ import { alertError } from './ts/alert'
 import { language } from './lang'
 
 window.addEventListener('vite:preloadError', (event) => {
+  event.preventDefault()
   console.error('Chunk load error detected:', event)
-  alertError(language.preloadError)
+  alertError(navigator.onLine === false ? language.preloadOfflineError : language.preloadStaleError)
 })
 
 installRouter()

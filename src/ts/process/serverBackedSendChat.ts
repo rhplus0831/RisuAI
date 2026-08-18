@@ -16,6 +16,7 @@ import { applyServerChatRestoration, applyServerMessagePatch } from './request/s
 import {
   requestServerChat,
   requestServerChatGeneration,
+  SERVER_CHAT_CLIENT_CAPABILITIES,
   type ServerChatInput,
   type ServerChatOperationStream,
   type ServerChatTerminal,
@@ -45,6 +46,12 @@ import {
   skippedGenerationEffect,
 } from './generationEffectLedger'
 import type { ServerGenerationEffectLedgerRef } from './request/serverChatEvents'
+import { readBrowserClientContext } from './request/clientContext'
+import {
+  canUseGenerationOperationProtocol,
+  stageTargetedGenerationOperation,
+  submitStagedTargetedGenerationOperation,
+} from '../server/generationOperations'
 
 export interface ServerBackedStageTimings {
   stage1Start: number
@@ -542,9 +549,49 @@ export async function assembleServerBackedSendChat(args: {
   }
 
   const wantsServerDispatch = !args.preview && !args.previewPrompt
-  let served = wantsServerDispatch
-    ? await requestServerChatGeneration(input, args.abortSignal)
-    : await requestServerChat(input, args.abortSignal)
+  let served: ServerChatAnyResult
+  const targetMessageId = mode === 'regenerate' ? args.regenerateMessageId : lastMessage?.chatId
+  if (
+    wantsServerDispatch &&
+    args.durable &&
+    (mode === 'continue' || mode === 'regenerate') &&
+    targetMessageId &&
+    canUseGenerationOperationProtocol()
+  ) {
+    const staged = await stageTargetedGenerationOperation({
+      target: {
+        selectedCharID: args.selectedChar,
+        chatPage: args.selectedChat,
+        characterId: args.currentChar.chaId,
+        chatId: args.currentChat.id,
+      },
+      mode,
+      targetMessageId,
+      generation: {
+        syntheticSayNothing: false,
+        resetMessages: false,
+        inlayAssetRefs,
+        clientContext: readBrowserClientContext(),
+        clientCapabilities: { ...SERVER_CHAT_CLIENT_CAPABILITIES },
+      },
+    })
+    if ('status' in staged) {
+      return { status: 'failed', error: staged.error, currentChat: args.currentChat }
+    }
+    const submitted = await submitStagedTargetedGenerationOperation(staged)
+    if (submitted.status !== 'accepted' || !submitted.stream) {
+      return {
+        status: 'failed',
+        error: submitted.status === 'accepted' ? 'Generation operation returned no live stream.' : submitted.error,
+        currentChat: args.currentChat,
+      }
+    }
+    served = await requestServerChatGeneration(input, args.abortSignal, undefined, submitted.stream)
+  } else {
+    served = wantsServerDispatch
+      ? await requestServerChatGeneration(input, args.abortSignal)
+      : await requestServerChat(input, args.abortSignal)
+  }
 
   if (
     wantsServerDispatch &&
@@ -583,11 +630,14 @@ export async function assembleServerBackedSendChat(args: {
       currentChat: args.currentChat,
     })
     const failure = sendChatFailureFromServerCode(served.code)
+    const reattachOutcome =
+      'reattachOutcome' in served ? (served.reattachOutcome as GenerationReattachOutcomeStatus | undefined) : undefined
     return {
       status: 'failed',
       error: served.error,
       currentChat,
       ...(failure ? { failure } : {}),
+      ...(reattachOutcome ? { reattachOutcome } : {}),
     }
   }
 

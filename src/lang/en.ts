@@ -9,6 +9,9 @@ export const languageEnglish = {
     sidebarWarning: (name: string) => `Connection lost: ${name}`,
   },
   preloadError: 'The server has been updated or the network connection has been lost. Please refresh the page.',
+  preloadOfflineError:
+    'A part of the app could not load while offline. Your current page is still open; try the action again after the connection returns.',
+  preloadStaleError: 'The app has been updated. Refresh the page to load the current version.',
   characterCreationQueued:
     'The new character is saved on this device and queued. It has not been accepted by the server and will retry automatically.',
   characterCreationFailed: 'The character could not be created. The provisional character was removed.',

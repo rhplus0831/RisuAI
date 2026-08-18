@@ -178,6 +178,12 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
   let errorTarget: StablePostGenerationChatTarget | null = null
   let errorTargetMessageId: string | undefined
 
+  const isObserverFailure = (status: GenerationReattachOutcome['status'] | undefined): boolean =>
+    status === 'retryable_transport_failure' ||
+    status === 'missing_job' ||
+    status === 'authority_reconciliation_required' ||
+    status === 'observer_superseded'
+
   const stageTimings = {
     stage1Start: 0,
     stage2Start: 0,
@@ -417,7 +423,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
             console.error(error)
           }
         }
-        throwError(serverAssembly.error)
+        if (!isObserverFailure(serverAssembly.reattachOutcome)) throwError(serverAssembly.error)
         return false
       }
       if (serverAssembly.status === 'preview') {
@@ -593,7 +599,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
             error: terminalResult.error,
           }
         }
-        throwError(terminalResult.error)
+        if (!isObserverFailure(terminalResult.reattachOutcome)) throwError(terminalResult.error)
         return false
       }
       effectLedger = terminalResult.effectLedger

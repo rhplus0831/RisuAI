@@ -4,7 +4,7 @@ import { get } from 'svelte/store'
 const alertMocks = vi.hoisted(() => ({ alertToast: vi.fn() }))
 const generationOperationMocks = vi.hoisted(() => ({
   applySseEvent: vi.fn(),
-  reconcileErrorBody: vi.fn(() => ({})),
+  reconcileErrorBody: vi.fn((): any => ({ disposition: 'unresolved' })),
   registerViewer: vi.fn((_operationId: string, _detach: () => void) => () => undefined),
   stopOperation: vi.fn(async (_operationId: string) => ({ status: 'acknowledged' })),
 }))
@@ -29,6 +29,7 @@ vi.mock('../../../server/generationOperations', () => ({
 
 import {
   cancelServerChatGeneration,
+  retireGenerationJobViewers,
   requestServerChat,
   requestServerChatGeneration,
   type ServerChatInput,
@@ -174,7 +175,7 @@ beforeEach(() => {
     },
   )
   generationOperationMocks.reconcileErrorBody.mockReset()
-  generationOperationMocks.reconcileErrorBody.mockReturnValue({})
+  generationOperationMocks.reconcileErrorBody.mockReturnValue({ disposition: 'unresolved' })
   generationOperationMocks.registerViewer.mockReset()
   generationOperationMocks.registerViewer.mockReturnValue(() => undefined)
   generationOperationMocks.stopOperation.mockReset()
@@ -1827,6 +1828,7 @@ describe('requestServerChat', () => {
     expect(res).toEqual({
       status: 'error',
       error: 'Generation job not found or already expired.',
+      code: 'generation_job_not_found',
       reattachOutcome: 'missing_job',
     })
   })
@@ -2049,6 +2051,7 @@ describe('requestServerChatGeneration durable cancel-on-abort', () => {
       href: `/api/v1/generation-operations/${operationId}/stream?attemptNo=2&jobId=job-current&projectionEpoch=41`,
     }
     generationOperationMocks.reconcileErrorBody.mockReturnValueOnce({
+      disposition: 'redirected',
       operation: { operationId, state: 'owned_by_job' },
       stream: currentStream,
     })
@@ -2124,6 +2127,63 @@ describe('requestServerChatGeneration durable cancel-on-abort', () => {
     expect(generationOperationMocks.applySseEvent).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'done', jobId: 'job-current', operationId }),
     )
+  })
+
+  it('returns terminal stale-attempt authority for coordinator reconciliation', async () => {
+    const operationId = '11111111-1111-4111-8111-111111111111'
+    const stream = {
+      operationId,
+      attemptNo: 1,
+      jobId: 'job-expired-attempt',
+      projectionEpoch: 40,
+      href: `/api/v1/generation-operations/${operationId}/stream?attemptNo=1&jobId=job-expired-attempt&projectionEpoch=40`,
+    }
+    generationOperationMocks.reconcileErrorBody.mockReturnValueOnce({
+      disposition: 'terminal',
+      operation: { operationId, state: 'completed' },
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              error: 'stale_generation_attempt',
+              operation: { operationId, state: 'completed' },
+            }),
+            { status: 409, headers: { 'content-type': 'application/json' } },
+          ),
+      ),
+    )
+
+    await expect(requestServerChatGeneration(baseInput, null, undefined, stream)).resolves.toMatchObject({
+      status: 'error',
+      code: 'stale_generation_attempt',
+      reattachOutcome: 'authority_reconciliation_required',
+    })
+  })
+
+  it('retires an exact job viewer without cancelling durable work', async () => {
+    const jobId = 'job-observer-retire'
+    const wire = controlledGenerationStream()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => wire.response),
+    )
+
+    const pending = requestServerChatGeneration(baseInput, null, jobId)
+    sendGenerationReadyFrames(wire, jobId)
+    const served = await pending
+    expect(served.status).toBe('ok')
+    if (served.status !== 'ok') return
+
+    retireGenerationJobViewers(jobId)
+
+    await expect(served.terminal).resolves.toMatchObject({
+      status: 'error',
+      reattachOutcome: 'observer_superseded',
+    })
+    expect(generationOperationMocks.stopOperation).not.toHaveBeenCalled()
   })
 
   it('does NOT cancel on abort for a non-durable send', async () => {
