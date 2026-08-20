@@ -119,6 +119,10 @@ describe('bounded regex limits', () => {
 })
 
 describe('bounded regex compatibility selection', () => {
+  it('uses a 15-second runtime fallback timeout', () => {
+    expect(DEFAULT_COMPLEX_REGEX_TIMEOUT_MS).toBe(15_000)
+  })
+
   it('uses the worker fallback only for complexity-screen rejections', () => {
     expect(compileComplex()).toEqual({
       kind: 'complex-bounded-regex',

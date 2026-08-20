@@ -85,6 +85,10 @@ describe('database defaults', () => {
       expect.objectContaining({ id: 'default-global-lorebook', name: 'My First LoreBook', data: [] }),
     ])
     expect(database.strictScriptCheck).toBe(false)
+    expect(database.complexRegexCompatibilityMode).toBe('worker')
+    expect(database.complexRegexInputTimeoutMs).toBe(15000)
+    expect(database.complexRegexOutputTimeoutMs).toBe(15000)
+    expect(database.complexRegexDisplayTimeoutMs).toBe(15000)
     expect(database.seperateModels).toMatchObject({
       memory: '',
       emotion: '',

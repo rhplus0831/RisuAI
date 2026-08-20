@@ -407,6 +407,39 @@ describe('settings database normalization', () => {
     expect(getDatabase().openAIFlexProcessing).toBe(true)
   })
 
+  it('defaults complex regex compatibility to 15-second worker timeouts', () => {
+    seedPresetDatabase()
+    const legacyData = clonePlain(getDatabase())
+    delete (legacyData as Partial<Database>).complexRegexCompatibilityMode
+    delete (legacyData as Partial<Database>).complexRegexInputTimeoutMs
+    delete (legacyData as Partial<Database>).complexRegexOutputTimeoutMs
+    delete (legacyData as Partial<Database>).complexRegexDisplayTimeoutMs
+
+    setDatabase(legacyData)
+
+    expect(getDatabase()).toMatchObject({
+      complexRegexCompatibilityMode: 'worker',
+      complexRegexInputTimeoutMs: 15000,
+      complexRegexOutputTimeoutMs: 15000,
+      complexRegexDisplayTimeoutMs: 15000,
+    })
+
+    const configuredData = clonePlain(getDatabase())
+    configuredData.complexRegexCompatibilityMode = 'strict'
+    configuredData.complexRegexInputTimeoutMs = 1000
+    configuredData.complexRegexOutputTimeoutMs = 2000
+    configuredData.complexRegexDisplayTimeoutMs = 3000
+
+    setDatabase(configuredData)
+
+    expect(getDatabase()).toMatchObject({
+      complexRegexCompatibilityMode: 'strict',
+      complexRegexInputTimeoutMs: 1000,
+      complexRegexOutputTimeoutMs: 2000,
+      complexRegexDisplayTimeoutMs: 3000,
+    })
+  })
+
   it('normalizes chat load counts and migrates the fork legacy initial-tail setting', () => {
     seedPresetDatabase()
     const data = clonePlain(getDatabase())

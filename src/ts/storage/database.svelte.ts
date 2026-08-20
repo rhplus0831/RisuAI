@@ -2910,21 +2910,21 @@ export function setDatabase(data: Database) {
     data.pluginCompatibilityMode = false
   }
   data.strictScriptCheck ??= false
-  data.complexRegexCompatibilityMode ??= 'strict'
+  data.complexRegexCompatibilityMode ??= 'worker'
   if (data.complexRegexCompatibilityMode !== 'worker') {
     data.complexRegexCompatibilityMode = 'strict'
   }
-  data.complexRegexInputTimeoutMs ??= 10000
+  data.complexRegexInputTimeoutMs ??= 15000
   if (typeof data.complexRegexInputTimeoutMs !== 'number' || Number.isNaN(data.complexRegexInputTimeoutMs)) {
-    data.complexRegexInputTimeoutMs = 10000
+    data.complexRegexInputTimeoutMs = 15000
   }
-  data.complexRegexOutputTimeoutMs ??= 10000
+  data.complexRegexOutputTimeoutMs ??= 15000
   if (typeof data.complexRegexOutputTimeoutMs !== 'number' || Number.isNaN(data.complexRegexOutputTimeoutMs)) {
-    data.complexRegexOutputTimeoutMs = 10000
+    data.complexRegexOutputTimeoutMs = 15000
   }
-  data.complexRegexDisplayTimeoutMs ??= 10000
+  data.complexRegexDisplayTimeoutMs ??= 15000
   if (typeof data.complexRegexDisplayTimeoutMs !== 'number' || Number.isNaN(data.complexRegexDisplayTimeoutMs)) {
-    data.complexRegexDisplayTimeoutMs = 10000
+    data.complexRegexDisplayTimeoutMs = 15000
   }
   if (checkNullish(data.elevenLabKey)) {
     data.elevenLabKey = ''

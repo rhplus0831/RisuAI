@@ -7,7 +7,7 @@ export const BOUNDED_REGEX_LIMITS = {
   replacement: 64 * 1024,
 } as const
 
-export const DEFAULT_COMPLEX_REGEX_TIMEOUT_MS = 10_000
+export const DEFAULT_COMPLEX_REGEX_TIMEOUT_MS = 15_000
 
 const MAX_COMPLEX_REGEX_TIMEOUT_MS = 10 * 60 * 1000
 

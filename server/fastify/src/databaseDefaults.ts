@@ -289,16 +289,16 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'doNotWarnExternalServers', false)
   setDefault(database, 'pluginCompatibilityMode', false)
   setDefault(database, 'strictScriptCheck', false)
-  setDefault(database, 'complexRegexCompatibilityMode', 'strict')
+  setDefault(database, 'complexRegexCompatibilityMode', 'worker')
   if (database.complexRegexCompatibilityMode !== 'worker') {
     database.complexRegexCompatibilityMode = 'strict'
   }
-  setDefault(database, 'complexRegexInputTimeoutMs', 10000)
-  normalizeNumber(database, 'complexRegexInputTimeoutMs', 10000)
-  setDefault(database, 'complexRegexOutputTimeoutMs', 10000)
-  normalizeNumber(database, 'complexRegexOutputTimeoutMs', 10000)
-  setDefault(database, 'complexRegexDisplayTimeoutMs', 10000)
-  normalizeNumber(database, 'complexRegexDisplayTimeoutMs', 10000)
+  setDefault(database, 'complexRegexInputTimeoutMs', 15000)
+  normalizeNumber(database, 'complexRegexInputTimeoutMs', 15000)
+  setDefault(database, 'complexRegexOutputTimeoutMs', 15000)
+  normalizeNumber(database, 'complexRegexOutputTimeoutMs', 15000)
+  setDefault(database, 'complexRegexDisplayTimeoutMs', 15000)
+  normalizeNumber(database, 'complexRegexDisplayTimeoutMs', 15000)
   setDefault(database, 'elevenLabKey', '')
   setDefault(database, 'voicevoxUrl', '')
   setDefault(database, 'showMemoryLimit', false)
