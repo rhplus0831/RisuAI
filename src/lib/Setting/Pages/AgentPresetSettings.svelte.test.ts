@@ -142,6 +142,9 @@ describe('modular Agent Preset settings', () => {
     component = mount(AgentPresetSettings, { target })
     await tick()
 
+    const presetsHeader = target.querySelector('[data-risu-agent-presets-header]')
+    expect(presetsHeader?.textContent).toContain(language.agentPresets.presetsSectionDescription)
+    expect(presetsHeader?.querySelector('[data-risu-agent-preset-create]')).not.toBeNull()
     expect(target.querySelector('[data-risu-agent-settings]')?.textContent).toContain(language.agentPresets.agentsTitle)
     expect(target.querySelector('[data-risu-agent-row]')?.textContent).toContain(agent.name)
     expect(target.querySelector('[data-risu-agent-preset-row]')?.textContent).toContain(preset.name)

@@ -237,16 +237,9 @@
 </script>
 
 <section class="flex flex-col gap-4" data-risu-agent-preset-settings>
-  <div class="flex flex-wrap items-start justify-between gap-3">
-    <div>
-      <h2 class="mb-1 mt-2 text-2xl font-bold">{language.agentPresets.settingsTitle}</h2>
-      <p class="text-sm text-textcolor2">{language.agentPresets.settingsDescription}</p>
-    </div>
-    <span data-risu-agent-preset-create>
-      <Button size="sm" disabled={mutationLocked} onclick={openCreateEditor}>
-        <span class="inline-flex items-center gap-2"><PlusIcon size={16} />{language.agentPresets.createPreset}</span>
-      </Button>
-    </span>
+  <div>
+    <h2 class="mb-1 mt-2 text-2xl font-bold">{language.agentPresets.settingsTitle}</h2>
+    <p class="text-sm text-textcolor2">{language.agentPresets.settingsDescription}</p>
   </div>
 
   <AgentSettingsSection />
@@ -275,9 +268,16 @@
     <span class="text-sm text-textcolor2">{language.agentPresets.globalDefaultHelp}</span>
   </div>
 
-  <div class="mt-4">
-    <h3 class="text-lg font-semibold">{language.agentPresets.presetsSectionTitle}</h3>
-    <p class="text-sm text-textcolor2">{language.agentPresets.presetsSectionDescription}</p>
+  <div class="mt-4 flex flex-wrap items-start justify-between gap-3" data-risu-agent-presets-header>
+    <div>
+      <h3 class="text-lg font-semibold">{language.agentPresets.presetsSectionTitle}</h3>
+      <p class="text-sm text-textcolor2">{language.agentPresets.presetsSectionDescription}</p>
+    </div>
+    <span data-risu-agent-preset-create>
+      <Button size="sm" disabled={mutationLocked} onclick={openCreateEditor}>
+        <span class="inline-flex items-center gap-2"><PlusIcon size={16} />{language.agentPresets.createPreset}</span>
+      </Button>
+    </span>
   </div>
 
   {#if presets.length === 0}
