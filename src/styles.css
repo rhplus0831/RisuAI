@@ -139,6 +139,14 @@
     color: var(--color-gray-400);
   }
 
+  /* Native select popups may keep the platform background while inheriting app text colors.
+     Scope this to select descendants so datalist suggestions remain browser-owned. */
+  select option,
+  select optgroup {
+    background-color: var(--risu-theme-darkbg);
+    color: var(--risu-theme-textcolor);
+  }
+
   dialog {
     margin: auto;
   }
@@ -154,6 +162,8 @@ body {
 }
 
 :root {
+  --risu-theme-color-scheme: dark;
+  color-scheme: var(--risu-theme-color-scheme);
   --FontColorStandard: #fafafa;
   --FontColorBold: #e5e5e5;
   --FontColorItalic: #8c8d93;

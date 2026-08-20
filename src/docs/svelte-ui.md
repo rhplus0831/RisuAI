@@ -224,6 +224,11 @@ and `CustomCSSStore` for injected custom CSS. The visual palette selector and
 durable custom scheme are documented in
 [Settings UI](svelte-settings-ui.md#display-and-theme-controls).
 
+`updateColorScheme()` also publishes the active light/dark type as the root
+`color-scheme`. Global base styles give native select options and option groups
+the active theme foreground and dark-surface background; fixed-palette selects
+must declare their own `color-scheme` and option colors.
+
 `chatScreenWidth` becomes `--chat-screen-width` and constrains transcript and
 composer content without changing the outer shell. `DefaultChatScreen.svelte`
 also publishes `--chat-content-rendered-width` and

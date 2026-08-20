@@ -604,7 +604,7 @@
         <label class="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-zinc-700 text-zinc-300">
           <TagIcon class="w-3 h-3" />
           <select
-            class="max-w-36 bg-transparent text-zinc-200 focus:outline-hidden"
+            class="max-w-36 bg-transparent text-zinc-200 focus:outline-hidden [color-scheme:dark]"
             aria-label={language.hypaV3Modal.summaryCategoryLabel.replace('{0}', (summaryIndex + 1).toString())}
             value={summary.categoryId ?? ''}
             onchange={(event) => {
@@ -612,7 +612,7 @@
               void onSummaryChanged?.(summaryIndex, 'categoryId')
             }}>
             {#each categoryOptions as category}
-              <option value={category.id}>{category.name}</option>
+              <option value={category.id} class="bg-zinc-900 text-zinc-200">{category.name}</option>
             {/each}
           </select>
         </label>

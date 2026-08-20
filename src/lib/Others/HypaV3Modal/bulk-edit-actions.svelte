@@ -85,12 +85,12 @@
       <div class="flex items-center gap-2">
         <!-- Category Selection -->
         <select
-          class="px-3 py-2 rounded-sm border border-zinc-600 bg-zinc-900 text-zinc-200 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+          class="px-3 py-2 rounded-sm border border-zinc-600 bg-zinc-900 text-zinc-200 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500 [color-scheme:dark]"
           aria-label={language.hypaV3Modal.bulkCategoryLabel}
           value={bulkEditState.selectedCategory}
           onchange={handleCategoryChange}>
           {#each categories as category}
-            <option value={category.id}>{category.name}</option>
+            <option value={category.id} class="bg-zinc-900 text-zinc-200">{category.name}</option>
           {/each}
         </select>
 

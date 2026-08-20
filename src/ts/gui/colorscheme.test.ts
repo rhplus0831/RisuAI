@@ -282,6 +282,16 @@ describe('built-in color scheme contrast', () => {
   )
 })
 
+describe('native control color scheme', () => {
+  it.each(['dark', 'light'] as const)('publishes the %s scheme for browser-owned controls', (type) => {
+    colorSchemeMocks.database.colorScheme = { ...scheme('aaa'), type }
+
+    updateColorScheme()
+
+    expect(document.documentElement.style.getPropertyValue('--risu-theme-color-scheme')).toBe(type)
+  })
+})
+
 describe('legacy built-in color scheme migration', () => {
   it.each([
     ['default', '#64748b'],
