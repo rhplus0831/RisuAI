@@ -2286,8 +2286,10 @@
     </div>
   {/if}
   {#if $selectedCharID >= 0 && (activeChatMessagesLoading || activeChatDisplayLoading)}
+    <!-- Keep this below App's z-30 responsive sidebar dialog. On wide layouts
+         the sidebar is in flow, but on narrow layouts it overlays this full-width chat root. -->
     <div
-      class="absolute inset-0 z-40 flex items-center justify-center bg-bgcolor"
+      class="absolute inset-0 z-20 flex items-center justify-center bg-bgcolor"
       role="status"
       aria-live="polite"
       aria-busy="true"

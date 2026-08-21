@@ -846,6 +846,8 @@ describe('DefaultChatScreen initial display readiness', () => {
     expect(cover?.getAttribute('aria-busy')).toBe('true')
     expect(cover?.textContent).toContain('loadingChat')
     expect(cover?.querySelector('.animate-spin')).toBeTruthy()
+    expect(cover?.classList.contains('z-20')).toBe(true)
+    expect(cover?.classList.contains('z-40')).toBe(false)
 
     expect(defaultChatScreenTestChatController.releaseNext()).toBe(true)
     await settle()

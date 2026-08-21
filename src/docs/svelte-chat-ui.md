@@ -91,6 +91,8 @@ post-first-asset source through the same-chat batch bridge. Pending parses keep
 the last successful body. On a cold transcript mount, `Chats.svelte` keeps the
 chat-content loading cover visible until the newest two rows' first display
 parses settle; later reparses continue showing their last successful bodies.
+The cover stays below the app-owned responsive sidebar dialog so opening
+navigation remains usable while the chat finishes rendering.
 Plugin hooks and unsupported surfaces transparently run the former all-client
 path, while raw message, translation, copy, edit, TTS, and prompt sources remain
 unchanged.
