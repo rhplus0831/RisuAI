@@ -2292,6 +2292,7 @@ export const languageEnglish = {
     'Extends the cache time for Claude Caching, by requesting every 4 minutes. This can reduce the cache miss rate, but it can increase the cost if its not used properly.',
   automaticCachePoint: 'Automatic Cache Point',
   experimentalChatCompression: 'Experimental Chat Data Handling',
+  loadingChat: 'Loading chat…',
   loadingChatData: 'Loading Chat Data',
   chatDataLoadFailed: 'Chat data could not be loaded.',
   promptTemplateLoadFailed: 'Prompt template could not be loaded.',

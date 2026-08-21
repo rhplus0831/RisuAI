@@ -828,23 +828,37 @@ afterEach(() => {
 })
 
 describe('DefaultChatScreen initial display readiness', () => {
-  it('keeps the transcript loading surface visible until every cold row parse settles', async () => {
+  it('covers the chat content until the newest two cold row parses settle', async () => {
     defaultChatScreenTestChatController.hold()
-    seedDatabase([2])
+    seedDatabase([4])
     mountScreen()
 
     await waitFor(() => {
-      expect(target.querySelector('[data-testid="chat-display-loading"]')).toBeTruthy()
+      expect(defaultChatScreenTestChatController.pendingCount()).toBe(2)
     })
-    expect(messageRowIndexes()).toEqual([1, 0])
+    expect(messageRowIndexes()).toEqual([3, 2, 1, 0])
 
-    defaultChatScreenTestChatController.release()
+    const cover = target.querySelector<HTMLElement>('[data-chat-loading-cover]')
+    expect(cover).toBeTruthy()
+    expect(cover?.matches('[data-testid="chat-display-loading"]')).toBe(true)
+    expect(cover?.getAttribute('role')).toBe('status')
+    expect(cover?.getAttribute('aria-live')).toBe('polite')
+    expect(cover?.getAttribute('aria-busy')).toBe('true')
+    expect(cover?.textContent).toContain('loadingChat')
+    expect(cover?.querySelector('.animate-spin')).toBeTruthy()
+
+    expect(defaultChatScreenTestChatController.releaseNext()).toBe(true)
+    await settle()
+    expect(defaultChatScreenTestChatController.pendingCount()).toBe(1)
+    expect(target.querySelector('[data-testid="chat-display-loading"]')).toBeTruthy()
+
+    expect(defaultChatScreenTestChatController.releaseNext()).toBe(true)
 
     await waitFor(() => {
       expect(target.querySelector('[data-testid="chat-display-loading"]')).toBeNull()
     })
     expect(target.textContent).toContain('chat-0 message 0')
-    expect(target.textContent).toContain('chat-0 message 1')
+    expect(target.textContent).toContain('chat-0 message 3')
   })
 })
 

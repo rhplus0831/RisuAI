@@ -89,8 +89,8 @@ message id and original/translation/bilingual layer; `ChatBody.svelte` carries
 those through the existing parse memo; and `ParseMarkdown()` sends the
 post-first-asset source through the same-chat batch bridge. Pending parses keep
 the last successful body. On a cold transcript mount, `Chats.svelte` keeps the
-existing chat-loading surface visible until every mounted row's first display
-parse settles; later reparses continue showing their last successful bodies.
+chat-content loading cover visible until the newest two rows' first display
+parses settle; later reparses continue showing their last successful bodies.
 Plugin hooks and unsupported surfaces transparently run the former all-client
 path, while raw message, translation, copy, edit, TTS, and prompt sources remain
 unchanged.

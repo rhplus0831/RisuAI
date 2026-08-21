@@ -7,8 +7,20 @@ export interface InitialDisplayReadiness {
 
 type ReadinessPhase = 'waiting' | 'collecting' | 'ready'
 
+export const INITIAL_DISPLAY_MESSAGE_COUNT = 2
+
+export function shouldAwaitInitialDisplayParse(messageIndex: number, messageCount: number): boolean {
+  return (
+    Number.isInteger(messageIndex) &&
+    Number.isInteger(messageCount) &&
+    messageCount > 0 &&
+    messageIndex >= Math.max(0, messageCount - INITIAL_DISPLAY_MESSAGE_COUNT) &&
+    messageIndex < messageCount
+  )
+}
+
 /**
- * Holds the transcript loading surface over the first mounted display parses
+ * Holds the transcript loading surface over the tracked initial display parses
  * for one chat. Later row reparses are deliberately ignored after the scope is
  * ready because ChatBody keeps its last successful body visible for those.
  */

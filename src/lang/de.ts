@@ -1556,6 +1556,7 @@ export const languageGerman = {
     'Verlängert die Cache-Zeit für Claude-Caching, indem alle 4 Minuten angefordert wird. Dies kann die Cache-Miss-Rate verringern, aber die Kosten erhöhen, wenn es nicht richtig verwendet wird.',
   automaticCachePoint: 'Automatischer Cache-Punkt',
   experimentalChatCompression: 'Experimentelle Chat-Datenverarbeitung',
+  loadingChat: 'Chat wird geladen…',
   loadingChatData: 'Lade Chat-Daten',
   chatDataLoadFailed: 'Die Chat-Daten konnten nicht geladen werden.',
   promptTemplateLoadFailed: 'Die Prompt-Vorlage konnte nicht geladen werden.',

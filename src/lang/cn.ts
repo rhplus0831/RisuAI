@@ -1433,6 +1433,7 @@ export const languageChinese = {
     '通过每 4 分钟请求一次来延长 Claude 缓存的缓存时间。这可以降低缓存未命中率，但如果不正确使用，可能会增加成本。',
   automaticCachePoint: '自动缓存点',
   experimentalChatCompression: '实验性聊天数据处理',
+  loadingChat: '正在加载聊天…',
   loadingChatData: '加载聊天数据',
   chatDataLoadFailed: '无法加载聊天数据。',
   promptTemplateLoadFailed: '无法加载提示词模板。',

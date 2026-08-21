@@ -1611,6 +1611,7 @@ const languageKoreanBase = {
     '4분마다 요청하여 Claude 캐싱의 캐시 시간을 연장합니다. 캐시 누락률을 줄일 수 있지만, 적절히 사용하지 않으면 비용이 증가할 수 있습니다.',
   automaticCachePoint: '자동 캐시 포인트',
   experimentalChatCompression: '실험적 채팅 데이터 처리',
+  loadingChat: '채팅 불러오는 중…',
   loadingChatData: '채팅 데이터 로딩 중',
   chatDataLoadFailed: '채팅 데이터를 불러오지 못했습니다.',
   promptTemplateLoadFailed: '프롬프트 템플릿을 불러오지 못했습니다.',

@@ -49,6 +49,12 @@ afterEach(() => {
 })
 
 describe('changeLanguage same-code cache', () => {
+  it('uses the requested chat-entry loading copy', async () => {
+    const { languageEnglish } = await loadLanguageModule()
+
+    expect(languageEnglish.loadingChat).toBe('Loading chat…')
+  })
+
   it('L37: repeated same-code changeLanguage calls reuse the applied language object without clone work', async () => {
     const { cloneSpy, langModule, languageKorean } = await loadLanguageModule()
 

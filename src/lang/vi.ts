@@ -1514,6 +1514,7 @@ export const languageVietnamese = {
     'Kéo dài thời gian lưu trữ bộ nhớ đệm Claude bằng cách yêu cầu mỗi 4 phút. Điều này có thể giảm tỷ lệ bỏ lỡ bộ nhớ đệm, nhưng có thể tăng chi phí nếu không sử dụng đúng cách.',
   automaticCachePoint: 'Điểm lưu trữ tự động',
   experimentalChatCompression: 'Xử lý dữ liệu trò chuyện thử nghiệm',
+  loadingChat: 'Đang tải cuộc trò chuyện…',
   loadingChatData: 'Đang tải dữ liệu trò chuyện',
   chatDataLoadFailed: 'Không thể tải dữ liệu trò chuyện.',
   promptTemplateLoadFailed: 'Không thể tải mẫu nhắc.',

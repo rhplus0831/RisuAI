@@ -1535,6 +1535,7 @@ export const languageSpanish = {
     'Extiende el tiempo de caché para Claude Caching, solicitando cada 4 minutos. esto puede reducir la tasa de fallos de caché, pero puede aumentar el costo si no se usa correctamente.',
   automaticCachePoint: 'Punto de Caché Automático',
   experimentalChatCompression: 'Manejo Experimental de Datos de Chat',
+  loadingChat: 'Cargando chat…',
   loadingChatData: 'Cargando Datos de Chat',
   chatDataLoadFailed: 'No se pudieron cargar los datos del chat.',
   promptTemplateLoadFailed: 'No se pudo cargar la plantilla de prompt.',

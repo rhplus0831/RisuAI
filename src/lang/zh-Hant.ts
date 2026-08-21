@@ -1455,6 +1455,7 @@ export const languageChineseTraditional = {
     '透過每 4 分鐘請求一次來延長 Claude 快取的保留時間。這可以降低快取未命中率，但如果不當使用可能會增加成本。',
   automaticCachePoint: '自動快取點',
   experimentalChatCompression: '對話資料壓縮（實驗性功能）',
+  loadingChat: '正在載入對話…',
   loadingChatData: '正在載入對話資料',
   chatDataLoadFailed: '無法載入對話資料。',
   promptTemplateLoadFailed: '無法載入提示詞模板。',

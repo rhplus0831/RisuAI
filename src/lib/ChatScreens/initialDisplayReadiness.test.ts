@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createInitialDisplayReadiness } from './initialDisplayReadiness'
+import { createInitialDisplayReadiness, shouldAwaitInitialDisplayParse } from './initialDisplayReadiness'
 
 function createHarness() {
   const pendingChanges: boolean[] = []
@@ -26,6 +26,12 @@ function createHarness() {
 }
 
 describe('initial transcript display readiness', () => {
+  it('tracks only the newest two messages in an initial transcript', () => {
+    expect([0, 1, 2, 3].map((index) => shouldAwaitInitialDisplayParse(index, 4))).toEqual([false, false, true, true])
+    expect(shouldAwaitInitialDisplayParse(0, 1)).toBe(true)
+    expect(shouldAwaitInitialDisplayParse(0, 0)).toBe(false)
+  })
+
   it('keeps the cold transcript pending until every registered parse settles', async () => {
     const harness = createHarness()
     const first = Symbol('first')

@@ -29,7 +29,7 @@
   import type { ActiveChatTarget } from 'src/ts/chatCommands'
   import { clearVisibleChat, markChatRead, markChatUnread, setVisibleChat } from 'src/ts/process/chatUnread.svelte'
   import { recordChatRowsBuild } from './chatRowsBuildInstrumentation'
-  import { createInitialDisplayReadiness } from './initialDisplayReadiness'
+  import { createInitialDisplayReadiness, shouldAwaitInitialDisplayParse } from './initialDisplayReadiness'
 
   const getCurrentChatRoomId = () => {
     const charId = get(selectedCharID)
@@ -134,6 +134,7 @@
       isLastMemory: boolean
       generationPersistenceState: GenerationPersistenceIndicatorState | null
       scopeId: string | null
+      awaitInitialDisplayParse: boolean
     }[] = []
 
     for (let i = loadStart; i >= loadEnd; i--) {
@@ -153,6 +154,7 @@
         generationPersistenceState: generationPersistenceStateFromLookup(generationPersistenceLookup, message),
         isLastMemory: isMemoryLimitMessage(database.showMemoryLimit, lastMemoryId, message.chatId),
         scopeId: currentChatId ?? null,
+        awaitInitialDisplayParse: shouldAwaitInitialDisplayParse(i, messages.length),
       })
     }
 
@@ -604,8 +606,12 @@
           $automaticTranslationMessageIds.includes(row.message.chatId) &&
           !$serverOwnedGeneratedMessageIds.has(row.message.chatId)}
         onAutoTranslationEligibilityConsumed={() => consumeAutomaticTranslationEligibility(row.message.chatId ?? '')}
-        onInitialDisplayParseStart={(registration) => initialDisplayReadiness.start(row.scopeId, registration)}
-        onInitialDisplayParseSettled={(registration) => initialDisplayReadiness.settle(row.scopeId, registration)}
+        onInitialDisplayParseStart={row.awaitInitialDisplayParse
+          ? (registration) => initialDisplayReadiness.start(row.scopeId, registration)
+          : undefined}
+        onInitialDisplayParseSettled={row.awaitInitialDisplayParse
+          ? (registration) => initialDisplayReadiness.settle(row.scopeId, registration)
+          : undefined}
         generationPersistenceState={row.generationPersistenceState}
         {generationStage}
         disabled={row.message.disabled ?? false} />

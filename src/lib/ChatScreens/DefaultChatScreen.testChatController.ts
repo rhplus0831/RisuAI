@@ -18,6 +18,19 @@ export const defaultChatScreenTestChatController = {
     return () => undefined
   },
 
+  pendingCount() {
+    return pendingParses.size
+  },
+
+  releaseNext() {
+    holdInitialParses = false
+    const settle = pendingParses.values().next().value
+    if (!settle) return false
+    pendingParses.delete(settle)
+    settle()
+    return true
+  },
+
   release() {
     holdInitialParses = false
     const pending = [...pendingParses]
