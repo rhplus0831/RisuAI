@@ -12,6 +12,7 @@ import {
 } from './generationActivity.svelte'
 import { recordGenerationRecoveryEvent } from '../server/protocolDiagnostics'
 import { subscribeBrowserLifecycleRecovery } from '../server/lifecycleRecovery'
+import { setCachedServerCommandRevision } from '../server/commands'
 
 /**
  * Durable generations still running server-side, as surfaced by the bootstrap
@@ -1123,6 +1124,13 @@ async function refreshGenerationAuthority(
         })
         return { status: 'error', error: bootstrapRefreshError(runtime) }
       }
+      // The read itself suppresses revision caching so an aborted or superseded
+      // recovery probe cannot move the command cursor. Once this epoch has been
+      // accepted, advance the known-server cursor before transcript/effect
+      // reconciliation yields: a concurrent character selection must use this
+      // bootstrap revision rather than the older cached base. The separate
+      // applied-resource cursor remains unchanged until event reconciliation.
+      setCachedServerCommandRevision(runtime.bootstrap.revision)
       await applyGenerationRecoveryBootstrap(runtime, source)
       return { status: 'ok' }
     } catch (error) {

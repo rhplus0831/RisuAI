@@ -58,9 +58,11 @@ recovery, durable command dispatch, and compatibility bridges. Start from the
   authority. Active jobs are live attachment hints and local activities are
   observer state. Runtime read-only bootstrap probes are epoch-fenced and
   bounded; a foreground probe may supersede an older suspended request while
-  preserving the last successfully applied projection on failure. Terminal or
-  expired jobs are not cleared until their affected transcript has been
-  authoritatively hydrated, and the snapshot's finalization/effect projections
+  preserving the last successfully applied projection on failure. A current,
+  accepted probe advances the known-server command cursor before transcript and
+  effect reconciliation, while the applied-resource cursor remains event-owned.
+  Terminal or expired jobs are not cleared until their affected transcript has
+  been authoritatively hydrated, and the snapshot's finalization/effect projections
   are reconciled in the same recovery pass.
 - Command success reconciliation and foreign command SSE events both flow through the
   same serialized resource path. Contiguous response-confirmed optimistic

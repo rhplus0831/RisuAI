@@ -52,6 +52,7 @@ const h = vi.hoisted(() => {
       ) => true,
     ),
     fetchRuntimeJobs: vi.fn(),
+    setCachedServerCommandRevision: vi.fn(),
     hydrateChatMessages: vi.fn(async () => undefined),
     cancelServerChatGeneration: vi.fn(async () => undefined),
     retireGenerationJobViewers: vi.fn(),
@@ -93,6 +94,10 @@ vi.mock('../../storage/database.svelte', () => ({
 
 vi.mock('../../server/bootstrap', () => ({
   fetchServerBootstrapReadOnly: h.fetchRuntimeJobs,
+}))
+
+vi.mock('../../server/commands', () => ({
+  setCachedServerCommandRevision: h.setCachedServerCommandRevision,
 }))
 
 vi.mock('../../server/chatMessageHydration.svelte', () => ({
@@ -175,6 +180,7 @@ beforeEach(() => {
     status: 'ok',
     bootstrap: { activeGenerationJobs: [] },
   })
+  h.setCachedServerCommandRevision.mockClear()
   h.hydrateChatMessages.mockClear()
   h.cancelServerChatGeneration.mockClear()
   h.retireGenerationJobViewers.mockClear()
@@ -922,6 +928,21 @@ describe('reattach open-chat generation (Phase 4)', () => {
     })
   })
 
+  it('advances the known command revision before applying an accepted recovery bootstrap', async () => {
+    h.fetchRuntimeJobs.mockResolvedValueOnce({
+      status: 'ok',
+      bootstrap: { revision: 15_017, activeGenerationJobs: [] },
+    })
+    h.applyGenerationOperationBootstrap.mockImplementationOnce(() => {
+      expect(h.setCachedServerCommandRevision).toHaveBeenCalledWith(15_017)
+      return true
+    })
+
+    await refreshActiveGenerationJobsFromBootstrap()
+
+    expect(h.setCachedServerCommandRevision).toHaveBeenCalledTimes(1)
+  })
+
   it('routes online, pageshow, focus, and visible wakeups through the shared bootstrap reconciler', async () => {
     startActiveGenerationReattach()
     Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
@@ -970,7 +991,7 @@ describe('reattach open-chat generation (Phase 4)', () => {
     startActiveGenerationReattach()
     h.fetchRuntimeJobs.mockReturnValueOnce(new Promise(() => {})).mockResolvedValueOnce({
       status: 'ok',
-      bootstrap: { activeGenerationJobs: [] },
+      bootstrap: { revision: 22, activeGenerationJobs: [] },
     })
 
     window.dispatchEvent(new Event('online'))
@@ -978,6 +999,8 @@ describe('reattach open-chat generation (Phase 4)', () => {
 
     window.dispatchEvent(new Event('pageshow'))
     await vi.waitFor(() => expect(h.fetchRuntimeJobs).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(h.setCachedServerCommandRevision).toHaveBeenCalledWith(22))
+    expect(h.setCachedServerCommandRevision).toHaveBeenCalledTimes(1)
     await vi.waitFor(() =>
       expect(h.applyGenerationOperationBootstrap).toHaveBeenCalledWith(expect.anything(), 'pageshow'),
     )
