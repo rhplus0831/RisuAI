@@ -34,6 +34,8 @@ import {
 } from './routes/generationChat.js'
 import { registerGenerationOperationRoutes } from './routes/generationOperations.js'
 import { registerGenerationEffectRoutes } from './routes/generationEffects.js'
+import { registerDisplaySourceRoutes } from './routes/displaySources.js'
+import { DisplaySourceService } from './displaySourceService.js'
 import { bootPromptVariables } from './prompt/promptVariablesBoot.js'
 import { registerHealthRoutes } from './routes/health.js'
 import { registerHubRoutes } from './routes/hub.js'
@@ -242,6 +244,11 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   })
   const pushNotifications = createPushNotificationService(db, config.dataDir)
   const commandEventSink = opts.commandEvents ?? createCommandEventSink()
+  const displaySourceService = new DisplaySourceService({
+    db,
+    dataDir: config.dataDir,
+    eventSink: commandEventSink,
+  })
   const streamJobRegistry = new JobRegistry()
   // Separately GC-ticked registry for detached chat generations and their
   // transient chatId→jobId submission lock.
@@ -341,6 +348,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     messageTranslationJobRegistry,
     greetingTranslationJobRegistry,
   )
+  registerDisplaySourceRoutes(app, authState, displaySourceService)
   registerEventsRoutes(app, db, authState, commandEventSink, memoryEventBus, activeWriterState)
   registerAssetsRoutes(app, db, authState, config.dataDir, activeWriterState)
   registerBackupRoutes(app, db, authState, config.dataDir, commandEventSink, {

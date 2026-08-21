@@ -18,6 +18,11 @@ import {
 } from '../../ts/stores.svelte'
 import { getLLMCache, getLLMCacheMutationEpoch } from '../../ts/translator/translator'
 import { getActivePromptPresetRegexScripts } from '../../ts/process/promptPresetRegex'
+import {
+  normalizeDisplayDependencyValue as normalizeForSignature,
+  stableDisplayDependencyJson as stableStringify,
+} from '../../ts/process/displaySourceProtocol'
+import type { DisplaySourceLayer } from '../../ts/process/displaySourceProtocol'
 
 type ChatBodyParseMode = 'normal' | 'back' | 'pretranslate' | 'notrim'
 
@@ -27,6 +32,10 @@ interface ChatBodyParseMemoInput {
   mode: ChatBodyParseMode
   chatID: number
   cbsConditions: CbsConditions
+  displayLayer?: DisplaySourceLayer
+  messageId?: string
+  name?: string
+  streaming?: boolean
   memoKey?: string
 }
 
@@ -36,6 +45,10 @@ interface ChatBodyCachedOnlyInput {
   chatID: number
   cbsConditions: CbsConditions
   fallbackMode: ChatBodyParseMode
+  displayLayer?: DisplaySourceLayer
+  messageId?: string
+  name?: string
+  streaming?: boolean
   cachedOnlyParseKey?: string
   detectionKey?: string
 }
@@ -75,29 +88,6 @@ function refresh<T>(memo: Map<string, T>, key: string, value: T) {
   memo.delete(key)
   memo.set(key, value)
   return value
-}
-
-function normalizeForSignature(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map((item) => normalizeForSignature(item))
-  }
-  if (!value || typeof value !== 'object') {
-    return value
-  }
-
-  const normalized: Record<string, unknown> = {}
-  for (const key of Object.keys(value as Record<string, unknown>).sort()) {
-    const next = (value as Record<string, unknown>)[key]
-    if (next === undefined || typeof next === 'function') {
-      continue
-    }
-    normalized[key] = normalizeForSignature(next)
-  }
-  return normalized
-}
-
-function stableStringify(value: unknown): string {
-  return JSON.stringify(normalizeForSignature(value))
 }
 
 function stableFragment(value: unknown): string {
@@ -466,9 +456,11 @@ export function getChatBodyParseMemoKey(input: ChatBodyParseMemoInput): string {
       input.chatID,
     )},"data":${stableFragment(input.data ?? '')},"kind":"chat-body-parse","mode":${stableFragment(
       input.mode,
-    )},"modules":${serializedModuleSignature(modules)},"settings":${serializedSettingsSignature(
+    )},"displayLayer":${stableFragment(input.displayLayer)},"messageId":${stableFragment(
+      input.messageId,
+    )},"name":${stableFragment(input.name)},"modules":${serializedModuleSignature(modules)},"settings":${serializedSettingsSignature(
       modules,
-    )},"variableReloadEpoch":${stableFragment(get(VariableReloadGUIPointer))}}`
+    )},"streaming":${stableFragment(input.streaming)},"variableReloadEpoch":${stableFragment(get(VariableReloadGUIPointer))}}`
   })
 }
 
@@ -508,6 +500,10 @@ export function getChatBodyCachedOnlyLlmDetectionKey(input: ChatBodyCachedOnlyIn
           mode: detectionMode,
           chatID: input.chatID,
           cbsConditions: input.cbsConditions,
+          displayLayer: input.displayLayer,
+          messageId: input.messageId,
+          name: input.name,
+          streaming: input.streaming,
         }))
 
   const parseKeyFragment = detectionMode === 'raw' ? '' : `,"parseKey":${stableFragment(parseKey ?? '')}`
@@ -528,12 +524,15 @@ export function memoizedChatBodyParse(input: ChatBodyParseMemoInput): Promise<st
       return refresh(parseMemo, key, cached)
     }
 
-    const promise = ParseMarkdown(input.data, input.charArg, input.mode, input.chatID, input.cbsConditions).catch(
-      (error) => {
-        parseMemo.delete(key)
-        throw error
-      },
-    )
+    const promise = ParseMarkdown(input.data, input.charArg, input.mode, input.chatID, input.cbsConditions, {
+      layer: input.displayLayer,
+      messageId: input.messageId,
+      name: input.name,
+      streaming: input.streaming,
+    }).catch((error) => {
+      parseMemo.delete(key)
+      throw error
+    })
     remember(parseMemo, key, promise, PARSE_MEMO_LIMIT)
     return promise
   })

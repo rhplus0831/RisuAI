@@ -56,25 +56,12 @@ export function isServerUnsupportedTriggerEffectType(type: string): boolean {
   return serverUnsupportedTriggerEffectTypes.has(type)
 }
 
-/**
- * Browser-context CBS deliberately not implemented by Fastify. Screen width
- * and browser language are supported through reported client context; screen
- * height remains explicit no-port behavior.
- */
-export const serverUnsupportedCbsCallbackNames: ReadonlySet<string> = new Set(['screenheight', 'screen_height'])
+/** Browser-context CBS callbacks deliberately not implemented by Fastify. */
+export const serverUnsupportedCbsCallbackNames: ReadonlySet<string> = new Set()
 
 export interface TriggerServerCompatibilityDiagnostics {
   unsupportedEffectTypes: string[]
   unsupportedCbsCallbacks: string[]
-}
-
-const unsupportedCbsPattern = /\{\{\s*(screenheight|screen_height)(?=\s*(?:::|\}\}))/giu
-
-function collectUnsupportedCbsFromString(value: string, output: Set<string>): void {
-  unsupportedCbsPattern.lastIndex = 0
-  for (const match of value.matchAll(unsupportedCbsPattern)) {
-    if (match[1]) output.add('screenheight')
-  }
 }
 
 /**
@@ -88,7 +75,6 @@ export function diagnoseServerTriggerCompatibility(definitions: unknown): Trigge
 
   const visit = (value: unknown): void => {
     if (typeof value === 'string') {
-      collectUnsupportedCbsFromString(value, unsupportedCbsCallbacks)
       return
     }
     if (!value || typeof value !== 'object' || seen.has(value)) return

@@ -23,6 +23,7 @@
     getChatBodyParseMemoKey,
     memoizedChatBodyParse,
   } from './ChatBodyParseMemo'
+  import type { DisplaySourceLayer } from 'src/ts/process/displaySourceProtocol'
 
   interface Props {
     character?: simpleCharacterArgument | string | null
@@ -30,6 +31,9 @@
     idx?: number
     msgDisplay?: string
     name?: string
+    messageId?: string
+    displayLayer?: DisplaySourceLayer
+    streaming?: boolean
     role: string | null
     translated: boolean
     translating: boolean
@@ -44,6 +48,10 @@
     idx = 0,
     firstMessage = false,
     msgDisplay,
+    name,
+    messageId,
+    displayLayer = 'original',
+    streaming = false,
     role,
     translated = $bindable(false),
     translating = $bindable(false),
@@ -155,6 +163,10 @@
               mode: cachedOnlyDetectionMode,
               chatID,
               cbsConditions,
+              displayLayer,
+              messageId,
+              name,
+              streaming,
             })
       const detectionKey = getChatBodyCachedOnlyLlmDetectionKey({
         data,
@@ -177,6 +189,10 @@
                 charArg,
                 chatID,
                 cbsConditions,
+                displayLayer,
+                messageId,
+                name,
+                streaming,
                 fallbackMode: mode,
                 cachedOnlyParseKey,
                 detectionKey,
@@ -224,6 +240,10 @@
                 mode,
                 chatID,
                 cbsConditions,
+                displayLayer,
+                messageId,
+                name,
+                streaming,
               }),
             data,
           )
@@ -246,6 +266,10 @@
                 mode: 'pretranslate',
                 chatID,
                 cbsConditions,
+                displayLayer,
+                messageId,
+                name,
+                streaming,
               }),
             data,
           )
@@ -286,6 +310,10 @@
                 mode,
                 chatID,
                 cbsConditions,
+                displayLayer,
+                messageId,
+                name,
+                streaming,
               }),
             data,
           )
@@ -320,6 +348,10 @@
               mode,
               chatID,
               cbsConditions,
+              displayLayer,
+              messageId,
+              name,
+              streaming,
             }),
           data,
         )

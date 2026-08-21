@@ -1527,6 +1527,13 @@
       sentenceBreaks: paragraphBreakBySentences ? { sentencesPerParagraph: paragraphBreakSentenceCount } : undefined,
     })
   })
+  let displaySourceLayer = $derived(
+    !translated
+      ? ('original' as const)
+      : currentLiveChat()?.bilingualDisplay === true
+        ? ('bilingual' as const)
+        : ('translation' as const),
+  )
   // Partial edit routes each edited block to the text layer it renders from;
   // these mirror the displayMessage branches above.
   let partialEditTranslationText = $derived.by(() => {
@@ -2259,6 +2266,9 @@
             {idx}
             {msgDisplay}
             {name}
+            messageId={messageRowId || undefined}
+            displayLayer={displaySourceLayer}
+            streaming={isChatGenerating && idx === totalLength - 1 && role === 'char'}
             {bodyRoot}
             modelShortName={messageGenerationInfo ? getModelInfo(messageGenerationInfo?.model).shortName : ''}
             role={role ?? null}
@@ -2273,6 +2283,9 @@
             {idx}
             {msgDisplay}
             {name}
+            messageId={messageRowId || undefined}
+            displayLayer={displaySourceLayer}
+            streaming={isChatGenerating && idx === totalLength - 1 && role === 'char'}
             {bodyRoot}
             modelShortName={messageGenerationInfo ? getModelInfo(messageGenerationInfo?.model).shortName : ''}
             role={role ?? null}

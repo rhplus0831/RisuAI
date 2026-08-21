@@ -131,12 +131,38 @@ mutations are removed from rendered text and emitted as targeted chat-variable
 mutations.
 
 Fresh generation and prompt-preview requests report a bounded browser-context
-snapshot. Fastify resolves `{{screenwidth}}` and
-`{{metadata::browserlanguage}}` from that last-reported snapshot rather than
-reading browser globals. Missing context is non-fatal and emits a structured
-warning. `{{screenheight}}` remains deliberately unsupported: it expands to an
-empty value, emits the same non-throwing warning contract, and is diagnosed in
-trigger configuration/import surfaces.
+snapshot. Fastify resolves `{{screenwidth}}`, `{{screenheight}}`, and
+`{{metadata::browserlanguage}}` from that request-local snapshot rather than
+reading browser globals. Each dimension uses the browser's `window.innerWidth`
+or `window.innerHeight` value captured when the operation is accepted. Missing
+context from older clients or intents is non-fatal and emits a structured
+warning.
+
+## Intermediate Display Processing
+
+Fastify owns the expensive intermediate `editdisplay` transform for supported
+mounted chat rows through
+`POST /api/v1/chats/:chatId/display-sources`. The browser supplies the exact
+string after its first additional-asset pass; the server applies Lua
+`editDisplay`, the declarative V2 display trigger, non-mutating CBS expansion,
+and bounded global/active-preset/character/module regex scripts. The browser
+then resumes with the optional second asset pass, inlays, thought/tool markup,
+Markdown, style handling, sanitization, and DOM behavior. Neither the wire
+`displaySource` nor the process-local cache is persisted as message content.
+
+The route is active-writer guarded because Lua display hooks retain their
+existing ability to change chat scriptstate. One batch uses a working chat in
+target order and commits its final scriptstate delta once; a state-changing run
+is never inserted into the reusable cache. V2 display variables remain
+temporary. Browser `editdisplay` plugins, dynamic fuzzy-asset matching, an old
+server, stale identity/context, and transport failures select the complete
+browser transform instead of reordering stages.
+
+The cache has one active namespace keyed by database lineage, writer epoch,
+ephemeral page session, language, both viewport dimensions, and protocol
+version. Entries use SHA-256 over canonical display dependencies rather than a
+global revision. Stable rows use a byte-aware LRU; growing generation prefixes
+are coalesced and explicitly bypass it.
 
 ## Lorebook Activation And Injection
 

@@ -392,7 +392,7 @@ describe('TriggerV2List effect display', () => {
     expect(component.getValue().map((trigger) => trigger.comment)).toEqual(['Header B', 'Alpha B'])
   })
 
-  it('preserves unsupported imports and reports their effect and CBS diagnostics', async () => {
+  it('preserves imports and reports only definitions still unsupported by the server', async () => {
     const imported: triggerscript[] = [
       {
         comment: 'Imported unsupported definitions',
@@ -438,12 +438,14 @@ describe('TriggerV2List effect display', () => {
 
     expect(component.getValue()[2]).toEqual(imported[0])
     expect(triggerAlertMocks.alertError).toHaveBeenCalledWith(
-      language.triggerImportUnsupportedDiagnostic(['v2SetCharacterDesc'], ['screenheight']),
+      language.triggerImportUnsupportedDiagnostic(['v2SetCharacterDesc'], []),
     )
     expect(target.querySelector('[data-risu-server-compatibility-diagnostic]')?.textContent).toContain(
       'v2SetCharacterDesc',
     )
-    expect(target.querySelector('[data-risu-server-compatibility-diagnostic]')?.textContent).toContain('screenheight')
+    expect(target.querySelector('[data-risu-server-compatibility-diagnostic]')?.textContent).not.toContain(
+      'screenheight',
+    )
   })
 
   it('renders array insertion fields without null or malformed placeholders', async () => {

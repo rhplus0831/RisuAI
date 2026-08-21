@@ -436,6 +436,24 @@ When generation UI is wrong, inspect both the Svelte surface
 `src/lib/ChatScreens/DefaultChatScreen.svelte` and the runtime files above. Its
 visible ownership is documented in [Svelte Chat UI](svelte-chat-ui.md).
 
+## Intermediate Display Bridge
+
+Before final markup rendering, `ParseMarkdown()` keeps its first browser asset
+pass and asks the negotiated display-source bridge to perform only the
+intermediate `editdisplay` stages. `src/ts/server/displaySources.ts` batches
+same-chat mounted rows, reports an ephemeral page id plus language and viewport,
+and fences each result by request key, source hash, context fingerprint, target
+identity, and projection epoch. `ChatBodyParseMemo` remains above this bridge,
+so a browser memo hit performs no request and the existing last-good body stays
+visible while a replacement is pending.
+
+The full client `processScriptFull` path remains the correctness fallback for
+browser edit hooks, unsupported fuzzy dynamic assets, missing protocol support,
+stale writer/revision/context, and network failure. Growing generation prefixes
+are marked as streaming: pending duplicate prefixes coalesce and server results
+bypass the shared stable-row LRU. Final Markdown, CSS scoping, DOMPurify, blob
+URLs, metadata, and DOM activation remain browser-owned.
+
 ## Rendered Markup Sanitization
 
 The normal `ParseMarkdown()` path in `src/ts/parser/parser.svelte.ts` encodes

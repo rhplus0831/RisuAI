@@ -1710,7 +1710,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(bootstrap.json().database.characters[0].chats[0].scriptstate?.$llmResult).toBeUndefined()
   })
 
-  it('resolves browser language and screen width from client context while guarding unsupported CBS', async () => {
+  it('resolves browser language and screen dimensions from request-local client context', async () => {
     await restartHarness({
       dispatchProvider: () =>
         (async function* (): AsyncGenerator<CompletionStreamFrame> {
@@ -1735,25 +1735,16 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       headers: { 'risu-auth': assertion },
       payload: {
         ...basePayload,
-        clientContext: { browserLanguage: 'ko-KR', screenWidth: 777 },
+        clientContext: { browserLanguage: 'ko-KR', screenWidth: 777, screenHeight: 555 },
       },
     })
     expect(res.statusCode).toBe(200)
 
     const events = parseEvents(res.body)
     const promptText = JSON.stringify(events.find((event) => event.type === 'prompt')?.data.formated ?? [])
-    expect(promptText).toContain('WIDTH=777 LANG=ko-KR HEIGHT=')
+    expect(promptText).toContain('WIDTH=777 LANG=ko-KR HEIGHT=555')
     expect(promptText).not.toContain('{{screenheight}}')
-    expect(events.filter((event) => event.type === 'warning').map((event) => event.data)).toEqual([
-      {
-        message: 'CBS callback "screenheight" is unsupported on this server and returned an empty value.',
-        context: {
-          kind: 'unsupported_cbs_callback',
-          callbackName: 'screenheight',
-          reason: 'unsupported_on_server',
-        },
-      },
-    ])
+    expect(events.filter((event) => event.type === 'warning')).toEqual([])
     expect(events.at(-1)?.type).toBe('done')
   })
 
@@ -1764,7 +1755,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       characters: [
         {
           ...fixtureDatabase.characters[0],
-          desc: 'WIDTH={{screenwidth}} LANG={{metadata::browserlanguage}}',
+          desc: 'WIDTH={{screenwidth}} HEIGHT={{screenheight}} LANG={{metadata::browserlanguage}}',
         },
       ],
     })
@@ -1785,6 +1776,15 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         context: {
           kind: 'unsupported_cbs_callback',
           callbackName: 'screenwidth',
+          reason: 'client_context_unavailable',
+        },
+      },
+      {
+        message:
+          'CBS callback "screenheight" could not resolve because client context was not reported and returned an empty value.',
+        context: {
+          kind: 'unsupported_cbs_callback',
+          callbackName: 'screenheight',
           reason: 'client_context_unavailable',
         },
       },

@@ -85,6 +85,14 @@ includes `__tests__/**/*.test.ts`. The package aliases keep `pnpm test` on
 
 ## Regression-critical test groups
 
+Intermediate display protocol/cache/route coverage lives in
+`src/ts/process/displaySourceProtocol.test.ts`,
+`src/ts/server/displaySources.test.ts`,
+`server/fastify/__tests__/displaySourceCache.test.ts`, and
+`server/fastify/__tests__/displaySources.test.ts`. The existing ChatBody memo,
+parser, scripting, Lua, trigger, bounded-regex, bootstrap, route-protection, and
+generation suites remain companion parity coverage.
+
 1. **Outbox, dispatch, replay, bootstrap, and invalidation:** `pendingMutationOutbox`, `durableMutationDispatch`, `durableMutationTerminalRejection`, `pendingMutationReplay`, browser `commands`, `bootstrap`, `resourceState`, and `resourceInvalidation`. These are the core protection against lost, duplicated, or stale user edits.
 2. **Generation goldens and durable lifecycle:** `sendChat.fixtures*`, server `assemble`, `generation.chat`, `durableGeneration`, provider transport/terminal assertions, and the reroll Playwright journey. They protect model-visible context and durable transcripts.
 3. **Persistence transactions, identity repair, and recovery:** command/revision/idempotency/concurrency suites, migrations, lorebook and record identity normalization, backups, save/bundle codecs, asset GC, and Realm atomic staging. These defend user data at rest and through destructive operations.

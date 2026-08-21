@@ -204,6 +204,7 @@ export interface ServerBootstrapRuntime {
   /** Persistent ownership generation, incremented whenever the writer changes. */
   writerEpoch?: number
   generationOperationProtocol?: { version: number }
+  displaySourceProtocol?: { version: number }
   generationOperationProjectionEpoch?: number
   generationOperations?: GenerationOperationProjection[]
   /**
@@ -321,6 +322,7 @@ async function fetchServerBootstrapWithMode(input: {
     databaseLineage: typeof record.databaseLineage === 'string' ? record.databaseLineage : undefined,
     writerEpoch: Number.isSafeInteger(record.writerEpoch) ? (record.writerEpoch as number) : undefined,
     generationOperationProtocol: parseGenerationOperationProtocol(record.generationOperationProtocol),
+    displaySourceProtocol: parseGenerationOperationProtocol(record.displaySourceProtocol),
     generationOperationProjectionEpoch: isNonNegativeSafeInteger(record.generationOperationProjectionEpoch)
       ? (record.generationOperationProjectionEpoch as number)
       : undefined,

@@ -44,6 +44,7 @@ import {
 import { startBridgePatchLifecycleFlush } from './server/bridgeFlush'
 import { replayPendingMutations } from './server/pendingMutationReplay'
 import { applyGenerationOperationBootstrap, configureGenerationOperationProtocol } from './server/generationOperations'
+import { configureDisplaySourceProtocol } from './server/displaySources'
 import {
   countBlockingPendingMutationRecords,
   preparePendingMutationOutbox,
@@ -283,6 +284,7 @@ export async function loadWebInitialDatabase() {
     ? firstBootstrap.bootstrap
     : await initializeFreshServerDatabase(firstBootstrap.bootstrap)
   configureGenerationOperationProtocol(runtime.generationOperationProtocol, runtime.databaseLineage)
+  configureDisplaySourceProtocol(runtime.displaySourceProtocol, runtime.databaseLineage, runtime.writerEpoch)
 
   const { databaseLineage, requestedWriterWasActive, writerEpoch } = firstBootstrap.bootstrap
   if (

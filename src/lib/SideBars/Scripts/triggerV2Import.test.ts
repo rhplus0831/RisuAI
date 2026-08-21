@@ -38,7 +38,7 @@ describe('Trigger V2 imports', () => {
 
     expect(diagnoseServerTriggerCompatibility(imported)).toEqual({
       unsupportedEffectTypes: ['v2SetPersonaDesc'],
-      unsupportedCbsCallbacks: ['screenheight'],
+      unsupportedCbsCallbacks: [],
     })
     expect(imported).toEqual(before)
   })

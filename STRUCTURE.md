@@ -1,6 +1,6 @@
 # Project Structure
 
-Last audited: 2026-08-18.
+Last audited: 2026-08-21.
 
 Use this file to orient yourself in the Fastify-only RisuAI codebase. The
 supported toolchain is Node.js 24 or newer with pnpm. Choose the guide for your
@@ -78,6 +78,11 @@ to find companion files and tests.
   authoritative. Browser caches are disposable; the encrypted outbox and scoped
   drafts retain pending intent or edits, not an independent offline database.
   See the [Cache Protocol](docs/structure/server-resources-and-bridges.md#cache-protocol).
+- Intermediate `editdisplay` processing is Fastify-owned for negotiated,
+  parity-supported chat rows, while final Markdown/sanitization/DOM work remains
+  browser-owned. Derived `displaySource` text is process-local and never message
+  authority; see
+  [Intermediate Display Processing](docs/structure/prompt-assembly-and-scripting.md#intermediate-display-processing).
 - Normal revision-tracked domain writes use command mutations and global
   revision ordering. Server-owned exceptions are listed in
   [Data And Events](docs/structure/data-and-events.md#server-owned-exceptions).

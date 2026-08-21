@@ -85,6 +85,12 @@ export const COMMAND_METRIC_REVIEW_GATES = {
     dbJsonWriteMs: 0,
     maxTables: ['chats', ...MESSAGE_STORE_TABLES].sort(),
   },
+  'targeted-display-source-scriptstate': {
+    reviewGate: 'display-source Lua persistence writes only the active chat row',
+    sections: COMMAND_METRIC_SECTIONS,
+    dbJsonWriteMs: 0,
+    expectedTables: ['chats'],
+  },
   'targeted-character-selection': {
     reviewGate: 'character selection should update only the selected character row and settings',
     sections: COMMAND_METRIC_SECTIONS,

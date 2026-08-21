@@ -1,478 +1,647 @@
-# Background Generation Completion Freeze — Implementation Plan
+# Server-Owned Intermediate Display Processing — Implementation Plan
 
 ## Status
 
-Implemented and verified on 2026-08-21. The focused resource, hydration,
-terminal-patch, effect-ledger, and render-cost suites described below pass, as
-does the repository-wide `pnpm test:all` release gate.
+Implemented on 2026-08-21 with the rollout-safe protocol-v1 boundary described
+below. Raw messages remain authoritative and the client fallback remains
+compiled for browser plugins, older servers, unsupported dynamic-asset
+similarity, stale requests, and transport failures.
+
+Implementation findings resolved the original open decisions as follows:
+
+1. Dynamic-asset fuzzy matching selects `client_fallback` in protocol v1; exact
+   server parity would require moving the browser embedding model across the
+   boundary.
+2. The initial cache limits are 512 entries, 16 MiB total UTF-8 output, and 512
+   KiB per entry. The batch route accepts at most 64 targets, 512 KiB per source,
+   and 4 MiB of source text per request.
+3. Growing streaming prefixes use the same exact post-first-asset POST seam,
+   are coalesced in the browser, and explicitly bypass the shared server LRU.
+   The proposed additive SSE projection was not used because the generation
+   server does not possess the browser's first additional-asset-pass output;
+   emitting a transform there would reorder the compatibility pipeline.
+4. Version 1 uses only the separate POST operation; hydration remains raw and
+   authoritative.
+5. The whole client transform is retained as a negotiated compatibility and
+   plugin fallback.
+
+The related `screenHeight` compatibility defect is intentionally tracked in a
+separate report at
+`/home/codex/docs/screen-height-client-context-report.md`. That fix should land
+independently, preferably before this plan reaches client cutover.
 
 ## Objective
 
-Prevent a generation that completes in a background chat from briefly blocking
-or repainting the chat the user is currently reading.
+Move expensive intermediate message-display processing, centered on
+`processScriptFull(..., 'editdisplay')`, from the browser to Fastify. The browser
+should receive a fully transformed `displaySource`, then retain responsibility
+for browser-native asset/inlay resolution, Markdown rendering, HTML/CSS
+sanitization, translation presentation, metadata insertion, DOM enhancement,
+and interaction.
 
-The implementation should make completion work proportional to the changed
-chat and changed messages. It must preserve durable generation recovery,
-revision ordering, reroll candidates, translations, unread indicators,
-completion effects, and later navigation into the completed chat.
+The result should reduce browser CPU and interpreter work without persisting
+derived display text, changing raw message authority, or turning Fastify into an
+HTML renderer.
 
-## Problem Summary
+## Decisions
 
-Normal generation completion is already narrow on the server:
-`generation.persisted` identifies the changed chat and generated message, and
-the browser fetches a generation-specific transcript suffix. The pause is
-introduced primarily while applying and projecting that result in the browser.
+1. **Raw messages remain authoritative.** SQLite `messages.json` remains the
+   lossless source of truth. `displaySource` is disposable derived data and must
+   never be accepted as message content by mutation or generation code.
+2. **The boundary is intermediate text, not HTML.** The initial migration moves
+   the existing `processScriptFull(..., 'editdisplay')` seam. The browser keeps
+   the surrounding `ParseMarkdown()` pipeline, including its first and optional
+   second additional-asset pass, inlay blob URLs, thought/tool presentation,
+   sentence formatting, Markdown, style decoding, DOMPurify, and DOM observers.
+3. **Preserve transform ordering.** The client supplies the exact string that
+   currently enters `processScriptFull` after the first additional-asset pass.
+   Fastify returns the string that should enter the optional second asset pass.
+4. **No browser plugin reordering.** When a browser plugin has registered an
+   `editdisplay` hook, the entire current client `processScriptFull` path remains
+   active. Fastify does not attempt to run the server stages around a client
+   plugin with extra round trips, because that would alter the required order.
+5. **Current variable semantics remain valid.** V2 display-trigger variables
+   stay request-local temporary variables. Lua `editDisplay` may continue to
+   produce durable chat-scriptstate changes, as the client does today. A bot
+   relying on repeated render-time durable mutations is considered fragile bot
+   behavior, not a reason to keep the transform in the browser.
+6. **Single active display client is a supported invariant.** A writer-intent
+   bootstrap supersedes the previous browser in normal use; the stale browser
+   stops server communication and becomes frozen/read-only. The server cache may
+   therefore retain only one active display-context namespace. In-flight work
+   still carries immutable request context and source hashes so takeover timing
+   cannot misapply a result.
+7. **The cache is process-local and non-authoritative.** No SQLite table,
+   migration, command event, backup data, or resource revision is created for
+   cached display output.
 
-The main sources of unnecessary foreground work are:
+## Current Boundary
 
-1. `getResourceDatabase()` implicitly reads one global
-   `resourceDatabaseFacadeEpoch`. Any trusted write, including a write to a
-   background chat, invalidates every mounted reactive `getDatabase()` consumer.
-2. The visible transcript's row model reads the whole compatibility facade and
-   the global generation-finalization array. A change for another chat can
-   therefore rebuild the visible rows.
-3. Generation suffix hydration allocates a replacement array proportional to
-   the resident transcript length even when only one appended row changed.
-4. The live terminal projection and the later authoritative command-event
-   projection can perform semantically duplicate writes, producing multiple
-   global reactive flushes close together.
-5. The generation-specific hydration response includes chat-wide data such as
-   Hypa state and reroll alternates even when those values did not change.
-6. Configured completion effects, especially synchronous plugin callbacks or
-   local embedding work, can add a separate main-thread long task.
+The live message path is distributed across these stages:
+
+1. `Chat.svelte` selects original, translated, or bilingual text and performs
+   the initial display-oriented `risuChatParser` expansion.
+2. `ParseMarkdown()` performs an initial additional-asset pass.
+3. `processScriptFull(..., 'editdisplay')` runs:
+   - Lua `editDisplay` hooks;
+   - the declarative V2 `display` trigger;
+   - browser plugin edit hooks;
+   - another CBS/Risu parser expansion;
+   - global, active-preset, character, and module regex scripts;
+   - optional dynamic-asset name matching.
+4. When the transform changed the string, `ParseMarkdown()` repeats additional
+   asset expansion.
+5. The browser resolves inlays, converts thought/tool markers, inserts sentence
+   breaks, renders Markdown and code markers, scopes styles, sanitizes twice
+   where necessary, inserts metadata, and activates DOM behavior.
+
+The new Fastify service owns stage 3 only. This boundary is narrow enough to
+avoid server DOM work and broad enough to remove Lua/V2/regex/dynamic-match CPU
+from the browser. It also preserves the exact pre/post additional-asset order.
 
 ## Non-Goals
 
-- Do not weaken Fastify/SQLite authority or skip required revision/event
-  reconciliation.
-- Do not remove background generation, reattach, unread markers, terminal
-  effects, or persisted reroll candidates.
-- Do not replace the issue with an arbitrary debounce, timer, or loading
-  overlay. The work itself must be reduced and scoped.
-- Do not redesign the complete resource protocol in the first change.
-- Do not add user-visible strings unless the final implementation introduces a
-  new diagnostic surface.
+- Do not render Markdown, KaTeX, highlighted code, complete HTML, or the final
+  DOM on Fastify.
+- Do not move DOMPurify, CSS selector scoping, blob URL creation, BGM activation,
+  copy/download controls, or partial-edit DOM mapping to Fastify.
+- Do not persist `displaySource` in message rows or any compatibility export.
+- Do not make derived output part of revision ordering, backups, import/export,
+  prompt construction, translation source hashes, TTS source text, or editing.
+- Do not execute browser plugins on Fastify.
+- Do not solve general simultaneous multi-client rendering. The cache design is
+  optimized for the active-writer takeover model while remaining safe for
+  already-in-flight stale work.
+- Do not redefine Lua display-variable compatibility in this project. A future
+  policy that makes all display writes temporary would be a separate behavior
+  change.
+- Do not combine the independent `screenHeight` fix with the display-source
+  patch series.
 
 ## Required Invariants
 
-- A completed background chat must be correct when opened later, including its
-  final text, translation, generation metadata, reroll candidates, and Hypa
-  state where applicable.
-- `accepted`, `queued`, `committed_cleanup_pending`, stalled, terminal, and
-  rejected generation persistence states must retain their existing meanings.
-- Revision gaps, malformed events, database replacement, and replay exhaustion
-  must continue to use the authoritative full-refresh fallback.
-- Event-before-terminal and terminal-before-event races must converge on the
-  same transcript without dropping newer user edits or stream projections.
-- A background completion must not change foreground scroll alignment,
-  automatic-translation eligibility, parser reload pointers, composer state, or
-  reroll state.
-- Active-writer loss and database-lineage fences must remain effective.
-- The changes must work for both ordinary streaming and half-streaming, plus
-  send, continue, regenerate, cancellation, reattach, and finalization recovery.
-
-## Phase 0 — Add Reproduction and Cost Observability
-
-Create a regression harness before changing behavior so the implementation can
-distinguish fewer renders from merely faster machines.
-
-### Work
-
-- Extend `src/ts/__tests__/renderCostHarness.ts`, or add a focused companion
-  harness, with:
-  - one mounted foreground chat;
-  - a second resident background chat;
-  - a simulated `generation.persisted` suffix apply for the background chat;
-  - configurable foreground and background transcript sizes.
-- Add test-only counters or a small extracted pure helper so tests can observe:
-  - visible `Chats.svelte` row-model builds;
-  - `ChatBody`/`ParseMarkdown` invocations;
-  - foreground geometry/scroll effects;
-  - compatibility-facade epoch changes;
-  - target transcript rows copied or allocated during range application.
-- Cover both orderings:
-  - terminal projection before the command event;
-  - command event before the terminal projection.
-- Record a baseline result without asserting a wall-clock duration. Prefer
-  deterministic call/allocation counts for CI.
-
-### Initial Acceptance Tests
-
-- Applying a result to chat B leaves chat A's content and scroll position
-  unchanged.
-- The current implementation demonstrates at least one unnecessary foreground
-  row-model invalidation, proving the harness exercises the bug.
-- Parser counts remain separately visible so a row-model regression is not
-  misreported as markdown parsing.
-
-### Likely Files
-
-- `src/ts/__tests__/renderCostHarness.ts`
-- `src/ts/__tests__/renderCostHarness.test.ts`
-- `src/ts/server/chatMessageHydration.reactivity.svelte.test.ts`
-- `src/lib/ChatScreens/Chats.svelte`
-- A new test-only or pure row-model helper if necessary
-
-## Phase 1 — Scope Generation-Finalization Reactivity by Chat
-
-Remove the guaranteed foreground transcript rebuild caused by publishing one
-global finalization array.
-
-### Work
-
-- Keep the canonical flat generation-finalization list if bootstrap, polling,
-  and recovery still benefit from it, but add a reactive chat-keyed projection.
-  A `SvelteMap<string, readonly QueuedGenerationPersistence[]>` or individual
-  per-chat stores is preferred.
-- Update only the affected chat key in:
-  - `setGenerationFinalizationPersistences()`;
-  - `markGenerationPersistenceQueued()`;
-  - `clearGenerationPersistence()`;
-  - `acknowledgeHydratedGenerationPersistences()`.
-- Do not publish any state when a clear/acknowledgement removed nothing and
-  changed no entry.
-- Expose a selector for the exact visible chat. `Chats.svelte` should consume
-  that selector rather than `$generationFinalizationPersistences`.
-- Build a message-id/generation-id lookup once per relevant chat projection
-  instead of calling `Array.find()` for every visible message row.
-- Preserve the existing flat-list compatibility export until all non-UI users
-  are migrated or proven not to require it.
-
-### Acceptance Criteria
-
-- Clearing or acknowledging finalization state for chat B does not rebuild chat
-  A's row model.
-- A state change for chat A updates only the matching message indicator.
-- Bootstrap replacement, periodic refresh, queued projection retention, and
-  stalled/terminal states remain covered by existing tests.
-
-### Likely Files
-
-- `src/ts/process/generationPersistenceState.ts`
-- `src/lib/ChatScreens/Chats.svelte`
-- `src/ts/process/generationPersistenceState.test.ts`
-- `src/lib/ChatScreens/Chats*.test.ts`
-
-## Phase 2 — Remove Implicit App-Wide Facade Invalidation
-
-Complete the resource-scoped reactivity boundary so a nested chat write does
-not wake every `getDatabase()` caller.
-
-### Preferred Design
-
-- Stop reading `resourceDatabaseFacadeEpoch` implicitly inside
-  `getResourceDatabase()`.
-- Keep `getResourceDatabaseFacadeEpoch()` as an explicit compatibility signal
-  for the small number of consumers that intentionally observe any database
-  change.
-- Rely on reads from `settingsResourceState`, `collectionsResourceState`, and
-  `charactersResourceState`—including nested Svelte proxies—to register the
-  actual reactive dependencies.
-- Add narrow accessors where direct resource reads make ownership clearer, for
-  example:
-  - settings fields used by chat rendering;
-  - the selected character row;
-  - the selected chat body;
-  - character-order and pinned-chat metadata.
-
-### Migration and Audit
-
-- Audit reactive callers of `getDatabase()` and `DBState.db` for code that
-  depends only on receiving a new whole-database signal without reading a
-  concrete field.
-- Migrate any genuine broad observer to explicitly read the facade epoch.
-- Prioritize mounted latency-sensitive surfaces:
-  - `DefaultChatScreen.svelte`;
-  - `Chats.svelte`;
-  - `Chat.svelte`;
-  - `ChatScreen.svelte` and `BackgroundDom.svelte`;
-  - `Sidebar.svelte`, `SideChatList.svelte`, and pinned-chat projections;
-  - the module-update root effect in `src/ts/stores.svelte.ts`.
-- Consolidate repeated per-message renderer settings into a resource-backed
-  renderer-settings projection where that reduces duplicate dependency work.
-- Preserve an explicit compatibility mode temporarily if the audit finds a
-  legacy whole-facade consumer that cannot be migrated in the same change. Do
-  not make background chat writes conditionally non-reactive based only on
-  visibility; ownership must be resource-based, not UI-state-based.
-
-### Acceptance Criteria
-
-- A trusted write to chat B invalidates subscribers to chat B and intentional
-  whole-database observers, but not chat A's transcript or unrelated settings.
-- A trusted write to chat A still updates its loading state, messages, parser
-  inputs, and controls without an explicit global bump.
-- Settings, collection, character-row, and selected-character updates still
-  repaint their owning UI.
-- Tests cover retaining the stable compatibility-proxy identity while reading
-  newly replaced resource values.
-
-### Likely Files
-
-- `src/ts/server/resourceState.svelte.ts`
-- `src/ts/storage/database.svelte.ts`
-- `src/ts/stores.svelte.ts`
-- `src/lib/ChatScreens/DefaultChatScreen.svelte`
-- `src/lib/ChatScreens/Chats.svelte`
-- `src/lib/ChatScreens/Chat.svelte`
-- `src/lib/ChatScreens/ChatScreen.svelte`
-- `src/lib/ChatScreens/BackgroundDom.svelte`
-- `src/lib/SideBars/Sidebar.svelte`
-- `src/ts/storage/database.resourceState.test.ts`
-- `src/ts/server/resourceWriteGuard.test.ts`
-- `src/ts/server/chatMessageHydration.reactivity.svelte.test.ts`
-
-## Phase 3 — Make Transcript Suffix Application O(Delta)
-
-Avoid copying a complete resident transcript for a small authoritative suffix.
-
-### Work
-
-- Extract the range merge in `hydrateServerChatMessages()` into a separately
-  tested helper.
-- For a safe append where `start === existing.length` and `total` matches the
-  resulting length, append only the incoming rows.
-- For an in-range replacement, assign only the affected indexes.
-- Extend or truncate only when required by the authoritative `messageTotal`.
-- Create placeholders only for genuinely missing indexes; do not rebuild
-  existing placeholder or resident prefixes.
-- Preserve object identity for unchanged messages so keyed rows and editor
-  fences remain stable.
-- Retain a conservative replacement fallback for malformed ranges or cases
-  whose shape cannot be reconciled incrementally.
-- Keep projection-epoch, mutation-intent, hydration freshness, and reroll fences
-  around the merge.
-
-### Race Cases to Test
-
-- Append while an older range hydration is in flight.
-- Continue/regenerate replacing a tail row.
-- Authoritative truncation.
-- A local message edit occurring before the generation suffix applies.
-- A stream projection losing ownership to an authoritative apply.
-- Loaded prefixes mixed with server-unloaded placeholders.
-- Duplicate terminal/event delivery.
-
-### Acceptance Criteria
-
-- A one-message append performs work proportional to one row plus any required
-  length adjustment, not the total transcript length.
-- Unchanged message objects retain identity.
-- The active chat and a later-opened background chat render the same canonical
-  transcript as before.
-
-### Likely Files
-
-- `src/ts/storage/database.svelte.ts`
-- `src/ts/server/chatMessageHydration.svelte.ts`
-- `src/ts/server/chatMessageHydration.test.ts`
-- `src/ts/server/chatMessageHydration.reactivity.svelte.test.ts`
-
-## Phase 4 — Make Terminal and Event Reconciliation Idempotent
-
-Reduce clustered completion writes without weakening the authoritative event
-contract.
-
-### Work
-
-- Introduce an exact completion projection record keyed by database lineage,
-  chat ID, generation ID, message ID, and revision.
-- When the live terminal applies `done.postGeneration.messagePatch`, record what
-  was actually applied and the chat-body projection/mutation epochs that fenced
-  it.
-- When authoritative hydration arrives first, make the later terminal path
-  verify the persisted message and skip assignments that are already
-  semantically satisfied.
-- When the terminal arrives first, continue processing the command event unless
-  the terminal projection provides enough authority to acknowledge every field
-  the event owns. Initially, use the completion record to make the range merge a
-  no-op rather than skipping the server read.
-- Only add a no-fetch local acknowledgement after the wire contract proves that
-  the terminal contains the complete authoritative message/alternate state for
-  that exact event revision.
-- Ensure no-op assignments do not increment resource/facade epochs or publish
-  stores.
-- Expire projection records after the corresponding revision is reconciled or
-  after bounded recovery cleanup.
-
-### Acceptance Criteria
-
-- Both event orderings produce one meaningful transcript mutation.
-- Duplicate/replayed terminal or command events are no-ops.
-- Newer local edits, regenerated candidates, and reattached attempts are never
-  overwritten by an older completion record.
-- Revision cursors still advance in strict contiguous order.
-
-### Likely Files
-
-- `src/ts/process/serverBackedSendChat.ts`
-- `src/ts/process/postGeneration/streamResponse.ts`
-- `src/ts/server/resourceInvalidation.ts`
-- `src/ts/server/chatMessageHydration.svelte.ts`
-- `src/ts/server/resourceState.svelte.ts`
-- A new narrowly owned completion-projection ledger module
-- Existing server-backed send, reattach, resource invalidation, and accepted-send
-  tests
-
-## Phase 5 — Reduce Generation Hydration Payloads
-
-After browser-side scoping is proven, reduce completion-time JSON parsing and
-allocation.
-
-### Work
-
-- Document which table families can change for each finalization event shape:
-  `generation` versus `chatTranscript`.
-- For a plain `generation.persisted` event, omit chat-wide Hypa data when the
-  event contract proves it was unchanged.
-- Return reroll alternates only when finalization changed them, or add an
-  explicit `alternatesIncluded`/`alternatesChanged` contract so omission cannot
-  be confused with clearing.
-- Preserve the broader `chatTranscript` path when scripts or chat state changed.
-- Keep the fallback tail and full-chat reads for missing anchors, duplicate
-  generation writes in one batch, and compatibility states.
-- Update the client decoder so omitted, present-empty, and present-nonempty
-  fields have distinct meanings.
-- Add response-size instrumentation to the resource-read tests and protocol
-  metrics.
-
-### Acceptance Criteria
-
-- A normal one-message completion response is proportional to its message delta
-  plus explicitly changed alternate data.
-- Omitted Hypa/alternate fields preserve resident state; explicit empty fields
-  clear it only when authoritative.
-- Legacy/pre-extraction fallback behavior remains correct.
-
-### Likely Files
-
-- `server/fastify/src/routes/resourceReads.ts`
-- `server/fastify/src/repository.ts`
-- `server/fastify/src/messageStore.ts`
-- `src/ts/server/hydrationReads.ts`
-- `src/ts/server/resourceInvalidation.ts`
-- `src/ts/server/chatMessageHydration.svelte.ts`
-- Server and browser resource-read/invalidation tests
-
-## Phase 6 — Isolate Conditional Completion Effects
-
-Treat effect-related stalls as a separate performance class after the general
-cross-chat invalidation is fixed.
-
-### Work
-
-- Add development-only timing around ledgered completion effects:
-  notification, TTS, completion sound, emotion/image state, IGP, and plugin
-  output.
-- Confirm completion audio remains decoded during the user-activation unlock
-  path and is not repeatedly decoded at terminal time.
-- Move local emotion embedding/model inference off the main thread where the
-  current backend permits it, or schedule it after the transcript/UI settlement
-  with durable effect ownership retained.
-- Add a browser yield before expensive best-effort visual effects if it does not
-  violate the claim/lease window.
-- Identify synchronous plugin output listeners that create long tasks. Prefer a
-  worker/isolated runtime boundary for CPU-heavy plugin work; preserve stable
-  idempotency keys and effect receipts.
-- Do not mark an effect completed before its owned work actually succeeds.
-
-### Acceptance Criteria
-
-- With optional effects disabled, no completion-related long task remains.
-- Enabling each effect identifies only that effect's cost rather than causing an
-  unrelated transcript rebuild.
-- Late recovery, effect claiming, lease renewal, and receipts remain correct.
-
-### Likely Files
-
-- `src/ts/process/generationEffectLedger.ts`
-- `src/ts/process/serverBackedSendChat.ts`
-- `src/ts/process/postGeneration/runStage4.ts`
-- `src/ts/process/postGeneration/emotionFallbackEmbedding.ts`
-- `src/ts/process/messageCompletionSound.ts`
-- `src/ts/plugins/chatOutputListeners.ts`
-
-## Verification Matrix
-
-### Automated
-
-- Unit tests for resource-facade fine-grained reactivity.
-- DOM tests for foreground chat stability during a background completion.
-- Generation-persistence selector tests for unrelated chat updates.
-- Range-merge tests covering append, replace, truncate, placeholders, stale
-  projections, and no-op replay.
-- Resource invalidation tests for `generation`, `chatTranscript`, revision gaps,
-  and duplicate events.
-- Server resource-read tests for omitted versus explicit optional fields.
-- Existing durable send, reattach, cancellation, finalization recovery,
-  translation, reroll, and unread-marker suites.
-- Performance gates using deterministic render/parse/allocation counts.
-
-Run focused tests during each phase, then finish with the repository's standard
-commands, including:
-
-```sh
-pnpm exec prettier --check .
-pnpm test:all
+- Editing, copying source text, TTS, translation, partial editing, prompt
+  assembly, and exports continue to use the raw message or raw translation.
+- A server result is applied only to the exact client-selected display layer,
+  source hash, character/chat/message identity, transcript index/role, display
+  context, and client projection epoch that requested it.
+- Original, translated, bilingual, greeting, preview, bookmark, and custom-HTML
+  message surfaces either receive parity-correct output or explicitly retain the
+  client fallback.
+- Script order remains Lua → V2 display trigger → plugin hook → CBS → regex →
+  dynamic asset matching. Plugin presence selects full client fallback.
+- Active prompt-preset regex selection retains the current no-global-fallback
+  behavior when a selected preset has no regex rows.
+- V2 display variables remain temporary. Durable Lua scriptstate changes are
+  applied at most once for one deduplicated transform execution.
+- Cache hits never replay side effects. A transform that changes durable state
+  is returned but is not inserted under a reusable cross-request key.
+- Fastify failures, unsupported capabilities, stale targets, and network loss
+  preserve the current client transform as a correctness fallback during
+  rollout.
+- Streaming cancellation, detach/reattach, replay gaps, Continue extension,
+  regenerate ownership, and terminal persistence remain unchanged.
+- Sanitized final browser output must remain byte- or DOM-equivalent for the
+  compatibility corpus, apart from separately approved bug fixes.
+
+## Display Context Contract
+
+Introduce an additive normalized context shared by generation and display
+processing:
+
+```ts
+interface ReportedClientContext {
+  browserLanguage?: string
+  screenWidth?: number
+  screenHeight?: number
+}
+
+interface DisplayRequestContext extends ReportedClientContext {
+  pageSessionId: string
+}
 ```
 
-Run `pnpm test:gates:perf` when the performance harness changes or when verifying
-the final result.
+`pageSessionId` is an ephemeral identifier created once per page runtime and is
+not stored in `sessionStorage`. A reload therefore starts a fresh display cache
+namespace, matching the lifetime of the browser's current parse memo and Lua
+engine caches more closely than the writer session, which intentionally survives
+same-tab reloads.
 
-### Manual
+The server captures and normalizes the complete context once at the start of a
+display request. Transform code must never read a mutable "last client" global.
+The active cache service may compare that immutable context with its current
+namespace and retire the previous namespace because only one client is expected
+to remain active.
 
-Use `pnpm dev:agent` with disposable data and stop it afterward.
+`screenHeight` support is a prerequisite for complete CBS parity but is owned by
+the separate issue report, not implemented as an incidental part of this plan.
 
-Test at least these scenarios:
+## Cache Design
 
-1. Start a generation in chat B, navigate to chat A, and continuously scroll or
-   select text while B finishes.
-2. Repeat with a long background transcript and a long foreground transcript.
-3. Repeat for send, continue, regenerate, half-streaming, cancellation, and a
-   reattached job.
-4. Confirm B receives an unread indicator and opens with the correct final
-   transcript and reroll state.
-5. Repeat with Hypa enabled and with multiple reroll candidates.
-6. Repeat with completion sound, TTS, emotion view, image generation, and
-   plugins enabled one at a time.
-7. Capture a browser performance profile around terminal completion and verify
-   that no foreground transcript rebuild or long JSON/array-copy task remains.
+### Active Namespace
 
-## Delivery Sequence
+Maintain one process-local `DisplaySourceCache` namespace identified by:
 
-Land the work in reviewable commits:
+```text
+databaseLineage
++ activeWriterEpoch
++ pageSessionId
++ normalized browserLanguage
++ normalized screenWidth
++ normalized screenHeight
++ display-transform protocol version
+```
 
-1. Regression harness and observability.
-2. Chat-keyed generation-persistence projection.
-3. Fine-grained resource-facade reactivity and latency-sensitive UI migration.
-4. O(delta) transcript range application.
-5. Terminal/event idempotence.
-6. Optional hydration payload reduction.
-7. Optional effect isolation and documentation updates.
+When any namespace field changes:
 
-Each commit should keep the application functional and its focused tests green.
-Use conventional commit titles and include the required co-author trailer when
-committing.
+1. atomically install the new namespace;
+2. retire the old LRU so it cannot receive new lookups;
+3. let already-running requests finish against their captured namespace;
+4. discard their results if their namespace is no longer active;
+5. never cancel durable generation merely because the display namespace changed.
 
-## Documentation Updates
+This deliberately keeps one viewport/session partition, which is appropriate
+under the clarified single-client lifecycle. Correctness still comes from the
+captured namespace and keys, not from connection arrival order.
 
-After implementation, update:
+### Entry Key
 
-- `src/docs/client-runtime.md` with the per-chat completion and projection
-  reactivity contract;
-- `src/docs/svelte-chat-ui.md` with foreground transcript subscription
-  ownership;
-- `docs/structure/server-resources-and-bridges.md` with generation delta/optional
-  field semantics if Phase 5 changes the protocol;
-- relevant test documentation if a new performance gate is added.
+Inside the namespace, use a SHA-256 fingerprint over canonical, stable JSON:
 
-## Definition of Done
+```text
+source text and source hash
++ display-layer kind (original / translation / bilingual / greeting / preview)
++ character ID and effective display character
++ chat ID
++ stable message ID when present
++ transcript index, role, first-message flag, and name/saying context
++ chat scriptstate and relevant global variables
++ character custom scripts and Lua/V2 trigger definitions
++ global and effective active-preset regex scripts
++ active module IDs and relevant module regex/trigger/asset definitions
++ display-affecting settings
++ character/module asset metadata used by dynamic matching
++ CBS conditions
++ transform implementation version
+```
 
-- Background completion does not rerun the visible chat's row model, parser, or
-  geometry effects unless the visible chat itself changed.
-- A normal appended completion applies in O(delta) client work.
-- Terminal/event races and replay are idempotent.
-- Durable recovery, revisions, effects, rerolls, translations, and unread state
-  remain correct.
-- Focused tests, performance gates, formatting, and `pnpm test:all` pass.
-- A manual browser trace shows no perceptible input/scroll stall when a different
-  chat finishes.
+Do not use the global database revision as the primary key. It is a safe
+fallback during early development, but unrelated settings or background-chat
+mutations would destroy useful display cache locality. Prefer extracting a pure
+canonical dependency-signature helper from the existing
+`ChatBodyParseMemo.ts` signatures and sharing its JSON-compatible representation
+with the server implementation.
+
+The signature must include, at minimum, the fields already tracked by the
+browser parse memo: character custom scripts/triggers/assets/default variables,
+active chat ID/modules/scriptstate, global/active-preset/module regex scripts,
+module triggers/assets/toggles, dynamic-asset settings, and the CBS conditions.
+
+### Storage and Eviction
+
+- Store completed promises while a key is in flight so duplicate callers share
+  one execution and one possible side effect.
+- Store successful side-effect-free results in a move-to-end LRU.
+- Do not cache rejected, aborted, stale, oversized, or fallback results.
+- Do not cache a result when the run produced a durable state delta. Return the
+  result, commit the delta, and let the next request compute under the new
+  scriptstate fingerprint.
+- Bound both entry count and UTF-8 output bytes. Select final constants from the
+  Phase 0 corpus; initial test candidates are 512 entries, 16 MiB total output,
+  and 512 KiB maximum per cached entry.
+- Avoid a correctness TTL. Random/time-sensitive output currently remains stable
+  for the lifetime of a browser memo entry. `pageSessionId`, dependency changes,
+  LRU eviction, and server restart provide equivalent bounded lifetimes.
+- Add counters for hits, misses, in-flight joins, evictions, uncached durable
+  writes, oversize bypasses, fallback reasons, per-stage duration, and output
+  bytes. Never record message/script contents in metrics.
+
+### Streaming
+
+Growing streamed prefixes must not enter the shared LRU: nearly every prefix is
+unique and would evict stable transcript entries.
+
+Use one job/attempt-local display projection slot keyed by generation identity,
+target message identity, display context, and monotonically increasing sequence.
+Only the newest cumulative source is retained. Server-side coalescing should
+bound transform frequency, and terminal settlement must force one final exact
+transform.
+
+## Proposed Wire Contract
+
+Start with a separate active-writer authenticated operation so derived display
+work and possible Lua scriptstate writes do not contaminate authoritative
+message GET semantics:
+
+```text
+POST /api/v1/chats/:chatId/display-sources
+```
+
+Request, conceptually:
+
+```ts
+interface DisplaySourceRequest {
+  protocolVersion: 1
+  baseRevision: number
+  context: DisplayRequestContext
+  targets: Array<{
+    requestKey: string
+    characterId: string
+    messageId?: string
+    index: number
+    role: string | null
+    firstMessage: boolean
+    layer: 'original' | 'translation' | 'bilingual' | 'greeting' | 'preview'
+    source: string
+    sourceHash: string
+    projectionEpoch: number
+  }>
+}
+```
+
+The `source` is the exact string at the existing `processScriptFull` entry seam,
+after the browser's first additional-asset pass. This makes the server operation
+usable for original, translated, bilingual, synthetic greeting, and preview
+rows without pretending that every source is a persisted message. Validate
+target count, per-source bytes, total bytes, IDs, numeric indexes, and context
+fields before running user scripts.
+
+Response, conceptually:
+
+```ts
+interface DisplaySourceResponse {
+  protocolVersion: 1
+  revision: number
+  contextFingerprint: string
+  entries: Array<
+    | {
+        requestKey: string
+        status: 'ok'
+        sourceHash: string
+        dependencyFingerprint: string
+        displaySource: string
+      }
+    | {
+        requestKey: string
+        status: 'client_fallback' | 'stale' | 'error'
+        sourceHash: string
+        reason: string
+      }
+  >
+}
+```
+
+The client must compare `requestKey`, `sourceHash`, context, target identity, and
+projection epoch before applying an entry. The response revision advances only
+when Lua produced and the server committed a durable scriptstate delta.
+
+After the separate operation is stable, an optional projection may be folded
+into chat hydration responses to remove the second round trip. Keep the same
+internal service and envelope; do not add `displaySource` directly to the
+persisted `Message` type.
+
+## Phase 0 — Baseline, Corpus, and Contract Lock
+
+### Work
+
+- Build a display parity corpus covering:
+  - plain text and Markdown-containing text;
+  - original, translated, bilingual, greeting, preview, and custom-HTML inputs;
+  - global, active-preset, character, and module regex scripts;
+  - `<cbs>` regex inputs and screen/language callbacks;
+  - Lua `editDisplay`, multiple Lua owners, failures, timeouts, and variable
+    reads/writes;
+  - declarative display triggers and temporary variables;
+  - dynamic assets and fuzzy name matching;
+  - groups/simple characters and alternate greetings;
+  - malformed scripts and bounded-regex rejection;
+  - browser plugin presence and fallback.
+- Record the string immediately before and after the current client
+  `processScriptFull(..., 'editdisplay')` call, plus the final sanitized DOM.
+- Add deterministic cost counters for Lua boots/runs, trigger effects, regex
+  executions, cache hits/misses, parser calls, and bytes. Do not gate CI on wall
+  time.
+- Decide measured cache limits using typical and pathological message bodies.
+- Lock the version-1 request/response schemas and fallback reason catalog.
+
+### Acceptance Criteria
+
+- The corpus proves the selected boundary without relying on final HTML as the
+  server contract.
+- Every known browser-only feature is either outside the boundary or has an
+  explicit whole-path client fallback.
+- A failing transform cannot destroy or modify raw message/translation data.
+
+## Phase 1 — Extract Pure Dependency and Context Helpers
+
+### Work
+
+- Extract the JSON-compatible display dependency representation from
+  `ChatBodyParseMemo.ts` into a Svelte-free module usable by browser tests and
+  Fastify.
+- Keep browser reactivity reads in a thin adapter; keep normalization, stable
+  serialization, hashing, and field selection pure.
+- Add `DisplayRequestContext` validation and ephemeral page-session creation.
+- Consume the separately implemented `screenHeight` field when available; keep
+  it optional for compatibility with older clients.
+- Implement the active namespace and bounded byte-aware LRU with in-flight
+  promise deduplication.
+- Register namespace retirement on active-writer changes and database-lineage
+  replacement. Also retire when a display request reports a changed page
+  session or normalized viewport/language context.
+
+### Acceptance Criteria
+
+- Changing each relevant dependency changes the fingerprint.
+- Unrelated settings and background-chat changes do not change it.
+- A viewport/session/takeover change cannot return an entry from the retired
+  namespace.
+- In-flight old-namespace work cannot populate the new namespace.
+- LRU byte and entry limits are deterministic in tests.
+
+## Phase 2 — Build the Fastify Display Transform Service
+
+### Work
+
+- Add a server module that composes existing primitives in client order:
+  1. `runLuaEditTrigger(..., 'editdisplay')`;
+  2. `runTrigger(..., 'display', { displayMode: true, displayData })`;
+  3. capability gate for browser plugin hooks;
+  4. non-mutating CBS expansion;
+  5. async bounded regex `processScriptAsync(..., 'editdisplay')`;
+  6. dynamic-asset matching parity.
+- Resolve the exact character/chat/active-module/active-preset scope from the
+  authoritative server database, while treating the supplied source string as
+  the selected presentation-layer input.
+- Reuse the existing server Lua timeout, aggregate budget, abort checks, trigger
+  budgets, and bounded-regex limits.
+- Run one chat's batch in deterministic target order and deduplicate identical
+  keys. If Lua changes scriptstate, later targets in the same ordered batch see
+  the updated working state.
+- Accumulate durable scriptstate changes on the working chat. Commit the final
+  delta once through a targeted transaction/event after all successful entries;
+  do not issue one command per message.
+- Do not recursively regenerate display sources after that commit.
+- Return identity content on parity-compatible ordinary script failure where the
+  client currently does so; return explicit fallback for unsafe/unsupported
+  cases.
+
+### Acceptance Criteria
+
+- Server output matches the recorded client boundary for every supported corpus
+  row.
+- V2 display variables never persist.
+- Lua durable changes are committed once, cache hits do not replay them, and a
+  state-changing run is not stored as reusable output.
+- Bounded-regex rejection, Lua timeout, cancellation, and stale-writer takeover
+  cannot leave a partial durable mutation.
+- The service never imports browser DOM, Svelte stores, DOMPurify, Markdown, or
+  plugin runtime code.
+
+## Phase 3 — Add the Batch Route and Browser Bridge
+
+### Work
+
+- Register the route in `app.ts` and `routeManifest.ts` as authenticated and
+  active-writer guarded because a cache miss can execute Lua variable writes.
+- Add strict request count/byte limits and protocol metrics.
+- Add a browser adapter that batches mounted-message transform requests by chat
+  and context. Do not send one HTTP request per row.
+- Fence each response to the initiating message/layer/source/projection state.
+- Integrate at the existing `ParseMarkdown()` seam:
+  - client first additional-asset pass;
+  - server display transform;
+  - client optional second asset pass and remaining parser work.
+- Keep `memoizedChatBodyParse()` above the combined operation so a browser memo
+  hit performs no network request, matching current behavior.
+- Preserve the last successfully parsed body while a replacement transform is
+  pending; avoid flashing raw text or blank rows.
+- Select the whole-path client fallback when:
+  - plugin `editdisplay` handlers are registered;
+  - the server does not advertise protocol support;
+  - the route returns `client_fallback`;
+  - the writer is stale/offline;
+  - source/target freshness changed;
+  - an unsupported legacy surface is encountered.
+
+### Acceptance Criteria
+
+- Initial transcript rendering uses one bounded batch per chat window, not one
+  request per row.
+- Reopening or remounting unchanged visible rows hits browser/server caches and
+  does not rerun Lua or regex work.
+- Original, translated, bilingual, and greeting changes select distinct keys
+  and cannot cross-apply.
+- Editing a message invalidates only that source and other entries whose real
+  dependency fingerprints changed.
+- Losing writer ownership drops pending derived results and enters the existing
+  takeover flow without damaging drafts or raw messages.
+
+## Phase 4 — Server-Owned Streaming Display Projections
+
+### Work
+
+- Mark growing mounted-generation targets explicitly and carry their message,
+  layer, source-hash, context, and projection identity through the ordinary
+  batch contract. This preserves the post-first-additional-asset boundary that
+  the generation SSE producer cannot observe.
+- Coalesce same-target prefixes in the browser batch queue before dispatch. A
+  superseded parse resolves without executing the full local script path; the
+  latest cumulative prefix is the only target sent for that batch slot.
+- Serialize display batches on Fastify so Lua side effects remain ordered.
+- Do not place partial prefixes in the shared LRU. Cache the final persisted row
+  only when a later ordinary display request establishes a stable key.
+- Leave durable generation replay and raw token frames unchanged. Reattach or a
+  replay gap reconstructs display output by rendering the latest cumulative raw
+  source through the same negotiated batch route.
+- Fence client application with message/layer/source/context identity and the
+  monotonically increasing display projection epoch.
+- For browser plugin fallback, keep the current client coalescer and transform
+  path for the whole generation.
+
+### Acceptance Criteria
+
+- Streaming remains visibly incremental without per-token server transforms.
+- Detach/reattach reconstructs a valid projection from the durable cumulative
+  source without adding derived text to replay storage.
+- Stop, transport failure, post-token failure, Continue, regenerate, and
+  half-streaming retain their exact current persisted-text semantics.
+- A viewport/page-session change during generation cannot apply old-context
+  display output after a new-context request wins.
+
+## Phase 5 — Cutover, Observability, and Cleanup
+
+### Work
+
+- Advertise `displaySourceProtocol: { version: 1 }` from bootstrap.
+- Initially enable the server path only for parity-supported rows while keeping
+  the client fallback compiled and tested.
+- Add development-only parity diagnostics that compare pure fixtures, not live
+  double execution of side-effectful Lua.
+- Monitor cache hit rate, transform duration, Lua runs, fallback reasons,
+  response bytes, and client parser counts.
+- Make the server path default after the corpus, streaming journey, browser
+  smoke tests, and performance gates pass.
+- Remove only the redundant browser Lua/V2/regex path after plugin fallback and
+  old-server compatibility policy are explicitly retired. Keep shared client
+  helpers needed by Playground, imports, previews, or compatibility tests.
+- Update `STRUCTURE.md`, the prompt/scripting guide, client runtime guide, chat UI
+  guide, route manifest documentation, and test-suite guide.
+
+### Acceptance Criteria
+
+- Supported messages no longer execute client Lua/V2/editdisplay regex work.
+- Final sanitized DOM and user interactions remain equivalent.
+- Browser main-thread render counts and Lua engine work decrease on initial
+  hydration, broad display refresh, and streaming.
+- Server CPU and response bytes remain within measured budgets.
+- No cached or wire-derived display text enters SQLite, backups, exports,
+  commands, translation hashes, or prompt assembly.
+
+## Test Matrix
+
+### Server Unit Tests
+
+- Transform order and identity behavior.
+- Active-preset/global/character/module regex ordering and fallback.
+- CBS conditions and client context.
+- V2 display state/temp variables and effect allowlist.
+- Lua success, identity, timeout, abort, multiple owners, and durable variable
+  delta.
+- Dynamic asset selection and module assets.
+- Dependency fingerprints for every relevant field.
+- Cache hit/miss, in-flight join, LRU order, byte bounds, namespace retirement,
+  oversized bypass, stale completion, and durable-write bypass.
+
+### Route Tests
+
+- Auth and active-writer enforcement.
+- Request and total byte limits.
+- Malformed/stale targets and mixed per-entry outcomes.
+- One transactional scriptstate commit for a batch.
+- Revision/event behavior only when durable state changed.
+- Takeover during an in-flight transform.
+- Database-lineage replacement and process restart.
+
+### Browser Tests
+
+- Exact integration at the pre/post additional-asset seam.
+- Last-good-body behavior while pending.
+- Source/layer/projection freshness drops.
+- Translation, bilingual, greeting, preview, bookmark, custom HTML, partial edit,
+  copy, TTS, and message editing continue using correct layers.
+- Plugin registration selects the full client fallback.
+- Older server/no capability selects the full client fallback.
+- Offline/takeover behavior retains raw content and drafts.
+
+### Streaming Tests
+
+- Incremental projection cadence and forced terminal settlement.
+- Send, Continue append/extend, regenerate, reroll, half-streaming, cancel,
+  reattach, replay gap, and post-token failure.
+- Old-context frame dropped after page/viewport context change.
+- No shared-LRU entry for partial prefixes.
+
+### Performance Gates
+
+- Count client Lua boots/runs, editdisplay regex executions, `ParseMarkdown`
+  calls, display-source requests, server cache hits, and bytes.
+- Exercise at least the configured initial transcript tail and a long streaming
+  message.
+- Use deterministic counts/allocation bounds in CI; record wall-clock timing only
+  as diagnostic evidence.
+
+## Likely Files
+
+### Shared and Browser
+
+- `src/ts/process/request/clientContext.ts`
+- `src/lib/ChatScreens/ChatBodyParseMemo.ts`
+- `src/lib/ChatScreens/ChatBody.svelte`
+- `src/ts/parser/parser.svelte.ts`
+- `src/ts/process/scripts.ts`
+- `src/ts/process/postGeneration/streamResponse.ts`
+- `src/ts/process/request/serverChatEvents.ts`
+- `src/ts/server/hydrationReads.ts`
+- A new Svelte-free display dependency/context module
+- A new browser display-source route adapter
+
+### Fastify
+
+- `server/fastify/src/app.ts`
+- `server/fastify/src/routeManifest.ts`
+- `server/fastify/src/routes/resourceReads.ts` or a focused new display route
+- `server/fastify/src/prompt/scripts.ts`
+- `server/fastify/src/prompt/triggers.ts`
+- `server/fastify/src/prompt/luaRuntime.ts`
+- `server/fastify/src/prompt/modules.ts`
+- `server/fastify/src/routes/generationChat.ts`
+- `server/fastify/src/prompt/sseEvents.ts`
+- New display transform, cache, and route modules
+
+### Focused Existing Tests
+
+- `src/lib/ChatScreens/ChatBody.parseMemo.test.ts`
+- `src/ts/process/scripts.editdisplay.test.ts`
+- `src/ts/process/scriptings.test.ts`
+- `src/ts/__tests__/renderCostHarness.ts`
+- `server/fastify/__tests__/luaRuntime.test.ts`
+- `server/fastify/__tests__/triggers.test.ts`
+- `server/fastify/__tests__/boundedRegex.test.ts`
+- `server/fastify/__tests__/generation.chat.test.ts`
+- `server/fastify/__tests__/durableGeneration.test.ts`
+- New server display transform/cache/route tests
+
+## Resolved Implementation Decisions
+
+1. Dynamic-asset fuzzy matching selects client fallback in version 1.
+2. The bounded limits are recorded in the status section and shared protocol
+   constants.
+3. Mounted growing prefixes reuse the browser's existing render coalescing and
+   the display batch adapter's latest-prefix replacement; no partial prefix is
+   inserted into the shared LRU.
+4. The first release uses only the separate POST operation.
+5. Old-server and plugin fallback remains supported; deleting it requires a
+   separate compatibility decision.
+
+Co-Authored-By: Codex <noreply@openai.com>

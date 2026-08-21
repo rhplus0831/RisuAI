@@ -1,10 +1,11 @@
 export interface ReportedClientContext {
   browserLanguage?: string
   screenWidth?: number
+  screenHeight?: number
 }
 
 const MAX_BROWSER_LANGUAGE_LENGTH = 128
-const MAX_REPORTED_SCREEN_WIDTH = 100_000
+const MAX_REPORTED_SCREEN_DIMENSION = 100_000
 const BROWSER_LANGUAGE_PATTERN = /^[A-Za-z]{1,8}(?:-[A-Za-z0-9]{1,8})*$/u
 
 export function normalizeReportedClientContext(value: unknown): ReportedClientContext | undefined {
@@ -18,10 +19,17 @@ export function normalizeReportedClientContext(value: unknown): ReportedClientCo
   const screenWidthValue = raw.screenWidth
   const screenWidth =
     typeof screenWidthValue === 'number' && Number.isFinite(screenWidthValue) && screenWidthValue > 0
-      ? Math.min(Math.round(screenWidthValue), MAX_REPORTED_SCREEN_WIDTH)
+      ? Math.min(Math.round(screenWidthValue), MAX_REPORTED_SCREEN_DIMENSION)
+      : undefined
+  const screenHeightValue = raw.screenHeight
+  const screenHeight =
+    typeof screenHeightValue === 'number' && Number.isFinite(screenHeightValue) && screenHeightValue > 0
+      ? Math.min(Math.round(screenHeightValue), MAX_REPORTED_SCREEN_DIMENSION)
       : undefined
 
-  return browserLanguage !== undefined || screenWidth !== undefined ? { browserLanguage, screenWidth } : undefined
+  return browserLanguage !== undefined || screenWidth !== undefined || screenHeight !== undefined
+    ? { browserLanguage, screenWidth, screenHeight }
+    : undefined
 }
 
 /**
@@ -49,6 +57,10 @@ export function readBrowserClientContext(): ReportedClientContext | undefined {
       const screenWidth = window.innerWidth
       if (Number.isFinite(screenWidth) && screenWidth > 0) {
         context.screenWidth = screenWidth
+      }
+      const screenHeight = window.innerHeight
+      if (Number.isFinite(screenHeight) && screenHeight > 0) {
+        context.screenHeight = screenHeight
       }
     }
   } catch {

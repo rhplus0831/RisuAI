@@ -20,10 +20,9 @@ import { getActiveModules, getModuleLorebooks } from './modules.js'
  * active `promptScope` singleton rather than from browser resource state or
  * Svelte stores.
  *
- * Browser-context callbacks never read server globals. `{{screenwidth}}` and
- * `{{metadata::browserlanguage}}` resolve from the client context reported with
- * the generation request. The deliberately unsupported `{{screenheight}}`
- * returns an empty value and records a visible warning instead of throwing.
+ * Browser-context callbacks never read server globals. `{{screenwidth}}`,
+ * `{{screenheight}}`, and `{{metadata::browserlanguage}}` resolve from the
+ * request-local client context reported with the generation request.
  *
  * `getCurrentTriggerId` returns `'null'` because manual triggers are a
  * browser UI concept.
@@ -86,8 +85,10 @@ function reportedBrowserLanguage(): string {
   return ''
 }
 
-function unsupportedScreenHeight(): string {
-  reportActiveCbsCallbackDiagnostic('screenheight', 'unsupported_on_server')
+function reportedScreenHeight(): string {
+  const value = getActiveClientContext()?.screenHeight
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.round(value).toString()
+  reportActiveCbsCallbackDiagnostic('screenheight', 'client_context_unavailable')
   return ''
 }
 
@@ -147,7 +148,7 @@ export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
     appVer: '2026.4.181',
     getCurrentTriggerId: () => 'null',
     getScreenWidth: reportedScreenWidth,
-    getScreenHeight: unsupportedScreenHeight,
+    getScreenHeight: reportedScreenHeight,
     getBrowserLanguage: reportedBrowserLanguage,
   }
 }

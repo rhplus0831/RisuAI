@@ -376,6 +376,22 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'chat-display-sources',
+    methods: ['POST'],
+    path: '/api/v1/chats/:chatId/display-sources',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Intermediate display text can contain private transcript and script output.',
+    },
+    activeWriter: {
+      decision: 'active-writer',
+      reason: 'A cache miss may execute Lua editDisplay hooks that update chat scriptstate.',
+    },
+    streaming: 'none',
+    notes: 'Returns disposable intermediate displaySource text; raw messages remain authoritative.',
+  },
+  {
     id: 'character-lorebook-read',
     methods: GET_ONLY,
     path: '/api/v1/characters/:id/lorebook',

@@ -278,6 +278,7 @@ describe('requestServerChat', () => {
     expect(calls[0]?.clientContext).toEqual({
       browserLanguage: navigator.language,
       screenWidth: window.innerWidth,
+      screenHeight: window.innerHeight,
     })
   })
 

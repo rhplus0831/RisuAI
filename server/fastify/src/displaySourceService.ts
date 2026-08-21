@@ -1,0 +1,512 @@
+import { createHash } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
+import type { DatabaseSync } from 'node:sqlite'
+import type { Chat, Database, Message, character, customscript } from '../../../src/ts/storage/database.svelte'
+import type { CbsConditions } from '../../../src/ts/parser/risuChatParserHelpers'
+import { resolvePromptPresetRegexField } from '../../../src/ts/presetSplit.js'
+import {
+  DISPLAY_SOURCE_PROTOCOL_VERSION,
+  DISPLAY_SOURCE_TRANSFORM_VERSION,
+  displaySourceNamespaceJson,
+  stableDisplayDependencyJson,
+  type DisplaySourceRequest,
+  type DisplaySourceResponse,
+  type DisplaySourceResponseEntry,
+  type DisplaySourceTarget,
+} from '../../../src/ts/process/displaySourceProtocol.js'
+import { getSchemaState } from './db.js'
+import { getDatabaseLineage, getDatabaseWriterMetadata } from './databaseLineage.js'
+import { loadPersistedForAssembly, writeSingleChatRowExact } from './repository.js'
+import { applyTargetedCommandMutation } from './commands/mutations.js'
+import { COMMAND_EVENT_CATALOG, type CommandEventSink } from './commands/events.js'
+import { normalizeAllCharacterChats, requireChatLocation } from './commands/chats.js'
+import { ValidationError } from './repository.js'
+import { createLuaExecBudget, runLuaEditTrigger } from './prompt/luaRuntime.js'
+import { createTriggerVarEngine } from './prompt/triggerVars.js'
+import { getChatDefaultVariables } from './prompt/chatVarDefaults.js'
+import { getActiveModules, getModuleAssets, getModuleTriggers } from './prompt/modules.js'
+import { createTriggerExecutionBudget, runTrigger } from './prompt/triggers.js'
+import { processScriptAsync } from './prompt/scripts.js'
+import { isBoundedRegexError } from './prompt/boundedRegex.js'
+import { emitProtocolMetric, protocolDurationMs, protocolNowMs } from './protocolMetrics.js'
+import { DisplaySourceCache } from './displaySourceCache.js'
+
+type JsonRecord = Record<string, unknown>
+
+interface DisplaySourceServiceOptions {
+  db: DatabaseSync
+  dataDir: string
+  eventSink: CommandEventSink
+  cache?: DisplaySourceCache
+}
+
+interface DisplayScope {
+  database: Database
+  character: character
+  chat: Chat
+  chatId: string
+  selectedCharID: number
+  chatPage: number
+}
+
+interface TransformOutcome {
+  displaySource: string
+  durableStateChanged: boolean
+  stageDurations: Record<string, number>
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex')
+}
+
+function cloneScriptstate(value: Chat['scriptstate']): Chat['scriptstate'] {
+  return value === undefined ? undefined : structuredClone(value)
+}
+
+function installScriptstate(chat: Chat, value: Chat['scriptstate']): void {
+  if (value === undefined || Object.keys(value).length === 0) {
+    delete chat.scriptstate
+    return
+  }
+  chat.scriptstate = structuredClone(value)
+}
+
+function activePromptPresetRegex(database: Database, chat: Chat): customscript[] {
+  const promptPresetId = chat.generationSettings?.promptPresetId?.trim()
+  if (!promptPresetId) return Array.isArray(database.presetRegex) ? database.presetRegex : []
+  const preset = database.promptPresets?.find((candidate) => candidate?.id === promptPresetId)
+  const resolved = resolvePromptPresetRegexField(preset)
+  return resolved.present && Array.isArray(resolved.value) ? (resolved.value as customscript[]) : []
+}
+
+function displayScope(database: Database, characterId: string, chatId: string): DisplayScope | null {
+  const selectedCharID = database.characters.findIndex((candidate) => candidate?.chaId === characterId)
+  if (selectedCharID < 0) return null
+  const character = database.characters[selectedCharID]
+  const chatPage = character.chats?.findIndex((candidate) => candidate?.id === chatId) ?? -1
+  if (chatPage < 0) return null
+  const chat = character.chats[chatPage]
+  database.presetRegex = structuredClone(activePromptPresetRegex(database, chat))
+  return { database, character, chat, chatId, selectedCharID, chatPage }
+}
+
+function dynamicAssetFallbackRequired(scope: DisplayScope): boolean {
+  if (!scope.database.dynamicAssets || !scope.database.dynamicAssetsEditDisplay) return false
+  const modules = getActiveModules(scope.database, scope.character, scope.chat)
+  return (scope.character.additionalAssets?.length ?? 0) > 0 || getModuleAssets(modules).length > 0
+}
+
+function targetIsFresh(scope: DisplayScope, target: DisplaySourceTarget): boolean {
+  if (target.index < 0) return true
+  const message = scope.chat.message?.[target.index]
+  if (!message) return false
+  if (target.messageId && message.chatId !== target.messageId) return false
+  if (target.role !== null && message.role !== target.role) return false
+  return true
+}
+
+function dependencyValue(
+  scope: DisplayScope,
+  target: DisplaySourceTarget,
+  sourceHash: string,
+): Record<string, unknown> {
+  const modules = getActiveModules(scope.database, scope.character, scope.chat)
+  return {
+    cbsConditions: { firstmsg: target.firstMessage, chatRole: target.role },
+    character: {
+      additionalAssets: scope.character.additionalAssets,
+      chaId: scope.character.chaId,
+      customscript: scope.character.customscript,
+      defaultVariables: scope.character.defaultVariables,
+      desc: scope.character.desc,
+      firstMessage: scope.character.firstMessage,
+      alternateGreetings: scope.character.alternateGreetings,
+      emotionImages: scope.character.emotionImages,
+      modules: scope.character.modules,
+      name: scope.character.name,
+      personality: scope.character.personality,
+      scenario: scope.character.scenario,
+      triggerscript: scope.character.triggerscript,
+      type: scope.character.type,
+    },
+    chat: {
+      generationSettings: scope.chat.generationSettings,
+      id: scope.chat.id,
+      fmIndex: scope.chat.fmIndex,
+      message: scope.chat.message?.map((message) => ({
+        chatId: message.chatId,
+        data: message.data,
+        name: message.name,
+        role: message.role,
+      })),
+      modules: scope.chat.modules,
+      scriptstate: scope.chat.scriptstate,
+    },
+    database: {
+      dynamicAssets: scope.database.dynamicAssets,
+      dynamicAssetsEditDisplay: scope.database.dynamicAssetsEditDisplay,
+      enabledModules: scope.database.enabledModules,
+      globalChatVariables: scope.database.globalChatVariables,
+      globalscript: scope.database.globalscript,
+      moduleIntergration: scope.database.moduleIntergration,
+      presetRegex: scope.database.presetRegex,
+      personaPrompt: scope.database.personaPrompt,
+      templateDefaultVariables: scope.database.templateDefaultVariables,
+      username: scope.database.username,
+    },
+    modules: modules.map((module) => ({
+      assets: module.assets,
+      id: module.id,
+      customModuleToggle: module.customModuleToggle,
+      lowLevelAccess: module.lowLevelAccess,
+      namespace: module.namespace,
+      regex: module.regex,
+      trigger: module.trigger,
+    })),
+    source: target.source,
+    sourceHash,
+    target: {
+      characterId: target.characterId,
+      firstMessage: target.firstMessage,
+      index: target.index,
+      layer: target.layer,
+      messageId: target.messageId,
+      name: target.name,
+      role: target.role,
+      streaming: target.streaming,
+    },
+    transformVersion: DISPLAY_SOURCE_TRANSFORM_VERSION,
+  }
+}
+
+function errorEntry(
+  target: DisplaySourceTarget,
+  status: 'client_fallback' | 'stale' | 'error',
+  reason: string,
+): DisplaySourceResponseEntry {
+  return { requestKey: target.requestKey, status, sourceHash: target.sourceHash, reason }
+}
+
+export class DisplaySourceService {
+  readonly cache: DisplaySourceCache
+
+  private readonly db: DatabaseSync
+  private readonly dataDir: string
+  private readonly eventSink: CommandEventSink
+  private exclusiveTail: Promise<void> = Promise.resolve()
+
+  constructor(options: DisplaySourceServiceOptions) {
+    this.db = options.db
+    this.dataDir = options.dataDir
+    this.eventSink = options.eventSink
+    this.cache = options.cache ?? new DisplaySourceCache()
+  }
+
+  currentRevision(): number {
+    return getSchemaState(this.db).revision
+  }
+
+  transformBatch(chatId: string, request: DisplaySourceRequest, signal?: AbortSignal): Promise<DisplaySourceResponse> {
+    const run = this.exclusiveTail.then(() => this.transformBatchExclusive(chatId, request, signal))
+    this.exclusiveTail = run.then(
+      () => undefined,
+      () => undefined,
+    )
+    return run
+  }
+
+  private async transformBatchExclusive(
+    chatId: string,
+    request: DisplaySourceRequest,
+    signal?: AbortSignal,
+  ): Promise<DisplaySourceResponse> {
+    const startedAt = protocolNowMs()
+    const initialRevision = getSchemaState(this.db).revision
+    if (request.baseRevision !== initialRevision) {
+      throw new ValidationError(`Display source base revision is stale; current revision is ${initialRevision}`)
+    }
+
+    const databaseLineage = getDatabaseLineage(this.db)
+    const activeWriterEpoch = getDatabaseWriterMetadata(this.db).epoch
+    const namespaceJson = displaySourceNamespaceJson({
+      databaseLineage,
+      activeWriterEpoch,
+      context: request.context,
+    })
+    const contextFingerprint = sha256(namespaceJson)
+    this.cache.activate(contextFingerprint)
+
+    const database = this.loadScopeDatabase(chatId)
+    const primaryTarget = request.targets[0]
+    const scope = primaryTarget ? displayScope(database, primaryTarget.characterId, chatId) : null
+    if (!scope) throw new ValidationError('Display source chat or character was not found')
+    const initialScriptstate = cloneScriptstate(scope.chat.scriptstate)
+    const entries: DisplaySourceResponseEntry[] = []
+    const luaExecBudget = createLuaExecBudget()
+    const triggerBudget = createTriggerExecutionBudget()
+
+    for (const target of request.targets) {
+      if (signal?.aborted) throw signal.reason ?? new Error('Display source request aborted')
+      if (target.characterId !== scope.character.chaId || !targetIsFresh(scope, target)) {
+        entries.push(errorEntry(target, 'stale', 'target_identity_changed'))
+        continue
+      }
+      const actualSourceHash = sha256(target.source)
+      if (actualSourceHash !== target.sourceHash) {
+        entries.push(errorEntry(target, 'error', 'source_hash_mismatch'))
+        continue
+      }
+      if (dynamicAssetFallbackRequired(scope)) {
+        entries.push(errorEntry(target, 'client_fallback', 'dynamic_asset_similarity_required'))
+        continue
+      }
+
+      const dependencyFingerprint = sha256(
+        stableDisplayDependencyJson(dependencyValue(scope, target, actualSourceHash)),
+      )
+      try {
+        const execute = async () => {
+          const outcome = await this.transformTarget(
+            scope,
+            target,
+            request.context,
+            luaExecBudget,
+            triggerBudget,
+            signal,
+          )
+          emitProtocolMetric('display_source_transform', {
+            status: 'ok',
+            characterId: target.characterId,
+            chatId: scope.chat.id,
+            durationMs: Object.values(outcome.stageDurations).reduce((sum, duration) => sum + duration, 0),
+            outputBytes: Buffer.byteLength(outcome.displaySource, 'utf8'),
+            durableStateChanged: outcome.durableStateChanged,
+            ...outcome.stageDurations,
+          })
+          return {
+            value: { displaySource: outcome.displaySource, dependencyFingerprint },
+            cacheable: !outcome.durableStateChanged,
+          }
+        }
+        const result = target.streaming
+          ? { ...(await execute()).value, cacheStatus: 'miss' as const }
+          : await this.cache.resolve(contextFingerprint, dependencyFingerprint, execute)
+        entries.push({
+          requestKey: target.requestKey,
+          status: 'ok',
+          sourceHash: target.sourceHash,
+          dependencyFingerprint: result.dependencyFingerprint,
+          displaySource: result.displaySource,
+        })
+      } catch (error) {
+        const reason = isBoundedRegexError(error) ? 'bounded_regex_rejected' : 'transform_failed'
+        entries.push(errorEntry(target, isBoundedRegexError(error) ? 'client_fallback' : 'error', reason))
+      }
+    }
+
+    let revision = initialRevision
+    if (!isDeepStrictEqual(initialScriptstate, scope.chat.scriptstate)) {
+      revision = this.commitScriptstate(scope.chatId, initialScriptstate, scope.chat.scriptstate, initialRevision)
+    } else if (getSchemaState(this.db).revision !== initialRevision) {
+      return this.staleResponse(request, contextFingerprint, 'revision_changed_during_transform')
+    }
+
+    const currentLineage = getDatabaseLineage(this.db)
+    const currentWriterEpoch = getDatabaseWriterMetadata(this.db).epoch
+    if (currentLineage !== databaseLineage || currentWriterEpoch !== activeWriterEpoch) {
+      const currentNamespace = sha256(
+        displaySourceNamespaceJson({
+          databaseLineage: currentLineage,
+          activeWriterEpoch: currentWriterEpoch,
+          context: request.context,
+        }),
+      )
+      this.cache.activate(currentNamespace)
+      return this.staleResponse(request, contextFingerprint, 'display_namespace_retired')
+    }
+
+    emitProtocolMetric('display_source_batch', {
+      status: 'ok',
+      targetCount: request.targets.length,
+      okCount: entries.filter((entry) => entry.status === 'ok').length,
+      fallbackCount: entries.filter((entry) => entry.status === 'client_fallback').length,
+      durationMs: protocolDurationMs(startedAt),
+      revision,
+      cache: this.cache.stats(),
+    })
+    return { protocolVersion: DISPLAY_SOURCE_PROTOCOL_VERSION, revision, contextFingerprint, entries }
+  }
+
+  private loadScopeDatabase(chatId: string): Database {
+    const persisted = loadPersistedForAssembly(this.db, this.dataDir, chatId)
+    if (!persisted.database || typeof persisted.database !== 'object') {
+      throw new ValidationError('Server database is not initialized')
+    }
+    return persisted.database as Database
+  }
+
+  private async transformTarget(
+    scope: DisplayScope,
+    target: DisplaySourceTarget,
+    clientContext: DisplaySourceRequest['context'],
+    luaExecBudget: ReturnType<typeof createLuaExecBudget>,
+    triggerBudget: ReturnType<typeof createTriggerExecutionBudget>,
+    signal?: AbortSignal,
+  ): Promise<TransformOutcome> {
+    const beforeScriptstate = cloneScriptstate(scope.chat.scriptstate)
+    const stageDurations: Record<string, number> = {}
+    const measure = async <T>(stage: string, operation: () => Promise<T>): Promise<T> => {
+      const startedAt = protocolNowMs()
+      try {
+        return await operation()
+      } finally {
+        stageDurations[`${stage}Ms`] = protocolDurationMs(startedAt)
+      }
+    }
+    let data = target.source
+    const modules = getActiveModules(scope.database, scope.character, scope.chat)
+    const cbsConditions: CbsConditions = {
+      firstmsg: target.firstMessage,
+      ...(target.role === null ? {} : { chatRole: target.role }),
+    }
+
+    const varEngine = createTriggerVarEngine({
+      chat: scope.chat,
+      database: scope.database,
+      selectedCharID: scope.selectedCharID,
+      chatPage: scope.chatPage,
+      defaultVariables: getChatDefaultVariables(scope.character, scope.database),
+    })
+    try {
+      try {
+        data = await measure('lua', () =>
+          runLuaEditTrigger(
+            scope.character,
+            'editdisplay',
+            data,
+            { index: target.index },
+            {
+              chat: scope.chat,
+              database: scope.database,
+              selectedCharID: scope.selectedCharID,
+              chatPage: scope.chatPage,
+              varEngine,
+              model: scope.database.aiModel,
+              signal,
+              execBudget: luaExecBudget,
+              requestHistoryDb: this.db,
+              assetDataDir: this.dataDir,
+              moduleTriggers: getModuleTriggers(modules),
+            },
+          ),
+        )
+      } catch {
+        installScriptstate(scope.chat, beforeScriptstate)
+        data = target.source
+      }
+
+      try {
+        const triggerResult = await measure('trigger', () =>
+          runTrigger(
+            {
+              modules,
+              model: scope.database.aiModel,
+              database: scope.database,
+              selectedCharID: scope.selectedCharID,
+              chatPage: scope.chatPage,
+              signal,
+              triggerBudget,
+              clientContext,
+            },
+            scope.character,
+            'display',
+            {
+              chat: scope.chat,
+              displayMode: true,
+              displayData: data,
+              triggerBudget,
+            },
+          ),
+        )
+        data = triggerResult?.displayData ?? data
+      } catch {
+        // The browser catches the display-trigger stage and continues.
+      }
+
+      const fakeInjectTarget = { role: target.role ?? 'char', data: target.source } as Message
+      data = await measure('regex', () =>
+        processScriptAsync(
+          {
+            database: scope.database,
+            selectedCharID: scope.selectedCharID,
+            chatPage: scope.chatPage,
+            chara: scope.character,
+            runVar: false,
+            role: target.role ?? undefined,
+            cbsConditions,
+            signal,
+            clientContext,
+          },
+          scope.character,
+          data,
+          'editdisplay',
+          cbsConditions,
+          target.index,
+          scope.chat,
+          { injectTarget: fakeInjectTarget },
+        ),
+      )
+      return {
+        displaySource: data,
+        durableStateChanged: !isDeepStrictEqual(beforeScriptstate, scope.chat.scriptstate),
+        stageDurations,
+      }
+    } catch (error) {
+      installScriptstate(scope.chat, beforeScriptstate)
+      throw error
+    }
+  }
+
+  private commitScriptstate(
+    chatId: string,
+    before: Chat['scriptstate'],
+    after: Chat['scriptstate'],
+    baseRevision: number,
+  ): number {
+    const result = applyTargetedCommandMutation<{ chatId: string }>({
+      db: this.db,
+      dataDir: this.dataDir,
+      baseRevision,
+      eventSink: this.eventSink,
+      mutationPath: 'targeted-display-source-scriptstate',
+      chatScopedRead: { chatId, exactChatRow: true },
+      mutate(database, db) {
+        const characters = normalizeAllCharacterChats(database)
+        const { character, chat } = requireChatLocation(characters, chatId)
+        if (!isDeepStrictEqual(chat.scriptstate, before)) {
+          throw new ValidationError(`Display source scriptstate is stale for chat ${chatId}`)
+        }
+        installScriptstate(chat as Chat, after)
+        writeSingleChatRowExact(db, chatId, chat as JsonRecord)
+        return {
+          event: { ...COMMAND_EVENT_CATALOG.chatScriptstateUpdated, id: chatId, parentId: character.chaId },
+          extra: { chatId },
+        }
+      },
+    })
+    return result.revision
+  }
+
+  private staleResponse(
+    request: DisplaySourceRequest,
+    contextFingerprint: string,
+    reason: string,
+  ): DisplaySourceResponse {
+    return {
+      protocolVersion: DISPLAY_SOURCE_PROTOCOL_VERSION,
+      revision: getSchemaState(this.db).revision,
+      contextFingerprint,
+      entries: request.targets.map((target) => errorEntry(target, 'stale', reason)),
+    }
+  }
+}

@@ -3,6 +3,7 @@ import markdownit from 'markdown-it'
 import { sha256Hex } from '../sha256Fallback'
 import {
   getCurrentCharacter,
+  getCurrentChat,
   getDatabase,
   type character,
   type customscript,
@@ -14,6 +15,8 @@ import { aiWatermarkingLawApplies, getFileSrc } from '../globalApi.svelte'
 import './chatVar.svelte' // side effect: registers the browser chatVar backend
 import { getChatVar, setChatVar, getGlobalChatVar } from './chatVarBackend'
 import { processScriptFull } from '../process/scripts'
+import { requestServerDisplaySource } from '../server/displaySources'
+import type { DisplaySourceLayer } from '../process/displaySourceProtocol'
 import { get } from 'svelte/store'
 import css, { type CssAtRuleAST } from '@adobe/css-tools'
 import { selectedCharID } from '../stores.svelte'
@@ -918,6 +921,7 @@ export async function ParseMarkdown(
   mode: 'normal' | 'back' | 'pretranslate' | 'notrim' = 'normal',
   chatID = -1,
   cbsConditions: CbsConditions = {},
+  displayTarget: { layer?: DisplaySourceLayer; messageId?: string; name?: string; streaming?: boolean } = {},
 ) {
   let firstParsed = ''
   const additionalAssetMode = mode === 'back' ? 'back' : 'normal'
@@ -931,7 +935,33 @@ export async function ParseMarkdown(
   }
 
   if (char) {
-    data = (await processScriptFull(char, data, 'editdisplay', chatID, cbsConditions)).data
+    const currentChat = getCurrentChat()
+    const messageId = displayTarget.messageId ?? (chatID >= 0 ? currentChat?.message?.[chatID]?.chatId : undefined)
+    const currentTriggerId = get(CurrentTriggerIdStore)
+    const hasBrowserOnlyTriggerContext = currentTriggerId !== null && currentTriggerId !== 'null'
+    const serverDisplaySource =
+      currentChat?.id && !hasBrowserOnlyTriggerContext
+        ? await requestServerDisplaySource({
+            chatId: currentChat.id,
+            character: char,
+            ...(messageId ? { messageId } : {}),
+            index: chatID,
+            role: cbsConditions.chatRole ?? null,
+            firstMessage: cbsConditions.firstmsg ?? false,
+            layer: displayTarget.layer ?? (chatID < 0 ? 'greeting' : mode === 'back' ? 'preview' : 'original'),
+            source: data,
+            streaming: displayTarget.streaming,
+            ...(displayTarget.name
+              ? { name: displayTarget.name }
+              : 'name' in char && typeof char.name === 'string'
+                ? { name: char.name }
+                : {}),
+          })
+        : ({ status: 'fallback', reason: 'chat_unavailable' } as const)
+    data =
+      serverDisplaySource.status === 'ok'
+        ? serverDisplaySource.displaySource
+        : (await processScriptFull(char, data, 'editdisplay', chatID, cbsConditions)).data
   }
 
   if (firstParsed !== data && char) {
