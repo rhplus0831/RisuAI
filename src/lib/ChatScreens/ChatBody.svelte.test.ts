@@ -195,4 +195,71 @@ describe('ChatBody translation parse bounds', () => {
     expect(chatBodyMocks.translateHTML).not.toHaveBeenCalled()
     expect(target.textContent).toContain('preview user message')
   })
+
+  it('reports the first display parse as pending until its rendered body settles', async () => {
+    let resolveParse!: (value: string) => void
+    const pendingParse = new Promise<string>((resolve) => {
+      resolveParse = resolve
+    })
+    const onInitialDisplayParseStart = vi.fn()
+    const onInitialDisplayParseSettled = vi.fn()
+    chatBodyMocks.ParseMarkdown.mockReturnValue(pendingParse)
+
+    component = mount(ChatBody, {
+      target,
+      props: {
+        idx: 0,
+        modelShortName: '',
+        msgDisplay: 'source message',
+        role: 'char',
+        translated: false,
+        translating: false,
+        retranslate: false,
+        allowClientTranslation: false,
+        onInitialDisplayParseStart,
+        onInitialDisplayParseSettled,
+      },
+    })
+    flushSync()
+
+    expect(onInitialDisplayParseStart).toHaveBeenCalledOnce()
+    expect(onInitialDisplayParseSettled).not.toHaveBeenCalled()
+
+    resolveParse('parsed source message')
+    await flushComponentPromises()
+
+    expect(target.textContent).toContain('parsed source message')
+    expect(onInitialDisplayParseSettled).toHaveBeenCalledOnce()
+    expect(onInitialDisplayParseSettled).toHaveBeenCalledWith(onInitialDisplayParseStart.mock.calls[0][0])
+  })
+
+  it('settles an outstanding initial display registration when the body unmounts', () => {
+    const onInitialDisplayParseStart = vi.fn()
+    const onInitialDisplayParseSettled = vi.fn()
+    chatBodyMocks.ParseMarkdown.mockReturnValue(new Promise<string>(() => undefined))
+
+    component = mount(ChatBody, {
+      target,
+      props: {
+        idx: 0,
+        modelShortName: '',
+        msgDisplay: 'source message',
+        role: 'char',
+        translated: false,
+        translating: false,
+        retranslate: false,
+        allowClientTranslation: false,
+        onInitialDisplayParseStart,
+        onInitialDisplayParseSettled,
+      },
+    })
+    flushSync()
+
+    unmount(component)
+    component = undefined
+
+    expect(onInitialDisplayParseStart).toHaveBeenCalledOnce()
+    expect(onInitialDisplayParseSettled).toHaveBeenCalledOnce()
+    expect(onInitialDisplayParseSettled).toHaveBeenCalledWith(onInitialDisplayParseStart.mock.calls[0][0])
+  })
 })

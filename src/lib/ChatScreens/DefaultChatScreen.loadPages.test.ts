@@ -393,6 +393,7 @@ import {
   resetChatGenerationActivitiesForTests,
 } from 'src/ts/process/generationActivity.svelte'
 import { resetChatUnreadForTests, unreadChatIds } from 'src/ts/process/chatUnread.svelte'
+import { defaultChatScreenTestChatController } from './DefaultChatScreen.testChatController'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -740,6 +741,7 @@ function findButtonByText(text: string): HTMLButtonElement | undefined {
 }
 
 beforeEach(() => {
+  defaultChatScreenTestChatController.reset()
   resetChatGenerationActivitiesForTests()
   resetChatUnreadForTests()
   resetGenerationOperationClientForTests()
@@ -822,6 +824,28 @@ afterEach(() => {
   resetGenerationOperationClientForTests()
   resetChatGenerationActivitiesForTests()
   resetChatUnreadForTests()
+  defaultChatScreenTestChatController.reset()
+})
+
+describe('DefaultChatScreen initial display readiness', () => {
+  it('keeps the transcript loading surface visible until every cold row parse settles', async () => {
+    defaultChatScreenTestChatController.hold()
+    seedDatabase([2])
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="chat-display-loading"]')).toBeTruthy()
+    })
+    expect(messageRowIndexes()).toEqual([1, 0])
+
+    defaultChatScreenTestChatController.release()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="chat-display-loading"]')).toBeNull()
+    })
+    expect(target.textContent).toContain('chat-0 message 0')
+    expect(target.textContent).toContain('chat-0 message 1')
+  })
 })
 
 describe('DefaultChatScreen acknowledged Stop lifecycle', () => {

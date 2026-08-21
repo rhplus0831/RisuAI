@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
   import { sleep } from 'src/ts/util'
   import { alertError } from '../../ts/alert'
   import {
@@ -41,6 +41,8 @@
     allowClientTranslation?: boolean
     bodyRoot?: HTMLElement | null
     modelShortName: string
+    onInitialDisplayParseStart?: (registration: symbol) => void
+    onInitialDisplayParseSettled?: (registration: symbol) => void
   }
 
   let {
@@ -59,12 +61,31 @@
     allowClientTranslation = true,
     bodyRoot,
     modelShortName = '',
+    onInitialDisplayParseStart = () => {},
+    onInitialDisplayParseSettled = () => {},
   }: Props = $props()
 
   // svelte-ignore non_reactive_update
   let lastParsed = ''
   let lastTranslationDetectionKey = ''
   let markParsingRun = 0
+  const initialDisplayParseRegistration = Symbol('initial-display-parse')
+  let initialDisplayParseStarted = false
+  let initialDisplayParseSettled = false
+
+  function beginInitialDisplayParse() {
+    if (initialDisplayParseStarted) return
+    initialDisplayParseStarted = true
+    onInitialDisplayParseStart(initialDisplayParseRegistration)
+  }
+
+  function settleInitialDisplayParse() {
+    if (!initialDisplayParseStarted || initialDisplayParseSettled) return
+    initialDisplayParseSettled = true
+    onInitialDisplayParseSettled(initialDisplayParseRegistration)
+  }
+
+  onDestroy(settleInitialDisplayParse)
 
   function getCbsCondition() {
     try {
@@ -138,6 +159,7 @@
 
   const markParsing = async (data: string, charArg: string | simpleCharacterArgument, chatID: number) => {
     const runId = ++markParsingRun
+    beginInitialDisplayParse()
     const setTranslatingForRun = (value: boolean) => {
       if (runId === markParsingRun) {
         translating = value
@@ -365,6 +387,7 @@
       // Since trimMarkdown is fast, we don't need to cache it.
       if (runId === markParsingRun) {
         lastParsed = lastParsedQueue
+        settleInitialDisplayParse()
       }
     }
   }

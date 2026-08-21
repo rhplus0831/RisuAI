@@ -29,6 +29,7 @@
   import type { ActiveChatTarget } from 'src/ts/chatCommands'
   import { clearVisibleChat, markChatRead, markChatUnread, setVisibleChat } from 'src/ts/process/chatUnread.svelte'
   import { recordChatRowsBuild } from './chatRowsBuildInstrumentation'
+  import { createInitialDisplayReadiness } from './initialDisplayReadiness'
 
   const getCurrentChatRoomId = () => {
     const charId = get(selectedCharID)
@@ -54,6 +55,7 @@
     isGenerationActive = false,
     generationStage = 0,
     hasNewUnreadMessage = $bindable(false),
+    initialDisplayPending = $bindable(false),
   }: {
     messages: Message[]
     currentCharacter: character
@@ -70,6 +72,7 @@
     isGenerationActive?: boolean
     generationStage?: number
     hasNewUnreadMessage?: boolean
+    initialDisplayPending?: boolean
   } = $props()
 
   let chatBody: HTMLDivElement
@@ -86,6 +89,9 @@
   let latestMessageAlignmentPinned = false
   let latestMessageNaturalEndKey: string | null = null
   let chatsComponentDestroyed = false
+  const initialDisplayReadiness = createInitialDisplayReadiness((pending) => {
+    initialDisplayPending = pending
+  }, tick)
   let activeHalfStreamingTokensPerSecond = $derived.by(() => {
     const currentChatId = getCurrentChatRoomId()
     const progress = $halfStreamingProgress.find(
@@ -127,6 +133,7 @@
       character: ReturnType<typeof createSimpleCharacter>
       isLastMemory: boolean
       generationPersistenceState: GenerationPersistenceIndicatorState | null
+      scopeId: string | null
     }[] = []
 
     for (let i = loadStart; i >= loadEnd; i--) {
@@ -145,6 +152,7 @@
         character: simpleChar,
         generationPersistenceState: generationPersistenceStateFromLookup(generationPersistenceLookup, message),
         isLastMemory: isMemoryLimitMessage(database.showMemoryLimit, lastMemoryId, message.chatId),
+        scopeId: currentChatId ?? null,
       })
     }
 
@@ -408,6 +416,7 @@
 
   onDestroy(() => {
     chatsComponentDestroyed = true
+    initialDisplayReadiness.destroy()
     latestMessageGeometryMeasureVersion += 1
     latestMessageResizeObserver?.disconnect()
     scrollContainerResizeObserver?.disconnect()
@@ -417,6 +426,10 @@
   $effect.pre(() => {
     chatRows
     wasAtBottomBeforeUpdate = checkIfAtBottom()
+  })
+
+  $effect.pre(() => {
+    initialDisplayReadiness.updateScope(getCurrentChatRoomId(), chatRows.length > 0)
   })
 
   $effect(() => {
@@ -591,6 +604,8 @@
           $automaticTranslationMessageIds.includes(row.message.chatId) &&
           !$serverOwnedGeneratedMessageIds.has(row.message.chatId)}
         onAutoTranslationEligibilityConsumed={() => consumeAutomaticTranslationEligibility(row.message.chatId ?? '')}
+        onInitialDisplayParseStart={(registration) => initialDisplayReadiness.start(row.scopeId, registration)}
+        onInitialDisplayParseSettled={(registration) => initialDisplayReadiness.settle(row.scopeId, registration)}
         generationPersistenceState={row.generationPersistenceState}
         {generationStage}
         disabled={row.message.disabled ?? false} />

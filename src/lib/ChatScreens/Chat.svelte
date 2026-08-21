@@ -198,6 +198,8 @@
     disabled?: boolean | 'allBefore'
     autoTranslateOnReady?: boolean
     onAutoTranslationEligibilityConsumed?: () => void
+    onInitialDisplayParseStart?: (registration: symbol) => void
+    onInitialDisplayParseSettled?: (registration: symbol) => void
   }
 
   interface CapturedChatButtonTriggerTarget {
@@ -264,6 +266,8 @@
     disabled = false,
     autoTranslateOnReady = false,
     onAutoTranslationEligibilityConsumed = () => {},
+    onInitialDisplayParseStart = () => {},
+    onInitialDisplayParseSettled = () => {},
   }: Props = $props()
   let autoPopupMessageEditorOpen = $state(false)
   let autoPopupTranslationEditorOpen = $state(false)
@@ -2275,7 +2279,9 @@
             translated={false}
             bind:translating
             retranslate={false}
-            allowClientTranslation={false} />
+            allowClientTranslation={false}
+            {onInitialDisplayParseStart}
+            {onInitialDisplayParseSettled} />
         {:else}
           <ChatBody
             {character}
@@ -2294,7 +2300,9 @@
             bind:retranslate
             allowClientTranslation={idx < 0 &&
               getDatabase().translator !== '' &&
-              getDatabase().translatorType !== 'none'} />
+              getDatabase().translatorType !== 'none'}
+            {onInitialDisplayParseStart}
+            {onInitialDisplayParseSettled} />
         {/if}
       {/key}
       {#if idx >= 0 && !editMode && !translationInProgress && partialEditEnabled && (getDatabase().enableBlockPartialEdit || getDatabase().enableDragPartialEdit)}

@@ -487,6 +487,7 @@
   let activeChatMessagesFailed = $derived(
     activeChatOpen && hasChatMessageHydrationFailed(currentChatId, currentChat.length),
   )
+  let activeChatDisplayLoading = $state(false)
 
   $effect(() => {
     if (!currentCharacter || isServerCharacterShell(currentCharacter)) return
@@ -2284,8 +2285,10 @@
       Loading...
     </div>
   {/if}
-  {#if $selectedCharID >= 0 && activeChatMessagesLoading}
-    <div class="absolute inset-0 z-40 flex items-center justify-center bg-bgcolor">
+  {#if $selectedCharID >= 0 && (activeChatMessagesLoading || activeChatDisplayLoading)}
+    <div
+      class="absolute inset-0 z-40 flex items-center justify-center bg-bgcolor"
+      data-testid={activeChatDisplayLoading && !activeChatMessagesLoading ? 'chat-display-loading' : undefined}>
       <div class="flex flex-col items-center text-textcolor2">
         <svg class="animate-spin h-6 w-6 mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -2918,6 +2921,7 @@
               {userIconPortrait}
               isGenerationActive={currentChatOwnsGeneration}
               generationStage={currentChatGenerationStage}
+              bind:initialDisplayPending={activeChatDisplayLoading}
               bind:hasNewUnreadMessage={showNewMessageButton} />
           </div>
 
