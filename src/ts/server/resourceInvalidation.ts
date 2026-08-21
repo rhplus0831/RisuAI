@@ -91,6 +91,7 @@ export interface ServerResourceInvalidationHooks {
     hypaV3Data: unknown,
     alternates: unknown[],
     range?: { start: number; total: number },
+    options?: { hypaV3DataIncluded?: boolean },
   ): boolean
   applyCharacterLorebook(characterId: string, globalLore: unknown[]): boolean
   markCharacterLorebookHydrated(characterId: string): void
@@ -1417,7 +1418,12 @@ function applyChatMessages(
     typeof result.messageStart === 'number' && typeof result.messageTotal === 'number'
       ? { start: result.messageStart, total: result.messageTotal }
       : undefined
-  const applied = hooks.applyChatMessages(result.chatId, result.message, result.hypaV3Data, result.alternates, range)
+  const applied =
+    typeof result.hypaV3DataIncluded === 'boolean'
+      ? hooks.applyChatMessages(result.chatId, result.message, result.hypaV3Data, result.alternates, range, {
+          hypaV3DataIncluded: result.hypaV3DataIncluded,
+        })
+      : hooks.applyChatMessages(result.chatId, result.message, result.hypaV3Data, result.alternates, range)
   if (applied) markChatBodyResourceRevision(result.chatId, result.revision)
   return applied
 }

@@ -1,4 +1,5 @@
 import type { character, Chat, Message } from '../../storage/database.svelte'
+import { sameStructuredValue } from '../../server/chatMessageRangeMerge'
 import type { ServerChatMessageMutation, ServerChatMessagePatch, ServerChatRestoration } from './serverChatEvents'
 
 function cloneMessage(message: Message): Message {
@@ -13,21 +14,9 @@ function sameMessageContent(a: Message | undefined, b: Message): boolean {
   return a?.role === b.role && a.data === b.data && (a.name ?? null) === (b.name ?? null)
 }
 
-function sameStructuredValue(a: unknown, b: unknown): boolean {
-  if (Object.is(a, b)) return true
-  if (Array.isArray(a) || Array.isArray(b)) {
-    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false
-    return a.every((value, index) => sameStructuredValue(value, b[index]))
-  }
-  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false
-  const aRecord = a as Record<string, unknown>
-  const bRecord = b as Record<string, unknown>
-  const aKeys = Object.keys(aRecord)
-  const bKeys = Object.keys(bRecord)
-  if (aKeys.length !== bKeys.length || aKeys.some((key) => !Object.prototype.hasOwnProperty.call(bRecord, key))) {
-    return false
-  }
-  return aKeys.every((key) => sameStructuredValue(aRecord[key], bRecord[key]))
+function sameMessageSuffix(messages: readonly Message[], start: number, incoming: readonly Message[]): boolean {
+  if (messages.length - start !== incoming.length) return false
+  return incoming.every((message, index) => sameStructuredValue(messages[start + index], message))
 }
 
 function applyMessageMutation(chat: Chat, mutation: ServerChatMessageMutation): void {
@@ -37,21 +26,27 @@ function applyMessageMutation(chat: Chat, mutation: ServerChatMessageMutation): 
       (mutation.firstChangedIndex as number) >= 0 &&
       (mutation.firstChangedIndex as number) <= chat.message.length
     ) {
-      chat.message.splice(mutation.firstChangedIndex as number, chat.message.length, ...mutation.messages)
+      const firstChangedIndex = mutation.firstChangedIndex as number
+      if (!sameMessageSuffix(chat.message, firstChangedIndex, mutation.messages)) {
+        chat.message.splice(firstChangedIndex, chat.message.length - firstChangedIndex, ...mutation.messages)
+      }
     } else {
-      chat.message = mutation.messages
+      if (!sameStructuredValue(chat.message, mutation.messages)) chat.message = mutation.messages
     }
     return
   }
 
   if (mutation.type === 'replace_by_id') {
     const index = chat.message.findIndex((message) => message.chatId === mutation.messageId)
-    if (index >= 0) chat.message[index] = cloneMessage(mutation.message)
+    if (index >= 0 && !sameStructuredValue(chat.message[index], mutation.message)) {
+      chat.message[index] = cloneMessage(mutation.message)
+    }
     return
   }
 
   const next = cloneMessage(mutation.message)
   const existing = chat.message[mutation.index]
+  if (sameStructuredValue(existing, next)) return
   if (sameMessageContent(existing, next)) {
     chat.message[mutation.index] = next
     return
@@ -85,19 +80,25 @@ export function applyServerMessagePatch(chat: Chat, patch: ServerChatMessagePatc
   }
 
   if (patch.chatVarMutations.length > 0) {
-    chat.scriptstate ??= {}
+    if (!chat.scriptstate && patch.chatVarMutations.some((mutation) => mutation.after !== null)) {
+      chat.scriptstate = {}
+    }
     for (const mutation of patch.chatVarMutations) {
       if (mutation.after === null) {
-        delete chat.scriptstate[mutation.key]
-      } else {
+        if (chat.scriptstate && Object.prototype.hasOwnProperty.call(chat.scriptstate, mutation.key)) {
+          delete chat.scriptstate[mutation.key]
+        }
+      } else if (chat.scriptstate?.[mutation.key] !== mutation.after) {
+        chat.scriptstate ??= {}
         chat.scriptstate[mutation.key] = mutation.after
       }
     }
   }
 
   for (const mutation of patch.chatMetadataMutations ?? []) {
-    if (mutation.after === null) delete chat.lastMemory
-    else chat.lastMemory = mutation.after
+    if (mutation.after === null) {
+      if (Object.prototype.hasOwnProperty.call(chat, 'lastMemory')) delete chat.lastMemory
+    } else if (chat.lastMemory !== mutation.after) chat.lastMemory = mutation.after
   }
 
   if (character) applyCharacterFieldMutations(character, patch)

@@ -2111,7 +2111,7 @@ export interface ChatHydrationRangeInput {
 
 export interface ChatHydrationRangePayload {
   message: unknown[]
-  hypaV3Data: unknown
+  hypaV3Data?: unknown
   alternates: unknown[]
   messageStart: number
   messageTotal: number
@@ -2141,16 +2141,18 @@ export function loadChatHydrationRange(
   dataDir: string,
   chatId: string,
   range: ChatHydrationRangeInput,
+  options: { includeHypaV3Data?: boolean } = {},
 ): ChatHydrationRangePayload {
   const alternates = getAlternateMessages(db, chatId) as unknown[]
-  const hypaV3Data = getChatHypaV3(db, chatId)
+  const includeHypaV3Data = options.includeHypaV3Data !== false
+  const hypaV3Data = includeHypaV3Data ? getChatHypaV3(db, chatId) : undefined
   const rowCount = countChatMessages(db, chatId)
 
   if (rowCount > 0) {
     const { start, limit } = normalizedMessageRange(rowCount, range)
     return {
       message: getChatMessagesRange(db, chatId, start, limit) as unknown[],
-      hypaV3Data,
+      ...(includeHypaV3Data ? { hypaV3Data } : {}),
       alternates,
       messageStart: start,
       messageTotal: rowCount,
@@ -2164,7 +2166,7 @@ export function loadChatHydrationRange(
   const { start, limit } = normalizedMessageRange(full.message.length, range)
   return {
     message: full.message.slice(start, start + limit),
-    hypaV3Data: full.hypaV3Data,
+    ...(includeHypaV3Data ? { hypaV3Data: full.hypaV3Data } : {}),
     alternates,
     messageStart: start,
     messageTotal: full.message.length,
@@ -2181,9 +2183,15 @@ export function loadGenerationChatHydration(
 ): ChatHydrationRangePayload {
   const location = messageId ? getActiveMessageLocationById(db, messageId) : undefined
   if (location?.chatId === chatId) {
-    return loadChatHydrationRange(db, dataDir, chatId, { start: location.seq })
+    return loadChatHydrationRange(db, dataDir, chatId, { start: location.seq }, { includeHypaV3Data: false })
   }
-  return loadChatHydrationRange(db, dataDir, chatId, { tail: GENERATION_CHAT_FALLBACK_TAIL })
+  return loadChatHydrationRange(
+    db,
+    dataDir,
+    chatId,
+    { tail: GENERATION_CHAT_FALLBACK_TAIL },
+    { includeHypaV3Data: false },
+  )
 }
 
 export function loadChatHydrations(

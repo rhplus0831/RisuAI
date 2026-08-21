@@ -453,7 +453,6 @@ export function registerResourceReadRoutes(
             revision,
             chatId: req.params.id,
             message: hydration.message,
-            hypaV3Data: hydration.hypaV3Data,
             alternates: hydration.alternates,
             messageStart: hydration.messageStart,
             messageTotal: hydration.messageTotal,

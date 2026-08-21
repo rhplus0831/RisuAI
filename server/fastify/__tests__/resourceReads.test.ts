@@ -1048,6 +1048,7 @@ describe('authenticated resource read routes', () => {
       messageTotal: 2,
       alternates: [],
     })
+    expect(generationWindow.json()).not.toHaveProperty('hypaV3Data')
 
     const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
     try {

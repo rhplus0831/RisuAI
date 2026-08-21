@@ -604,6 +604,7 @@ export function applyServerChatMessagesResource(
   hypaV3Data: unknown,
   alternates: unknown[],
   range?: { start: number; total: number },
+  options: { hypaV3DataIncluded?: boolean } = {},
 ): boolean {
   if (!chatId) return false
   const applied = hydrateServerChatMessages(
@@ -611,6 +612,7 @@ export function applyServerChatMessagesResource(
     message,
     hypaV3Data,
     range ? { ...range, preserveExistingOnGrowth: true } : undefined,
+    options,
   )
   if (!applied) return false
   advanceChatProjectionEpoch(chatId)
@@ -765,10 +767,17 @@ export async function reconcileAcceptedSendCompletion(
       return { status: 'not_reconciled', reason: 'target_missing' }
     }
 
-    const applied = applyServerChatMessagesResource(chatId, fetched.message, fetched.hypaV3Data, fetched.alternates, {
-      start: start as number,
-      total: total as number,
-    })
+    const applied = applyServerChatMessagesResource(
+      chatId,
+      fetched.message,
+      fetched.hypaV3Data,
+      fetched.alternates,
+      {
+        start: start as number,
+        total: total as number,
+      },
+      { hypaV3DataIncluded: fetched.hypaV3DataIncluded },
+    )
     if (!applied) {
       return { status: 'not_reconciled', reason: 'apply_failed' }
     }

@@ -377,6 +377,28 @@ describe('chat message hydration bridge', () => {
     expect(projectionState.fetchChat).not.toHaveBeenCalled()
   })
 
+  it('preserves resident Hypa state when a narrow generation payload omits it', async () => {
+    const existingMessages = [{ role: 'user', data: 'first', chatId: 'm1' }]
+    projectionState.fetchChat.mockResolvedValue({
+      ...okResult('chat-1', existingMessages),
+      hypaV3Data: { resident: true },
+    })
+    await hydrateActiveChatFully()
+
+    expect(
+      applyServerChatMessagesResource(
+        'chat-1',
+        [{ role: 'char', data: 'generated', chatId: 'm2' }],
+        undefined,
+        [],
+        { start: 1, total: 2 },
+        { hypaV3DataIncluded: false },
+      ),
+    ).toBe(true)
+
+    expect((db().characters[0].chats[0] as { hypaV3Data?: unknown }).hypaV3Data).toEqual({ resident: true })
+  })
+
   it('clears an accepted-send warning when a ranged generation projection supplies the persisted reply', async () => {
     const accepted = { role: 'user', data: 'hello', chatId: 'message-a' }
     projectionState.fetchChat.mockResolvedValue(okResult('chat-1', [accepted]))

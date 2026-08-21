@@ -40,8 +40,12 @@ vi.mock('./recoveredGenerationEffects', () => ({
 
 import {
   acknowledgeHydratedGenerationPersistences,
+  buildGenerationPersistenceStateLookup,
+  clearGenerationPersistence,
   generationFinalizationPersistences,
   generationPersistenceStateForMessage,
+  generationPersistenceStateFromLookup,
+  getGenerationFinalizationPersistencesForChat,
   resetGenerationFinalizationPersistencesForTests,
   setGenerationFinalizationPersistences,
   startGenerationFinalizationPersistenceRefresh,
@@ -86,6 +90,59 @@ afterEach(() => {
 })
 
 describe('generation finalization persistence projection', () => {
+  it('keeps chat-keyed subscribers isolated from another chat update', () => {
+    setGenerationFinalizationPersistences([
+      { chatId: 'chat-a', messageId: 'message-a', generationId: 'generation-a', state: 'queued' },
+      { chatId: 'chat-b', messageId: 'message-b', generationId: 'generation-b', state: 'queued' },
+    ])
+    const chatAProjection = getGenerationFinalizationPersistencesForChat('chat-a')
+    const chatBProjection = getGenerationFinalizationPersistencesForChat('chat-b')
+
+    clearGenerationPersistence('chat-b', 'generation-b')
+
+    expect(getGenerationFinalizationPersistencesForChat('chat-a')).toBe(chatAProjection)
+    expect(getGenerationFinalizationPersistencesForChat('chat-b')).not.toBe(chatBProjection)
+    expect(getGenerationFinalizationPersistencesForChat('chat-b')).toEqual([])
+  })
+
+  it('does not publish the flat or keyed projection for no-op clear and acknowledgement', () => {
+    setGenerationFinalizationPersistences([
+      { chatId: 'chat-a', messageId: 'message-a', generationId: 'generation-a', state: 'queued' },
+    ])
+    let flatPublishes = 0
+    const unsubscribe = generationFinalizationPersistences.subscribe(() => {
+      flatPublishes += 1
+    })
+
+    clearGenerationPersistence('chat-b', 'generation-b')
+    acknowledgeHydratedGenerationPersistences('chat-b', [
+      { role: 'char', data: 'other', chatId: 'message-b', generationInfo: { generationId: 'generation-b' } },
+    ])
+
+    expect(flatPublishes).toBe(1)
+    expect(getGenerationFinalizationPersistencesForChat('chat-a')).toHaveLength(1)
+    unsubscribe()
+  })
+
+  it('builds one ordered lookup for message and generation identifiers', () => {
+    const lookup = buildGenerationPersistenceStateLookup([
+      { chatId: 'chat-a', messageId: 'message-a', generationId: 'generation-a', state: 'stalled' },
+      { chatId: 'chat-a', messageId: 'message-a', generationId: 'generation-b', state: 'terminal' },
+    ])
+
+    expect(generationPersistenceStateFromLookup(lookup, { role: 'char', data: '', chatId: 'message-a' })).toBe(
+      'stalled',
+    )
+    expect(
+      generationPersistenceStateFromLookup(lookup, {
+        role: 'char',
+        data: '',
+        chatId: 'other',
+        generationInfo: { generationId: 'generation-b' },
+      }),
+    ).toBe('terminal')
+  })
+
   it('reconstructs a snapshot-fenced provisional send after authoritative hydration', () => {
     const tail: Message = { role: 'user', data: 'hello', chatId: 'user-a' }
     seedMessages([tail])

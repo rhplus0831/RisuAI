@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { runRenderCostHarness } from './renderCostHarness'
+import { runBackgroundCompletionRenderCostHarness, runRenderCostHarness } from './renderCostHarness'
 
 vi.mock('../platform', async (importActual) => {
   const actual = await importActual<typeof import('../platform')>()
@@ -46,6 +46,25 @@ afterEach(() => {
 })
 
 describe('render-count harness', () => {
+  for (const ordering of ['terminal-before-event', 'event-before-terminal'] as const) {
+    it(`keeps the foreground transcript stable for a background completion (${ordering})`, async () => {
+      const result = await runBackgroundCompletionRenderCostHarness({
+        foregroundMessageCount: 4,
+        backgroundMessageCount: 40,
+        ordering,
+      })
+
+      expect(result.foregroundRowBuildsAfterCompletion).toBe(0)
+      expect(result.foregroundParsesAfterCompletion).toEqual({
+        parseMarkdown: 0,
+        risuChatParser: 0,
+        editDisplay: 0,
+      })
+      expect(result.foregroundMessageIdentitiesPreserved).toBe(true)
+      expect(result.backgroundMessageCount).toBe(41)
+    }, 60000)
+  }
+
   it('drives a variable-only GUI refresh without reparsing mounted chat messages or resetting caches', async () => {
     const messageCount = 4
     const result = await runRenderCostHarness({ messageCount, reloadKind: 'variable-only' })

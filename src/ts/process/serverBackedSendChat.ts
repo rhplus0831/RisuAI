@@ -33,6 +33,7 @@ import { hydrateChatMessages } from '../server/chatMessageHydration.svelte'
 import type { StreamMessageProjection } from './postGeneration/streamResponse'
 import type { IgpMessageTarget } from './postGeneration/igp'
 import { clearGenerationPersistence, markGenerationPersistenceQueued } from './generationPersistenceState'
+import { yieldBeforeCompletionEffect } from './completionEffectScheduling'
 import { chatOutputListeners, runChatOutputListeners } from '../plugins/chatOutputListeners'
 import { alertConfirm } from '../alert'
 import { language } from '../../lang'
@@ -991,11 +992,12 @@ export async function applyServerBackedTerminal(args: {
         : undefined)
     if (assistant) {
       if (postGen?.translation?.status === 'succeeded' && postGen.messageId && assistant.chatId === postGen.messageId) {
-        assistant.translation = { ...postGen.translation.translation }
+        const translation = { ...postGen.translation.translation }
+        if (JSON.stringify(assistant.translation) !== JSON.stringify(translation)) assistant.translation = translation
       }
       const baseText = typeof postGen?.finalText === 'string' ? postGen.finalText : assistant.data
       const inlay = runInlayScreen(resolution.character, baseText)
-      assistant.data = inlay.text
+      if (assistant.data !== inlay.text) assistant.data = inlay.text
       if (pendingTtsTexts[0] === baseText) {
         processedPrimaryTtsText = inlay.text
       }
@@ -1157,6 +1159,7 @@ export async function applyServerBackedTerminal(args: {
       ? finalChat.message.find((message) => message.chatId === args.targetMessageId && message.role === 'char')
       : undefined)
 
+  if (chatOutputListeners.size > 0) await yieldBeforeCompletionEffect()
   await runLedgeredGenerationEffect(effectLedger, 'plugin_output', 'live_terminal', async (effectContext) => {
     if (!finalResolution || chatOutputListeners.size === 0) return skippedGenerationEffect('not_configured')
     const characters = getDatabase().characters

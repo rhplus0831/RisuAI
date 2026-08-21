@@ -13,8 +13,9 @@
   import { scrollElementToContainerStart } from './chatScroll'
   import { isMemoryLimitMessage } from './memoryLimitMarker'
   import {
-    generationFinalizationPersistences,
-    generationPersistenceStateForMessage,
+    buildGenerationPersistenceStateLookup,
+    generationPersistenceStateFromLookup,
+    getGenerationFinalizationPersistencesForChat,
     type GenerationPersistenceIndicatorState,
   } from 'src/ts/process/generationPersistenceState'
   import { halfStreamingProgress } from 'src/ts/process/halfStreamingProgress'
@@ -27,6 +28,7 @@
   import { newlyAppendedMessageIds } from './newMessageTranslationEligibility'
   import type { ActiveChatTarget } from 'src/ts/chatCommands'
   import { clearVisibleChat, markChatRead, markChatUnread, setVisibleChat } from 'src/ts/process/chatUnread.svelte'
+  import { recordChatRowsBuild } from './chatRowsBuildInstrumentation'
 
   const getCurrentChatRoomId = () => {
     const charId = get(selectedCharID)
@@ -103,6 +105,10 @@
     const database = getDatabase()
     const currentChat = currentCharacter.chats?.[currentCharacter.chatPage]
     const currentChatId = currentChat?.id
+    recordChatRowsBuild(currentChatId)
+    const generationPersistenceLookup = buildGenerationPersistenceStateLookup(
+      getGenerationFinalizationPersistencesForChat(currentChatId),
+    )
     const lastMemoryId = currentChat?.lastMemory
     const { loadStart, loadEnd } = getTranscriptWindowRange({
       messageCount: messages.length,
@@ -137,11 +143,7 @@
         largePortrait: messageLargePortrait,
         name: message.role === 'user' ? currentUsername : getCharacterDisplayName(currentCharacter),
         character: simpleChar,
-        generationPersistenceState: generationPersistenceStateForMessage(
-          $generationFinalizationPersistences,
-          currentChatId,
-          message,
-        ),
+        generationPersistenceState: generationPersistenceStateFromLookup(generationPersistenceLookup, message),
         isLastMemory: isMemoryLimitMessage(database.showMemoryLimit, lastMemoryId, message.chatId),
       })
     }

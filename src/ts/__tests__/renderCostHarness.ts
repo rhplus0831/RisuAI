@@ -3,6 +3,14 @@ import { get } from 'svelte/store'
 import { vi } from 'vitest'
 import type { character, customscript, Database, Message } from '../storage/database.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
+import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
+import { applyServerChatMessagesResource } from '../server/chatMessageHydration.svelte'
+import {
+  resetGenerationFinalizationPersistencesForTests,
+  setGenerationFinalizationPersistences,
+} from '../process/generationPersistenceState'
+import { applyServerMessagePatch } from '../process/request/serverMessagePatch'
+import { setChatRowsBuildObserverForTests } from '../../lib/ChatScreens/chatRowsBuildInstrumentation'
 import {
   HideIconStore,
   ReloadChatPointer,
@@ -50,6 +58,20 @@ export interface RenderCostHarnessResult {
 export interface RenderCostHarnessOptions {
   messageCount: number
   reloadKind?: 'variable-only' | 'definition' | 'display'
+}
+
+export interface BackgroundCompletionRenderCostHarnessOptions {
+  foregroundMessageCount: number
+  backgroundMessageCount: number
+  ordering: 'terminal-before-event' | 'event-before-terminal'
+}
+
+export interface BackgroundCompletionRenderCostHarnessResult {
+  foregroundRowBuildsAfterCompletion: number
+  foregroundParsesAfterCompletion: RenderParseCounts
+  foregroundMessageTexts: string[]
+  foregroundMessageIdentitiesPreserved: boolean
+  backgroundMessageCount: number
 }
 
 interface RenderCostSeed {
@@ -353,5 +375,160 @@ export async function runRenderCostHarness(options: RenderCostHarnessOptions): P
     ReloadGUIPointer.set(previousReloadGui)
     VariableReloadGUIPointer.set(previousVariableReloadGui)
     HideIconStore.set(previousHideIcon)
+  }
+}
+
+export async function runBackgroundCompletionRenderCostHarness(
+  options: BackgroundCompletionRenderCostHarnessOptions,
+): Promise<BackgroundCompletionRenderCostHarnessResult> {
+  const previousDb = getResourceDatabase({ snapshot: true })
+  const previousSelectedChar = get(selectedCharID)
+  const target = document.createElement('div')
+  document.body.appendChild(target)
+  resetGenerationFinalizationPersistencesForTests()
+
+  const scriptsModule = await import('../process/scripts')
+  const processScriptFullSpy = vi.spyOn(scriptsModule, 'processScriptFull')
+  const risuChatParserSpy = vi.spyOn(scriptsModule, 'risuChatParser')
+  const parserModule = await import('../parser/parser.svelte')
+  const parseMarkdownSpy = vi.spyOn(parserModule, 'ParseMarkdown')
+  const parseMemoModule = await import('../../lib/ChatScreens/ChatBodyParseMemo')
+  parseMemoModule.clearChatBodyParseMemo()
+
+  const snapshotCounts = (): RenderParseCounts => ({
+    parseMarkdown: parseMarkdownSpy.mock.calls.length,
+    risuChatParser: risuChatParserSpy.mock.calls.length,
+    editDisplay: processScriptFullSpy.mock.calls.filter((call) => call[2] === 'editdisplay').length,
+  })
+
+  let component: Record<string, unknown> | null = null
+  let foregroundRowBuilds = 0
+  try {
+    seedRenderCostMessages(options.foregroundMessageCount)
+    const database = getResourceDatabase()
+    const currentCharacter = database.characters[0]
+    const foregroundChat = currentCharacter.chats[0]
+    const backgroundMessages: Message[] = Array.from({ length: options.backgroundMessageCount }, (_unused, index) => ({
+      role: index % 2 === 0 ? 'user' : 'char',
+      data: `Background message ${index}`,
+      chatId: `background-message-${index}`,
+    }))
+    withTrustedResourceWrite(() => {
+      currentCharacter.chats.push({
+        id: 'render-cost-background-chat',
+        name: 'Background Chat',
+        message: backgroundMessages,
+        note: '',
+        localLore: [],
+        scriptstate: {},
+        fmIndex: -1,
+        bookmarks: [],
+        bookmarkNames: {},
+      })
+    })
+    const foregroundIdentities = [...foregroundChat.message]
+    const foregroundMessageTexts = foregroundChat.message.map((message) => message.data)
+    setGenerationFinalizationPersistences([
+      {
+        chatId: 'render-cost-background-chat',
+        messageId: 'background-generation',
+        generationId: 'background-generation',
+        state: 'queued',
+      },
+    ])
+    setChatRowsBuildObserverForTests((chatId) => {
+      if (chatId === foregroundChat.id) foregroundRowBuilds += 1
+    })
+
+    const { default: Chats } = await import('../../lib/ChatScreens/Chats.svelte')
+    component = mount(Chats, {
+      target,
+      props: {
+        messages: foregroundChat.message,
+        currentCharacter,
+        onReroll: () => {},
+        unReroll: () => {},
+        onNewReroll: () => {},
+        onSelectRerollCandidate: () => {},
+        rerollTarget: null,
+        currentUsername: 'Harness User',
+        userIcon: '',
+        loadPages: Math.max(1, options.foregroundMessageCount),
+      },
+    }) as unknown as Record<string, unknown>
+    await waitForVisibleMessages(target, foregroundMessageTexts)
+
+    const rowBuildsBeforeCompletion = foregroundRowBuilds
+    const parseCountsBeforeCompletion = snapshotCounts()
+    const generatedMessage = {
+      role: 'char',
+      data: 'Background generation completed',
+      chatId: 'background-generation',
+      generationInfo: { generationId: 'background-generation' },
+    } satisfies Message
+    const terminalPatch = {
+      chatId: 'render-cost-background-chat',
+      characterId: currentCharacter.chaId,
+      selectedCharID: 0,
+      chatPage: 1,
+      varChanged: false,
+      messageMutations: [
+        {
+          type: 'replace_all' as const,
+          source: 'regenerate' as const,
+          beforeLength: options.backgroundMessageCount,
+          afterLength: options.backgroundMessageCount + 1,
+          firstChangedIndex: options.backgroundMessageCount,
+          messages: [generatedMessage],
+        },
+      ],
+      chatVarMutations: [],
+      additionalSystemPrompt: [],
+    }
+    const applyTerminal = () => {
+      withTrustedResourceWrite(() => {
+        applyServerMessagePatch(currentCharacter.chats[1], terminalPatch)
+      })
+    }
+    const applyEvent = () => {
+      applyServerChatMessagesResource(
+        'render-cost-background-chat',
+        [structuredClone(generatedMessage)],
+        undefined,
+        [],
+        { start: options.backgroundMessageCount, total: options.backgroundMessageCount + 1 },
+        { hypaV3DataIncluded: false },
+      )
+    }
+
+    if (options.ordering === 'terminal-before-event') {
+      applyTerminal()
+      applyEvent()
+    } else {
+      applyEvent()
+      applyTerminal()
+    }
+    await settleRenderWork()
+
+    return {
+      foregroundRowBuildsAfterCompletion: foregroundRowBuilds - rowBuildsBeforeCompletion,
+      foregroundParsesAfterCompletion: subtractCounts(snapshotCounts(), parseCountsBeforeCompletion),
+      foregroundMessageTexts,
+      foregroundMessageIdentitiesPreserved: foregroundChat.message.every(
+        (message, index) => message === foregroundIdentities[index],
+      ),
+      backgroundMessageCount: currentCharacter.chats[1].message.length,
+    }
+  } finally {
+    if (component) unmount(component)
+    setChatRowsBuildObserverForTests(null)
+    resetGenerationFinalizationPersistencesForTests()
+    target.remove()
+    processScriptFullSpy.mockRestore()
+    risuChatParserSpy.mockRestore()
+    parseMarkdownSpy.mockRestore()
+    parseMemoModule.clearChatBodyParseMemo()
+    replaceResourceDatabase(previousDb)
+    selectedCharID.set(previousSelectedChar)
   }
 }

@@ -107,6 +107,14 @@ workflow needs them. The authoritative-state invariant is canonical in
 owns the endpoint, cache, hydration, invalidation, and durable-mutation
 contracts.
 
+The compatibility facade keeps a stable proxy identity, but `getDatabase()` no
+longer subscribes callers to an implicit whole-database epoch. Reactive callers
+track the settings, collection, character, chat, and message fields they
+actually read. The explicit `getResourceDatabaseFacadeEpoch()` accessor remains
+available for diagnostics or compatibility observers that intentionally need
+an any-resource signal. A trusted write to one background chat must therefore
+not wake a mounted transcript for another chat.
+
 The main client boundaries are:
 
 | Path                                                                                                                                   | Responsibility                                                              |
@@ -392,6 +400,30 @@ repeated transient failures advance to a stalled marker while continuing capped
 backoff retries, and `stalled_legacy` is shown as a distinct non-retrying state.
 Conflicting post-generation script mutations arrive as warning frames but do
 not erase successfully persisted generated message text.
+
+Generation-finalization indicators retain a flat compatibility store for
+bootstrap, polling, and smoke snapshots, while the transcript subscribes to an
+independent per-chat projection. Clearing or acknowledging another chat cannot
+rebuild the visible row model, and each visible projection builds message-id and
+generation-id indexes once instead of scanning the flat list for every row.
+
+The `generation.persisted` read applies its bounded suffix in place. Safe
+appends, replacements, and truncations preserve the resident prefix and message
+object identity; placeholders are allocated only for genuinely unloaded
+indexes. Terminal patches and later authoritative suffixes compare structured
+values before assignment, so either delivery order converges without a second
+meaningful transcript mutation. Plain generation-suffix responses deliberately
+omit chat-wide Hypa state; the decoder carries an explicit inclusion bit so
+omission preserves resident Hypa data, while full and ordinary ranged reads
+retain the historical absent-means-clear behavior. Reroll alternates remain
+included because every generation finalization can clear or replace that
+authoritative candidate set.
+
+Ledgered completion callbacks emit development performance entries named
+`risu:generation-effect:<kind>:<delivery>`. Best-effort emotion/image and plugin
+output work yields through the browser scheduler after the transcript settles
+when that API is available; effect claims, leases, completion receipts, and
+idempotency keys retain their existing ownership.
 
 Provider/profile resolution is canonical in
 [Providers And Models](../../docs/structure/providers-and-models.md), prompt

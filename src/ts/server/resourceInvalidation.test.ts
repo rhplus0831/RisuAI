@@ -1493,6 +1493,7 @@ describe('API-backed resource invalidation', () => {
       chatId,
       message: [{ role: 'char', data: 'fresh-a' }],
       hypaV3Data: { fresh: 'a' },
+      hypaV3DataIncluded: true,
       alternates: [{ role: 'char', data: `${chatId}-alternate` }],
     }))
     api.generationChat.mockImplementation(async (chatId: string) => ({
@@ -1500,7 +1501,7 @@ describe('API-backed resource invalidation', () => {
       revision: 5,
       chatId,
       message: [{ role: 'char', data: 'fresh-b' }],
-      hypaV3Data: { fresh: 'b' },
+      hypaV3DataIncluded: false,
       alternates: [{ role: 'char', data: `${chatId}-alternate` }],
       messageStart: 1,
       messageTotal: 2,
@@ -1537,13 +1538,15 @@ describe('API-backed resource invalidation', () => {
       { fresh: 'a' },
       [{ role: 'char', data: 'chat-a-alternate' }],
       undefined,
+      { hypaV3DataIncluded: true },
     )
     expect(sideEffects.applyChat).toHaveBeenCalledWith(
       'chat-b',
       [{ role: 'char', data: 'fresh-b' }],
-      { fresh: 'b' },
+      undefined,
       [{ role: 'char', data: 'chat-b-alternate' }],
       { start: 1, total: 2 },
+      { hypaV3DataIncluded: false },
     )
     expect(sideEffects.applyLorebook).toHaveBeenCalledWith('char-a', [{ key: 'A' }])
     expect(sideEffects.applyLorebook).toHaveBeenCalledWith('char-b', [{ key: 'B' }])

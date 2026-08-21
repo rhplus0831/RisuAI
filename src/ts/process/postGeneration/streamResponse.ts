@@ -351,7 +351,7 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
       // left by abort/transport failure and should never remain in the transcript.
       removeEmptyGeneratedMessage()
       const targetChat = currentLiveChat()
-      if (targetChat) targetChat.isStreaming = false
+      if (targetChat?.isStreaming) targetChat.isStreaming = false
       bumpReloadKey()
     })
     if (halfStreaming) clearHalfStreamingProgress(halfStreamingTarget)

@@ -18,6 +18,49 @@ function patch(overrides: Partial<ServerChatMessagePatch>): ServerChatMessagePat
 }
 
 describe('applyServerMessagePatch', () => {
+  it('treats an authoritative transcript replay as a semantic no-op', () => {
+    const user = { role: 'user', data: 'hello', chatId: 'user-1' } as const
+    const assistant = {
+      role: 'char',
+      data: 'persisted reply',
+      chatId: 'generation-1',
+      generationInfo: { generationId: 'generation-1' },
+    } as const
+    const chat = {
+      message: [user, assistant],
+      note: '',
+      name: '',
+      localLore: [],
+      scriptstate: { $score: '1' },
+    } as Chat
+    const messagesBefore = chat.message
+    const userBefore = chat.message[0]
+    const assistantBefore = chat.message[1]
+    const scriptstateBefore = chat.scriptstate
+
+    applyServerMessagePatch(
+      chat,
+      patch({
+        messageMutations: [
+          {
+            type: 'replace_all',
+            source: 'output_trigger',
+            beforeLength: 1,
+            afterLength: 2,
+            firstChangedIndex: 1,
+            messages: [structuredClone(assistant)],
+          },
+        ],
+        chatVarMutations: [{ key: '$score', before: '0', after: '1' }],
+      }),
+    )
+
+    expect(chat.message).toBe(messagesBefore)
+    expect(chat.message[0]).toBe(userBefore)
+    expect(chat.message[1]).toBe(assistantBefore)
+    expect(chat.scriptstate).toBe(scriptstateBefore)
+  })
+
   it('preserves append single-message detach while normalizing an already-local user append', () => {
     const serverMessage = {
       role: 'user',

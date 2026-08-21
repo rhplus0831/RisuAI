@@ -1,10 +1,8 @@
 import { get, writable } from 'svelte/store'
+import type { Writable } from 'svelte/store'
+import { createSubscriber } from 'svelte/reactivity'
 import { registerRetainedChatProjection } from '../server/chatRetainedProjection'
-import type {
-  GenerationFinalizationProjection,
-  GenerationFinalizationProjectionFence,
-  GenerationFinalizationState,
-} from '../server/bootstrap'
+import type { GenerationFinalizationProjectionFence, GenerationFinalizationState } from '../server/bootstrap'
 import { getDatabase, type Message } from '../storage/database.svelte'
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 
@@ -22,7 +20,106 @@ export interface QueuedGenerationPersistence {
 
 export type GenerationPersistenceIndicatorState = 'queued' | 'stalled' | 'terminal' | 'stalled_legacy'
 
-export const generationFinalizationPersistences = writable<QueuedGenerationPersistence[]>([])
+const EMPTY_CHAT_FINALIZATIONS: readonly QueuedGenerationPersistence[] = []
+const generationFinalizationPersistencesStore = writable<QueuedGenerationPersistence[]>([])
+interface ChatFinalizationProjection {
+  get(): readonly QueuedGenerationPersistence[]
+  set(entries: readonly QueuedGenerationPersistence[]): void
+}
+
+function createChatFinalizationProjection(): ChatFinalizationProjection {
+  let entries = EMPTY_CHAT_FINALIZATIONS
+  let notify = () => {}
+  const subscribe = createSubscriber((update) => {
+    notify = update
+    return () => {
+      notify = () => {}
+    }
+  })
+  return {
+    get: () => {
+      subscribe()
+      return entries
+    },
+    set: (next) => {
+      entries = next
+      notify()
+    },
+  }
+}
+
+const generationFinalizationPersistencesByChat = new Map<string, ChatFinalizationProjection>()
+
+function finalizationProjectionForChat(chatId: string): ChatFinalizationProjection {
+  let projection = generationFinalizationPersistencesByChat.get(chatId)
+  if (!projection) {
+    projection = createChatFinalizationProjection()
+    generationFinalizationPersistencesByChat.set(chatId, projection)
+  }
+  return projection
+}
+
+function sameStructuredValue(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false
+    return left.every((value, index) => sameStructuredValue(value, right[index]))
+  }
+  if (!left || !right || typeof left !== 'object' || typeof right !== 'object') return false
+  const leftRecord = left as Record<string, unknown>
+  const rightRecord = right as Record<string, unknown>
+  const leftKeys = Object.keys(leftRecord)
+  const rightKeys = Object.keys(rightRecord)
+  if (
+    leftKeys.length !== rightKeys.length ||
+    leftKeys.some((key) => !Object.prototype.hasOwnProperty.call(rightRecord, key))
+  ) {
+    return false
+  }
+  return leftKeys.every((key) => sameStructuredValue(leftRecord[key], rightRecord[key]))
+}
+
+function sameFinalizationEntries(
+  left: readonly QueuedGenerationPersistence[],
+  right: readonly QueuedGenerationPersistence[],
+): boolean {
+  return left.length === right.length && left.every((entry, index) => sameStructuredValue(entry, right[index]))
+}
+
+function groupFinalizationsByChat(
+  entries: readonly QueuedGenerationPersistence[],
+): Map<string, QueuedGenerationPersistence[]> {
+  const grouped = new Map<string, QueuedGenerationPersistence[]>()
+  for (const entry of entries) {
+    const chatEntries = grouped.get(entry.chatId)
+    if (chatEntries) chatEntries.push(entry)
+    else grouped.set(entry.chatId, [entry])
+  }
+  return grouped
+}
+
+function publishGenerationFinalizationPersistences(entries: readonly QueuedGenerationPersistence[]): void {
+  const previous = get(generationFinalizationPersistencesStore)
+  if (sameFinalizationEntries(previous, entries)) return
+
+  const previousByChat = groupFinalizationsByChat(previous)
+  const next = [...entries]
+  const nextByChat = groupFinalizationsByChat(next)
+  const chatIds = new Set([...previousByChat.keys(), ...nextByChat.keys()])
+  for (const chatId of chatIds) {
+    const previousChatEntries = previousByChat.get(chatId) ?? EMPTY_CHAT_FINALIZATIONS
+    const nextChatEntries = nextByChat.get(chatId) ?? EMPTY_CHAT_FINALIZATIONS
+    if (sameFinalizationEntries(previousChatEntries, nextChatEntries)) continue
+    finalizationProjectionForChat(chatId).set(nextChatEntries)
+  }
+  generationFinalizationPersistencesStore.set(next)
+}
+
+export const generationFinalizationPersistences: Writable<QueuedGenerationPersistence[]> = {
+  subscribe: generationFinalizationPersistencesStore.subscribe,
+  set: publishGenerationFinalizationPersistences,
+  update: (updater) => publishGenerationFinalizationPersistences(updater(get(generationFinalizationPersistencesStore))),
+}
 /** Compatibility alias for callers that only knew about the original live queued state. */
 export const queuedGenerationPersistences = generationFinalizationPersistences
 
@@ -74,12 +171,7 @@ function releaseRetainedFinalizationProjections(): void {
 }
 
 function messageMatches(left: Message | undefined, right: Message | undefined): boolean {
-  if (!left || !right) return left === right
-  try {
-    return JSON.stringify(left) === JSON.stringify(right)
-  } catch {
-    return false
-  }
+  return sameStructuredValue(left, right)
 }
 
 function findChatMessages(chatId: string): Message[] | null {
@@ -119,7 +211,7 @@ function reapplyGenerationFinalizationProjection(entry: QueuedGenerationPersiste
 }
 
 /** Replace the writer-scoped bootstrap projection and retain its safe provisional rows across hydration. */
-export function setGenerationFinalizationPersistences(entries: readonly GenerationFinalizationProjection[]): void {
+export function setGenerationFinalizationPersistences(entries: readonly QueuedGenerationPersistence[]): void {
   releaseRetainedFinalizationProjections()
   const next = entries.map((entry) => structuredClone(entry))
   generationFinalizationPersistences.set(next)
@@ -144,11 +236,49 @@ export function markGenerationPersistenceQueued(entry: QueuedGenerationPersisten
 }
 
 export function clearGenerationPersistence(chatId: string, generationId: string): void {
+  const entries = get(generationFinalizationPersistences)
+  if (!entries.some((entry) => entry.chatId === chatId && entry.generationId === generationId)) return
   retainedProjectionReleases.get(generationId)?.()
   retainedProjectionReleases.delete(generationId)
-  generationFinalizationPersistences.update((entries) =>
+  publishGenerationFinalizationPersistences(
     entries.filter((entry) => entry.chatId !== chatId || entry.generationId !== generationId),
   )
+}
+
+export function getGenerationFinalizationPersistencesForChat(
+  chatId: string | undefined,
+): readonly QueuedGenerationPersistence[] {
+  if (!chatId) return EMPTY_CHAT_FINALIZATIONS
+  return finalizationProjectionForChat(chatId).get()
+}
+
+export interface GenerationPersistenceStateLookup {
+  byMessageId: ReadonlyMap<string, GenerationPersistenceIndicatorState>
+  byGenerationId: ReadonlyMap<string, GenerationPersistenceIndicatorState>
+}
+
+export function buildGenerationPersistenceStateLookup(
+  entries: readonly QueuedGenerationPersistence[],
+): GenerationPersistenceStateLookup {
+  const byMessageId = new Map<string, GenerationPersistenceIndicatorState>()
+  const byGenerationId = new Map<string, GenerationPersistenceIndicatorState>()
+  for (const entry of entries) {
+    const state = entry.state ?? 'queued'
+    if (state !== 'queued' && state !== 'stalled' && state !== 'terminal' && state !== 'stalled_legacy') continue
+    if (!byMessageId.has(entry.messageId)) byMessageId.set(entry.messageId, state)
+    if (!byGenerationId.has(entry.generationId)) byGenerationId.set(entry.generationId, state)
+  }
+  return { byMessageId, byGenerationId }
+}
+
+export function generationPersistenceStateFromLookup(
+  lookup: GenerationPersistenceStateLookup,
+  message: Message,
+): GenerationPersistenceIndicatorState | null {
+  const messageState = message.chatId ? lookup.byMessageId.get(message.chatId) : undefined
+  if (messageState) return messageState
+  const generationId = message.generationInfo?.generationId
+  return generationId ? (lookup.byGenerationId.get(generationId) ?? null) : null
 }
 
 export function generationPersistenceStateForMessage(
@@ -168,21 +298,24 @@ export function generationPersistenceStateForMessage(
 
 /** Clear provisional badges only when an authoritative hydration contains the queued generation. */
 export function acknowledgeHydratedGenerationPersistences(chatId: string, messages: readonly Message[]): void {
-  generationFinalizationPersistences.update((entries) =>
-    entries.filter((entry) => {
-      if (entry.chatId !== chatId || entry.state === 'terminal' || entry.state === 'stalled_legacy') return true
-      const acknowledged = messages.some(
-        (message) =>
-          message.generationInfo?.generationId === entry.generationId ||
-          (entry.messageId === entry.generationId && message.chatId === entry.generationId),
-      )
-      if (acknowledged) {
-        retainedProjectionReleases.get(entry.generationId)?.()
-        retainedProjectionReleases.delete(entry.generationId)
-      }
-      return !acknowledged
-    }),
-  )
+  const entries = get(generationFinalizationPersistences)
+  const acknowledgedGenerationIds = new Set<string>()
+  const next = entries.filter((entry) => {
+    if (entry.chatId !== chatId || entry.state === 'terminal' || entry.state === 'stalled_legacy') return true
+    const acknowledged = messages.some(
+      (message) =>
+        message.generationInfo?.generationId === entry.generationId ||
+        (entry.messageId === entry.generationId && message.chatId === entry.generationId),
+    )
+    if (acknowledged) acknowledgedGenerationIds.add(entry.generationId)
+    return !acknowledged
+  })
+  if (acknowledgedGenerationIds.size === 0) return
+  for (const generationId of acknowledgedGenerationIds) {
+    retainedProjectionReleases.get(generationId)?.()
+    retainedProjectionReleases.delete(generationId)
+  }
+  publishGenerationFinalizationPersistences(next)
 }
 
 export function resetGenerationFinalizationPersistencesForTests(): void {

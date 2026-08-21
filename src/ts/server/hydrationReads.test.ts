@@ -327,6 +327,7 @@ describe('server hydration read clients', () => {
       chatId: 'chat/server',
       message: [{ role: 'user', data: 'tail' }],
       hypaV3Data: { summary: 'tail' },
+      hypaV3DataIncluded: true,
       messageStart: 8,
       messageTotal: 10,
       alternates: [{ index: 1 }],
@@ -337,6 +338,7 @@ describe('server hydration read clients', () => {
       chatId: 'chat/request',
       message: [{ role: 'char', data: 'range' }],
       hypaV3Data: undefined,
+      hypaV3DataIncluded: true,
       alternates: [],
     })
 
@@ -374,6 +376,7 @@ describe('server hydration read clients', () => {
       chatId: 'chat/request',
       message: [{ role: 'char', data: 'generated' }],
       hypaV3Data: undefined,
+      hypaV3DataIncluded: false,
       messageStart: 9,
       messageTotal: 10,
       alternates: [{ role: 'char', data: 'alternate' }],

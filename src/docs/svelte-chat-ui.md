@@ -91,6 +91,13 @@ whose journal cleanup remains pending are not described as provisional.
 operation or job. A settled control retained from an older send cannot hide Stop
 for a newer live continue or regenerate job.
 
+The visible `Chats.svelte` row model subscribes only to the current chat's
+finalization projection and the nested resource fields it renders. The flat
+bootstrap/recovery finalization list is not a UI dependency. Background-chat
+completion must leave the foreground row-model build counter, parser calls, and
+geometry effects unchanged; `renderCostHarness.test.ts` guards both
+terminal-before-event and event-before-terminal orderings.
+
 Message HTML crosses parser output, translation, custom HTML templates, inlays,
 additional/module assets, and optional partial edit. Parser code lives under
 `src/ts/parser/`, while file and inlay processing lives under

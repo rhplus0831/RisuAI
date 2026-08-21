@@ -92,6 +92,7 @@ import {
   withServerResourceApply,
   withTrustedResourceWrite,
 } from '../server/resourceWriteGuard.svelte'
+import { mergeChatMessageRange, sameStructuredValue } from '../server/chatMessageRangeMerge'
 import {
   captureCollectionProjectionEpoch,
   captureSettingsProjectionEpoch,
@@ -3600,6 +3601,11 @@ export interface ServerChatMessagesHydrationRange {
   preserveExistingOnGrowth?: boolean
 }
 
+export interface ServerChatMessagesHydrationOptions {
+  /** Omitted generation-delta Hypa state preserves the resident chat value. */
+  hypaV3DataIncluded?: boolean
+}
+
 export { isServerChatMessagePlaceholder }
 
 function createServerChatMessagePlaceholder(): Message {
@@ -3612,46 +3618,39 @@ function createServerChatMessagePlaceholder(): Message {
   } as Message
 }
 
-function createServerChatMessagePlaceholderArray(total: number): Message[] {
-  return Array.from({ length: total }, () => createServerChatMessagePlaceholder())
-}
-
 export function hydrateServerChatMessages(
   chatId: string,
   message: unknown[],
   hypaV3Data?: unknown,
   range?: ServerChatMessagesHydrationRange,
+  options: ServerChatMessagesHydrationOptions = {},
 ): boolean {
   return withTrustedResourceWrite(() => {
     for (const character of getDatabase().characters ?? []) {
       const chat = character.chats?.find((candidate) => candidate.id === chatId)
       if (chat) {
         if (range) {
-          const total = Math.max(0, Math.floor(range.total))
-          const start = Math.min(Math.max(0, Math.floor(range.start)), total)
-          const existingMessages = Array.isArray(chat.message) ? chat.message : []
-          const canPreserveExisting =
-            existingMessages.length === total ||
-            (range.preserveExistingOnGrowth === true && total > existingMessages.length)
-          const next =
-            canPreserveExisting && existingMessages.length === total
-              ? existingMessages.slice()
-              : canPreserveExisting
-                ? [...existingMessages, ...createServerChatMessagePlaceholderArray(total - existingMessages.length)]
-                : createServerChatMessagePlaceholderArray(total)
-          for (let index = 0; index < message.length && start + index < total; index += 1) {
-            next[start + index] = message[index] as Message
-          }
-          chat.message = next
+          const hasExistingMessages = Array.isArray(chat.message)
+          const existingMessages = hasExistingMessages ? chat.message : []
+          const merge = mergeChatMessageRange(
+            existingMessages,
+            message as Message[],
+            range,
+            createServerChatMessagePlaceholder,
+          )
+          if (!merge) return false
+          if (!hasExistingMessages || merge.replacedArray) chat.message = merge.messages
         } else {
-          chat.message = message as Message[]
+          if (!sameStructuredValue(chat.message, message)) chat.message = message as Message[]
         }
         // `hypaV3Data` is hydrated alongside messages; undefined means the chat
         // has none, so clear any stale value.
-        if (hypaV3Data === undefined) {
-          delete (chat as { hypaV3Data?: unknown }).hypaV3Data
-        } else {
-          chat.hypaV3Data = hypaV3Data as typeof chat.hypaV3Data
+        if (options.hypaV3DataIncluded !== false) {
+          if (hypaV3Data === undefined && Object.prototype.hasOwnProperty.call(chat, 'hypaV3Data')) {
+            delete (chat as { hypaV3Data?: unknown }).hypaV3Data
+          } else if (hypaV3Data !== undefined && !sameStructuredValue(chat.hypaV3Data, hypaV3Data)) {
+            chat.hypaV3Data = hypaV3Data as typeof chat.hypaV3Data
+          }
         }
         return true
       }

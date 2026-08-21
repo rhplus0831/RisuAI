@@ -334,6 +334,17 @@ workflows call full or batched hydration explicitly. Stale-response drops,
 hydration-generation resets, range stitching, reroll-alternate seeding, and
 queued-generation-persistence acknowledgement stay scoped to the chat body.
 
+Ranged message application mutates a safe resident array in place: an appended
+generation suffix does not copy the loaded prefix, unchanged rows retain object
+identity, and malformed ranges fail back into the existing authoritative
+recovery path. The generation-specific response omits `hypaV3Data` because a
+plain `generation` event cannot own chat-wide Hypa state; events that do change
+chat state use the broader `chatTranscript` resource. The browser distinguishes
+that omission from an authoritative empty value with `hypaV3DataIncluded`.
+Generation reads continue to include reroll alternates because send/continue
+clear them and regenerate can replace or extend them atomically with the
+message.
+
 Modern prompt-template hydration is owner-specific. The selected preset body is
 fetched before normal reconciliation begins; a background owner fetch updates
 only that preset and cannot replace the selected compatibility projection.
@@ -406,6 +417,11 @@ characters so an absent stub is never persisted as a deletion.
 aggregate compatibility view. Ordinary UI code should use the owning settings,
 collections, or characters resource instead of mutating that aggregate view
 directly.
+
+The aggregate compatibility proxy is stable but does not implicitly read its
+broad facade epoch. Nested proxy reads provide ordinary fine-grained Svelte
+dependencies; consumers that intentionally observe every resource write must
+read `getResourceDatabaseFacadeEpoch()` explicitly.
 
 Trusted write scopes are reserved for authoritative REST application,
 chat-message and character-lorebook hydration, command helpers that

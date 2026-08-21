@@ -2542,9 +2542,6 @@ export function composeResourceDatabaseSnapshot(): Database {
 }
 
 export function getResourceDatabase(options: { snapshot?: boolean } = {}): Database {
-  // A consumer that only retains the deprecated whole-database facade still
-  // tracks resource-backed writes without requiring a new proxy identity.
-  void resourceDatabaseFacadeEpoch
   return options.snapshot ? composeResourceDatabaseSnapshot() : resourceDatabaseCompatibilityProxy
 }
 

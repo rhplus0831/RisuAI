@@ -3,6 +3,7 @@ import {
   completedGenerationEffect,
   resetGenerationEffectLedgerForTests,
   runLedgeredGenerationEffect,
+  setGenerationEffectTimingObserverForTests,
 } from './generationEffectLedger'
 import type { ServerGenerationEffectLedgerRef } from './request/serverChatEvents'
 
@@ -33,6 +34,26 @@ beforeEach(() => {
 })
 
 describe('client generation effect ledger', () => {
+  it('reports the isolated callback duration and outcome', async () => {
+    const timings: Array<{ kind: string; delivery: string; durationMs: number; status: string }> = []
+    setGenerationEffectTimingObserverForTests((timing) => timings.push(timing))
+
+    await expect(
+      runLedgeredGenerationEffect(undefined, 'plugin_output', 'live_terminal', () =>
+        completedGenerationEffect(undefined),
+      ),
+    ).resolves.toMatchObject({ executed: true, status: 'completed' })
+
+    expect(timings).toEqual([
+      expect.objectContaining({
+        kind: 'plugin_output',
+        delivery: 'live_terminal',
+        status: 'completed',
+        durationMs: expect.any(Number),
+      }),
+    ])
+  })
+
   it('runs a live durable effect once and writes its completion receipt', async () => {
     let claimed = false
     let receipted = false

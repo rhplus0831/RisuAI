@@ -3445,6 +3445,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
       aiModel: string
+      complexRegexCompatibilityMode: 'strict' | 'worker'
       characters: Array<
         (typeof fixtureDatabase.characters)[number] & {
           globalLore?: unknown
@@ -3453,6 +3454,10 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       >
     }
     db.aiModel = 'echo_model'
+    // This case asserts the strict complexity-screen rejection. Database
+    // normalization otherwise defaults legacy fixtures to worker compatibility,
+    // which intentionally waits for the configured 15-second execution bound.
+    db.complexRegexCompatibilityMode = 'strict'
     db.characters[0].globalLore = [
       {
         key: '/(a+)+$/',

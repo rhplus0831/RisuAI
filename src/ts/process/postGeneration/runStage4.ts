@@ -14,6 +14,7 @@ import {
   runLedgeredGenerationEffect,
   skippedGenerationEffect,
 } from '../generationEffectLedger'
+import { yieldBeforeCompletionEffect } from '../completionEffectScheduling'
 
 export type RunStage4Result = { status: 'resend' } | { status: 'done' }
 
@@ -99,6 +100,13 @@ export async function runStage4(args: RunStage4Args): Promise<RunStage4Result> {
     },
   )
 
+  if (
+    !currentChar.inlayViewScreen &&
+    !abortSignal.aborted &&
+    (currentChar.viewScreen === 'emotion' || currentChar.viewScreen === 'imggen')
+  ) {
+    await yieldBeforeCompletionEffect()
+  }
   const stateEffect = await runLedgeredGenerationEffect(
     args.effectLedger,
     'emotion_image_state',

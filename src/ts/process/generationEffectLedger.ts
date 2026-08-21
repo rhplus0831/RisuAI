@@ -46,6 +46,55 @@ interface NotClaimedEffectResponse {
 
 const inFlightEffects = new Map<string, Promise<RunGenerationEffectResult<unknown>>>()
 
+export interface GenerationEffectTiming {
+  kind: GenerationEffectKind
+  delivery: GenerationEffectDelivery
+  durationMs: number
+  status: 'completed' | 'skipped' | 'failed'
+}
+
+let generationEffectTimingObserver: ((timing: GenerationEffectTiming) => void) | null = null
+
+export function setGenerationEffectTimingObserverForTests(
+  observer: ((timing: GenerationEffectTiming) => void) | null,
+): void {
+  generationEffectTimingObserver = observer
+}
+
+async function runMeasuredGenerationEffect<T>(
+  kind: GenerationEffectKind,
+  delivery: GenerationEffectDelivery,
+  context: GenerationEffectExecutionContext,
+  effect: (
+    context: GenerationEffectExecutionContext,
+  ) => Promise<GenerationEffectExecution<T>> | GenerationEffectExecution<T>,
+): Promise<GenerationEffectExecution<T>> {
+  const canMeasure = typeof performance !== 'undefined' && typeof performance.now === 'function'
+  const startedAt = canMeasure ? performance.now() : 0
+  let status: GenerationEffectTiming['status'] = 'failed'
+  try {
+    const result = await effect(context)
+    status = result.status
+    return result
+  } finally {
+    if (canMeasure) {
+      const durationMs = performance.now() - startedAt
+      generationEffectTimingObserver?.({ kind, delivery, durationMs, status })
+      if (import.meta.env.DEV && typeof performance.measure === 'function') {
+        try {
+          performance.measure(`risu:generation-effect:${kind}:${delivery}`, {
+            start: startedAt,
+            duration: durationMs,
+            detail: { kind, delivery, status },
+          })
+        } catch {
+          // Performance entry support differs across browsers; timing is diagnostic only.
+        }
+      }
+    }
+  }
+}
+
 export function completedGenerationEffect<T>(value: T): GenerationEffectExecution<T> {
   return { status: 'completed', value }
 }
@@ -103,22 +152,24 @@ export function runLedgeredGenerationEffect<T>(
     context: GenerationEffectExecutionContext,
   ) => Promise<GenerationEffectExecution<T>> | GenerationEffectExecution<T>,
 ): Promise<RunGenerationEffectResult<T>> {
+  const measuredEffect = (context: GenerationEffectExecutionContext) =>
+    runMeasuredGenerationEffect(kind, delivery, context, effect)
   if (!ref) {
     if (delivery === 'late_recovery') return Promise.resolve({ executed: false, status: 'unavailable' })
-    return Promise.resolve(effect({ idempotencyKey: `legacy-live-generation-effect:${kind}`, reclaimed: false })).then(
-      (result) => ({
+    return Promise.resolve()
+      .then(() => measuredEffect({ idempotencyKey: `legacy-live-generation-effect:${kind}`, reclaimed: false }))
+      .then((result) => ({
         executed: true,
         value: result.value,
         status: result.status,
-      }),
-    )
+      }))
   }
 
   const key = `${ref.databaseLineage}:${ref.generationId}:${kind}`
   const existing = inFlightEffects.get(key)
   if (existing) return existing as Promise<RunGenerationEffectResult<T>>
 
-  const running = runClaimedGenerationEffect(ref, kind, delivery, effect)
+  const running = runClaimedGenerationEffect(ref, kind, delivery, measuredEffect)
   inFlightEffects.set(key, running as Promise<RunGenerationEffectResult<unknown>>)
   void running.finally(() => {
     if (inFlightEffects.get(key) === running) inFlightEffects.delete(key)
@@ -301,4 +352,5 @@ async function readJson(response: Response): Promise<unknown> {
 
 export function resetGenerationEffectLedgerForTests(): void {
   inFlightEffects.clear()
+  generationEffectTimingObserver = null
 }

@@ -180,6 +180,8 @@ export type ServerChatMessagesResult =
       chatId: string
       message: unknown[]
       hypaV3Data?: unknown
+      /** False only for a narrow generation suffix that deliberately omitted chat-wide Hypa state. */
+      hypaV3DataIncluded: boolean
       messageStart?: number
       messageTotal?: number
       // Persisted reroll candidates for this chat's turn (the alternate rows).
@@ -281,6 +283,8 @@ async function fetchServerChatMessagesFromEndpoint(
   }
 
   const record = body as Record<string, unknown>
+  const generationRequest = nonEmptyString(options.generationMessageId)
+  const hypaV3DataIncluded = !generationRequest || Object.prototype.hasOwnProperty.call(record, 'hypaV3Data')
   const revision = record.revision
   if (!Number.isInteger(revision) || (revision as number) < 0) {
     return { status: 'error', error: 'Invalid resource revision' }
@@ -304,6 +308,7 @@ async function fetchServerChatMessagesFromEndpoint(
     chatId: typeof record.chatId === 'string' ? record.chatId : chatId,
     message: record.message as unknown[],
     hypaV3Data: record.hypaV3Data,
+    hypaV3DataIncluded,
     ...(typeof record.messageStart === 'number' && typeof record.messageTotal === 'number'
       ? {
           messageStart: record.messageStart,
