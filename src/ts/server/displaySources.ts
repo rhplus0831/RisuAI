@@ -2,7 +2,11 @@ import { sha256Hex } from '../sha256Fallback'
 import { pluginV2 } from '../plugins/plugins.svelte'
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse, isWriterAccessLost } from './activeWriterSession'
-import { peekCachedServerCommandRevision, setCachedServerCommandRevision } from './commands'
+import {
+  peekCachedServerCommandRevision,
+  runExternalServerRevisionOperation,
+  setCachedServerCommandRevision,
+} from './commands'
 import { readBrowserClientContext } from '../process/request/clientContext'
 import {
   DISPLAY_SOURCE_LIMITS,
@@ -179,13 +183,25 @@ async function flushDisplaySourceBatch(
       left.target.layer.localeCompare(right.target.layer) ||
       left.target.requestKey.localeCompare(right.target.requestKey),
   )
-  for (let offset = 0; offset < ordered.length; offset += DISPLAY_SOURCE_LIMITS.maxTargets) {
-    await flushDisplaySourceChunk(
-      chatId,
-      context,
-      configuredLineage,
-      ordered.slice(offset, offset + DISPLAY_SOURCE_LIMITS.maxTargets),
-    )
+  let executed = false
+  try {
+    const execution = await runExternalServerRevisionOperation(async () => {
+      for (let offset = 0; offset < ordered.length; offset += DISPLAY_SOURCE_LIMITS.maxTargets) {
+        await flushDisplaySourceChunk(
+          chatId,
+          context,
+          configuredLineage,
+          ordered.slice(offset, offset + DISPLAY_SOURCE_LIMITS.maxTargets),
+        )
+      }
+    })
+    executed = execution.status === 'executed'
+  } catch {
+    for (const item of ordered) item.resolve({ status: 'fallback', reason: 'network_error' })
+    return
+  }
+  if (!executed) {
+    for (const item of ordered) item.resolve({ status: 'fallback', reason: 'revision_unavailable' })
   }
 }
 
@@ -202,17 +218,18 @@ async function flushDisplaySourceChunk(
     fallbackAll('display_namespace_changed')
     return
   }
-  const baseRevision = peekCachedServerCommandRevision()
-  if (baseRevision === null) {
-    fallbackAll('revision_unavailable')
-    return
-  }
 
   let auth: string
   try {
     auth = await getNodeServerProxyAuth()
   } catch {
     fallbackAll('auth_unavailable')
+    return
+  }
+
+  const baseRevision = peekCachedServerCommandRevision()
+  if (baseRevision === null) {
+    fallbackAll('revision_unavailable')
     return
   }
 

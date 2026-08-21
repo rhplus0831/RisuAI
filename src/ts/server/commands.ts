@@ -1762,6 +1762,8 @@ export type ServerCommandExecutionWrapper = <T extends Record<string, unknown>>(
   execute: () => Promise<ServerCommandResult<T>>,
 ) => Promise<ServerCommandResult<T>>
 
+export type ExternalServerRevisionOperationResult<T> = { status: 'executed'; value: T } | { status: 'unavailable' }
+
 let cachedServerCommandRevision: number | null = null
 // The command/base-revision cursor may move ahead of the browser projection:
 // conflicts and server-owned mutations tell us the latest server revision
@@ -1792,9 +1794,9 @@ interface DirectServerCommandReconciliation {
 
 let serverCommandSuccessReconciler: ServerCommandSuccessReconciler | null = null
 let serverCommandConflictGapHandler: ServerCommandConflictGapHandler | null = null
-// Every command domain shares one server revision. Keep high-level mutations in
-// one client queue so two unrelated optimistic edits cannot both dispatch with
-// the same base revision and make the later edit roll back with a self-conflict.
+// Every command domain shares one server revision. Keep high-level mutations and
+// external operations that may advance that revision in one client queue so two
+// unrelated writes cannot dispatch with the same base revision and self-conflict.
 let serverCommandExecutionTail: Promise<void> = Promise.resolve()
 let queuedServerCommandExecutionCount = 0
 let activeServerCommandReconciliationBatch: ServerCommandReconciliationBatch | null = null
@@ -1892,25 +1894,24 @@ export async function runServerCommandWithMutationReceipt<T>(
   }
 }
 
+function enqueueServerRevisionExecution<T>(task: () => Promise<T>, onSettled?: () => void): Promise<T> {
+  const execution = serverCommandExecutionTail.then(task)
+  const settledExecution = onSettled ? execution.finally(onSettled) : execution
+  serverCommandExecutionTail = settledExecution.then(
+    () => undefined,
+    () => undefined,
+  )
+  return settledExecution
+}
+
 function enqueueServerCommandExecution<T>(task: (batch: ServerCommandReconciliationBatch) => Promise<T>): Promise<T> {
   const finishPersistenceActivity = beginPersistenceActivity()
   const batch = getOrCreateServerCommandReconciliationBatch()
   queuedServerCommandExecutionCount += 1
 
-  const execution = serverCommandExecutionTail.then(() => task(batch))
-  const settledExecution = execution.then(
-    (value) => {
-      finishServerCommandExecution(batch)
-      return value
-    },
-    (error) => {
-      finishServerCommandExecution(batch)
-      throw error
-    },
-  )
-  serverCommandExecutionTail = settledExecution.then(
-    () => undefined,
-    () => undefined,
+  const settledExecution = enqueueServerRevisionExecution(
+    () => task(batch),
+    () => finishServerCommandExecution(batch),
   )
   return settledExecution
     .then(
@@ -2119,6 +2120,23 @@ export async function withDirectServerCommandEventReconciliation<T>(
 
 export function canUseServerCommands(): boolean {
   return !isWriterAccessLost()
+}
+
+/**
+ * Serialize an external operation whose response carries no command event with
+ * the normal command revision lane. The operation must read its base revision
+ * and ingest any authoritative response revision before resolving. Do not call
+ * this from inside an already queued command operation, which would enqueue
+ * behind itself.
+ */
+export function runExternalServerRevisionOperation<T>(
+  operation: () => Promise<T>,
+): Promise<ExternalServerRevisionOperationResult<T>> {
+  if (!canUseServerCommands()) return Promise.resolve({ status: 'unavailable' })
+  return enqueueServerRevisionExecution(async () => {
+    if (!canUseServerCommands()) return { status: 'unavailable' }
+    return { status: 'executed', value: await operation() }
+  })
 }
 
 export function settingsGroupForKey(key: string): SettingsGroup | null {
