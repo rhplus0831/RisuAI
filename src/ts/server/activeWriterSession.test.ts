@@ -67,9 +67,30 @@ async function importActiveWriterSession() {
   return await import('./activeWriterSession')
 }
 
-async function flushMutationObserver() {
-  await Promise.resolve()
-  await new Promise((resolve) => setTimeout(resolve, 0))
+function stubMutationObserver() {
+  let callback: MutationCallback | undefined
+  const observe = vi.fn()
+
+  vi.stubGlobal(
+    'MutationObserver',
+    class {
+      observe = observe
+      disconnect = vi.fn()
+      takeRecords = vi.fn(() => [])
+
+      constructor(nextCallback: MutationCallback) {
+        callback = nextCallback
+      }
+    },
+  )
+
+  return {
+    observe,
+    notify(records: MutationRecord[]) {
+      if (!callback) throw new Error('MutationObserver has not been constructed')
+      callback(records, {} as MutationObserver)
+    },
+  }
 }
 
 beforeEach(() => {
@@ -197,6 +218,7 @@ describe('active writer browser session', () => {
 
   it('freezes editable content after the user stays offline', async () => {
     takeoverMocks.alertRequiredSelect.mockResolvedValue('1')
+    const mutationObserver = stubMutationObserver()
     const reload = vi.fn()
     vi.stubGlobal('location', { reload })
     document.body.innerHTML = `
@@ -219,8 +241,25 @@ describe('active writer browser session', () => {
     expect(document.getElementById('app')?.classList.contains('risu-writer-takeover-pending')).toBe(false)
 
     const laterTextarea = document.createElement('textarea')
-    document.getElementById('app')?.appendChild(laterTextarea)
-    await flushMutationObserver()
+    const appRoot = document.getElementById('app')
+    appRoot?.appendChild(laterTextarea)
+
+    // Mutation delivery is browser behavior. Invoke the registered callback directly so Happy DOM's
+    // timer-based observer emulation cannot make this application-level assertion load-sensitive.
+    mutationObserver.notify([
+      {
+        type: 'childList',
+        target: appRoot,
+        addedNodes: [laterTextarea],
+      } as unknown as MutationRecord,
+    ])
+
+    expect(mutationObserver.observe).toHaveBeenCalledWith(appRoot, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['contenteditable', 'readonly', 'type'],
+    })
     expect(laterTextarea.readOnly).toBe(true)
   })
 
