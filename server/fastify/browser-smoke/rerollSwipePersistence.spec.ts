@@ -31,8 +31,15 @@ test.afterAll(async () => {
 
 test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)', async ({ page }) => {
   const diagnostics: string[] = []
+  const generationRequestPaths: string[] = []
   page.on('console', (m) => diagnostics.push(`console.${m.type()}: ${m.text()}`))
   page.on('pageerror', (e) => diagnostics.push(`pageerror: ${e.message}`))
+  page.on('request', (request) => {
+    const pathname = new URL(request.url()).pathname
+    if (pathname.includes('/generation-operations') || pathname.includes('/messages/truncate')) {
+      generationRequestPaths.push(pathname)
+    }
+  })
 
   await page.goto(harness.baseUrl)
   await expect
@@ -62,24 +69,28 @@ test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)
     )
     .toEqual(['greet me', 'old reply'])
 
-  // Drive a real server regenerate (echo provider) — the displaced 'old reply' AND
-  // the new candidate both land in the reroll buffer (server alternate rows).
-  const regenerateStatus = await page.evaluate(async () => {
-    const headers = await window.__RISU_FASTIFY_BROWSER_SMOKE__!.activeWriterHeaders()
-    const res = await fetch('/api/v1/generate/chat', {
-      method: 'POST',
-      headers: { ...headers, 'content-type': 'application/json' },
-      body: JSON.stringify({
-        chatId: 'chat-1',
-        characterId: 'char-1',
-        mode: 'regenerate',
-        regenerateMessageId: 'msg-char-1',
-      }),
-    })
-    await res.text() // drain the SSE stream so the persist completes
-    return res.status
-  })
-  expect(regenerateStatus, diagnostics.slice(-15).join('\n')).toBe(200)
+  // Drive the production UI reroll. It must submit the target-preserving
+  // generation operation without first issuing a transcript truncate.
+  const operationResponse = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/v1/generation-operations' && response.request().method() === 'POST',
+  )
+  await page.locator('.default-chat-screen .risu-chat[data-chat-index="1"] .button-icon-reroll').click()
+  expect((await operationResponse).ok(), diagnostics.slice(-15).join('\n')).toBe(true)
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const snap = window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot()
+          const chat = (snap.characters as Array<{ chats: Array<{ message: Array<{ data: string }> }> }>)[0].chats[0]
+          return chat.message.at(-1)?.data ?? ''
+        }),
+      { timeout: 15_000, message: diagnostics.slice(-15).join('\n') },
+    )
+    .toContain('rerolled reply')
+  await expect(page.getByTestId('default-chat-send-button')).toBeVisible({ timeout: 15_000 })
+  expect(generationRequestPaths.some((pathname) => pathname === '/api/v1/generation-operations')).toBe(true)
+  expect(generationRequestPaths.some((pathname) => pathname.includes('/messages/truncate'))).toBe(false)
 
   // RELOAD: the buffer must be rebuilt purely from the persisted projection.
   await page.reload()
@@ -88,7 +99,9 @@ test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)
       timeout: 15_000,
     })
     .toBe(true)
-  await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForLoaded())
+  // The smoke bridge is installed before route/bootstrap settlement. Use the
+  // visible app shell below as the reload readiness signal; awaiting the bridge's
+  // original bootstrap promise can outlive the replaced reload execution context.
   await expectLoadedCharacterVisible(page)
   // Ensure the fixture character is open after the reload.
   await openFixtureChat(page)
@@ -247,6 +260,7 @@ function rerollFixtureDatabase(): Record<string, unknown> {
     mainPrompt: 'MAIN',
     maxContext: 100_000,
     maxResponse: 50,
+    swipe: false,
     aiModel: 'echo_model',
     echoMessage: 'rerolled reply',
     echoDelay: 0,

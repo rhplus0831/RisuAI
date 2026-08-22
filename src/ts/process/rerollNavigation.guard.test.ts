@@ -14,7 +14,6 @@ const commandSpies = vi.hoisted(() => ({
   currentChatScopedSnapshot: vi.fn(() => ({ snapshot: true })),
   dispatchReplaceTailMessagesScoped: vi.fn(),
   dispatchReplaceMessagesScoped: vi.fn(),
-  dispatchTruncateMessagesScoped: vi.fn(async () => null as unknown),
   dispatchUpdateMessageScoped: vi.fn(),
   ensureMessageId: vi.fn((message: { chatId?: string }) => {
     if (!message.chatId) message.chatId = 'minted'
@@ -95,32 +94,24 @@ describe('reroll swipe under the read-only resource guard', () => {
     expect(getRerollId()).toBe(2)
   })
 
-  it('reroll regenerate truncates the frozen transcript in place without throwing', async () => {
+  it('reroll regenerate submits the frozen target without mutating it', async () => {
     seedAndFreeze() // active = [u1, g3], positioned at the end of the buffer
     const sendChatMain = vi.fn(async () => true)
-    // At the end of the buffer → drop the assistant tail (truncate in place) and
-    // ask for a regenerate keyed by the dropped row's id. The in-place truncation
-    // reuses the surviving rows, so it must not throw on the read-only projection.
     await expect(reroll({ sendChatMain, closeMenu: vi.fn() })).resolves.toBeUndefined()
-    expect(tailUid()).toBe('u1')
+    expect(tailUid()).toBe('g3')
     expect(sendChatMain).toHaveBeenCalledWith(false, 'g3')
-    expect(commandSpies.dispatchTruncateMessagesScoped).toHaveBeenCalledTimes(1)
+    expect(commandSpies.dispatchReplaceTailMessagesScoped).not.toHaveBeenCalled()
     expect(commandSpies.dispatchReplaceMessagesScoped).not.toHaveBeenCalled()
   })
 
-  it('restores a failed regenerate without writing outside the trusted guard', async () => {
+  it('leaves a failed regenerate target untouched under the trusted guard', async () => {
     seedAndFreeze()
     const sendChatMain = vi.fn(async () => false)
 
     await expect(reroll({ sendChatMain, closeMenu: vi.fn() })).resolves.toBeUndefined()
 
     expect(tailUid()).toBe('g3')
-    expect(commandSpies.dispatchReplaceTailMessagesScoped).toHaveBeenCalledWith(
-      'chat-1',
-      'u1',
-      [expect.objectContaining({ chatId: 'g3' })],
-      expect.anything(),
-    )
+    expect(commandSpies.dispatchReplaceTailMessagesScoped).not.toHaveBeenCalled()
   })
 
   it('a direct projection write still throws (the guard is genuinely active)', () => {

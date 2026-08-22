@@ -8,7 +8,6 @@ const commandSpies = vi.hoisted(() => ({
   currentChatScopedSnapshot: vi.fn(() => ({ snapshot: true })),
   dispatchReplaceTailMessagesScoped: vi.fn(),
   dispatchReplaceMessagesScoped: vi.fn(),
-  dispatchTruncateMessagesScoped: vi.fn(async () => null as unknown),
   dispatchUpdateMessageScoped: vi.fn(),
   ensureMessageId: vi.fn((message: { chatId?: string }) => {
     if (!message.chatId) message.chatId = 'minted'
@@ -46,14 +45,6 @@ import {
 } from './rerollNavigation.svelte'
 
 type Msg = { role: string; data: string; chatId: string; generationInfo?: { generationId: string } }
-
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((resolver) => {
-    resolve = resolver
-  })
-  return { promise, resolve }
-}
 
 function setupChat(message: Msg[], charIndex = 0): void {
   testDatabaseState.db = {
@@ -218,23 +209,27 @@ describe('reroll swipe navigation (post-seed, durable for free)', () => {
 
   it('rerolling past the newest candidate generates a new one (regenerate)', async () => {
     seedThreeCandidates() // active = g3 at id 2 (the end)
-    const sendChatMain = vi.fn(async () => true)
+    const sendChatMain = vi.fn(async () => {
+      // The exact assistant remains authoritative through operation admission.
+      expect(tailUids()).toEqual(['u1', 'g3'])
+      testDatabaseState.db.characters[0].chats[0].message[1] = {
+        role: 'char',
+        data: 'c4',
+        chatId: 'g4',
+      }
+      return true
+    })
     await reroll({ sendChatMain, closeMenu: vi.fn() })
-    // At the end of the buffer → pops the assistant tail back to the user row and
-    // asks for a regenerate keyed by the old assistant id.
+    // At the end of the buffer, ask the server to replace the still-present
+    // assistant by its stable id.
     expect(sendChatMain).toHaveBeenCalledTimes(1)
     expect(sendChatMain).toHaveBeenCalledWith(false, 'g3')
-    expect(tailUids()).toEqual(['u1'])
-    expect(commandSpies.dispatchTruncateMessagesScoped).toHaveBeenCalledWith(
-      'chat-1',
-      'u1',
-      expect.objectContaining({ snapshot: true }),
-      { preserveRemovedAsAlternates: true },
-    )
+    expect(tailUids()).toEqual(['u1', 'g4'])
+    expect(bufferUids()).toEqual([['g1'], ['g2'], ['g3'], ['g4']])
     expect(commandSpies.dispatchReplaceMessagesScoped).not.toHaveBeenCalled()
   })
 
-  it('restores and durably rewrites the previous assistant tail when regenerate returns false', async () => {
+  it('leaves the authoritative assistant untouched when regenerate returns false', async () => {
     seedThreeCandidates()
     const sendChatMain = vi.fn(async () => false)
 
@@ -243,15 +238,10 @@ describe('reroll swipe navigation (post-seed, durable for free)', () => {
     expect(sendChatMain).toHaveBeenCalledWith(false, 'g3')
     expect(tailUids()).toEqual(['u1', 'g3'])
     expect(getRerollId()).toBe(2)
-    expect(commandSpies.dispatchReplaceTailMessagesScoped).toHaveBeenCalledWith(
-      'chat-1',
-      'u1',
-      [expect.objectContaining({ chatId: 'g3', data: 'c3' })],
-      expect.objectContaining({ characterId: 'c1', chatId: 'chat-1' }),
-    )
+    expect(commandSpies.dispatchReplaceTailMessagesScoped).not.toHaveBeenCalled()
   })
 
-  it('restores the previous assistant tail before propagating a regenerate exception', async () => {
+  it('keeps the authoritative assistant while propagating a regenerate exception', async () => {
     seedThreeCandidates()
     const failure = new Error('regenerate preflight failed')
     const sendChatMain = vi.fn(async () => {
@@ -261,80 +251,7 @@ describe('reroll swipe navigation (post-seed, durable for free)', () => {
     await expect(reroll({ sendChatMain, closeMenu: vi.fn() })).rejects.toBe(failure)
 
     expect(tailUids()).toEqual(['u1', 'g3'])
-    expect(commandSpies.dispatchReplaceTailMessagesScoped).toHaveBeenCalledWith(
-      'chat-1',
-      'u1',
-      [expect.objectContaining({ chatId: 'g3' })],
-      expect.anything(),
-    )
-  })
-
-  it('rerolling past the newest candidate waits for truncate persistence before regenerating', async () => {
-    seedThreeCandidates()
-    const truncate = deferred<{
-      status: 'ok'
-      revision: number
-      event: { type: string; revision: number; resource: string }
-    }>()
-    commandSpies.dispatchTruncateMessagesScoped.mockReturnValueOnce(truncate.promise)
-    const sendChatMain = vi.fn(async () => true)
-
-    const rerollPromise = reroll({ sendChatMain, closeMenu: vi.fn() })
-
-    expect(commandSpies.dispatchTruncateMessagesScoped).toHaveBeenCalledTimes(1)
-    expect(sendChatMain).not.toHaveBeenCalled()
-
-    truncate.resolve({
-      status: 'ok',
-      revision: 11,
-      event: { type: 'message.truncated', revision: 11, resource: 'message' },
-    })
-    await rerollPromise
-
-    expect(sendChatMain).toHaveBeenCalledTimes(1)
-    expect(sendChatMain).toHaveBeenCalledWith(false, 'g3')
-  })
-
-  it('rerolling past the newest candidate skips generation when the active chat changes during truncate persistence', async () => {
-    seedThreeCandidates()
-    const truncate = deferred<{
-      status: 'ok'
-      revision: number
-      event: { type: string; revision: number; resource: string }
-    }>()
-    commandSpies.dispatchTruncateMessagesScoped.mockReturnValueOnce(truncate.promise)
-    const sendChatMain = vi.fn(async () => true)
-
-    const rerollPromise = reroll({ sendChatMain, closeMenu: vi.fn() })
-
-    expect(commandSpies.dispatchTruncateMessagesScoped).toHaveBeenCalledTimes(1)
-    selectedCharID.set(1)
-    truncate.resolve({
-      status: 'ok',
-      revision: 12,
-      event: { type: 'message.truncated', revision: 12, resource: 'message' },
-    })
-    await rerollPromise
-
-    expect(sendChatMain).not.toHaveBeenCalled()
-    expect(tailUids()).toEqual(['u1', 'g3'])
-    expect(commandSpies.dispatchReplaceTailMessagesScoped).toHaveBeenCalledWith(
-      'chat-1',
-      'u1',
-      [expect.objectContaining({ chatId: 'g3' })],
-      expect.anything(),
-    )
-  })
-
-  it('rerolling past the newest candidate skips generation when truncate persistence fails', async () => {
-    seedThreeCandidates()
-    commandSpies.dispatchTruncateMessagesScoped.mockResolvedValueOnce({ status: 'error', error: 'truncate failed' })
-    const sendChatMain = vi.fn(async () => true)
-
-    await reroll({ sendChatMain, closeMenu: vi.fn() })
-
-    expect(commandSpies.dispatchTruncateMessagesScoped).toHaveBeenCalledTimes(1)
-    expect(sendChatMain).not.toHaveBeenCalled()
+    expect(commandSpies.dispatchReplaceTailMessagesScoped).not.toHaveBeenCalled()
   })
 
   it('selectRerollCandidate jumps directly to a saved candidate', async () => {
@@ -351,47 +268,20 @@ describe('reroll swipe navigation (post-seed, durable for free)', () => {
   it('newReroll regenerates instead of moving to the next saved candidate', async () => {
     seedThreeCandidates()
     await selectRerollCandidate(0)
-    const sendChatMain = vi.fn(async () => true)
+    const sendChatMain = vi.fn(async () => {
+      expect(tailUids()).toEqual(['u1', 'g1'])
+      testDatabaseState.db.characters[0].chats[0].message[1] = {
+        role: 'char',
+        data: 'c4',
+        chatId: 'g4',
+      }
+      return true
+    })
     await newReroll({ sendChatMain, closeMenu: vi.fn() })
-    expect(getRerollId()).toBe(0)
+    expect(getRerollId()).toBe(3)
     expect(sendChatMain).toHaveBeenCalledTimes(1)
     expect(sendChatMain).toHaveBeenCalledWith(false, 'g1')
-    expect(tailUids()).toEqual(['u1'])
-    expect(commandSpies.dispatchTruncateMessagesScoped).toHaveBeenCalledWith(
-      'chat-1',
-      'u1',
-      expect.objectContaining({ snapshot: true }),
-      { preserveRemovedAsAlternates: true },
-    )
-  })
-
-  it('newReroll skips generation when the active chat changes during truncate persistence', async () => {
-    seedThreeCandidates()
-    testDatabaseState.db.characters[0].chats.push({
-      id: 'chat-1b',
-      message: [{ role: 'user', data: 'other chat', chatId: 'other-u1' }],
-    } as never)
-    const truncate = deferred<{
-      status: 'ok'
-      revision: number
-      event: { type: string; revision: number; resource: string }
-    }>()
-    commandSpies.dispatchTruncateMessagesScoped.mockReturnValueOnce(truncate.promise)
-    const sendChatMain = vi.fn(async () => true)
-
-    const rerollPromise = newReroll({ sendChatMain, closeMenu: vi.fn() })
-
-    expect(commandSpies.dispatchTruncateMessagesScoped).toHaveBeenCalledTimes(1)
-    testDatabaseState.db.characters[0].chatPage = 1
-    truncate.resolve({
-      status: 'ok',
-      revision: 13,
-      event: { type: 'message.truncated', revision: 13, resource: 'message' },
-    })
-    await rerollPromise
-
-    expect(sendChatMain).not.toHaveBeenCalled()
-    expect(tailUids()).toEqual(['u1', 'g3'])
+    expect(tailUids()).toEqual(['u1', 'g4'])
   })
 
   it('getRerollCandidates exposes active candidate metadata for the list UI', () => {
@@ -441,13 +331,11 @@ describe('reroll buffer lifecycle (generation + confirm boundary)', () => {
     const originTarget = targetFor()
     const sendChatMain = vi.fn(async () => {
       selectedCharID.set(1)
-      testDatabaseState.db.characters[0].chats[0].message.push({
+      testDatabaseState.db.characters[0].chats[0].message[1] = {
         role: 'char',
         data: 'new reply',
         chatId: 'g-new',
-      } as never)
-      recordGeneratedReroll(1, originTarget)
-      markRerollChar(originTarget)
+      } as never
       return true
     })
 
@@ -606,13 +494,13 @@ describe('reroll clone cost (Phase 3 cheap wins)', () => {
     expect(instrumented.maxClonedSize).toBeLessThan(5_000)
   })
 
-  it('reroll regenerate truncates in place without deep-cloning the whole transcript', async () => {
+  it('reroll regenerate preserves the target without deep-cloning the whole transcript', async () => {
     const transcript = [...bigTranscript(40), { role: 'char', data: 'assistant tail', chatId: 'g-tail' } as Msg]
     setupChat(transcript)
     const fullSize = JSON.stringify(transcript).length
     expect(fullSize).toBeGreaterThan(50_000)
-    // One buffered candidate positioned at the end → reroll() takes the regenerate
-    // (truncate + send) branch.
+    // One buffered candidate positioned at the end → reroll() submits a targeted
+    // regenerate without cloning or mutating the authoritative transcript.
     seedRerollBufferFromAlternates(transcript, [{ role: 'char', data: 'assistant tail', chatId: 'g-tail' }])
     expect(getRerollId()).toBe(0)
     const sendChatMain = vi.fn(async () => true)
@@ -620,10 +508,9 @@ describe('reroll clone cost (Phase 3 cheap wins)', () => {
     const instrumented = withCloneInstrumentation(() => reroll({ sendChatMain, closeMenu: vi.fn() }))
     await instrumented.result
 
-    // The assistant tail is dropped (regenerate keyed by its id) and only the
-    // surviving rows remain — without serializing the whole transcript.
+    // The assistant target stays in place until server-owned replacement.
     expect(sendChatMain).toHaveBeenCalledWith(false, 'g-tail')
-    expect(tailUids().at(-1)).toBe('lu')
+    expect(tailUids().at(-1)).toBe('g-tail')
     expect(instrumented.maxClonedSize).toBeLessThan(fullSize)
     expect(instrumented.maxClonedSize).toBeLessThan(5_000)
   })

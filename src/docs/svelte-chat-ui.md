@@ -292,8 +292,10 @@ Refresh, and Stop controls pass the failed job ID rather than selecting work by
 chat, and the accepted-send recovery alert remains an independent state
 machine.
 `src/ts/process/rerollNavigation.svelte.ts` owns reroll operation fencing and
-failed-regenerate rollback, including restoring a displaced assistant tail only
-when newer transcript work has not superseded it.
+keeps the selected assistant authoritative while its targeted regenerate is
+admitted. Server assembly removes that row only from the working prompt, and
+generation finalization atomically replaces it while retaining reroll
+alternates. A failed regenerate therefore needs no browser transcript rollback.
 
 Settling a chat-keyed message generation records a bounded, consume-once marker
 in `src/ts/process/chatSuggestionCompletion.svelte.ts`. `Suggestion.svelte`

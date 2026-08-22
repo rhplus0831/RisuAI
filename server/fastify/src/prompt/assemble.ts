@@ -1285,10 +1285,6 @@ function prepareRegenerateTranscript(state: AssemblyState): void {
   const messages = (state.currentChat.message ??= [])
   const targetIndex = messages.findIndex((message) => message.chatId === regenerateMessageId)
   if (targetIndex === -1) {
-    const lastMessage = messages.at(-1)
-    if (lastMessage?.role === 'user') {
-      return
-    }
     throw new EntityNotFoundError(`regenerate message not found: ${regenerateMessageId}`)
   }
 

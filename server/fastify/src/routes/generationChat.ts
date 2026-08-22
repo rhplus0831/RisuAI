@@ -1720,11 +1720,9 @@ function persistAssemblyMutations(args: {
  *     row in place, preserving its original `chatId`.
  *   - append-style continue: the transient say-nothing boundary becomes a new
  *     assistant row keyed by `generationId`, so persistence appends it.
- *   - regenerate: a NEW row keyed by `generationId` was appended after the
- *     transcript was truncated to the target; persist it but REPLACE the old
- *     target (`regenerateMessageId`) when that target existed at assembly start.
- *     If the client already truncated back to the user row and sent a stale
- *     regenerate id, match `prepareRegenerateTranscript` and append instead.
+ *   - regenerate: a NEW row keyed by `generationId` was appended to the
+ *     assembly-only transcript after its target was removed; persist it by
+ *     replacing the still-authoritative target (`regenerateMessageId`).
  */
 function resolveInlineGenerationMessage(args: {
   state: AssemblyState

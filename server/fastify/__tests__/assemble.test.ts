@@ -3717,7 +3717,7 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
     ).rejects.toThrow(/latest assistant message/)
   })
 
-  it('accepts an already-truncated regenerate transcript from the browser command race', async () => {
+  it('rejects an already-truncated regenerate transcript with no authoritative target', async () => {
     const db = fullDb({
       characters: [
         makeCharacter({
@@ -3732,18 +3732,16 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
       ],
     } as Partial<Database>)
 
-    const result = await assemblePrompt(
-      baseInput({
-        mode: 'regenerate',
-        userMessage: undefined,
-        regenerateMessageId: 'msg-char-1',
-      }),
-      depsFor(db),
-    )
-
-    expect(result.stopSending).toBe(false)
-    expect(result.mutations?.messageMutations).toEqual([])
-    expect(result.formated?.some((row) => row.content === 'old reply')).toBe(false)
+    await expect(
+      assemblePrompt(
+        baseInput({
+          mode: 'regenerate',
+          userMessage: undefined,
+          regenerateMessageId: 'msg-char-1',
+        }),
+        depsFor(db),
+      ),
+    ).rejects.toThrow(/regenerate message not found/)
   })
 
   it('returns stopSending without a prompt when a start trigger aborts', async () => {

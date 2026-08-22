@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Reroll/swipe rollback uses the real snapshot and dispatch to prove two things
-// end to end:
+// Swipe rollback uses the real snapshot and dispatch to prove two things end to
+// end:
 //   - a swipe captures a chat-scoped rollback (only the active chat is cloned,
 //     never the sibling characters), and
 //   - a failed tail command restores only the active chat.
+// Targeted regenerate is covered here as the complementary invariant: it must
+// not issue a transcript mutation before server operation admission.
 
 vi.mock('../platform', async (importActual) => ({
   ...(await (importActual() as Promise<object>)),
@@ -29,7 +31,6 @@ import { selectedCharID } from '../stores.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 import {
-  getRerollCandidates,
   getRerollId,
   reroll,
   resetRerollNavigation,
@@ -181,7 +182,7 @@ describe('reroll/swipe chat-scoped rollback (Phase 2)', () => {
     expect(siblingMessageCount()).toBe(40)
   })
 
-  it('regenerate truncate sends a truncate command instead of the surviving transcript', async () => {
+  it('regenerate submits the authoritative assistant id without a transcript command', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
       'fetch',
@@ -192,110 +193,21 @@ describe('reroll/swipe chat-scoped rollback (Phase 2)', () => {
           method: init.method ?? 'GET',
           body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
         })
-        if (url === '/api/v1/bootstrap') {
-          return new Response(JSON.stringify({ revision: 10 }), { status: 200 })
-        }
-        if (url === '/api/v1/commands/chats/chat-active/messages/truncate') {
-          return new Response(
-            JSON.stringify({
-              revision: 11,
-              event: { type: 'message.truncated', revision: 11, resource: 'message', parentId: 'chat-active' },
-              chatId: 'chat-active',
-              afterMessageId: 'u1',
-              removedCount: 1,
-            }),
-            { status: 200 },
-          )
-        }
         return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 404 })
       }) as unknown as typeof fetch,
     )
     seedDb('chat-active')
 
-    const sendChatMain = vi.fn(async () => true)
+    const sendChatMain = vi.fn(async (_continued: boolean, regenerateMessageId?: string) => {
+      expect(regenerateMessageId).toBe('g2')
+      expect(activeTailUid()).toBe('g2')
+      expect(calls).toEqual([])
+      return false
+    })
     await reroll({ sendChatMain, closeMenu: vi.fn() })
-    await waitForCallCount(calls, 2)
 
-    const commandCall = calls.find((call) => call.url === '/api/v1/commands/chats/chat-active/messages/truncate')
-    expect(commandCall?.method).toBe('POST')
-    expect(commandCall?.body).toEqual({
-      baseRevision: 10,
-      afterMessageId: 'u1',
-      preserveRemovedAsAlternates: true,
-    })
     expect(sendChatMain).toHaveBeenCalledWith(false, 'g2')
-  })
-
-  it('restores and persists the displaced tail when generation fails after truncate', async () => {
-    const calls: CapturedFetch[] = []
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
-        const url = String(input)
-        calls.push({
-          url,
-          method: init.method ?? 'GET',
-          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
-        })
-        if (url === '/api/v1/bootstrap') {
-          return new Response(JSON.stringify({ revision: 10 }), { status: 200 })
-        }
-        if (url === '/api/v1/commands/chats/chat-active/messages/truncate') {
-          return new Response(
-            JSON.stringify({
-              revision: 11,
-              event: { type: 'message.truncated', revision: 11, resource: 'message', parentId: 'chat-active' },
-              chatId: 'chat-active',
-              afterMessageId: 'u1',
-              removedCount: 1,
-            }),
-            { status: 200 },
-          )
-        }
-        if (url === '/api/v1/commands/chats/chat-active/messages/tail') {
-          return new Response(
-            JSON.stringify({
-              revision: 12,
-              event: { type: 'messages.replaced', revision: 12, resource: 'message', parentId: 'chat-active' },
-              chatId: 'chat-active',
-              afterMessageId: 'u1',
-              replacedCount: 0,
-            }),
-            { status: 200 },
-          )
-        }
-        return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 404 })
-      }) as unknown as typeof fetch,
-    )
-    seedDb('chat-active')
-
-    await reroll({ sendChatMain: vi.fn(async () => false), closeMenu: vi.fn() })
     expect(activeTailUid()).toBe('g2')
-    await waitForCallCount(calls, 3)
-
-    const recoveryCall = calls.find((call) => call.url === '/api/v1/commands/chats/chat-active/messages/tail')
-    expect(recoveryCall).toEqual({
-      url: '/api/v1/commands/chats/chat-active/messages/tail',
-      method: 'POST',
-      body: {
-        baseRevision: 11,
-        afterMessageId: 'u1',
-        messages: [{ role: 'char', data: 'c2', chatId: 'g2' }],
-      },
-    })
-
-    // Active-chat hydration calls this same seeding hook with the persisted
-    // primary plus alternates. The recovered candidate remains active after a reload.
-    resetRerollNavigation()
-    const hydratedMessages = testDatabaseState.db.characters[0].chats[0].message as unknown as Msg[]
-    seedRerollBufferFromAlternates(hydratedMessages, [{ role: 'char', data: 'c2', chatId: 'g2' }])
-    expect(getRerollId()).toBe(0)
-    expect(getRerollCandidates()).toEqual([
-      expect.objectContaining({
-        index: 0,
-        active: true,
-        messages: [expect.objectContaining({ chatId: 'g2', data: 'c2' })],
-      }),
-    ])
+    expect(calls).toEqual([])
   })
 })

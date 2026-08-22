@@ -11100,7 +11100,7 @@ describe('Phase 9-3c message history commands', () => {
     expect(bootstrap.json().revision).toBe(revision)
   })
 
-  it('can preserve truncated assistant tail rows as reroll alternates', async () => {
+  it('rejects retired reroll-preserving truncates and leaves ordinary truncation destructive', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       characters: [
@@ -11127,7 +11127,7 @@ describe('Phase 9-3c message history commands', () => {
       characterOrder: ['char-a'],
     })
 
-    const truncated = await harness.app.inject({
+    const retired = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/commands/chats/chat-a/messages/truncate',
       headers: { 'risu-auth': assertion },
@@ -11135,6 +11135,19 @@ describe('Phase 9-3c message history commands', () => {
         baseRevision: revision,
         afterMessageId: 'msg-1',
         preserveRemovedAsAlternates: true,
+      },
+    })
+    expect(retired.statusCode).toBe(400)
+    expect(retired.json().error).toBe('preserveRemovedAsAlternates is no longer supported')
+    expect(await persistedChatMessages(harness.app, assertion, 'chat-a')).toHaveLength(3)
+
+    const truncated = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/messages/truncate',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        afterMessageId: 'msg-1',
       },
     })
 
@@ -11148,9 +11161,7 @@ describe('Phase 9-3c message history commands', () => {
     expect(await persistedChatMessages(harness.app, assertion, 'chat-a')).toEqual([
       { role: 'user', data: 'one', chatId: 'msg-1' },
     ])
-    expect(await persistedChatAlternates(harness.app, assertion, 'chat-a')).toEqual([
-      { role: 'char', data: 'two', chatId: 'msg-2', generationInfo: { model: 'm' } },
-    ])
+    expect(await persistedChatAlternates(harness.app, assertion, 'chat-a')).toEqual([])
   })
 
   it('replaces only the requested message tail', async () => {

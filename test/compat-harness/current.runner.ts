@@ -59,12 +59,7 @@ vi.mock('@mlc-ai/web-tokenizers', () => ({
 
 import { setupAuthedClient } from '../../server/fastify/__tests__/helpers/auth'
 import { buildApp } from '../../server/fastify/src/app'
-import {
-  appendCurrentChatUserMessageForSend,
-  captureActiveChatTarget,
-  currentChatScopedSnapshot,
-  dispatchTruncateMessagesScoped,
-} from '../../src/ts/chatCommands'
+import { appendCurrentChatUserMessageForSend, captureActiveChatTarget } from '../../src/ts/chatCommands'
 import { markFixtureActiveChatGenerationSettingsReady } from '../../src/ts/process/__fixtures__/loadFixture'
 import { isTokenizerUrl, serveTokenizerFetch } from '../../src/ts/process/__fixtures__/mocks/tokenizerFetch'
 import { resetAcceptedSendCoordinatorForTests } from '../../src/ts/process/acceptedSendCoordinator.svelte'
@@ -79,7 +74,6 @@ import {
   FIXTURE_ASSISTANT_ID,
   FIXTURE_CHAT_ID,
   FIXTURE_CHARACTER_ID,
-  FIXTURE_USER_ID,
   MULTISEND_COMMAND,
   createFixtureDatabase,
   providerReply,
@@ -299,11 +293,6 @@ describe('Original-Risu compatibility harness current-stack runner', () => {
           }
           break
         case 'regenerate': {
-          const previous = currentChatScopedSnapshot()
-          const truncated = dispatchTruncateMessagesScoped(FIXTURE_CHAT_ID, FIXTURE_USER_ID, previous, {
-            preserveRemovedAsAlternates: true,
-          })
-          if (truncated) await truncated
           completed = await sendChat(-1, { regenerateMessageId: FIXTURE_ASSISTANT_ID })
           break
         }

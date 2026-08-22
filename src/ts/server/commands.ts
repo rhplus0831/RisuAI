@@ -1697,7 +1697,6 @@ export interface DeleteMessageCommandInput extends ChatCommandInput {
 export interface TruncateMessagesCommandInput extends ChatCommandInput {
   chatId: string
   afterMessageId?: string | null
-  preserveRemovedAsAlternates?: boolean
   optimisticChatBodyProjectionEpoch?: number
 }
 
@@ -5406,7 +5405,6 @@ export async function truncateMessagesCommand(
     body: {
       baseRevision: input.baseRevision,
       afterMessageId: input.afterMessageId ?? null,
-      ...(input.preserveRemovedAsAlternates ? { preserveRemovedAsAlternates: true } : {}),
     },
     signal,
     readLocalEffect: (body, event) =>

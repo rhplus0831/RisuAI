@@ -455,6 +455,31 @@ function atomicSendRequest(args: {
   }
 }
 
+function atomicTargetedRequest(args: {
+  operationId: string
+  baseRevision: number
+  mode: 'continue' | 'regenerate'
+  targetMessageId: string
+}): JsonRecord {
+  return {
+    protocolVersion: 1,
+    operationId: args.operationId,
+    baseRevision: args.baseRevision,
+    characterId: 'char-1',
+    chatId: 'chat-1',
+    mode: args.mode,
+    targetMessageId: args.targetMessageId,
+    draftGeneration: 1,
+    generation: {
+      syntheticSayNothing: false,
+      resetMessages: false,
+      inlayAssetRefs: [],
+      clientContext: {},
+      clientCapabilities: {},
+    },
+  }
+}
+
 function postAtomicOperation(databaseLineage: string, body: JsonRecord, writerSession = 'writer-a'): Promise<Response> {
   return fetch(`${harness.baseUrl}/api/v1/generation-operations`, {
     method: 'POST',
@@ -822,6 +847,55 @@ function seedGenerationFinalizationRetryRow(
 }
 
 describe('Durable generation (Milestone 1)', () => {
+  it('accepts a targeted regenerate while the assistant remains authoritative through admission', async () => {
+    await seedChatWithMessages([
+      { role: 'user', data: 'greet me', chatId: 'msg-user-1' },
+      { role: 'char', data: 'old reply', chatId: 'msg-char-1', saying: 'char-1' },
+    ])
+    providerImpl = () =>
+      (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'a brand new reply' }
+        yield { kind: 'done', finishReason: 'stop' }
+      })()
+
+    const authority = await operationAuthority()
+    const operationId = randomUUID()
+    const submitted = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicTargetedRequest({
+        operationId,
+        baseRevision: authority.revision,
+        mode: 'regenerate',
+        targetMessageId: 'msg-char-1',
+      }),
+    )
+    expect(submitted.status).toBe(201)
+    expect(await submitted.json()).toMatchObject({
+      operation: {
+        operationId,
+        mode: 'regenerate',
+        targetMessageId: 'msg-char-1',
+        state: 'owned_by_job',
+      },
+    })
+
+    await waitFor(async () => {
+      const status = await operationStatus(operationId)
+      return status.operation.state === 'completed' ? status : undefined
+    })
+    const hydration = await chatHydration(await bootstrap())
+    expect(hydration.message).toHaveLength(2)
+    expect(hydration.message[0]).toMatchObject({ role: 'user', chatId: 'msg-user-1' })
+    expect(hydration.message[1]).toMatchObject({ role: 'char', data: 'a brand new reply' })
+    expect(hydration.message[1].chatId).not.toBe('msg-char-1')
+    expect(hydration.alternates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ role: 'char', data: 'old reply', chatId: 'msg-char-1' }),
+        expect.objectContaining({ role: 'char', data: 'a brand new reply' }),
+      ]),
+    )
+  })
+
   it('atomically replays one accepted send and carries exact lineage through SSE, bootstrap, journal, result, and events', async () => {
     const gated = makeGatedProvider({ before: 'lineage', after: ' result' })
     let providerCalls = 0
@@ -3045,7 +3119,7 @@ describe('Durable generation (Milestone 1)', () => {
     expect(messages.some((m) => m.data === 'old reply')).toBe(false)
   })
 
-  it('appends a durable regenerate when the requested target was already truncated', async () => {
+  it('rejects a durable regenerate when the requested target is no longer authoritative', async () => {
     await seedChatWithMessages([{ role: 'user', data: 'greet me', chatId: 'msg-user-1' }])
     providerImpl = () => {
       async function* gen(): AsyncGenerator<CompletionStreamFrame> {
@@ -3061,22 +3135,14 @@ describe('Durable generation (Milestone 1)', () => {
       userMessage: undefined,
     })
     const events = await readSse(res, (ev) => ev.type === 'done')
-    expect(events.some((ev) => ev.type === 'error')).toBe(false)
-
-    const appended = await waitFor(async () => {
-      const row = (await chatMessages(await bootstrap())).find((m) => m.role === 'char')
-      return row?.data === 'a brand new reply' ? row : undefined
-    })
-    expect(appended.chatId).not.toBe('stale-msg-char-1')
+    expect(String(events.find((event) => event.type === 'error')?.data.error)).toMatch(/regenerate message not found/)
 
     const messages = await chatMessages(await bootstrap())
-    expect(messages).toHaveLength(2)
-    expect(messages[0]).toMatchObject({ role: 'user', chatId: 'msg-user-1' })
-    expect(messages[1]).toMatchObject({ role: 'char', data: 'a brand new reply' })
+    expect(messages).toEqual([expect.objectContaining({ role: 'user', chatId: 'msg-user-1' })])
     expect(generationFinalizationRetryRows()).toEqual([])
   })
 
-  it('preserves reroll alternates when durable regenerate follows client-side truncate', async () => {
+  it('preserves reroll alternates while durable regenerate keeps its target authoritative', async () => {
     await seedChatWithMessages([
       { role: 'user', data: 'greet me', chatId: 'msg-user-1' },
       { role: 'char', data: 'old reply', chatId: 'msg-char-1', saying: 'char-1' },
@@ -3088,18 +3154,6 @@ describe('Durable generation (Milestone 1)', () => {
       }
       return gen()
     }
-
-    const boot = await bootstrap()
-    const truncated = await fetch(`${harness.baseUrl}/api/v1/commands/chats/chat-1/messages/truncate`, {
-      method: 'POST',
-      headers: authHeaders({ 'content-type': 'application/json' }),
-      body: JSON.stringify({
-        baseRevision: boot.revision,
-        afterMessageId: 'msg-user-1',
-        preserveRemovedAsAlternates: true,
-      }),
-    })
-    expect(truncated.status).toBe(200)
 
     const res = await postDurable({
       mode: 'regenerate',

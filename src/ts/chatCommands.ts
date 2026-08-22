@@ -5978,25 +5978,17 @@ export async function dispatchDeleteMessageScoped(
   return { status: 'failed', error: scopedDeleteFailureMessage(result) }
 }
 
-interface TruncateMessagesOptions {
-  preserveRemovedAsAlternates?: boolean
-}
-
 function dispatchTruncateMessagesWith(
   chatId: string,
   afterMessageId: string | null,
   characterId: string | undefined,
   rollback: () => void,
   optimisticChatBodyProjectionEpoch: number,
-  options: TruncateMessagesOptions = {},
   onTransport?: (transport: ServerCommandTransportOptions) => void,
 ): Promise<ServerCommandResult | null> {
   if (!canUseServerCommands()) return Promise.resolve(null)
   markChatMessageMutationIntent(chatId)
-  const body = freezeDurableChatRequestBody({
-    afterMessageId,
-    ...(options.preserveRemovedAsAlternates ? { preserveRemovedAsAlternates: true } : {}),
-  })
+  const body = freezeDurableChatRequestBody({ afterMessageId })
   const intent = durableChatMutationIntent('POST', `/chats/${encodeURIComponent(chatId)}/messages/truncate`, body)
   return dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) => {
     onTransport?.(transport)
@@ -6006,7 +5998,6 @@ function dispatchTruncateMessagesWith(
           baseRevision,
           chatId,
           afterMessageId: body.afterMessageId,
-          preserveRemovedAsAlternates: body.preserveRemovedAsAlternates,
           optimisticChatBodyProjectionEpoch,
         }),
       rollback,
@@ -6021,15 +6012,11 @@ function dispatchTruncateMessagesWithOutcome(
   characterId: string | undefined,
   rollback: () => void,
   optimisticChatBodyProjectionEpoch: number,
-  options: TruncateMessagesOptions = {},
   onTransport?: (transport: ServerCommandTransportOptions) => void,
 ): Promise<ChatMutationOutcome> | null {
   if (!canUseServerCommands()) return null
   markChatMessageMutationIntent(chatId)
-  const body = freezeDurableChatRequestBody({
-    afterMessageId,
-    ...(options.preserveRemovedAsAlternates ? { preserveRemovedAsAlternates: true } : {}),
-  })
+  const body = freezeDurableChatRequestBody({ afterMessageId })
   const intent = durableChatMutationIntent('POST', `/chats/${encodeURIComponent(chatId)}/messages/truncate`, body)
   const outcome = dispatchCharacterOwnedDurableMutationWithOutcome(characterId, intent, (transport) => {
     onTransport?.(transport)
@@ -6039,7 +6026,6 @@ function dispatchTruncateMessagesWithOutcome(
           baseRevision,
           chatId,
           afterMessageId: body.afterMessageId,
-          preserveRemovedAsAlternates: body.preserveRemovedAsAlternates,
           optimisticChatBodyProjectionEpoch,
         }),
       rollback,
@@ -6053,7 +6039,6 @@ export function dispatchTruncateMessages(
   chatId: string,
   afterMessageId: string | null,
   previous: ChatStateSnapshot,
-  options: TruncateMessagesOptions = {},
 ): Promise<ServerCommandResult | null> {
   return dispatchTruncateMessagesWith(
     chatId,
@@ -6061,7 +6046,6 @@ export function dispatchTruncateMessages(
     characterIdForChatInState(previous, chatId),
     () => restoreChatState(previous),
     captureChatBodyProjectionEpoch(chatId),
-    options,
   )
 }
 
@@ -6069,7 +6053,6 @@ export function dispatchTruncateMessagesScoped(
   chatId: string,
   afterMessageId: string | null,
   previous: ChatScopedSnapshot,
-  options: TruncateMessagesOptions = {},
 ): Promise<ChatMutationOutcome> | null {
   const optimisticChatBodyProjectionEpoch = captureChatBodyProjectionEpoch(chatId)
   const attemptedMessages = attemptedMessagesAfterTruncate(previous, afterMessageId)
@@ -6088,7 +6071,6 @@ export function dispatchTruncateMessagesScoped(
       if (pendingAttempt) rollbackScopedTranscriptAttempt(pendingAttempt)
     },
     optimisticChatBodyProjectionEpoch,
-    options,
     (transport) => bindScopedTranscriptAttemptDurability(pendingAttempt, transport),
   )
   const result = outcome?.then((settled) => settled.result as ServerCommandResult) ?? null
