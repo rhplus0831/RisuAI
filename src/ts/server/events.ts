@@ -7,7 +7,7 @@ import type {
   ServerMemoryJobKind,
   ServerMemoryJobStatus,
 } from '../process/request/serverMemory'
-import { isWriterAccessLost } from './activeWriterSession'
+import { activeWriterSessionHeader, isWriterAccessLost } from './activeWriterSession'
 
 const EVENTS_ENDPOINT = '/api/v1/events'
 
@@ -95,6 +95,7 @@ export async function subscribeServerCommandEvents(
   const auth = await getNodeServerProxyAuth()
   const headers: Record<string, string> = {
     'risu-auth': auth,
+    ...activeWriterSessionHeader(),
   }
   const sinceRevision =
     Number.isInteger(input.sinceRevision) && (input.sinceRevision as number) >= 0

@@ -2,7 +2,7 @@ import { get } from 'svelte/store'
 import { getDatabase, setResourceWriteGuardEnabled, type Database } from './storage/database.svelte'
 import { botMakerMode, selectedCharID, loadedStore, LoadingStatusState } from './stores.svelte'
 import { loadPlugins, startPluginRuntimeSync } from './plugins/plugins.svelte'
-import { alertError, alertMd, waitAlert } from './alert'
+import { alertError, alertMd, alertRequiredSelect, waitAlert } from './alert'
 import { updateReducedMotion } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
 import { language } from 'src/lang'
@@ -276,7 +276,18 @@ export async function loadWebInitialDatabase() {
   if (pendingMutationOwner) {
     adoptPendingMutationWriterSessionId(pendingMutationOwner.writerSessionId)
   }
-  const firstBootstrap = await fetchServerBootstrap()
+  let firstBootstrap = await fetchServerBootstrap()
+  if (firstBootstrap.status === 'active-writer-connected') {
+    const selection = await alertRequiredSelect(
+      [language.writerConnectDisconnectExisting, language.cancel],
+      language.writerConnectConflictBody,
+      language.writerConnectConflictTitle,
+    )
+    if (selection !== '0') {
+      throw new FatalBootstrapError(language.writerConnectCancelled)
+    }
+    firstBootstrap = await fetchServerBootstrap(null, { disconnectExistingWriter: true })
+  }
   if (firstBootstrap.status !== 'ok') {
     throw new Error(firstBootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : firstBootstrap.error)
   }

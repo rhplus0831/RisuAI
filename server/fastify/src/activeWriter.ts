@@ -5,17 +5,51 @@ import { routeRequiresActiveWriter } from './routeManifest.js'
 import { createWriterEventBus, type WriterEventBus } from './writerEvents.js'
 
 export const ACTIVE_WRITER_SESSION_HEADER = 'risu-writer-session'
+export const DISCONNECT_EXISTING_WRITER_HEADER = 'risu-disconnect-existing-writer'
 
 export interface ActiveWriterState {
   sessionId: string | null
   epoch: number
   db: DatabaseSync
   events: WriterEventBus
+  connectedSessions: Map<string, number>
 }
 
 export function createActiveWriterState(db: DatabaseSync): ActiveWriterState {
   const metadata = getDatabaseWriterMetadata(db)
-  return { ...metadata, db, events: createWriterEventBus() }
+  return { ...metadata, db, events: createWriterEventBus(), connectedSessions: new Map() }
+}
+
+export function trackConnectedWriterSession(state: ActiveWriterState, sessionId: string | null): () => void {
+  if (sessionId === null) return () => {}
+  state.connectedSessions.set(sessionId, (state.connectedSessions.get(sessionId) ?? 0) + 1)
+
+  let connected = true
+  return () => {
+    if (!connected) return
+    connected = false
+    const count = state.connectedSessions.get(sessionId) ?? 0
+    if (count <= 1) {
+      state.connectedSessions.delete(sessionId)
+      return
+    }
+    state.connectedSessions.set(sessionId, count - 1)
+  }
+}
+
+export function writerTakeoverRequiresConfirmation(state: ActiveWriterState, req: FastifyRequest): boolean {
+  const requestedSessionId = readActiveWriterSessionId(req)
+  const currentSessionId = state.sessionId
+  if (requestedSessionId === null || currentSessionId === null || requestedSessionId === currentSessionId) {
+    return false
+  }
+  return (state.connectedSessions.get(currentSessionId) ?? 0) > 0
+}
+
+export function disconnectExistingWriterWasConfirmed(req: FastifyRequest): boolean {
+  const raw = req.headers[DISCONNECT_EXISTING_WRITER_HEADER]
+  const value = Array.isArray(raw) ? raw[0] : raw
+  return value === 'true'
 }
 
 export function registerActiveWriterSession(state: ActiveWriterState, req: FastifyRequest): void {

@@ -2311,6 +2311,12 @@ export const languageKorean = {
   chatScreenWidth: '채팅 화면 너비',
   personaBindingFailed: '페르소나 고정 설정을 업데이트할 수 없습니다. 다시 시도해 주세요.',
   personaBindingQueued: '페르소나 고정 설정이 이 기기에 저장되어 대기열에 추가되었습니다. 자동으로 다시 시도합니다.',
+  writerConnectConflictTitle: '다른 클라이언트가 연결되어 있습니다',
+  writerConnectConflictBody:
+    '다른 클라이언트가 이 서버에 연결되어 있습니다. 기존 클라이언트의 연결을 끊고 이 클라이언트에서 계속하시겠습니까?',
+  writerConnectDisconnectExisting: '기존 클라이언트 연결 끊기',
+  writerConnectCancelled:
+    '기존 클라이언트의 연결을 유지했습니다. 이 클라이언트에서 다시 연결하려면 페이지를 새로고침하세요.',
   writerTakeoverTitle: '다른 세션으로 쓰기 권한이 이동했습니다',
   writerTakeoverBody:
     '다른 브라우저 세션에서 쓰기 권한을 가져갔습니다. 현재 페이지에서는 변경 사항을 저장할 수 없습니다. 새로고침하여 쓰기 권한을 되찾거나, 작성 중인 내용을 복사할 수 있도록 오프라인 읽기 전용 상태를 유지하세요.',

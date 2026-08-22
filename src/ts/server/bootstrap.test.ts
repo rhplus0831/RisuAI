@@ -4,7 +4,7 @@ vi.mock('../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'bootstrap-auth-token',
 }))
 
-import { fetchServerBootstrap, fetchServerBootstrapReadOnly } from './bootstrap'
+import { DISCONNECT_EXISTING_WRITER_HEADER, fetchServerBootstrap, fetchServerBootstrapReadOnly } from './bootstrap'
 import { ACTIVE_WRITER_SESSION_HEADER } from './activeWriterSession'
 import { clearCachedServerCommandRevision, peekCachedServerCommandRevision } from './commands'
 
@@ -13,6 +13,7 @@ interface CapturedFetch {
   method: string
   authHeader: string | null
   writerSessionHeader: string | null
+  disconnectExistingWriterHeader: string | null
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -33,6 +34,7 @@ function stubBootstrapFetch(body: unknown | (() => unknown)): CapturedFetch[] {
         method: init.method ?? 'GET',
         authHeader: headers?.['risu-auth'] ?? null,
         writerSessionHeader: headers?.[ACTIVE_WRITER_SESSION_HEADER] ?? null,
+        disconnectExistingWriterHeader: headers?.[DISCONNECT_EXISTING_WRITER_HEADER] ?? null,
       })
       const value = typeof body === 'function' ? body() : body
       return value instanceof Response ? value : jsonResponse(value)
@@ -221,8 +223,46 @@ describe('server runtime bootstrap helper', () => {
         method: 'GET',
         authHeader: 'bootstrap-auth-token',
         writerSessionHeader: expect.any(String),
+        disconnectExistingWriterHeader: null,
       },
     ])
+  })
+
+  it('requires an explicit retry before disconnecting a connected writer', async () => {
+    let requestCount = 0
+    const calls = stubBootstrapFetch(() => {
+      requestCount += 1
+      if (requestCount === 1) {
+        return jsonResponse(
+          {
+            error: 'active_writer_connected',
+            reason: 'Another browser session is still connected.',
+          },
+          409,
+        )
+      }
+      return {
+        initialized: true,
+        revision: 8,
+        databaseLineage: 'database-a',
+        requestedWriterWasActive: false,
+        writerEpoch: 2,
+      }
+    })
+
+    await expect(fetchServerBootstrap()).resolves.toEqual({
+      status: 'active-writer-connected',
+      error: 'active_writer_connected',
+    })
+    await expect(fetchServerBootstrap(null, { disconnectExistingWriter: true })).resolves.toMatchObject({
+      status: 'ok',
+      bootstrap: {
+        revision: 8,
+        requestedWriterWasActive: false,
+        writerEpoch: 2,
+      },
+    })
+    expect(calls.map((call) => call.disconnectExistingWriterHeader)).toEqual([null, 'true'])
   })
 
   it('performs read-only bootstrap without writer ownership or optional revision caching', async () => {

@@ -15,12 +15,15 @@ recovery, durable command dispatch, and compatibility bridges. Start from the
   mutation owner and can adopt that writer session so recoverable local work is
   not orphaned by a new browser session.
 - `fetchServerBootstrap()` sends writer intent to `GET /api/v1/bootstrap`.
-  Bootstrap is deliberately runtime-only metadata: initialization state,
-  revision/schema version, database lineage, durable writer epoch, the
-  pre-takeover writer verdict, asset base URL, generation-operation protocol and
-  projections, running generation jobs, writer-scoped finalization/effect
-  recovery, and running plus bounded recent terminal message/greeting
-  translations. It does not carry durable application data.
+  When another writer still has an identified event stream open, bootstrap
+  returns `409 active_writer_connected`; the browser prompts before retrying
+  with explicit permission to disconnect that client. A successful bootstrap
+  is deliberately runtime-only metadata: initialization state, revision/schema
+  version, database lineage, durable writer epoch, the pre-takeover writer
+  verdict, asset base URL, generation-operation protocol and projections,
+  running generation jobs, writer-scoped finalization/effect recovery, and
+  running plus bounded recent terminal message/greeting translations. It does
+  not carry durable application data.
 - When bootstrap reports `initialized: false`, the browser attempts
   `POST /api/v1/commands/state/initialize`. The server re-runs the classifier in
   the command transaction and accepts only genuinely empty state; conflicting
@@ -492,7 +495,8 @@ batch once.
 ## Active Writer And Diagnostics
 
 Active writer is server-side. A writer-intent bootstrap owns
-`risu-writer-session`; stale guarded mutations receive
+`risu-writer-session`; a still-connected foreign writer requires the explicit
+disconnect handshake, and stale guarded mutations receive
 `423 active_writer_stale`. The client resource write guard is separate and
 catches accidental unscoped local mutation.
 

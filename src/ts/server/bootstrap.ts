@@ -5,6 +5,7 @@ import { setCachedServerCommandRevision } from './commands'
 
 const BOOTSTRAP_ENDPOINT = '/api/v1/bootstrap'
 const WRITER_OBSERVER_SESSION_HEADER = 'risu-writer-observer-session'
+export const DISCONNECT_EXISTING_WRITER_HEADER = 'risu-disconnect-existing-writer'
 
 export interface ActiveGenerationJob {
   chatId: string
@@ -228,36 +229,53 @@ export interface ServerBootstrapRuntime {
 
 export type ServerBootstrapResult =
   | { status: 'ok'; bootstrap: ServerBootstrapRuntime; requestUid?: string }
+  | { status: 'active-writer-connected'; error: 'active_writer_connected'; requestUid?: string }
   | { status: 'error'; error: string; requestUid?: string }
   | { status: 'unavailable' }
+
+type ServerBootstrapReadOnlyResult = Exclude<ServerBootstrapResult, { status: 'active-writer-connected' }>
 
 export function canUseServerBootstrap(): boolean {
   return true
 }
 
-export async function fetchServerBootstrap(signal?: AbortSignal | null): Promise<ServerBootstrapResult> {
+export async function fetchServerBootstrap(
+  signal?: AbortSignal | null,
+  options: { disconnectExistingWriter?: boolean } = {},
+): Promise<ServerBootstrapResult> {
   return fetchServerBootstrapWithMode({
     signal,
     registerActiveWriter: true,
     cacheRevision: true,
+    disconnectExistingWriter: options.disconnectExistingWriter === true,
   })
 }
 
 export async function fetchServerBootstrapReadOnly(
   signal?: AbortSignal | null,
   options: { cacheRevision?: boolean } = {},
-): Promise<ServerBootstrapResult> {
-  return fetchServerBootstrapWithMode({
+): Promise<ServerBootstrapReadOnlyResult> {
+  const result = await fetchServerBootstrapWithMode({
     signal,
     registerActiveWriter: false,
     cacheRevision: options.cacheRevision ?? true,
+    disconnectExistingWriter: false,
   })
+  if (result.status === 'active-writer-connected') {
+    return {
+      status: 'error',
+      error: 'Unexpected active-writer conflict during read-only bootstrap',
+      ...(result.requestUid ? { requestUid: result.requestUid } : {}),
+    }
+  }
+  return result
 }
 
 async function fetchServerBootstrapWithMode(input: {
   signal?: AbortSignal | null
   registerActiveWriter: boolean
   cacheRevision: boolean
+  disconnectExistingWriter: boolean
 }): Promise<ServerBootstrapResult> {
   if (!canUseServerBootstrap()) return { status: 'unavailable' }
 
@@ -270,7 +288,10 @@ async function fetchServerBootstrapWithMode(input: {
       headers: {
         'risu-auth': auth,
         ...(input.registerActiveWriter
-          ? activeWriterSessionHeader()
+          ? {
+              ...activeWriterSessionHeader(),
+              ...(input.disconnectExistingWriter ? { [DISCONNECT_EXISTING_WRITER_HEADER]: 'true' } : {}),
+            }
           : { [WRITER_OBSERVER_SESSION_HEADER]: activeWriterSessionHeader()['risu-writer-session'] }),
       },
     })
@@ -285,6 +306,20 @@ async function fetchServerBootstrapWithMode(input: {
     body = await response.json()
   } catch {
     // HTTP status handling below reports non-JSON failures.
+  }
+
+  if (
+    response.status === 409 &&
+    body !== null &&
+    typeof body === 'object' &&
+    !Array.isArray(body) &&
+    (body as Record<string, unknown>).error === 'active_writer_connected'
+  ) {
+    return {
+      status: 'active-writer-connected',
+      error: 'active_writer_connected',
+      ...(requestUid ? { requestUid } : {}),
+    }
   }
 
   if (!response.ok) {

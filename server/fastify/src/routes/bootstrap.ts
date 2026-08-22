@@ -1,7 +1,13 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import type { ActiveWriterState } from '../activeWriter.js'
-import { readActiveWriterSessionId, registerActiveWriterSession, requestedWriterWasActive } from '../activeWriter.js'
+import {
+  disconnectExistingWriterWasConfirmed,
+  readActiveWriterSessionId,
+  registerActiveWriterSession,
+  requestedWriterWasActive,
+  writerTakeoverRequiresConfirmation,
+} from '../activeWriter.js'
 import type { AuthState } from '../auth.js'
 import type { GenerationJobRegistry } from '../generationJobs.js'
 import { requireAuth } from '../http.js'
@@ -43,6 +49,17 @@ export function registerBootstrapRoutes(
 ): void {
   app.get('/api/v1/bootstrap', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
+    if (
+      activeWriterState &&
+      writerTakeoverRequiresConfirmation(activeWriterState, req) &&
+      !disconnectExistingWriterWasConfirmed(req)
+    ) {
+      reply.code(409).send({
+        error: 'active_writer_connected',
+        reason: 'Another browser session is still connected. Confirm its disconnection before taking write access.',
+      })
+      return
+    }
     const wasRequestedWriterActive = activeWriterState ? requestedWriterWasActive(activeWriterState, req) : undefined
     if (activeWriterState) {
       registerActiveWriterSession(activeWriterState, req)

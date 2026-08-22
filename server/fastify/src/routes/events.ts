@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite'
 import type { FastifyBaseLogger, FastifyInstance } from 'fastify'
 import type { ActiveWriterState } from '../activeWriter.js'
+import { readActiveWriterSessionId, trackConnectedWriterSession } from '../activeWriter.js'
 import type { AuthState } from '../auth.js'
 import {
   listPersistedCommandEventHistory,
@@ -129,6 +130,7 @@ export function registerEventsRoutes(
     let unsubscribeCommand: (() => void) | null = null
     let unsubscribeMemory: (() => void) | null = null
     let unsubscribeWriter: (() => void) | null = null
+    let disconnectWriterSession: (() => void) | null = null
     let cleanedUp = false
     let streamMetrics: EventStreamMetricTracker | null = null
     const cleanup = (reason: EventStreamCloseReason): void => {
@@ -140,6 +142,7 @@ export function registerEventsRoutes(
       unsubscribeCommand?.()
       unsubscribeMemory?.()
       unsubscribeWriter?.()
+      disconnectWriterSession?.()
       req.raw.off('aborted', onRequestAborted)
       req.raw.off('close', onRequestClose)
       reply.raw.off('finish', onResponseFinish)
@@ -253,6 +256,7 @@ export function registerEventsRoutes(
 
     streamMetrics = createEventStreamMetricTracker(req.log)
     reply.hijack()
+    disconnectWriterSession = trackConnectedWriterSession(activeWriterState, readActiveWriterSessionId(req))
     reply.raw.writeHead(200, {
       'content-type': 'text/event-stream; charset=utf-8',
       'cache-control': 'no-cache, no-transform',

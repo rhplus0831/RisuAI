@@ -233,6 +233,7 @@ vi.mock('./plugins/plugins.svelte', () => ({
 vi.mock('./alert', () => ({
   alertError: vi.fn(),
   alertMd: vi.fn(),
+  alertRequiredSelect: vi.fn(async () => '0'),
   waitAlert: vi.fn(async () => undefined),
 }))
 vi.mock('./gui/animation', () => ({ updateReducedMotion: vi.fn() }))
@@ -263,7 +264,8 @@ import {
   stopServerResourceEvents,
 } from './bootstrap'
 import { loadPlugins, startPluginRuntimeSync } from './plugins/plugins.svelte'
-import { alertError } from './alert'
+import { alertError, alertRequiredSelect } from './alert'
+import { language } from 'src/lang'
 import { updateHeightMode } from './gui/heightMode'
 import {
   clearAppliedServerResourceRevision,
@@ -610,6 +612,39 @@ describe('API-backed client bootstrap', () => {
     expect(hydrationApi.startChatMessageHydration).toHaveBeenCalledTimes(1)
     expect(promptTemplateApi.ensure).toHaveBeenCalledWith({ minimumRevision: 5 })
     expect(eventApi.subscriptions[0]?.sinceRevision).toBe(5)
+  })
+
+  it('prompts before explicitly disconnecting a still-connected writer', async () => {
+    bootstrapApi.fetch
+      .mockResolvedValueOnce({ status: 'active-writer-connected', error: 'active_writer_connected' })
+      .mockResolvedValueOnce(runtimeBootstrap({ requestedWriterWasActive: false, writerEpoch: 2 }))
+
+    await loadWebInitialDatabase()
+
+    expect(alertRequiredSelect).toHaveBeenCalledWith(
+      [language.writerConnectDisconnectExisting, language.cancel],
+      language.writerConnectConflictBody,
+      language.writerConnectConflictTitle,
+    )
+    expect(bootstrapApi.fetch).toHaveBeenNthCalledWith(1)
+    expect(bootstrapApi.fetch).toHaveBeenNthCalledWith(2, null, { disconnectExistingWriter: true })
+    expect(pendingMutationApi.prepare).toHaveBeenCalledWith(
+      expect.objectContaining({ requestedWriterWasActive: false, writerEpoch: 2 }),
+    )
+  })
+
+  it('leaves the existing writer connected when the new client cancels', async () => {
+    bootstrapApi.fetch.mockResolvedValueOnce({
+      status: 'active-writer-connected',
+      error: 'active_writer_connected',
+    })
+    vi.mocked(alertRequiredSelect).mockResolvedValueOnce('1')
+
+    await expect(loadWebInitialDatabase()).rejects.toThrow(language.writerConnectCancelled)
+
+    expect(bootstrapApi.fetch).toHaveBeenCalledOnce()
+    expect(resourceApi.loadInitial).not.toHaveBeenCalled()
+    expect(pendingMutationApi.prepare).not.toHaveBeenCalled()
   })
 
   it('stops before hydration when transient failures leave encrypted changes queued', async () => {

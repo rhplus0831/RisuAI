@@ -52,9 +52,12 @@ scroll coordinators, and shared completion-audio context unlocking before mounti
 `loadData()` in `src/ts/bootstrap.ts` performs the visible startup work:
 
 1. Adopt the sole pending-mutation writer identity, if one exists, then fetch
-   `/api/v1/bootstrap` for initialization, revision, database-lineage/writer
-   metadata, generation operation/job projections, writer-scoped
-   finalization/effect recovery, and message/greeting translation entries.
+   `/api/v1/bootstrap`. If a different writer still has an identified event
+   connection open, ask the new client whether to disconnect it before retrying
+   with explicit takeover confirmation. The successful response supplies
+   initialization, revision, database-lineage/writer metadata, generation
+   operation/job projections, writer-scoped finalization/effect recovery, and
+   message/greeting translation entries.
 2. If bootstrap reports `initialized: false`, issue the initialization command.
    The server's transactional classifier accepts only genuinely empty state and
    rejects conflict state. The winning client reuses the returned revision;
@@ -268,6 +271,12 @@ refresh, and generation reattach, then asks the user to refresh or stay
 offline. Refresh retakes ownership through normal bootstrap. Staying offline
 freezes editable controls and adds a reload banner while leaving text
 selectable for recovery.
+
+Before that handoff, the event stream carries the browser's writer session so
+the server can tell whether the current writer is still connected. A new client
+must confirm the `409 active_writer_connected` bootstrap response before the
+server changes ownership; a durable owner with no live event connection is
+reclaimed without prompting.
 
 This flow is different from database-lineage and pending-mutation recovery
 failures, which still force a reload. When a mounted app suddenly stops all

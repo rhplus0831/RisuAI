@@ -125,7 +125,7 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     },
     activeWriter: {
       decision: 'writer-registration',
-      reason: 'Writer-intent bootstrap can latch the latest writer session; it is not gated.',
+      reason: 'Writer-intent bootstrap can latch the latest session after any live-writer confirmation handshake.',
     },
     streaming: 'none',
   },

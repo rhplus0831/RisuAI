@@ -99,8 +99,10 @@ from `app.printRoutes()` and the manifest and guards explicit wildcard/prefix
 exceptions. Runtime active-writer enforcement uses `activeWriter.ts`: before any
 writer is latched, guarded mutations are allowed; after a writer-intent
 bootstrap latches ownership, stale or missing writer sessions receive
-`423 active_writer_stale`. Ownership and its monotonic epoch live in
-`database_metadata`, so a server restart does not make an older tab active.
+`423 active_writer_stale`. A foreign bootstrap must first confirm takeover when
+the active writer still has an identified event stream open. Ownership and its
+monotonic epoch live in `database_metadata`, so a server restart does not make
+an older tab active.
 
 Rate limits are opt-in per route. Current presets are setup `5/min`, login
 `10/min`, auth crypto `60/min`, provider and embedding operations `60/min`,

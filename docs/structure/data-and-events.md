@@ -287,12 +287,17 @@ subscription create/delete routes remain authenticated.
 dev runner; `pnpm dev:agent` enables it by default, while `pnpm dev:human`
 leaves password auth enabled by default.
 
-The active-writer guard is separate. Any authenticated bootstrap carrying
-`risu-writer-session` latches the latest writer durably and advances a monotonic
-writer epoch when ownership changes; routes whose manifest decision is
-`active-writer` reject stale sessions with `423 active_writer_stale` even after
-a server restart. Ownership changes are also published through a live-only
-writer event bus. A stale browser shows a refresh-or-stay dialog: refresh
+The active-writer guard is separate. Authenticated event streams identify their
+`risu-writer-session`, allowing the server to distinguish a still-connected
+writer from a merely durable stale owner. A foreign writer-intent bootstrap
+receives `409 active_writer_connected` while the current writer's event stream
+is open; the new browser asks whether to disconnect that client and retries
+with explicit confirmation. With confirmation, or when the old writer is no
+longer connected, bootstrap latches the latest writer durably and advances a
+monotonic writer epoch. Routes whose manifest decision is `active-writer`
+reject stale sessions with `423 active_writer_stale` even after a server
+restart. Ownership changes are also published through a live-only writer event
+bus. A stale browser shows a refresh-or-stay dialog: refresh
 reclaims ownership with the same session id, while stay closes server
 communication and freezes the page offline/read-only so unfinished text remains
 selectable and copyable. Refresh is the only exit from that frozen state, and a

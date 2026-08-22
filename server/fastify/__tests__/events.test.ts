@@ -18,6 +18,7 @@ import {
   type CommandEventSink,
 } from '../src/commands/events.js'
 import { bumpRevision, openDatabase } from '../src/db.js'
+import { ACTIVE_WRITER_SESSION_HEADER, DISCONNECT_EXISTING_WRITER_HEADER } from '../src/activeWriter.js'
 import { createMemoryEventBus, type MemoryEvent, type MemoryEventSink } from '../src/memoryEvents.js'
 import { createEventStreamMetricTracker } from '../src/routes/events.js'
 
@@ -483,28 +484,46 @@ describe('Phase 9-5a command events stream', () => {
     }
   })
 
-  it('broadcasts a new writer takeover to an open event stream', async () => {
+  it('requires confirmation before replacing a writer with an open event stream', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
+    const firstWriter = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion, [ACTIVE_WRITER_SESSION_HEADER]: 'writer-old' },
+    })
+    expect(firstWriter.statusCode).toBe(200)
     const baseUrl = await listen(harness.app)
     const abort = new AbortController()
     const res = await fetch(`${baseUrl}/api/v1/events`, {
-      headers: { 'risu-auth': assertion },
+      headers: { 'risu-auth': assertion, [ACTIVE_WRITER_SESSION_HEADER]: 'writer-old' },
       signal: abort.signal,
     })
     const reader = res.body?.getReader()
     expect(reader).toBeDefined()
     await readUntil(reader!, (chunk) => chunk.includes(': connected\n\n'))
 
+    const unconfirmedTakeover = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion, [ACTIVE_WRITER_SESSION_HEADER]: 'writer-new' },
+    })
+    expect(unconfirmedTakeover.statusCode).toBe(409)
+    expect(unconfirmedTakeover.json()).toMatchObject({ error: 'active_writer_connected' })
+
     const takeover = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/bootstrap',
-      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-new' },
+      headers: {
+        'risu-auth': assertion,
+        [ACTIVE_WRITER_SESSION_HEADER]: 'writer-new',
+        [DISCONNECT_EXISTING_WRITER_HEADER]: 'true',
+      },
     })
     expect(takeover.statusCode).toBe(200)
 
     try {
       const text = await readUntil(reader!, (chunk) => chunk.includes('writer-new'))
-      expect(parseSseJsonEvents(text, 'writer')).toEqual([{ sessionId: 'writer-new', epoch: 1 }])
+      expect(parseSseJsonEvents(text, 'writer')).toEqual([{ sessionId: 'writer-new', epoch: 2 }])
     } finally {
       abort.abort()
       reader?.releaseLock()

@@ -7,6 +7,7 @@ vi.mock('../storage/fastifyStorage', () => ({
 }))
 
 import { subscribeServerCommandEvents } from './events'
+import { ACTIVE_WRITER_SESSION_HEADER } from './activeWriterSession'
 import type { CommandEvent } from './commands'
 import type { ServerMemoryEvent, ServerMemoryJobSnapshot, ServerWriterEvent } from './events'
 
@@ -14,6 +15,7 @@ interface CapturedFetch {
   url: string
   method: string
   authHeader: string | null
+  writerSessionHeader: string | null
   lastEventIdHeader: string | null
   signal: AbortSignal | null
 }
@@ -38,6 +40,7 @@ function stubEventsFetch(body: string | null, status = 200): CapturedFetch[] {
         url: String(input),
         method: init.method ?? 'GET',
         authHeader: headers?.['risu-auth'] ?? null,
+        writerSessionHeader: headers?.[ACTIVE_WRITER_SESSION_HEADER] ?? null,
         lastEventIdHeader: headers?.['Last-Event-ID'] ?? null,
         signal: init.signal ?? null,
       })
@@ -151,6 +154,7 @@ describe('server command event subscription helper', () => {
       url: '/api/v1/events',
       method: 'GET',
       authHeader: 'events-auth-token',
+      writerSessionHeader: expect.any(String),
     })
   })
 

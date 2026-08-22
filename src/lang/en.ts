@@ -1921,6 +1921,11 @@ export const languageEnglish = {
   strictJsonSchema: 'Strict Schema',
   extractJson: 'Extract JSON',
   reloadSession: 'Newer version of save data is found. Reloading the session...',
+  writerConnectConflictTitle: 'Another client is connected',
+  writerConnectConflictBody:
+    'Another client is still connected to this server. Do you want to disconnect it and continue on this client?',
+  writerConnectDisconnectExisting: 'Disconnect existing client',
+  writerConnectCancelled: 'The existing client remains connected. Reload this page to try connecting again.',
   writerTakeoverTitle: 'Write access moved to another session',
   writerTakeoverBody:
     'Another browser session took over write access. This page can no longer save changes. Refresh to take write access back, or stay here in offline read-only mode so you can copy your work.',
