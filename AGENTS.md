@@ -42,6 +42,17 @@ Start by reading `STRUCTURE.md` to understand the project structure.
 - When writing commit titles, use conventional prefixes such as `feat:`, `fix:`, and `refactor:`.
 - Describe what you did in the commit message.
 
+# Test Workflow
+
+- During implementation, prefer `pnpm test:affected` for the current uncommitted
+  diff or pass `--base <git-ref>` for a branch diff. Use `--dry-run` to inspect
+  the selected lanes and `--include-smoke` when browser-smoke files changed.
+- When the owning test file is known, running that file directly is the fastest
+  feedback loop. Run the complete owning frontend or server lane before handoff
+  when the change is broader than one focused contract.
+- Reserve `pnpm test:all` for build/configuration changes and final pre-merge or
+  CI verification; do not run it after every edit.
+
 # Language File
 
 When adding strings that appear in the frontend UI, create an appropriate key for them under `src/lang`.

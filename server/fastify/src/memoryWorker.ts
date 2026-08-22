@@ -72,6 +72,7 @@ export class MemoryWorker {
   private timer: NodeJS.Timeout | null = null
   private inFlight: Promise<boolean> | null = null
   private active = false
+  private wakeRequested = false
   private lastRetentionSweepAtMs = 0
   /** Per-chat serve recency for the round-robin claim. */
   private readonly chatLastServedAt = new Map<string, number>()
@@ -116,6 +117,20 @@ export class MemoryWorker {
     return true
   }
 
+  /** Schedule newly enqueued work without waiting for the next idle poll. */
+  wake(): void {
+    if (!this.active) return
+    if (this.inFlight) {
+      this.wakeRequested = true
+      return
+    }
+    if (this.timer) {
+      clearTimeout(this.timer)
+      this.timer = null
+    }
+    this.schedule(0)
+  }
+
   start(): void {
     if (this.active) return
     for (const job of recoverRunningMemoryJobs(this.db, this.retry)) {
@@ -129,6 +144,7 @@ export class MemoryWorker {
   async stop(): Promise<void> {
     if (!this.active && this.timer === null && this.inFlight === null) return
     this.active = false
+    this.wakeRequested = false
     if (this.timer) {
       clearTimeout(this.timer)
       this.timer = null
@@ -147,6 +163,14 @@ export class MemoryWorker {
       return await task
     } finally {
       this.inFlight = null
+      if (this.active && this.wakeRequested) {
+        this.wakeRequested = false
+        if (this.timer) {
+          clearTimeout(this.timer)
+          this.timer = null
+        }
+        this.schedule(0)
+      }
     }
   }
 

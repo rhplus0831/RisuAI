@@ -14,9 +14,177 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
+  changes:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    outputs:
+      ui: ${{ steps.paths.outputs.ui }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: paths
+        name: Detect UI coverage changes
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            base_sha="$PR_BASE_SHA"
+          else
+            base_sha="$EVENT_BEFORE"
+          fi
+          if [[ -z "$base_sha" || "$base_sha" =~ ^0+$ ]]; then
+            base_sha="$(git hash-object -t tree /dev/null)"
+          fi
+          if git diff --quiet "$base_sha" "$HEAD_SHA" -- \
+            src \
+            package.json \
+            pnpm-lock.yaml \
+            pnpm-workspace.yaml \
+            vite.config.ts \
+            vitest.config.ts \
+            vitest.setup.ts \
+            ':(glob)tsconfig*.json' \
+            .github/workflows/quality.yml; then
+            echo "ui=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ui=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+
+  check-server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check:server
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:frontend
+
+  gates-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:gates:audit
+
+  gates-perf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:gates:perf --no-file-parallelism --maxWorkers=1
+
+  ui-coverage:
+    needs: changes
+    if: needs.changes.outputs.ui == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm coverage:ui-map
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-coverage
+          path: coverage/ui-map
+          if-no-files-found: ignore
+
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:server
+
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -28,4 +196,49 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm test:all
+      - run: pnpm test:smoke
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-test-results
+          path: test-results
+          if-no-files-found: ignore
+
+  verify:
+    if: always()
+    needs:
+      - changes
+      - format
+      - check
+      - check-server
+      - frontend
+      - gates-audit
+      - gates-perf
+      - ui-coverage
+      - server
+      - smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every quality lane
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          FORMAT_RESULT: ${{ needs.format.result }}
+          CHECK_RESULT: ${{ needs.check.result }}
+          CHECK_SERVER_RESULT: ${{ needs['check-server'].result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          GATES_AUDIT_RESULT: ${{ needs['gates-audit'].result }}
+          GATES_PERF_RESULT: ${{ needs['gates-perf'].result }}
+          UI_COVERAGE_RESULT: ${{ needs['ui-coverage'].result }}
+          SERVER_RESULT: ${{ needs.server.result }}
+          SMOKE_RESULT: ${{ needs.smoke.result }}
+        run: |
+          test "$CHANGES_RESULT" = success
+          test "$FORMAT_RESULT" = success
+          test "$CHECK_RESULT" = success
+          test "$CHECK_SERVER_RESULT" = success
+          test "$FRONTEND_RESULT" = success
+          test "$GATES_AUDIT_RESULT" = success
+          test "$GATES_PERF_RESULT" = success
+          test "$SERVER_RESULT" = success
+          test "$SMOKE_RESULT" = success
+          test "$UI_COVERAGE_RESULT" = success || test "$UI_COVERAGE_RESULT" = skipped

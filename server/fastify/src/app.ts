@@ -459,6 +459,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     onEvent: emitMemoryEvent,
     snapshotVersion: () => memoryEventBus.snapshotVersion(),
     abortRunningJob: (jobId) => memoryWorker?.abortRunningJob(jobId) ?? false,
+    wakeWorker: () => memoryWorker?.wake(),
   })
   registerMemoryReadRoutes(app, db, authState)
   bootPromptVariables()

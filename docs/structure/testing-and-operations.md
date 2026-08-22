@@ -1,6 +1,6 @@
 # Testing And Operations
 
-Last audited: 2026-08-17.
+Last audited: 2026-08-22.
 
 Use `pnpm` for package scripts. Node.js is declared as `>=24.0.0`. The package
 is root-only; there is no `server/fastify/package.json`. `package.json` does not
@@ -21,6 +21,7 @@ pin a `packageManager`; the lockfile is pnpm lockfile v9.
 | `pnpm check`                       | Run `svelte-check --tsconfig ./tsconfig.json`.                                                                                                                                |
 | `pnpm check:server`                | Emit client-library declarations, then typecheck strict Fastify and Playwright browser-smoke projects without emitting server code.                                           |
 | `pnpm test`                        | Alias for `pnpm test:frontend`; runs the default root/browser Vitest lane without explicit gate tests.                                                                        |
+| `pnpm test:quick`, `pnpm test:affected` | Run changed test files directly or use Vitest dependency selection for changed source files; defaults to the uncommitted diff against `HEAD`.                            |
 | `pnpm test:frontend`               | Run default root/browser Vitest tests outside `server/**`, excluding explicit gate tests.                                                                                     |
 | `pnpm test:frontend:all`           | Run all root/browser Vitest tests, including explicit gate tests.                                                                                                             |
 | `pnpm test:gates`                  | Run two mounted visible-state UI gates plus render-cost and send-clone performance gates.                                                                                     |
@@ -30,9 +31,9 @@ pin a `packageManager`; the lockfile is pnpm lockfile v9.
 | `pnpm test:compat-harness`         | Compare pinned local/Fastify generation matrices against a prepared pre-Fastify worktree; opt-in and not part of `test:all`.                                                 |
 | `pnpm test:smoke`                  | Alias for `pnpm smoke:fastify-browser`.                                                                                                                                       |
 | `pnpm test:all`                    | Run format, Svelte, strict server/browser-smoke TypeScript, frontend tests, explicit gates, the UI coverage gate, server tests, and browser smoke; preserve any failing lane. |
-| `pnpm coverage:ui-map`             | Run the focused UI coverage gate and write reports to `coverage/ui-map`.                                                                                                      |
+| `pnpm coverage:ui-map`             | Run the focused UI coverage gate and write text/JSON reports to `coverage/ui-map`; use `coverage:ui-map:html` for an on-demand HTML report.                                   |
 | `pnpm api:test`                    | Compatibility alias for `pnpm test:server`.                                                                                                                                   |
-| `pnpm smoke:fastify-browser`       | Build the client, then run Playwright Fastify browser smoke.                                                                                                                  |
+| `pnpm smoke:fastify-browser`       | Build the smoke client without production sourcemaps, then run Playwright Fastify browser smoke.                                                                             |
 | `pnpm analyze:db <path>`           | Analyze `.risu`, JSON, raw database JSON, or data dirs containing `db.json`; SQLite sidecars are copied when present. Add `--json` for machine-readable output.               |
 | `pnpm ts:agent <command>`          | Run the tsserver-backed agent debugging wrapper for navigation, diagnostics, symbols, code actions, imports, and renames.                                                     |
 | `pnpm format`, `pnpm format:check` | Prettier write/check.                                                                                                                                                         |
@@ -151,7 +152,7 @@ disables Fastify static serving.
 
 | Area                        | Command/config                                                                          | Environment | Locations                                                                                                                  |
 | --------------------------- | --------------------------------------------------------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Browser/client/domain tests | `pnpm test` or `pnpm test:frontend`, `vitest.config.ts`                                 | `happy-dom` | Root suite outside `server/**`, including `src/**` and `util/**/*.test.ts`, minus explicit gate tests.                     |
+| Browser/client/domain tests | `pnpm test` or `pnpm test:frontend`, `vitest*.config.ts`                                | Node + `happy-dom` | Root suite outside `server/**`, including `src/**` and `util/**/*.test.ts`, minus explicit gate tests.                |
 | Explicit frontend gates     | `pnpm test:gates`, `vitest.config.ts`                                                   | `happy-dom` | `src/ts/__tests__/**/*.test.ts` and `src/lib/_audit/**/*.test.ts`.                                                         |
 | Full frontend tests         | `pnpm test:frontend:all`, `vitest.config.ts`                                            | `happy-dom` | Root suite outside `server/**`, including explicit gate tests.                                                             |
 | Frontend coverage           | `pnpm coverage:frontend`, `vitest.config.ts`                                            | `happy-dom` | Broad coverage over `src/**/*.{ts,svelte}` and `util/**/*.ts`; reports under `coverage/frontend`.                          |
@@ -161,7 +162,12 @@ disables Fastify static serving.
 | Backend coverage            | `pnpm coverage:backend`, `server/fastify/vitest.config.ts`                              | Node        | Broad coverage over `server/fastify/src/**/*.ts`; reports under `coverage/backend`.                                        |
 | Browser smoke               | `pnpm smoke:fastify-browser` or `pnpm test:smoke`, `playwright.fastify-smoke.config.ts` | Chromium    | `server/fastify/browser-smoke/`; specs start an in-process Fastify app on a random port serving `dist`.                    |
 
-Pick the smallest command that covers the changed area. On a fresh machine, run
+Pick the smallest command that covers the changed area. `pnpm test:affected`
+uses exact paths when only tests changed and dependency-aware `--changed`
+selection when source changed. `--base <git-ref>` selects a branch diff,
+`--dry-run` prints the plan, `--include-smoke` opts into relevant Playwright
+work, and `--all` selects `test:all`. Deleted tests/source and runner changes
+conservatively widen to their complete lanes. On a fresh machine, run
 `pnpm exec playwright install --with-deps chromium` before browser smoke.
 `server/fastify/__tests__/README.md` is the maintained topical map for the flat
 Fastify test directory; use it to find command/persistence, generation, memory,
@@ -173,11 +179,15 @@ dependencies at the path declared in `test/compat-harness/run.ts`. Set
 artifacts. It is excluded from `pnpm test:all` because that external worktree is
 not a normal checkout prerequisite.
 
-Config details: root Vitest uses the threads pool, `happy-dom`, browser resolve
-conditions, the `src` alias, and `vitest.setup.ts` to mock `katex` and install
-the shared production `safeStructuredClone` helper. `vitest.setup.test.ts`
-protects its native, fallback, and global-restoration semantics. Root Vitest
-excludes explicit gate tests unless `RISU_TEST_INCLUDE_GATES=true` is set.
+Config details: `vitest.config.ts` composes two thread-pool projects. The
+conservative allowlist in `vitest.node-tests.ts` runs validated pure tests in
+Node without loading `happy-dom`; new frontend tests default to the Svelte /
+`happy-dom` project until deliberately promoted. Both projects retain browser
+resolve conditions, the `src` alias, and `vitest.setup.ts` to mock `katex` and
+install the shared production `safeStructuredClone` helper.
+`vitest.setup.test.ts` protects its native, fallback, and global-restoration
+semantics. Root Vitest excludes explicit gate tests unless
+`RISU_TEST_INCLUDE_GATES=true` is set.
 `pnpm test:gates`, the
 `pnpm test:gates:*` sub-lanes, `pnpm test:frontend:all`, and
 `pnpm coverage:frontend` set that variable for the lanes that intentionally
@@ -195,9 +205,10 @@ coverage when frontend tests fail, then exits non-zero if either side failed.
 `pnpm coverage:ui-map` is the focused UI state coverage gate included in
 `pnpm test:all`. It uses `@vitest/coverage-v8`, runs the focused ChatScreens,
 Others, and SideBars UI test files, enforces line `8%`, statement `7%`, function
-`5%`, and branch `4%` thresholds, and emits `text`, `json-summary`, and `html`
-reports under `coverage/ui-map`. The repository ignores `coverage/`; keep all
-coverage reports local unless a plan slice explicitly asks for extracted results.
+`5%`, and branch `4%` thresholds, and emits `text` and `json-summary` reports
+under `coverage/ui-map`. `pnpm coverage:ui-map:html` additionally emits HTML on
+demand. The repository ignores `coverage/`; keep all coverage reports local
+unless a plan slice explicitly asks for extracted results.
 
 Browser smoke also owns tracked desktop/mobile screenshot baselines under
 `server/fastify/browser-smoke/*-snapshots/`. The core-chat and blocking-alert
@@ -371,11 +382,14 @@ Test/audit summary variables include `RISU_TEST_INCLUDE_GATES`,
 ## CI And Deployment
 
 `.github/workflows/quality.yml` is the only current workflow. Pull requests and
-pushes to `main` use Node 24 and pnpm 10, install Chromium with Playwright
-dependencies, and run `pnpm test:all`; that single command covers formatting,
-Svelte/browser checking, client-library declaration emission, strict Fastify
-and Playwright-source TypeScript checking, frontend tests, explicit gates, UI
-coverage, server tests, and browser smoke.
+pushes to `main` use Node 24 and pnpm 10. Formatting, both typecheck lanes,
+frontend tests, isolated audit/performance gates, server tests, and serial
+browser smoke run as independent jobs; only the smoke job installs Chromium.
+The focused UI coverage job runs when `src/` or its runner/build configuration
+changes and uploads its report. Playwright failure traces/results are also
+uploaded. A final `verify` job preserves the aggregate pass/fail contract while
+allowing independent lanes to finish after another lane fails. The local
+`pnpm test:all` command remains the unconditional pre-merge equivalent.
 
 The container path (`Dockerfile`, `docker-compose.yml`, `.dockerignore`) was
 removed on 2026-07-22; the project does not currently ship a Docker image, and

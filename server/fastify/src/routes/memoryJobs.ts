@@ -87,6 +87,7 @@ export function registerMemoryJobRoutes(
     onEvent?: MemoryEventSink
     snapshotVersion?: () => { streamId: string; version: number }
     abortRunningJob?: (jobId: string) => boolean
+    wakeWorker?: () => void
   } = {},
 ): void {
   app.post('/api/v1/memory/jobs', async (req, reply) => {
@@ -129,6 +130,7 @@ export function registerMemoryJobRoutes(
         nextRunAt: typeof body.nextRunAt === 'string' ? body.nextRunAt : undefined,
       })
       emitRouteJobEvent(db, options.onEvent, job.id)
+      options.wakeWorker?.()
       reply.code(201)
       return { job }
     } catch (err) {

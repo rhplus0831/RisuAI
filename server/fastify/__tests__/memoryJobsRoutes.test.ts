@@ -475,6 +475,7 @@ describe('Phase 8-2e memory job routes', () => {
     })
     harness = await startHarness({
       memoryWorker: {
+        // Keep the idle poll deliberately long: enqueue must wake the worker.
         pollIntervalMs: 10_000,
         handlers: {
           summarize: async (_job, context) => {

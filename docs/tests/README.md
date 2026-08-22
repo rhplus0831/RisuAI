@@ -1,6 +1,6 @@
 # Test Suite Guide
 
-Last audited: 2026-08-17.
+Last audited: 2026-08-22.
 
 This documentation groups the current suite by protected product behavior. Treat `package.json` and the runner configuration files as the source of truth for commands and discovery; this guide intentionally avoids snapshot case counts and pass totals, which become stale whenever tests are added or parameterized matrices change.
 
@@ -45,7 +45,8 @@ The main weakness is integration depth rather than raw case count. Most frontend
 | Command                  | Scope                                                                                                         |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------- |
 | `pnpm test`              | Alias for the ordinary frontend Vitest lane                                                                   |
-| `pnpm test:frontend`     | Frontend happy-dom tests; excludes `src/ts/__tests__` and `src/lib/_audit`                                    |
+| `pnpm test:quick` / `pnpm test:affected` | Changed-path planner for the local diff; exact changed tests first, dependency-aware source selection otherwise |
+| `pnpm test:frontend`     | Frontend Node + happy-dom projects; excludes `src/ts/__tests__` and `src/lib/_audit`                           |
 | `pnpm test:frontend:all` | Frontend tests including both explicit gate directories                                                       |
 | `pnpm test:gates`        | All explicit performance and audit gates                                                                      |
 | `pnpm test:gates:perf`   | The two named render/clone performance probes                                                                 |
@@ -56,9 +57,16 @@ The main weakness is integration depth rather than raw case count. Most frontend
 | `pnpm test:all`          | The quality-workflow aggregate: formatting, both type checks, frontend, gates, UI map, server, and smoke      |
 | `pnpm coverage:frontend` | Broad frontend report, including gates; not part of `test:all`                                                |
 | `pnpm coverage:backend`  | Broad Fastify report; not part of `test:all`                                                                  |
-| `pnpm coverage:ui-map`   | Six-file repeated UI sentinel with aggregate line/statement/function/branch floors of 8%/7%/5%/4% respectively |
+| `pnpm coverage:ui-map`   | Six-file repeated UI sentinel with aggregate line/statement/function/branch floors of 8%/7%/5%/4%; text/JSON output |
+| `pnpm coverage:ui-map:html` | The same focused gate with an additional on-demand HTML report                                             |
 
-Both Vitest configurations reject focused tests. Playwright is serial, retains traces on failure, and sets `forbidOnly` in CI. The normally skipped 7,000-display-asset Realm stress case is enabled by running `realmImport.test.ts` directly. Broad frontend and backend coverage are report-only; only the focused UI map has thresholds.
+All Vitest projects reject focused tests. The frontend runner composes a
+validated Node allowlist with the default Svelte/happy-dom project; add a test to
+`vitest.node-tests.ts` only after it passes in Node without Svelte rune transform
+or DOM dependencies. Playwright is serial, retains traces on failure, and sets
+`forbidOnly` in CI. The normally skipped 7,000-display-asset Realm stress case is
+enabled by running `realmImport.test.ts` directly. Broad frontend and backend
+coverage are report-only; only the focused UI map has thresholds.
 
 `server/fastify/vitest.config.ts` roots discovery at `server/fastify/` and
 includes `__tests__/**/*.test.ts`. The package aliases keep `pnpm test` on

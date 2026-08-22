@@ -68,6 +68,74 @@ describe('memory worker lifecycle and dispatch', () => {
     }
   })
 
+  it('wakes an idle worker immediately when new work is enqueued', async () => {
+    vi.useFakeTimers()
+    const db = openDatabase(makeDataDir())
+    try {
+      const handled: string[] = []
+      const worker = new MemoryWorker({
+        db,
+        pollIntervalMs: 10_000,
+        handlers: {
+          chunk: (job) => {
+            handled.push(job.id)
+          },
+        },
+      })
+      worker.start()
+      await vi.advanceTimersByTimeAsync(0)
+
+      enqueueMemoryJob(db, { id: 'job-woken', chatId: 'chat-1', kind: 'chunk', payload: {} })
+      worker.wake()
+      await vi.advanceTimersByTimeAsync(0)
+      await flushMicrotasks()
+
+      expect(handled).toEqual(['job-woken'])
+      await worker.stop()
+    } finally {
+      db.close()
+    }
+  })
+
+  it('remembers a wake request made while another job is in flight', async () => {
+    vi.useFakeTimers()
+    const db = openDatabase(makeDataDir())
+    try {
+      const firstStarted = deferred()
+      const releaseFirst = deferred()
+      const handled: string[] = []
+      enqueueMemoryJob(db, { id: 'job-first', chatId: 'chat-1', kind: 'chunk', payload: {} })
+      const worker = new MemoryWorker({
+        db,
+        pollIntervalMs: 10_000,
+        handlers: {
+          chunk: async (job) => {
+            handled.push(job.id)
+            if (job.id === 'job-first') {
+              firstStarted.resolve()
+              await releaseFirst.promise
+            }
+          },
+        },
+      })
+      worker.start()
+      await vi.advanceTimersByTimeAsync(0)
+      await firstStarted.promise
+
+      enqueueMemoryJob(db, { id: 'job-second', chatId: 'chat-1', kind: 'chunk', payload: {} })
+      worker.wake()
+      releaseFirst.resolve()
+      await flushMicrotasks()
+      await vi.advanceTimersByTimeAsync(0)
+      await flushMicrotasks()
+
+      expect(handled).toEqual(['job-first', 'job-second'])
+      await worker.stop()
+    } finally {
+      db.close()
+    }
+  })
+
   it('dispatches chunk, embed, and summarize jobs through stub handlers', async () => {
     const db = openDatabase(makeDataDir())
     try {

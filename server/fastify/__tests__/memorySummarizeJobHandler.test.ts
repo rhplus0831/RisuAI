@@ -376,6 +376,9 @@ describe('summarize memory job handler', () => {
           summarize: createSummarizeMemoryJobBatchHandler({
             db,
             loadDatabase: () => database({ summarizationMaxConcurrent: 3 }),
+            // The rate-limit delay is covered separately. This case exercises
+            // independent persistence after one sibling result is invalid.
+            sleep: async () => {},
             summarize: async (messages) => {
               const text = String(messages[0]?.content ?? '')
               if (text.includes('chunk two')) return { text: '', tokens: 0 }
@@ -750,6 +753,7 @@ describe('summarize memory job handler', () => {
           summarize: createSummarizeMemoryJobBatchHandler({
             db,
             loadDatabase: () => database({ summarizationMaxConcurrent: 2 }),
+            sleep: async () => {},
             summarize: async (messages) => {
               const text = String(messages[0]?.content ?? '')
               if (text.includes('chunk one')) cancelMemoryJob(db, 'job-1')
