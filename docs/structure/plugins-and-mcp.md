@@ -210,9 +210,11 @@ current chat modules, current character modules, modules linked to the Persona
 effective for the current chat, the selected Prompt Preset's
 `moduleIntergration` (or the global fallback when no prompt preset is selected),
 and the effective enabled Agent Preset's `moduleIntergration`.
-`combineModuleIntegrations()` deduplicates the integration sources before
-module lookup; this resolution is guarded by
-`src/ts/moduleIntegration.test.ts` and `src/ts/process/modules.test.ts`.
+The pure `resolveActiveModuleStates()` helper in `src/ts/moduleActivation.ts`
+matches module ids or namespaces, deduplicates module rows, and preserves the
+activation sources for runtime and UI consumers. This resolution is guarded by
+`src/ts/moduleActivation.test.ts`, `src/ts/moduleIntegration.test.ts`, and
+`src/ts/process/modules.test.ts`.
 Initialization dedupes concurrent construction, removes stale clients when the
 active URL inputs change, indexes tools with the first MCP URL winning duplicate
 tool names, and isolates failed internal handshakes so other MCP clients remain

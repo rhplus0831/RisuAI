@@ -1,8 +1,12 @@
 import type { Chat, Database, character, customscript, loreBook } from '../../../../src/ts/storage/database.svelte'
 import type { RisuModule } from '../../../../src/ts/process/modules'
 import type { triggerscript } from '../../../../src/ts/process/triggers'
-import { parseModuleIntegration } from '../../../../src/ts/moduleIntegration.js'
-import { resolvePersonaModuleIds } from '../../../../src/ts/personaModuleLinks.js'
+import {
+  hasModuleActivationIdentifiers,
+  moduleActivationIdentifiersKey,
+  resolveActiveModuleIdentifiers,
+  resolveModuleActivationStates,
+} from '../../../../src/ts/moduleActivation.js'
 import { attachTriggerSource } from './triggerSource.js'
 
 /**
@@ -17,7 +21,7 @@ import { attachTriggerSource } from './triggerSource.js'
  * dedupe is cached per loaded `Database` object. Keying the cache on the
  * database object (WeakMap) instead of the SPA's module-global string keeps
  * cross-request isolation: every request loads a fresh `Database`, so a new
- * request can never see a stale hit. The requested-id key and the
+ * request can never see a stale hit. The activation-identifier key and the
  * `database.modules` array reference both guard recomputation, so a
  * mid-assembly module toggle (chat/char/db id-list change) or wholesale
  * `modules` replacement invalidates the entry.
@@ -31,19 +35,8 @@ import { attachTriggerSource } from './triggerSource.js'
  * helpers below.
  */
 
-function dedupeById(modules: RisuModule[]): RisuModule[] {
-  const seen = new Set<string>()
-  const out: RisuModule[] = []
-  for (const m of modules) {
-    if (!m || seen.has(m.id)) continue
-    seen.add(m.id)
-    out.push(m)
-  }
-  return out
-}
-
 interface ActiveModulesMemoEntry {
-  /** The requested-id inputs the cached result was computed from. */
+  /** The activation identifiers the cached result was computed from. */
   key: string
   /** The `database.modules` array the cached result was filtered from. */
   modulesRef: RisuModule[] | undefined
@@ -62,26 +55,19 @@ export function getActiveModules(
   currentChar: character | undefined,
   currentChat: Chat | undefined,
 ): RisuModule[] {
-  let ids: string[] = [...(database.enabledModules ?? [])]
-  if (currentChat?.modules) ids = ids.concat(currentChat.modules)
-  if (currentChar?.modules) ids = ids.concat(currentChar.modules)
-  ids = ids.concat(resolvePersonaModuleIds(database, currentChat))
-  if (database.moduleIntergration) {
-    ids = ids.concat(parseModuleIntegration(database.moduleIntergration))
-  }
-  if (ids.length === 0) return NO_ACTIVE_MODULES
+  const activationIdentifiers = resolveActiveModuleIdentifiers(database, currentChar, currentChat)
+  if (!hasModuleActivationIdentifiers(activationIdentifiers)) return NO_ACTIVE_MODULES
 
-  // JSON keying (not the SPA's '-' join) — module ids are UUIDs containing '-'.
-  const key = JSON.stringify(ids)
+  const key = moduleActivationIdentifiersKey(activationIdentifiers)
   const memo = activeModulesMemo.get(database)
   if (memo && memo.key === key && memo.modulesRef === database.modules) {
     return memo.result
   }
 
-  const idSet = new Set(ids)
-  const all = database.modules ?? []
-  const matched = all.filter((m) => m && (idSet.has(m.id) || (m.namespace ? idSet.has(m.namespace) : false)))
-  const result = dedupeById(matched)
+  const result = resolveModuleActivationStates({
+    modules: database.modules ?? [],
+    identifiers: activationIdentifiers,
+  }).map((state) => state.module)
   activeModulesMemo.set(database, { key, modulesRef: database.modules, result })
   return result
 }

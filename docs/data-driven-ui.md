@@ -248,7 +248,7 @@ indexes data-driven variants.
   - Owners: `src/lib/Setting/Pages/PluginSettings.svelte`; `src/ts/plugins/plugins.svelte.ts`; `pluginPermissions.ts`
 - `SET-18` — Module management/editor (`R`, `A`, `X`)
   - Variants: Empty/list/search result; ordinary versus MCP row; enabled/integration state; MCP import busy; create/edit/error/pending; basic/lore/regex/trigger/assets tabs; missing arrays initialized on entry; asset empty/list and preview by media extension. Search with no match currently yields a blank list instead of the global empty message.
-  - Owners: `src/lib/Setting/Pages/Module/ModuleSettings.svelte`; `ModuleMenu.svelte`; `ModuleChatMenu.svelte`; `src/ts/process/modules.ts`
+  - Owners: `src/lib/Setting/Pages/Module/ModuleSettings.svelte`; `ModuleMenu.svelte`; `ModuleChatMenu.svelte`; `src/ts/moduleActivation.ts`; `src/ts/process/modules.ts`
 - `SET-19` — Persona, lorebook, and regex record lists (`R`, `A`, `L`)
   - Variants: Persona icon empty/loading/resolved and selected state; selected persona editor; display/rename picker modes; selected/global lorebook name; lore empty/list/folders and data-shaped editor, including Agent-input-only entries that force normal activation off; regex empty/list/expanded. Final-row deletion is guarded in logic for several lists but not always visibly disabled.
   - Owners: `src/lib/Setting/Pages/PersonaSettings.svelte`; `src/lib/Setting/listedPersona.svelte`; `lorepreset.svelte`; `src/lib/SideBars/LoreBook/*`; `src/lib/SideBars/Scripts/RegexList.svelte`; `RegexData.svelte`

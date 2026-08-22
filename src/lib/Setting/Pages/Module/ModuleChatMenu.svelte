@@ -15,7 +15,7 @@
   import { selectedCharID, SettingsMenuIndex, settingsOpen } from 'src/ts/stores.svelte'
   import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
-  import { resolvePersonaModuleIds } from 'src/ts/personaModuleLinks'
+  import { resolveActiveModuleStates, type ModuleActivationSource } from 'src/ts/moduleActivation'
 
   interface Props {
     close?: any
@@ -28,6 +28,12 @@
   let scopedModuleMutationStates = $state<
     Record<string, { sequence: number; status: 'saving' | 'queued' | 'failed'; error?: string }>
   >({})
+  let activeModuleStates = $derived.by(() => {
+    const database = getResourceDatabase()
+    const character = database.characters[$selectedCharID]
+    const chat = character?.chats?.[character.chatPage]
+    return new Map(resolveActiveModuleStates(database, character, chat).map((state) => [state.module.id, state]))
+  })
 
   function sortModules(modules: RisuModule[], search: string) {
     return modules
@@ -41,13 +47,29 @@
       })
   }
 
-  function activeChat() {
-    const character = getResourceDatabase().characters[$selectedCharID]
-    return character?.chats?.[character.chatPage]
+  function hasActivationSource(moduleId: string, source: ModuleActivationSource): boolean {
+    return activeModuleStates.get(moduleId)?.sources.includes(source) ?? false
   }
 
-  function isPersonaLinked(moduleId: string): boolean {
-    return resolvePersonaModuleIds(getResourceDatabase(), activeChat()).includes(moduleId)
+  function isInheritedActive(moduleId: string): boolean {
+    return (
+      activeModuleStates.get(moduleId)?.sources.some((source) => source !== 'chat' && source !== 'character') ?? false
+    )
+  }
+
+  function inheritedActivationLabels(moduleId: string): Array<{ source: ModuleActivationSource; label: string }> {
+    const labels: Array<{ source: ModuleActivationSource; label: string }> = []
+    for (const source of activeModuleStates.get(moduleId)?.sources ?? []) {
+      if (source === 'persona') labels.push({ source, label: language.personaModuleLinkActive })
+      if (source === 'promptPresetIntegration') {
+        labels.push({ source, label: language.promptPresetModuleIntegrationActive })
+      }
+      if (source === 'agentPresetIntegration') {
+        labels.push({ source, label: language.agentPresetModuleIntegrationActive })
+      }
+      if (source === 'legacyIntegration') labels.push({ source, label: language.moduleIntegrationActive })
+    }
+    return labels
   }
 
   function closeMenu(): void {
@@ -168,6 +190,7 @@
         <div class="text-textcolor2 p-3">{language.noModules}</div>
       {:else}
         {#each sortModules(getResourceDatabase().modules, moduleSearch) as rmodule, i}
+          {@const inheritedLabels = inheritedActivationLabels(rmodule.id)}
           {#if i !== 0}
             <div class="border-t-1 border-selected"></div>
           {/if}
@@ -176,7 +199,7 @@
               {#if rmodule.mcp}
                 <Waypoints size={18} class="mr-2" />
               {/if}
-              {#if !alertMode && (getResourceDatabase().enabledModules.includes(rmodule.id) || isPersonaLinked(rmodule.id))}
+              {#if !alertMode && isInheritedActive(rmodule.id)}
                 <span class="text-textcolor2">{rmodule.name}</span>
               {:else}
                 <span class="">{rmodule.name}</span>
@@ -193,26 +216,27 @@
                     }}>
                     <CircleCheckIcon size={18} />
                   </button>
-                {:else if getResourceDatabase().enabledModules.includes(rmodule.id)}
+                {:else if hasActivationSource(rmodule.id, 'global')}
                   <span class="mr-2" aria-hidden="true"></span>
-                {:else if isPersonaLinked(rmodule.id)}
-                  <span class="mr-2 text-xs text-blue-400">{language.personaModuleLinkActive}</span>
+                {:else if inheritedLabels.length > 0}
+                  <span class="mr-2 flex flex-wrap justify-end gap-1">
+                    {#each inheritedLabels as activation}
+                      <span class="text-xs text-blue-400" data-module-activation-source={activation.source}
+                        >{activation.label}</span>
+                    {/each}
+                  </span>
                 {:else if rmodule.mcp}
                   <span class="mr-2" aria-hidden="true"></span>
                 {:else}
                   <button
                     aria-label={`${language.module}: ${rmodule.name}`}
-                    aria-pressed={getResourceDatabase().characters[$selectedCharID].chats[
-                      getResourceDatabase().characters[$selectedCharID].chatPage
-                    ].modules?.includes(rmodule.id) ||
-                      getResourceDatabase().characters[$selectedCharID]?.modules?.includes(rmodule.id)}
+                    aria-pressed={hasActivationSource(rmodule.id, 'chat') ||
+                      hasActivationSource(rmodule.id, 'character')}
                     aria-busy={isScopedModuleMutationPending(rmodule.id)}
                     disabled={isScopedModuleMutationPending(rmodule.id)}
-                    class={getResourceDatabase().characters[$selectedCharID].chats[
-                      getResourceDatabase().characters[$selectedCharID].chatPage
-                    ].modules?.includes(rmodule.id)
+                    class={hasActivationSource(rmodule.id, 'chat')
                       ? 'mr-2 cursor-pointer text-blue-500 disabled:cursor-wait disabled:opacity-60'
-                      : getResourceDatabase().characters[$selectedCharID]?.modules?.includes(rmodule.id)
+                      : hasActivationSource(rmodule.id, 'character')
                         ? 'mr-2 cursor-pointer text-violet-500 disabled:cursor-wait disabled:opacity-60'
                         : 'text-textcolor2 hover:text-blue-400 mr-2 cursor-pointer disabled:cursor-wait disabled:opacity-60'}
                     onclick={(e) => {

@@ -128,6 +128,7 @@ import {
   getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
 } from 'src/ts/server/resourceState.svelte'
+import { selectedCharID } from 'src/ts/stores.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -308,6 +309,7 @@ async function clickModuleSurfaceAction(actionKind: string) {
 }
 
 beforeEach(() => {
+  selectedCharID.set(-1)
   target = document.createElement('div')
   document.body.appendChild(target)
   vi.clearAllMocks()
@@ -424,6 +426,23 @@ describe('ModuleSettings derived module rows', () => {
     await tick()
     await Promise.resolve()
     expect(moduleCommandSpies.deleteGlobalModule).toHaveBeenCalledWith('beta-id')
+  })
+
+  it('shows the current chat Prompt Preset namespace integration state', () => {
+    getDatabase().moduleIntergration = ''
+    getDatabase().promptPresets = [{ id: 'gpt-preset', name: 'GPT', moduleIntergration: 'shared' }]
+    getDatabase().characters = [
+      {
+        chatPage: 0,
+        chats: [{ generationSettings: { promptPresetId: 'gpt-preset' } }],
+      },
+    ] as any
+    selectedCharID.set(0)
+
+    mountSettings()
+
+    expect(rowForModuleId('beta-id').getAttribute('data-risu-integration-state')).toBe('integrated')
+    expect(moduleAction('beta-id', 'toggle-enabled').getAttribute('aria-pressed')).toBe('false')
   })
 
   it('keeps a module toggle busy through its durable outcome and reports queued work', async () => {

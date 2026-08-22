@@ -1,4 +1,5 @@
 import { agentToggleStorageKey, type AgentPresetUseRecord, type AgentToggleDefinition } from './agentPresetRecords'
+import { resolveModuleActivationStates } from './moduleActivation'
 import { parseModuleIntegration, resolveAgentPresetModuleIntegration } from './moduleIntegration'
 
 export const CHAT_GENERATION_SETTINGS_FIELD = 'generationSettings' as const
@@ -793,29 +794,20 @@ function resolvePreset<T extends { id?: string | null }>(
 
 function resolveActiveModules(input: ResolveChatGenerationRequirementsInput): ChatGenerationModuleReference[] {
   const agentPresetModuleIntegration = resolveAgentPresetModuleIntegration(input.agentPresets, input.agentPresetId)
-  const requestedIds = [
-    ...(input.enabledModuleIds ?? []),
-    ...(input.chatModuleIds ?? []),
-    ...(input.characterModuleIds ?? []),
-    ...(input.personaModuleIds ?? []),
-    ...parseModuleIntegration(input.moduleIntegration),
-    ...parseModuleIntegration(agentPresetModuleIntegration),
-  ].filter(isNonEmptyString)
-
-  if (requestedIds.length === 0) return []
-
-  const requested = new Set(requestedIds)
-  const seen = new Set<string>()
-  const active: ChatGenerationModuleReference[] = []
-  for (const module of input.modules ?? []) {
-    if (!isNonEmptyString(module.id) || seen.has(module.id)) continue
-    if (!requested.has(module.id) && !(module.namespace && requested.has(module.namespace))) {
-      continue
-    }
-    seen.add(module.id)
-    active.push(module)
-  }
-  return active
+  const modules = (input.modules ?? []).filter(
+    (module): module is ChatGenerationModuleReference => !!module && isNonEmptyString(module.id),
+  )
+  return resolveModuleActivationStates({
+    modules,
+    identifiers: {
+      global: input.enabledModuleIds?.filter(isNonEmptyString),
+      chat: input.chatModuleIds?.filter(isNonEmptyString),
+      character: input.characterModuleIds?.filter(isNonEmptyString),
+      persona: input.personaModuleIds?.filter(isNonEmptyString),
+      promptPresetIntegration: parseModuleIntegration(input.moduleIntegration),
+      agentPresetIntegration: parseModuleIntegration(agentPresetModuleIntegration),
+    },
+  }).map((state) => state.module)
 }
 
 function presetDisplaysJailbreakToggle(preset: ChatGenerationPresetReference | undefined): boolean {

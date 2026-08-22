@@ -29,15 +29,6 @@
 
     return rows.sort((a, b) => a.normalizedName.localeCompare(b.normalizedName))
   }
-
-  export function parseModuleIntegrationNamespaces(moduleIntergration?: string | null) {
-    const namespaces = new Set<string>()
-    for (const namespace of moduleIntergration?.split(',') ?? []) {
-      const normalizedNamespace = namespace.trim()
-      if (normalizedNamespace) namespaces.add(normalizedNamespace)
-    }
-    return namespaces
-  }
 </script>
 
 <script lang="ts">
@@ -63,6 +54,8 @@
     type ModuleEditorSaveOutcome,
   } from 'src/ts/moduleCommands'
   import { getResourceDatabase } from 'src/ts/server/resourceState.svelte'
+  import { resolveActiveModuleStates, type ModuleActivationSource } from 'src/ts/moduleActivation'
+  import { selectedCharID } from 'src/ts/stores.svelte'
   import type { ServerCommandResult } from 'src/ts/server/commands'
   import {
     deleteModuleEditorDraft,
@@ -94,7 +87,12 @@
   let moduleSearch = $state('')
   let normalizedModuleSearch = $derived(normalizeModuleSearch(moduleSearch))
   let sortedModuleRows = $derived(sortModuleSettingsRows(getResourceDatabase().modules ?? [], normalizedModuleSearch))
-  let moduleIntegrationNamespaces = $derived(parseModuleIntegrationNamespaces(getResourceDatabase().moduleIntergration))
+  let activeModuleStates = $derived.by(() => {
+    const database = getResourceDatabase()
+    const character = database.characters[$selectedCharID]
+    const chat = character?.chats?.[character.chatPage]
+    return new Map(resolveActiveModuleStates(database, character, chat).map((state) => [state.module.id, state]))
+  })
   let activeDraftGeneration: ModuleEditorDraftGeneration | null = null
   let lastCapturedDraftFingerprint = ''
   let restoreAttempt = 0
@@ -284,9 +282,21 @@
     return getResourceDatabase().enabledModules.includes(moduleId)
   }
 
+  function hasActivationSource(moduleId: string, source: ModuleActivationSource) {
+    return activeModuleStates.get(moduleId)?.sources.includes(source) ?? false
+  }
+
+  function isModuleIntegrated(moduleId: string) {
+    return (
+      hasActivationSource(moduleId, 'promptPresetIntegration') ||
+      hasActivationSource(moduleId, 'agentPresetIntegration') ||
+      hasActivationSource(moduleId, 'legacyIntegration')
+    )
+  }
+
   function moduleIntegrationState(rmodule: RisuModule) {
-    if (!rmodule.namespace) return 'none'
-    return moduleIntegrationNamespaces.has(rmodule.namespace) ? 'integrated' : 'unmatched'
+    if (isModuleIntegrated(rmodule.id)) return 'integrated'
+    return rmodule.namespace ? 'unmatched' : 'none'
   }
 
   function moduleMutationError(result: ServerCommandResult): string {
@@ -470,7 +480,7 @@
               disabled={isRowMutationPending(rmodule.id)}
               class={isModuleEnabled(rmodule.id)
                 ? 'mr-2 cursor-pointer text-blue-500'
-                : rmodule.namespace && moduleIntegrationNamespaces.has(rmodule.namespace)
+                : isModuleIntegrated(rmodule.id)
                   ? 'text-amber-500 hover:text-green-500 mr-2 cursor-pointer'
                   : 'text-textcolor2 hover:text-green-500 mr-2 cursor-pointer'}
               use:tooltip={language.enableGlobal}

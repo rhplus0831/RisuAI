@@ -7,15 +7,19 @@ const moduleMenuDatabase = vi.hoisted(() => ({
       chatPage: 0,
       chats: [{ modules: [] as string[] }] as Array<{
         modules: string[]
-        generationSettings?: { personaId?: string }
+        generationSettings?: { personaId?: string; promptPresetId?: string; agentPresetId?: string }
         bindedPersona?: string
       }>,
       modules: [] as string[],
     },
   ],
   enabledModules: [] as string[],
-  modules: [] as Array<{ id: string; name: string; mcp?: unknown }>,
+  moduleIntergration: '',
+  modules: [] as Array<{ id: string; name: string; namespace?: string; mcp?: unknown }>,
   personas: [] as Array<{ id: string; modules?: string[] }>,
+  promptPresets: [] as Array<{ id: string; moduleIntergration?: string }>,
+  agentPresets: [] as Array<{ id: string; enabled?: boolean; moduleIntergration?: string }>,
+  agentPresetDefaultId: undefined as string | undefined,
   selectedPersona: 0,
 }))
 
@@ -91,7 +95,11 @@ beforeEach(() => {
   moduleMenuDatabase.characters[0].modules = []
   moduleMenuDatabase.modules = []
   moduleMenuDatabase.enabledModules = []
+  moduleMenuDatabase.moduleIntergration = ''
   moduleMenuDatabase.personas = []
+  moduleMenuDatabase.promptPresets = []
+  moduleMenuDatabase.agentPresets = []
+  moduleMenuDatabase.agentPresetDefaultId = undefined
   moduleMenuDatabase.selectedPersona = 0
   moduleMenuMocks.toggleSelectedCharacterModule.mockReset()
   moduleMenuMocks.toggleSelectedChatModule.mockReset()
@@ -153,6 +161,20 @@ describe('ModuleChatMenu modal behavior', () => {
 
     expect(target.textContent).toContain(language.personaModuleLinkActive)
     expect(target.querySelector('button[aria-label="Module: Module A"]')).toBeNull()
+    expect(moduleMenuMocks.toggleSelectedChatModule).not.toHaveBeenCalled()
+  })
+
+  it('shows modules activated by the selected Prompt Preset namespace integration as active', async () => {
+    moduleMenuDatabase.modules = [{ id: 'codex-module', name: 'Codex Module', namespace: 'Codex' }]
+    moduleMenuDatabase.promptPresets = [{ id: 'gpt-preset', moduleIntergration: 'Codex' }]
+    moduleMenuDatabase.characters[0].chats = [{ modules: [], generationSettings: { promptPresetId: 'gpt-preset' } }]
+    component = mount(ModuleChatMenu, { target, props: { close: vi.fn() } })
+    await settle()
+
+    expect(target.querySelector('[data-module-activation-source="promptPresetIntegration"]')?.textContent).toContain(
+      language.promptPresetModuleIntegrationActive,
+    )
+    expect(target.querySelector('button[aria-label="Module: Codex Module"]')).toBeNull()
     expect(moduleMenuMocks.toggleSelectedChatModule).not.toHaveBeenCalled()
   })
 

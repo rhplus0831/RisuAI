@@ -18,7 +18,11 @@ import { compressImage } from '../media'
 import { decodeRPack, encodeRPack } from '../rpack/rpack_js'
 import { HideIconStore, moduleBackgroundEmbedding, reloadGuiAfterDefinitionChange } from '../stores.svelte'
 import { createGlobalModule } from '../moduleCommands'
-import { resolvePersonaModuleIds } from '../personaModuleLinks'
+import {
+  moduleActivationIdentifiersKey,
+  resolveActiveModuleIdentifiers,
+  resolveModuleActivationStates,
+} from '../moduleActivation'
 import { SERVER_ASSET_CONTENT_TYPES } from '../server/assets'
 import {
   currentLorebookCollectionScopedSnapshot,
@@ -60,12 +64,6 @@ import {
 import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from '../server/staleStateGuards'
 import { isImportableMCPIdentifier } from './mcp/mcpIdentifier'
 import { ensureCharacterLorebookHydrated } from '../server/chatMessageHydration.svelte'
-import { resolveEffectiveAgentPresetId } from '../agentPresetResolver'
-import {
-  combineModuleIntegrations,
-  parseModuleIntegration,
-  resolveAgentPresetModuleIntegration,
-} from '../moduleIntegration'
 
 export interface MCPModule {
   url: string
@@ -599,43 +597,6 @@ function getModuleById(id: string) {
   return null
 }
 
-function getModuleByIds(ids: string[]) {
-  const idSet = new Set(ids)
-  const modules = getDatabaseModules().filter((m) => idSet.has(m.id) || (m.namespace && idSet.has(m.namespace)))
-  return deduplicateModuleById(modules)
-}
-
-function deduplicateModuleById(modules: RisuModule[]) {
-  let ids: string[] = []
-  let newModules: RisuModule[] = []
-  for (let i = 0; i < modules.length; i++) {
-    if (ids.includes(modules[i].id)) {
-      continue
-    }
-    ids.push(modules[i].id)
-    newModules.push(modules[i])
-  }
-  return newModules
-}
-
-type PromptPresetModuleIntegration = {
-  id?: unknown
-  moduleIntergration?: unknown
-}
-
-function promptPresetModuleIntegration(
-  db: ReturnType<typeof getDatabase>,
-  currentChat: ReturnType<typeof getCurrentChat>,
-) {
-  const promptPresetId = currentChat?.generationSettings?.promptPresetId
-  if (typeof promptPresetId === 'string' && promptPresetId.trim().length > 0) {
-    const promptPresets = Array.isArray(db.promptPresets) ? (db.promptPresets as PromptPresetModuleIntegration[]) : []
-    const preset = promptPresets.find((candidate) => candidate?.id === promptPresetId)
-    return typeof preset?.moduleIntergration === 'string' ? preset.moduleIntergration : ''
-  }
-  return typeof db.moduleIntergration === 'string' ? db.moduleIntergration : ''
-}
-
 let lastModules = ''
 let lastModuleData: RisuModule[] = []
 let lastModuleSource: RisuModule[] | undefined
@@ -652,25 +613,8 @@ export function getModules() {
   const character = getCurrentCharacter()
   const db = getDatabase()
   const moduleSource = getDatabaseModules(db)
-  let ids = db.enabledModules ?? []
-  if (currentChat) {
-    ids = ids.concat(currentChat.modules ?? [])
-  }
-  if (character && character.modules) {
-    ids = ids.concat(character.modules)
-  }
-  ids = ids.concat(resolvePersonaModuleIds(db, currentChat))
-  const moduleIntergration = combineModuleIntegrations(
-    promptPresetModuleIntegration(db, currentChat),
-    resolveAgentPresetModuleIntegration(
-      db.agentPresets,
-      resolveEffectiveAgentPresetId(db, currentChat?.generationSettings),
-    ),
-  )
-  if (moduleIntergration) {
-    ids = ids.concat(parseModuleIntegration(moduleIntergration))
-  }
-  const idsJoined = JSON.stringify(ids)
+  const activationIdentifiers = resolveActiveModuleIdentifiers(db, character, currentChat)
+  const idsJoined = moduleActivationIdentifiersKey(activationIdentifiers)
   if (
     lastModules === idsJoined &&
     lastModuleSource === moduleSource &&
@@ -679,11 +623,14 @@ export function getModules() {
     return lastModuleData
   }
 
-  let modules: RisuModule[] = getModuleByIds(ids)
+  const resolvedModules = resolveModuleActivationStates({
+    modules: moduleSource,
+    identifiers: activationIdentifiers,
+  }).map((state) => state.module)
   lastModules = idsJoined
   lastModuleSource = moduleSource
-  lastModuleData = modules
-  return modules
+  lastModuleData = resolvedModules
+  return resolvedModules
 }
 
 export function getModuleLorebooks() {
