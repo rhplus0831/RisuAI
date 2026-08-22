@@ -6,6 +6,9 @@
     idx = -1,
     message = '',
     msgDisplay = '',
+    name = '',
+    img = '',
+    largePortrait = false,
     halfStreamingTokensPerSecond = undefined,
     onInitialDisplayParseStart = undefined,
     onInitialDisplayParseSettled = undefined,
@@ -13,6 +16,9 @@
     idx?: number
     message?: string
     msgDisplay?: string
+    name?: string
+    img?: string | Promise<string>
+    largePortrait?: boolean
     halfStreamingTokensPerSecond?: number
     onInitialDisplayParseStart?: (registration: symbol) => void
     onInitialDisplayParseSettled?: (registration: symbol) => void
@@ -39,7 +45,14 @@
   })
 </script>
 
-<div class="risu-chat" data-chat-index={idx}>{message || msgDisplay}</div>
+<div
+  class="risu-chat"
+  data-chat-index={idx}
+  data-chat-name={name}
+  data-chat-image={typeof img === 'string' ? img : ''}
+  data-chat-large-portrait={largePortrait ? 'true' : 'false'}>
+  {message || msgDisplay}
+</div>
 {#if halfStreamingTokensPerSecond !== undefined}
   <div data-testid="half-streaming-throughput">{halfStreamingTokensPerSecond}</div>
 {/if}

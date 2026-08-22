@@ -58,7 +58,7 @@
   } from '../../ts/process/index.svelte'
   import { SvelteSet } from 'svelte/reactivity'
   import { sleep } from '../../ts/util'
-  import { getUserDisplayName, getUserIcon, getUserIconProtrait } from '../../ts/utilState'
+  import { resolveUserPersonaPresentation } from '../../ts/utilState'
   import { language } from '../../lang'
   import { isExpTranslator, translate } from '../../ts/translator/translator'
   import {
@@ -1950,11 +1950,7 @@
   }
 
   let { userIconPortrait, currentUsername, userIcon } = $derived.by(() => {
-    return {
-      currentUsername: getUserDisplayName(),
-      userIconPortrait: getUserIconProtrait(),
-      userIcon: getUserIcon(),
-    }
+    return resolveUserPersonaPresentation(getDatabase(), currentChatRecord)
   })
 
   // Empty textareas can transiently report no scroll height during mobile layout changes.

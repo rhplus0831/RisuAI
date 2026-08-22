@@ -44,7 +44,11 @@ const sidebarMocks = vi.hoisted(() => {
   let pendingDeleteCommand: DeferredCommand | undefined
   let pendingSelectCommand: DeferredCommand | undefined
   let pendingUpdateCommand: DeferredCommand | undefined
+  let pendingGenerationSettingsCommand: DeferredCommand | undefined
   let createOutcomeOverride: ((...args: any[]) => Promise<any>) | undefined
+  let generationSettingsApplier:
+    | ((chatId: string, generationSettings: Record<string, unknown>) => () => void)
+    | undefined
 
   function createDeferredCommand(): DeferredCommand {
     let resolveCommand!: (value: unknown) => void
@@ -90,6 +94,11 @@ const sidebarMocks = vi.hoisted(() => {
   function createDeferredUpdateCommand(): DeferredCommand {
     pendingUpdateCommand = createDeferredCommand()
     return pendingUpdateCommand
+  }
+
+  function createDeferredGenerationSettingsCommand(): DeferredCommand {
+    pendingGenerationSettingsCommand = createDeferredCommand()
+    return pendingGenerationSettingsCommand
   }
 
   function okCommandResult() {
@@ -145,6 +154,7 @@ const sidebarMocks = vi.hoisted(() => {
     createDeferredDeleteCommand,
     createDeferredSelectCommand,
     createDeferredUpdateCommand,
+    createDeferredGenerationSettingsCommand,
     createChatCopyName: vi.fn((name: string, suffix: string) => `${name} ${suffix}`),
     currentRoute,
     createChatFolderCommand: vi.fn((input: unknown) => {
@@ -183,6 +193,21 @@ const sidebarMocks = vi.hoisted(() => {
       status: 'accepted',
       result: okCommandResult(),
     })),
+    dispatchSaveChatGenerationSettingsWithOutcome: vi.fn(
+      (chatId: string, generationSettings: Record<string, unknown>) => {
+        const rollback = generationSettingsApplier?.(chatId, generationSettings) ?? (() => undefined)
+        const deferred = pendingGenerationSettingsCommand
+        if (!deferred) {
+          return { settlement: Promise.resolve({ status: 'accepted' as const }) }
+        }
+        deferred.input = { chatId, generationSettings }
+        const settlement = deferred.promise.then((result) => {
+          if ((result as { status?: string }).status === 'failed') rollback()
+          return result
+        })
+        return { settlement }
+      },
+    ),
     dispatchUpdateChatWithOutcome: vi.fn(async (..._args: any[]) => ({
       status: 'accepted',
       result: okCommandResult(),
@@ -245,6 +270,7 @@ const sidebarMocks = vi.hoisted(() => {
       pendingDeleteCommand = undefined
       pendingSelectCommand = undefined
       pendingUpdateCommand = undefined
+      pendingGenerationSettingsCommand = undefined
       createOutcomeOverride = undefined
       SortableMock.instances = []
       serverCommandsEnabled = false
@@ -282,6 +308,11 @@ const sidebarMocks = vi.hoisted(() => {
     },
     setCreateOutcomeOverride: (override: ((...args: any[]) => Promise<any>) | undefined) => {
       createOutcomeOverride = override
+    },
+    setGenerationSettingsApplier: (
+      applier: (chatId: string, generationSettings: Record<string, unknown>) => () => void,
+    ) => {
+      generationSettingsApplier = applier
     },
     dispatchCreateChatWithOutcome: (...args: any[]) => createOutcomeOverride?.(...args),
     rollbackServerBackedChatFolderRowMetadata: vi.fn(),
@@ -390,6 +421,7 @@ vi.mock('src/ts/chatCommands', async (importActual) => {
     dispatchReorderChatFoldersAndChatsByIdsWithOutcome: sidebarMocks.dispatchReorderChatFoldersAndChatsByIdsWithOutcome,
     dispatchReorderChatsByIdsWithOutcome: sidebarMocks.dispatchReorderChatsByIdsWithOutcome,
     dispatchResetChatsWithOutcome: sidebarMocks.dispatchResetChatsWithOutcome,
+    dispatchSaveChatGenerationSettingsWithOutcome: sidebarMocks.dispatchSaveChatGenerationSettingsWithOutcome,
     dispatchUpdateChatWithOutcome: sidebarMocks.dispatchUpdateChatWithOutcome,
     dispatchUpdateChatFolderWithOutcome: sidebarMocks.dispatchUpdateChatFolderWithOutcome,
   }
@@ -704,6 +736,24 @@ describe('SideChatList DOM contract harness', () => {
     target = document.createElement('div')
     document.body.appendChild(target)
     sidebarMocks.resetCommandHarness()
+    sidebarMocks.setGenerationSettingsApplier((chatId, generationSettings) => {
+      const chat = getDatabase()
+        .characters.flatMap((character) => character.chats)
+        .find((candidate) => candidate.id === chatId)
+      const hadGenerationSettings = Object.prototype.hasOwnProperty.call(chat ?? {}, 'generationSettings')
+      const previous =
+        chat?.generationSettings === undefined ? undefined : JSON.parse(JSON.stringify(chat.generationSettings))
+      withTrustedResourceWrite(() => {
+        if (chat) chat.generationSettings = JSON.parse(JSON.stringify(generationSettings)) as never
+      })
+      return () => {
+        withTrustedResourceWrite(() => {
+          if (!chat) return
+          if (hadGenerationSettings) chat.generationSettings = previous as never
+          else delete chat.generationSettings
+        })
+      }
+    })
     vi.clearAllMocks()
     generationJobLifecycles.set({})
     resetChatUnreadForTests()
@@ -2060,13 +2110,22 @@ describe('SideChatList DOM contract harness', () => {
 
   it('keeps persona unbinding pending until failure rolls state and DOM back', async () => {
     const chara = seedSidebarDatabase()
-    chara.chats[1].bindedPersona = 'persona-a'
+    chara.chats[1].generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    }
+    chara.chats[1].bindedPersona = 'legacy-persona'
+    getDatabase().personas = [
+      { id: 'persona-a', name: 'Persona A' },
+      { id: 'legacy-persona', name: 'Legacy Persona' },
+    ] as never
     sidebarMocks.setServerCommandsEnabled(true)
     setResourceWriteGuardEnabled(true)
     sidebarMocks.alertChatOptions.mockResolvedValueOnce(1)
     sidebarMocks.alertConfirm.mockResolvedValueOnce(true)
-    sidebarMocks.rollbackServerBackedChatRowMetadata.mockImplementationOnce(restoreChatRowMetadata)
-    const command = sidebarMocks.createDeferredUpdateCommand()
+    const command = sidebarMocks.createDeferredGenerationSettingsCommand()
 
     component = mount(SideChatListHarness, { target })
     await tick()
@@ -2076,8 +2135,12 @@ describe('SideChatList DOM contract harness', () => {
     await flushCommandWork()
 
     expect(command.settled).toBe(false)
-    expect(command.input).toMatchObject({ chatId: 'chat-foldered', patch: { bindedPersona: '' }, select: false })
-    expect(selectedCharacter().chats[1].bindedPersona).toBe('')
+    expect(command.input).toMatchObject({ chatId: 'chat-foldered' })
+    expect((command.input as { generationSettings: Record<string, unknown> }).generationSettings).not.toHaveProperty(
+      'personaId',
+    )
+    expect(selectedCharacter().chats[1].generationSettings).not.toHaveProperty('personaId')
+    expect(selectedCharacter().chats[1].bindedPersona).toBe('legacy-persona')
     expect(options.getAttribute('aria-busy')).toBe('true')
     expect(options.getAttribute('aria-disabled')).toBe('true')
     expect(options).toBeInstanceOf(HTMLButtonElement)
@@ -2089,11 +2152,11 @@ describe('SideChatList DOM contract harness', () => {
     await tick()
     expect(sidebarMocks.alertChatOptions).toHaveBeenCalledOnce()
 
-    command.resolve({ error: 'persona update failed', status: 'error' })
+    command.resolve({ error: 'persona update failed', status: 'failed' })
     await flushCommandWork()
 
-    expect(sidebarMocks.rollbackServerBackedChatRowMetadata).toHaveBeenCalledOnce()
-    expect(selectedCharacter().chats[1].bindedPersona).toBe('persona-a')
+    expect(selectedCharacter().chats[1].generationSettings?.personaId).toBe('persona-a')
+    expect(selectedCharacter().chats[1].bindedPersona).toBe('legacy-persona')
     expect(options.getAttribute('aria-busy')).toBe('false')
     expect(options.getAttribute('aria-disabled')).toBe('false')
     expect((options as HTMLButtonElement).disabled).toBe(false)
@@ -2108,7 +2171,7 @@ describe('SideChatList DOM contract harness', () => {
     setResourceWriteGuardEnabled(true)
     sidebarMocks.alertChatOptions.mockResolvedValueOnce(1)
     sidebarMocks.alertConfirm.mockResolvedValueOnce(true)
-    const command = sidebarMocks.createDeferredUpdateCommand()
+    const command = sidebarMocks.createDeferredGenerationSettingsCommand()
 
     component = mount(SideChatListHarness, { target })
     await tick()
@@ -2120,14 +2183,18 @@ describe('SideChatList DOM contract harness', () => {
     expect(command.settled).toBe(false)
     expect(command.input).toMatchObject({
       chatId: 'chat-root-a',
-      patch: { bindedPersona: 'persona-selected' },
-      select: false,
+      generationSettings: {
+        configured: true,
+        personaId: 'persona-selected',
+        jailbreakToggle: false,
+      },
     })
-    expect(selectedCharacter().chats[0].bindedPersona).toBe('persona-selected')
+    expect(selectedCharacter().chats[0].generationSettings?.personaId).toBe('persona-selected')
+    expect(selectedCharacter().chats[0].bindedPersona).toBeUndefined()
     expect(options.getAttribute('aria-busy')).toBe('true')
     expect(sidebarMocks.alertNormal).not.toHaveBeenCalled()
 
-    command.resolve({ revision: 11, status: 'ok' })
+    command.resolve({ status: 'accepted' })
     await flushCommandWork()
 
     expect(options.getAttribute('aria-busy')).toBe('false')
@@ -2142,8 +2209,7 @@ describe('SideChatList DOM contract harness', () => {
     setResourceWriteGuardEnabled(true)
     sidebarMocks.alertChatOptions.mockResolvedValueOnce(1)
     sidebarMocks.alertConfirm.mockResolvedValueOnce(true)
-    sidebarMocks.runServerCommand.mockImplementationOnce(async (input) => input.command(10))
-    const command = sidebarMocks.createDeferredUpdateCommand()
+    const command = sidebarMocks.createDeferredGenerationSettingsCommand()
 
     component = mount(SideChatListHarness, { target })
     await tick()
@@ -2152,12 +2218,11 @@ describe('SideChatList DOM contract harness', () => {
     options.click()
     await flushCommandWork()
 
-    expect(selectedCharacter().chats[0].bindedPersona).toBe('persona-selected')
-    command.resolve({ status: 'unavailable' })
+    expect(selectedCharacter().chats[0].generationSettings?.personaId).toBe('persona-selected')
+    command.resolve({ status: 'queued' })
     await flushCommandWork()
 
-    expect(selectedCharacter().chats[0].bindedPersona).toBe('persona-selected')
-    expect(sidebarMocks.rollbackServerBackedChatRowMetadata).not.toHaveBeenCalled()
+    expect(selectedCharacter().chats[0].generationSettings?.personaId).toBe('persona-selected')
     expect(sidebarMocks.alertError).not.toHaveBeenCalled()
     expect(sidebarMocks.alertNormal).toHaveBeenCalledWith('Persona binding queued')
   })

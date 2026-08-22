@@ -8,6 +8,7 @@ import {
   getUserIcon,
   getUserIconProtrait,
   getUserName,
+  resolveUserPersonaPresentation,
 } from './utilState'
 
 function seedPersonaDisplayState(chatPatch: Record<string, unknown>): void {
@@ -105,6 +106,36 @@ describe('active chat persona display helpers', () => {
     expect(getUserIcon()).toBe('legacy.png')
     expect(getPersonaPrompt()).toBe('legacy prompt')
     expect(getUserIconProtrait()).toBe(false)
+  })
+
+  it('does not let a legacy binding override an authoritative modern settings object', () => {
+    seedPersonaDisplayState({
+      bindedPersona: 'legacy-persona',
+      generationSettings: {},
+    })
+
+    expect(checkPersonaBinded()).toBeNull()
+    expect(getUserDisplayName()).toBe('Visible Global Persona')
+    expect(getUserIcon()).toBe('global.png')
+  })
+
+  it('resolves presentation from an explicitly supplied chat instead of navigation globals', () => {
+    seedPersonaDisplayState({})
+    const db = testDatabaseState.db
+    const presentation = resolveUserPersonaPresentation(db, {
+      id: 'supplied-chat',
+      name: 'Supplied chat',
+      message: [],
+      note: '',
+      localLore: [],
+      generationSettings: { personaId: 'chat-persona' },
+    } as never)
+
+    expect(presentation).toEqual({
+      currentUsername: 'Visible Chat Persona',
+      userIcon: 'chat.png',
+      userIconPortrait: true,
+    })
   })
 
   it('uses the selected persona display name only for visible labels', () => {

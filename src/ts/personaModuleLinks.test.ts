@@ -47,6 +47,13 @@ describe('Persona module links', () => {
     expect(resolvePersonaModuleIds(db, chat())).toEqual(['module-a'])
   })
 
+  it('does not revive legacy or global Persona modules once modern chat settings exist', () => {
+    const db = database()
+
+    expect(resolveEffectivePersonaId(db, chat({ generationSettings: {}, bindedPersona: 'persona-chat' }))).toBeNull()
+    expect(resolvePersonaModuleIds(db, chat({ generationSettings: {}, bindedPersona: 'persona-chat' }))).toEqual([])
+  })
+
   it('ignores missing Persona references and malformed link values', () => {
     const db = database()
     ;(db.personas[1] as unknown as { modules: unknown }).modules = ['module-b', null, 3]

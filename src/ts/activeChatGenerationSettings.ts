@@ -262,6 +262,15 @@ export function createActiveChatGenerationSettingsSelectionPatch(
   return createActiveChatGenerationSettingsPatch(selection, state)
 }
 
+export function createActiveChatPersonaSelectionPatch(
+  personaId: string | null,
+  state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),
+): ChatGenerationSettings {
+  const next = createActiveChatGenerationSettingsPatch(personaId ? { personaId } : {}, state)
+  if (!personaId) delete next.personaId
+  return next
+}
+
 export function createManualModelPresetSelection(modelPresetId: string): ActiveChatGenerationSettingsPatch {
   return {
     modelPresetId,

@@ -4,8 +4,40 @@ import {
   resolveEffectivePromptTemplate,
   type EffectivePromptTemplateOptions,
 } from './process/promptAssembly/effectivePromptTemplate'
-import { getDatabase } from './storage/database.svelte'
+import { getDatabase, type Chat, type Database } from './storage/database.svelte'
 import { selectedCharID } from './stores/coreStores.svelte'
+import { resolveChatBoundPersonaId } from './personaModuleLinks'
+
+export interface UserPersonaPresentation {
+  currentUsername: string
+  userIcon: string
+  userIconPortrait: boolean
+}
+
+export function resolveUserPersonaPresentation(database: Database, chat: Chat | undefined): UserPersonaPresentation {
+  const personaId = resolveChatBoundPersonaId(chat)
+  const persona = personaId ? database.personas?.find((candidate) => candidate.id === personaId) : undefined
+  if (persona) {
+    return {
+      currentUsername: getPersonaDisplayName(persona),
+      userIcon: persona.icon ?? '',
+      userIconPortrait: persona.largePortrait ?? false,
+    }
+  }
+
+  const selectedPersona = database.personas?.[database.selectedPersona]
+  return {
+    currentUsername: getPersonaDisplayName(
+      {
+        name: database.username ?? selectedPersona?.name,
+        displayName: selectedPersona?.displayName,
+      },
+      'User',
+    ),
+    userIcon: database.userIcon ?? '',
+    userIconPortrait: selectedPersona?.largePortrait ?? false,
+  }
+}
 
 export const replacePlaceholders = (msg: string, name: string) => {
   const db = getDatabase()
@@ -23,10 +55,7 @@ export function checkPersonaBinded() {
     const selectedChar = get(selectedCharID)
     const character = db.characters[selectedChar]
     const chat = character.chats[character.chatPage]
-    const personaId =
-      typeof chat.generationSettings?.personaId === 'string' && chat.generationSettings.personaId.trim()
-        ? chat.generationSettings.personaId
-        : chat.bindedPersona
+    const personaId = resolveChatBoundPersonaId(chat)
     if (!personaId) {
       return null
     }
@@ -47,28 +76,17 @@ export function getUserName() {
 }
 
 export function getUserDisplayName() {
-  const bindedPersona = checkPersonaBinded()
-  if (bindedPersona) {
-    return getPersonaDisplayName(bindedPersona)
-  }
   const db = getDatabase()
-  const selectedPersona = db.personas?.[db.selectedPersona]
-  return getPersonaDisplayName(
-    {
-      name: db.username ?? selectedPersona?.name,
-      displayName: selectedPersona?.displayName,
-    },
-    'User',
-  )
+  const selectedChar = get(selectedCharID)
+  const character = db.characters?.[selectedChar]
+  return resolveUserPersonaPresentation(db, character?.chats?.[character.chatPage]).currentUsername
 }
 
 export function getUserIcon() {
-  const bindedPersona = checkPersonaBinded()
-  if (bindedPersona) {
-    return bindedPersona.icon
-  }
   const db = getDatabase()
-  return db.userIcon ?? ''
+  const selectedChar = get(selectedCharID)
+  const character = db.characters?.[selectedChar]
+  return resolveUserPersonaPresentation(db, character?.chats?.[character.chatPage]).userIcon
 }
 
 export function getPersonaPrompt() {
@@ -82,12 +100,10 @@ export function getPersonaPrompt() {
 
 export function getUserIconProtrait() {
   try {
-    const bindedPersona = checkPersonaBinded()
-    if (bindedPersona) {
-      return bindedPersona.largePortrait
-    }
     const db = getDatabase()
-    return db.personas[db.selectedPersona].largePortrait
+    const selectedChar = get(selectedCharID)
+    const character = db.characters?.[selectedChar]
+    return resolveUserPersonaPresentation(db, character?.chats?.[character.chatPage]).userIconPortrait
   } catch (error) {
     return false
   }

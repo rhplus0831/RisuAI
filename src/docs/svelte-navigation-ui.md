@@ -74,10 +74,13 @@ Tests include `src/ts/characterFolderOpening.test.ts`,
 
 `src/lib/SideBars/SideChatList.svelte` owns selecting, creating, deleting,
 forking, importing, and exporting chats; chat folders; chat/folder names;
-reordering; persona binding; and server-backed metadata watchers. Stable chat
-and folder IDs are the organization keys. The component surfaces pending,
-queued, and failed structural operations and blocks conflicting actions while
-an operation is pending.
+reordering; persona binding; and server-backed metadata watchers. Persona
+binding writes the authoritative `generationSettings.personaId` through the
+generation-settings save queue; legacy `bindedPersona` is compatibility input,
+not a second writable selection. Stable chat and folder IDs are the
+organization keys. The component surfaces pending, queued, and failed
+structural operations and blocks conflicting actions while an operation is
+pending.
 
 Its derived grouping preserves source order and each chat's original array
 position. Selection normally navigates to the stable character/chat route. A

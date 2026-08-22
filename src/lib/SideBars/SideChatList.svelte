@@ -48,14 +48,14 @@
     dispatchReorderChatFoldersAndChatsByIdsWithOutcome,
     dispatchReorderChatsByIdsWithOutcome,
     dispatchResetChatsWithOutcome,
+    dispatchSaveChatGenerationSettingsWithOutcome,
     dispatchSelectChat,
-    dispatchUpdateChatAsync,
     dispatchUpdateChatFolderWithOutcome,
     dispatchUpdateChatWithOutcome,
     type ChatMutationOutcome,
   } from 'src/ts/chatCommands'
   import { reportWriterAccessLostMutation } from 'src/ts/server/activeWriterSession'
-  import { canUseServerCommands, type ServerCommandResult } from 'src/ts/server/commands'
+  import { canUseServerCommands } from 'src/ts/server/commands'
   import {
     rollbackServerBackedChatFolderRowMetadata,
     rollbackServerBackedChatRowMetadata,
@@ -71,6 +71,11 @@
   import GenerationIndicator from './GenerationIndicator.svelte'
   import UnreadIndicator from './UnreadIndicator.svelte'
   import { markChatRead, unreadChatIds } from 'src/ts/process/chatUnread.svelte'
+  import {
+    createActiveChatPersonaSelectionPatch,
+    resolveActiveChatGenerationSettings,
+  } from 'src/ts/activeChatGenerationSettings'
+  import { resolveChatBoundPersonaId } from 'src/ts/personaModuleLinks'
 
   interface Props {
     chara: character
@@ -902,55 +907,46 @@
       const chat = currentSidebarCharacter()?.chats?.find((candidate) => candidate.id === chatId)
       if (!chat) return
 
-      const previousBinding = chat.bindedPersona ?? ''
+      const previousBinding = resolveChatBoundPersonaId(chat) ?? ''
       const confirmed = await alertConfirm(
         previousBinding ? language.doYouWantToUnbindCurrentPersona : language.doYouWantToBindCurrentPersona,
       )
       if (!confirmed) return
 
       const liveChat = currentSidebarCharacter()?.chats?.find((candidate) => candidate.id === chatId)
-      if (!liveChat || (liveChat.bindedPersona ?? '') !== previousBinding) return
+      if (!liveChat || (resolveChatBoundPersonaId(liveChat) ?? '') !== previousBinding) return
 
-      const previous = currentChatStateSnapshot()
-      let bindedPersona = ''
+      let personaId: string | null = null
       if (!previousBinding) {
         const selectedPersona = getDatabase().selectedPersona
         const persona = getDatabase().personas?.[selectedPersona]
-        if (!persona) return
-        bindedPersona = persona.id || v4()
-        if (!persona.id) {
-          withTrustedResourceWrite(() => {
-            if (getDatabase().selectedPersona !== selectedPersona) return
-            const livePersona = getDatabase().personas?.[selectedPersona]
-            if (livePersona && !livePersona.id) {
-              livePersona.id = bindedPersona
-            }
-          })
-        }
+        if (!persona?.id?.trim()) return
+        personaId = persona.id
       }
 
-      if (!applyDirectOptimisticChatMetadata(chatId, (candidate) => (candidate.bindedPersona = bindedPersona))) return
-
-      let result: ServerCommandResult | null
-      try {
-        result = await dispatchUpdateChatAsync(
+      const state = resolveActiveChatGenerationSettings({
+        target: {
+          selectedCharID: -1,
+          chatPage: -1,
+          characterId: chara.chaId,
           chatId,
-          { bindedPersona },
-          previous,
-          false,
-          rollbackServerBackedChatRowMetadata,
-        )
-      } catch {
+        },
+      })
+      if (state.chat?.id !== chatId) return
+      const operation = dispatchSaveChatGenerationSettingsWithOutcome(
+        chatId,
+        createActiveChatPersonaSelectionPatch(personaId, state),
+      )
+      if (!operation) {
         alertError(language.personaBindingFailed)
         return
       }
-      if (result && result.status !== 'ok') {
-        const retainedBinding =
-          currentSidebarCharacter()?.chats?.find((candidate) => candidate.id === chatId)?.bindedPersona ?? ''
-        if (retainedBinding === bindedPersona) {
-          alertNormal(language.personaBindingQueued)
-          return
-        }
+      const result = await operation.settlement
+      if (result.status === 'queued') {
+        alertNormal(language.personaBindingQueued)
+        return
+      }
+      if (result.status === 'failed') {
         alertError(language.personaBindingFailed)
         return
       }

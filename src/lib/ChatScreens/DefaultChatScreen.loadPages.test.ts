@@ -764,6 +764,7 @@ beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,AA==')
   consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
   vi.clearAllMocks()
+  loadPageMocks.getCharImage.mockReturnValue('')
   loadPageMocks.abortActiveGeneration.mockImplementation(() => {
     abortInputHookActivity(captureActiveChatTargetForTest())
   })
@@ -825,6 +826,53 @@ afterEach(() => {
   resetChatGenerationActivitiesForTests()
   resetChatUnreadForTests()
   defaultChatScreenTestChatController.reset()
+})
+
+describe('DefaultChatScreen persona presentation', () => {
+  it('repaints the bound persona when navigation changes the selected character', async () => {
+    seedDatabase([1, 1])
+    const database = getResourceDatabase()
+    database.personas = [
+      {
+        id: 'persona-a',
+        name: 'Persona A',
+        displayName: 'Display A',
+        icon: 'persona-a.png',
+        largePortrait: false,
+        personaPrompt: '',
+      },
+      {
+        id: 'persona-b',
+        name: 'Persona B',
+        displayName: 'Display B',
+        icon: 'persona-b.png',
+        largePortrait: true,
+        personaPrompt: '',
+      },
+    ] as never
+    database.characters[0].chats[0].generationSettings = { personaId: 'persona-a' }
+    database.characters[1].chats[0].generationSettings = { personaId: 'persona-b' }
+    loadPageMocks.getCharImage.mockImplementation((image: unknown) => String(image ?? ''))
+
+    mountScreen()
+    await settle()
+
+    const currentUserRow = () => target.querySelector<HTMLElement>('.risu-chat[data-chat-index="0"]')
+    expect(currentUserRow()?.dataset).toMatchObject({
+      chatName: 'Display A',
+      chatImage: 'persona-a.png',
+      chatLargePortrait: 'false',
+    })
+
+    switchToCharacterChat(1)
+    await settle()
+
+    expect(currentUserRow()?.dataset).toMatchObject({
+      chatName: 'Display B',
+      chatImage: 'persona-b.png',
+      chatLargePortrait: 'true',
+    })
+  })
 })
 
 describe('DefaultChatScreen initial display readiness', () => {

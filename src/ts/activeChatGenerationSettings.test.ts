@@ -22,6 +22,7 @@ import {
   createActiveChatGenerationSettingsPatch,
   createActiveChatGenerationSettingsDefaultValuesPatch,
   createActiveChatGenerationSettingsSelectionPatch,
+  createActiveChatPersonaSelectionPatch,
   createManualModelPresetSelection,
   createPromptPresetSelection,
   fillMissingActiveChatSidebarToggleDefaults,
@@ -479,6 +480,37 @@ describe('active chat generation settings helper', () => {
       body: {
         baseRevision: 100,
         patch: nextSettings,
+      },
+    })
+  })
+
+  it('clears only the authoritative persona id when unbinding a configured chat', () => {
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        mode: 'warm',
+        global: '1',
+        chat: '1',
+        character: '1',
+        integrated: '1',
+      },
+    }
+
+    expect(createActiveChatPersonaSelectionPatch(null)).toEqual({
+      configured: true,
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        mode: 'warm',
+        global: '1',
+        chat: '1',
+        character: '1',
+        integrated: '1',
       },
     })
   })
