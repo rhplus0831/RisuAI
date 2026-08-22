@@ -56,6 +56,7 @@
     generationStage = 0,
     hasNewUnreadMessage = $bindable(false),
     initialDisplayPending = $bindable(false),
+    initialRowsPending = false,
   }: {
     messages: Message[]
     currentCharacter: character
@@ -73,6 +74,7 @@
     generationStage?: number
     hasNewUnreadMessage?: boolean
     initialDisplayPending?: boolean
+    initialRowsPending?: boolean
   } = $props()
 
   let chatBody: HTMLDivElement
@@ -431,7 +433,7 @@
   })
 
   $effect.pre(() => {
-    initialDisplayReadiness.updateScope(getCurrentChatRoomId(), chatRows.length > 0)
+    initialDisplayReadiness.updateScope(getCurrentChatRoomId(), chatRows.length > 0, initialRowsPending)
   })
 
   $effect(() => {

@@ -91,6 +91,10 @@ post-first-asset source through the same-chat batch bridge. Pending parses keep
 the last successful body. On a cold transcript mount, `Chats.svelte` keeps the
 chat-content loading cover visible until the newest two rows' first display
 parses settle; later reparses continue showing their last successful bodies.
+An empty hydration shell starts that cold-display cycle only if persisted rows
+arrive. Once hydration confirms that the chat is empty, its display is ready and
+the first subsequently sent message does not reopen the cover. An authoritative
+re-stub or resync can start a new cycle.
 The cover stays below the app-owned responsive sidebar dialog so opening
 navigation remains usable while the chat finishes rendering.
 Plugin hooks and unsupported surfaces transparently run the former all-client

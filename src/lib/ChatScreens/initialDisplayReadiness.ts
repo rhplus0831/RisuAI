@@ -1,11 +1,11 @@
 export interface InitialDisplayReadiness {
-  updateScope(scopeId: string | null, hasRows: boolean): void
+  updateScope(scopeId: string | null, hasRows: boolean, initialRowsPending: boolean): void
   start(scopeId: string | null, registration: symbol): void
   settle(scopeId: string | null, registration: symbol): void
   destroy(): void
 }
 
-type ReadinessPhase = 'waiting' | 'collecting' | 'ready'
+type ReadinessPhase = 'awaiting-rows' | 'collecting' | 'ready'
 
 export const INITIAL_DISPLAY_MESSAGE_COUNT = 2
 
@@ -29,7 +29,7 @@ export function createInitialDisplayReadiness(
   afterRender: () => PromiseLike<void>,
 ): InitialDisplayReadiness {
   let scopeId: string | null = null
-  let phase: ReadinessPhase = 'waiting'
+  let phase: ReadinessPhase = 'ready'
   let pending = false
   let checkVersion = 0
   let destroyed = false
@@ -52,34 +52,48 @@ export function createInitialDisplayReadiness(
     })
   }
 
+  const transition = (nextPhase: ReadinessPhase, force = false) => {
+    if (!force && phase === nextPhase) return
+    phase = nextPhase
+    registrations.clear()
+    checkVersion += 1
+    publishPending(phase === 'collecting')
+    if (phase === 'collecting') scheduleReadyCheck()
+  }
+
   return {
-    updateScope(nextScopeId, hasRows) {
+    updateScope(nextScopeId, hasRows, initialRowsPending) {
       if (destroyed) return
 
       if (nextScopeId !== scopeId) {
         scopeId = nextScopeId
-        phase = nextScopeId && hasRows ? 'collecting' : 'waiting'
-        registrations.clear()
-        checkVersion += 1
-        publishPending(phase === 'collecting')
-        if (phase === 'collecting') scheduleReadyCheck()
+        transition(
+          !nextScopeId ? 'ready' : hasRows ? 'collecting' : initialRowsPending ? 'awaiting-rows' : 'ready',
+          true,
+        )
         return
       }
 
-      if (!nextScopeId || !hasRows) {
-        if (phase === 'waiting') return
-        phase = 'waiting'
-        registrations.clear()
-        checkVersion += 1
-        publishPending(false)
+      if (!nextScopeId) {
+        transition('ready')
         return
       }
 
-      if (phase === 'waiting') {
-        phase = 'collecting'
-        publishPending(true)
-        scheduleReadyCheck()
+      if (phase === 'ready') {
+        // Later appends and reparses belong to an already-visible transcript.
+        // Only a real re-stub/resync may begin another initial display cycle.
+        if (initialRowsPending) transition('awaiting-rows')
+        return
       }
+
+      if (phase === 'awaiting-rows') {
+        if (hasRows) transition('collecting')
+        else if (!initialRowsPending) transition('ready')
+        return
+      }
+
+      if (initialRowsPending) transition('awaiting-rows')
+      else if (!hasRows) transition('ready')
     },
 
     start(registrationScopeId, registration) {

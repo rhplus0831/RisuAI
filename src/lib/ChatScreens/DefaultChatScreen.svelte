@@ -2924,6 +2924,7 @@
               {userIconPortrait}
               isGenerationActive={currentChatOwnsGeneration}
               generationStage={currentChatGenerationStage}
+              initialRowsPending={activeChatMessagesLoading}
               bind:initialDisplayPending={activeChatDisplayLoading}
               bind:hasNewUnreadMessage={showNewMessageButton} />
           </div>

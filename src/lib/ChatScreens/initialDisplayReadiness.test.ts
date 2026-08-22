@@ -37,7 +37,7 @@ describe('initial transcript display readiness', () => {
     const first = Symbol('first')
     const second = Symbol('second')
 
-    harness.readiness.updateScope('chat-a', true)
+    harness.readiness.updateScope('chat-a', true, false)
     harness.readiness.start('chat-a', first)
     harness.readiness.start('chat-a', second)
     await harness.flushRenderWaiters()
@@ -59,9 +59,9 @@ describe('initial transcript display readiness', () => {
     const stale = Symbol('stale')
     const current = Symbol('current')
 
-    harness.readiness.updateScope('chat-a', true)
+    harness.readiness.updateScope('chat-a', true, false)
     harness.readiness.start('chat-a', stale)
-    harness.readiness.updateScope('chat-b', true)
+    harness.readiness.updateScope('chat-b', true, false)
     harness.readiness.start('chat-b', current)
     harness.readiness.settle('chat-a', stale)
     await harness.flushRenderWaiters()
@@ -77,11 +77,61 @@ describe('initial transcript display readiness', () => {
   it('clears after one render when the initial rows do not mount parsed bodies and ignores later reparses', async () => {
     const harness = createHarness()
 
-    harness.readiness.updateScope('chat-a', true)
+    harness.readiness.updateScope('chat-a', true, false)
     await harness.flushRenderWaiters()
     expect(harness.pendingChanges).toEqual([true, false])
 
     harness.readiness.start('chat-a', Symbol('later-reparse'))
+    expect(harness.pendingChanges).toEqual([true, false])
+  })
+
+  it('keeps a settled empty transcript ready when its first message is appended', async () => {
+    const harness = createHarness()
+    const firstMessage = Symbol('first-message')
+
+    harness.readiness.updateScope('chat-a', false, true)
+    harness.readiness.updateScope('chat-a', false, false)
+    harness.readiness.updateScope('chat-a', true, false)
+    harness.readiness.start('chat-a', firstMessage)
+    harness.readiness.settle('chat-a', firstMessage)
+    await harness.flushRenderWaiters()
+
+    expect(harness.pendingChanges).toEqual([])
+    expect(harness.renderWaiters).toHaveLength(0)
+  })
+
+  it('collects initial parses when an unresolved empty shell receives persisted rows', async () => {
+    const harness = createHarness()
+    const hydratedMessage = Symbol('hydrated-message')
+
+    harness.readiness.updateScope('chat-a', false, true)
+    harness.readiness.updateScope('chat-a', true, false)
+    harness.readiness.start('chat-a', hydratedMessage)
+    await harness.flushRenderWaiters()
+
+    expect(harness.pendingChanges).toEqual([true])
+
+    harness.readiness.settle('chat-a', hydratedMessage)
+    await harness.flushRenderWaiters()
+
+    expect(harness.pendingChanges).toEqual([true, false])
+  })
+
+  it('restarts initial display readiness after a ready transcript is re-stubbed', async () => {
+    const harness = createHarness()
+    const hydratedMessage = Symbol('hydrated-message')
+
+    harness.readiness.updateScope('chat-a', false, false)
+    harness.readiness.updateScope('chat-a', false, true)
+    harness.readiness.updateScope('chat-a', true, false)
+    harness.readiness.start('chat-a', hydratedMessage)
+    await harness.flushRenderWaiters()
+
+    expect(harness.pendingChanges).toEqual([true])
+
+    harness.readiness.settle('chat-a', hydratedMessage)
+    await harness.flushRenderWaiters()
+
     expect(harness.pendingChanges).toEqual([true, false])
   })
 })

@@ -862,6 +862,31 @@ describe('DefaultChatScreen initial display readiness', () => {
     expect(target.textContent).toContain('chat-0 message 0')
     expect(target.textContent).toContain('chat-0 message 3')
   })
+
+  it('does not cover the first message appended to a settled empty chat', async () => {
+    defaultChatScreenTestChatController.hold()
+    seedDatabase([0])
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+    expect(target.querySelector('[data-chat-loading-cover]')).toBeNull()
+
+    getResourceDatabase().characters[0].chats[0].message.push({
+      chatId: 'first-message',
+      role: 'user',
+      data: 'First message',
+    })
+
+    await waitFor(() => {
+      expect(defaultChatScreenTestChatController.pendingCount()).toBe(1)
+      expect(target.querySelector('.chat-message-container')).toBeTruthy()
+    })
+    expect(target.querySelector('[data-chat-loading-cover]')).toBeNull()
+
+    defaultChatScreenTestChatController.release()
+  })
 })
 
 describe('DefaultChatScreen acknowledged Stop lifecycle', () => {
