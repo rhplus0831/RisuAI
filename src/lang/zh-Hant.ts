@@ -1256,6 +1256,7 @@ export const languageChineseTraditional = {
   translatorExcludeThoughts: '排除思維鏈',
   translatorHistoryMaxTokens: '翻譯歷史最大權杖數',
   retranslate: '重新翻譯',
+  retranslateConfirm: '要重新翻譯這則訊息嗎？目前的翻譯將被取代。',
   editTranslation: '編輯翻譯',
   editTranslationSave: '儲存翻譯',
   exportTranslationCache: '匯出翻譯快取',

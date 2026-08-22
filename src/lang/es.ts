@@ -1326,6 +1326,7 @@ export const languageSpanish = {
   translatorExcludeThoughts: 'Excluir cadena de pensamiento',
   translatorHistoryMaxTokens: 'Tokens máximos del historial de traducción',
   retranslate: 'Retraducir',
+  retranslateConfirm: '¿Volver a traducir este mensaje? La traducción actual se reemplazará.',
   editTranslation: 'Editar traducción',
   editTranslationSave: 'Guardar traducción',
   exportTranslationCache: 'Exportar caché de traducción',

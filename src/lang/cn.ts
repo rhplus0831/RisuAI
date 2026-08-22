@@ -1234,6 +1234,7 @@ export const languageChinese = {
   translatorExcludeThoughts: '排除思维链',
   translatorHistoryMaxTokens: '翻译历史最大令牌数',
   retranslate: '重新翻译',
+  retranslateConfirm: '要重新翻译这条消息吗？当前翻译将被替换。',
   editTranslation: '编辑翻译',
   editTranslationSave: '保存翻译',
   exportTranslationCache: '导出翻译缓存',

@@ -1545,6 +1545,44 @@ describe('message action target freshness', () => {
 })
 
 describe('server raw translation controls', () => {
+  it('requires confirmation before replacing an existing message translation', async () => {
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(1, null as unknown as string)
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'llm'
+    testDatabaseState.db.characters[0].chats[0].message[0].translation = {
+      source: 'raw',
+      text: 'existing translation',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm',
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 123,
+    }
+    mountCustomHtmlRows(1)
+    await settle()
+
+    target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
+    await settle()
+    expect(target.textContent).toContain('existing translation')
+
+    customHtmlMocks.alertConfirm.mockResolvedValueOnce(false)
+    buttonByText('retranslate')?.click()
+    await settle()
+
+    expect(customHtmlMocks.alertConfirm).toHaveBeenCalledWith('retranslateConfirm')
+    expect(customHtmlMocks.translateMessageCommand).not.toHaveBeenCalled()
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].translation?.text).toBe('existing translation')
+
+    customHtmlMocks.alertConfirm.mockResolvedValueOnce(true)
+    buttonByText('retranslate')?.click()
+    await settle()
+
+    expect(customHtmlMocks.translateMessageCommand).toHaveBeenCalledOnce()
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].translation?.text).toBe('translated raw')
+  })
+
   it('auto-displays a stored translation once without overriding a manual return to the original', async () => {
     customHtmlMocks.canUseServerCommands.mockReturnValue(true)
     seedDatabase(1, null as unknown as string)

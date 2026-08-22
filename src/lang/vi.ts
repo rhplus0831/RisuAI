@@ -1310,6 +1310,7 @@ export const languageVietnamese = {
   translatorExcludeThoughts: 'Loại trừ chuỗi suy nghĩ',
   translatorHistoryMaxTokens: 'Token tối đa cho lịch sử dịch',
   retranslate: 'Dịch lại',
+  retranslateConfirm: 'Dịch lại tin nhắn này? Bản dịch hiện tại sẽ bị thay thế.',
   editTranslation: 'Chỉnh sửa bản dịch',
   editTranslationSave: 'Lưu bản dịch',
   exportTranslationCache: 'Xuất bộ nhớ đệm dịch',

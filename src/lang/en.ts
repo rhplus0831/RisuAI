@@ -2009,6 +2009,7 @@ export const languageEnglish = {
   translatorExcludeThoughts: 'Exclude Chain-of-Thought',
   translatorHistoryMaxTokens: 'Translation History Max Tokens',
   retranslate: 'Retranslate',
+  retranslateConfirm: 'Retranslate this message? This will replace the current translation.',
   editTranslation: 'Edit Translation',
   editTranslationSave: 'Save Translation',
   exportTranslationCache: 'Export Translation Cache',

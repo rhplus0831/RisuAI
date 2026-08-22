@@ -1349,6 +1349,7 @@ export const languageGerman = {
   translatorExcludeThoughts: 'Gedankengang ausschließen',
   translatorHistoryMaxTokens: 'Maximale Tokens im Übersetzungsverlauf',
   retranslate: 'Neu übersetzen',
+  retranslateConfirm: 'Diese Nachricht neu übersetzen? Die aktuelle Übersetzung wird ersetzt.',
   editTranslation: 'Übersetzung bearbeiten',
   editTranslationSave: 'Übersetzung speichern',
   exportTranslationCache: 'Übersetzungscache exportieren',

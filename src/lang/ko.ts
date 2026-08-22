@@ -1400,6 +1400,7 @@ const languageKoreanBase = {
   translatorExcludeThoughts: '사고 과정 제외',
   translatorHistoryMaxTokens: '번역 기록 최대 토큰',
   retranslate: '다시 번역',
+  retranslateConfirm: '이 메시지를 다시 번역하시겠습니까? 현재 번역이 대체됩니다.',
   editTranslation: '번역 수정',
   editTranslationSave: '번역 저장',
   exportTranslationCache: '번역 캐시 내보내기',

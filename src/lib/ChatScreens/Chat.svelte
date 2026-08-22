@@ -1039,9 +1039,8 @@
       : null
   }
 
-  async function requestServerRawTranslation() {
+  async function requestServerRawTranslation(target: RawTranslationTarget | null = captureRawTranslationTarget()) {
     if (translationInProgress) return
-    const target = captureRawTranslationTarget()
     if (!target) {
       setStatusMessage('Translation target is not ready yet.', 2500)
       return
@@ -1171,6 +1170,31 @@
         translating = false
       }
     }
+  }
+
+  async function confirmServerRawRetranslation() {
+    const target = captureRawTranslationTarget()
+    if (!target || translationInProgress) return
+    if (!(await alertConfirm(language.retranslateConfirm))) return
+    if (!isRenderingRawTranslationTarget(target) || translationInProgress || !canTranslateRawTarget()) return
+    await requestServerRawTranslation(target)
+  }
+
+  async function confirmClientRetranslation() {
+    const sourceMessage = message
+    const sourceIndex = idx
+    if (!(await alertConfirm(language.retranslateConfirm))) return
+    if (
+      translationInProgress ||
+      !translated ||
+      message !== sourceMessage ||
+      idx !== sourceIndex ||
+      hasServerRawTranslationTarget() ||
+      getDatabase().translatorType !== 'llm'
+    ) {
+      return
+    }
+    retranslate = true
   }
 
   // Returns null only when no scoped snapshot exists for the target; a null
@@ -2148,9 +2172,7 @@
       <button
         class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
                             hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center"
-        onclick={async () => {
-          await requestServerRawTranslation()
-        }}>
+        onclick={confirmServerRawRetranslation}>
         <RefreshCcwIcon size={20} />
         <span class="ml-1">
           {language.retranslate}
@@ -2177,9 +2199,7 @@
       <button
         class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
                             hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center"
-        onclick={() => {
-          retranslate = true
-        }}>
+        onclick={confirmClientRetranslation}>
         <RefreshCcwIcon size={20} />
         <span class="ml-1">
           {language.retranslate}
