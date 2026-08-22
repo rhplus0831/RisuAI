@@ -73,7 +73,7 @@ whether Fastify can faithfully own the request. Server generation then calls
 The effective-config order is selected model preset, prompt-preset generation
 fields, prompt-preset model overrides, profile-bound runtime fields, then a
 final reapplication of prompt-preset model overrides. Chat-scoped persona,
-Agent Preset, jailbreak, sidebar-toggle, and Prompt/Agent module integration
+Persona-linked modules, Agent Preset, jailbreak, sidebar-toggle, and Prompt/Agent module integration
 are materialized before assembly. This is an effective request overlay; it does
 not rewrite global settings.
 

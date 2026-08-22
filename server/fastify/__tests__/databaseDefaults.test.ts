@@ -418,6 +418,29 @@ describe('database defaults', () => {
     expect(database.keepSessionAlive).toBe('sound')
   })
 
+  it('normalizes Persona links to unique existing non-MCP modules', () => {
+    const database = normalizeDatabaseDefaults(
+      {
+        modules: [
+          { id: 'module-a', name: 'A', description: '' },
+          { id: 'mcp-a', name: 'MCP', description: '', mcp: { url: 'internal:risuai' } },
+        ],
+        personas: [
+          {
+            id: 'persona-a',
+            name: 'Persona',
+            icon: '',
+            personaPrompt: '',
+            modules: ['module-a', 'module-a', 'missing', 'mcp-a'],
+          },
+        ],
+      },
+      { providerDefaults: false },
+    )
+
+    expect((database.personas as Array<{ modules?: string[] }>)[0].modules).toEqual(['module-a'])
+  })
+
   it('removes retired hotkey rows while preserving supported custom bindings', () => {
     const database = normalizeDatabaseDefaults(
       {

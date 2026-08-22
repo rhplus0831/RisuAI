@@ -73,14 +73,21 @@ export interface SelectedPersonaProjectionSnapshot {
   userNote: string
   displayName: string
   largePortrait: boolean
+  modules: string[]
 }
 
 export type SelectedPersonaProfileField = 'username' | 'userNote' | 'personaPrompt'
-export type SelectedPersonaDirtyField = SelectedPersonaProfileField | 'userIcon' | 'displayName' | 'largePortrait'
+export type SelectedPersonaDirtyField =
+  | SelectedPersonaProfileField
+  | 'userIcon'
+  | 'displayName'
+  | 'largePortrait'
+  | 'modules'
 export type PersonaPersistenceStatus = 'accepted' | 'queued' | 'failed'
 type PersonaProfileMirrorField = 'username' | 'userIcon' | 'personaPrompt' | 'userNote'
 type PersonaRowProfileField = 'name' | 'icon' | 'personaPrompt' | 'note'
-type PersonaRowRollbackField = PersonaRowProfileField | 'displayName' | 'largePortrait'
+type PersonaRowRollbackField = PersonaRowProfileField | 'displayName' | 'largePortrait' | 'modules'
+type SelectedPersonaDirtyValue = string | boolean | string[]
 
 interface PersonaProfileMirrorRollbackSnapshot {
   selectedPersona: number
@@ -122,7 +129,7 @@ let personaSettingsWatcherSuppressed = false
 let personaSettingsWatcherSuppressionToken = 0
 let nextImportedPersonaCreateOperationId = 1
 const pendingImportedPersonaCreates: PendingImportedPersonaCreate[] = []
-const dirtySelectedPersonaFieldsById = new Map<string, Map<SelectedPersonaDirtyField, string | boolean>>()
+const dirtySelectedPersonaFieldsById = new Map<string, Map<SelectedPersonaDirtyField, SelectedPersonaDirtyValue>>()
 const personaProfileMirrorFields: readonly PersonaProfileMirrorField[] = [
   'username',
   'userIcon',
@@ -137,6 +144,7 @@ const personaRowRollbackFields = new Set<PersonaRowRollbackField>([
   'note',
   'displayName',
   'largePortrait',
+  'modules',
 ])
 
 function cloneJsonValue<T>(value: T): T {
@@ -225,6 +233,7 @@ export function currentSelectedPersonaProjectionSnapshot(): SelectedPersonaProje
     userNote: getDatabase().userNote,
     displayName: selectedPersona?.displayName ?? '',
     largePortrait: selectedPersona?.largePortrait ?? false,
+    modules: cloneJsonValue(selectedPersona?.modules ?? []),
   }
 }
 
@@ -873,6 +882,7 @@ function selectedPersonaPatchFromState(snapshot: PersonaStateSnapshot, personaId
     personaPrompt: selected ? snapshot.personaPrompt : persona.personaPrompt,
     note: selected ? snapshot.userNote : persona.note,
     largePortrait: persona.largePortrait ?? false,
+    modules: cloneJsonValue(persona.modules ?? []),
   }
 }
 
@@ -912,6 +922,7 @@ function changedPersonaProfilePatch(
         personaPrompt: previousPersona.personaPrompt ?? '',
         note: previousPersona.note ?? '',
         largePortrait: previousPersona.largePortrait ?? false,
+        modules: cloneJsonValue(previousPersona.modules ?? []),
       }
     : null
   const attemptedRow: PersonaSnapshot = {
@@ -921,6 +932,7 @@ function changedPersonaProfilePatch(
     personaPrompt: attemptedPersona.personaPrompt ?? '',
     note: attemptedPersona.note ?? '',
     largePortrait: attemptedPersona.largePortrait ?? false,
+    modules: cloneJsonValue(attemptedPersona.modules ?? []),
   }
   const changed = changedSelectedPersonaPatch(personaId, previous, attempted)
   for (const [key, value] of Object.entries(attemptedRow)) {
@@ -949,7 +961,10 @@ function isSelectedPersonaProfileField(
 function selectedPersonaFieldProjectionValue(
   persona: Persona | undefined,
   field: SelectedPersonaDirtyField,
-): string | boolean | undefined {
+): SelectedPersonaDirtyValue | undefined {
+  if (field === 'modules') {
+    return cloneJsonValue(persona?.modules ?? [])
+  }
   if (field === 'largePortrait') {
     return persona?.largePortrait ?? false
   }
@@ -964,7 +979,7 @@ function selectedPersonaLegacyProjectionValue(field: SelectedPersonaProfileField
   return getDatabase()[field] ?? ''
 }
 
-function markSelectedPersonaFieldDirty(field: SelectedPersonaDirtyField, value: string | boolean): void {
+function markSelectedPersonaFieldDirty(field: SelectedPersonaDirtyField, value: SelectedPersonaDirtyValue): void {
   const personaId = selectedPersonaId()
   if (!personaId) return
   let dirtyFields = dirtySelectedPersonaFieldsById.get(personaId)
@@ -1006,7 +1021,7 @@ function clearPersonaPatchDirtyFields(
   for (const rowField of rowFields) {
     const field = selectedPersonaDirtyFieldForRowField(rowField)
     const attemptedValue = selectedPersonaFieldProjectionValue(attemptedPersona, field)
-    if (attemptedValue !== undefined && dirtyFields.get(field) === attemptedValue) {
+    if (attemptedValue !== undefined && exactJsonValuesEqual(dirtyFields.get(field), attemptedValue)) {
       dirtyFields.delete(field)
     }
   }
@@ -1015,16 +1030,14 @@ function clearPersonaPatchDirtyFields(
 
 function clearDirtySelectedPersonaFieldsMatchingProjection(
   persona: Persona | undefined,
-  dirtyFields: Map<SelectedPersonaDirtyField, string | boolean>,
+  dirtyFields: Map<SelectedPersonaDirtyField, SelectedPersonaDirtyValue>,
 ): void {
   for (const [field, value] of Array.from(dirtyFields.entries())) {
     const rowValue = selectedPersonaFieldProjectionValue(persona, field)
     const projectionMatchesDirtyValue =
-      field === 'largePortrait'
-        ? rowValue === value
-        : field === 'displayName'
-          ? rowValue === value
-          : rowValue === value && selectedPersonaLegacyProjectionValue(field) === value
+      field === 'largePortrait' || field === 'displayName' || field === 'modules'
+        ? exactJsonValuesEqual(rowValue, value)
+        : rowValue === value && selectedPersonaLegacyProjectionValue(field) === value
     if (projectionMatchesDirtyValue) {
       dirtyFields.delete(field)
     }
@@ -1056,10 +1069,11 @@ export function settleAcceptedPersonaPatchDirtyFields(
   }
   if (Object.prototype.hasOwnProperty.call(attemptedPatch, 'displayName')) acceptedFields.push('displayName')
   if (Object.prototype.hasOwnProperty.call(attemptedPatch, 'largePortrait')) acceptedFields.push('largePortrait')
+  if (Object.prototype.hasOwnProperty.call(attemptedPatch, 'modules')) acceptedFields.push('modules')
 
   for (const field of acceptedFields) {
     const attemptedValue = selectedPersonaFieldProjectionValue(attemptedPersona as Persona, field)
-    if (attemptedValue !== undefined && dirtyFields.get(field) === attemptedValue) {
+    if (attemptedValue !== undefined && exactJsonValuesEqual(dirtyFields.get(field), attemptedValue)) {
       dirtyFields.delete(field)
     }
   }
@@ -1108,6 +1122,10 @@ export function reconcileSelectedPersonaProjectionEpoch(): void {
       if (nonBlankPersonaId(persona) !== personaId) return
 
       for (const [field, value] of dirtyFields) {
+        if (field === 'modules') {
+          persona.modules = cloneJsonValue(Array.isArray(value) ? value : [])
+          continue
+        }
         if (field === 'largePortrait') {
           persona.largePortrait = value === true
           continue
@@ -1709,6 +1727,25 @@ export function updateSelectedPersonaDisplayName(value: string): void {
   })
 }
 
+export function updateSelectedPersonaModules(moduleIds: readonly string[]): void {
+  const persona = getDatabase().personas[getDatabase().selectedPersona]
+  if (!persona) return
+  const linkableModuleIds = new Set(
+    (getDatabase().modules ?? []).filter((module) => !module.mcp).map((module) => module.id),
+  )
+  const next = Array.from(
+    new Set(
+      moduleIds.filter((moduleId): moduleId is string => {
+        return typeof moduleId === 'string' && moduleId.trim().length > 0 && linkableModuleIds.has(moduleId)
+      }),
+    ),
+  )
+  markSelectedPersonaFieldDirty('modules', cloneJsonValue(next))
+  withTrustedResourceWrite(() => {
+    getDatabase().personas[getDatabase().selectedPersona].modules = cloneJsonValue(next)
+  })
+}
+
 export interface NewUserPersonaMutation {
   persona: Persona
   persistence: Promise<PersonaPersistenceStatus>
@@ -1723,6 +1760,7 @@ export function createNewUserPersonaWithOutcome(): NewUserPersonaMutation {
     icon: '',
     personaPrompt: '',
     note: '',
+    modules: [],
   } as Persona
 
   suppressPersonaSettingsWatcherUntilNextTask()
@@ -2153,6 +2191,7 @@ export async function importUserPersona() {
         icon: await saveImage(await reencodeImage(v.data)),
         personaPrompt: data.personaPrompt,
         note: data.note,
+        modules: [],
         id: v4(),
       }
       const previous = currentPersonaStateSnapshot()

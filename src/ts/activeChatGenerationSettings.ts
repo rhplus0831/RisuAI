@@ -28,6 +28,7 @@ import type { ServerCommandTransportOptions } from './server/commands'
 import { getResourceDatabase } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
 import type { Chat, Database, character } from './storage/database.svelte'
+import { resolvePersonaModuleIdsById } from './personaModuleLinks'
 
 type ActiveChatGenerationPromptPresetReference = ChatGenerationPromptPresetReference & {
   moduleIntergration?: unknown
@@ -525,6 +526,7 @@ function resolveReadiness(
     enabledModuleIds: stringArray(db.enabledModules),
     chatModuleIds: stringArray(chat?.modules),
     characterModuleIds: stringArray(character?.modules),
+    personaModuleIds: resolvePersonaModuleIdsById(db, settings?.personaId),
     moduleIntegration:
       typeof selectedPromptPreset?.moduleIntergration === 'string' ? selectedPromptPreset.moduleIntergration : null,
   })
@@ -560,6 +562,7 @@ function resolveDisplayedToggles(
     enabledModuleIds: stringArray(db.enabledModules),
     chatModuleIds: stringArray(chat?.modules),
     characterModuleIds: stringArray(character?.modules),
+    personaModuleIds: resolvePersonaModuleIdsById(db, settings?.personaId),
     moduleIntegration:
       typeof selectedPromptPreset?.moduleIntergration === 'string' ? selectedPromptPreset.moduleIntergration : null,
   })

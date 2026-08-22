@@ -5,12 +5,18 @@ const moduleMenuDatabase = vi.hoisted(() => ({
   characters: [
     {
       chatPage: 0,
-      chats: [{ modules: [] as string[] }],
+      chats: [{ modules: [] as string[] }] as Array<{
+        modules: string[]
+        generationSettings?: { personaId?: string }
+        bindedPersona?: string
+      }>,
       modules: [] as string[],
     },
   ],
   enabledModules: [] as string[],
   modules: [] as Array<{ id: string; name: string; mcp?: unknown }>,
+  personas: [] as Array<{ id: string; modules?: string[] }>,
+  selectedPersona: 0,
 }))
 
 const moduleMenuMocks = vi.hoisted(() => ({
@@ -85,6 +91,8 @@ beforeEach(() => {
   moduleMenuDatabase.characters[0].modules = []
   moduleMenuDatabase.modules = []
   moduleMenuDatabase.enabledModules = []
+  moduleMenuDatabase.personas = []
+  moduleMenuDatabase.selectedPersona = 0
   moduleMenuMocks.toggleSelectedCharacterModule.mockReset()
   moduleMenuMocks.toggleSelectedChatModule.mockReset()
   moduleMenuMocks.toggleSelectedCharacterModule.mockResolvedValue({ status: 'accepted', result: null })
@@ -134,6 +142,18 @@ describe('ModuleChatMenu modal behavior', () => {
     expect(target.querySelector('button[aria-label="Module: MCP A"]')).toBeNull()
     expect(moduleMenuMocks.toggleSelectedChatModule).not.toHaveBeenCalled()
     expect(moduleMenuMocks.toggleSelectedCharacterModule).not.toHaveBeenCalled()
+  })
+
+  it('shows Persona-linked modules as active without exposing a chat toggle', async () => {
+    moduleMenuDatabase.modules = [{ id: 'module-a', name: 'Module A' }]
+    moduleMenuDatabase.personas = [{ id: 'persona-a', modules: ['module-a'] }]
+    moduleMenuDatabase.characters[0].chats = [{ modules: [], generationSettings: { personaId: 'persona-a' } }]
+    component = mount(ModuleChatMenu, { target, props: { close: vi.fn() } })
+    await settle()
+
+    expect(target.textContent).toContain(language.personaModuleLinkActive)
+    expect(target.querySelector('button[aria-label="Module: Module A"]')).toBeNull()
+    expect(moduleMenuMocks.toggleSelectedChatModule).not.toHaveBeenCalled()
   })
 
   it('shows pending and failed state when a chat-scoped toggle is rejected', async () => {

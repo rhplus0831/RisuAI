@@ -875,6 +875,9 @@ const COLLECTION_SCOPED_READS = {
   onboarding: ['modelPresets', 'promptPresets'],
   presets: ['botPresets'],
   personas: ['personas'],
+  // Persona create/update validates module links without broadening the write:
+  // only the persona row/table is persisted by those commands.
+  personasWithModules: ['personas', 'modules'],
   translatorPresets: ['translatorPresets'],
   loadouts: ['loadouts'],
   lorebooks: ['loreBook'],
@@ -4680,9 +4683,10 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
-        collectionScopedRead: COLLECTION_SCOPED_READS.personas,
+        collectionScopedRead: COLLECTION_SCOPED_READS.personasWithModules,
         mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
+          validateNormalModuleLinks(ensureModuleRecords(target), persona.modules ?? [], 'persona.modules')
           const personas = ensurePersonaCollection(target)
           if (findPersonaIndex(personas, persona.id) !== -1) {
             throw new ValidationError(`Duplicate persona id: ${persona.id}`)
@@ -4745,9 +4749,12 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
-        collectionScopedRead: COLLECTION_SCOPED_READS.personas,
+        collectionScopedRead: COLLECTION_SCOPED_READS.personasWithModules,
         mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
+          if (Array.isArray(patch.modules)) {
+            validateNormalModuleLinks(ensureModuleRecords(target), patch.modules, 'patch.modules')
+          }
           const personas = ensurePersonaCollection(target)
           const index = requirePersonaIndex(personas, personaId)
           personas[index] = {

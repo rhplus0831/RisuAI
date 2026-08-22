@@ -1156,8 +1156,9 @@ describe('API-backed resource invalidation', () => {
 
     expect(api.settingsGroup).toHaveBeenCalledWith('modules', undefined)
     expect(api.settings).not.toHaveBeenCalled()
-    expect(api.collection).toHaveBeenCalledTimes(2)
+    expect(api.collection).toHaveBeenCalledTimes(3)
     expect(api.collection).toHaveBeenCalledWith('modules', undefined)
+    expect(api.collection).toHaveBeenCalledWith('personas', undefined)
     expect(api.collection).toHaveBeenCalledWith('loadouts', undefined)
     expect(api.characters).toHaveBeenCalledWith(undefined)
   })

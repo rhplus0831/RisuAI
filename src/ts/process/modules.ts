@@ -18,6 +18,7 @@ import { compressImage } from '../media'
 import { decodeRPack, encodeRPack } from '../rpack/rpack_js'
 import { HideIconStore, moduleBackgroundEmbedding, reloadGuiAfterDefinitionChange } from '../stores.svelte'
 import { createGlobalModule } from '../moduleCommands'
+import { resolvePersonaModuleIds } from '../personaModuleLinks'
 import { SERVER_ASSET_CONTENT_TYPES } from '../server/assets'
 import {
   currentLorebookCollectionScopedSnapshot,
@@ -658,6 +659,7 @@ export function getModules() {
   if (character && character.modules) {
     ids = ids.concat(character.modules)
   }
+  ids = ids.concat(resolvePersonaModuleIds(db, currentChat))
   const moduleIntergration = combineModuleIntegrations(
     promptPresetModuleIntegration(db, currentChat),
     resolveAgentPresetModuleIntegration(

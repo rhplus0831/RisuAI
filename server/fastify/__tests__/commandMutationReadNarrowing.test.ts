@@ -808,7 +808,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
       'POST',
       '/api/v1/commands/personas',
       { baseRevision: revision, persona: { id: 'l11-persona', name: 'L11 Persona' } },
-      ['personas'],
+      ['personas', 'modules'],
     )
 
     await runScopedCollectionCommand(

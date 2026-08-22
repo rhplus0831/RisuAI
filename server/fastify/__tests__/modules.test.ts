@@ -92,6 +92,27 @@ describe('Phase 7-6d getActiveModules', () => {
     expect(getActiveModules(db, char, undefined)).toEqual([a])
   })
 
+  it('adds modules linked to the Persona selected for the chat', () => {
+    const linked = makeModule({ id: 'persona-module' })
+    const db = makeDb({
+      modules: [linked],
+      selectedPersona: 0,
+      personas: [
+        { id: 'persona-global', name: 'Global', icon: '', personaPrompt: '', modules: [] },
+        {
+          id: 'persona-chat',
+          name: 'Chat',
+          icon: '',
+          personaPrompt: '',
+          modules: ['persona-module'],
+        },
+      ],
+    })
+    const currentChat = makeChat({ generationSettings: { personaId: 'persona-chat' } })
+
+    expect(getActiveModules(db, undefined, currentChat)).toEqual([linked])
+  })
+
   it('parses db.moduleIntergration as a comma-separated list', () => {
     const a = makeModule({ id: 'a' })
     const b = makeModule({ id: 'b' })

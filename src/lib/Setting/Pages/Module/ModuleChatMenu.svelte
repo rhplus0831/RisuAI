@@ -15,6 +15,7 @@
   import { selectedCharID, SettingsMenuIndex, settingsOpen } from 'src/ts/stores.svelte'
   import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
+  import { resolvePersonaModuleIds } from 'src/ts/personaModuleLinks'
 
   interface Props {
     close?: any
@@ -38,6 +39,15 @@
         let score = a.name.toLowerCase().localeCompare(b.name.toLowerCase())
         return score
       })
+  }
+
+  function activeChat() {
+    const character = getResourceDatabase().characters[$selectedCharID]
+    return character?.chats?.[character.chatPage]
+  }
+
+  function isPersonaLinked(moduleId: string): boolean {
+    return resolvePersonaModuleIds(getResourceDatabase(), activeChat()).includes(moduleId)
   }
 
   function closeMenu(): void {
@@ -166,7 +176,7 @@
               {#if rmodule.mcp}
                 <Waypoints size={18} class="mr-2" />
               {/if}
-              {#if !alertMode && getResourceDatabase().enabledModules.includes(rmodule.id)}
+              {#if !alertMode && (getResourceDatabase().enabledModules.includes(rmodule.id) || isPersonaLinked(rmodule.id))}
                 <span class="text-textcolor2">{rmodule.name}</span>
               {:else}
                 <span class="">{rmodule.name}</span>
@@ -185,6 +195,8 @@
                   </button>
                 {:else if getResourceDatabase().enabledModules.includes(rmodule.id)}
                   <span class="mr-2" aria-hidden="true"></span>
+                {:else if isPersonaLinked(rmodule.id)}
+                  <span class="mr-2 text-xs text-blue-400">{language.personaModuleLinkActive}</span>
                 {:else if rmodule.mcp}
                   <span class="mr-2" aria-hidden="true"></span>
                 {:else}

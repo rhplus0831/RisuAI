@@ -60,6 +60,7 @@ import {
   updateSelectedPersonaField,
   updateSelectedPersonaFieldWithOutcome,
   updateSelectedPersonaLargePortrait,
+  updateSelectedPersonaModules,
 } from './persona'
 
 function cloneJsonValue<T>(value: T): T {
@@ -417,9 +418,14 @@ describe('persona ID read and command preparation', () => {
       ],
       0,
     )
+    getDatabase().modules = [
+      { id: 'module-a', name: 'Module A' },
+      { id: 'module-b', name: 'Module B' },
+    ] as any
     const previous = currentPersonaStateSnapshot()
     updateSelectedPersonaField('personaPrompt', 'Unsaved prompt')
     updateSelectedPersonaDisplayName('Unsaved display name')
+    updateSelectedPersonaModules(['module-a', 'module-b'])
     const attempted = currentPersonaStateSnapshot()
     queueSelectedPersonaUpdate(previous, attempted)
 
@@ -444,6 +450,7 @@ describe('persona ID read and command preparation', () => {
     expect(fetch).toHaveBeenCalledTimes(2)
     expect(updateBody.patch).toEqual({
       displayName: 'Unsaved display name',
+      modules: ['module-a', 'module-b'],
       personaPrompt: 'Unsaved prompt',
     })
     expect(currentPersonaStateSnapshot()).toEqual(previous)

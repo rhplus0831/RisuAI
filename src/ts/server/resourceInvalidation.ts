@@ -817,6 +817,7 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
     case 'module':
       addSettingsGroup('modules')
       plan.collections.add('modules')
+      plan.collections.add('personas')
       plan.collections.add('loadouts')
       addAllCharacters()
       return

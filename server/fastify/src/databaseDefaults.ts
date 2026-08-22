@@ -388,6 +388,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'removePunctuationHypa', true)
   setDefault(database, 'memoryLimitThickness', 1)
   setDefault(database, 'modules', [])
+  normalizePersonaModuleLinks(database)
   setDefault(database, 'enabledModules', [])
   setDefault(database, 'additionalParams', [])
   setDefault(database, 'applyAdditionalParamsToAll', false)
@@ -745,6 +746,7 @@ function normalizePersonas(database: JsonRecord): void {
         icon: typeof database.userIcon === 'string' ? database.userIcon : '',
         note: typeof database.userNote === 'string' ? database.userNote : '',
         largePortrait: false,
+        modules: [],
       },
     ]
     database.selectedPersona = 0
@@ -758,11 +760,38 @@ function normalizePersonas(database: JsonRecord): void {
     const id = requestedId && !seen.has(requestedId) ? requestedId : `persona-${index + 1}`
     persona.id = seen.has(id) ? `${id}-${index + 1}` : id
     seen.add(persona.id as string)
+    if (persona.modules !== undefined) {
+      persona.modules = Array.isArray(persona.modules)
+        ? Array.from(
+            new Set(
+              persona.modules.filter(
+                (moduleId): moduleId is string => typeof moduleId === 'string' && moduleId.trim().length > 0,
+              ),
+            ),
+          )
+        : []
+    }
   }
 
   if (!Number.isInteger(database.selectedPersona)) database.selectedPersona = 0
   const selected = database.selectedPersona as number
   if (selected < 0 || selected >= database.personas.length) database.selectedPersona = 0
+}
+
+function normalizePersonaModuleLinks(database: JsonRecord): void {
+  if (!Array.isArray(database.personas) || !Array.isArray(database.modules)) return
+  const availableModuleIds = new Set(
+    database.modules.flatMap((module) => {
+      if (!isRecord(module) || module.mcp || typeof module.id !== 'string' || !module.id.trim()) return []
+      return [module.id]
+    }),
+  )
+  for (const persona of database.personas) {
+    if (!isRecord(persona) || !Array.isArray(persona.modules)) continue
+    persona.modules = persona.modules.filter(
+      (moduleId): moduleId is string => typeof moduleId === 'string' && availableModuleIds.has(moduleId),
+    )
+  }
 }
 
 function normalizeNAISettings(database: JsonRecord): void {

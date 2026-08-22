@@ -156,6 +156,7 @@ function isJsonValueEqual(left: unknown, right: unknown): boolean {
 
 export interface ChatGenerationPersonaReference {
   id?: string | null
+  modules?: readonly string[] | null
 }
 
 export interface ChatGenerationPromptTemplateItemReference {
@@ -266,6 +267,7 @@ export interface ResolveChatGenerationRequirementsInput {
   enabledModuleIds?: readonly string[]
   chatModuleIds?: readonly string[]
   characterModuleIds?: readonly string[]
+  personaModuleIds?: readonly string[]
   moduleIntegration?: string | null
 }
 
@@ -425,8 +427,12 @@ export function resolveChatGenerationSettingsReadiness(
   input: ResolveChatGenerationSettingsReadinessInput,
 ): ChatGenerationSettingsReadiness {
   const settings = input.settings
+  const personaModuleIds = isNonEmptyString(settings?.personaId)
+    ? (input.personas.find((persona) => persona.id === settings.personaId)?.modules ?? [])
+    : []
   const requirements = resolveChatGenerationControlRequirements({
     ...input,
+    personaModuleIds,
     modelPresetId: settings?.modelPresetId,
     promptPresetId: settings?.promptPresetId,
     agentPresetId:
@@ -791,6 +797,7 @@ function resolveActiveModules(input: ResolveChatGenerationRequirementsInput): Ch
     ...(input.enabledModuleIds ?? []),
     ...(input.chatModuleIds ?? []),
     ...(input.characterModuleIds ?? []),
+    ...(input.personaModuleIds ?? []),
     ...parseModuleIntegration(input.moduleIntegration),
     ...parseModuleIntegration(agentPresetModuleIntegration),
   ].filter(isNonEmptyString)

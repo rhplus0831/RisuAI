@@ -186,7 +186,7 @@ Module record patches use the same compact contract for optional module
 metadata, including CJS and asset references. `POST /api/v1/commands/modules`
 independently applies the shared MCP import predicate at creation. Stored MCP
 rows can be globally enabled or durably deleted, but cannot be patched or
-linked to character, chat, or loadout scopes.
+linked to character, chat, Persona, or loadout scopes.
 Single-key plugin-storage `PUT`/`DELETE` commands skip full database load and
 touch only `plugin_custom_storage`; bulk storage reads and merges current
 storage. Plugin collection commands are similarly scoped, and deleting the
@@ -206,7 +206,8 @@ are released.
 MCP and tool orchestration mostly lives under `src/ts/process/mcp/`. MCP
 initialization reads MCP URLs from currently active modules via
 `getModuleMcps()` in `src/ts/process/modules.ts`: global enabled modules,
-current chat modules, current character modules, the selected Prompt Preset's
+current chat modules, current character modules, modules linked to the Persona
+effective for the current chat, the selected Prompt Preset's
 `moduleIntergration` (or the global fallback when no prompt preset is selected),
 and the effective enabled Agent Preset's `moduleIntergration`.
 `combineModuleIntegrations()` deduplicates the integration sources before

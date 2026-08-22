@@ -1543,6 +1543,9 @@ describe('module command projection helpers', () => {
   it('optimistically applies global module delete references and rolls back on command failure', async () => {
     const calls = stubFailingCommandFetch()
     getDatabase().enabledModules = ['mod-a']
+    getDatabase().personas = [
+      { id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: '', modules: ['mod-a', 'persona-module'] },
+    ]
     getDatabase().characters = [
       {
         chaId: 'char-a',
@@ -1562,6 +1565,7 @@ describe('module command projection helpers', () => {
 
     expect(getDatabase().enabledModules).toEqual([])
     expect(getDatabase().modules.map((module) => module.id)).toEqual(['mod-b'])
+    expect(getDatabase().personas[0].modules).toEqual(['persona-module'])
     expect(getDatabase().characters[0].modules).toEqual(['character-module'])
     expect(getDatabase().characters[0].chats[0].modules).toEqual(['chat-module'])
 
@@ -1575,6 +1579,7 @@ describe('module command projection helpers', () => {
     expect(getDatabase().enabledModules).toEqual(['mod-a'])
     expect(getDatabase().modules.map((module) => module.id)).toEqual(['mod-a', 'mod-b'])
     expect(getDatabase().modules[0].name).toBe('Latest optimistic module child edit')
+    expect(getDatabase().personas[0].modules).toEqual(['mod-a', 'persona-module'])
     expect(getDatabase().characters[0].modules).toEqual(['mod-a', 'character-module'])
     expect(getDatabase().characters[0].chats[0].modules).toEqual(['mod-a', 'chat-module'])
     expect(getDatabase().characters[0].name).toBe('Concurrent character edit')
@@ -1809,6 +1814,10 @@ describe('module command projection helpers', () => {
   it('failed delete reinserts only deleted module and restores references only while they match attempted deletion', async () => {
     const calls = stubFailingCommandFetch()
     getDatabase().enabledModules = ['mod-a', 'mod-b']
+    getDatabase().personas = [
+      { id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: '', modules: ['mod-a', 'persona-module'] },
+      { id: 'persona-b', name: 'Persona B', icon: '', personaPrompt: '', modules: ['mod-a', 'changed-persona'] },
+    ]
     getDatabase().characters = [
       {
         chaId: 'char-a',
@@ -1837,6 +1846,7 @@ describe('module command projection helpers', () => {
     deleteGlobalModule('mod-a')
     expect(getDatabase().modules.map((module) => module.id)).toEqual(['mod-b'])
     expect(getDatabase().enabledModules).toEqual(['mod-b'])
+    expect(getDatabase().personas[0].modules).toEqual(['persona-module'])
     expect(getDatabase().characters[0].modules).toEqual(['character-module'])
     expect(getDatabase().characters[0].chats[0].modules).toEqual(['chat-module'])
     expect(getDatabase().loadouts[0].modules).toEqual(['loadout-module'])
@@ -1844,6 +1854,7 @@ describe('module command projection helpers', () => {
     withTrustedResourceWrite(() => {
       getDatabase().modules.push({ id: 'mod-c', name: 'Newer Module C' } as any)
       getDatabase().enabledModules.push('mod-c')
+      getDatabase().personas[1].modules = ['newer-persona-ref']
       getDatabase().characters[1].modules = ['newer-character-ref']
       getDatabase().characters[1].chats[0].modules = ['newer-chat-ref']
       getDatabase().loadouts[1].modules = ['newer-loadout-ref']
@@ -1854,6 +1865,8 @@ describe('module command projection helpers', () => {
 
     expect(getDatabase().modules.map((module) => module.id)).toEqual(['mod-a', 'mod-b', 'mod-c'])
     expect(getDatabase().enabledModules).toEqual(['mod-a', 'mod-b', 'mod-c'])
+    expect(getDatabase().personas[0].modules).toEqual(['mod-a', 'persona-module'])
+    expect(getDatabase().personas[1].modules).toEqual(['newer-persona-ref'])
     expect(getDatabase().characters[0].modules).toEqual(['mod-a', 'character-module'])
     expect(getDatabase().characters[0].chats[0].modules).toEqual(['mod-a', 'chat-module'])
     expect(getDatabase().characters[1].modules).toEqual(['newer-character-ref'])

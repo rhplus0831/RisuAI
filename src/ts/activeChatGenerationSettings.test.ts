@@ -439,6 +439,11 @@ describe('active chat generation settings helper', () => {
   })
 
   it('saves first-time persona/preset selections with an explicit jailbreak toggle off', async () => {
+    testDatabaseState.db.personas[0].modules = ['persona-module']
+    testDatabaseState.db.modules.push({
+      id: 'persona-module',
+      customModuleToggle: 'persona=Persona module',
+    } as never)
     const calls = stubCommandFetch()
     setResourceWriteGuardEnabled(true)
 
@@ -455,6 +460,7 @@ describe('active chat generation settings helper', () => {
         global: '0',
         chat: '0',
         character: '0',
+        persona: '0',
       },
     })
 

@@ -607,6 +607,7 @@ export type PersonaSnapshot = Record<string, unknown> & {
   personaPrompt?: string
   note?: string
   largePortrait?: boolean
+  modules?: string[]
 }
 
 export type TranslatorPresetSnapshot = Record<string, unknown> & {

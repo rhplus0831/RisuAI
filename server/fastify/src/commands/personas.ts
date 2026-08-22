@@ -19,6 +19,7 @@ export interface PersonaRecord extends JsonRecord {
   personaPrompt?: string
   note?: string
   largePortrait?: boolean
+  modules?: string[]
 }
 
 export type PersonaMutationOperation = 'create' | 'delete' | 'select' | 'reorder'
@@ -117,6 +118,9 @@ export function normalizePersonaCollection(database: unknown): void {
 export function createPersonaRecord(input: unknown, options: { assetDb?: DatabaseSync } = {}): PersonaRecord {
   const persona = readJsonObject(input, 'persona') as PersonaRecord
   persona.id = readPersonaId(persona.id, 'persona.id')
+  if (Object.prototype.hasOwnProperty.call(persona, 'modules')) {
+    persona.modules = readPersonaModuleIds(persona.modules, 'persona.modules')
+  }
   validatePersonaRecord(persona, 'persona', options)
   return persona
 }
@@ -124,6 +128,9 @@ export function createPersonaRecord(input: unknown, options: { assetDb?: Databas
 function repairPersonaRecord(input: unknown, options: { assetDb?: DatabaseSync } = {}): PersonaRecord {
   const persona = readJsonObject(input, 'persona') as PersonaRecord
   persona.id = typeof persona.id === 'string' && persona.id.trim() ? persona.id : randomUUID()
+  if (Object.prototype.hasOwnProperty.call(persona, 'modules')) {
+    persona.modules = readPersonaModuleIds(persona.modules, 'persona.modules')
+  }
   validatePersonaRecord(persona, 'persona', options)
   return persona
 }
@@ -133,8 +140,29 @@ export function readPersonaPatch(input: unknown, options: { assetDb?: DatabaseSy
   if (Object.keys(patch).length === 0) {
     throw new ValidationError('patch must include at least one persona field')
   }
+  if (Object.prototype.hasOwnProperty.call(patch, 'modules')) {
+    patch.modules = readPersonaModuleIds(patch.modules, 'patch.modules')
+  }
   validatePersonaRecord(patch, 'patch', options)
   return patch
+}
+
+export function readPersonaModuleIds(value: unknown, label = 'modules'): string[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) {
+    throw new ValidationError(`${label} must be an array`)
+  }
+  const seen = new Set<string>()
+  return value.map((id, index) => {
+    if (typeof id !== 'string' || id.trim() === '') {
+      throw new ValidationError(`${label}[${index}] must be a non-empty string`)
+    }
+    if (seen.has(id)) {
+      throw new ValidationError(`Duplicate module id in ${label}: ${id}`)
+    }
+    seen.add(id)
+    return id
+  })
 }
 
 export function readPersonaId(value: unknown, label = 'personaId'): string {

@@ -146,7 +146,7 @@ describe('chat generation settings contract', () => {
     ])
   })
 
-  it('resolves active module toggles from global, chat, character, and namespace links', () => {
+  it('resolves active module toggles from global, chat, character, Persona, and namespace links', () => {
     const toggles = resolveRequiredSidebarToggles({
       modelPresetId: 'model-a',
       promptPresetId: 'preset-empty',
@@ -156,6 +156,7 @@ describe('chat generation settings contract', () => {
         { id: 'enabled-module', customModuleToggle: 'enabled=Enabled module' },
         { id: 'chat-module', customModuleToggle: 'chat=Chat module=select=a,b' },
         { id: 'character-module', customModuleToggle: 'character=Character module=text' },
+        { id: 'persona-module', customModuleToggle: 'persona=Persona module' },
         {
           id: 'integrated-module',
           namespace: 'shared-space',
@@ -166,6 +167,7 @@ describe('chat generation settings contract', () => {
       enabledModuleIds: ['enabled-module'],
       chatModuleIds: ['chat-module'],
       characterModuleIds: ['character-module'],
+      personaModuleIds: ['persona-module'],
       moduleIntegration: ' shared-space ',
     })
 
@@ -173,8 +175,34 @@ describe('chat generation settings contract', () => {
       ['enabled', 'boolean', 'module', 'enabled-module'],
       ['chat', 'select', 'module', 'chat-module'],
       ['character', 'text', 'module', 'character-module'],
+      ['persona', 'boolean', 'module', 'persona-module'],
       ['integrated', 'textarea', 'module', 'integrated-module'],
     ])
+  })
+
+  it('derives required module toggles from the selected Persona links', () => {
+    const readiness = resolveChatGenerationSettingsReadiness(
+      readinessInput({
+        personas: [{ id: 'persona-a', modules: ['persona-module'] }],
+        modules: [{ id: 'persona-module', customModuleToggle: 'persona=Persona module' }],
+        promptPresets: [{ id: 'prompt-a' }],
+        settings: {
+          configured: true,
+          personaId: 'persona-a',
+          modelPresetId: 'model-a',
+          promptPresetId: 'prompt-a',
+          jailbreakToggle: false,
+          sidebarToggles: {},
+        },
+      }),
+    )
+
+    expect(readiness.requirements.sidebarToggles).toEqual([
+      expect.objectContaining({ key: 'persona', moduleId: 'persona-module' }),
+    ])
+    expect(readiness.missing).toContainEqual(
+      expect.objectContaining({ code: 'sidebar_toggle_missing', toggleKey: 'persona' }),
+    )
   })
 
   it('adds modules associated with the effective Agent Preset to Prompt module integration', () => {

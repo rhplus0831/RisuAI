@@ -121,7 +121,13 @@ interface LoadoutModuleReferenceSnapshot {
   modules: ModuleIdsFieldSnapshot
 }
 
+interface PersonaModuleReferenceSnapshot {
+  personaId: string
+  modules: ModuleIdsFieldSnapshot
+}
+
 interface ModuleReferenceStateSnapshot {
+  personas: PersonaModuleReferenceSnapshot[]
   characters: CharacterModuleReferenceSnapshot[]
   loadouts: LoadoutModuleReferenceSnapshot[]
 }
@@ -201,6 +207,7 @@ interface ModuleReferenceRollbackEntry {
   target: string
   previous: ModuleIdsFieldSnapshot
   attempted: ModuleIdsFieldSnapshot
+  personaId?: string
   characterId?: string
   chatId?: string
   loadoutId?: string
@@ -389,8 +396,15 @@ export function restoreGlobalModuleState(snapshot: GlobalModuleStateSnapshot): v
 }
 
 function currentModuleReferenceStateSnapshot(moduleId: string): ModuleReferenceStateSnapshot {
+  const personas: PersonaModuleReferenceSnapshot[] = []
   const characters: CharacterModuleReferenceSnapshot[] = []
   const loadouts: LoadoutModuleReferenceSnapshot[] = []
+
+  for (const candidate of getDatabase().personas ?? []) {
+    if (!candidate?.id) continue
+    const personaModules = moduleIdsFieldSnapshot(candidate, moduleId)
+    if (personaModules) personas.push({ personaId: candidate.id, modules: personaModules })
+  }
 
   for (const candidate of getDatabase().characters ?? []) {
     if (!candidate?.chaId) continue
@@ -430,7 +444,7 @@ function currentModuleReferenceStateSnapshot(moduleId: string): ModuleReferenceS
     })
   }
 
-  return { characters, loadouts }
+  return { personas, characters, loadouts }
 }
 
 function moduleIdsFieldSnapshot(value: { modules?: unknown }, moduleId: string): ModuleIdsFieldSnapshot | undefined {
@@ -442,6 +456,11 @@ function moduleIdsFieldSnapshot(value: { modules?: unknown }, moduleId: string):
 }
 
 function restoreModuleReferenceState(snapshot: ModuleReferenceStateSnapshot): void {
+  for (const personaSnapshot of snapshot.personas) {
+    const persona = getDatabase().personas?.find((candidate) => candidate.id === personaSnapshot.personaId)
+    if (persona) restoreModulesField(persona, personaSnapshot.modules)
+  }
+
   for (const characterSnapshot of snapshot.characters) {
     const character = findCharacterById(characterSnapshot.characterId)
     if (!character) continue
@@ -1136,6 +1155,12 @@ function applyOptimisticDeletedGlobalModule(moduleId: string): void {
 }
 
 function removeProjectedModuleReferences(moduleId: string): void {
+  for (const persona of getDatabase().personas ?? []) {
+    if (Array.isArray(persona.modules)) {
+      persona.modules = persona.modules.filter((id) => id !== moduleId)
+    }
+  }
+
   for (const character of getDatabase().characters ?? []) {
     if (Array.isArray(character.modules)) {
       character.modules = character.modules.filter((id) => id !== moduleId)
@@ -1462,6 +1487,16 @@ function moduleReferenceRollbackEntries(
 ): ModuleReferenceRollbackEntry[] {
   const entries: ModuleReferenceRollbackEntry[] = []
 
+  for (const personaSnapshot of snapshot.personas) {
+    entries.push({
+      kind: 'module-reference',
+      target: modulePersonaReferenceRollbackTarget(personaSnapshot.personaId),
+      personaId: personaSnapshot.personaId,
+      previous: cloneJsonValue(personaSnapshot.modules),
+      attempted: moduleReferenceAttemptAfterDelete(personaSnapshot.modules, moduleId),
+    })
+  }
+
   for (const characterSnapshot of snapshot.characters) {
     if (characterSnapshot.modules) {
       entries.push({
@@ -1689,6 +1724,9 @@ function rollbackModuleReferenceIfLiveMatches(entry: ModuleReferenceRollbackEntr
 }
 
 function findModuleReferenceTarget(entry: ModuleReferenceRollbackEntry): { modules?: string[] } | undefined {
+  if (entry.personaId) {
+    return getDatabase().personas?.find((candidate) => candidate.id === entry.personaId)
+  }
   if (entry.characterId && entry.chatId) {
     const character = findCharacterById(entry.characterId)
     return character?.chats?.find((candidate) => candidate.id === entry.chatId)
@@ -1779,6 +1817,10 @@ function moduleEnableRollbackTarget(moduleId: string): string {
 
 function moduleCharacterReferenceRollbackTarget(characterId: string): string {
   return `module-reference:character:${characterId}`
+}
+
+function modulePersonaReferenceRollbackTarget(personaId: string): string {
+  return `module-reference:persona:${personaId}`
 }
 
 function moduleChatReferenceRollbackTarget(characterId: string, chatId: string): string {

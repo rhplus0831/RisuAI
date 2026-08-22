@@ -3087,8 +3087,18 @@ export function setDatabase(data: Database) {
       icon: data.userIcon,
       note: data.userNote,
       largePortrait: false,
+      modules: [],
     },
   ]
+  for (const persona of data.personas) {
+    if (persona.modules !== undefined) {
+      persona.modules = Array.isArray(persona.modules)
+        ? Array.from(
+            new Set(persona.modules.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)),
+          )
+        : []
+    }
+  }
   data.classicMaxWidth ??= false
   data.chatScreenWidth ??= 900
   data.autoTranslateNotificationDeferCapSeconds ??= 180
@@ -3979,6 +3989,7 @@ export interface Database {
     largePortrait?: boolean
     id?: string
     note?: string
+    modules?: string[]
   }[]
   personaNote: boolean
   assetWidth: number

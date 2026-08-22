@@ -27,6 +27,7 @@
     updateSelectedPersonaDisplayName,
     updateSelectedPersonaField,
     updateSelectedPersonaLargePortrait,
+    updateSelectedPersonaModules,
     type PersonaStateSnapshot,
     type PersonaPersistenceStatus,
   } from 'src/ts/persona'
@@ -37,6 +38,7 @@
   import { getServerResourceApplyEpoch } from 'src/ts/server/resourceWriteGuard.svelte'
   import { getPersonaDisplayName } from 'src/ts/personaDisplayName'
   import { navigateToPersonaSettings } from 'src/ts/router'
+  import { CircleCheckIcon } from '@lucide/svelte'
 
   let stb: Sortable = null
   let ele: HTMLDivElement = $state()
@@ -48,6 +50,25 @@
   let previousResourceApplyEpoch = getServerResourceApplyEpoch()
   let structuralMutationPending = $state(false)
   let structuralMutationError = $state('')
+  let moduleSearch = $state('')
+
+  function selectedPersonaModuleIds(): string[] {
+    return getDatabase().personas[getDatabase().selectedPersona]?.modules ?? []
+  }
+
+  function linkablePersonaModules() {
+    const query = moduleSearch.trim().toLocaleLowerCase()
+    return (getDatabase().modules ?? [])
+      .filter((module) => !module.mcp && (!query || module.name.toLocaleLowerCase().includes(query)))
+      .sort((left, right) => left.name.localeCompare(right.name))
+  }
+
+  function toggleSelectedPersonaModule(moduleId: string): void {
+    const current = selectedPersonaModuleIds()
+    updateSelectedPersonaModules(
+      current.includes(moduleId) ? current.filter((candidate) => candidate !== moduleId) : [...current, moduleId],
+    )
+  }
 
   async function runPersonaStructuralMutation(
     start: () => Promise<PersonaPersistenceStatus> | null,
@@ -260,6 +281,33 @@
       autocomplete="off"
       bind:value={() => getDatabase().personaPrompt, (value) => updateSelectedPersonaField('personaPrompt', value)}
       placeholder={`Put the description of this persona here.\nExample: [<user> is a 20 year old girl.]`} />
+    <div class="mt-4 flex flex-col gap-2">
+      <span class="text-sm font-medium text-textcolor">{language.personaModuleLink}</span>
+      <span class="text-sm text-textcolor2">{language.personaModuleLinkInfo}</span>
+      <TextInput placeholder={language.search} ariaLabel={language.search} bind:value={moduleSearch} />
+      <div class="max-h-64 overflow-y-auto rounded-md border border-darkborderc">
+        {#if linkablePersonaModules().length === 0}
+          <div class="p-3 text-sm text-textcolor2">{language.noLinkableModules}</div>
+        {:else}
+          {#each linkablePersonaModules() as personaModule, index}
+            <button
+              type="button"
+              disabled={structuralMutationPending}
+              class="flex w-full items-center gap-3 p-3 text-left text-textcolor hover:bg-selected disabled:opacity-60"
+              class:border-t={index !== 0}
+              class:border-darkborderc={index !== 0}
+              aria-pressed={selectedPersonaModuleIds().includes(personaModule.id)}
+              aria-label={`${language.personaModuleLink}: ${personaModule.name}`}
+              onclick={() => toggleSelectedPersonaModule(personaModule.id)}>
+              <CircleCheckIcon
+                size={18}
+                class={selectedPersonaModuleIds().includes(personaModule.id) ? 'text-blue-500' : 'text-textcolor2'} />
+              <span class="min-w-0 grow truncate">{personaModule.name}</span>
+            </button>
+          {/each}
+        {/if}
+      </div>
+    </div>
     <div class="flex gap-2 mt-4 max-w-full flex-wrap">
       <Button onclick={exportUserPersona}>{language.export}</Button>
       <Button onclick={importUserPersona}>{language.import}</Button>

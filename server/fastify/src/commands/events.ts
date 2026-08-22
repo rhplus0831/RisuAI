@@ -709,7 +709,7 @@ export const COMMAND_EVENT_CATALOG = {
   },
   moduleDeleted: {
     type: 'module.deleted',
-    // Deletion cross-writes characters/chats/loadouts via removeModuleReferences,
+    // Deletion cross-writes personas/characters/chats/loadouts via removeModuleReferences,
     // so it keeps the broad `module` resource.
     resource: 'module',
   },

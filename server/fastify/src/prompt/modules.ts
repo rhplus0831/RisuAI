@@ -2,6 +2,7 @@ import type { Chat, Database, character, customscript, loreBook } from '../../..
 import type { RisuModule } from '../../../../src/ts/process/modules'
 import type { triggerscript } from '../../../../src/ts/process/triggers'
 import { parseModuleIntegration } from '../../../../src/ts/moduleIntegration.js'
+import { resolvePersonaModuleIds } from '../../../../src/ts/personaModuleLinks.js'
 import { attachTriggerSource } from './triggerSource.js'
 
 /**
@@ -64,6 +65,7 @@ export function getActiveModules(
   let ids: string[] = [...(database.enabledModules ?? [])]
   if (currentChat?.modules) ids = ids.concat(currentChat.modules)
   if (currentChar?.modules) ids = ids.concat(currentChar.modules)
+  ids = ids.concat(resolvePersonaModuleIds(database, currentChat))
   if (database.moduleIntergration) {
     ids = ids.concat(parseModuleIntegration(database.moduleIntergration))
   }

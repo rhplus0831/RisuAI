@@ -192,6 +192,15 @@ export function validateNormalModuleLinks(
 
 export function removeModuleReferences(database: JsonRecord, moduleId: string): void {
   database.enabledModules = ensureEnabledModules(database).filter((id) => id !== moduleId)
+  if (Array.isArray(database.personas)) {
+    for (const persona of database.personas) {
+      if (!persona || typeof persona !== 'object' || Array.isArray(persona)) continue
+      const record = persona as JsonRecord
+      if (Array.isArray(record.modules)) {
+        record.modules = record.modules.filter((id) => id !== moduleId)
+      }
+    }
+  }
   for (const character of ensureCharacterCollection(database)) {
     character.modules = readStringArray(character.modules, `character ${character.chaId}.modules`).filter(
       (id) => id !== moduleId,

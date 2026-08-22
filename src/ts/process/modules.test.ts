@@ -22,7 +22,9 @@ type ModuleDatabaseFixture = {
   enabledModules?: string[]
   enableLorebookStubs?: boolean
   moduleIntergration?: string
+  personas?: Array<Record<string, unknown>>
   promptPresets?: Array<Record<string, unknown>>
+  selectedPersona?: number
   modules: Array<Record<string, unknown>>
 }
 const getDatabase = vi.hoisted(() => vi.fn((): ModuleDatabaseFixture => ({ modules: [] })))
@@ -1210,6 +1212,30 @@ describe('module imports', () => {
     })
 
     expect(getModuleRegexScripts().map((script) => script.comment)).toEqual(['chat regex'])
+  })
+
+  it('resolves modules linked to the Persona selected for the active chat', () => {
+    getCurrentChatMock.mockReturnValue({
+      modules: [],
+      generationSettings: { personaId: 'persona-chat' },
+    })
+    getCurrentCharacter.mockReturnValue({ modules: [] })
+    getDatabase.mockReturnValue({
+      selectedPersona: 0,
+      personas: [
+        { id: 'persona-global', modules: [] },
+        { id: 'persona-chat', modules: ['persona-module'] },
+      ],
+      enabledModules: [],
+      modules: [
+        {
+          id: 'persona-module',
+          regex: [{ comment: 'persona regex', in: 'PERSONA', out: 'persona', type: 'editdisplay' }],
+        },
+      ],
+    })
+
+    expect(getModuleRegexScripts().map((script) => script.comment)).toEqual(['persona regex'])
   })
 
   it('adds module integration from the effective default Agent Preset', () => {

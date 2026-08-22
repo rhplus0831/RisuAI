@@ -6213,6 +6213,44 @@ describe('Phase 9-2c prompt template and item commands', () => {
 })
 
 describe('Phase 9-2d persona commands', () => {
+  it('rejects unknown, duplicate, and MCP Persona module links', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      personas: [{ id: 'persona-a', name: 'A', icon: '', personaPrompt: '', note: '' }],
+      selectedPersona: 0,
+      modules: [
+        { id: 'module-a', name: 'Module A', description: '' },
+        { id: 'mcp-a', name: 'MCP', description: '', mcp: { url: 'internal:risuai' } },
+      ],
+    })
+
+    for (const [moduleIds, message] of [
+      [['missing'], 'Unknown module id in persona.modules: missing'],
+      [['module-a', 'module-a'], 'Duplicate module id in persona.modules: module-a'],
+      [['mcp-a'], 'Unknown module id in persona.modules: mcp-a'],
+    ] as const) {
+      const response = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/commands/personas',
+        headers: { 'risu-auth': assertion },
+        payload: {
+          baseRevision: revision,
+          persona: {
+            id: `persona-${moduleIds[0]}`,
+            name: 'Linked Persona',
+            icon: '',
+            personaPrompt: '',
+            note: '',
+            modules: moduleIds,
+          },
+        },
+      })
+
+      expect(response.statusCode).toBe(400)
+      expect(response.json().error).toBe(message)
+    }
+  })
+
   it('creates, updates, deletes, and reorders personas by stable id', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const personaIconId = seedAssetMetadata(harness.dataDir)
@@ -6221,6 +6259,7 @@ describe('Phase 9-2d persona commands', () => {
       userIcon: 'assets/current.png',
       personaPrompt: 'Current prompt',
       userNote: 'Current note',
+      modules: [{ id: 'module-a', name: 'Module A', description: '' }],
       personas: [
         {
           id: 'persona-a',
@@ -6246,6 +6285,7 @@ describe('Phase 9-2d persona commands', () => {
           icon: personaIconId,
           personaPrompt: 'b prompt',
           note: 'b note',
+          modules: ['module-a'],
         },
       },
     })
@@ -6270,6 +6310,7 @@ describe('Phase 9-2d persona commands', () => {
           icon: personaIconId,
           personaPrompt: 'b prompt',
           note: 'b note',
+          modules: ['module-a'],
         },
       ]),
       selectedPersonaId: 'persona-a',
@@ -6285,7 +6326,7 @@ describe('Phase 9-2d persona commands', () => {
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: created.json().revision,
-        patch: { name: 'B renamed', displayName: 'Localized B', largePortrait: true },
+        patch: { name: 'B renamed', displayName: 'Localized B', largePortrait: true, modules: ['module-a'] },
       },
     })
     expect(updated.statusCode).toBe(200)
@@ -6298,7 +6339,7 @@ describe('Phase 9-2d persona commands', () => {
         id: 'persona-b',
       },
       personaId: 'persona-b',
-      acknowledgedKeys: ['name', 'displayName', 'largePortrait'],
+      acknowledgedKeys: ['name', 'displayName', 'largePortrait', 'modules'],
       legacyProfileProjectionApplied: false,
     })
 
@@ -6330,6 +6371,7 @@ describe('Phase 9-2d persona commands', () => {
           personaPrompt: 'b prompt',
           note: 'b note',
           largePortrait: true,
+          modules: ['module-a'],
         },
         { id: 'persona-a', name: 'A', icon: '', personaPrompt: 'a prompt', note: 'a note' },
       ]),
@@ -6371,6 +6413,7 @@ describe('Phase 9-2d persona commands', () => {
           personaPrompt: 'b prompt',
           note: 'b note',
           largePortrait: true,
+          modules: ['module-a'],
         },
       ]),
       selectedPersonaId: 'persona-b',
@@ -6406,6 +6449,7 @@ describe('Phase 9-2d persona commands', () => {
         personaPrompt: 'b prompt',
         note: 'b note',
         largePortrait: true,
+        modules: ['module-a'],
       },
     ])
   })
@@ -14639,6 +14683,10 @@ describe('Phase 9-4c module record and enablement commands', () => {
         { id: 'mod-b', name: 'B', description: 'Beta' },
         { id: 'mcp-a', name: 'MCP', description: 'Bridge', mcp: { url: 'internal:risuai' } },
       ],
+      personas: [
+        { id: 'persona-a', name: 'Persona', icon: '', personaPrompt: '', note: '', modules: ['mod-a', 'mod-b'] },
+      ],
+      selectedPersona: 0,
       characters: [
         {
           chaId: 'char-a',
@@ -14761,6 +14809,7 @@ describe('Phase 9-4c module record and enablement commands', () => {
       customModuleToggle: 'toggle',
     })
     expect(database.enabledModules).toEqual(['mod-a'])
+    expect(database.personas[0].modules).toEqual(['mod-a'])
     expect(database.characters[0].modules).toEqual(['mod-a'])
     expect(database.characters[0].chats[0].modules).toEqual(['mod-a'])
     expect(database.loadouts[0].modules).toEqual(['mod-a'])
