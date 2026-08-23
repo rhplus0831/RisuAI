@@ -3,6 +3,7 @@ import { IDBFactory } from 'fake-indexeddb'
 
 const selectedFileState = vi.hoisted(() => ({
   queue: [] as Array<null | { name: string; data: Uint8Array }>,
+  requestedExtensions: [] as string[][],
 }))
 
 const personaAlertState = vi.hoisted(() => ({
@@ -76,7 +77,8 @@ vi.mock('./util', () => {
 vi.mock('./filePicker', () => ({
   selectFileByDom: vi.fn(),
   selectMultipleFile: vi.fn(async () => []),
-  selectSingleFile: vi.fn(async (_ext: string[], options: { onFileSelected?: (file: File) => void } = {}) => {
+  selectSingleFile: vi.fn(async (ext: string[], options: { onFileSelected?: (file: File) => void } = {}) => {
+    selectedFileState.requestedExtensions.push([...ext])
     const selected = selectedFileState.queue.shift() ?? null
     if (!selected) return null
     options.onFileSelected?.({ name: selected.name } as File)
@@ -270,6 +272,7 @@ beforeEach(() => {
   clearCachedServerCommandRevision()
   setResourceWriteGuardEnabled(false)
   selectedFileState.queue.length = 0
+  selectedFileState.requestedExtensions.length = 0
   personaAlertState.current = { type: 'none', msg: '' }
 })
 
@@ -279,6 +282,19 @@ afterEach(() => {
 })
 
 describe('Phase 3 persona icon upload freshness', () => {
+  it('offers WebP files when selecting a persona icon', async () => {
+    const calls = stubCommandFetch(['webp-icon'])
+    selectedFileState.queue.push(personaFile('persona.webp'))
+    seedPersonaState([makePersona({ id: 'persona-webp', icon: 'old-icon' })], 0)
+
+    await expect(selectUserImg()).resolves.toBe('accepted')
+
+    expect(selectedFileState.requestedExtensions).toEqual([['png', 'webp']])
+    expect(calls.filter((call) => call.url === '/api/v1/assets')).toHaveLength(1)
+    expect(getDatabase().userIcon).toBe('webp-icon')
+    expect(getDatabase().personas[0].icon).toBe('webp-icon')
+  })
+
   it('drops stale completion if selected persona changes before saveImage resolves', async () => {
     const upload = deferred<string>()
     const calls = stubCommandFetch([upload.promise])
@@ -408,6 +424,7 @@ describe('Phase 3 persona icon upload freshness', () => {
     await vi.waitFor(() => {
       expect(commandCalls(calls)).toHaveLength(1)
     })
+    expect(selectedFileState.requestedExtensions).toEqual([['png']])
     expect(personaAlertState.current).not.toMatchObject({ type: 'normal', msg: language.successImport })
 
     command.resolve(

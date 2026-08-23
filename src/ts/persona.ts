@@ -1862,7 +1862,7 @@ export async function selectUserImg() {
 
   let operation: PersonaIconUploadOperation | null = null
   try {
-    const selected = await selectSingleFile(['png'], {
+    const selected = await selectSingleFile(['png', 'webp'], {
       onFileSelected: () => {
         operation = beginPersonaIconUpload(target)
       },
