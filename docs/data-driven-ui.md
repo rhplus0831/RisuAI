@@ -88,7 +88,7 @@ indexes data-driven variants.
   - Variants: A writer SSE event or validated stale-writer response blocks interaction and asks for Refresh or Stay Offline. Refresh reloads; offline mode stops server coordination, freezes editable controls, preserves selectable text, and adds a reload banner.
   - Owners: `src/ts/server/activeWriterSession.ts`; `src/ts/server/events.ts`; `src/styles.css`
 - `HOME-01` — Landing versus Realm (`L`, `R`)
-  - Variants: Home title/version/GitHub card or the Realm catalog. Opening Realm can first yield an external-server confirmation unless `doNotWarnExternalServers` is set.
+  - Variants: Home title/version and Realm launcher or the Realm catalog. Opening Realm can first yield an external-server confirmation unless `doNotWarnExternalServers` is set.
   - Owners: `src/lib/UI/MainMenu.svelte`
 - `HOME-02` — Realm catalog request (`A`, `L`, `X`)
   - Variants: Loading, failure/retry, server-supplied `additionalHTML`, empty catalog, card grid, and pagination. Search/sort/NSFW/page replace results; stale requests are fenced. The dormant `$MobileGUI` filter branch is not live.
@@ -190,7 +190,7 @@ indexes data-driven variants.
 ### Shell, schema, display, language, and advanced
 
 - `SET-01` — Settings shell/navigation (`R`, `L`, `B`, `X`)
-  - Variants: Desktop split versus narrow list/detail; Lite-reduced menu; legacy bot-preset entry only when rows exist; page selected by `SettingsMenuIndex`; input-hook authoring; plugin menu rows; EasyPanel only with Pro Tools; lorebook picker overlay. Menu index `1` renders legacy Bot Settings when legacy presets exist and modern Model Settings otherwise.
+  - Variants: Desktop split versus narrow list/detail; Lite-reduced menu; legacy bot-preset entry only when rows exist; page selected by `SettingsMenuIndex`; input-hook authoring; Source Code repository links; plugin menu rows; EasyPanel only with Pro Tools; lorebook picker overlay. Menu index `1` renders legacy Bot Settings when legacy presets exist and modern Model Settings otherwise.
   - Owners: `src/lib/Setting/Settings.svelte`; `src/ts/router.ts`
 - `SET-02` — Schema-driven setting rows (`R`, `L`)
   - Variants: Each item can be omitted by a condition, choose one of 11 wrapper types, recursively render an accordion, show warning/experimental/help metadata, or render nothing for an unknown custom component. Context includes database, main/sub model capability, and preset mirror target. Removal from supported repeatable settings collections is additionally gated by a shared browser confirmation before the draft changes.

@@ -214,6 +214,35 @@ describe('router initial application', () => {
     expect(get(SettingsMenuIndex)).toBe(20)
   })
 
+  it('routes and serializes the Source Code settings section', async () => {
+    const router = await importRouterAt('/settings/source-code')
+    const stores = await import('./stores.svelte')
+    const { SettingsMenuIndex, settingsOpen } = stores
+
+    expect(get(router.currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings/source-code',
+      section: 'source-code',
+      index: 22,
+    })
+
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
+
+    expect(get(settingsOpen)).toBe(true)
+    expect(get(SettingsMenuIndex)).toBe(22)
+
+    router.syncRouteFromState({
+      currentRouteKind: 'settings',
+      settingsOpen: true,
+      settingsMenuIndex: 22,
+      selectedCharID: -1,
+      playgroundStore: 0,
+    })
+
+    expect(window.location.pathname).toBe('/settings/source-code')
+  })
+
   it('routes a specific persona id and selects it through the persona command path', async () => {
     const router = await importRouterAt('/settings/persona/persona-b')
     const stores = await import('./stores.svelte')

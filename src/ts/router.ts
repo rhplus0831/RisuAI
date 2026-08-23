@@ -115,6 +115,8 @@ const settingIndexBySlug = new Map<string, number>([
   ['module', 14],
   ['hotkey', 15],
   ['hotkeys', 15],
+  ['source-code', 22],
+  ['sourcecode', 22],
   ['supporter', 77],
   ['thanks', 77],
 ])
@@ -140,6 +142,7 @@ const settingSlugByIndex = new Map<number, string>([
   [19, 'agent-presets'],
   [20, 'input-hooks'],
   [21, 'request-history'],
+  [22, 'source-code'],
   [77, 'supporter'],
 ])
 

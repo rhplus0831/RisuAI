@@ -301,6 +301,26 @@ describe('Settings supporter tab', () => {
     })
   })
 
+  it('opens Source Code from Advanced & About', async () => {
+    const sourceCodeButton = settingsButton(language.settingsNavSourceCode)
+    expect(sourceCodeButton).toBeTruthy()
+
+    sourceCodeButton?.click()
+    await flushClick()
+
+    expect(get(currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings/source-code',
+      section: 'source-code',
+      index: 22,
+    })
+
+    await applyNavigatedRoute()
+
+    expect(get(SettingsMenuIndex)).toBe(22)
+    expect(target.querySelector('[data-risu-source-code]')).toBeTruthy()
+  })
+
   it('hides the legacy global lorebook and regex settings items by default', () => {
     expect(settingsButton(language.globalLoreBook)).toBeUndefined()
     expect(settingsButton(language.globalRegexScript)).toBeUndefined()

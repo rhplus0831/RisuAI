@@ -20,6 +20,7 @@
     BookOpen,
     Regex,
     HistoryIcon,
+    GithubIcon,
   } from '@lucide/svelte'
   import { language } from 'src/lang'
   import DisplaySettings from './Pages/DisplaySettings.svelte'
@@ -31,6 +32,7 @@
   import AgentPresetSettings from './Pages/AgentPresetSettings.svelte'
   import InputHookSettings from './Pages/InputHookSettings.svelte'
   import RequestHistorySettings from './Pages/RequestHistorySettings.svelte'
+  import SourceCode from './Pages/SourceCode.svelte'
   import { additionalSettingsMenu, easyPanelStore, MobileGUI, SettingsMenuIndex } from 'src/ts/stores.svelte'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import Communities from './Pages/Communities.svelte'
@@ -287,6 +289,14 @@
               <ActivityIcon size={20} />
               <span>{language.settingsNavAdvanced}</span>
             </button>
+            <button
+              class={navButtonClass($SettingsMenuIndex === 22)}
+              onclick={() => {
+                navigate('/settings/source-code')
+              }}>
+              <GithubIcon size={20} />
+              <span>{language.settingsNavSourceCode}</span>
+            </button>
             <button class={navButtonClass($SettingsMenuIndex === 77)} onclick={openSupporterThanks}>
               <BoxIcon size={20} />
               <span>{language.settingsNavSupporters}</span>
@@ -401,6 +411,8 @@
             <InputHookSettings />
           {:else if $SettingsMenuIndex === 21}
             <RequestHistorySettings />
+          {:else if $SettingsMenuIndex === 22}
+            <SourceCode />
           {:else if $SettingsMenuIndex === 77}
             <ThanksPage />
           {/if}

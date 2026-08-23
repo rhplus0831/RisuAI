@@ -94,4 +94,13 @@ describe('Playground and main-menu navigation', () => {
     back!.click()
     expect(get(OpenRealmStore)).toBe(false)
   })
+
+  it('keeps repository links off the main menu', () => {
+    ;(OpenRealmStore as Writable<boolean>).set(false)
+    component = mount(MainMenu, { target })
+
+    expect(target.textContent).toContain(language.openRisuRealm)
+    expect(target.querySelector('a[href*="github.com"]')).toBeNull()
+    expect(target.textContent).not.toContain('Upstream project this variant is derived from.')
+  })
 })

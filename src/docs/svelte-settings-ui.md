@@ -56,6 +56,7 @@ Primary indexes and canonical slugs are:
 | `17` | `model` | Profile-first model settings |
 | `19`, `20` | `agent-presets`, `input-hooks` | `src/lib/Setting/Pages/AgentPresetSettings.svelte` and `src/lib/Setting/Pages/InputHookSettings.svelte` |
 | `21` | `request-history` | `src/lib/Setting/Pages/RequestHistorySettings.svelte` |
+| `22` | `source-code` | `src/lib/Setting/Pages/SourceCode.svelte` |
 | `77` | `supporter` | `src/lib/Setting/Pages/ThanksPage.svelte` after the external-server warning when required |
 
 The `other-bots` URL is retained for compatibility, but the visible nav,
@@ -69,6 +70,10 @@ persists through the server-backed `requestHistoryLimit` setting, and record
 deletion uses the authenticated operational delete route. Its detail view keeps
 RisuAI request metadata separate from additional non-content metadata returned
 by the provider API.
+
+The Source Code page groups the upstream RisuAI repository and this Fastify
+fork behind one short Advanced & About navigation item. The repository cards
+identify their relationship explicitly and open protected external links.
 
 Lite mode removes Chat Setup, Capabilities, most Interface controls, and the
 advanced/about group. Legacy global lorebook and regex navigation also remain
@@ -353,6 +358,7 @@ to
 Shell, renderer, and authoring guards include
 `src/lib/Setting/Settings.svelte.test.ts`,
 `src/lib/Setting/SettingRenderer.svelte.test.ts`,
+`src/lib/Setting/Pages/SourceCode.svelte.test.ts`,
 `src/lib/Setting/Wrappers/SettingAccordion.svelte.test.ts`,
 `src/lib/Setting/Pages/AgentPresetSettings.svelte.test.ts`,
 `src/lib/Setting/Pages/InputHookSettings.svelte.test.ts`,
