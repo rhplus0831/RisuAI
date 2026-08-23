@@ -17,6 +17,9 @@ import {
 } from './ts/server/pushNotifications'
 import { alertError } from './ts/alert'
 import { language } from './lang'
+import { recordStartupMilestone } from './ts/startupReadiness'
+
+recordStartupMilestone('entry', 0)
 
 window.addEventListener('vite:preloadError', (event) => {
   event.preventDefault()
@@ -33,6 +36,7 @@ installCompletionAudioUnlock()
 let app = mount(App, {
   target: document.getElementById('app'),
 })
+recordStartupMilestone('shell-mounted')
 void installViewportDebugOverlayIfEnabled().catch((error) => {
   console.error('Failed to install viewport diagnostics', error)
 })

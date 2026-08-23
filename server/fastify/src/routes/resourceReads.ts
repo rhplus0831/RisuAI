@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
-import type { FastifyInstance, FastifyReply } from 'fastify'
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { AuthState } from '../auth.js'
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
 import { maskProviderSecretsInPlace } from '../providerSecrets.js'
-import { emitProtocolMetric, jsonPayloadBytes } from '../protocolMetrics.js'
+import { emitProtocolMetric, jsonPayloadBytes, protocolElapsedMs } from '../protocolMetrics.js'
+import { readRequestTraceUid } from '../requestTrace.js'
 import { READABLE_SETTINGS_GROUPS, SETTINGS_GROUP_KEYS, type ReadableSettingsGroup } from './commands.js'
 import {
   COLLECTION_FIELDS,
@@ -96,7 +97,7 @@ export function registerResourceReadRoutes(
     if (!(await requireAuth(authState, req, reply))) return
     const { revision } = getSchemaState(db)
     const settings = loadSettingsFromSqlite(db)
-    return metricResourceResponse(req.log, 'settings', revision, {
+    return metricResourceResponse(req, reply, 'settings', revision, {
       revision,
       settings: maskProviderSecretsInPlace(settings ?? {}),
     })
@@ -105,7 +106,7 @@ export function registerResourceReadRoutes(
   app.get('/api/v1/inlay-assets', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
     const { revision } = getSchemaState(db)
-    return metricResourceResponse(req.log, 'inlayCatalog', revision, {
+    return metricResourceResponse(req, reply, 'inlayCatalog', revision, {
       revision,
       assets: listInlayCatalogEntries(db),
     })
@@ -120,7 +121,8 @@ export function registerResourceReadRoutes(
     const settings = maskProviderSecretsInPlace(loadSettingsFromSqlite(db) ?? {})
     const substitution = substituteCachedValue(settings, cacheRequest.hashes.get('settings'))
     return metricResourceResponse(
-      req.log,
+      req,
+      reply,
       'settings',
       revision,
       {
@@ -144,7 +146,8 @@ export function registerResourceReadRoutes(
     const group = req.params.group as ReadableSettingsGroup
     const { revision } = getSchemaState(db)
     return metricResourceResponse(
-      req.log,
+      req,
+      reply,
       'settings',
       revision,
       {
@@ -178,7 +181,8 @@ export function registerResourceReadRoutes(
         cacheRequest.hashes.get('settings'),
       )
       return metricResourceResponse(
-        req.log,
+        req,
+        reply,
         'settings',
         revision,
         {
@@ -195,7 +199,7 @@ export function registerResourceReadRoutes(
   app.get('/api/v1/collections', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
     const { revision } = getSchemaState(db)
-    return metricResourceResponse(req.log, 'collections', revision, {
+    return metricResourceResponse(req, reply, 'collections', revision, {
       revision,
       collections: loadCollections(db, dataDir, READABLE_COLLECTION_NAMES, {
         suppressSelectedPromptTemplateProjection: true,
@@ -216,7 +220,8 @@ export function registerResourceReadRoutes(
       cacheRequest,
     )
     return metricResourceResponse(
-      req.log,
+      req,
+      reply,
       'collections',
       revision,
       {
@@ -239,7 +244,8 @@ export function registerResourceReadRoutes(
     }
     const { revision } = getSchemaState(db)
     return metricResourceResponse(
-      req.log,
+      req,
+      reply,
       'collection',
       revision,
       {
@@ -268,7 +274,8 @@ export function registerResourceReadRoutes(
       const { revision } = getSchemaState(db)
       const substitution = substituteCachedCollections(loadCollections(db, dataDir, [req.params.name]), cacheRequest)
       return metricResourceResponse(
-        req.log,
+        req,
+        reply,
         'collection',
         revision,
         {
@@ -286,7 +293,7 @@ export function registerResourceReadRoutes(
     const { revision } = getSchemaState(db)
     const settings = loadPersistedDatabaseFields(db, dataDir, ['characterOrder', 'currentChar'])
     const characterEnvelope = maskProviderSecretsInPlace({ characters: loadCharacterRowsForRead(db, dataDir) })
-    return metricResourceResponse(req.log, 'characters', revision, {
+    return metricResourceResponse(req, reply, 'characters', revision, {
       revision,
       characters: characterEnvelope.characters,
       characterOrder: Array.isArray(settings.characterOrder) ? settings.characterOrder : [],
@@ -304,7 +311,8 @@ export function registerResourceReadRoutes(
     const characterEnvelope = maskProviderSecretsInPlace({ characters: loadCharacterRowsForRead(db, dataDir) })
     const substitution = substituteCachedArray(characterEnvelope.characters, cacheRequest.hashes.get('characters'))
     return metricResourceResponse(
-      req.log,
+      req,
+      reply,
       'characters',
       revision,
       {
@@ -322,7 +330,7 @@ export function registerResourceReadRoutes(
     if (!(await requireAuth(authState, req, reply))) return
     const { revision } = getSchemaState(db)
     const settings = loadPersistedDatabaseFields(db, dataDir, ['characterOrder'])
-    return metricResourceResponse(req.log, 'characterOrder', revision, {
+    return metricResourceResponse(req, reply, 'characterOrder', revision, {
       revision,
       characterOrder: Array.isArray(settings.characterOrder) ? settings.characterOrder : [],
     })
@@ -343,13 +351,12 @@ export function registerResourceReadRoutes(
       }
       const { revision } = getSchemaState(db)
       return metricResourceResponse(
-        req.log,
+        req,
+        reply,
         'characterSelection',
         revision,
         { revision, ...selection },
-        {
-          id: req.params.id,
-        },
+        { detailRead: true },
       )
     },
   )
@@ -367,11 +374,12 @@ export function registerResourceReadRoutes(
     const { revision } = getSchemaState(db)
     const envelope = maskProviderSecretsInPlace({ characters: [character] })
     return metricResourceResponse(
-      req.log,
+      req,
+      reply,
       'character',
       revision,
       { revision, character: envelope.characters[0] },
-      { id: req.params.id },
+      { detailRead: true },
     )
   })
 
@@ -405,7 +413,8 @@ export function registerResourceReadRoutes(
           }))
         : []
       return metricResourceResponse(
-        req.log,
+        req,
+        reply,
         'greetingTranslations',
         revision,
         {
@@ -414,7 +423,7 @@ export function registerResourceReadRoutes(
           settingsHash,
           translations,
         },
-        { id: req.params.characterId },
+        { detailRead: true },
       )
     },
   )
@@ -446,7 +455,8 @@ export function registerResourceReadRoutes(
       if (generationMessageId) {
         const hydration = loadGenerationChatHydration(db, dataDir, req.params.id, generationMessageId)
         return metricResourceResponse(
-          req.log,
+          req,
+          reply,
           'chatMessages',
           revision,
           {
@@ -457,13 +467,14 @@ export function registerResourceReadRoutes(
             messageStart: hydration.messageStart,
             messageTotal: hydration.messageTotal,
           },
-          { id: req.params.id, generationMessageId },
+          { readMode: 'generation' },
         )
       }
       if (range) {
         const hydration = loadChatHydrationRange(db, dataDir, req.params.id, range)
         return metricResourceResponse(
-          req.log,
+          req,
+          reply,
           'chatMessages',
           revision,
           {
@@ -475,13 +486,14 @@ export function registerResourceReadRoutes(
             messageStart: hydration.messageStart,
             messageTotal: hydration.messageTotal,
           },
-          { id: req.params.id, range },
+          { readMode: 'range' },
         )
       }
 
       const hydration = loadChatHydration(db, dataDir, req.params.id)
       return metricResourceResponse(
-        req.log,
+        req,
+        reply,
         'chatMessages',
         revision,
         {
@@ -491,7 +503,7 @@ export function registerResourceReadRoutes(
           hypaV3Data: hydration.hypaV3Data,
           alternates: hydration.alternates,
         },
-        { id: req.params.id },
+        { readMode: 'full' },
       )
     },
   )
@@ -519,7 +531,8 @@ export function registerResourceReadRoutes(
       const { revision } = getSchemaState(db)
       const hydration = loadChatHydrations(db, dataDir, chatIds, { includeAlternates: true })
       return metricResourceResponse(
-        req.log,
+        req,
+        reply,
         'chatMessages',
         revision,
         {
@@ -540,7 +553,8 @@ export function registerResourceReadRoutes(
       const { revision } = getSchemaState(db)
       const hydration = loadCharacterLorebookHydration(db, dataDir, req.params.id)
       return metricResourceResponse(
-        req.log,
+        req,
+        reply,
         'characterLorebook',
         revision,
         {
@@ -548,7 +562,7 @@ export function registerResourceReadRoutes(
           characterId: req.params.id,
           globalLore: hydration.globalLore,
         },
-        { id: req.params.id },
+        { detailRead: true },
       )
     },
   )
@@ -565,7 +579,8 @@ export function registerResourceReadRoutes(
       const hydration = loadCharacterLorebookHydration(db, dataDir, req.params.id)
       const substitution = substituteCachedArray(hydration.globalLore, cacheRequest.hashes.get('globalLore'))
       return metricResourceResponse(
-        req.log,
+        req,
+        reply,
         'characterLorebook',
         revision,
         {
@@ -574,7 +589,7 @@ export function registerResourceReadRoutes(
           cache: RESOURCE_CACHE_METADATA,
           globalLore: substitution.value,
         },
-        { id: req.params.id, ...cacheMetricFields(substitution) },
+        { detailRead: true, ...cacheMetricFields(substitution) },
       )
     },
   )
@@ -602,7 +617,8 @@ export function registerResourceReadRoutes(
       const { revision } = getSchemaState(db)
       const hydration = loadCharacterLorebookHydrations(db, dataDir, characterIds)
       return metricResourceResponse(
-        req.log,
+        req,
+        reply,
         'characterLorebooks',
         revision,
         {
@@ -628,11 +644,12 @@ export function registerResourceReadRoutes(
     const { revision } = getSchemaState(db)
     const envelope = maskProviderSecretsInPlace({ botPresets: [hydration.preset] })
     return metricResourceResponse(
-      req.log,
+      req,
+      reply,
       'legacyPreset',
       revision,
       { revision, preset: envelope.botPresets[0] },
-      { id: req.params.id },
+      { detailRead: true },
     )
   })
 
@@ -656,7 +673,8 @@ export function registerResourceReadRoutes(
       const envelope = maskProviderSecretsInPlace({ botPresets: [hydration.preset] })
       const substitution = substituteCachedValue(envelope.botPresets[0], cacheRequest.hashes.get('preset'))
       return metricResourceResponse(
-        req.log,
+        req,
+        reply,
         'legacyPreset',
         revision,
         {
@@ -664,7 +682,7 @@ export function registerResourceReadRoutes(
           cache: RESOURCE_CACHE_METADATA,
           preset: substitution.value,
         },
-        { id: req.params.id, ...cacheMetricFields(substitution) },
+        { detailRead: true, ...cacheMetricFields(substitution) },
       )
     },
   )
@@ -691,7 +709,8 @@ export function registerResourceReadRoutes(
       }
       const { revision } = getSchemaState(db)
       return metricResourceResponse(
-        req.log,
+        req,
+        reply,
         'promptPresetTemplate',
         revision,
         {
@@ -702,7 +721,7 @@ export function registerResourceReadRoutes(
             ? { selectedFallbackPromptTemplate: hydration.selectedFallbackPromptTemplate }
             : {}),
         },
-        { id: req.params.id },
+        { detailRead: true },
       )
     },
   )
@@ -753,8 +772,8 @@ export function registerResourceReadRoutes(
         hits += fallbackSubstitution.hits
         misses += fallbackSubstitution.misses
       }
-      return metricResourceResponse(req.log, 'promptPresetTemplate', revision, response, {
-        id: req.params.id,
+      return metricResourceResponse(req, reply, 'promptPresetTemplate', revision, response, {
+        detailRead: true,
         ...cacheMetricFields({ value: response, hits, misses }),
       })
     },
@@ -793,7 +812,8 @@ function loadPromptPresetTemplateForRead(
 }
 
 function metricResourceResponse<T>(
-  logger: FastifyInstance['log'],
+  request: FastifyRequest,
+  reply: FastifyReply,
   resource: string,
   revision: number,
   response: T,
@@ -801,13 +821,18 @@ function metricResourceResponse<T>(
 ): T {
   emitProtocolMetric(
     'resource_response',
-    () => ({
-      resource,
-      revision,
-      ...extra,
-      payloadBytes: jsonPayloadBytes(response),
-    }),
-    logger,
+    () => {
+      const requestUid = readRequestTraceUid(request)
+      return {
+        resource,
+        revision,
+        ...extra,
+        durationMs: protocolElapsedMs(reply.elapsedTime),
+        ...(requestUid ? { requestUid } : {}),
+        payloadBytes: jsonPayloadBytes(response),
+      }
+    },
+    request.log,
   )
   return response
 }

@@ -278,6 +278,7 @@ import {
 } from './server/commands'
 import { getActiveWriterSessionId } from './server/activeWriterSession'
 import { adoptReplacementDatabaseOwnership } from './server/replacementDatabaseOwnership'
+import { getStartupReadinessSnapshot, recordStartupMilestone, resetStartupReadinessForTests } from './startupReadiness'
 import { getDatabase, setResourceWriteGuardEnabled, withTrustedResourceWrite } from './storage/database.svelte'
 import {
   applyCollectionsResource,
@@ -390,6 +391,9 @@ function seedResourceDatabase() {
 }
 
 beforeEach(() => {
+  resetStartupReadinessForTests()
+  recordStartupMilestone('entry', 0)
+  recordStartupMilestone('shell-mounted', 1)
   stopServerResourceEvents()
   setResourceWriteGuardEnabled(false)
   resetServerResourceState()
@@ -449,6 +453,7 @@ beforeEach(() => {
 
 afterEach(() => {
   stopServerResourceEvents()
+  resetStartupReadinessForTests()
   vi.useRealTimers()
   vi.restoreAllMocks()
 })
@@ -462,6 +467,17 @@ describe('API-backed client bootstrap', () => {
     expect(alertError).toHaveBeenCalledOnce()
     expect(bootstrapApi.fetch).toHaveBeenCalledTimes(2)
     expect(get(loadedStore)).toBe(true)
+    expect(getStartupReadinessSnapshot()).toMatchObject({
+      phase: 'background-ready',
+      attempts: [
+        {
+          attemptId: 1,
+          failureCode: 'writer-bootstrap-failed',
+          failureMilestone: 'observer-ready',
+        },
+        { attemptId: 2, completedAtMs: expect.any(Number) },
+      ],
+    })
   })
 
   it('starts plugin runtime synchronization after the initial plugin load', async () => {

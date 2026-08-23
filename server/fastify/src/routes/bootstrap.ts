@@ -14,7 +14,14 @@ import { requireAuth } from '../http.js'
 import { getSchemaState } from '../db.js'
 import type { MessageTranslationJobRegistry } from '../messageTranslationJobs.js'
 import type { GreetingTranslationJobRegistry } from '../greetingTranslationJobs.js'
-import { emitProtocolMetric, jsonPayloadBytes } from '../protocolMetrics.js'
+import {
+  emitProtocolMetric,
+  jsonPayloadBytes,
+  protocolDurationMs,
+  protocolMetricsEnabled,
+  protocolNowMs,
+} from '../protocolMetrics.js'
+import { readRequestTraceUid } from '../requestTrace.js'
 import { getDatabaseLineage, getDatabaseWriterMetadata } from '../databaseLineage.js'
 import { assessDatabaseInitialization } from '../databaseInitialization.js'
 import {
@@ -48,6 +55,7 @@ export function registerBootstrapRoutes(
   greetingTranslationJobs?: GreetingTranslationJobRegistry,
 ): void {
   app.get('/api/v1/bootstrap', { exposeHeadRoute: false }, async (req, reply) => {
+    const metricStartedAt = protocolMetricsEnabled() ? protocolNowMs() : 0
     if (!(await requireAuth(authState, req, reply))) return
     if (
       activeWriterState &&
@@ -104,19 +112,24 @@ export function registerBootstrapRoutes(
     }
     emitProtocolMetric(
       'bootstrap_projection',
-      () => ({
-        revision,
-        payloadBytes: jsonPayloadBytes(response),
-        activeGenerationJobCount: response.activeGenerationJobs.length,
-        generationOperationCount: generationOperations.length,
-        generationOperationProjectionEpoch,
-        generationFinalizationCount:
-          'generationFinalizations' in response ? (response.generationFinalizations?.length ?? 0) : 0,
-        pendingGenerationEffectCount:
-          'pendingGenerationEffects' in response ? (response.pendingGenerationEffects?.length ?? 0) : 0,
-        activeMessageTranslationCount: response.activeMessageTranslations.length,
-        activeGreetingTranslationCount: response.activeGreetingTranslations.length,
-      }),
+      () => {
+        const requestUid = readRequestTraceUid(req)
+        return {
+          revision,
+          durationMs: protocolDurationMs(metricStartedAt),
+          payloadBytes: jsonPayloadBytes(response),
+          ...(requestUid ? { requestUid } : {}),
+          activeGenerationJobCount: response.activeGenerationJobs.length,
+          generationOperationCount: generationOperations.length,
+          generationOperationProjectionEpoch,
+          generationFinalizationCount:
+            'generationFinalizations' in response ? (response.generationFinalizations?.length ?? 0) : 0,
+          pendingGenerationEffectCount:
+            'pendingGenerationEffects' in response ? (response.pendingGenerationEffects?.length ?? 0) : 0,
+          activeMessageTranslationCount: response.activeMessageTranslations.length,
+          activeGreetingTranslationCount: response.activeGreetingTranslations.length,
+        }
+      },
       req.log,
     )
     return response

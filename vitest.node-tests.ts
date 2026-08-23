@@ -115,8 +115,10 @@ export const nodeTestFiles = [
   'src/ts/server/tts.test.ts',
   'src/ts/setting/advancedSettingsData.test.ts',
   'src/ts/sha256Fallback.test.ts',
+  'src/ts/startupReadiness.test.ts',
   'src/ts/translator/bilingualInterleave.test.ts',
   'src/ts/translator/presets.test.ts',
   'util/affected-tests.test.ts',
   'util/analyze-database.test.ts',
+  'util/initial-preload-report.test.ts',
 ] as const

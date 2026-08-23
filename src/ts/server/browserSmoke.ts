@@ -14,6 +14,12 @@ import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { alertNormal } from '../alert'
 import { generationOperationCancellations, generationOperationProjections } from './generationOperations'
 import { listPendingMutations } from './pendingMutationOutbox'
+import {
+  getStartupReadinessSnapshot,
+  waitForStartupMilestone,
+  type StartupMilestone,
+  type StartupReadinessSnapshot,
+} from '../startupReadiness'
 
 export interface FastifyBrowserSmokeLifecycleSnapshot {
   acceptedSendRecoveries: unknown[]
@@ -38,9 +44,11 @@ export interface FastifyBrowserSmokeHook {
   getAppliedServerResourceRevision: () => number | null
   getDatabaseSnapshot: () => Database
   getLifecycleSnapshot: () => Promise<FastifyBrowserSmokeLifecycleSnapshot>
+  getStartupSnapshot: () => StartupReadinessSnapshot
   isLoaded: () => boolean
   patchRuntimeSettings: (patch: Record<string, unknown>) => Promise<ServerCommandResult>
   waitForLoaded: (timeoutMs?: number) => Promise<void>
+  waitForStartupMilestone: (milestone: StartupMilestone, timeoutMs?: number) => Promise<void>
   // Swipe-persistence E2E: open a character (drives chat hydration), read the
   // reconstructed reroll candidates, and drive the swipe controls.
   selectCharacter: (index: number) => void
@@ -91,6 +99,7 @@ export function installFastifyBrowserSmokeHook() {
         requests: structuredClone(intent.requests),
       })),
     }),
+    getStartupSnapshot: getStartupReadinessSnapshot,
     isLoaded: () => get(loadedStore),
     // Ride the real durable outbox path so the request carries the mutation
     // receipt + database-lineage headers. The Journey 3 lineage-recovery gate
@@ -98,6 +107,7 @@ export function installFastifyBrowserSmokeHook() {
     // a benign revision_conflict, never the database_lineage_conflict reload.
     patchRuntimeSettings: (patch) => dispatchDurableServerBackedSettingsPatch({ patch }),
     waitForLoaded,
+    waitForStartupMilestone,
     selectCharacter: (index) => selectedCharID.set(index),
     getRerollCandidates: () =>
       getRerollBuffer().map((entry) => {

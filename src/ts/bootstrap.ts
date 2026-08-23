@@ -161,6 +161,14 @@ import {
   reconcilePendingRecoveredGenerationEffects,
   setPendingRecoveredGenerationEffects,
 } from './process/recoveredGenerationEffects'
+import {
+  beginStartupAttempt,
+  completeStartupAttempt,
+  failStartupAttempt,
+  recordStartupMilestone,
+  type StartupAttemptFailureCode,
+  type StartupMilestone,
+} from './startupReadiness'
 
 setPendingMutationDiscardNotifier((key, error) => {
   alertError(`${language.pendingMutationDiscarded}\n\n${language.pendingMutationDiscardedDetail(key, error)}`)
@@ -223,15 +231,27 @@ function initialSelectedCharFromDatabase(db: Database): number {
 export async function loadData(): Promise<void> {
   const loaded = get(loadedStore)
   if (!loaded) {
+    const startupAttemptId = beginStartupAttempt()
+    let failureCode: StartupAttemptFailureCode = 'writer-bootstrap-failed'
+    let failureMilestone: StartupMilestone = 'observer-ready'
     try {
-      await loadWebInitialDatabase()
+      const { initialChatHydration } = await loadWebInitialDatabase()
       const db = getDatabase()
+      failureCode = 'push-initialization-failed'
+      failureMilestone = 'background-ready'
       await initializePushNotificationCoordinator()
       void reconcileChatCompletionPushNotificationSetting(db.notification === true)
       LoadingStatusState.text = 'Loading Plugins...'
+      failureCode = 'plugin-initialization-failed'
+      failureMilestone = 'plugins-ready'
       await loadPlugins()
       startPluginRuntimeSync()
+      recordStartupMilestone('plugins-ready')
+      failureCode = 'generation-recovery-failed'
+      failureMilestone = 'chat-ready'
       await reconcilePendingRecoveredGenerationEffects()
+      failureCode = 'runtime-initialization-failed'
+      failureMilestone = 'background-ready'
       LoadingStatusState.text = 'Checking For Format Update...'
 
       LoadingStatusState.text = 'Updating States...'
@@ -261,7 +281,16 @@ export async function loadData(): Promise<void> {
       startObserveDom()
       registerModelDynamic()
       moduleUpdate()
+      recordStartupMilestone('background-ready')
+      completeStartupAttempt(startupAttemptId)
+      void initialChatHydration
+        .then(() => recordStartupMilestone('chat-ready'))
+        .catch(() => {
+          // Active-chat hydration remains non-blocking during Phase 0. A failed
+          // signal intentionally leaves chat/background readiness unpublished.
+        })
     } catch (error) {
+      failStartupAttempt(startupAttemptId, failureCode, failureMilestone)
       alertError(error)
       await waitAlert()
       if (error instanceof FatalBootstrapError) return
@@ -357,6 +386,7 @@ export async function loadWebInitialDatabase() {
   )
   setServerCommandConflictGapHandler(handleServerCommandConflictGap)
   setResourceWriteGuardEnabled(true)
+  recordStartupMilestone('observer-ready')
   applyGenerationOperationBootstrap(runtime, 'startup')
   setPendingRecoveredGenerationEffects(runtime.pendingGenerationEffects ?? [])
   setGenerationFinalizationPersistences(runtime.generationFinalizations ?? [])
@@ -367,7 +397,7 @@ export async function loadWebInitialDatabase() {
   startActiveGreetingTranslationRefresh()
   startActiveGenerationReattach()
   startChatMessageHydration()
-  void hydrateActiveChat()
+  const initialChatHydration = hydrateActiveChat()
   stopBridgePatchLifecycleFlush?.()
   stopBridgePatchLifecycleFlush = startBridgePatchLifecycleFlush()
   serverResourceRuntimeReplayEnabled = false
@@ -375,6 +405,7 @@ export async function loadWebInitialDatabase() {
   serverResourceRuntimeReplayEnabled = true
   normalizeLegacyCustomBackgroundSetting()
   showLegacyMemoryMigrationNoticeIfNeeded()
+  return { initialChatHydration }
 }
 
 /**
@@ -491,6 +522,7 @@ async function startServerResourceEvents(options: { replayPendingMutations?: boo
     serverResourceReconnectAttempt = 0
     serverResourceEventSubscription = subscription
     recordServerResourceEventFrame(eventEpoch)
+    recordStartupMilestone('writer-ready')
     if (options.replayPendingMutations !== false) triggerReconnectPendingMutationReplay()
     if (hasPendingReplacementDatabaseRefresh()) {
       enqueueServerResourceSync(async () => {

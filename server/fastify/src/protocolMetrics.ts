@@ -2,6 +2,12 @@ import type { FastifyBaseLogger } from 'fastify'
 import { performance } from 'node:perf_hooks'
 
 const ENABLED_VALUES = new Set(['1', 'true', 'yes', 'on'])
+const protocolMetricListeners = new Set<(metric: Readonly<Record<string, unknown>>) => void>()
+
+export function subscribeProtocolMetrics(listener: (metric: Readonly<Record<string, unknown>>) => void): () => void {
+  protocolMetricListeners.add(listener)
+  return () => protocolMetricListeners.delete(listener)
+}
 
 export function protocolMetricsEnabled(): boolean {
   return ENABLED_VALUES.has((process.env.RISU_PROTOCOL_METRICS ?? '').toLowerCase())
@@ -12,7 +18,11 @@ export function protocolNowMs(): number {
 }
 
 export function protocolDurationMs(startMs: number): number {
-  return Math.round((performance.now() - startMs) * 100) / 100
+  return protocolElapsedMs(performance.now() - startMs)
+}
+
+export function protocolElapsedMs(elapsedMs: number): number {
+  return Math.round(Math.max(0, elapsedMs) * 100) / 100
 }
 
 export function jsonPayloadBytes(value: unknown): number | null {
@@ -39,9 +49,16 @@ export function emitProtocolMetric(
   const payload = { metric: name, ...(typeof fields === 'function' ? fields() : fields) }
   if (logger) {
     logger.info(payload, 'protocol metric')
-    return
+  } else {
+    console.info(`[protocol-metric] ${JSON.stringify(payload)}`)
   }
-  console.info(`[protocol-metric] ${JSON.stringify(payload)}`)
+  for (const listener of protocolMetricListeners) {
+    try {
+      listener(payload)
+    } catch {
+      // Measurement consumers must never change request behavior.
+    }
+  }
 }
 
 // --- mutation-range write capture -------------------------------------------

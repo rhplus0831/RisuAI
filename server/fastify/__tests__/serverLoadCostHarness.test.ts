@@ -19,7 +19,7 @@ import {
   type PersistedAsset,
 } from '../src/repository.js'
 import { MASKED_PROVIDER_SECRET, maskProviderSecrets } from '../src/providerSecrets.js'
-import { emitProtocolMetric, protocolMetricsEnabled } from '../src/protocolMetrics.js'
+import { emitProtocolMetric, protocolMetricsEnabled, subscribeProtocolMetrics } from '../src/protocolMetrics.js'
 import {
   appendActiveChatMessageTail,
   applyChatMessageDiff,
@@ -1833,14 +1833,26 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(thunk).not.toHaveBeenCalled()
 
     const logged: Record<string, unknown>[] = []
+    const observed: Readonly<Record<string, unknown>>[] = []
     const logger = { info: (payload: Record<string, unknown>) => logged.push(payload) }
+    const unsubscribe = subscribeProtocolMetrics((metric) => observed.push(metric))
     await withProtocolMetricsEnv('1', async () => {
       emitProtocolMetric('m5_probe', thunk, logger as never)
       emitProtocolMetric('m5_probe_eager', { payloadBytes: 123 }, logger as never)
     })
+    unsubscribe()
     expect(thunk).toHaveBeenCalledTimes(1)
     expect(logged[0]).toEqual({ metric: 'm5_probe', payloadBytes: 123 })
     expect(logged[1]).toEqual({ metric: 'm5_probe_eager', payloadBytes: 123 })
+    expect(observed).toEqual(logged)
+
+    const unsubscribeThrowing = subscribeProtocolMetrics(() => {
+      throw new Error('measurement sink failed')
+    })
+    await withProtocolMetricsEnv('1', async () => {
+      expect(() => emitProtocolMetric('m5_probe_listener_failure', {}, logger as never)).not.toThrow()
+    })
+    unsubscribeThrowing()
   })
 
   it('M5: resource and bootstrap responses add metric serialization only when enabled', async () => {

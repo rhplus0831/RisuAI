@@ -17,6 +17,11 @@ const GZIP_BODY_PREVIEW_MAX_BYTES = 4 * 1024
 const TRACE_BODY_MAX_GZIP_BYTES = 10 * 1024 * 1024
 const TRACE_ENTRY_LIMIT = 5_000
 const gzipAsync = promisify(gzip)
+const requestTraceUids = new WeakMap<FastifyRequest, string>()
+
+export function readRequestTraceUid(request: FastifyRequest): string | undefined {
+  return requestTraceUids.get(request)
+}
 
 interface RegisterRequestTraceOptions {
   dataDir: string
@@ -175,6 +180,7 @@ export function registerRequestTrace(app: FastifyInstance, opts: RegisterRequest
       logApiRequest: isApiRequest(request.raw.url ?? request.url),
     }
     traceStates.set(request, state)
+    requestTraceUids.set(request, state.uid)
 
     request.headers[REQUEST_UID_HEADER.toLowerCase()] = state.uid
     reply.header(REQUEST_UID_HEADER, state.uid)

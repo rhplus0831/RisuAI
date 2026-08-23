@@ -22,50 +22,50 @@ must land before performance-oriented implementation begins.
 
 ### 0A. Stable readiness instrumentation
 
-- [ ] Define one owner for startup marks and measures; keep mark names and
+- [x] Define one owner for startup marks and measures; keep mark names and
   one-time emission rules out of UI components.
-- [ ] Record entry, shell mount, observer readiness, writer readiness, chat
+- [x] Record entry, shell mount, observer readiness, writer readiness, chat
   readiness, plugin readiness, and background readiness.
-- [ ] Enforce monotonic timestamps and make retries record attempt/failure data
+- [x] Enforce monotonic timestamps and make retries record attempt/failure data
   without rewriting the first successful transition.
-- [ ] Extend `FastifyBrowserSmokeHook` with a serializable phase/timing snapshot
+- [x] Extend `FastifyBrowserSmokeHook` with a serializable phase/timing snapshot
   and wait helpers for the narrow readiness points used by tests.
-- [ ] Unit-test transition ordering, duplicate suppression, retry behavior, and
+- [x] Unit-test transition ordering, duplicate suppression, retry behavior, and
   absence of browser-content data in the snapshot.
 
 ### 0B. Initial-preload build report
 
-- [ ] Add a script under `util/` that reads a production `dist/index.html`,
+- [x] Add a script under `util/` that reads a production `dist/index.html`,
   resolves the main entry and module-preload files, and reports file count plus
   raw and gzip byte totals.
-- [ ] Report the largest initial chunk separately and emit both human-readable
+- [x] Report the largest initial chunk separately and emit both human-readable
   output and stable machine-readable data for CI artifacts.
-- [ ] Add a package command that builds and runs the report in one documented
+- [x] Add a package command that builds and runs the report in one documented
   step.
-- [ ] Add deterministic tests for duplicate preloads, missing files, gzip totals,
+- [x] Add deterministic tests for duplicate preloads, missing files, gzip totals,
   and paths containing encoded or nested segments.
 - [ ] Gate the ratified total and per-chunk budgets in CI. Do not use manual
   chunking to make the report ignore an eager dependency.
 
 ### 0C. Server and payload timing
 
-- [ ] Extend the existing protocol metrics rather than introducing a separate
+- [x] Extend the existing protocol metrics rather than introducing a separate
   logging channel.
-- [ ] Measure bootstrap and resource response duration and size with resource
+- [x] Measure bootstrap and resource response duration and size with resource
   name, revision, cache hit/miss counts, and request UID where already available.
-- [ ] Keep character, chat, prompt, plugin, and account content out of metrics.
-- [ ] Add a large-database payload assertion for the character endpoint that
+- [x] Keep character, chat, prompt, plugin, and account content out of metrics.
+- [x] Add a large-database payload assertion for the character endpoint that
   Phase 2 can replace with a summary-specific budget.
 
 ### 0D. Cold/warm scenario matrix
 
-- [ ] Define stable small and large SQLite fixtures. The large fixture must make
+- [x] Define stable small and large SQLite fixtures. The large fixture must make
   historical character/chat payload growth visible.
-- [ ] Measure cold browser cache plus empty resource cache separately from warm
+- [x] Measure cold browser cache plus empty resource cache separately from warm
   browser/resource cache. Never average the two populations together.
-- [ ] Capture initial preload report, phase timings, resource payload totals, and
+- [x] Capture initial preload report, phase timings, resource payload totals, and
   relevant request traces for each fixture/cache combination.
-- [ ] Document the single developer command and environment needed to reproduce
+- [x] Document the single developer command and environment needed to reproduce
   the measurements.
 
 ## Initial budgets to ratify
@@ -82,7 +82,20 @@ CI variance must be measured before these values become hard gates. Any later
 change requires before/after artifacts and an explanation of the dependency
 that needs the increase.
 
+### Budget calibration status
+
+Two local production reports on 2026-08-23 measured 1,632,861-1,632,865
+total gzip bytes and 668,641-668,643 gzip bytes for the largest chunk. The
+provisional regression ceilings are 1,650,000 and 675,000 bytes respectively;
+the 900/500 KiB milestone targets remain report-only. Review the first five
+successful CI artifacts before treating the regression ceilings as ratified or
+tightening them. The CI budget checkbox above remains open until that review.
+
 ## Verification
+
+Run `pnpm measure:fast-bootstrap` to build the production preload report,
+produce the browser-smoke build, and execute the small/large cold/warm startup
+matrix. Local and CI artifacts are written under `fast-bootstrap-results/`.
 
 - Run the timing and report unit tests directly.
 - Run `pnpm build` and the new build-report command.
