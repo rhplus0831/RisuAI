@@ -471,7 +471,7 @@ client contract remains intentional.
 Add the missing normal composer-to-real-stream Playwright journey. Existing
 documentation notes that the repository lacks a normal composer-to-real-stream
 browser test
-([test guide](../../tests/prompting-generation-and-streaming.md#L9)). The new
+([test guide](../../../docs/tests/prompting-generation-and-streaming.md#L9)). The new
 journey should run in desktop Chromium and a Pixel-class mobile profile:
 
 1. submit through the real composer;

@@ -349,8 +349,8 @@ terminal failure rather than an unconditional `done`.
 Document that “queued” means a confirmed replayable SQLite row, not merely a
 retryable-looking exception. The relevant canonical descriptions are:
 
-- [backend.md:243-265](../../structure/backend.md#L243-L265)
-- [data-and-events.md:227-240](../../structure/data-and-events.md#L227-L240)
+- [backend.md:243-265](../../../docs/structure/backend.md#L243-L265)
+- [data-and-events.md:227-240](../../../docs/structure/data-and-events.md#L227-L240)
 - [client-runtime.md:331-337](../../../src/docs/client-runtime.md#L331-L337)
 
 ## How should the fix be validated?

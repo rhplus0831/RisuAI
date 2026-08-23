@@ -18,7 +18,7 @@ records past decisions and is not authoritative.
 | Chat, transcript, message, composer, generation UI, drafts, viewport behavior, or completion audio | [Svelte Chat UI](src/docs/svelte-chat-ui.md), then [Client Runtime](src/docs/client-runtime.md#generation-client) for durable generation |
 | Sidebars, routes, chat lists, character selection, or reordering | [Svelte Navigation UI](src/docs/svelte-navigation-ui.md) |
 | Settings, shared controls/accessibility, localization, authoring pages, or provider panels | [Svelte Settings UI](src/docs/svelte-settings-ui.md) and [Svelte UI](src/docs/svelte-ui.md#localization) |
-| App shell, styling/themes, responsive/Lite behavior, Playground, or data-dependent rendering | [Svelte UI](src/docs/svelte-ui.md) and [Data-Driven UI Inventory](docs/data-driven-ui.md) |
+| App shell, styling/themes, responsive/Lite behavior, Playground, or data-dependent rendering | [Svelte UI](src/docs/svelte-ui.md) |
 | Model profiles, credentials, providers, capabilities, runtime options, or request history | [Providers And Models](docs/structure/providers-and-models.md) |
 | Prompt assembly, templates, lorebook/Hypa memory, CBS, regex, triggers, or Lua | [Prompt Assembly And Scripting](docs/structure/prompt-assembly-and-scripting.md) |
 | Translation, translator presets/caches/jobs, or Draft/BTW input hooks | [Translation And Input Hooks](docs/structure/translation-and-input-hooks.md) |
@@ -26,7 +26,6 @@ records past decisions and is not authoritative.
 | Modules, plugins, permissions, or MCP | [Plugins And MCP](docs/structure/plugins-and-mcp.md) |
 | Assets, inlay catalog, `.risu`/CharX/chat exchange, backups, reset, or Realm conversion | [Assets And Saves](docs/structure/assets-and-saves.md) |
 | Tests, compatibility harness, local dev, CI, generated paths, or removed paths | [Testing And Operations](docs/structure/testing-and-operations.md), [Test Suite Guide](docs/tests/README.md), and [Generated And Legacy](docs/structure/generated-and-legacy.md) |
-| Upstream fork maintenance | [Upstream Sync](docs/upstream-sync/README.md) and its current sweep ledger |
 
 ## Repository Map
 
@@ -38,8 +37,8 @@ records past decisions and is not authoritative.
 | `index.html`, `vite.config.ts`, `src/` | Svelte 5 SPA, Vite configuration, browser runtime, UI, language packs, and bundled client data. |
 | `server/fastify/` | Fastify API and tests, including SQLite persistence and provider execution; it has no separate package manifest. |
 | `STRUCTURE.md`, `docs/structure/`, `src/docs/` | Current architecture and implementation guides. Start at the [Architecture Index](docs/structure/README.md). |
-| `docs/tests/`, `docs/data-driven-ui.md`, `docs/upstream-sync/` | Test discovery, data-dependent UI, and fork-maintenance guides. |
-| `.archived-docs/` | Closed workstreams and dated reports, including the message-generation parity audit. Do not infer current behavior from them. |
+| `docs/tests/` | Test-discovery guides organized by product and domain area. |
+| `.archived-docs/` | Closed workstreams and dated reports, including the August Fastify audits, upstream-sync sweep, data-driven UI inventory, and message-generation parity audit. Do not infer current behavior from them. |
 | `test/compat-harness/` | Opt-in golden compatibility comparison against the pinned pre-Fastify worktree; it is not part of `pnpm test:all`. |
 | `public/` | Static application sources copied or served by Vite, including the service worker and vendor/tokenizer payloads. |
 | `resources/` | Retained packaging artwork; the current Vite/Fastify build does not consume it. |

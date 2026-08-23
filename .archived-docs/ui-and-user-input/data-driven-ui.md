@@ -53,9 +53,9 @@ Driver tags used below:
 | `X` | Plugin, module, custom HTML/CSS/CBS, parser, or remote-authored content.      |
 
 For implementation ownership, use the focused
-[chat UI](../src/docs/svelte-chat-ui.md),
-[navigation UI](../src/docs/svelte-navigation-ui.md), and
-[settings UI](../src/docs/svelte-settings-ui.md) guides. This document only
+[chat UI](../../src/docs/svelte-chat-ui.md),
+[navigation UI](../../src/docs/svelte-navigation-ui.md), and
+[settings UI](../../src/docs/svelte-settings-ui.md) guides. This document only
 indexes data-driven variants.
 
 ## App shell, routing, and home

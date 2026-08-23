@@ -364,7 +364,7 @@ and job; a changed payload under the same operation ID must fail closed.
 
 Add a real composer-to-stream-to-reload Playwright journey using the built SPA,
 Fastify, and SQLite. The repository currently documents that this journey does
-not exist ([test-suite gap](../../tests/README.md#L7)). Run it with desktop and a
+not exist ([test-suite gap](../../../docs/tests/README.md#L7)). Run it with desktop and a
 Pixel-class mobile profile and hold the relevant request/server seam at each
 checkpoint:
 

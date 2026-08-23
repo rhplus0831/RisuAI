@@ -10,15 +10,16 @@ codebase whenever an archived line number or contract has drifted.
 
 | Topic                                                              | Contents                                                                                                                          |
 | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| [Architecture and migration](architecture-and-migration/README.md) | Fastify migration history, client-thinning closeout, and dated original-versus-Fastify behavior audit.                            |
+| [Architecture and migration](architecture-and-migration/README.md) | Fastify migration history, client-thinning closeout, upstream-sync sweep, and dated original-versus-Fastify behavior audit.      |
 | [Protocol and persistence](protocol-and-persistence/README.md)     | Server/client protocol audits, SQLite migration, projection work, asset coercion, mutation narrowing, and writer takeover.         |
-| [Performance and stability](performance-and-stability/README.md)   | Frontend clone narrowing and the four chronological stability/performance audits.                                                 |
+| [Performance and stability](performance-and-stability/README.md)   | Frontend clone narrowing, chat multitasking regressions, and the four chronological stability/performance audits.                 |
 | [Generation and models](generation-and-models/README.md)           | Durable generation, translation decisions, chat-scoped settings, Agent Presets, model profiles, and prompt-template ownership.    |
-| [UI and user input](ui-and-user-input/README.md)                   | Visible-state and persistence audits, input hooks, chat/settings controls, stale-state reviews, and input hardening.               |
+| [UI and user input](ui-and-user-input/README.md)                   | Visible-state and persistence audits, data-driven UI inventory, input hooks, chat/settings controls, stale-state reviews, and input hardening. |
 | [Deferred work](deferred-work/README.md)                           | The consolidated deferred-feature inventory/progress record and the older Fastify leftover snapshot.                              |
 | [July 23 audit scopes](audit-scopes-2026-07-23/README.md)          | Closed cross-cutting audit charters, verification records, and the plans implemented on 2026-07-23.                                |
 | [August 5 data-loss delta audit](data-loss-delta-audit-2026-08-05/README.md) | Closed dual-track (Codex+Claude) pre-beta data-loss audit: charter, ten pass reports, consolidated conclusion, D1/D2 decisions. |
 | [Message-generation parity audit](audit/WORK-INDEX.md) | Closed August 2026 parity review: 51 resolved findings, two deferred items, and the supporting area evidence. |
+| [August 2026 Fastify audits](fastify-audits-2026-08-11-to-12/WORK-INDEX.md) | Closed multi-chat/mobile stability review and original-Risu compatibility audit, including validation reports and the accepted-send protocol plan. |
 
 ## Archive Conventions
 

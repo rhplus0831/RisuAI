@@ -360,7 +360,7 @@ loss at every append-to-job checkpoint and require automatic reconstruction
 without duplicate append or generation. The current test guide explicitly
 notes that no composer-to-stream-to-durable-reload or crash/reload browser
 journey exists
-([test-suite gap](../../tests/README.md#major-gaps)).
+([test-suite gap](../../../docs/tests/README.md#major-gaps)).
 
 After implementation, run at minimum:
 

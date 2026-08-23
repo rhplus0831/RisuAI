@@ -297,7 +297,7 @@ Yes. The following issues were found during MS-09 tracing and are not documented
 
 **Confidence: High. Suggested severity: Medium.**
 
-Only command events receive SSE IDs and persisted replay. Memory frames have no ID ([`server/fastify/src/routes/events.ts:22-28`](../../../server/fastify/src/routes/events.ts#L22-L28)); the architecture explicitly says memory events are never replayed ([`docs/structure/data-and-events.md:340-356`](../../structure/data-and-events.md#L340-L356)). On reconnect, bootstrap re-establishes the stream and refreshes durable command resources, but it neither resets nor hydrates the global Hypa progress store ([`src/ts/bootstrap.ts:425-487`](../../../src/ts/bootstrap.ts#L425-L487)).
+Only command events receive SSE IDs and persisted replay. Memory frames have no ID ([`server/fastify/src/routes/events.ts:22-28`](../../../server/fastify/src/routes/events.ts#L22-L28)); the architecture explicitly says memory events are never replayed ([`docs/structure/data-and-events.md:340-356`](../../../docs/structure/data-and-events.md#L340-L356)). On reconnect, bootstrap re-establishes the stream and refreshes durable command resources, but it neither resets nor hydrates the global Hypa progress store ([`src/ts/bootstrap.ts:425-487`](../../../src/ts/bootstrap.ts#L425-L487)).
 
 Consequences:
 

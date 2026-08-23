@@ -27,6 +27,7 @@ and async stale-state work.
 | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | [`chat-screen-width-2026-07-20.md`](chat-screen-width-2026-07-20.md)         | Fixed chat-column width setting, responsive layout contract, and existing-database hydration constraint.  |
 | [`saved-toggles-rework-2026-07-20.md`](saved-toggles-rework-2026-07-20.md)   | Saved-toggle state model, dialog selection, Pick merge semantics, and historical validation baseline.     |
+| [`data-driven-ui.md`](data-driven-ui.md)                                    | Dated 2026-08-17 inventory of data-dependent UI variants and their implementation owners.                  |
 
 Within each consolidated audit record, later verification and stale-state
 sections supersede conflicting baseline verdicts. The initial and post-fix June

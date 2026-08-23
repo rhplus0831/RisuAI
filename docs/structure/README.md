@@ -34,8 +34,6 @@ in `docs/structure/` appears below.
 | ----- | --- |
 | [`src/docs/README.md`](../../src/docs/README.md) | Choose among the five focused Svelte/browser-runtime guides. |
 | [`docs/tests/README.md`](../tests/README.md) | Find product-flow, domain, server, browser, and visible-state tests without searching the full test tree. |
-| [`docs/data-driven-ui.md`](../data-driven-ui.md) | Trace server-backed, session-local, and asynchronous state into current UI consumers. |
-| [`docs/upstream-sync/README.md`](../upstream-sync/README.md) | Apply the current upstream-fork sweep procedure and update its ledger. |
 | [`server/fastify/__tests__/README.md`](../../server/fastify/__tests__/README.md) | Navigate the flat Fastify test directory by feature area. |
 
 [`frontend.md`](frontend.md) remains only as a compatibility pointer for older
@@ -65,7 +63,7 @@ frontend/browser guides and owns no current guidance.
 | An import/export or restore format | `src/ts/characterCards.ts`, `src/ts/process/processzip.ts`, `src/ts/characters.ts`, `src/ts/storage/backup.ts`, `src/lib/Setting/Pages/UserSettings.svelte`, `server/fastify/src/risuSave/`, `server/fastify/src/routes/save.ts`, `server/fastify/src/routes/backups.ts`, their fixtures/tests, [Assets And Saves](assets-and-saves.md), and [Settings UI](../../src/docs/svelte-settings-ui.md#shell-and-routed-pages). |
 | Chat export or all-chat reset | `src/ts/characters.ts`, `src/ts/chatCommands.ts`, `src/lib/SideBars/SideChatList.svelte`, `server/fastify/src/routes/commands.ts`, `server/fastify/src/commands/events.ts`, `src/ts/server/pendingMutationOutbox.ts`, `src/ts/server/resourceInvalidation.ts`, their focused tests, [Chats And Datasets](assets-and-saves.md#chats-and-datasets), the [client export fence](../../src/docs/client-runtime.md#all-chats-export-fence), and [Chat Lists UI](../../src/docs/svelte-navigation-ui.md#chat-lists-and-folders). |
 | Web Push | `server/fastify/src/pushNotifications.ts`, `server/fastify/src/routes/pushNotifications.ts`, `src/ts/server/pushNotifications.ts`, `src/ts/server/pushNotificationRetryStorage.ts`, `src/ts/server/pushNotificationSetting.ts`, `public/service-worker.js`, `src/lib/Setting/Pages/Display/NotificationToggle.svelte`, their tests, [Backend Map](backend.md), [Client Runtime](../../src/docs/client-runtime.md#push-notification-coordinator), and [Settings UI](../../src/docs/svelte-settings-ui.md#shared-controls-and-focus). |
-| User-visible behavior | The narrowest of [Svelte UI](../../src/docs/svelte-ui.md), [Chat UI](../../src/docs/svelte-chat-ui.md), [Navigation UI](../../src/docs/svelte-navigation-ui.md), or [Settings UI](../../src/docs/svelte-settings-ui.md); matching DOM/browser tests; [Data-Driven UI](../data-driven-ui.md) when state-backed; and `src/lang/` for strings. |
+| User-visible behavior | The narrowest of [Svelte UI](../../src/docs/svelte-ui.md), [Chat UI](../../src/docs/svelte-chat-ui.md), [Navigation UI](../../src/docs/svelte-navigation-ui.md), or [Settings UI](../../src/docs/svelte-settings-ui.md); matching DOM/browser tests; and `src/lang/` for strings. |
 
 ## Maintenance Rules
 
