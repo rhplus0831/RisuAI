@@ -25,8 +25,7 @@
     WrenchIcon,
     User2Icon,
   } from '@lucide/svelte'
-  import { addCharacter, changeChar, getCharImage } from '../../ts/characters'
-  import CharConfig from './CharConfig.svelte'
+  import { getCharImage } from '../../ts/characterImage'
   import { language } from '../../lang'
   import SidebarAvatar from './SidebarAvatar.svelte'
   import BaseRoundedButton from '../UI/BaseRoundedButton.svelte'
@@ -35,8 +34,7 @@
   import { alertConfirm, alertError, alertInput, alertNormal, alertSelect } from 'src/ts/alert'
   import SideChatList from './SideChatList.svelte'
   import { sideBarSize } from 'src/ts/gui/guisize'
-  import DevTool from './DevTool.svelte'
-  import QuickSettingsGui from '../Others/QuickSettingsGUI.svelte'
+  import LazyComponent from '../UI/LazyComponent.svelte'
   import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte'
   import {
     createCharacterOrderFolderWithOutcome,
@@ -78,6 +76,10 @@
   import { activeGenerationJobs, generationJobLifecycles } from 'src/ts/process/reattach'
   import { markChatRead, unreadChatIds } from 'src/ts/process/chatUnread.svelte'
   import UnreadIndicator from './UnreadIndicator.svelte'
+
+  const loadCharConfig = () => import('./CharConfig.svelte')
+  const loadDevTool = () => import('./DevTool.svelte')
+  const loadQuickSettings = () => import('../Others/QuickSettingsGUI.svelte')
   let sideBarMode = $state(0)
   let editMode = $state(false)
   let menuMode = $state(0)
@@ -348,9 +350,10 @@
     })
   }
 
-  function openCharacterRoute(index: number) {
+  async function openCharacterRoute(index: number) {
     const character = getDatabase().characters?.[index]
     if (!character?.chaId) {
+      const { changeChar } = await import('../../ts/characters')
       changeChar(index, { reseter })
       return
     }
@@ -949,6 +952,7 @@
         <BaseRoundedButton
           ariaLabel={language.addCharacter}
           onClick={async () => {
+            const { addCharacter } = await import('../../ts/characters')
             addCharacter({ reseter })
           }}
           ><svg viewBox="0 0 24 24" width="1.2em" height="1.2em"
@@ -1072,12 +1076,12 @@
         {/if}
       </div>
       {#if QuickSettings.open}
-        <QuickSettingsGui />
+        <LazyComponent loader={loadQuickSettings} fill testId="quick-settings" />
       {:else if devTool}
-        <DevTool />
+        <LazyComponent loader={loadDevTool} fill testId="developer-tools" />
       {:else if $botMakerMode}
         <div class="contents" data-risu-sidebar-panel="character">
-          <CharConfig />
+          <LazyComponent loader={loadCharConfig} fill testId="character-editor" />
         </div>
       {:else}
         <div class="contents" data-risu-sidebar-panel="chat">

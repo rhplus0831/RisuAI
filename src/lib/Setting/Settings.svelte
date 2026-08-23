@@ -23,35 +23,35 @@
     GithubIcon,
   } from '@lucide/svelte'
   import { language } from 'src/lang'
-  import DisplaySettings from './Pages/DisplaySettings.svelte'
-  import UserSettings from './Pages/UserSettings.svelte'
-  import BotSettings from './Pages/BotSettings.svelte'
-  import OtherBotSettings from './Pages/OtherBotSettings.svelte'
-  import PluginSettings from './Pages/PluginSettings.svelte'
-  import AdvancedSettings from './Pages/AdvancedSettings.svelte'
-  import AgentPresetSettings from './Pages/AgentPresetSettings.svelte'
-  import InputHookSettings from './Pages/InputHookSettings.svelte'
-  import RequestHistorySettings from './Pages/RequestHistorySettings.svelte'
-  import SourceCode from './Pages/SourceCode.svelte'
   import { additionalSettingsMenu, easyPanelStore, MobileGUI, SettingsMenuIndex } from 'src/ts/stores.svelte'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
-  import Communities from './Pages/Communities.svelte'
-  import GlobalLoreBookSettings from './Pages/GlobalLoreBookSettings.svelte'
-  import Lorepreset from './lorepreset.svelte'
-  import GlobalRegex from './Pages/GlobalRegex.svelte'
-  import LanguageSettings from './Pages/LanguageSettings.svelte'
-  import AccessibilitySettings from './Pages/AccessibilitySettings.svelte'
-  import PersonaSettings from './Pages/PersonaSettings.svelte'
-  import PromptSettings from './Pages/PromptSettings.svelte'
-  import ThanksPage from './Pages/ThanksPage.svelte'
-  import ModuleSettings from './Pages/Module/ModuleSettings.svelte'
   import { isLite } from 'src/ts/lite'
-  import HotkeySettings from './Pages/HotkeySettings.svelte'
   import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte'
+  import LazyComponent from '../UI/LazyComponent.svelte'
   import { alertConfirm } from 'src/ts/alert'
   import { closeSettingsRoute, navigate } from 'src/ts/router'
 
-  let openLoreList = $state(false)
+  const loadUserSettings = () => import('./Pages/UserSettings.svelte')
+  const loadBotSettings = () => import('./Pages/BotSettings.svelte')
+  const loadOtherBotSettings = () => import('./Pages/OtherBotSettings.svelte')
+  const loadDisplaySettings = () => import('./Pages/DisplaySettings.svelte')
+  const loadPluginSettings = () => import('./Pages/PluginSettings.svelte')
+  const loadAdvancedSettings = () => import('./Pages/AdvancedSettings.svelte')
+  const loadCommunities = () => import('./Pages/Communities.svelte')
+  const loadGlobalLoreBookSettings = () => import('./Pages/LazyGlobalLoreBookSettings.svelte')
+  const loadGlobalRegex = () => import('./Pages/GlobalRegex.svelte')
+  const loadLanguageSettings = () => import('./Pages/LanguageSettings.svelte')
+  const loadAccessibilitySettings = () => import('./Pages/AccessibilitySettings.svelte')
+  const loadPersonaSettings = () => import('./Pages/PersonaSettings.svelte')
+  const loadModuleSettings = () => import('./Pages/Module/ModuleSettings.svelte')
+  const loadPromptSettings = () => import('./Pages/PromptSettings.svelte')
+  const loadHotkeySettings = () => import('./Pages/HotkeySettings.svelte')
+  const loadAgentPresetSettings = () => import('./Pages/AgentPresetSettings.svelte')
+  const loadInputHookSettings = () => import('./Pages/InputHookSettings.svelte')
+  const loadRequestHistorySettings = () => import('./Pages/RequestHistorySettings.svelte')
+  const loadSourceCode = () => import('./Pages/SourceCode.svelte')
+  const loadThanksPage = () => import('./Pages/ThanksPage.svelte')
+
   let supporterConfirmOpen = $state(false)
   let viewportWidth = $state(window.innerWidth)
   let splitSettingsLayout = $derived(viewportWidth >= 700 && !$MobileGUI)
@@ -357,64 +357,79 @@
             </button>
           {/if}
           {#if $SettingsMenuIndex === 0}
-            <UserSettings />
+            <LazyComponent loader={loadUserSettings} fill testId="settings-user" />
           {:else if $SettingsMenuIndex === 1}
             {#if getDatabase().botPresets?.length > 0}
-              <BotSettings
-                settingsKind="legacy"
-                goPromptTemplate={() => {
-                  navigate('/settings/prompt')
-                }} />
+              <LazyComponent
+                loader={loadBotSettings}
+                componentProps={{
+                  settingsKind: 'legacy',
+                  goPromptTemplate: () => navigate('/settings/prompt'),
+                }}
+                fill
+                testId="settings-legacy-bot" />
             {:else}
-              <BotSettings settingsKind="model" />
+              <LazyComponent
+                loader={loadBotSettings}
+                componentProps={{ settingsKind: 'model' }}
+                fill
+                testId="settings-model" />
             {/if}
           {:else if $SettingsMenuIndex === 2}
-            <OtherBotSettings />
+            <LazyComponent loader={loadOtherBotSettings} fill testId="settings-other-bots" />
           {:else if $SettingsMenuIndex === 3}
-            <DisplaySettings />
+            <LazyComponent loader={loadDisplaySettings} fill testId="settings-display" />
           {:else if $SettingsMenuIndex === 4}
-            <PluginSettings />
+            <LazyComponent loader={loadPluginSettings} fill testId="settings-plugins" />
           {:else if $SettingsMenuIndex === 6}
-            <AdvancedSettings />
+            <LazyComponent loader={loadAdvancedSettings} fill testId="settings-advanced" />
           {:else if $SettingsMenuIndex === 7}
-            <Communities />
+            <LazyComponent loader={loadCommunities} fill testId="settings-communities" />
           {:else if $SettingsMenuIndex === 8}
-            <GlobalLoreBookSettings bind:openLoreList />
+            <LazyComponent loader={loadGlobalLoreBookSettings} fill testId="settings-global-lorebook" />
           {:else if $SettingsMenuIndex === 9}
-            <GlobalRegex />
+            <LazyComponent loader={loadGlobalRegex} fill testId="settings-global-regex" />
           {:else if $SettingsMenuIndex === 10}
-            <LanguageSettings />
+            <LazyComponent loader={loadLanguageSettings} fill testId="settings-language" />
           {:else if $SettingsMenuIndex === 11}
-            <AccessibilitySettings />
+            <LazyComponent loader={loadAccessibilitySettings} fill testId="settings-accessibility" />
           {:else if $SettingsMenuIndex === 12}
-            <PersonaSettings />
+            <LazyComponent loader={loadPersonaSettings} fill testId="settings-persona" />
           {:else if $SettingsMenuIndex === 14}
-            <ModuleSettings />
+            <LazyComponent loader={loadModuleSettings} fill testId="settings-modules" />
           {:else if $SettingsMenuIndex === 13}
-            <PromptSettings
-              onGoBack={() => {
-                navigate('/settings/prompt-settings')
-              }} />
+            <LazyComponent
+              loader={loadPromptSettings}
+              componentProps={{ onGoBack: () => navigate('/settings/prompt-settings') }}
+              fill
+              testId="settings-prompt" />
           {:else if $SettingsMenuIndex === 15}
-            <HotkeySettings />
+            <LazyComponent loader={loadHotkeySettings} fill testId="settings-hotkeys" />
           {:else if $SettingsMenuIndex === 17}
-            <BotSettings settingsKind="model" />
+            <LazyComponent
+              loader={loadBotSettings}
+              componentProps={{ settingsKind: 'model' }}
+              fill
+              testId="settings-model" />
           {:else if $SettingsMenuIndex === 18}
-            <BotSettings
-              settingsKind="prompt"
-              goPromptTemplate={() => {
-                navigate('/settings/prompt')
-              }} />
+            <LazyComponent
+              loader={loadBotSettings}
+              componentProps={{
+                settingsKind: 'prompt',
+                goPromptTemplate: () => navigate('/settings/prompt'),
+              }}
+              fill
+              testId="settings-prompt-presets" />
           {:else if $SettingsMenuIndex === 19}
-            <AgentPresetSettings />
+            <LazyComponent loader={loadAgentPresetSettings} fill testId="settings-agent-presets" />
           {:else if $SettingsMenuIndex === 20}
-            <InputHookSettings />
+            <LazyComponent loader={loadInputHookSettings} fill testId="settings-input-hooks" />
           {:else if $SettingsMenuIndex === 21}
-            <RequestHistorySettings />
+            <LazyComponent loader={loadRequestHistorySettings} fill testId="settings-request-history" />
           {:else if $SettingsMenuIndex === 22}
-            <SourceCode />
+            <LazyComponent loader={loadSourceCode} fill testId="settings-source-code" />
           {:else if $SettingsMenuIndex === 77}
-            <ThanksPage />
+            <LazyComponent loader={loadThanksPage} fill testId="settings-thanks" />
           {/if}
         </div>
       {/key}
@@ -431,12 +446,6 @@
     {/if}
   </div>
 </div>
-{#if openLoreList}
-  <Lorepreset
-    close={() => {
-      openLoreList = false
-    }} />
-{/if}
 
 <style>
   .setting-bg {

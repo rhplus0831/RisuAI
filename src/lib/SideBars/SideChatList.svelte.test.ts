@@ -1250,10 +1250,14 @@ describe('SideChatList DOM contract harness', () => {
     const chatExport = rowActionButton(rowByChatId('chat-root-a'), 'export')
     expect(chatExport).toBeInstanceOf(HTMLButtonElement)
     chatExport.click()
+    await vi.waitFor(() => expect(sidebarMocks.exportChat).toHaveBeenCalledTimes(1))
     rowActionButton(rowByChatId('chat-foldered'), 'export').click()
+    await vi.waitFor(() => expect(sidebarMocks.exportChat).toHaveBeenCalledTimes(2))
     sidebarRoot().querySelector<HTMLButtonElement>('[data-risu-chat-action="export-all"]')!.click()
     chara.chats.reverse()
-    await tick()
+    await vi.waitFor(() => {
+      expect(sidebarMocks.exportAllChats).toHaveBeenCalledOnce()
+    })
 
     expect(sidebarMocks.exportChat.mock.calls).toEqual([
       [{ characterId: 'char-a', chatId: 'chat-root-a' }],

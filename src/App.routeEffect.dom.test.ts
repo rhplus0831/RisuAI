@@ -424,6 +424,9 @@ describe('App route/refreeze mounted DOM behavior', () => {
     expect(characterTab).not.toBeNull()
     characterTab?.click()
     await tick()
+    await vi.waitFor(() => {
+      expect(target.querySelector('[data-testid="char-config"]')).not.toBeNull()
+    })
 
     expect(get(botMakerMode)).toBe(true)
     expect(target.querySelector('[data-risu-sidebar-panel="character"]')).not.toBeNull()
@@ -437,7 +440,9 @@ describe('App route/refreeze mounted DOM behavior', () => {
       characterOrder: [...database.characterOrder],
     })
     await tick()
-    await tick()
+    await vi.waitFor(() => {
+      expect(target.querySelector('[data-testid="char-config"]')).not.toBeNull()
+    })
 
     expect(target.querySelector('[data-risu-sidebar-panel="character"]')).not.toBeNull()
     expect(target.querySelector('[data-testid="char-config"]')).not.toBeNull()
@@ -521,8 +526,10 @@ describe('App route/refreeze mounted DOM behavior', () => {
     router.currentRoute.set({ kind: 'grid', path: '/grid' })
     await tick()
 
+    await vi.waitFor(() => {
+      expect(target.querySelector('[data-testid="grid-close"]')).not.toBeNull()
+    })
     const closeButton = target.querySelector<HTMLButtonElement>('[data-testid="grid-close"]')
-    expect(closeButton).not.toBeNull()
     closeButton?.click()
 
     expect(appRouteDomMocks.closeGridRoute).toHaveBeenCalledOnce()

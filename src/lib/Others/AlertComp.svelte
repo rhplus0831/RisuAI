@@ -10,7 +10,7 @@
     type alertData,
   } from '../../ts/alert'
 
-  import { getCharImage } from '../../ts/characters'
+  import { getCharImage } from '../../ts/characterImage'
   import { ParseMarkdown } from '../../ts/parser/parser.svelte'
   import BarIcon from '../SideBars/BarIcon.svelte'
   import { ChevronRightIcon, User } from '@lucide/svelte'

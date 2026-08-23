@@ -2,7 +2,7 @@
   import { onDestroy, tick, untrack } from 'svelte'
   import { getDatabase, type character, type Message } from 'src/ts/storage/database.svelte'
   import Chat from './Chat.svelte'
-  import { getCharImage } from 'src/ts/characters'
+  import { getCharImage } from 'src/ts/characterImage'
   import { createSimpleCharacter, selectedCharID, ReloadChatPointer } from 'src/ts/stores.svelte'
   import { RegexDisplayReloadPointer } from 'src/ts/process/regexDisplayReload'
   import { chatFoldedStateMessageIndex } from 'src/ts/globalApi.svelte'

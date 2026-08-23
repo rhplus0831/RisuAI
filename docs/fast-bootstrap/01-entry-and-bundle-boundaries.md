@@ -53,17 +53,40 @@ treated as completion.
 
 ### 1B. Lazy root UI and route handlers
 
-- [ ] Introduce recoverable lazy boundaries for settings, character/grid editors,
+- [x] Introduce recoverable lazy boundaries for settings, character/grid editors,
   Playground, import/export tools, and modal families currently imported by
   `src/App.svelte`.
-- [ ] Keep the loading/error surface accessible and route chunk-load errors
+- [x] Keep the loading/error surface accessible and route chunk-load errors
   through localized retry messaging.
-- [ ] Separate lightweight URL classification from persistence-capable route
+- [x] Separate lightweight URL classification from persistence-capable route
   application in `src/ts/router.ts`.
-- [ ] Dynamically load character, persona, Playground, settings, and chat route
+- [x] Dynamically load character, persona, Playground, settings, and chat route
   handlers only for matching routes.
 - [ ] Add first-open tests for every lazy route and modal family, including CSS,
   focus restoration, no transient blank screen, and offline/stale chunk failure.
+
+### 1B implementation measurement (2026-08-24)
+
+| Measure | After 1A | 1B implementation | Change |
+| --- | ---: | ---: | ---: |
+| Initial preload files | 11 | 11 | 0 |
+| Initial JavaScript gzip | 316,644 bytes | 317,810 bytes | +0.4% |
+| Largest initial chunk gzip | 283,335 bytes | 283,335 bytes | 0% |
+| Cold startup JavaScript transfer | 1,545,220 bytes | 1,320,987 bytes | -14.5% |
+| Root `appStartup` chunk raw | 1,759,397 bytes | 234,580 bytes | -86.7% |
+
+The initial preload result remains nearly flat because `appStartup` was already
+requested dynamically after environment setup. The cold transfer and root chunk
+measurements show the actual effect: settings pages, Grid, Playground tools,
+character-editor panels, App-owned modal families, chat/module dialogs, and file
+transfer implementations now have first-use entry chunks. URL classification is
+owned by `routerRoute.ts`; persistence-capable settings, persona, Playground,
+character, and chat application lives behind route-specific dynamic handlers.
+
+The reusable lazy host has focused pending, failure, retry, stale-attempt, and
+modal focus-restoration coverage. The final 1B test checkbox remains open until
+the production-browser first-open matrix covers every registered family and
+intercepts real emitted JavaScript/CSS for offline and stale-chunk failures.
 
 ### 1C. Store and global API dependency cleanup
 

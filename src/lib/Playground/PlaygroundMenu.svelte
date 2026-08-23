@@ -2,20 +2,22 @@
   import { ArrowLeft } from '@lucide/svelte'
   import { language } from 'src/lang'
   import { PlaygroundStore, SizeStore } from 'src/ts/stores.svelte'
-  import PlaygroundEmbedding from './PlaygroundEmbedding.svelte'
-  import PlaygroundTokenizer from './PlaygroundTokenizer.svelte'
-  import PlaygroundJinja from './PlaygroundJinja.svelte'
-  import PlaygroundSyntax from './PlaygroundSyntax.svelte'
-  import PlaygroundImageGen from './PlaygroundImageGen.svelte'
-  import PlaygroundParser from './PlaygroundParser.svelte'
-  import ToolConversion from './ToolConversion.svelte'
-  import PlaygroundSubtitle from './PlaygroundSubtitle.svelte'
-  import PlaygroundImageTrans from './PlaygroundImageTrans.svelte'
-  import PlaygroundTranslation from './PlaygroundTranslation.svelte'
-  import PlaygroundMcp from './PlaygroundMCP.svelte'
-  import PlaygroundDocs from './PlaygroundDocs.svelte'
-  import PlaygroundInlayExplorer from './PlaygroundInlayExplorer.svelte'
   import { navigate } from 'src/ts/router'
+  import LazyComponent from '../UI/LazyComponent.svelte'
+
+  const loadPlaygroundEmbedding = () => import('./PlaygroundEmbedding.svelte')
+  const loadPlaygroundTokenizer = () => import('./PlaygroundTokenizer.svelte')
+  const loadPlaygroundSyntax = () => import('./PlaygroundSyntax.svelte')
+  const loadPlaygroundJinja = () => import('./PlaygroundJinja.svelte')
+  const loadPlaygroundImageGen = () => import('./PlaygroundImageGen.svelte')
+  const loadPlaygroundParser = () => import('./PlaygroundParser.svelte')
+  const loadPlaygroundSubtitle = () => import('./PlaygroundSubtitle.svelte')
+  const loadPlaygroundImageTrans = () => import('./PlaygroundImageTrans.svelte')
+  const loadPlaygroundTranslation = () => import('./PlaygroundTranslation.svelte')
+  const loadPlaygroundMcp = () => import('./PlaygroundMCP.svelte')
+  const loadPlaygroundDocs = () => import('./PlaygroundDocs.svelte')
+  const loadPlaygroundInlayExplorer = () => import('./PlaygroundInlayExplorer.svelte')
+  const loadToolConversion = () => import('./ToolConversion.svelte')
 
   let easterEggTouch = $state(0)
 </script>
@@ -158,43 +160,43 @@
         <!-- The synthetic Playground character renders through the normal chat shell. -->
       {/if}
       {#if $PlaygroundStore === 3}
-        <PlaygroundEmbedding />
+        <LazyComponent loader={loadPlaygroundEmbedding} testId="playground-embedding" />
       {/if}
       {#if $PlaygroundStore === 4}
-        <PlaygroundTokenizer />
+        <LazyComponent loader={loadPlaygroundTokenizer} testId="playground-tokenizer" />
       {/if}
       {#if $PlaygroundStore === 5}
-        <PlaygroundSyntax />
+        <LazyComponent loader={loadPlaygroundSyntax} testId="playground-syntax" />
       {/if}
       {#if $PlaygroundStore === 6}
-        <PlaygroundJinja />
+        <LazyComponent loader={loadPlaygroundJinja} testId="playground-jinja" />
       {/if}
       {#if $PlaygroundStore === 7}
-        <PlaygroundImageGen />
+        <LazyComponent loader={loadPlaygroundImageGen} testId="playground-image-gen" />
       {/if}
       {#if $PlaygroundStore === 8}
-        <PlaygroundParser />
+        <LazyComponent loader={loadPlaygroundParser} testId="playground-parser" />
       {/if}
       {#if $PlaygroundStore === 9}
-        <PlaygroundSubtitle />
+        <LazyComponent loader={loadPlaygroundSubtitle} testId="playground-subtitles" />
       {/if}
       {#if $PlaygroundStore === 10}
-        <PlaygroundImageTrans />
+        <LazyComponent loader={loadPlaygroundImageTrans} testId="playground-image-translation" />
       {/if}
       {#if $PlaygroundStore === 11}
-        <PlaygroundTranslation />
+        <LazyComponent loader={loadPlaygroundTranslation} testId="playground-translation" />
       {/if}
       {#if $PlaygroundStore === 12}
-        <PlaygroundMcp />
+        <LazyComponent loader={loadPlaygroundMcp} testId="playground-mcp" />
       {/if}
       {#if $PlaygroundStore === 13}
-        <PlaygroundDocs />
+        <LazyComponent loader={loadPlaygroundDocs} testId="playground-docs" />
       {/if}
       {#if $PlaygroundStore === 14}
-        <PlaygroundInlayExplorer />
+        <LazyComponent loader={loadPlaygroundInlayExplorer} testId="playground-inlays" />
       {/if}
       {#if $PlaygroundStore === 101}
-        <ToolConversion />
+        <LazyComponent loader={loadToolConversion} testId="playground-tools" />
       {/if}
     </div>
   {/if}

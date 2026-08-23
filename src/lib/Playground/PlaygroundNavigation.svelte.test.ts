@@ -26,7 +26,7 @@ vi.mock('src/ts/server/resourceState.svelte', () => ({
   getResourceDatabase: () => ({ doNotWarnExternalServers: true }),
 }))
 
-vi.mock('src/ts/characters', () => ({
+vi.mock('src/ts/characterImage', () => ({
   getCharImage: vi.fn(async () => '/none.webp'),
 }))
 

@@ -138,6 +138,14 @@ vi.mock('src/ts/characters', () => ({
   getCharImage: loadPageMocks.getCharImage,
 }))
 
+vi.mock('../../ts/characterImage', () => ({
+  getCharImage: loadPageMocks.getCharImage,
+}))
+
+vi.mock('src/ts/characterImage', () => ({
+  getCharImage: loadPageMocks.getCharImage,
+}))
+
 vi.mock('../../ts/util', async (importActual) => {
   const actual = await importActual<typeof import('../../ts/util')>()
   return {

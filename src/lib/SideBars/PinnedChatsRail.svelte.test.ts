@@ -8,7 +8,7 @@ vi.mock('src/ts/gui/tooltip', () => ({
   }),
 }))
 
-vi.mock('src/ts/characters', () => ({
+vi.mock('src/ts/characterImage', () => ({
   getCharImage: (source: string) => source,
 }))
 

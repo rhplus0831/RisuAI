@@ -24,7 +24,6 @@
   import Button from '../UI/GUI/Button.svelte'
   import TextInput from '../UI/GUI/TextInput.svelte'
 
-  import { exportChat, importChat, exportAllChats, matchesAllChatsExportFence } from 'src/ts/characters'
   import { alertChatOptions, alertConfirm, alertError, alertNormal, alertSelect, alertStore } from 'src/ts/alert'
   import { sleep, sortableOptions } from 'src/ts/util'
   import { bookmarkListOpen } from 'src/ts/stores.svelte'
@@ -1003,6 +1002,14 @@
   async function exportAllAndMaybeResetChats(): Promise<void> {
     const characterId = chara.chaId
     if (!characterId) return
+    let characterTransfers: typeof import('src/ts/characters')
+    try {
+      characterTransfers = await import('src/ts/characters')
+    } catch (error) {
+      alertError(error as Error)
+      return
+    }
+    const { exportAllChats, matchesAllChatsExportFence } = characterTransfers
     const exportResult = await exportAllChats(characterId)
     if (!exportResult.success) return
 
@@ -1048,6 +1055,25 @@
       isExpectedSidebarChatSelected(characterId, chat.id)
     ) {
       navigate(characterRoutePath(characterId, chat.id), { replace: true })
+    }
+  }
+
+  async function exportChatOnDemand(chatId: string): Promise<void> {
+    if (!chara.chaId) return
+    try {
+      const { exportChat } = await import('src/ts/characters')
+      await exportChat({ characterId: chara.chaId, chatId })
+    } catch (error) {
+      alertError(error as Error)
+    }
+  }
+
+  async function importChatOnDemand(): Promise<void> {
+    try {
+      const { importChat } = await import('src/ts/characters')
+      await importChat()
+    } catch (error) {
+      alertError(error as Error)
     }
   }
 
@@ -1646,7 +1672,7 @@
                           onclick={async (e) => {
                             e.stopPropagation()
                             if (chara.chaId && chat.id) {
-                              exportChat({ characterId: chara.chaId, chatId: chat.id })
+                              void exportChatOnDemand(chat.id)
                             }
                           }}>
                           <DownloadIcon size={18} />
@@ -1781,7 +1807,7 @@
                   onclick={async (e) => {
                     e.stopPropagation()
                     if (chara.chaId && chat.id) {
-                      exportChat({ characterId: chara.chaId, chatId: chat.id })
+                      void exportChatOnDemand(chat.id)
                     }
                   }}>
                   <DownloadIcon size={18} />
@@ -1822,7 +1848,7 @@
           aria-label={language.chatListImport}
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
           onclick={() => {
-            importChat()
+            void importChatOnDemand()
           }}>
           <HardDriveUploadIcon size={18} />
         </button>

@@ -8,7 +8,7 @@
   import Title from './Title.svelte'
   import { alertConfirm } from 'src/ts/alert'
   import { onMount } from 'svelte'
-  import { getCharImage } from 'src/ts/characters'
+  import { getCharImage } from 'src/ts/characterImage'
   import { characterRoutePath, navigate, openGridRoute } from 'src/ts/router'
   import GenerationIndicator from '../SideBars/GenerationIndicator.svelte'
   import UnreadIndicator from '../SideBars/UnreadIndicator.svelte'

@@ -6,12 +6,14 @@
   import ResizeBox from './ResizeBox.svelte'
   import DefaultChatScreen from './DefaultChatScreen.svelte'
   import defaultWallpaper from '../../etc/bg.jpg'
-  import ChatList from '../Others/ChatList.svelte'
   import TransitionImage from './TransitionImage.svelte'
   import BackgroundDom from './BackgroundDom.svelte'
   import SideBarArrow from '../UI/GUI/SideBarArrow.svelte'
-  import ModuleChatMenu from '../Setting/Pages/Module/ModuleChatMenu.svelte'
   import { createLatestBackgroundLoader } from './ChatScreenBackground'
+  import LazyComponent from '../UI/LazyComponent.svelte'
+
+  const loadChatList = () => import('../Others/ChatList.svelte')
+  const loadModuleChatMenu = () => import('../Setting/Pages/Module/ModuleChatMenu.svelte')
   let openChatList = $state(false)
   let openModuleList = $state(false)
 
@@ -104,15 +106,19 @@
   </div>
 {/if}
 {#if openChatList}
-  <ChatList
-    close={() => {
-      openChatList = false
-    }} />
+  <LazyComponent
+    loader={loadChatList}
+    componentProps={{ close: () => (openChatList = false) }}
+    modal
+    onDismiss={() => (openChatList = false)}
+    testId="chat-list" />
 {:else if openModuleList}
-  <ModuleChatMenu
-    close={() => {
-      openModuleList = false
-    }} />
+  <LazyComponent
+    loader={loadModuleChatMenu}
+    componentProps={{ close: () => (openModuleList = false) }}
+    modal
+    onDismiss={() => (openModuleList = false)}
+    testId="module-chat-menu" />
 {/if}
 
 <style>

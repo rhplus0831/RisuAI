@@ -28,37 +28,19 @@
     PlaygroundStore,
     selectedCharID,
     SettingsMenuIndex,
+    closePopupEditorSession,
   } from './ts/stores.svelte'
   import Sidebar from './lib/SideBars/Sidebar.svelte'
   import ChatScreen from './lib/ChatScreens/ChatScreen.svelte'
-  import AlertComp from './lib/Others/AlertComp.svelte'
-  import RealmPopUp from './lib/UI/Realm/RealmPopUp.svelte'
-  import GridChars from './lib/Others/GridCatalog.svelte'
-  import BookmarkList from './lib/Others/BookmarkList.svelte'
-  import Settings from './lib/Setting/Settings.svelte'
-  import { showRealmInfoStore, importCharacterProcess } from './ts/characterCards'
-  import { importPreset } from './ts/storage/database.svelte'
+  import { showRealmInfoStore } from './ts/realmInfoStore'
   import { getResourceDatabase as getDatabase } from './ts/server/resourceState.svelte'
   import { language } from './lang'
+  import LazyComponent from './lib/UI/LazyComponent.svelte'
   import SavePopupIconComp from './lib/Others/SavePopupIcon.svelte'
-  import Botpreset from './lib/Setting/botpreset.svelte'
-  import ListedPersona from './lib/Setting/listedPersona.svelte'
-  import ChatGenerationTogglePresetDialog from './lib/SideBars/ChatGenerationTogglePresetDialog.svelte'
-  import CustomGUISettingMenu from './lib/Setting/Pages/CustomGUISettingMenu.svelte'
-  import { checkCharOrder } from './ts/globalApi.svelte'
   import { ArrowUpIcon, GlobeIcon, PlusIcon } from '@lucide/svelte'
   import { hypaV3ModalOpen } from './ts/stores.svelte'
   import { activeMemoryJobsStore } from './ts/server/memoryJobProjection.svelte'
-  import HypaV3Modal from './lib/Others/HypaV3Modal.svelte'
-  import HypaV3Progress from './lib/Others/HypaV3Progress.svelte'
-  import PopupList from './lib/UI/PopupList.svelte'
-  import EasyPanel from './lib/Others/ProTools/EasyPanel.svelte'
   import sendSound from './etc/send.mp3'
-  import PopupEditor from './lib/Others/PopupEditor.svelte'
-  import LoadoutModal from './lib/Others/LoadoutModal.svelte'
-  import IrisModal from './lib/Others/IrisModal.svelte'
-  import CustomSidebarConfig from './lib/Others/CustomSidebarConfig.svelte'
-  import { importRisuModuleData } from './ts/process/modules'
   import {
     applyRouteToStores,
     closeGridRoute,
@@ -73,6 +55,24 @@
   import { modalFocusTrap } from './ts/gui/modalFocusTrap'
   import { alertError } from './ts/alert'
   import { hasDragType, RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes'
+
+  const loadAlert = () => import('./lib/Others/AlertComp.svelte')
+  const loadRealmPopup = () => import('./lib/UI/Realm/LazyRealmPopUp.svelte')
+  const loadGrid = () => import('./lib/Others/GridCatalog.svelte')
+  const loadBookmarkList = () => import('./lib/Others/BookmarkList.svelte')
+  const loadSettings = () => import('./lib/Setting/Settings.svelte')
+  const loadBotPreset = () => import('./lib/Setting/botpreset.svelte')
+  const loadPersonaList = () => import('./lib/Setting/listedPersona.svelte')
+  const loadChatGenerationTogglePresetDialog = () => import('./lib/SideBars/ChatGenerationTogglePresetDialog.svelte')
+  const loadCustomGUISettingMenu = () => import('./lib/Setting/Pages/CustomGUISettingMenu.svelte')
+  const loadHypaV3Modal = () => import('./lib/Others/HypaV3Modal.svelte')
+  const loadHypaV3Progress = () => import('./lib/Others/HypaV3Progress.svelte')
+  const loadPopupList = () => import('./lib/UI/PopupList.svelte')
+  const loadEasyPanel = () => import('./lib/Others/ProTools/EasyPanel.svelte')
+  const loadPopupEditor = () => import('./lib/Others/PopupEditor.svelte')
+  const loadLoadoutModal = () => import('./lib/Others/LoadoutModal.svelte')
+  const loadIrisModal = () => import('./lib/Others/IrisModal.svelte')
+  const loadCustomSidebarConfig = () => import('./lib/Others/CustomSidebarConfig.svelte')
 
   let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
   let aprilFoolsPage = $state(0)
@@ -176,12 +176,18 @@
 
       if (name.endsWith('.risup')) {
         const data = new Uint8Array(await file.arrayBuffer())
+        const { importPreset } = await import('./ts/storage/database.svelte')
         await importPreset({ name: file.name, data })
       } else if (name.endsWith('.risum')) {
         const data = new Uint8Array(await file.arrayBuffer())
+        const { importRisuModuleData } = await import('./ts/process/modules')
         await importRisuModuleData(data)
         return
       } else {
+        const [{ importCharacterProcess }, { checkCharOrder }] = await Promise.all([
+          import('./ts/characterCards'),
+          import('./ts/globalApi.svelte'),
+        ])
         await importCharacterProcess({
           name: file.name,
           data: file,
@@ -302,11 +308,16 @@
       <span class="text-sm mt-2 text-textcolor2">{LoadingStatusState.text}</span>
     </div>
   {:else if $CustomGUISettingMenuStore}
-    <CustomGUISettingMenu />
+    <LazyComponent loader={loadCustomGUISettingMenu} fill testId="custom-gui-settings" />
   {:else if $settingsOpen}
-    <Settings />
+    <LazyComponent loader={loadSettings} fill label={language.settings} testId="settings" />
   {:else if $currentRoute.kind === 'grid'}
-    <GridChars endGrid={closeGridRoute} />
+    <LazyComponent
+      loader={loadGrid}
+      componentProps={{ endGrid: closeGridRoute }}
+      fill
+      label={language.grid}
+      testId="character-grid" />
   {:else}
     {#if !$DynamicGUI}
       <Sidebar openGrid={openGridRoute} hidden={!$sideBarStore} />
@@ -326,57 +337,91 @@
     <ChatScreen />
   {/if}
   {#if $alertStore.type !== 'none'}
-    <AlertComp />
+    <LazyComponent loader={loadAlert} modal testId="alert" />
   {/if}
   {#if $showRealmInfoStore}
-    <RealmPopUp bind:openedData={$showRealmInfoStore} />
+    <LazyComponent loader={loadRealmPopup} modal onDismiss={() => showRealmInfoStore.set(null)} testId="realm-popup" />
   {/if}
   {#if $openPresetList}
-    <Botpreset
-      mode={presetListModalStore.mode}
-      kind={presetListModalStore.kind}
-      target={presetListModalStore.target}
-      close={closePresetListModal} />
+    <LazyComponent
+      loader={loadBotPreset}
+      componentProps={{
+        mode: presetListModalStore.mode,
+        kind: presetListModalStore.kind,
+        target: presetListModalStore.target,
+        close: closePresetListModal,
+      }}
+      modal
+      onDismiss={closePresetListModal}
+      testId="preset-list" />
   {/if}
   {#if $openPersonaList}
-    <ListedPersona
-      mode={personaListModalStore.mode}
-      target={personaListModalStore.target}
-      close={closePersonaListModal} />
+    <LazyComponent
+      loader={loadPersonaList}
+      componentProps={{
+        mode: personaListModalStore.mode,
+        target: personaListModalStore.target,
+        close: closePersonaListModal,
+      }}
+      modal
+      onDismiss={closePersonaListModal}
+      testId="persona-list" />
   {/if}
   {#if $openChatGenerationTogglePresetList}
-    <ChatGenerationTogglePresetDialog
-      target={chatGenerationTogglePresetListModalStore.target}
-      close={closeChatGenerationTogglePresetListModal} />
+    <LazyComponent
+      loader={loadChatGenerationTogglePresetDialog}
+      componentProps={{
+        target: chatGenerationTogglePresetListModalStore.target,
+        close: closeChatGenerationTogglePresetListModal,
+      }}
+      modal
+      onDismiss={closeChatGenerationTogglePresetListModal}
+      testId="chat-generation-toggle-presets" />
   {/if}
   {#if $bookmarkListOpen}
-    <BookmarkList />
+    <LazyComponent
+      loader={loadBookmarkList}
+      modal
+      onDismiss={() => bookmarkListOpen.set(false)}
+      testId="bookmark-list" />
   {/if}
   {#if $hypaV3ModalOpen}
-    <HypaV3Modal />
+    <LazyComponent loader={loadHypaV3Modal} modal onDismiss={() => hypaV3ModalOpen.set(false)} testId="hypa-v3" />
   {/if}
   <SavePopupIconComp />
   {#if $activeMemoryJobsStore.length > 0}
-    <HypaV3Progress />
+    <LazyComponent loader={loadHypaV3Progress} testId="hypa-v3-progress" />
   {/if}
   {#if popupStore.children}
-    <PopupList />
+    <LazyComponent loader={loadPopupList} testId="popup-list" />
   {/if}
   {#if easyPanelStore.open}
-    <EasyPanel />
+    <LazyComponent loader={loadEasyPanel} modal onDismiss={() => (easyPanelStore.open = false)} testId="easy-panel" />
   {/if}
   {#if popUpEditorStore.open}
     {#key popUpEditorStore.sessionId}
-      <PopupEditor />
+      <LazyComponent
+        loader={loadPopupEditor}
+        modal
+        onDismiss={() => closePopupEditorSession(popUpEditorStore.sessionId)}
+        testId="popup-editor" />
     {/key}
   {/if}
   {#if loadoutModalStore.open}
-    <LoadoutModal />
+    <LazyComponent
+      loader={loadLoadoutModal}
+      modal
+      onDismiss={() => (loadoutModalStore.open = false)}
+      testId="loadout-modal" />
   {/if}
   {#if irisStore.open}
-    <IrisModal />
+    <LazyComponent loader={loadIrisModal} modal onDismiss={() => (irisStore.open = false)} testId="iris-modal" />
   {/if}
   {#if customSideBarConfigDialogStore.open}
-    <CustomSidebarConfig />
+    <LazyComponent
+      loader={loadCustomSidebarConfig}
+      modal
+      onDismiss={() => (customSideBarConfigDialogStore.open = false)}
+      testId="custom-sidebar-config" />
   {/if}
 </main>

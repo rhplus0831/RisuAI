@@ -1,6 +1,6 @@
 <script lang="ts">
   import { language } from 'src/lang'
-  import { getCharImage } from 'src/ts/characters'
+  import { getCharImage } from 'src/ts/characterImage'
   import { currentRoute } from 'src/ts/router'
   import GenerationIndicator from './GenerationIndicator.svelte'
   import UnreadIndicator from './UnreadIndicator.svelte'

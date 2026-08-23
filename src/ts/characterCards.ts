@@ -1,4 +1,3 @@
-import { writable, type Writable } from 'svelte/store'
 import {
   alertCardExport,
   alertClear,
@@ -78,6 +77,9 @@ import {
   ensureClientTriggerDefinitionIds,
 } from './server/scriptDefinitionBridge.svelte'
 import { serverAssetIdFromReference } from './server/assets'
+import { showRealmInfoStore } from './realmInfoStore'
+
+export { showRealmInfoStore } from './realmInfoStore'
 
 export const hubURL = '/api/v1/hub'
 export interface CharacterImportProcessOptions {
@@ -526,8 +528,6 @@ export async function importCharacterProcess(
   }
   return await importCharacterCardSpec(parsed, img, 'normal', assets, undefined, dataUriMaxBase64Length)
 }
-
-export const showRealmInfoStore: Writable<null | hubType> = writable(null)
 
 let latestRealmInfoRequest = 0
 let realmInfoRequestController: AbortController | null = null

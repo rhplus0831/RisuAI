@@ -49,7 +49,7 @@
     type InputHook,
     type Message,
   } from '../../ts/storage/database.svelte'
-  import { getCharImage } from '../../ts/characters'
+  import { getCharImage } from '../../ts/characterImage'
   import {
     abortActiveGeneration,
     clearActiveGenerationAbortController,
@@ -162,6 +162,7 @@
   import { createDraftHookTranslation } from 'src/ts/process/draftHookTranslation'
   import { maximumHistorySlotCount } from 'src/ts/translator/historySlots'
   import InputHookPickerDialog from './InputHookPickerDialog.svelte'
+  import LazyComponent from '../UI/LazyComponent.svelte'
   import {
     currentGreetingTranslatorSettingsSignature,
     findGreetingTranslation,
@@ -169,7 +170,7 @@
     refreshGreetingTranslationProjection,
   } from 'src/ts/server/greetingTranslations.svelte'
 
-  const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte').then((m) => m.default)
+  const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte')
   const composerFileOperationGuard = createLatestOperationGuard<string>()
   const composerOperationGuard = createLatestOperationGuard<string>()
 
@@ -2318,9 +2319,7 @@
     {#if $PlaygroundStore === 0}
       <MainMenu />
     {:else}
-      {#await loadPlaygroundMenu() then PlaygroundMenu}
-        <PlaygroundMenu />
-      {/await}
+      <LazyComponent loader={loadPlaygroundMenu} fill label={language.playground.playground} testId="playground-menu" />
     {/if}
   {:else if !activeChatOpen}
     <div class="h-full w-full flex flex-col items-center justify-center text-center px-6" data-risu-chat-empty-state>

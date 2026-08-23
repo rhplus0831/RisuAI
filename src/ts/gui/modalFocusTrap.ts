@@ -1,3 +1,5 @@
+import { findLazyModalFocusOrigin } from './lazyModalFocusOrigin'
+
 const focusableSelector = [
   'a[href]',
   'button:not([disabled])',
@@ -48,7 +50,12 @@ function focusInitialElement(node: HTMLElement): void {
  * the modal, and restores focus and background state when the modal closes.
  */
 export function modalFocusTrap(node: HTMLElement) {
-  const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  const lazyFocusOrigin = findLazyModalFocusOrigin(node)
+  const previousFocus = lazyFocusOrigin.found
+    ? lazyFocusOrigin.origin
+    : document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null
   const modalRoot = node.closest<HTMLElement>('[data-modal-root]') ?? node
   const backgroundStates = new Map<HTMLElement, BackgroundState>()
   let active = false

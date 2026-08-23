@@ -24,7 +24,7 @@ vi.mock('src/ts/stores.svelte', async () => {
   return { OpenRealmStore: writable(false) }
 })
 
-vi.mock('src/ts/characters', () => ({
+vi.mock('src/ts/characterImage', () => ({
   getCharImage: vi.fn(async (source: string) => (source ? `/assets/${source}` : '/none.webp')),
 }))
 
