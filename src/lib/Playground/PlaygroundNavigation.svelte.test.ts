@@ -7,7 +7,10 @@ const navigationMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('src/ts/router', () => ({
+  characterRoutePath: (characterId: string, chatId?: string) =>
+    chatId ? `/character/${characterId}/${chatId}` : `/character/${characterId}`,
   navigate: navigationMocks.navigate,
+  openGridRoute: vi.fn(),
 }))
 
 vi.mock('src/ts/stores.svelte', async () => {
@@ -22,6 +25,31 @@ vi.mock('src/ts/stores.svelte', async () => {
 vi.mock('src/ts/server/resourceState.svelte', () => ({
   getResourceDatabase: () => ({ doNotWarnExternalServers: true }),
 }))
+
+vi.mock('src/ts/characters', () => ({
+  getCharImage: vi.fn(async () => '/none.webp'),
+}))
+
+vi.mock('src/ts/process/generationActivity.svelte', async () => {
+  const { writable } = await import('svelte/store')
+  return { activeChatGenerations: writable([]) }
+})
+
+vi.mock('src/ts/process/reattach', async () => {
+  const { writable } = await import('svelte/store')
+  return {
+    activeGenerationJobs: writable([]),
+    generationJobLifecycles: writable({}),
+  }
+})
+
+vi.mock('src/ts/process/chatUnread.svelte', async () => {
+  const { writable } = await import('svelte/store')
+  return {
+    unreadChatIds: writable(new Set()),
+    markChatRead: vi.fn(),
+  }
+})
 
 vi.mock('src/ts/globalApi.svelte', () => ({
   getVersionString: () => 'test-version',
