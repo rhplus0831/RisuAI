@@ -191,7 +191,7 @@ describe('changeChar shell selection freshness', () => {
       characters: [fullCharacter('char-a', 'Character A'), fullCharacter('char-b', 'Character B')],
       characterOrder: ['char-a', 'char-b'],
     } as any
-    stubChangeCharFetch(Promise.resolve(jsonResponse({})))
+    const calls = stubChangeCharFetch(Promise.resolve(jsonResponse({})))
     activeGenerationTarget.set({
       selectedCharID: 0,
       chatPage: 0,
@@ -206,6 +206,8 @@ describe('changeChar shell selection freshness', () => {
     await changeChar(0)
 
     expect(get(selectedCharID)).toBe(0)
+    await flushAsyncWork()
+    expect(selectedCharacterCommandIds(calls)).toEqual(['char-b', 'char-a'])
   })
 
   it('preserves a newer character selection when an older shell hydration resolves later', async () => {
