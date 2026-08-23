@@ -95,8 +95,8 @@
   import {
     currentPromptTemplateOwnerId,
     ensurePromptTemplateHydrated,
-    isPromptTemplateHydrated,
-    promptTemplateHydratedStore,
+    isPromptTemplateHydratedInState,
+    promptTemplateHydrationStateStore,
   } from 'src/ts/server/promptTemplateHydration'
   import { mirrorTopLevelPresetField } from 'src/ts/presetFieldMirror'
   import {
@@ -288,7 +288,7 @@
     return () => clearTimeout(timer)
   })
 
-  let promptTemplateHydrated = $derived($promptTemplateHydratedStore && isPromptTemplateHydrated())
+  let promptTemplateHydrated = $derived(isPromptTemplateHydratedInState($promptTemplateHydrationStateStore))
   let selectedPromptPreset = $derived(getDatabase().promptPresets?.[getDatabase().promptPresetsId])
   let selectedPromptPresetOwnsPromptTemplate = $derived(selectedPromptPresetHasOwnPromptTemplate())
   let recommendedModelPresetMutation = $state<{

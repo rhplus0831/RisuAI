@@ -106,10 +106,15 @@ const hydrationState = vi.hoisted(() => {
   let hydrated = true
   let ownerId: string | null = null
   let hydratedOwnerId: string | null | undefined = undefined
-  const subscribers = new Set<(value: boolean) => void>()
+  let version = 0
+  const subscribers = new Set<(value: { hydratedOwnerIds: ReadonlySet<string | null>; version: number }) => void>()
   const ownerEpochs = new Map<string | null, number>()
   const taintedOwners = new Set<string | null>()
   const selectedFallbacks = new Map<string, unknown[]>()
+  const hydrationSnapshot = () => ({
+    hydratedOwnerIds: new Set<string | null>(hydrated ? [hydratedOwnerId ?? ownerId] : []),
+    version,
+  })
   return {
     ensure: vi.fn(
       async (options?: { force?: boolean; promptPresetId?: string | null }) =>
@@ -142,11 +147,13 @@ const hydrationState = vi.hoisted(() => {
     setHydrated: (value: boolean, owner?: string | null) => {
       hydrated = value
       hydratedOwnerId = owner
-      for (const subscriber of subscribers) subscriber(value)
+      version += 1
+      const snapshot = hydrationSnapshot()
+      for (const subscriber of subscribers) subscriber(snapshot)
     },
     store: {
-      subscribe: (run: (value: boolean) => void) => {
-        run(hydrated)
+      subscribe: (run: (value: { hydratedOwnerIds: ReadonlySet<string | null>; version: number }) => void) => {
+        run(hydrationSnapshot())
         subscribers.add(run)
         return () => subscribers.delete(run)
       },
@@ -243,10 +250,11 @@ vi.mock('./promptTemplateHydration', () => ({
   hasPromptTemplateOwnerProjectionEpochChanged: hydrationState.hasOwnerEpochChanged,
   ensurePromptTemplateHydrated: hydrationState.ensure,
   isPromptTemplateHydrated: hydrationState.isHydrated,
+  isPromptTemplateHydratedInState: (_state: unknown, owner?: string | null) => hydrationState.isHydrated(owner),
   markPromptTemplateOwnerAcknowledgementTainted: hydrationState.markTainted,
   promptTemplateOwnerUsesSelectedFallback: hydrationState.usesSelectedFallback,
   peekPromptTemplateOwnerRevision: () => null,
-  promptTemplateHydratedStore: hydrationState.store,
+  promptTemplateHydrationStateStore: hydrationState.store,
 }))
 vi.mock('src/ts/server/promptTemplateHydration', () => ({
   capturePromptTemplateOwnerProjectionEpoch: hydrationState.captureOwnerEpoch,
@@ -255,10 +263,11 @@ vi.mock('src/ts/server/promptTemplateHydration', () => ({
   hasPromptTemplateOwnerProjectionEpochChanged: hydrationState.hasOwnerEpochChanged,
   ensurePromptTemplateHydrated: hydrationState.ensure,
   isPromptTemplateHydrated: hydrationState.isHydrated,
+  isPromptTemplateHydratedInState: (_state: unknown, owner?: string | null) => hydrationState.isHydrated(owner),
   markPromptTemplateOwnerAcknowledgementTainted: hydrationState.markTainted,
   promptTemplateOwnerUsesSelectedFallback: hydrationState.usesSelectedFallback,
   peekPromptTemplateOwnerRevision: () => null,
-  promptTemplateHydratedStore: hydrationState.store,
+  promptTemplateHydrationStateStore: hydrationState.store,
 }))
 
 import type { PromptItem, PromptSettings as PromptSettingsFixture } from '../process/prompt'

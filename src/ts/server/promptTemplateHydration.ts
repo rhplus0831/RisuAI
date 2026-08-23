@@ -5,11 +5,20 @@ import { peekCachedServerCommandRevision } from './commands'
 import { fetchServerPromptPresetTemplate } from './hydrationReads'
 import { withServerResourceApply } from './resourceWriteGuard.svelte'
 
-export const promptTemplateHydratedStore = writable(false)
+export interface PromptTemplateHydrationState {
+  hydratedOwnerIds: ReadonlySet<string | null>
+  version: number
+}
+
+let promptTemplateHydrationState: PromptTemplateHydrationState = {
+  hydratedOwnerIds: new Set(),
+  version: 0,
+}
+
+export const promptTemplateHydrationStateStore = writable(promptTemplateHydrationState)
 
 let promptTemplateHydrationInFlight = new Map<string, Promise<boolean>>()
 let promptTemplateHydrationGeneration = 0
-let promptTemplateHydratedOwnerIds = new Set<string | null>()
 let promptTemplateSelectedFallbackOwnerIds = new Set<string>()
 let promptTemplateSelectedFallbacks = new Map<string, Database['promptTemplate']>()
 let nextPromptTemplateOwnerProjectionEpoch = 0
@@ -26,7 +35,14 @@ export function currentPromptTemplateOwnerId(): string | null {
 }
 
 export function isPromptTemplateHydrated(promptPresetId: string | null = currentPromptTemplateOwnerId()): boolean {
-  if (get(promptTemplateHydratedStore) && promptTemplateHydratedOwnerIds.has(promptPresetId)) return true
+  return isPromptTemplateHydratedInState(get(promptTemplateHydrationStateStore), promptPresetId)
+}
+
+export function isPromptTemplateHydratedInState(
+  state: PromptTemplateHydrationState,
+  promptPresetId: string | null = currentPromptTemplateOwnerId(),
+): boolean {
+  if (state.hydratedOwnerIds.has(promptPresetId)) return true
   return promptPresetId === null && Object.prototype.hasOwnProperty.call(getDatabase(), 'promptTemplate')
 }
 
@@ -71,27 +87,25 @@ export function markPromptTemplateOwnerAcknowledgementTainted(promptPresetId: st
 export function resetPromptTemplateHydration(): void {
   promptTemplateHydrationGeneration += 1
   promptTemplateHydrationInFlight = new Map()
-  promptTemplateHydratedOwnerIds = new Set()
   promptTemplateSelectedFallbackOwnerIds = new Set()
   promptTemplateSelectedFallbacks = new Map()
   promptTemplateOwnerProjectionBaseline = ++nextPromptTemplateOwnerProjectionEpoch
   promptTemplateOwnerProjectionEpochs = new Map()
   promptTemplateOwnerRevisions = new Map()
   promptTemplateOwnerAcknowledgementTaints = new Set()
-  promptTemplateHydratedStore.set(false)
+  publishPromptTemplateHydratedOwnerIds(new Set())
 }
 
 export function invalidatePromptTemplateHydration(
   promptPresetId: string | null = currentPromptTemplateOwnerId(),
 ): void {
-  promptTemplateHydratedOwnerIds.delete(promptPresetId)
   if (promptPresetId !== null) {
     promptTemplateSelectedFallbackOwnerIds.delete(promptPresetId)
     promptTemplateSelectedFallbacks.delete(promptPresetId)
   }
   if (promptPresetId !== null) promptTemplateHydrationInFlight.delete(promptPresetId)
   promptTemplateOwnerProjectionEpochs.set(promptPresetId, ++nextPromptTemplateOwnerProjectionEpoch)
-  promptTemplateHydratedStore.set(promptTemplateHydratedOwnerIds.size > 0)
+  setPromptTemplateOwnerHydrated(promptPresetId, false)
 }
 
 export function markPromptTemplateProjectionApplied(
@@ -99,7 +113,6 @@ export function markPromptTemplateProjectionApplied(
   revision?: number,
   options: { advanceProjectionEpoch?: boolean } = {},
 ): void {
-  promptTemplateHydratedOwnerIds.add(promptPresetId)
   if (options.advanceProjectionEpoch ?? true) {
     promptTemplateOwnerProjectionEpochs.set(promptPresetId, ++nextPromptTemplateOwnerProjectionEpoch)
     promptTemplateOwnerAcknowledgementTaints.delete(promptPresetId)
@@ -110,7 +123,7 @@ export function markPromptTemplateProjectionApplied(
       Math.max(promptTemplateOwnerRevisions.get(promptPresetId) ?? -1, revision as number),
     )
   }
-  promptTemplateHydratedStore.set(true)
+  setPromptTemplateOwnerHydrated(promptPresetId, true)
 }
 
 export function startPromptTemplateHydration(): void {
@@ -130,7 +143,7 @@ export async function ensurePromptTemplateHydrated(
   const ownerRevision = peekPromptTemplateOwnerRevision(ownerId)
   if (
     !options.force &&
-    promptTemplateHydratedOwnerIds.has(ownerId) &&
+    promptTemplateHydrationState.hydratedOwnerIds.has(ownerId) &&
     (minimumRevision === null || (ownerRevision !== null && ownerRevision >= minimumRevision))
   ) {
     if (ownerId !== null && (options.applyProjection ?? true)) {
@@ -224,7 +237,9 @@ export async function ensurePromptTemplateHydrated(
 }
 
 function applyHydratedOwnerCompatibilityProjection(ownerId: string): boolean {
-  if (ownerId !== currentPromptTemplateOwnerId() || !promptTemplateHydratedOwnerIds.has(ownerId)) return false
+  if (ownerId !== currentPromptTemplateOwnerId() || !promptTemplateHydrationState.hydratedOwnerIds.has(ownerId)) {
+    return false
+  }
   const preset = uniquePromptPresetOwner(ownerId)
   if (!preset) return false
   const hasPromptTemplate = Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')
@@ -232,10 +247,9 @@ function applyHydratedOwnerCompatibilityProjection(ownerId: string): boolean {
   const usesSelectedFallback = !hasPromptTemplate && promptTemplateSelectedFallbackOwnerIds.has(ownerId)
   const selectedFallbackPromptTemplate = usesSelectedFallback ? promptTemplateSelectedFallbacks.get(ownerId) : undefined
   if (usesSelectedFallback && !Array.isArray(selectedFallbackPromptTemplate)) {
-    promptTemplateHydratedOwnerIds.delete(ownerId)
     promptTemplateSelectedFallbackOwnerIds.delete(ownerId)
     promptTemplateSelectedFallbacks.delete(ownerId)
-    promptTemplateHydratedStore.set(promptTemplateHydratedOwnerIds.size > 0)
+    setPromptTemplateOwnerHydrated(ownerId, false)
     return false
   }
   const fields = {
@@ -248,6 +262,22 @@ function applyHydratedOwnerCompatibilityProjection(ownerId: string): boolean {
       : {}),
   })
   return applied
+}
+
+function setPromptTemplateOwnerHydrated(promptPresetId: string | null, hydrated: boolean): void {
+  if (promptTemplateHydrationState.hydratedOwnerIds.has(promptPresetId) === hydrated) return
+  const hydratedOwnerIds = new Set(promptTemplateHydrationState.hydratedOwnerIds)
+  if (hydrated) hydratedOwnerIds.add(promptPresetId)
+  else hydratedOwnerIds.delete(promptPresetId)
+  publishPromptTemplateHydratedOwnerIds(hydratedOwnerIds)
+}
+
+function publishPromptTemplateHydratedOwnerIds(hydratedOwnerIds: ReadonlySet<string | null>): void {
+  promptTemplateHydrationState = {
+    hydratedOwnerIds: new Set(hydratedOwnerIds),
+    version: promptTemplateHydrationState.version + 1,
+  }
+  promptTemplateHydrationStateStore.set(promptTemplateHydrationState)
 }
 
 function isOlderThanRevision(revision: number, comparisonRevision: number | null): boolean {

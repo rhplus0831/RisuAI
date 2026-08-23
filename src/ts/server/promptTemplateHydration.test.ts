@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { derived, writable } from 'svelte/store'
 import type { PromptItem } from '../process/prompt'
 import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 
@@ -33,6 +34,7 @@ import {
   markPromptTemplateOwnerAcknowledgementTainted,
   markPromptTemplateProjectionApplied,
   peekPromptTemplateOwnerRevision,
+  promptTemplateHydrationStateStore,
   promptTemplateOwnerUsesSelectedFallback,
   resetPromptTemplateHydration,
 } from './promptTemplateHydration'
@@ -65,6 +67,41 @@ afterEach(() => {
 })
 
 describe('promptTemplate hydration', () => {
+  it('reactively publishes hydration when a second owner becomes ready', async () => {
+    ;(testDatabaseState as { db: unknown }).db = {
+      promptPresetsId: 0,
+      promptPresets: [
+        { id: 'preset-a', name: 'Preset A' },
+        { id: 'preset-b', name: 'Preset B' },
+      ],
+    }
+    setCachedServerCommandRevision(7)
+    projectionState.fetchResource.mockImplementation(async (promptPresetId: string) => ({
+      status: 'ok',
+      revision: 7,
+      promptPresetId,
+      promptTemplate: [item(`${promptPresetId}-row`, promptPresetId)],
+    }))
+
+    const selectedOwner = writable<string | null>('preset-a')
+    const selectedOwnerHydrated = derived([promptTemplateHydrationStateStore, selectedOwner], ([state, ownerId]) =>
+      state.hydratedOwnerIds.has(ownerId),
+    )
+    const readiness: boolean[] = []
+    const unsubscribe = selectedOwnerHydrated.subscribe((hydrated) => readiness.push(hydrated))
+
+    try {
+      await expect(ensurePromptTemplateHydrated({ promptPresetId: 'preset-a' })).resolves.toBe(true)
+      testDatabaseState.db.promptPresetsId = 1
+      selectedOwner.set('preset-b')
+      await expect(ensurePromptTemplateHydrated({ promptPresetId: 'preset-b' })).resolves.toBe(true)
+    } finally {
+      unsubscribe()
+    }
+
+    expect(readiness).toEqual([false, true, false, true])
+  })
+
   it('uses the top-level prompt template already loaded with settings', async () => {
     testDatabaseState.db.promptTemplate = [item('p-1', 'settings template')]
     setCachedServerCommandRevision(7)

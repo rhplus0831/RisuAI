@@ -59,9 +59,10 @@
     currentPromptTemplateOwnerId,
     ensurePromptTemplateHydrated,
     isPromptTemplateHydrated,
+    isPromptTemplateHydratedInState,
     markPromptTemplateOwnerAcknowledgementTainted,
     promptTemplateOwnerUsesSelectedFallback,
-    promptTemplateHydratedStore,
+    promptTemplateHydrationStateStore,
   } from 'src/ts/server/promptTemplateHydration'
   import {
     canUseServerCommands,
@@ -183,7 +184,7 @@
   }
   let previousPromptTemplateRevision = peekCachedServerCommandRevision()
   let previousPromptTemplatePresetSelection = promptTemplatePresetSelectionSignature()
-  let promptTemplateHydrated = $derived($promptTemplateHydratedStore && isPromptTemplateHydrated())
+  let promptTemplateHydrated = $derived(isPromptTemplateHydratedInState($promptTemplateHydrationStateStore))
   let promptTemplateUsesSelectedFallback = $derived(promptTemplateOwnerUsesSelectedFallback(selectedPromptPresetId()))
   let promptTemplateHydrationPending = $state(!isPromptTemplateHydrated())
   let promptTemplateHydrationFailed = $state(false)

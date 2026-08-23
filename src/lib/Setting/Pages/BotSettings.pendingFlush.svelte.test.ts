@@ -204,9 +204,10 @@ vi.mock('src/ts/server/promptTemplateHydration', async () => {
     ensurePromptTemplateHydrated: vi.fn(async () => true),
     hasPromptTemplateOwnerProjectionEpochChanged: vi.fn(() => false),
     isPromptTemplateHydrated: vi.fn(() => true),
+    isPromptTemplateHydratedInState: vi.fn(() => true),
     markPromptTemplateOwnerAcknowledgementTainted: vi.fn(),
     peekPromptTemplateOwnerRevision: vi.fn(() => 100),
-    promptTemplateHydratedStore: readable(true),
+    promptTemplateHydrationStateStore: readable({ hydratedOwnerIds: new Set([null]), version: 0 }),
     promptTemplateOwnerUsesSelectedFallback: vi.fn(() => false),
   }
 })
