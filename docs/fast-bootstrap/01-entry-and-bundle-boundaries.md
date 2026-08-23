@@ -23,17 +23,33 @@ parallel with [Phase 2](02-thin-character-summaries.md).
 
 ### 1A. Entry and conditional polyfills
 
-- [ ] Reduce `src/main.ts` to essential environment setup, shell mount, and a
+- [x] Reduce `src/main.ts` to essential environment setup, shell mount, and a
   lightweight startup call.
-- [ ] Replace the blanket `core-js/actual` import with targeted feature checks
+- [x] Replace the blanket `core-js/actual` import with targeted feature checks
   based on the supported-browser policy.
-- [ ] Keep `safeStructuredClone` and other required globals available without
+- [x] Keep `safeStructuredClone` and other required globals available without
   eagerly importing unrelated runtime code.
-- [ ] Dynamically import stream ponyfills only when native stream constructors
+- [x] Dynamically import stream ponyfills only when native stream constructors
   are absent.
-- [ ] Dynamically import mobile drag/drop only on affected platforms and verify
+- [x] Dynamically import mobile drag/drop only on affected platforms and verify
   that initialization still occurs before the first supported drag action.
-- [ ] Capture the preload report before and after the slice.
+- [x] Capture the preload report before and after the slice.
+
+### 1A measurement (2026-08-24)
+
+| Measure | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| Initial preload files | 25 | 11 | -14 |
+| Initial JavaScript gzip | 1,632,865 bytes | 316,644 bytes | -80.6% |
+| Largest initial chunk gzip | 668,643 bytes | 283,335 bytes | -57.6% |
+| Cold startup JavaScript transfer | 1,630,413 bytes | 1,545,220 bytes | -5.2% |
+
+The preload boundary now passes the 900/500 KiB milestone targets, but the cold
+transfer comparison is the honest current runtime reduction. `appStartup` is
+requested immediately after environment setup and still contains the full root
+UI/database graph. Slices 1B and 1C must make those implementations truly
+on-demand before the Phase 1 exit gate can pass; the preload result alone is not
+treated as completion.
 
 ### 1B. Lazy root UI and route handlers
 

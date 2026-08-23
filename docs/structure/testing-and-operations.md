@@ -148,6 +148,19 @@ pnpm api:start
 `RISU_API_STATIC_ROOT` defaults to `<repo>/dist`; empty string, `none`, or `off`
 disables Fastify static serving.
 
+## Browser Support
+
+The production client follows Vite's `baseline-widely-available` target as of
+Vite 8: Chrome and Edge 111+, Firefox 114+, and Safari/iOS 16.4+. Vite applies
+syntax transforms for this target but does not add runtime polyfills.
+
+`src/ts/polyfill.ts` therefore checks only runtime features used by the client
+and loads their focused `core-js` modules when a claimed runtime is incomplete.
+Buffer, stream constructors, and mobile drag/drop are installed before the full
+application module graph is evaluated; their implementations are downloaded
+only when the corresponding native/global capability is absent or the platform
+requires the drag/drop workaround.
+
 ## Tests And Checks
 
 | Area                        | Command/config                                                                          | Environment | Locations                                                                                                                  |

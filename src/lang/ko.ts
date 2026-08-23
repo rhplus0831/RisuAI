@@ -32,6 +32,7 @@ const languageKoreanBase = {
   preloadOfflineError:
     '오프라인 상태에서 앱의 일부를 불러오지 못했습니다. 현재 페이지는 유지됩니다. 연결이 복구된 뒤 작업을 다시 시도해 주세요.',
   preloadStaleError: '앱이 업데이트되었습니다. 최신 버전을 불러오려면 페이지를 새로고침해 주세요.',
+  preloadReload: '새로고침',
   hypaContextTruncationConfirm:
     '이 채팅에 Hypa Memory가 활성화되어 있지 않아 이번 요청에서 이전 메시지가 제외될 수 있습니다. Hypa Memory 없이 계속할까요? 이 선택은 현재 채팅에 저장됩니다.',
   regexDisplayUpdatePending: '편집을 멈추면 채팅 표시가 업데이트됩니다.',
