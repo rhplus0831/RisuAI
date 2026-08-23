@@ -33,6 +33,7 @@ import type {
   ModelRoleProfileBinding,
 } from '../model/modelProfileRecords'
 import type { ProviderCredentialRecord } from '../model/providerCredentialRecords'
+import type { ScriptModelOverrides } from '../model/scriptModelOverrides'
 import {
   serializeScriptDefinitionCollectionDigestInput,
   type ScriptDefinitionCollectionMutation,
@@ -705,6 +706,7 @@ export type ModuleSnapshot = Record<string, unknown> & {
   description?: string
   namespace?: string
   lowLevelAccess?: boolean
+  scriptModelOverrides?: ScriptModelOverrides
   hideIcon?: boolean
   backgroundEmbedding?: string
   customModuleToggle?: string

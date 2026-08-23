@@ -358,6 +358,26 @@ describe('requestChatDataMain model-role routing', () => {
     })
   })
 
+  it('does not silently fall back when a strict profile override is missing', async () => {
+    const fetchSpy = installSuccessFetch()
+
+    const result = await requestChatData(
+      {
+        formated: [{ role: 'user', content: 'hi' }],
+        bias: {},
+        profileIdOverride: 'missing-script-profile',
+        strictProfileIdOverride: true,
+      },
+      'scriptMain',
+    )
+
+    expect(result).toEqual({
+      type: 'fail',
+      result: 'Model profile not found or unavailable: missing-script-profile',
+    })
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
   it('continues to raw model fallbacks when the active durable profile config is incomplete', async () => {
     seedDb({
       modelProfiles: [

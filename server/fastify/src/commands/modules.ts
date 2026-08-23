@@ -6,6 +6,10 @@ import { type CharacterRecord, ensureCharacterCollection, readCharacterId, readJ
 import { ensureCharacterChats } from './chats.js'
 import { isImportableMCPIdentifier } from '../../../../src/ts/process/mcp/mcpIdentifier.js'
 import { repairCreatedLorebookEntries } from './lorebooks.js'
+import {
+  normalizeScriptModelOverrides,
+  readScriptModelOverrides,
+} from '../../../../src/ts/model/scriptModelOverrides.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -99,6 +103,9 @@ function repairModuleRecord(
   module.id = typeof module.id === 'string' && module.id.trim() ? module.id : randomUUID()
   module.name = typeof module.name === 'string' && module.name.trim() ? module.name : 'New Module'
   module.description = typeof module.description === 'string' ? module.description : ''
+  const scriptModelOverrides = normalizeScriptModelOverrides(module.scriptModelOverrides)
+  if (Object.keys(scriptModelOverrides).length > 0) module.scriptModelOverrides = scriptModelOverrides
+  else delete module.scriptModelOverrides
   validateModuleRecord(module, label, options, assetOptions)
   return module
 }
@@ -273,6 +280,16 @@ function validateModulePatch(
   options: { allowId?: boolean; allowChildren?: boolean; allowMcp?: boolean; allowDeleteSentinel?: boolean } = {},
   assetOptions: { assetDb?: DatabaseSync } = {},
 ): void {
+  if ('scriptModelOverrides' in record) {
+    try {
+      record.scriptModelOverrides = readScriptModelOverrides(
+        record.scriptModelOverrides,
+        `${label}.scriptModelOverrides`,
+      )
+    } catch (error) {
+      throw new ValidationError(error instanceof Error ? error.message : String(error))
+    }
+  }
   for (const key of Object.keys(record)) {
     if ((!options.allowId || key !== 'id') && MODULE_PATCH_EXCLUDED_KEYS.has(key)) {
       if (options.allowChildren && ['lorebook', 'regex', 'trigger'].includes(key)) {

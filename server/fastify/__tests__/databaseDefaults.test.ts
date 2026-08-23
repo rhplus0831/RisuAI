@@ -117,6 +117,36 @@ describe('database defaults', () => {
     })
   })
 
+  it('normalizes local character and module script model overrides', () => {
+    const database = normalizeDatabaseDefaults(
+      {
+        characters: [
+          { chaId: 'char-a', scriptModelOverrides: { llmProfileId: ' main-profile ' } },
+          { chaId: 'char-b', scriptModelOverrides: { llmProfileId: '' } },
+        ],
+        modules: [
+          {
+            id: 'module-a',
+            name: 'Module A',
+            description: '',
+            scriptModelOverrides: { axLlmProfileId: ' aux-profile ' },
+          },
+          { id: 'module-b', name: 'Module B', description: '', scriptModelOverrides: [] },
+        ],
+      },
+      { providerDefaults: false },
+    )
+
+    expect((database.characters as Array<Record<string, unknown>>)[0].scriptModelOverrides).toEqual({
+      llmProfileId: 'main-profile',
+    })
+    expect((database.characters as Array<Record<string, unknown>>)[1]).not.toHaveProperty('scriptModelOverrides')
+    expect((database.modules as Array<Record<string, unknown>>)[0].scriptModelOverrides).toEqual({
+      axLlmProfileId: 'aux-profile',
+    })
+    expect((database.modules as Array<Record<string, unknown>>)[1]).not.toHaveProperty('scriptModelOverrides')
+  })
+
   it('retires Mood Light classification without removing its characters', () => {
     const database = normalizeDatabaseDefaults(
       {

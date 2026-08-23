@@ -85,6 +85,14 @@ compatibility surfaces. Resolution reports `ready`, `incomplete`,
 are blocked before browser dispatch, server-intent completion, chat job
 acceptance, and final provider dispatch.
 
+Character and module `scriptModelOverrides` may locally bind Lua `LLM` and
+`axLLM` calls to durable profile ids. Owner-local bindings take precedence over
+the `scriptMain` or `scriptAux` role only for calls owned by that character or
+module. Missing references remain visible for repair and fail that script call;
+they never silently fall back to a different profile. These bindings are local
+installation state and are omitted from individual character-card and `.risum`
+exports, while whole-database saves retain them.
+
 Normalization/defaults run in `src/ts/storage/database.svelte.ts` and
 `server/fastify/src/databaseDefaults.ts`. Canonical row-oriented wrappers and
 handlers in `src/ts/server/commands.ts`,

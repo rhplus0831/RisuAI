@@ -763,6 +763,10 @@ describe('PNG character card import', () => {
 describe('character card export assets', () => {
   it('writes cloned emotion and additional assets as PNG chunks without mutating source arrays', async () => {
     const char = createExportCharacter()
+    char.scriptModelOverrides = {
+      llmProfileId: 'local-main-profile',
+      axLlmProfileId: 'local-aux-profile',
+    }
     const originalEmotions = structuredClone(char.emotionImages)
     const originalAdditionalAssets = structuredClone(char.additionalAssets)
     const writer = new CaptureWriter()
@@ -781,6 +785,8 @@ describe('character card export assets', () => {
     expect(chunks['chara-ext-asset_:2']).toBe(Buffer.from(EXPORT_ADDITIONAL_BYTES).toString('base64'))
 
     const card = JSON.parse(Buffer.from(chunks.chara, 'base64').toString('utf-8'))
+    expect(JSON.stringify(card)).not.toContain('local-main-profile')
+    expect(JSON.stringify(card)).not.toContain('local-aux-profile')
     expect(card.data.extensions.risuai.emotions).toEqual([['happy', '__asset:1']])
     expect(card.data.extensions.risuai.additionalAssets).toEqual([['theme', '__asset:2', 'css']])
   })

@@ -2629,6 +2629,14 @@ export const languageKorean = {
       scriptAux: '보조 역할을 사용하는 스크립트 요청에 사용합니다.',
     },
   },
+  scriptModelOverrides: {
+    title: '스크립트 모델 재정의',
+    description:
+      '이 항목이 소유한 LLM 및 axLLM 호출에 사용할 로컬 모델 프로필을 선택합니다. 이 선택은 개별 캐릭터 또는 모듈 내보내기에 포함되지 않습니다.',
+    llm: 'LLM 모델 프로필',
+    axLlm: 'axLLM 모델 프로필',
+    inheritRole: '설정된 스크립트 역할 사용',
+  },
   modelProfiles: {
     settingsTitle: '모델 프로필',
     rolesTab: '역할',

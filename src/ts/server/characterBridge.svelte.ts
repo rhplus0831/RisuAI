@@ -31,6 +31,7 @@ import {
   type PendingMutationHandle,
 } from './pendingMutationOutbox'
 import { characterOwnerMutationKey } from './resourceOwnerMutationKeys'
+import { normalizeScriptModelOverrides } from '../model/scriptModelOverrides'
 import { subscribeServerCommandLocalEffectApplied } from './commandLocalEffectEvents'
 
 interface PendingCharacterPatch {
@@ -628,6 +629,7 @@ function normalizeCharacterDraft(value: CharacterSnapshot): CharacterDraftValue 
   value.prebuiltAssetStyle ??= ''
   value.prebuiltAssetExclude ??= []
   value.lowLevelAccess ??= false
+  value.scriptModelOverrides = normalizeScriptModelOverrides(value.scriptModelOverrides)
   value.hideChatIcon ??= false
   value.utilityBot ??= false
   value.escapeOutput ??= false

@@ -189,10 +189,12 @@ vi.mock('../server/resourceWriteGuard.svelte', () => ({
 import {
   applyModule,
   getModuleRegexScripts,
+  getModuleTriggerOwner,
   getModuleTriggers,
   importModule,
   importRisuModuleObject,
   moduleUpdate,
+  moduleForSingleItemExport,
   refreshModules,
 } from './modules'
 import { moduleBackgroundEmbedding, reloadGuiAfterDefinitionChange } from '../stores.svelte'
@@ -421,6 +423,26 @@ describe('module imports', () => {
     dispatchReplaceCharacterScripts.mockClear()
     dispatchReplaceCharacterTriggers.mockClear()
     refreshModules()
+  })
+
+  it('keeps script model profile ids local to the installation', async () => {
+    const module = {
+      id: 'module-local-models',
+      name: 'Local models',
+      description: '',
+      scriptModelOverrides: {
+        llmProfileId: 'local-main',
+        axLlmProfileId: 'local-aux',
+      },
+    }
+
+    expect(moduleForSingleItemExport(module)).not.toHaveProperty('scriptModelOverrides')
+    expect(module).toHaveProperty('scriptModelOverrides.llmProfileId', 'local-main')
+
+    await importRisuModuleObject(module)
+    expect(createGlobalModule).toHaveBeenCalledWith(
+      expect.not.objectContaining({ scriptModelOverrides: expect.anything() }),
+    )
   })
 
   it('imports ordinary .risum modules through asset upload and module command helpers', async () => {
@@ -1374,6 +1396,10 @@ describe('module imports', () => {
     expect(resolvedTrigger).toMatchObject({
       comment: 'readonly trigger',
       lowLevelAccess: true,
+    })
+    expect(getModuleTriggerOwner(resolvedTrigger)).toEqual({
+      moduleId: 'module-a',
+      scriptModelOverrides: {},
     })
     expect('lowLevelAccess' in trigger).toBe(false)
   })

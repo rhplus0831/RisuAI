@@ -124,6 +124,7 @@
   import { mutateAlternateGreetings, type AlternateGreetingMutation } from 'src/ts/alternateGreetingMutation'
   import { dispatchDurableAlternateGreetingMutation } from 'src/ts/alternateGreetingCommands'
   import { alertError, alertNormal } from 'src/ts/alert'
+  import ScriptModelOverrideSelectors from 'src/lib/UI/ScriptModelOverrideSelectors.svelte'
 
   let iconRemoveMode = $state(false)
   let viewSubMenu = $state(0)
@@ -180,6 +181,7 @@
     'prebuiltAssetStyle',
     'prebuiltAssetExclude',
     'lowLevelAccess',
+    'scriptModelOverrides',
     'hideChatIcon',
     'utilityBot',
     'escapeOutput',
@@ -2451,6 +2453,10 @@
   <div class="flex items-center mt-4">
     <Check bind:check={characterDraft.value.lowLevelAccess} name={language.lowLevelAccess} />
     <span> <Help key="lowLevelAccess" name={language.lowLevelAccess} /></span>
+  </div>
+
+  <div class="mt-4">
+    <ScriptModelOverrideSelectors bind:value={characterDraft.value.scriptModelOverrides} />
   </div>
 
   <div class="flex items-center mt-4">

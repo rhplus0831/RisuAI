@@ -125,6 +125,7 @@ const mediaMock = vi.hoisted(() => ({
   readImage: vi.fn(async () => new Uint8Array([1, 2, 3])),
   writeInlayImage: vi.fn(async () => 'inlay-id'),
 }))
+const requestChatData = vi.hoisted(() => vi.fn(async () => ({ type: 'success', result: 'ok' })))
 
 vi.mock('wasmoon', () => ({
   LuaFactory: luaMock.LuaFactory,
@@ -160,6 +161,10 @@ vi.mock('./files/inlays', () => ({
 
 vi.mock('./stableDiff', () => ({
   generateAIImage: mediaMock.generateAIImage,
+}))
+
+vi.mock('./request/request', () => ({
+  requestChatData,
 }))
 
 vi.mock('../util', async (importActual) => {
@@ -419,6 +424,7 @@ beforeEach(() => {
   mediaMock.getUserName.mockReturnValue('User')
   mediaMock.readImage.mockResolvedValue(new Uint8Array([1, 2, 3]))
   mediaMock.writeInlayImage.mockResolvedValue('inlay-id')
+  requestChatData.mockClear()
   vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 200 })) as unknown as typeof fetch)
   vi.spyOn(console, 'log').mockImplementation(() => {})
   vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -517,6 +523,54 @@ describe('client scripting media cleanup (L51)', () => {
 })
 
 describe('client scripting Lua budgets and cache (L39-L41)', () => {
+  it('uses the current script owner profile overrides with a cached Lua engine', async () => {
+    const chat = makeChat()
+    const char = makeCharacter(chat)
+    char.scriptModelOverrides = { llmProfileId: 'character-main' }
+    luaMock.setDispatchArgs('LLMMain', [JSON.stringify([{ role: 'user', content: 'prompt' }]), false, ''])
+    const code = '-- cached owner-aware LLM handler'
+
+    await runScripted(code, { char, chat, mode: 'LLMMain', lowLevelAccess: true })
+    await runScripted(code, {
+      char,
+      chat,
+      mode: 'LLMMain',
+      lowLevelAccess: true,
+      scriptModelOverrides: { llmProfileId: 'module-main' },
+    })
+
+    expect(luaMock.createEngine).toHaveBeenCalledTimes(1)
+    expect(requestChatData).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ profileIdOverride: 'character-main', strictProfileIdOverride: true }),
+      'scriptMain',
+    )
+    expect(requestChatData).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ profileIdOverride: 'module-main', strictProfileIdOverride: true }),
+      'scriptMain',
+    )
+  })
+
+  it('uses the axLLM override for scriptAux calls', async () => {
+    const chat = makeChat()
+    const char = makeCharacter(chat)
+    luaMock.setDispatchArgs('axLLMMain', [JSON.stringify([{ role: 'user', content: 'prompt' }]), false, ''])
+
+    await runScripted('-- owner-aware axLLM handler', {
+      char,
+      chat,
+      mode: 'axLLMMain',
+      lowLevelAccess: true,
+      scriptModelOverrides: { axLlmProfileId: 'module-aux' },
+    })
+
+    expect(requestChatData).toHaveBeenCalledWith(
+      expect.objectContaining({ profileIdOverride: 'module-aux', strictProfileIdOverride: true }),
+      'scriptAux',
+    )
+  })
+
   it('keeps readonly character trigger rows immutable before Lua edit-display dispatch', async () => {
     const chat = makeChat()
     const char = makeCharacter(chat)

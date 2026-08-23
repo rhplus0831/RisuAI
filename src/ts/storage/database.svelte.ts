@@ -43,6 +43,7 @@ import {
   normalizeProviderCredentials,
   type ProviderCredentialRecord,
 } from '../model/providerCredentialRecords'
+import { normalizeScriptModelOverrides, type ScriptModelOverrides } from '../model/scriptModelOverrides'
 import {
   normalizeAgentConfiguration,
   normalizeAgentPresetDefaultId,
@@ -3188,6 +3189,16 @@ export function setDatabase(data: Database) {
   data.memoryLimitThickness ??= 1
   data.modules ??= []
   data.enabledModules ??= []
+  for (const character of data.characters) {
+    const overrides = normalizeScriptModelOverrides(character.scriptModelOverrides)
+    if (Object.keys(overrides).length > 0) character.scriptModelOverrides = overrides
+    else delete character.scriptModelOverrides
+  }
+  for (const module of data.modules) {
+    const overrides = normalizeScriptModelOverrides(module.scriptModelOverrides)
+    if (Object.keys(overrides).length > 0) module.scriptModelOverrides = overrides
+    else delete module.scriptModelOverrides
+  }
   data.additionalParams ??= []
   data.applyAdditionalParamsToAll ??= false
   data.heightMode ??= 'normal'
@@ -4552,6 +4563,8 @@ export interface character {
   }>
   defaultVariables?: string
   lowLevelAccess?: boolean
+  /** Local-only model-profile selections for character-owned script LLM calls. */
+  scriptModelOverrides?: ScriptModelOverrides
   hideChatIcon?: boolean
   lastInteraction?: number
   translatorNote?: string

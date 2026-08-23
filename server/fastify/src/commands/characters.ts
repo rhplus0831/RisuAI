@@ -9,6 +9,10 @@ import {
   validateOptionalServerAssetRef,
 } from './assets.js'
 import { repairCreatedLorebookEntries } from './lorebooks.js'
+import {
+  normalizeScriptModelOverrides,
+  readScriptModelOverrides,
+} from '../../../../src/ts/model/scriptModelOverrides.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -139,6 +143,9 @@ export function buildPatchedCharacterCollectionRow(
 export function repairCharacterRecord(input: unknown, options: { assetDb?: DatabaseSync } = {}): CharacterRecord {
   const character = readJsonObject(input, 'character') as CharacterRecord
   character.chaId = typeof character.chaId === 'string' && character.chaId.trim() ? character.chaId : randomUUID()
+  const scriptModelOverrides = normalizeScriptModelOverrides(character.scriptModelOverrides)
+  if (Object.keys(scriptModelOverrides).length > 0) character.scriptModelOverrides = scriptModelOverrides
+  else delete character.scriptModelOverrides
   validateCharacterRecord(character, 'character', options)
   return character
 }
@@ -439,6 +446,16 @@ function validateOrderedCharacterId(characterId: string, activeIds: Set<string>,
 }
 
 function validateCharacterRecord(record: JsonRecord, label: string, options: { assetDb?: DatabaseSync } = {}): void {
+  if ('scriptModelOverrides' in record) {
+    try {
+      record.scriptModelOverrides = readScriptModelOverrides(
+        record.scriptModelOverrides,
+        `${label}.scriptModelOverrides`,
+      )
+    } catch (error) {
+      throw new ValidationError(error instanceof Error ? error.message : String(error))
+    }
+  }
   if ('chaId' in record && (typeof record.chaId !== 'string' || record.chaId.trim() === '')) {
     throw new ValidationError(`${label}.chaId must be a non-empty string`)
   }

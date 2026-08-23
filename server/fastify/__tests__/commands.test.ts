@@ -7689,6 +7689,46 @@ describe('Phase 9-3a character commands', () => {
     }
   })
 
+  it('persists and validates character script model overrides as profile ids', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [{ chaId: 'char-a', name: 'A', chats: [], chatFolders: [] }],
+      characterOrder: ['char-a'],
+    })
+
+    const patched = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          scriptModelOverrides: {
+            llmProfileId: 'character-main-profile',
+            axLlmProfileId: 'character-aux-profile',
+          },
+        },
+      },
+    })
+    expect(patched.statusCode).toBe(200)
+    expect(readJsonRow('characters', 'char-a').scriptModelOverrides).toEqual({
+      llmProfileId: 'character-main-profile',
+      axLlmProfileId: 'character-aux-profile',
+    })
+
+    const invalid = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision + 1,
+        patch: { scriptModelOverrides: { llmProfileId: '' } },
+      },
+    })
+    expect(invalid.statusCode).toBe(400)
+    expect(invalid.json().error).toBe('patch.scriptModelOverrides.llmProfileId must be a non-empty string')
+  })
+
   it('creates, updates, selects, reorders, and deletes characters by chaId', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -14742,6 +14782,7 @@ describe('Phase 9-4c module record and enablement commands', () => {
           hideIcon: true,
           backgroundEmbedding: '<style>.chattext .name { color: red; }</style>',
           customModuleToggle: 'toggle',
+          scriptModelOverrides: { llmProfileId: 'module-main-profile' },
         },
       },
     })
@@ -14807,6 +14848,7 @@ describe('Phase 9-4c module record and enablement commands', () => {
       hideIcon: true,
       backgroundEmbedding: '<style>.chattext .name { color: red; }</style>',
       customModuleToggle: 'toggle',
+      scriptModelOverrides: { llmProfileId: 'module-main-profile' },
     })
     expect(database.enabledModules).toEqual(['mod-a'])
     expect(database.personas[0].modules).toEqual(['mod-a'])
@@ -15065,6 +15107,18 @@ describe('Phase 9-4c module record and enablement commands', () => {
     })
     expect(badPatch.statusCode).toBe(400)
     expect(badPatch.json().error).toBe('patch.assets[0][1] must be a server asset id')
+
+    const badScriptModelOverrides = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/modules/mod-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { scriptModelOverrides: { modelId: 'raw-model' } },
+      },
+    })
+    expect(badScriptModelOverrides.statusCode).toBe(400)
+    expect(badScriptModelOverrides.json().error).toBe('patch.scriptModelOverrides.modelId is not supported')
 
     const badEnable = await harness.app.inject({
       method: 'POST',

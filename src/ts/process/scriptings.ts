@@ -22,9 +22,14 @@ import { generateAIImage } from './stableDiff'
 import { writeInlayImage, getInlayAsset } from './files/inlays'
 import type { OpenAIChat, MultiModal } from './index.svelte'
 import { requestChatData, type StreamResponseChunk } from './request/request'
+import {
+  normalizeScriptModelOverrides,
+  scriptModelOverrideProfileId,
+  type ScriptModelOverrides,
+} from '../model/scriptModelOverrides'
 import { v4 } from 'uuid'
 import { createNonSecurityUuid } from '../nonSecurityUuid'
-import { getModuleLorebooks, getModuleTriggers } from './modules'
+import { getModuleLorebooks, getModuleTriggerOwner, getModuleTriggers } from './modules'
 import { Mutex } from '../mutex'
 import { tokenize } from '../tokenizer'
 import { fetchNative, readImage } from '../globalApi.svelte'
@@ -67,6 +72,7 @@ interface BasicScriptingEngineState {
   chat?: Chat
   setVar?: (key: string, value: string) => boolean | void
   getVar?: (key: string) => string
+  scriptModelOverrides: ScriptModelOverrides
   currentRun?: {
     char?: character | simpleCharacterArgument
     stopChat: () => void
@@ -105,6 +111,9 @@ export async function runScripted(
     mode?: string
     type?: 'lua' | 'py'
     luaExecTimeoutMs?: number
+    /** Explicit script owner selection. Pass `{}` for a module with no override
+     * so it does not inherit the active character's local selection. */
+    scriptModelOverrides?: ScriptModelOverrides
   },
 ) {
   const type: 'lua' | 'py' = arg.type ?? 'lua'
@@ -115,6 +124,13 @@ export async function runScripted(
   const meta = arg.meta ?? {}
   const mode = arg.mode ?? 'manual'
   const luaExecTimeoutMs = arg.luaExecTimeoutMs ?? DEFAULT_CLIENT_LUA_EXEC_TIMEOUT_MS
+  const scriptModelOverrides = normalizeScriptModelOverrides(
+    Object.prototype.hasOwnProperty.call(arg, 'scriptModelOverrides')
+      ? arg.scriptModelOverrides
+      : char.type === 'simple'
+        ? undefined
+        : char.scriptModelOverrides,
+  )
 
   let chat = arg.chat ?? getCurrentChat()
   let stopSending = false
@@ -131,6 +147,7 @@ export async function runScripted(
     ScriptingEngineState.chat = chat
     ScriptingEngineState.setVar = setVar
     ScriptingEngineState.getVar = getVar
+    ScriptingEngineState.scriptModelOverrides = scriptModelOverrides
     const shouldRecreateLuaEngine =
       ScriptingEngineState.type === 'lua' &&
       (code !== ScriptingEngineState.code || ScriptingEngineState.execTimeoutMs !== luaExecTimeoutMs)
@@ -653,6 +670,15 @@ export async function runScripted(
               useStreaming: options.streaming === true,
               forceStreaming: options.streaming === true,
               noMultiGen: true,
+              ...(scriptModelOverrideProfileId(ScriptingEngineState.scriptModelOverrides, 'scriptMain')
+                ? {
+                    profileIdOverride: scriptModelOverrideProfileId(
+                      ScriptingEngineState.scriptModelOverrides,
+                      'scriptMain',
+                    ),
+                    strictProfileIdOverride: true,
+                  }
+                : {}),
             },
             'scriptMain',
           )
@@ -707,6 +733,15 @@ export async function runScripted(
             bias: {},
             useStreaming: false,
             noMultiGen: true,
+            ...(scriptModelOverrideProfileId(ScriptingEngineState.scriptModelOverrides, 'scriptMain')
+              ? {
+                  profileIdOverride: scriptModelOverrideProfileId(
+                    ScriptingEngineState.scriptModelOverrides,
+                    'scriptMain',
+                  ),
+                  strictProfileIdOverride: true,
+                }
+              : {}),
           },
           'scriptMain',
         )
@@ -1015,6 +1050,15 @@ export async function runScripted(
               useStreaming: options.streaming === true,
               forceStreaming: options.streaming === true,
               noMultiGen: true,
+              ...(scriptModelOverrideProfileId(ScriptingEngineState.scriptModelOverrides, 'scriptAux')
+                ? {
+                    profileIdOverride: scriptModelOverrideProfileId(
+                      ScriptingEngineState.scriptModelOverrides,
+                      'scriptAux',
+                    ),
+                    strictProfileIdOverride: true,
+                  }
+                : {}),
             },
             'scriptAux',
           )
@@ -1417,6 +1461,7 @@ async function getOrCreateEngineState(
   const creationPromise = (() => {
     const engineState: ScriptingEngineState = {
       mutex: new Mutex(),
+      scriptModelOverrides: {},
       type: type,
       cacheKey,
       cacheBucket,
@@ -1901,12 +1946,18 @@ export async function runLuaButtonTrigger(
         return null
       }
       if (trigger?.effect?.[0]?.type === 'triggerlua') {
+        const moduleOwner = getModuleTriggerOwner(trigger)
         runResult = await runScripted(trigger.effect[0].code, {
           char: char,
           chat: workingChat,
           setVar: setWorkingVar,
           getVar: getWorkingVar,
           lowLevelAccess: trigger.lowLevelAccess,
+          scriptModelOverrides: moduleOwner
+            ? moduleOwner.scriptModelOverrides
+            : char.type === 'simple'
+              ? {}
+              : char.scriptModelOverrides,
           mode: 'onButtonClick',
           data: data,
         })

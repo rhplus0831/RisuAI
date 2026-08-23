@@ -12,7 +12,12 @@ import type { triggerscript } from '../../../../src/ts/process/triggers'
 import type { simpleCharacterArgument } from '../../../../src/ts/parser/parser.svelte'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { ModelRole } from '../../../../src/ts/model/modelRoles.js'
-import { resolveModelProfile } from '../../../../src/ts/model/modelProfileResolver.js'
+import {
+  resolveModelProfile,
+  resolveModelProfileByProfileId,
+  type ResolvedModelProfile,
+} from '../../../../src/ts/model/modelProfileResolver.js'
+import { scriptModelOverrideProfileId } from '../../../../src/ts/model/scriptModelOverrides.js'
 import type { TriggerVarEngine } from './triggerVars.js'
 import { expandVariables } from './variables.js'
 import { tokenize } from './tokens.js'
@@ -723,6 +728,7 @@ export interface ServerLuaRuntimeContext {
 
 interface RuntimeState {
   ctx: ServerLuaRuntimeContext
+  source?: TriggerSourceAttribution
   safeIds: Set<string>
   lowLevelIds: Set<string>
   editDisplayIds: Set<string>
@@ -1045,7 +1051,7 @@ async function runLuaLlm(
   options: { streaming?: boolean } = {},
 ): Promise<LuaLlmResult> {
   try {
-    const profile = resolveModelProfile({ database: state.ctx.database, role })
+    const profile = resolveLuaLlmProfile(state, role)
     const database = {
       ...state.ctx.database,
       aiModel: profile.modelId,
@@ -1087,6 +1093,31 @@ async function runLuaLlm(
   } catch (error) {
     return luaLlmFailure(error instanceof Error ? error.message : String(error))
   }
+}
+
+function resolveLuaLlmProfile(state: RuntimeState, role: ModelRole): ResolvedModelProfile {
+  const source = state.source
+  const overrides =
+    source?.ownerType === 'module'
+      ? state.ctx.database.modules?.find((module) => module.id === source.ownerId)?.scriptModelOverrides
+      : asCharacter(state.ctx)?.scriptModelOverrides
+  const profileId =
+    role === 'scriptMain' || role === 'scriptAux' ? scriptModelOverrideProfileId(overrides, role) : undefined
+  if (!profileId) return resolveModelProfile({ database: state.ctx.database, role })
+
+  const profile = resolveModelProfileByProfileId({
+    database: state.ctx.database,
+    role,
+    profileId,
+  })
+  if (!profile) {
+    const ownerLabel =
+      source?.ownerType === 'module'
+        ? `module ${source.ownerName ? `"${source.ownerName}"` : (source.ownerId ?? '')}`.trim()
+        : `character ${state.ctx.char && 'name' in state.ctx.char ? `"${state.ctx.char.name}"` : ''}`.trim()
+    throw new Error(`${ownerLabel} references missing script model profile "${profileId}"`)
+  }
+  return profile
 }
 
 async function runLuaLlmMain(
@@ -2305,6 +2336,7 @@ export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRunt
 
   const state: RuntimeState = {
     ctx,
+    source: opts.source,
     safeIds: new Set<string>(),
     lowLevelIds: new Set<string>(),
     editDisplayIds: new Set<string>(),

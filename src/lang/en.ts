@@ -2720,6 +2720,14 @@ export const languageEnglish = {
       scriptAux: 'Script requests that use the auxiliary role.',
     },
   },
+  scriptModelOverrides: {
+    title: 'Script model overrides',
+    description:
+      'Choose local model profiles for LLM and axLLM calls owned by this item. These selections are not included in individual character or module exports.',
+    llm: 'LLM model profile',
+    axLlm: 'axLLM model profile',
+    inheritRole: 'Use the configured script role',
+  },
   modelProfiles: {
     settingsTitle: 'Model',
     rolesTab: 'Roles',

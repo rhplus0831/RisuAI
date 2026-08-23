@@ -349,6 +349,13 @@ uses `DEFAULT_TRIGGER_WALL_CLOCK_BUDGET_MS` from
 `server/fastify/src/prompt/triggers.ts` alongside effect, loop, and recursion
 budgets.
 
+Low-level `LLM`/`simpleLLM` calls use `scriptMain` and `axLLM` uses
+`scriptAux`. A character- or module-owned `scriptModelOverrides` profile id
+wins for that owner's call. Server trigger-source attribution and the browser's
+non-enumerable module-trigger owner metadata preserve the owner per run; a
+module without an override therefore falls back to the global script role, not
+the active character's local override.
+
 Lua participates in submit/input, editinput, request, editoutput, and output
 phases through `server/fastify/src/prompt/assemble.ts`,
 `server/fastify/src/prompt/triggers.ts`, and the route retry policy. Browser

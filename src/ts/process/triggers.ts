@@ -12,7 +12,7 @@ import {
 import { setSelectedPersonaPromptFromTrigger } from '../persona'
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { tokenize } from '../tokenizer'
-import { getModuleTriggers } from './modules'
+import { getModuleTriggerOwner, getModuleTriggers } from './modules'
 import { get } from 'svelte/store'
 import { CurrentTriggerIdStore, refreshVariableOnlyGui, reloadChatAt } from '../stores.svelte'
 import { processMultiCommand } from './command'
@@ -24,10 +24,14 @@ import { alertError, alertInput, alertNormal, alertSelect } from '../alert'
 import type { OpenAIChat } from './index.svelte'
 import { HypaProcesser } from './memory/hypamemory'
 import { requestChatData } from './request/request'
-import type { ModelModeExtended } from './request/shared'
 import { generateAIImage } from './stableDiff'
 import { writeInlayImage } from './files/inlays'
 import { runScripted } from './scriptings'
+import {
+  scriptModelOverrideProfileId,
+  type ScriptModelOverrides,
+  type ScriptModelRole,
+} from '../model/scriptModelOverrides'
 import { calcString } from './infunctions'
 import {
   currentChatScriptstateSnapshot,
@@ -44,6 +48,10 @@ export interface triggerscript {
   conditions: triggerCondition[]
   effect: triggerEffect[]
   lowLevelAccess?: boolean
+}
+
+function scriptModelOverridesForTrigger(trigger: triggerscript, char: character): ScriptModelOverrides | undefined {
+  return getModuleTriggerOwner(trigger)?.scriptModelOverrides ?? char.scriptModelOverrides
 }
 
 export type triggerCondition = triggerConditionsVar | triggerConditionsExists | triggerConditionsChatIndex
@@ -438,7 +446,7 @@ export type triggerV2RunLLM = {
   indent: number
 }
 
-function normalizeTriggerLLMMode(mode: triggerV2RunLLM['model']): ModelModeExtended {
+function normalizeTriggerLLMMode(mode: triggerV2RunLLM['model']): ScriptModelRole {
   if (mode === 'model') return 'scriptMain'
   if (mode === 'submodel' || mode === 'otherAx') return 'scriptAux'
   return mode
@@ -1921,6 +1929,15 @@ export async function runTrigger(
               bias: {},
               useStreaming: false,
               noMultiGen: true,
+              ...(scriptModelOverrideProfileId(scriptModelOverridesForTrigger(trigger, char), 'scriptMain')
+                ? {
+                    profileIdOverride: scriptModelOverrideProfileId(
+                      scriptModelOverridesForTrigger(trigger, char),
+                      'scriptMain',
+                    ),
+                    strictProfileIdOverride: true,
+                  }
+                : {}),
             },
             'scriptMain',
           )
@@ -1989,6 +2006,7 @@ export async function runTrigger(
         }
 
         case 'triggerlua': {
+          const moduleOwner = getModuleTriggerOwner(trigger)
           const triggerCodeResult = await runScripted(effect.code, {
             lowLevelAccess: trigger.lowLevelAccess,
             mode: mode === 'manual' ? arg.manualName : mode,
@@ -1996,6 +2014,7 @@ export async function runTrigger(
             getVar: getVar,
             char: char,
             chat: chat,
+            scriptModelOverrides: moduleOwner ? moduleOwner.scriptModelOverrides : char.scriptModelOverrides,
           })
 
           if (triggerCodeResult.stopSending) {
@@ -2407,14 +2426,24 @@ export async function runTrigger(
           if (!promptbody) {
             promptbody = [{ role: 'user', content: value }]
           }
+          const modelRole = normalizeTriggerLLMMode(effect.model)
           let result = await requestChatData(
             {
               formated: promptbody,
               bias: {},
               useStreaming: effect.streaming ?? false,
               noMultiGen: true,
+              ...(scriptModelOverrideProfileId(scriptModelOverridesForTrigger(trigger, char), modelRole)
+                ? {
+                    profileIdOverride: scriptModelOverrideProfileId(
+                      scriptModelOverridesForTrigger(trigger, char),
+                      modelRole,
+                    ),
+                    strictProfileIdOverride: true,
+                  }
+                : {}),
             },
-            normalizeTriggerLLMMode(effect.model),
+            modelRole,
           )
 
           if (result.type === 'fail' || result.type === 'multiline') {

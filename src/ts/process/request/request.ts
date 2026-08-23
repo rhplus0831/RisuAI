@@ -66,6 +66,7 @@ interface requestDataArgument {
   staticModel?: string
   fallbackProfileId?: string
   profileIdOverride?: string
+  strictProfileIdOverride?: boolean
   escape?: boolean
   tools?: MCPTool[]
   toolRounds?: ServerToolRound[]
@@ -638,6 +639,12 @@ export async function requestChatData(
   const overrideProfile = arg.profileIdOverride
     ? resolveModelProfileByProfileId({ database: db, role: model, profileId: arg.profileIdOverride })
     : null
+  if (arg.profileIdOverride && arg.strictProfileIdOverride && !overrideProfile) {
+    return {
+      type: 'fail',
+      result: `Model profile not found or unavailable: ${arg.profileIdOverride}`,
+    }
+  }
   const fallbackAttempts: RequestFallbackAttempt[] = overrideProfile
     ? [{ staticModel: '', fallbackProfileId: arg.profileIdOverride, modelId: overrideProfile.modelId }]
     : [...resolveRequestFallbackAttempts(db, model, resolvedProfile.fallbacks), { staticModel: '' }]

@@ -334,6 +334,11 @@ interface RisuModule {
   id: string
   /** Low level system access */
   lowLevelAccess?: boolean
+  /** Local-only model-profile selections for module-owned LLM and axLLM calls */
+  scriptModelOverrides?: {
+    llmProfileId?: string
+    axLlmProfileId?: string
+  }
   /** Hide icon in UI */
   hideIcon?: boolean
   /** Background embedding */

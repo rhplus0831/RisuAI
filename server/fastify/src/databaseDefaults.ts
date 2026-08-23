@@ -28,6 +28,7 @@ import {
   normalizeModelRoleProfiles,
 } from '../../../src/ts/model/modelProfileRecords.js'
 import { normalizeProviderCredentials } from '../../../src/ts/model/providerCredentialRecords.js'
+import { normalizeScriptModelOverrides } from '../../../src/ts/model/scriptModelOverrides.js'
 import { normalizeAgentConfiguration, normalizeAgentPresetDefaultId } from '../../../src/ts/agentPresetRecords.js'
 import { normalizeTranslatorPresetState, type TranslatorPresetStateLike } from '../../../src/ts/translator/presets.js'
 import { normalizePromptTemplateValue } from './commands/prompts.js'
@@ -388,6 +389,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'removePunctuationHypa', true)
   setDefault(database, 'memoryLimitThickness', 1)
   setDefault(database, 'modules', [])
+  normalizeModuleScriptModelOverrides(database)
   normalizePersonaModuleLinks(database)
   setDefault(database, 'enabledModules', [])
   setDefault(database, 'additionalParams', [])
@@ -559,6 +561,19 @@ function normalizeCharacters(database: JsonRecord): void {
     if (typeof character.notificationImage !== 'string') {
       character.notificationImage = ''
     }
+    const overrides = normalizeScriptModelOverrides(character.scriptModelOverrides)
+    if (Object.keys(overrides).length > 0) character.scriptModelOverrides = overrides
+    else delete character.scriptModelOverrides
+  }
+}
+
+function normalizeModuleScriptModelOverrides(database: JsonRecord): void {
+  if (!Array.isArray(database.modules)) return
+  for (const module of database.modules) {
+    if (!isRecord(module)) continue
+    const overrides = normalizeScriptModelOverrides(module.scriptModelOverrides)
+    if (Object.keys(overrides).length > 0) module.scriptModelOverrides = overrides
+    else delete module.scriptModelOverrides
   }
 }
 

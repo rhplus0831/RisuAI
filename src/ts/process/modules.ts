@@ -64,6 +64,7 @@ import {
 import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from '../server/staleStateGuards'
 import { isImportableMCPIdentifier } from './mcp/mcpIdentifier'
 import { ensureCharacterLorebookHydrated } from '../server/chatMessageHydration.svelte'
+import { normalizeScriptModelOverrides, type ScriptModelOverrides } from '../model/scriptModelOverrides'
 
 export interface MCPModule {
   url: string
@@ -78,12 +79,42 @@ export interface RisuModule {
   trigger?: triggerscript[]
   id: string
   lowLevelAccess?: boolean
+  /** Local-only model-profile selections for module-owned script LLM calls. */
+  scriptModelOverrides?: ScriptModelOverrides
   hideIcon?: boolean
   backgroundEmbedding?: string
   assets?: [string, string, string][]
   namespace?: string
   customModuleToggle?: string
   mcp?: MCPModule
+}
+
+const MODULE_TRIGGER_OWNER = Symbol('risu.moduleTriggerOwner')
+
+interface ModuleTriggerOwner {
+  moduleId: string
+  scriptModelOverrides: ScriptModelOverrides
+}
+
+type ModuleOwnedTrigger = triggerscript & {
+  [MODULE_TRIGGER_OWNER]?: ModuleTriggerOwner
+}
+
+export function getModuleTriggerOwner(trigger: triggerscript | undefined): ModuleTriggerOwner | undefined {
+  return (trigger as ModuleOwnedTrigger | undefined)?.[MODULE_TRIGGER_OWNER]
+}
+
+function attachModuleTriggerOwner(trigger: triggerscript, module: RisuModule): triggerscript {
+  Object.defineProperty(trigger, MODULE_TRIGGER_OWNER, {
+    configurable: true,
+    enumerable: false,
+    writable: true,
+    value: {
+      moduleId: module.id,
+      scriptModelOverrides: normalizeScriptModelOverrides(module.scriptModelOverrides),
+    },
+  })
+  return trigger
 }
 
 export interface ReadModuleOptions {
@@ -154,6 +185,10 @@ function normalizeRisuModuleMetadata(module: unknown): RisuModule | null {
     return null
   }
   const normalized = module as unknown as RisuModule
+  // Script model-profile bindings are deliberately installation-local. Crafted
+  // or older single-module imports must not bind themselves to a coincidentally
+  // matching local profile id.
+  delete normalized.scriptModelOverrides
   if (assets) {
     normalized.assets = assets
   } else {
@@ -243,6 +278,12 @@ async function guardImportableRisuModule(module: RisuModule): Promise<boolean> {
   return true
 }
 
+export function moduleForSingleItemExport(module: RisuModule): RisuModule {
+  const exported = safeStructuredClone(module)
+  delete exported.scriptModelOverrides
+  return exported
+}
+
 export async function exportModule(
   module: RisuModule,
   arg: {
@@ -266,7 +307,7 @@ export async function exportModule(
   }
 
   const assets = module.assets ?? []
-  module = safeStructuredClone(module)
+  module = moduleForSingleItemExport(module)
   module.assets ??= []
   module.assets = module.assets.map((asset) => {
     return [asset[0], '', asset[2]] as [string, string, string]
@@ -671,10 +712,13 @@ export function getModuleTriggers() {
     if (module.trigger) {
       triggers = triggers.concat(
         module.trigger.map((t) => {
-          return {
-            ...t,
-            lowLevelAccess: module.lowLevelAccess,
-          }
+          return attachModuleTriggerOwner(
+            {
+              ...t,
+              lowLevelAccess: module.lowLevelAccess,
+            },
+            module,
+          )
         }),
       )
     }

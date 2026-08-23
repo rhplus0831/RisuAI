@@ -488,6 +488,26 @@ describe('server Lua runtime — low-level LLM bindings', () => {
             requestModel: 'script-aux-model',
           },
         },
+        {
+          id: 'character-script-debug',
+          name: 'Character Script Debug',
+          providerId: 'debug-echo',
+          modelId: 'debug-echo',
+          providerOptions: {
+            baseUrl: 'debug://character-script',
+            requestModel: 'character-script-model',
+          },
+        },
+        {
+          id: 'module-aux-debug',
+          name: 'Module Auxiliary Debug',
+          providerId: 'debug-echo',
+          modelId: 'debug-echo',
+          providerOptions: {
+            baseUrl: 'debug://module-aux',
+            requestModel: 'module-aux-model',
+          },
+        },
       ],
       modelRoleProfiles: {
         scriptMain: { mode: 'profile', profileId: 'script-main-debug' },
@@ -515,6 +535,76 @@ describe('server Lua runtime — low-level LLM bindings', () => {
       baseUrl: 'debug://script-aux',
       requestModel: 'script-aux-model',
     })
+  })
+
+  it('uses the active character script model override for LLM calls', async () => {
+    const char = makeChar({ scriptModelOverrides: { llmProfileId: 'character-script-debug' } })
+    const { ctx } = makeRuntime({ char, database: debugEchoDatabase() })
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        local res = LLM(id, {{ role = 'user', content = 'character prompt' }})
+        data[1].content = res.result
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
+
+    const payload = JSON.parse((result.res as OpenAIChat[])[0].content)
+    expect(payload).toMatchObject({
+      baseUrl: 'debug://character-script',
+      requestModel: 'character-script-model',
+    })
+  })
+
+  it('uses the owning module override instead of the active character override', async () => {
+    const char = makeChar({ scriptModelOverrides: { axLlmProfileId: 'script-aux-debug' } })
+    const module = makeModule({ scriptModelOverrides: { axLlmProfileId: 'module-aux-debug' } })
+    const { ctx } = makeRuntime({
+      char,
+      database: { ...debugEchoDatabase(), modules: [module] },
+    })
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        local res = axLLM(id, {{ role = 'user', content = 'module prompt' }})
+        data[1].content = res.result
+        return data
+      end)
+    `
+
+    const result = await runServerLua(
+      {
+        code,
+        mode: 'editRequest',
+        data: rows('orig'),
+        lowLevelAccess: true,
+        source: { ownerType: 'module', ownerId: module.id, ownerName: module.name },
+      },
+      ctx,
+    )
+
+    const payload = JSON.parse((result.res as OpenAIChat[])[0].content)
+    expect(payload).toMatchObject({
+      baseUrl: 'debug://module-aux',
+      requestModel: 'module-aux-model',
+    })
+  })
+
+  it('fails explicitly when a local script override references a missing profile', async () => {
+    const char = makeChar({ scriptModelOverrides: { llmProfileId: 'missing-script-profile' } })
+    const { ctx } = makeRuntime({ char, database: debugEchoDatabase() })
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        local res = LLM(id, {{ role = 'user', content = 'missing prompt' }})
+        data[1].content = res.result
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
+
+    expect((result.res as OpenAIChat[])[0].content).toContain('missing script model profile')
+    expect((result.res as OpenAIChat[])[0].content).toContain('missing-script-profile')
   })
 
   it('keeps axLLMMain denied without low-level access', async () => {

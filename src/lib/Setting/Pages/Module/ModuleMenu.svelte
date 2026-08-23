@@ -163,6 +163,7 @@
   } from 'src/ts/server/moduleAssetUpload'
   import { getResourceDatabase } from 'src/ts/server/resourceState.svelte'
   import { assetListRenderKey } from 'src/ts/media/assetList'
+  import ScriptModelOverrideSelectors from 'src/lib/UI/ScriptModelOverrideSelectors.svelte'
 
   const MODULE_ASSET_EXTENSIONS = [
     'png',
@@ -765,5 +766,9 @@
   <div class="flex items-center mt-4">
     <Check bind:check={currentModule.lowLevelAccess} name={language.lowLevelAccess} />
     <span> <Help key="lowLevelAccess" name={language.lowLevelAccess} /></span>
+  </div>
+
+  <div class="mt-4">
+    <ScriptModelOverrideSelectors bind:value={currentModule.scriptModelOverrides} />
   </div>
 {/if}
