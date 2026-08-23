@@ -15,6 +15,7 @@ vi.mock('src/ts/stores.svelte', async () => import('./QuickSettingsGUI.testState
 import QuickSettingsGUI from './QuickSettingsGUI.svelte'
 import { language } from 'src/lang'
 import { QuickSettings } from 'src/ts/stores.svelte'
+import { registerModuleEditorLeaveGuard } from 'src/ts/moduleEditorLeaveGuard'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -62,5 +63,23 @@ describe('QuickSettingsGUI tabs', () => {
     expect(botButton.getAttribute('aria-pressed')).toBe('false')
     expect(memoryButton.getAttribute('aria-pressed')).toBe('false')
     expect(moduleButton.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('keeps the Modules tab selected when its leave guard cancels navigation', async () => {
+    QuickSettings.index = 2
+    const guard = vi.fn(() => false)
+    const unregister = registerModuleEditorLeaveGuard(guard)
+    component = mount(QuickSettingsGUI, { target })
+    await tick()
+
+    try {
+      buttonByName(language.chatBot).click()
+      await tick()
+
+      expect(guard).toHaveBeenCalledOnce()
+      expect(QuickSettings.index).toBe(2)
+    } finally {
+      unregister()
+    }
   })
 })

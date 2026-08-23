@@ -21,8 +21,9 @@ vi.mock('./process/modules', async (importActual) => {
 import { initHotkey } from './hotkey'
 import { alertCardExport, alertConfirm, alertPluginConfirm, cardExportCancelMessage } from './alert'
 import { RISU_PRESET_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './dragTypes'
-import { alertStore, PlaygroundStore, selectedCharID, settingsOpen } from './stores.svelte'
+import { alertStore, PlaygroundStore, QuickSettings, selectedCharID, settingsOpen } from './stores.svelte'
 import { testDatabaseState } from './__tests__/resourceDatabaseState'
+import { registerModuleEditorLeaveGuard } from './moduleEditorLeaveGuard'
 
 async function press(key: string, options: KeyboardEventInit = {}): Promise<KeyboardEvent> {
   const event = new KeyboardEvent('keydown', {
@@ -48,6 +49,8 @@ beforeEach(() => {
   alertStore.set({ type: 'none', msg: '' })
   selectedCharID.set(-1)
   PlaygroundStore.set(0)
+  QuickSettings.open = false
+  QuickSettings.index = 0
   testDatabaseState.db = {
     hotkeys: [
       { action: 'settings', ctrl: true, key: 's' },
@@ -108,6 +111,25 @@ describe('global hotkey route ownership', () => {
 
     expect(event.defaultPrevented).toBe(true)
     expect(hotkeyNavigationMocks.closeSettingsRoute).toHaveBeenCalledOnce()
+  })
+
+  it('keeps Quick Settings open when the module editor cancels closing it', async () => {
+    testDatabaseState.db.hotkeys = [{ action: 'quickSettings', ctrl: true, key: 'q' }]
+    QuickSettings.open = true
+    QuickSettings.index = 2
+    const guard = vi.fn(() => false)
+    const unregister = registerModuleEditorLeaveGuard(guard)
+
+    try {
+      const event = await press('q', { ctrlKey: true })
+
+      expect(event.defaultPrevented).toBe(true)
+      expect(guard).toHaveBeenCalledOnce()
+      expect(QuickSettings.open).toBe(true)
+      expect(QuickSettings.index).toBe(2)
+    } finally {
+      unregister()
+    }
   })
 
   it('confirms an owned ask dialog with Enter', async () => {

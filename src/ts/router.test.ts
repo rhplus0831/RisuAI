@@ -403,6 +403,61 @@ describe('router grid history', () => {
 })
 
 describe('router settings history', () => {
+  it('keeps the current Settings section when an active module editor cancels navigation', async () => {
+    const router = await importRouterAt('/settings/modules')
+    const { registerModuleEditorLeaveGuard } = await import('./moduleEditorLeaveGuard')
+    const guard = vi.fn(() => false)
+    const unregister = registerModuleEditorLeaveGuard(guard)
+
+    try {
+      router.navigate('/settings/display')
+
+      expect(guard).toHaveBeenCalledOnce()
+      expect(window.location.pathname).toBe('/settings/modules')
+      expect(get(router.currentRoute)).toMatchObject({ kind: 'settings', index: 14 })
+    } finally {
+      unregister()
+    }
+  })
+
+  it('does not start Settings history traversal when an active module editor cancels leaving', async () => {
+    const router = await importRouterAt('/character/char-a/chat-a')
+    const { registerModuleEditorLeaveGuard } = await import('./moduleEditorLeaveGuard')
+    const back = vi.spyOn(window.history, 'back').mockImplementation(() => {})
+
+    router.openSettingsRoute('/settings/modules')
+    const unregister = registerModuleEditorLeaveGuard(() => false)
+
+    try {
+      router.closeSettingsRoute()
+
+      expect(back).not.toHaveBeenCalled()
+      expect(window.location.pathname).toBe('/settings/modules')
+    } finally {
+      unregister()
+      back.mockRestore()
+    }
+  })
+
+  it('reverses browser history traversal when an active module editor cancels leaving', async () => {
+    const router = await importRouterAt('/settings/modules')
+    const { registerModuleEditorLeaveGuard } = await import('./moduleEditorLeaveGuard')
+    const forward = vi.spyOn(window.history, 'forward').mockImplementation(() => {})
+    const unregister = registerModuleEditorLeaveGuard(() => false)
+    router.installRouter()
+
+    try {
+      window.history.pushState(null, '', '/')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+
+      expect(forward).toHaveBeenCalledOnce()
+      expect(get(router.currentRoute)).toMatchObject({ kind: 'settings', index: 14 })
+    } finally {
+      unregister()
+      forward.mockRestore()
+    }
+  })
+
   it('uses one marked history entry for an in-app Settings session', async () => {
     const router = await importRouterAt('/character/char-a/chat-a')
     const pushState = vi.spyOn(window.history, 'pushState')

@@ -2297,6 +2297,9 @@ export const languageKorean = {
     copyDraft: '초안 복사',
     exportDraft: '초안 내보내기',
     discardDraft: '초안 삭제',
+    leaveEditorConfirm:
+      '이 모듈에 저장하지 않은 변경 사항이 있습니다. 편집기를 나갈까요? 초안은 복구할 수 있도록 보관됩니다.',
+    discardChangesConfirm: '저장하지 않은 모듈 변경 사항을 삭제할까요? 이 작업은 되돌릴 수 없습니다.',
     draftCopied: '복구된 모듈 초안을 클립보드에 복사했습니다.',
     commandError: (error: string) => `모듈 저장에 실패했습니다: ${error}`,
   },

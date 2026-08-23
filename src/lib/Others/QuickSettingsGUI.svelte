@@ -5,6 +5,12 @@
   import BotSettings from '../Setting/Pages/BotSettings.svelte'
   import OtherBotSettings from '../Setting/Pages/OtherBotSettings.svelte'
   import ModuleSettings from '../Setting/Pages/Module/ModuleSettings.svelte'
+  import { requestActiveModuleEditorLeave } from 'src/ts/moduleEditorLeaveGuard'
+
+  function selectQuickSettings(index: number): void {
+    if (QuickSettings.index === index || !requestActiveModuleEditorLeave()) return
+    QuickSettings.index = index
+  }
 </script>
 
 <div class="flex mb-2 gap-2">
@@ -13,9 +19,7 @@
     aria-label={language.chatBot}
     aria-pressed={QuickSettings.index === 0}
     class={QuickSettings.index === 0 ? 'text-textcolor ' : 'text-textcolor2'}
-    onclick={() => {
-      QuickSettings.index = 0
-    }}>
+    onclick={() => selectQuickSettings(0)}>
     <BotIcon />
   </button>
   <button
@@ -23,9 +27,7 @@
     aria-label={language.settingsNavMemory}
     aria-pressed={QuickSettings.index === 1}
     class={QuickSettings.index === 1 ? 'text-textcolor ' : 'text-textcolor2'}
-    onclick={() => {
-      QuickSettings.index = 1
-    }}>
+    onclick={() => selectQuickSettings(1)}>
     <BrainIcon />
   </button>
   <button
@@ -33,9 +35,7 @@
     aria-label={language.modules}
     aria-pressed={QuickSettings.index === 2}
     class={QuickSettings.index === 2 ? 'text-textcolor ' : 'text-textcolor2'}
-    onclick={() => {
-      QuickSettings.index = 2
-    }}>
+    onclick={() => selectQuickSettings(2)}>
     <PackageIcon />
   </button>
 </div>

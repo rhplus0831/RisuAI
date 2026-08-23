@@ -1726,6 +1726,8 @@ export const languageEnglish = {
     copyDraft: 'Copy Draft',
     exportDraft: 'Export Draft',
     discardDraft: 'Discard Draft',
+    leaveEditorConfirm: 'This module has unsaved changes. Leave the editor? Your draft will be kept for recovery.',
+    discardChangesConfirm: 'Discard unsaved module changes? This cannot be undone.',
     draftCopied: 'The recovered module draft was copied.',
     commandError: (error: string) => `Module save failed: ${error}`,
   },

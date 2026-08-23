@@ -17,6 +17,7 @@ import {
   selectedCharID,
   settingsOpen,
 } from './stores.svelte'
+import { hasActiveModuleEditorLeaveGuard, requestActiveModuleEditorLeave } from './moduleEditorLeaveGuard'
 
 export type AppRoute =
   | { kind: 'home'; path: string }
@@ -197,6 +198,7 @@ let skipNextRouteApplication = false
 let routeApplicationEpoch = 0
 let gridHistoryTraversalPending = false
 let settingsHistoryTraversalPending = false
+let approvedModuleEditorHistoryTraversal = false
 
 interface PendingChatMessageJump {
   messageIndex: number
@@ -213,6 +215,13 @@ export function installRouter(): void {
   window.addEventListener('popstate', () => {
     gridHistoryTraversalPending = false
     settingsHistoryTraversalPending = false
+    if (approvedModuleEditorHistoryTraversal) {
+      approvedModuleEditorHistoryTraversal = false
+    } else if (!requestActiveModuleEditorLeave()) {
+      approvedModuleEditorHistoryTraversal = true
+      window.history.forward()
+      return
+    }
     routeApplicationPending = true
     currentRoute.set(parseRoute(window.location.pathname))
   })
@@ -223,6 +232,7 @@ export function navigate(path: string, options: { replace?: boolean } = {}): voi
 
   const canonicalPath = path
   const nextRoute = parseRoute(canonicalPath)
+  if (routeKey(get(currentRoute)) !== routeKey(nextRoute) && !requestActiveModuleEditorLeave()) return
 
   if (nextRoute.kind === 'settings') {
     const currentPath = normalizePath(window.location.pathname)
@@ -286,6 +296,9 @@ export function closeSettingsRoute(): void {
   const isSettingsRoute = parseRoute(window.location.pathname).kind === 'settings'
   if (isSettingsRoute && settingsOriginPath(window.history.state)) {
     if (settingsHistoryTraversalPending) return
+    const hasModuleEditorGuard = hasActiveModuleEditorLeaveGuard()
+    if (hasModuleEditorGuard && !requestActiveModuleEditorLeave()) return
+    approvedModuleEditorHistoryTraversal = hasModuleEditorGuard
     settingsHistoryTraversalPending = true
     window.history.back()
     return
@@ -301,6 +314,7 @@ export function openGridRoute(): void {
   gridHistoryTraversalPending = false
   const originPath = normalizePath(window.location.pathname)
   if (parseRoute(originPath).kind === 'grid') return
+  if (!requestActiveModuleEditorLeave()) return
 
   const historyState: GridHistoryState = {
     [GRID_HISTORY_STATE_KEY]: {

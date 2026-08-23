@@ -43,6 +43,7 @@ import {
 import { captureActiveChatTarget, isActiveChatTargetFresh } from './chatCommands'
 import { closeSettingsRoute, navigate, openSettingsRoute } from './router'
 import { findChatGenerationActivity } from './process/generationActivity.svelte'
+import { requestActiveModuleEditorLeave } from './moduleEditorLeaveGuard'
 
 export function initHotkey() {
   const handleHotkeyKeydown = async (ev: KeyboardEvent): Promise<void> => {
@@ -240,6 +241,7 @@ export function initHotkey() {
           break
         }
         case 'quickSettings': {
+          if (QuickSettings.open && !requestActiveModuleEditorLeave()) break
           QuickSettings.open = !QuickSettings.open
           QuickSettings.index = 0
           break

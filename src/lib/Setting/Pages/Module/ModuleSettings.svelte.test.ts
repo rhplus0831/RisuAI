@@ -129,6 +129,7 @@ import {
   replaceResourceDatabase as setDatabaseLite,
 } from 'src/ts/server/resourceState.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
+import { requestActiveModuleEditorLeave } from 'src/ts/moduleEditorLeaveGuard'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -157,6 +158,7 @@ interface ModuleFixtureOptions {
 
 let target: HTMLElement
 let component: MountedComponent | undefined
+const confirmLeave = vi.fn(() => false)
 
 function makeModule(options: ModuleFixtureOptions): RisuModule {
   let currentName = options.name
@@ -313,6 +315,8 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   vi.clearAllMocks()
+  confirmLeave.mockReturnValue(false)
+  vi.stubGlobal('confirm', confirmLeave)
   moduleDraftStoreSpies.state.sequence = 0
   moduleDraftStoreSpies.state.failureListener = null
   moduleDraftStoreSpies.readLatestModuleEditorDraft.mockResolvedValue(null)
@@ -333,6 +337,89 @@ afterEach(() => {
   }
   target.remove()
   document.body.innerHTML = ''
+  vi.unstubAllGlobals()
+})
+
+describe('ModuleSettings unsaved-change safeguards', () => {
+  it('leaves an unchanged editor without prompting', async () => {
+    mountSettings()
+    moduleAction('alpha-id', 'edit').click()
+    await tick()
+
+    expect(requestActiveModuleEditorLeave()).toBe(true)
+    expect(confirmLeave).not.toHaveBeenCalled()
+  })
+
+  it('keeps a dirty editor open when leaving is canceled', async () => {
+    mountSettings()
+    moduleAction('alpha-id', 'edit').click()
+    await tick()
+    await updateModuleName('Unsaved Alpha')
+
+    expect(requestActiveModuleEditorLeave()).toBe(false)
+    expect(confirmLeave).toHaveBeenCalledWith(language.moduleSave.leaveEditorConfirm)
+    expect(target.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe('Unsaved Alpha')
+    expect(moduleDraftStoreSpies.deleteModuleEditorDraft).not.toHaveBeenCalled()
+  })
+
+  it('warns for a changed create draft but not a newly opened blank draft', async () => {
+    mountSettings()
+    await clickModuleSurfaceAction('create')
+
+    expect(requestActiveModuleEditorLeave()).toBe(true)
+    expect(confirmLeave).not.toHaveBeenCalled()
+
+    await updateModuleName('Unsaved New Module')
+
+    expect(requestActiveModuleEditorLeave()).toBe(false)
+    expect(confirmLeave).toHaveBeenCalledWith(language.moduleSave.leaveEditorConfirm)
+  })
+
+  it('allows leaving a dirty editor while retaining its recovery draft', async () => {
+    confirmLeave.mockReturnValue(true)
+    mountSettings()
+    moduleAction('alpha-id', 'edit').click()
+    await tick()
+    await updateModuleName('Recoverable Alpha')
+
+    expect(requestActiveModuleEditorLeave()).toBe(true)
+    expect(confirmLeave).toHaveBeenCalledWith(language.moduleSave.leaveEditorConfirm)
+    expect(moduleDraftStoreSpies.deleteModuleEditorDraft).not.toHaveBeenCalled()
+  })
+
+  it('confirms before explicitly discarding a dirty draft', async () => {
+    mountSettings()
+    moduleAction('alpha-id', 'edit').click()
+    await tick()
+    await updateModuleName('Maybe discard Alpha')
+
+    await clickModuleSurfaceAction('discard-draft')
+
+    expect(confirmLeave).toHaveBeenCalledWith(language.moduleSave.discardChangesConfirm)
+    expect(target.querySelector('[data-risu-module-action="submit-edit"]')).toBeTruthy()
+    expect(moduleDraftStoreSpies.deleteModuleEditorDraft).not.toHaveBeenCalled()
+
+    confirmLeave.mockReturnValue(true)
+    await clickModuleSurfaceAction('discard-draft')
+
+    expect(target.querySelector('[data-risu-module-action="submit-edit"]')).toBeNull()
+    expect(moduleDraftStoreSpies.deleteModuleEditorDraft).toHaveBeenCalledOnce()
+  })
+
+  it('requests the native browser warning only for a dirty editor', async () => {
+    mountSettings()
+    moduleAction('alpha-id', 'edit').click()
+    await tick()
+
+    const unchangedUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(unchangedUnload)
+    expect(unchangedUnload.defaultPrevented).toBe(false)
+
+    await updateModuleName('Unsaved before unload')
+    const dirtyUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(dirtyUnload)
+    expect(dirtyUnload.defaultPrevented).toBe(true)
+  })
 })
 
 describe('ModuleSettings derived module rows', () => {
@@ -905,6 +992,7 @@ describe('ModuleSettings derived module rows', () => {
       expect.objectContaining({ id: 'deleted-module', cjs: 'recoverable code' }),
     )
 
+    confirmLeave.mockReturnValue(true)
     await clickModuleSurfaceAction('discard-draft')
     expect(moduleDraftStoreSpies.deleteModuleEditorDraft).toHaveBeenCalledWith(generation)
     expect(target.querySelector('[data-risu-recovered-module-draft]')).toBeNull()

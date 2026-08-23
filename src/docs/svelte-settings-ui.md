@@ -144,7 +144,11 @@ is in
 `ModuleSettings.svelte` has separate reload-durable editor recovery in
 `src/ts/server/moduleEditorDraftStore.ts`. It rebases a restored draft over the
 latest module and offers copy/export/discard recovery when the target vanished.
-These drafts are not outbox commands; see
+The editor also registers a dirty-leave guard: routed Settings navigation,
+Quick Settings tab changes, history traversal, and browser unload warn only
+after the draft differs from its opening snapshot. Leaving keeps the recovery
+draft; explicit discard confirms before deleting it. These drafts are not
+outbox commands; see
 [Client Runtime](client-runtime.md#draft-recovery-stores).
 
 Manual editors call `src/ts/setting/confirmSettingsItemRemoval.ts` before

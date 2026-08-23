@@ -66,9 +66,16 @@
     type ModuleEditorDraftGeneration,
     type ModuleEditorDraftInput,
   } from 'src/ts/server/moduleEditorDraftStore'
+  import { registerModuleEditorLeaveGuard } from 'src/ts/moduleEditorLeaveGuard'
 
   function cloneJsonValue<T>(value: T): T {
     return JSON.parse(JSON.stringify(value)) as T
+  }
+
+  function moduleEditorSnapshotFingerprint(value: RisuModule): string {
+    const snapshot = cloneJsonValue(value)
+    snapshot.hideIcon ??= false
+    return JSON.stringify(snapshot)
   }
 
   let tempModule: RisuModule = $state({
@@ -77,6 +84,7 @@
     id: v4(),
   })
   let editBaseline: RisuModule | null = null
+  let editorInitialSnapshot: RisuModule | null = null
   let mode = $state(0)
   let mutationPending = $state(false)
   let mcpImportPending = $state(false)
@@ -101,6 +109,11 @@
   let mutationErrorAlerted = false
   let draftStorageErrorAlerted = false
   let editorFieldset: HTMLFieldSetElement | null = $state(null)
+  let editorDirty = $derived.by(() => {
+    if (mode === 3) return true
+    if ((mode !== 1 && mode !== 2) || !editorInitialSnapshot) return false
+    return moduleEditorSnapshotFingerprint(tempModule) !== moduleEditorSnapshotFingerprint(editorInitialSnapshot)
+  })
 
   function reportDraftStorageFailure(): void {
     draftStorageError = language.moduleSave.draftStorageFailed
@@ -161,6 +174,7 @@
     restoreAttempt += 1
     mutationError = ''
     mutationErrorAlerted = false
+    editorInitialSnapshot = null
     resetEditorDraftRuntime()
   }
 
@@ -168,6 +182,7 @@
     if (generation) await deleteModuleEditorDraft(generation)
     if (!componentMounted) return
     editBaseline = null
+    editorInitialSnapshot = null
     mode = 0
     resetEditorDraftRuntime()
   }
@@ -192,6 +207,7 @@
         activeDraftGeneration.sequence === generation.sequence
       ) {
         editBaseline = null
+        editorInitialSnapshot = null
         mode = 0
         resetEditorDraftRuntime()
       }
@@ -204,8 +220,26 @@
     const generation = activeDraftGeneration
     mode = 0
     editBaseline = null
+    editorInitialSnapshot = null
     resetEditorDraftRuntime()
     if (generation) await deleteModuleEditorDraft(generation)
+  }
+
+  async function requestDiscardActiveModuleDraft(): Promise<void> {
+    if (mutationPending) return
+    if (editorDirty && !window.confirm(language.moduleSave.discardChangesConfirm)) return
+    await discardActiveModuleDraft()
+  }
+
+  function requestModuleEditorLeave(): boolean {
+    if (mutationPending) return false
+    return !editorDirty || window.confirm(language.moduleSave.leaveEditorConfirm)
+  }
+
+  function handleBeforeUnload(event: BeforeUnloadEvent): void {
+    if (!editorDirty) return
+    event.preventDefault()
+    event.returnValue = ''
   }
 
   async function restoreLatestModuleEditorDraft(attempt: number): Promise<void> {
@@ -224,6 +258,11 @@
       }
       tempModule = cloneJsonValue(recovered.tempModule)
       editBaseline = null
+      editorInitialSnapshot = {
+        name: '',
+        description: '',
+        id: recovered.moduleId,
+      }
       mode = 1
       return
     }
@@ -232,6 +271,7 @@
     if (!latest || !recovered.editBaseline) {
       tempModule = cloneJsonValue(recovered.tempModule)
       editBaseline = recovered.editBaseline ? cloneJsonValue(recovered.editBaseline) : null
+      editorInitialSnapshot = null
       mutationError = language.moduleSave.editTargetMissing
       mode = 3
       return
@@ -245,6 +285,7 @@
     }
     tempModule = rebased
     editBaseline = latestSnapshot
+    editorInitialSnapshot = cloneJsonValue(latestSnapshot)
     mode = 2
   }
 
@@ -425,14 +466,19 @@
 
   onMount(() => {
     componentMounted = true
+    window.addEventListener('beforeunload', handleBeforeUnload)
     const attempt = restoreAttempt
     void restoreLatestModuleEditorDraft(attempt)
   })
+
+  const unregisterModuleEditorLeaveGuard = registerModuleEditorLeaveGuard(requestModuleEditorLeave)
 
   onDestroy(() => {
     componentMounted = false
     restoreAttempt += 1
     saveAttempt += 1
+    window.removeEventListener('beforeunload', handleBeforeUnload)
+    unregisterModuleEditorLeaveGuard()
     unregisterDraftStorageFailure()
     refreshModules()
   })
@@ -514,6 +560,7 @@
                   const baseline = cloneJsonValue(rmodule)
                   tempModule = cloneJsonValue(baseline)
                   editBaseline = baseline
+                  editorInitialSnapshot = cloneJsonValue(baseline)
                   mutationError = ''
                   mode = 2
                 }}>
@@ -582,6 +629,7 @@
           id: v4(),
         }
         editBaseline = null
+        editorInitialSnapshot = cloneJsonValue(tempModule)
         mutationError = ''
         mode = 1
       }}>
@@ -629,7 +677,7 @@
         <Button disabled={mutationPending} onclick={createModuleFromDraft}>{language.createModule}</Button>
       </div>
       <div class="contents" data-risu-module-action="discard-draft">
-        <Button disabled={mutationPending} onclick={discardActiveModuleDraft}
+        <Button disabled={mutationPending} onclick={requestDiscardActiveModuleDraft}
           >{language.moduleSave.discardDraft}</Button>
       </div>
     </div>
@@ -651,7 +699,7 @@
         </div>
       {/if}
       <div class="contents" data-risu-module-action="discard-draft">
-        <Button disabled={mutationPending} onclick={discardActiveModuleDraft}
+        <Button disabled={mutationPending} onclick={requestDiscardActiveModuleDraft}
           >{language.moduleSave.discardDraft}</Button>
       </div>
     </div>
@@ -677,7 +725,7 @@
       <Button onclick={() => exportModule(cloneJsonValue(tempModule))}>{language.moduleSave.exportDraft}</Button>
     </div>
     <div class="contents" data-risu-module-action="discard-draft">
-      <Button onclick={discardActiveModuleDraft}>{language.moduleSave.discardDraft}</Button>
+      <Button onclick={requestDiscardActiveModuleDraft}>{language.moduleSave.discardDraft}</Button>
     </div>
   </div>
 {/if}
