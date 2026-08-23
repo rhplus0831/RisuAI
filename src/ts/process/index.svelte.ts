@@ -39,6 +39,7 @@ import {
   beginChatGenerationActivity,
   findChatGenerationActivity,
   finishChatGenerationActivity,
+  updateChatGenerationActivityMetadata,
   updateChatGenerationActivityStage,
   type ChatGenerationActivity,
 } from './generationActivity.svelte'
@@ -256,6 +257,10 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
         controller: generationControllerBySignal.get(abortSignal),
         operationId: arg.generationOperationStream?.operationId,
         acceptedMessageId: arg.generationOperationStream?.acceptedMessageId,
+        mode: arg.regenerateMessageId ? 'regenerate' : arg.continue ? 'continue' : 'send',
+        targetMessageId: arg.regenerateMessageId,
+        attemptNo: arg.generationOperationStream?.attemptNo,
+        projectionEpoch: arg.generationOperationStream?.projectionEpoch,
       }) ?? undefined
     if (!generationActivity) return false
     refreshLegacyGenerationProjection()
@@ -491,6 +496,20 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       generationId = serverDispatch.generationId
       generationInfo = serverDispatch.generationInfo
       serverTerminal = serverDispatch.terminal
+      if (generationTarget && generationActivity) {
+        updateChatGenerationActivityMetadata(generationTarget, {
+          generationId,
+          ...(serverDispatch.req.type === 'streaming' && serverDispatch.req.generationDisplayProjection
+            ? {
+                operationId: serverDispatch.req.generationDisplayProjection.operationId,
+                mode: serverDispatch.req.generationDisplayProjection.mode,
+                targetMessageId: serverDispatch.req.generationDisplayProjection.targetMessageId,
+                attemptNo: serverDispatch.req.generationDisplayProjection.attemptNo,
+                projectionEpoch: serverDispatch.req.generationDisplayProjection.projectionEpoch,
+              }
+            : {}),
+        })
+      }
       // Durable cancel-on-abort is owned by the SSE consumer
       // (`requestServerChatGeneration`): it captures the jobId from `job_accepted`
       // and issues the DELETE on any abort — including mid-assembly — so it is not

@@ -393,6 +393,13 @@ lossy replay window. `done.outcome` is additive: absence means completed for
 older peers, while an explicitly cancelled durable job emits `cancelled` and
 does not enter successful browser post-generation effects.
 
+For negotiated targeted regenerate, `info.generationDisplayProjection`
+contains version, mode, target message id, generation id, operation id, attempt
+number, and projection epoch. It is transient presentation metadata, not a
+message write. Prompt-only regenerate truncation is absent from that viewer's
+`message_patch`; the authoritative replacement still arrives through committed
+generation persistence and chat-resource reconciliation.
+
 Other streaming/binary surfaces include optional completion SSE, optional Realm
 progress SSE, proxy stream WebSocket attachment, asset bytes, `.risu`/bundle
 export, and proxy/hub/storage binary passthrough. Command-event SSE, chat

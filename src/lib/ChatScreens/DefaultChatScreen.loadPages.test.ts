@@ -394,6 +394,12 @@ import {
 } from 'src/ts/process/generationActivity.svelte'
 import { resetChatUnreadForTests, unreadChatIds } from 'src/ts/process/chatUnread.svelte'
 import { defaultChatScreenTestChatController } from './DefaultChatScreen.testChatController'
+import {
+  beginGenerationDisplayProjection,
+  generationDisplayProjections,
+  resetGenerationDisplayProjectionsForTests,
+  updateGenerationDisplayProjection,
+} from 'src/ts/process/generationDisplayProjection.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -750,6 +756,7 @@ beforeEach(() => {
   clearAgentPresetProgress()
   clearPostGenerationProgress()
   resetHalfStreamingProgressForTests()
+  resetGenerationDisplayProjectionsForTests()
   resetDraftRecoveryScopeForTests()
   clearDefaultChatComposerDrafts()
   initializeDraftRecoveryScope({ databaseLineage: 'database-a', writerSessionId: 'writer-a' })
@@ -820,6 +827,7 @@ afterEach(() => {
   clearAgentPresetProgress()
   clearPostGenerationProgress()
   resetHalfStreamingProgressForTests()
+  resetGenerationDisplayProjectionsForTests()
   activeGenerationJobs.set([])
   generationJobLifecycles.set({})
   resetGenerationOperationClientForTests()
@@ -852,7 +860,7 @@ describe('DefaultChatScreen persona presentation', () => {
     ] as never
     database.characters[0].chats[0].generationSettings = { personaId: 'persona-a' }
     database.characters[1].chats[0].generationSettings = { personaId: 'persona-b' }
-    loadPageMocks.getCharImage.mockImplementation((image: unknown) => String(image ?? ''))
+    loadPageMocks.getCharImage.mockImplementation((image?: unknown) => String(image ?? ''))
 
     mountScreen()
     await settle()
@@ -1470,6 +1478,97 @@ describe('DefaultChatScreen floating action accessibility', () => {
 })
 
 describe('DefaultChatScreen latest-message alignment', () => {
+  it('renders a regenerate stream in the existing latest row and follows its natural end until the user scrolls away', async () => {
+    const resizeObservers = installResizeObserverHarness()
+    seedDatabase([2])
+    getResourceDatabase().autoScrollToNewMessage = true
+    getResourceDatabase().floatingChatInput = false
+    const targetMessageId = 'chat-0-message-1'
+    const generation = beginChatGenerationActivity({
+      target: captureActiveChatTargetForTest()!,
+      kind: 'message',
+      mode: 'regenerate',
+      targetMessageId,
+      operationId: 'operation-regenerate',
+      attemptNo: 1,
+      projectionEpoch: 4,
+    })!
+    mountScreen()
+    await waitFor(() => expect(target.querySelectorAll('.chat-message-container')).toHaveLength(2))
+
+    const transcript = target.querySelector<HTMLElement>('[data-default-chat-transcript]')!
+    const latestRow = target.querySelector<HTMLElement>('.chat-message-container')!
+    const spacer = target.querySelector<HTMLElement>('[data-latest-message-scroll-spacer]')!
+    let latestRowHeight = 260
+    stubLatestMessageGeometry({
+      transcript,
+      row: latestRow,
+      spacer,
+      clientHeight: () => 600,
+      rowHeight: () => latestRowHeight,
+      trailingHeight: () => 100,
+    })
+    const projection = {
+      operationId: 'operation-regenerate',
+      attemptNo: 1,
+      characterId: 'character-0',
+      chatId: 'chat-0',
+      mode: 'regenerate' as const,
+      targetMessageId,
+      projectionEpoch: 4,
+    }
+
+    beginGenerationDisplayProjection(projection)
+    expect(get(generationDisplayProjections)).toEqual([expect.objectContaining(projection)])
+    await waitFor(() => expect(latestRow.dataset.generationDisplayProjection).toBe('regenerate'))
+    expect(target.querySelectorAll('.chat-message-container')).toHaveLength(2)
+    expect(latestRow.textContent).toContain('chat-0 message 1')
+    expect(latestRow.querySelector('[data-generation-projection-loading]')).toBeTruthy()
+    expect(spacer.style.height).toBe('0px')
+    expect(transcript.scrollTop).toBe(0)
+
+    updateGenerationDisplayProjection(projection, { status: 'streaming', text: 'projected replacement' })
+    latestRowHeight = 420
+    resizeObservers.notify(latestRow)
+    await waitFor(() => expect(latestRow.textContent).toContain('projected replacement'))
+    expect(target.querySelector('.chat-message-container')).toBe(latestRow)
+    expect(getResourceDatabase().characters[0].chats[0].message[1]).toMatchObject({
+      chatId: targetMessageId,
+      data: 'chat-0 message 1',
+    })
+    expect(spacer.style.height).toBe('0px')
+
+    transcript.scrollTop = -120
+    transcript.dispatchEvent(new Event('scroll'))
+    await waitFor(() => expect(transcript.scrollTop).toBe(0))
+
+    transcript.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    transcript.scrollTop = -160
+    transcript.dispatchEvent(new Event('scroll'))
+    await settle()
+    updateGenerationDisplayProjection(projection, { text: 'projected replacement grows' })
+    resizeObservers.notify(latestRow)
+    await settle()
+    expect(transcript.scrollTop).toBe(-160)
+
+    updateGenerationDisplayProjection(projection, {
+      status: 'finalizing',
+      generationId: 'assistant-new',
+      text: 'projected replacement complete',
+    })
+    getResourceDatabase().characters[0].chats[0].message[1] = {
+      role: 'char',
+      data: 'projected replacement complete',
+      chatId: 'assistant-new',
+      generationInfo: { generationId: 'assistant-new' },
+    }
+    await waitFor(() => expect(get(generationDisplayProjections)).toEqual([]))
+    expect(target.querySelector('.chat-message-container')).toBe(latestRow)
+    finishChatGenerationActivity(generation.id)
+    await settle()
+    expect(transcript.scrollTop).toBe(-160)
+  })
+
   it('keeps a newly appended empty assistant turn at the natural end while it starts streaming', async () => {
     const resizeObservers = installResizeObserverHarness()
     seedDatabase([2])

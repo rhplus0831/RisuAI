@@ -2812,6 +2812,16 @@
         class="default-chat-screen relative flex min-h-0 w-full flex-1 flex-col-reverse overflow-y-auto"
         class:fastify-chat-theme={getDatabase().theme === 'fastify'}
         data-default-chat-transcript
+        onwheel={() => chatsInstance?.handleTranscriptUserInteraction()}
+        ontouchstart={() => chatsInstance?.handleTranscriptUserInteraction()}
+        onpointerdown={(event) => {
+          if (event.target === event.currentTarget) chatsInstance?.handleTranscriptUserInteraction()
+        }}
+        onkeydown={(event) => {
+          if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) {
+            chatsInstance?.handleTranscriptUserInteraction()
+          }
+        }}
         onscroll={(e) => {
           chatsInstance?.handleTranscriptScroll()
           //@ts-expect-error scrollHeight/clientHeight/scrollTop don't exist on EventTarget, but target is HTMLElement here

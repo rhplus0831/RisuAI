@@ -80,6 +80,16 @@ export interface InfoEvent {
    * conflicting.
    */
   revision?: number
+  /** Negotiated in-place regenerate display metadata. */
+  generationDisplayProjection?: {
+    version: 1
+    mode: 'regenerate'
+    targetMessageId: string
+    generationId: string
+    operationId: string
+    attemptNo: number
+    projectionEpoch: number
+  }
 }
 
 export interface TokenEvent {

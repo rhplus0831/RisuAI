@@ -460,6 +460,7 @@ function atomicTargetedRequest(args: {
   baseRevision: number
   mode: 'continue' | 'regenerate'
   targetMessageId: string
+  clientCapabilities?: JsonRecord
 }): JsonRecord {
   return {
     protocolVersion: 1,
@@ -475,7 +476,7 @@ function atomicTargetedRequest(args: {
       resetMessages: false,
       inlayAssetRefs: [],
       clientContext: {},
-      clientCapabilities: {},
+      clientCapabilities: args.clientCapabilities ?? {},
     },
   }
 }
@@ -894,6 +895,76 @@ describe('Durable generation (Milestone 1)', () => {
         expect.objectContaining({ role: 'char', data: 'a brand new reply' }),
       ]),
     )
+  })
+
+  it('keeps a negotiated regenerate target authoritative while streaming its in-place projection', async () => {
+    await seedChatWithMessages([
+      { role: 'user', data: 'greet me', chatId: 'msg-user-1' },
+      { role: 'char', data: 'old reply', chatId: 'msg-char-1', saying: 'char-1' },
+    ])
+    const gated = makeGatedProvider({ before: 'projected', after: ' replacement' })
+    providerImpl = gated.dispatchProvider
+
+    const authority = await operationAuthority()
+    const operationId = randomUUID()
+    const submitted = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicTargetedRequest({
+        operationId,
+        baseRevision: authority.revision,
+        mode: 'regenerate',
+        targetMessageId: 'msg-char-1',
+        clientCapabilities: {
+          compactPromptEvent: true,
+          promptMetadataOnly: true,
+          regenerateTargetProjection: 1,
+        },
+      }),
+    )
+    expect(submitted.status).toBe(201)
+    const accepted = (await submitted.json()) as AtomicOperationResponse
+    expect(accepted.stream?.href).toBeTypeOf('string')
+    const currentOperation = await operationStatus(operationId)
+    expect(currentOperation.operation.currentAttempt).toBeDefined()
+    const currentAttempt = currentOperation.operation.currentAttempt!
+    const currentStreamHref =
+      `/api/v1/generation-operations/${encodeURIComponent(operationId)}/stream` +
+      `?attemptNo=${currentAttempt.attemptNo}&jobId=${encodeURIComponent(currentAttempt.jobId)}` +
+      `&projectionEpoch=${currentOperation.operation.projectionEpoch}`
+
+    const stream = await fetch(`${harness.baseUrl}${currentStreamHref}`, {
+      headers: authHeaders({ 'risu-writer-session': 'writer-a' }),
+    })
+    expect(stream.status).toBe(200)
+    const events = await readSse(stream, (event) => event.type === 'token')
+    expect(events.some((event) => event.type === 'message_patch')).toBe(false)
+    const info = events.find((event) => event.type === 'info')
+    expect(info, JSON.stringify(events)).toBeDefined()
+    expect(info?.data).toMatchObject({
+      generationDisplayProjection: {
+        version: 1,
+        mode: 'regenerate',
+        targetMessageId: 'msg-char-1',
+        operationId,
+        attemptNo: 1,
+        projectionEpoch: expect.any(Number),
+        generationId: expect.any(String),
+      },
+    })
+    expect(await chatMessages(await bootstrap())).toEqual([
+      expect.objectContaining({ role: 'user', chatId: 'msg-user-1' }),
+      expect.objectContaining({ role: 'char', chatId: 'msg-char-1', data: 'old reply' }),
+    ])
+
+    gated.release()
+    await waitFor(async () => {
+      const status = await operationStatus(operationId)
+      return status.operation.state === 'completed' ? status : undefined
+    })
+    expect(await chatMessages(await bootstrap())).toEqual([
+      expect.objectContaining({ role: 'user', chatId: 'msg-user-1' }),
+      expect.objectContaining({ role: 'char', data: 'projected replacement' }),
+    ])
   })
 
   it('atomically replays one accepted send and carries exact lineage through SSE, bootstrap, journal, result, and events', async () => {

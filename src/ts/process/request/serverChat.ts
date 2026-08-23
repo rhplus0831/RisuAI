@@ -67,6 +67,7 @@ import {
   stopGenerationOperation,
 } from '../../server/generationOperations'
 import { recordGenerationRecoveryEvent } from '../../server/protocolDiagnostics'
+import type { GenerationDisplayProjectionRef } from '../generationDisplayProjection.svelte'
 
 const CHAT_ENDPOINT = '/api/v1/generate/chat'
 const INCOMPLETE_CHAT_GENERATION_SETTINGS_ERROR = 'chat_generation_settings_incomplete'
@@ -86,6 +87,7 @@ export const SERVER_CHAT_CLIENT_CAPABILITIES = {
   promptMetadataOnly: true,
   omitDuplicateDoneResult: true,
   hypaContextTruncationConfirmation: true,
+  regenerateTargetProjection: 1,
 } as const
 
 const durableGenerationViewerRetirers = new Map<string, Set<() => void>>()
@@ -714,6 +716,43 @@ function coerceGenerationInfo(
   return { generationId, generationInfo }
 }
 
+function regenerateDisplayProjectionFromInfo(
+  input: ServerChatInput,
+  info: ServerChatInfo,
+  operationStream: ServerChatOperationStream | undefined,
+): GenerationDisplayProjectionRef | undefined {
+  const projection = info.generationDisplayProjection
+  if (
+    input.mode !== 'regenerate' ||
+    !projection ||
+    projection.version !== 1 ||
+    projection.mode !== 'regenerate' ||
+    projection.targetMessageId !== input.regenerateMessageId ||
+    !nonEmptyString(projection.generationId) ||
+    !nonEmptyString(projection.operationId) ||
+    !Number.isSafeInteger(projection.attemptNo) ||
+    !Number.isSafeInteger(projection.projectionEpoch)
+  ) {
+    return undefined
+  }
+  if (
+    operationStream &&
+    (operationStream.operationId !== projection.operationId || operationStream.attemptNo !== projection.attemptNo)
+  ) {
+    return undefined
+  }
+  return {
+    operationId: projection.operationId,
+    attemptNo: projection.attemptNo,
+    characterId: input.characterId,
+    chatId: input.chatId,
+    mode: 'regenerate',
+    targetMessageId: projection.targetMessageId,
+    generationId: projection.generationId,
+    projectionEpoch: projection.projectionEpoch,
+  }
+}
+
 export async function requestServerChatGeneration(
   input: ServerChatInput,
   signal: AbortSignal | null,
@@ -940,6 +979,11 @@ export async function requestServerChatGeneration(
         if (halfStreaming) {
           beginHalfStreaming(generation.generationId)
         }
+        const generationDisplayProjection = regenerateDisplayProjectionFromInfo(
+          input,
+          info,
+          authoritativeOperationStream,
+        )
         streamingRequest = {
           type: 'streaming',
           result: tokenStream,
@@ -948,6 +992,7 @@ export async function requestServerChatGeneration(
           ...(replayGapPending ? { replayGapPending: true } : {}),
           ...(info.continueDisposition ? { continueDisposition: info.continueDisposition } : {}),
           ...(typeof info.continueBase === 'string' ? { continueBase: info.continueBase } : {}),
+          ...(generationDisplayProjection ? { generationDisplayProjection } : {}),
         }
         resolveReadyOnce({
           status: 'ok',

@@ -256,6 +256,13 @@ transcript reconciliation, not a generation-failure inference. A
 attempt or returns terminal/non-live operation authority for that same
 reconciliation path.
 
+Targeted regenerate operations can negotiate `regenerateTargetProjection: 1`.
+Their replayable `info` frame carries the exact target/generation and
+operation-attempt fence, while assembly omits the prompt-only target-removal
+patch. Legacy operation requests retain the former removal-plus-synthetic-row
+frames for compatibility. The finalization transaction remains the only owner
+that replaces the authoritative regenerate target.
+
 Prompt construction and scripting are canonical in
 [Prompt Assembly And Scripting](prompt-assembly-and-scripting.md); provider and
 profile behavior in [Providers And Models](providers-and-models.md); Agent and

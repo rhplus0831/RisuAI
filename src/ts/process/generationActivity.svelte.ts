@@ -3,6 +3,7 @@ import type { ActiveChatTarget } from '../chatCommands'
 import { markChatSuggestionCompletion, resetChatSuggestionCompletionsForTests } from './chatSuggestionCompletion.svelte'
 
 export type ChatGenerationActivityKind = 'message' | 'preview'
+export type ChatGenerationActivityMode = 'send' | 'continue' | 'regenerate'
 
 export interface ChatGenerationActivity {
   id: number
@@ -15,6 +16,11 @@ export interface ChatGenerationActivity {
   controller?: AbortController
   operationId?: string
   acceptedMessageId?: string
+  mode: ChatGenerationActivityMode
+  targetMessageId?: string
+  generationId?: string
+  attemptNo?: number
+  projectionEpoch?: number
 }
 
 export const activeChatGenerations = writable<ChatGenerationActivity[]>([])
@@ -49,6 +55,11 @@ export function beginChatGenerationActivity(input: {
   controller?: AbortController
   operationId?: string
   acceptedMessageId?: string
+  mode?: ChatGenerationActivityMode
+  targetMessageId?: string
+  generationId?: string
+  attemptNo?: number
+  projectionEpoch?: number
 }): ChatGenerationActivity | null {
   const targetKey = chatGenerationTargetKey(input.target)
   if (!targetKey || findChatGenerationActivity(input.target)) return null
@@ -64,9 +75,36 @@ export function beginChatGenerationActivity(input: {
     controller: input.controller,
     operationId: input.operationId,
     acceptedMessageId: input.acceptedMessageId,
+    mode: input.mode ?? 'send',
+    targetMessageId: input.targetMessageId,
+    generationId: input.generationId,
+    attemptNo: input.attemptNo,
+    projectionEpoch: input.projectionEpoch,
   }
   activeChatGenerations.update((activities) => [...activities, activity])
   return activity
+}
+
+export function updateChatGenerationActivityMetadata(
+  target: ActiveChatTarget,
+  update: Partial<
+    Pick<
+      ChatGenerationActivity,
+      | 'operationId'
+      | 'acceptedMessageId'
+      | 'mode'
+      | 'targetMessageId'
+      | 'generationId'
+      | 'attemptNo'
+      | 'projectionEpoch'
+    >
+  >,
+): void {
+  const targetKey = chatGenerationTargetKey(target)
+  if (!targetKey) return
+  activeChatGenerations.update((activities) =>
+    activities.map((activity) => (activity.targetKey === targetKey ? { ...activity, ...update } : activity)),
+  )
 }
 
 export function updateChatGenerationActivityStage(activityId: number, stage: number): void {

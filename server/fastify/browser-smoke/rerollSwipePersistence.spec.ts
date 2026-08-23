@@ -77,6 +77,19 @@ test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)
   )
   await page.locator('.default-chat-screen .risu-chat[data-chat-index="1"] .button-icon-reroll').click()
   expect((await operationResponse).ok(), diagnostics.slice(-15).join('\n')).toBe(true)
+  const projectionRow = page.locator(
+    '.default-chat-screen .chat-message-container[data-generation-display-projection="regenerate"]',
+  )
+  await expect(projectionRow).toBeVisible({ timeout: 5_000 })
+  await expect(projectionRow).toContainText('old reply')
+  await expect(page.locator('.default-chat-screen .chat-message-container')).toHaveCount(2)
+  await expect
+    .poll(
+      () =>
+        page.locator('[data-default-chat-transcript]').evaluate((transcript) => (transcript as HTMLElement).scrollTop),
+      { timeout: 5_000 },
+    )
+    .toBe(0)
   await expect
     .poll(
       () =>
@@ -88,6 +101,8 @@ test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)
       { timeout: 15_000, message: diagnostics.slice(-15).join('\n') },
     )
     .toContain('rerolled reply')
+  await expect(projectionRow).toHaveCount(0)
+  await expect(page.locator('.default-chat-screen .chat-message-container')).toHaveCount(2)
   await expect(page.getByTestId('default-chat-send-button')).toBeVisible({ timeout: 15_000 })
   expect(generationRequestPaths.some((pathname) => pathname === '/api/v1/generation-operations')).toBe(true)
   expect(generationRequestPaths.some((pathname) => pathname.includes('/messages/truncate'))).toBe(false)
@@ -263,7 +278,7 @@ function rerollFixtureDatabase(): Record<string, unknown> {
     swipe: false,
     aiModel: 'echo_model',
     echoMessage: 'rerolled reply',
-    echoDelay: 0,
+    echoDelay: 0.5,
   }
 }
 

@@ -191,6 +191,7 @@
     totalPages?: number
     isComment?: boolean
     isGenerationLoading?: boolean
+    isGenerationProjection?: boolean
     isChatGenerating?: boolean
     halfStreamingTokensPerSecond?: number
     generationPersistenceState?: GenerationPersistenceIndicatorState | null
@@ -259,6 +260,7 @@
     totalPages = 1,
     isComment = false,
     isGenerationLoading = false,
+    isGenerationProjection = false,
     isChatGenerating = false,
     halfStreamingTokensPerSecond = undefined,
     generationPersistenceState = null,
@@ -396,7 +398,7 @@
   }
 
   function handleMessageBodyClick(event: MouseEvent): void {
-    if (!getDatabase().clickToEdit || idx < 0 || event.defaultPrevented) return
+    if (isGenerationProjection || !getDatabase().clickToEdit || idx < 0 || event.defaultPrevented) return
 
     const target = event.target
     if (
@@ -2247,7 +2249,7 @@
         {msgDisplay}
       {/if}
     </div>
-  {:else if isGenerationLoading}
+  {:else if isGenerationLoading && !isGenerationProjection}
     {#if !hasActiveAgentPresetProgress}
       <div class="chat-generation-loading w-full" role="status" aria-live="polite" aria-busy="true">
         <div class="chat-generation-loading-header">
@@ -2325,7 +2327,7 @@
             {onInitialDisplayParseSettled} />
         {/if}
       {/key}
-      {#if idx >= 0 && !editMode && !translationInProgress && partialEditEnabled && (getDatabase().enableBlockPartialEdit || getDatabase().enableDragPartialEdit)}
+      {#if idx >= 0 && !editMode && !translationInProgress && !isGenerationProjection && partialEditEnabled && (getDatabase().enableBlockPartialEdit || getDatabase().enableDragPartialEdit)}
         <PartialEditController
           messageData={message}
           chatIndex={idx}
@@ -2339,7 +2341,7 @@
           on:save={handlePartialEditSave} />
       {/if}
     </span>
-    {#if halfStreamingLoadingText !== undefined && isChatGenerating}
+    {#if halfStreamingLoadingText !== undefined && isChatGenerating && !isGenerationProjection}
       <div class="chat-generation-loading w-full" role="status" aria-live="polite" aria-busy="true">
         <div class="chat-generation-loading-header">
           <LoaderCircleIcon size={16} class="risu-ongoing-pulse animate-spin shrink-0" />
@@ -3185,6 +3187,7 @@
   data-chat-id={messageRowId}
   data-risu-message-index={idx}
   data-risu-message-id={messageRowId}
+  data-generation-display-projection={isGenerationProjection ? 'regenerate' : undefined}
   style={isLastMemory ? `border-top:${getDatabase().memoryLimitThickness}px solid rgba(98, 114, 164, 0.7);` : ''}
   onclickcapture={handleButtonTriggerWithin}>
   <div

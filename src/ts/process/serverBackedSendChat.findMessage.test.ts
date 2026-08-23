@@ -60,6 +60,11 @@ import type { ServerChatMessagePatch, ServerChatRestoration } from './request/se
 import { getRerollBuffer, getRerollId, resetRerollNavigation } from './rerollNavigation.svelte'
 import { acknowledgeHydratedGenerationPersistences, queuedGenerationPersistences } from './generationPersistenceState'
 import { addChatOutputListener, chatOutputListeners, type ChatOutputListenerArg } from '../plugins/chatOutputListeners'
+import {
+  beginGenerationDisplayProjection,
+  generationDisplayProjections,
+  resetGenerationDisplayProjectionsForTests,
+} from './generationDisplayProjection.svelte'
 
 const testDatabaseState = {
   get db() {
@@ -237,8 +242,10 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     ttsMock.say.mockResolvedValue(undefined)
     hydrationMock.hydrate.mockReset()
     hydrationMock.hydrate.mockResolvedValue(undefined)
+    resetGenerationDisplayProjectionsForTests()
     queuedGenerationPersistences.set([])
     chatOutputListeners.clear()
+    resetGenerationDisplayProjectionsForTests()
     selectedCharID.set(0)
   })
 
@@ -280,6 +287,117 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     })
     expect(target.message[0].data).toBe('stable final text')
     expect(staleIndexChat.message[0].data).toBe('stale original')
+  })
+
+  it('hydrates regenerate authority before removing its transient target projection', async () => {
+    const target = makeTerminalChat('chat-target', [
+      { role: 'user', data: 'try again', chatId: 'user-1' } as Message,
+      { role: 'char', data: 'old reply', chatId: 'assistant-old' } as Message,
+    ])
+    const char = makeTerminalCharacter([target])
+    testDatabaseState.db = { characters: [char] } as typeof testDatabaseState.db
+    const liveChar = testDatabaseState.db.characters[0]
+    const liveChat = liveChar.chats[0]
+    const displayProjection = {
+      operationId: 'operation-1',
+      attemptNo: 1,
+      characterId: 'char-stable',
+      chatId: 'chat-target',
+      mode: 'regenerate' as const,
+      targetMessageId: 'assistant-old',
+      generationId: 'assistant-new',
+      projectionEpoch: 4,
+    }
+    beginGenerationDisplayProjection(displayProjection)
+    hydrationMock.hydrate.mockImplementationOnce(async () => {
+      liveChat.message[1] = terminalMessage('new reply', 'assistant-new')
+    })
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'done',
+        done: {
+          generationId: 'assistant-new',
+          postGeneration: { messageId: 'assistant-new', finalText: 'new reply' },
+        },
+      },
+      currentChar: liveChar,
+      currentChat: liveChat,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      targetMessageId: 'assistant-old',
+      generationInfo: { generationId: 'assistant-new' },
+      streamProjection: {
+        chatId: 'chat-target',
+        messageId: 'assistant-old',
+        generationId: 'assistant-new',
+        previousData: 'old reply',
+        ownedData: 'old reply',
+        appended: false,
+        displayProjection,
+      },
+    })
+
+    expect(hydrationMock.hydrate).toHaveBeenCalledWith('chat-target', { force: true, strict: true })
+    expect(result.status).toBe('ok')
+    expect(liveChat.message).toEqual([
+      expect.objectContaining({ chatId: 'user-1', data: 'try again' }),
+      expect.objectContaining({ chatId: 'assistant-new', data: 'new reply' }),
+    ])
+    expect(get(generationDisplayProjections)).toEqual([])
+  })
+
+  it('drops a failed regenerate projection without changing the original target', async () => {
+    const target = makeTerminalChat('chat-target', [
+      { role: 'user', data: 'try again', chatId: 'user-1' } as Message,
+      { role: 'char', data: 'old reply', chatId: 'assistant-old' } as Message,
+    ])
+    const char = makeTerminalCharacter([target])
+    testDatabaseState.db = { characters: [char] } as typeof testDatabaseState.db
+    const liveChar = testDatabaseState.db.characters[0]
+    const liveChat = liveChar.chats[0]
+    const displayProjection = {
+      operationId: 'operation-1',
+      attemptNo: 1,
+      characterId: 'char-stable',
+      chatId: 'chat-target',
+      mode: 'regenerate' as const,
+      targetMessageId: 'assistant-old',
+      generationId: 'assistant-new',
+      projectionEpoch: 4,
+    }
+    beginGenerationDisplayProjection(displayProjection)
+
+    const result = await applyServerBackedTerminal({
+      terminal: { status: 'error', error: 'provider failed before output' },
+      currentChar: liveChar,
+      currentChat: liveChat,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      targetMessageId: 'assistant-old',
+      generationInfo: { generationId: 'assistant-new' },
+      streamProjection: {
+        chatId: 'chat-target',
+        messageId: 'assistant-old',
+        generationId: 'assistant-new',
+        previousData: 'old reply',
+        ownedData: 'old reply',
+        appended: false,
+        displayProjection,
+      },
+    })
+
+    expect(result.status).toBe('failed')
+    expect(liveChat.message).toEqual([
+      expect.objectContaining({ chatId: 'user-1', data: 'try again' }),
+      expect.objectContaining({ chatId: 'assistant-old', data: 'old reply' }),
+    ])
+    expect(hydrationMock.hydrate).not.toHaveBeenCalled()
+    expect(get(generationDisplayProjections)).toEqual([])
   })
 
   it('notifies output listeners after the finalized assistant message is applied', async () => {

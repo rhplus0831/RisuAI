@@ -53,6 +53,13 @@ import {
   stageTargetedGenerationOperation,
   submitStagedTargetedGenerationOperation,
 } from '../server/generationOperations'
+import {
+  beginGenerationDisplayProjection,
+  finishGenerationDisplayProjection,
+  updateGenerationDisplayProjection,
+  type GenerationDisplayProjectionRef,
+} from './generationDisplayProjection.svelte'
+import { updateChatGenerationActivityMetadata } from './generationActivity.svelte'
 
 export interface ServerBackedStageTimings {
   stage1Start: number
@@ -552,6 +559,7 @@ export async function assembleServerBackedSendChat(args: {
   const wantsServerDispatch = !args.preview && !args.previewPrompt
   let served: ServerChatAnyResult
   const targetMessageId = mode === 'regenerate' ? args.regenerateMessageId : lastMessage?.chatId
+  let regenerateDisplayProjection: GenerationDisplayProjectionRef | undefined
   if (
     wantsServerDispatch &&
     args.durable &&
@@ -587,6 +595,33 @@ export async function assembleServerBackedSendChat(args: {
         currentChat: args.currentChat,
       }
     }
+    if (mode === 'regenerate') {
+      regenerateDisplayProjection = {
+        operationId: submitted.stream.operationId,
+        attemptNo: submitted.stream.attemptNo,
+        characterId: args.currentChar.chaId,
+        chatId: args.currentChat.id ?? '',
+        mode: 'regenerate',
+        targetMessageId,
+        projectionEpoch: submitted.stream.projectionEpoch,
+      }
+      beginGenerationDisplayProjection(regenerateDisplayProjection)
+      updateChatGenerationActivityMetadata(
+        {
+          selectedCharID: args.selectedChar,
+          chatPage: args.selectedChat,
+          characterId: args.currentChar.chaId,
+          chatId: args.currentChat.id,
+        },
+        {
+          operationId: submitted.stream.operationId,
+          mode: 'regenerate',
+          targetMessageId,
+          attemptNo: submitted.stream.attemptNo,
+          projectionEpoch: submitted.stream.projectionEpoch,
+        },
+      )
+    }
     served = await requestServerChatGeneration(input, args.abortSignal, undefined, submitted.stream)
   } else {
     served = wantsServerDispatch
@@ -620,8 +655,12 @@ export async function assembleServerBackedSendChat(args: {
     served = await requestServerChatGeneration(input, args.abortSignal)
   }
 
-  if (served.status === 'aborted') return { status: 'aborted' }
+  if (served.status === 'aborted') {
+    if (regenerateDisplayProjection) finishGenerationDisplayProjection(regenerateDisplayProjection)
+    return { status: 'aborted' }
+  }
   if (served.status === 'error') {
+    if (regenerateDisplayProjection) finishGenerationDisplayProjection(regenerateDisplayProjection)
     const currentChat = applyServerMessagePatches({
       patches: served.messagePatches ?? [],
       selectedChar: args.selectedChar,
@@ -640,6 +679,15 @@ export async function assembleServerBackedSendChat(args: {
       ...(failure ? { failure } : {}),
       ...(reattachOutcome ? { reattachOutcome } : {}),
     }
+  }
+  if (
+    regenerateDisplayProjection &&
+    isServerChatGenerationOk(served) &&
+    served.req.type === 'streaming' &&
+    !served.req.generationDisplayProjection
+  ) {
+    finishGenerationDisplayProjection(regenerateDisplayProjection)
+    regenerateDisplayProjection = undefined
   }
 
   args.stageTimings.stage1Duration =
@@ -739,6 +787,19 @@ export async function reattachServerBackedSendChat(args: {
     mode,
   }
   if (mode === 'regenerate') input.regenerateMessageId = args.regenerateMessageId
+  const regenerateDisplayProjection =
+    mode === 'regenerate' && args.operationStream && args.regenerateMessageId
+      ? {
+          operationId: args.operationStream.operationId,
+          attemptNo: args.operationStream.attemptNo,
+          characterId: args.currentChar.chaId,
+          chatId: args.currentChat.id ?? '',
+          mode: 'regenerate' as const,
+          targetMessageId: args.regenerateMessageId,
+          projectionEpoch: args.operationStream.projectionEpoch,
+        }
+      : undefined
+  if (regenerateDisplayProjection) beginGenerationDisplayProjection(regenerateDisplayProjection)
   const served = await requestServerChatGeneration(
     input,
     args.abortSignal,
@@ -746,8 +807,12 @@ export async function reattachServerBackedSendChat(args: {
     args.operationStream,
   )
 
-  if (served.status === 'aborted') return { status: 'aborted' }
+  if (served.status === 'aborted') {
+    if (regenerateDisplayProjection) finishGenerationDisplayProjection(regenerateDisplayProjection)
+    return { status: 'aborted' }
+  }
   if (served.status === 'error') {
+    if (regenerateDisplayProjection) finishGenerationDisplayProjection(regenerateDisplayProjection)
     const currentChat = applyServerMessagePatches({
       patches: served.messagePatches ?? [],
       selectedChar: args.selectedChar,
@@ -764,6 +829,14 @@ export async function reattachServerBackedSendChat(args: {
       ...(failure ? { failure } : {}),
       ...(served.reattachOutcome ? { reattachOutcome: served.reattachOutcome } : {}),
     }
+  }
+  if (
+    regenerateDisplayProjection &&
+    isServerChatGenerationOk(served) &&
+    served.req.type === 'streaming' &&
+    !served.req.generationDisplayProjection
+  ) {
+    finishGenerationDisplayProjection(regenerateDisplayProjection)
   }
 
   args.stageTimings.stage1Duration =
@@ -822,6 +895,28 @@ export async function applyServerBackedTerminal(args: {
   restorationGuard?: ServerBackedRestorationGuard
   streamProjection?: StreamMessageProjection
 }): Promise<ServerBackedTerminalResult> {
+  const displayProjection = args.streamProjection?.displayProjection
+  const observeDisplayProjectionAuthority = async (messageId?: string): Promise<boolean> => {
+    if (!displayProjection) return false
+    const generationId = messageId ?? args.generationInfo.generationId ?? displayProjection.generationId
+    updateGenerationDisplayProjection(displayProjection, {
+      status: 'finalizing',
+      ...(generationId ? { generationId } : {}),
+    })
+    if (!displayProjection.chatId || !generationId) return false
+    await hydrateChatMessages(displayProjection.chatId, { force: true, strict: true }).catch(() => {})
+    const resolution = resolveServerBackedLiveChat({
+      selectedChar: args.selectedChar,
+      selectedChat: args.selectedChat,
+      characterId: displayProjection.characterId,
+      chatId: displayProjection.chatId,
+    })
+    return !!resolution?.chat.message.some(
+      (message) =>
+        message.role === 'char' &&
+        (message.chatId === generationId || message.generationInfo?.generationId === generationId),
+    )
+  }
   const terminalInfo = args.terminal.done?.generationInfo
   if (terminalInfo && typeof terminalInfo === 'object') {
     Object.assign(args.generationInfo, terminalInfo)
@@ -839,6 +934,9 @@ export async function applyServerBackedTerminal(args: {
       typeof args.terminal.done?.postGeneration?.finalText === 'string' &&
       args.terminal.persistenceDisposition !== 'rejected' &&
       args.terminal.persistenceDisposition !== 'unconfirmed'
+    const displayAuthorityObserved = retainedPartial
+      ? await observeDisplayProjectionAuthority(args.terminal.done?.postGeneration?.messageId)
+      : false
     if (retainedPartial) {
       applyInterruptedTerminalSnapshot({
         selectedChar: args.selectedChar,
@@ -861,6 +959,9 @@ export async function applyServerBackedTerminal(args: {
           applyServerChatRestoration(resolution.chat, args.terminal.restoration!)
         }
       })
+    }
+    if (displayProjection && (!retainedPartial || displayAuthorityObserved)) {
+      finishGenerationDisplayProjection(displayProjection)
     }
     if (args.terminal.persistenceDisposition === 'rejected' || args.terminal.persistenceDisposition === 'unconfirmed') {
       const generationId =
@@ -905,6 +1006,10 @@ export async function applyServerBackedTerminal(args: {
 
   if (args.terminal.status === 'cancelled') {
     const postGeneration = args.terminal.done?.postGeneration
+    const retainedPartial = typeof postGeneration?.finalText === 'string'
+    const displayAuthorityObserved = retainedPartial
+      ? await observeDisplayProjectionAuthority(postGeneration?.messageId)
+      : false
     const target = targetFromPayloadOrContext(postGeneration?.messagePatch, contextTarget)
     const generationId = args.generationInfo.generationId ?? ''
     applyInterruptedTerminalSnapshot({
@@ -916,6 +1021,9 @@ export async function applyServerBackedTerminal(args: {
       postGeneration,
       streamProjection: args.streamProjection,
     })
+    if (displayProjection && (!retainedPartial || displayAuthorityObserved)) {
+      finishGenerationDisplayProjection(displayProjection)
+    }
     if (target.chatId && generationId) clearGenerationPersistence(target.chatId, generationId)
     return {
       status: 'cancelled',
@@ -961,6 +1069,7 @@ export async function applyServerBackedTerminal(args: {
   const effectLedger = postGen?.effectLedger
   const resendChat = !!postGen?.resendChat
   const generationId = args.generationInfo.generationId ?? ''
+  const displayAuthorityObserved = await observeDisplayProjectionAuthority(postGen?.messageId ?? generationId)
   const terminalTarget = targetFromPayloadOrContext(postGen?.messagePatch, contextTarget)
   if (terminalTarget.chatId && generationId) clearGenerationPersistence(terminalTarget.chatId, generationId)
   type InlayFinalizationState = {
@@ -1175,6 +1284,7 @@ export async function applyServerBackedTerminal(args: {
   })
 
   if (postGen?.agentPresetError) {
+    if (displayProjection && displayAuthorityObserved) finishGenerationDisplayProjection(displayProjection)
     return {
       status: 'failed',
       error: postGen.agentPresetError.message,
@@ -1207,6 +1317,7 @@ export async function applyServerBackedTerminal(args: {
         }
       : undefined
 
+  if (displayProjection && displayAuthorityObserved) finishGenerationDisplayProjection(displayProjection)
   return {
     status: 'ok',
     currentChat: finalChat,

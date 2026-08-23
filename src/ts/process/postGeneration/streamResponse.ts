@@ -19,6 +19,12 @@ import {
   recordHalfStreamingToken,
   type HalfStreamingProgressTarget,
 } from '../halfStreamingProgress'
+import {
+  beginGenerationDisplayProjection,
+  finishGenerationDisplayProjection,
+  updateGenerationDisplayProjection,
+  type GenerationDisplayProjectionRef,
+} from '../generationDisplayProjection.svelte'
 
 type StreamingResponse = Extract<requestDataResponse, { type: 'streaming' }>
 
@@ -72,6 +78,8 @@ export interface StreamMessageProjection {
   messageIndex?: number
   /** The stream crossed an explicit durable replay gap before terminal reconciliation. */
   gapTruncated?: boolean
+  /** Transient target-row projection used instead of an authoritative message write. */
+  displayProjection?: GenerationDisplayProjectionRef
 }
 
 export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions): Promise<ConsumeStreamResponseResult> {
@@ -132,8 +140,27 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
   let anonymousStreamTarget: Message | undefined
   let lastStreamOwnedData = ''
   let appendedGeneratedMessage = false
+  const displayProjection = req.generationDisplayProjection
+  const projectsRegenerateTarget = displayProjection?.mode === 'regenerate' && !!displayProjection.targetMessageId
   const extendsContinue = arg.continue === true && req.continueDisposition !== 'append'
-  if (extendsContinue) {
+  if (projectsRegenerateTarget) {
+    const targetIndex = initialMessages.findIndex((message) => message.chatId === displayProjection.targetMessageId)
+    const target = initialMessages[targetIndex]
+    if (targetIndex < 0 || target?.role !== 'char') {
+      finishGenerationDisplayProjection(displayProjection)
+      throw new Error('Regenerate display target is unavailable for the streaming response')
+    }
+    msgIndex = targetIndex
+    streamTargetMessageId = displayProjection.targetMessageId
+    lastStreamOwnedData = target.data ?? ''
+    beginGenerationDisplayProjection(displayProjection)
+    updateGenerationDisplayProjection(displayProjection, {
+      generationId,
+      status: 'preparing',
+      gapTruncated: req.replayGapTruncated === true,
+      projectionEpoch: displayProjection.projectionEpoch,
+    })
+  } else if (extendsContinue) {
     msgIndex -= 1
     const continueTarget = initialMessages[msgIndex]
     const visibleContinueData = continueTarget?.data ?? ''
@@ -261,6 +288,18 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
       nextData = result2.data
       emoChanged = result2.emoChanged
     }
+    if (projectsRegenerateTarget) {
+      const target = resolveStreamMessage()
+      if (!ownsStreamTarget(target)) return
+      msgIndex = target.index
+      updateGenerationDisplayProjection(displayProjection, {
+        generationId,
+        status: 'streaming',
+        text: nextData,
+        gapTruncated: req.replayGapTruncated === true,
+      })
+      return
+    }
     withTrustedResourceWrite(() => {
       const target = resolveStreamMessage()
       if (!ownsStreamTarget(target)) return
@@ -272,6 +311,7 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
   }
   const renderCoalescer = createStreamRenderCoalescer(applyLatestChunk, opts.renderFlushScheduler)
   const removeEmptyGeneratedMessage = (): void => {
+    if (projectsRegenerateTarget) return
     if (extendsContinue) return
     if (streamDetached) return
     if (result.length > 0 && (!halfStreaming || streamCompleted) && !streamAborted && !abortSignal.aborted) return
@@ -355,6 +395,9 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
       bumpReloadKey()
     })
     if (halfStreaming) clearHalfStreamingProgress(halfStreamingTarget)
+    if (displayProjection && (streamAborted || abortSignal.aborted || !streamCompleted)) {
+      finishGenerationDisplayProjection(displayProjection)
+    }
     void reader.cancel().catch(() => {})
   }
 
@@ -374,6 +417,7 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
       detached: streamDetached,
       messageIndex: msgIndex,
       gapTruncated: req.replayGapTruncated === true,
+      ...(displayProjection ? { displayProjection } : {}),
     },
   }
 }

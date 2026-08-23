@@ -32,6 +32,7 @@ import {
   type AssembleAbortReason,
   type AssembleInput,
   type AssembleMutationPayload,
+  type AssembleMutationSource,
   type AssembleResult,
   type AssemblyState,
   type ContinueDisposition,
@@ -189,6 +190,7 @@ export interface GenerationClientCapabilities {
   promptMetadataOnly: boolean
   omitDuplicateDoneResult: boolean
   hypaContextTruncationConfirmation: boolean
+  regenerateTargetProjection: boolean
 }
 
 type PromptAssemblyRun = Awaited<ReturnType<typeof assemblePromptWithMetrics>>
@@ -593,6 +595,7 @@ export function readGenerationClientCapabilities(body: ChatRequestBody): Generat
     omitDuplicateDoneResult: isRecord(clientCapabilities) && clientCapabilities.omitDuplicateDoneResult === true,
     hypaContextTruncationConfirmation:
       isRecord(clientCapabilities) && clientCapabilities.hypaContextTruncationConfirmation === true,
+    regenerateTargetProjection: isRecord(clientCapabilities) && clientCapabilities.regenerateTargetProjection === 1,
   }
 }
 
@@ -649,6 +652,30 @@ function messagePatchForClient(
     }
   })
   return changed ? { ...mutations, messageMutations } : mutations
+}
+
+function mutationPayloadHasVisibleChanges(mutations: AssembleMutationPayload | undefined): boolean {
+  return !!(
+    mutations &&
+    (mutations.messageMutations.length > 0 ||
+      mutations.chatVarMutations.length > 0 ||
+      (mutations.chatMetadataMutations?.length ?? 0) > 0 ||
+      (mutations.characterFieldMutations?.length ?? 0) > 0 ||
+      mutations.localLoreMutation !== undefined)
+  )
+}
+
+function assemblyPatchForClient(args: {
+  result: AssembleResult
+  persistence?: PersistedAssemblyMutations
+  capabilities: GenerationClientCapabilities
+  useRegenerateTargetProjection: boolean
+}): AssembleMutationPayload | undefined {
+  if (!args.useRegenerateTargetProjection) {
+    return args.result.mutations ? messagePatchForClient(args.result.mutations, args.capabilities) : undefined
+  }
+  const source = args.persistence?.patch
+  return mutationPayloadHasVisibleChanges(source) ? messagePatchForClient(source!, args.capabilities) : undefined
 }
 
 function validate(body: ChatRequestBody): { ok: true } | { ok: false; error: string } {
@@ -1379,6 +1406,7 @@ function createPromptAssemblyMetricContext(args: {
     compactPromptEvent: args.clientCapabilities.compactPromptEvent,
     promptMetadataOnly: args.clientCapabilities.promptMetadataOnly,
     hypaContextTruncationConfirmation: args.clientCapabilities.hypaContextTruncationConfirmation,
+    regenerateTargetProjection: args.clientCapabilities.regenerateTargetProjection,
     generationId: args.generationId,
     durableJobId: args.durable ? args.generationId : undefined,
   }
@@ -1497,6 +1525,29 @@ function canAppendAssemblyReplacement(
   return true
 }
 
+interface PersistedAssemblyMutations {
+  revision: number
+  patch: AssembleMutationPayload
+}
+
+function persistedAssemblyReplacementSource(
+  mutations: readonly AssembleMutationPayload['messageMutations'][number][],
+): Exclude<AssembleMutationSource, 'user_message'> {
+  for (let index = mutations.length - 1; index >= 0; index -= 1) {
+    const mutation = mutations[index]
+    if (
+      mutation?.type === 'replace_all' &&
+      (mutation.source === 'input_trigger' ||
+        mutation.source === 'editinput' ||
+        mutation.source === 'agent_preset' ||
+        mutation.source === 'history_inject')
+    ) {
+      return mutation.source
+    }
+  }
+  return 'editinput'
+}
+
 /**
  * Persist the assembly-time chat-var and chat-metadata deltas the assembler
  * computed and, when a submit-time input transform or history `@@inject`
@@ -1522,7 +1573,7 @@ function persistAssemblyMutations(args: {
   initialMessages: readonly Message[]
   submitMessages?: Message[]
   submitTranscriptChanged?: boolean
-}): number | undefined {
+}): PersistedAssemblyMutations | undefined {
   const patch: Record<string, string | number | boolean> = {}
   const deleteKeys: string[] = []
   for (const mutation of args.mutations.chatVarMutations) {
@@ -1692,7 +1743,37 @@ function persistAssemblyMutations(args: {
       hasLocalLoreWrite,
       durationMs: protocolDurationMs(persistStartedAt),
     })
-    return result.revision
+    const messageMutations: AssembleMutationPayload['messageMutations'] = replacement
+      ? [
+          {
+            type: 'replace_all',
+            source: persistedAssemblyReplacementSource(args.mutations.messageMutations),
+            beforeLength: args.initialMessages.length,
+            afterLength: replacement.length,
+            messages: structuredClone(replacement) as Message[],
+          },
+        ]
+      : persistTargetedInjects
+        ? structuredClone(injectReplacements)
+        : []
+    return {
+      revision: result.revision,
+      patch: {
+        chatId: args.mutations.chatId,
+        characterId: args.mutations.characterId,
+        selectedCharID: args.mutations.selectedCharID,
+        chatPage: args.mutations.chatPage,
+        varChanged: hasVarWrite,
+        messageMutations,
+        chatVarMutations: structuredClone(args.mutations.chatVarMutations),
+        ...(lastMemoryMutation ? { chatMetadataMutations: [structuredClone(lastMemoryMutation)] } : {}),
+        ...(hasCharacterWrite
+          ? { characterFieldMutations: structuredClone(args.mutations.characterFieldMutations) }
+          : {}),
+        ...(hasLocalLoreWrite ? { localLoreMutation: structuredClone(args.mutations.localLoreMutation) } : {}),
+        additionalSystemPrompt: [],
+      },
+    }
   } catch (err) {
     emitProtocolMetric('generation_assembly_persistence', {
       status: 'error',
@@ -2484,7 +2565,7 @@ async function streamAssembly(
       // The route owns assembly-time chat-var writes and post-`editinput`
       // submit-transcript writes for persisting modes. This runs for both success
       // and `stopSending` so aborted sends do not lose the assembly mutations.
-      const persistedRevision =
+      const persistedAssembly =
         isPersistingMode(input.mode) && result.mutations
           ? persistAssemblyMutations({
               db,
@@ -2497,6 +2578,12 @@ async function streamAssembly(
               submitTranscriptChanged: result.submitTranscriptChanged,
             })
           : undefined
+      const assemblyPatch = assemblyPatchForClient({
+        result,
+        persistence: persistedAssembly,
+        capabilities: clientCapabilities,
+        useRegenerateTargetProjection: false,
+      })
       emitAssemblyWarnings(result, emit)
       if (!result.stopSending && result.prompt) {
         const successfulResult: SuccessfulAssembleResult = {
@@ -2532,13 +2619,11 @@ async function streamAssembly(
           durable: false,
           compactPromptEvent: clientCapabilities.compactPromptEvent,
           shouldDispatch,
-          revision: persistedRevision,
+          revision: persistedAssembly?.revision,
           trace,
         })
         emit({ type: 'prompt', ...promptEvent })
-        if (result.mutations) {
-          emit({ type: 'message_patch', patch: messagePatchForClient(result.mutations, clientCapabilities) })
-        }
+        if (assemblyPatch) emit({ type: 'message_patch', patch: assemblyPatch })
         emit({ type: 'stage', stage: 'prompt', status: 'end' })
         // `outputTokens` is the response budget, not a completion count, so it
         // rides on `responseBudget` rather than `tokens.completion`.
@@ -2558,7 +2643,7 @@ async function streamAssembly(
             : {}),
           // Present only when a chat-var write actually persisted, so the browser
           // reconciles its cached command revision; omitted otherwise.
-          revision: persistedRevision,
+          revision: persistedAssembly?.revision,
         })
         if (shouldDispatch && database && generationInfo) {
           const dispatchProvider =
@@ -2681,9 +2766,7 @@ async function streamAssembly(
           }
         }
       } else {
-        if (result.mutations) {
-          emit({ type: 'message_patch', patch: messagePatchForClient(result.mutations, clientCapabilities) })
-        }
+        if (assemblyPatch) emit({ type: 'message_patch', patch: assemblyPatch })
         const stopError = assemblyStopError(result, database)
         emit({
           type: 'error',
@@ -4785,7 +4868,14 @@ async function runGenerationJob(args: {
       }
       assertGenerationOperationTargetCurrent(db, job)
       const database = result.state?.database ?? deps.getDatabase()
-      const persistedRevision =
+      const useRegenerateTargetProjection =
+        clientCapabilities.regenerateTargetProjection &&
+        input.mode === 'regenerate' &&
+        job.operationProtocolVersion === 1 &&
+        typeof job.operationId === 'string' &&
+        typeof job.attemptNo === 'number' &&
+        typeof job.targetMessageId === 'string'
+      const persistedAssembly =
         isPersistingMode(input.mode) && result.mutations
           ? persistAssemblyMutations({
               db,
@@ -4798,6 +4888,24 @@ async function runGenerationJob(args: {
               submitTranscriptChanged: result.submitTranscriptChanged,
             })
           : undefined
+      const assemblyPatch = assemblyPatchForClient({
+        result,
+        persistence: persistedAssembly,
+        capabilities: clientCapabilities,
+        useRegenerateTargetProjection,
+      })
+      if (useRegenerateTargetProjection) {
+        emitProtocolMetric('generation_regenerate_projection', {
+          status: 'assembly_patch_filtered',
+          chatId: input.chatId,
+          characterId: input.characterId,
+          operationId: job.operationId,
+          attemptNo: job.attemptNo,
+          projectionEpoch: job.projectionEpoch,
+          suppressedWorkingMessageMutationCount: result.mutations?.messageMutations.length ?? 0,
+          authoritativeMessageMutationCount: assemblyPatch?.messageMutations.length ?? 0,
+        })
+      }
       emitAssemblyWarnings(result, emit)
       if (!result.stopSending && result.prompt) {
         const successfulResult: SuccessfulAssembleResult = {
@@ -4848,7 +4956,7 @@ async function runGenerationJob(args: {
           durable: true,
           compactPromptEvent: clientCapabilities.compactPromptEvent,
           shouldDispatch,
-          revision: persistedRevision,
+          revision: persistedAssembly?.revision,
           trace,
         })
         if (operationLineage) {
@@ -4856,9 +4964,7 @@ async function runGenerationJob(args: {
           updateJobOperationProjection(job, operation)
         }
         emit({ type: 'prompt', ...promptEvent })
-        if (result.mutations) {
-          emit({ type: 'message_patch', patch: messagePatchForClient(result.mutations, clientCapabilities) })
-        }
+        if (assemblyPatch) emit({ type: 'message_patch', patch: assemblyPatch })
         emit({ type: 'stage', stage: 'prompt', status: 'end' })
         if (successfulResult.state?.input.mode === 'continue') {
           job.continueDisposition = successfulResult.state.continueDisposition
@@ -4871,13 +4977,26 @@ async function runGenerationJob(args: {
           ...(database?.halfStreaming === true ? { halfStreaming: true } : {}),
           generationId: shouldDispatch ? generationId : undefined,
           generationInfo,
+          ...(useRegenerateTargetProjection
+            ? {
+                generationDisplayProjection: {
+                  version: 1 as const,
+                  mode: 'regenerate' as const,
+                  targetMessageId: job.targetMessageId!,
+                  generationId,
+                  operationId: job.operationId!,
+                  attemptNo: job.attemptNo!,
+                  projectionEpoch: job.projectionEpoch ?? 0,
+                },
+              }
+            : {}),
           ...(successfulResult.state?.input.mode === 'continue'
             ? {
                 continueDisposition: successfulResult.state.continueDisposition,
                 ...(extendContinueBase !== undefined ? { continueBase: extendContinueBase } : {}),
               }
             : {}),
-          revision: persistedRevision,
+          revision: persistedAssembly?.revision,
         })
         if (shouldDispatch && database && generationInfo) {
           const dispatchProvider =
@@ -5212,9 +5331,7 @@ async function runGenerationJob(args: {
           }
         }
       } else {
-        if (result.mutations) {
-          emit({ type: 'message_patch', patch: messagePatchForClient(result.mutations, clientCapabilities) })
-        }
+        if (assemblyPatch) emit({ type: 'message_patch', patch: assemblyPatch })
         const stopError = assemblyStopError(result, database)
         emit({
           type: 'error',

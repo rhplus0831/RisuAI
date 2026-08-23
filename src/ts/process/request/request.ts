@@ -16,6 +16,7 @@ import { getNodeServerProxyAuth } from '../../storage/fastifyStorage'
 import { tokenizeNum } from '../../tokenizer'
 import { simplifySchema, sleep } from '../../util'
 import type { OpenAIChat } from '../index.svelte'
+import type { GenerationDisplayProjectionRef } from '../generationDisplayProjection.svelte'
 import { callTool, decodeToolCall, encodeToolCall, getTools } from '../mcp/mcp'
 import type { MCPTool } from '../mcp/mcplib'
 import { NovelAIBadWordIds, stringlizeNAIChat } from '../models/nai'
@@ -116,6 +117,8 @@ export type requestDataResponse =
       continueDisposition?: 'append' | 'extend'
       /** Immutable pre-generation assistant text for extend-Continue replay rendering. */
       continueBase?: string
+      /** In-place transient row target for a negotiated regenerate stream. */
+      generationDisplayProjection?: GenerationDisplayProjectionRef
       special?: {
         emotion?: string
       }

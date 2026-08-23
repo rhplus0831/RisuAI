@@ -274,6 +274,7 @@ describe('requestServerChat', () => {
       promptMetadataOnly: true,
       omitDuplicateDoneResult: true,
       hypaContextTruncationConfirmation: true,
+      regenerateTargetProjection: 1,
     })
     expect(calls[0]?.clientContext).toEqual({
       browserLanguage: navigator.language,
@@ -2032,6 +2033,56 @@ describe('requestServerChatGeneration durable cancel-on-abort', () => {
     })
     expect(viewerSignal?.aborted).toBe(false)
     expect(get(activeGenerationJobs)).toEqual([])
+  })
+
+  it('exposes negotiated regenerate target metadata on the token stream', async () => {
+    const wire = controlledGenerationStream()
+    vi.stubGlobal('fetch', async () => wire.response)
+    const operationStream = {
+      operationId: '11111111-1111-4111-8111-111111111111',
+      attemptNo: 2,
+      jobId: 'job-regenerate',
+      projectionEpoch: 7,
+      href: '/api/v1/generation-operations/11111111-1111-4111-8111-111111111111/stream?attemptNo=2&jobId=job-regenerate&projectionEpoch=7',
+    }
+    const input = {
+      ...baseInput,
+      mode: 'regenerate' as const,
+      regenerateMessageId: 'assistant-old',
+    }
+    const pending = requestServerChatGeneration(input, null, undefined, operationStream)
+    wire.send('prompt', {})
+    wire.send('info', {
+      generationId: 'assistant-new',
+      generationInfo: { generationId: 'assistant-new', model: 'm' },
+      generationDisplayProjection: {
+        version: 1,
+        mode: 'regenerate',
+        targetMessageId: 'assistant-old',
+        generationId: 'assistant-new',
+        operationId: operationStream.operationId,
+        attemptNo: 2,
+        projectionEpoch: 7,
+      },
+    })
+
+    const served = await pending
+    expect(served.status).toBe('ok')
+    if (served.status !== 'ok' || served.req.type !== 'streaming') return
+    expect(served.req.generationDisplayProjection).toEqual({
+      operationId: operationStream.operationId,
+      attemptNo: 2,
+      characterId: 'char-1',
+      chatId: 'chat-1',
+      mode: 'regenerate',
+      targetMessageId: 'assistant-old',
+      generationId: 'assistant-new',
+      projectionEpoch: 7,
+    })
+
+    wire.send('done', { generationId: 'assistant-new', result: 'new reply' })
+    await expect(served.terminal).resolves.toMatchObject({ status: 'done' })
+    await served.req.result.cancel()
   })
 
   it('refreshes typed stale-attempt authority and reattaches the current exact operation attempt', async () => {

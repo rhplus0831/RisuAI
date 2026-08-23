@@ -30,6 +30,18 @@
   import { clearVisibleChat, markChatRead, markChatUnread, setVisibleChat } from 'src/ts/process/chatUnread.svelte'
   import { recordChatRowsBuild } from './chatRowsBuildInstrumentation'
   import { createInitialDisplayReadiness, shouldAwaitInitialDisplayParse } from './initialDisplayReadiness'
+  import { LoaderCircleIcon } from '@lucide/svelte'
+  import { language } from 'src/lang'
+  import {
+    getChatGenerationLoadingLanguageKey,
+    getChatGenerationLoadingProgress,
+    normalizeChatGenerationLoadingStage,
+  } from './chatGenerationLoading'
+  import {
+    finishGenerationDisplayProjection,
+    generationDisplayProjections,
+    type GenerationDisplayProjection,
+  } from 'src/ts/process/generationDisplayProjection.svelte'
 
   const getCurrentChatRoomId = () => {
     const charId = get(selectedCharID)
@@ -101,9 +113,27 @@
     )
     return progress?.tokensPerSecond
   })
+  let activeRegenerateProjection = $derived.by(() => {
+    const currentChatId = getCurrentChatRoomId()
+    if (!currentChatId) return undefined
+    return $generationDisplayProjections
+      .filter((projection) => projection.chatId === currentChatId && projection.mode === 'regenerate')
+      .sort(
+        (left, right) =>
+          left.projectionEpoch - right.projectionEpoch ||
+          left.attemptNo - right.attemptNo ||
+          left.operationId.localeCompare(right.operationId),
+      )
+      .at(-1)
+  })
+  let presentationKeyAliases: Record<string, string> = $state({})
+  let normalizedGenerationStage = $derived(normalizeChatGenerationLoadingStage(generationStage))
+  let generationLoadingText = $derived(language[getChatGenerationLoadingLanguageKey(normalizedGenerationStage)])
+  let generationLoadingProgress = $derived(getChatGenerationLoadingProgress(normalizedGenerationStage))
 
   const chatRows = $derived.by(() => {
     void $RegexDisplayReloadPointer
+    void activeRegenerateProjection
     const charImage = getCharImage(currentCharacter.image, 'css')
     const userImage = getCharImage(userIcon, 'css')
     const simpleChar = createSimpleCharacter(
@@ -137,6 +167,7 @@
       generationPersistenceState: GenerationPersistenceIndicatorState | null
       scopeId: string | null
       awaitInitialDisplayParse: boolean
+      generationDisplayProjection?: GenerationDisplayProjection
     }[] = []
 
     for (let i = loadStart; i >= loadEnd; i--) {
@@ -145,8 +176,23 @@
       const messageLargePortrait =
         message.role === 'user' ? (userIconPortrait ?? false) : ((currentCharacter as character).largePortrait ?? false)
       const reloadPointer = reloadPointerMap[i] ?? 0
+      const generationDisplayProjection =
+        activeRegenerateProjection &&
+        (activeRegenerateProjection.targetMessageId === message.chatId ||
+          activeRegenerateProjection.generationId === message.chatId)
+          ? activeRegenerateProjection
+          : undefined
+      const presentationKey =
+        (generationDisplayProjection?.targetMessageId
+          ? (presentationKeyAliases[generationDisplayProjection.targetMessageId] ??
+            generationDisplayProjection.targetMessageId)
+          : message.chatId
+            ? presentationKeyAliases[message.chatId]
+            : undefined) ??
+        message.chatId ??
+        `message-${i}`
       rows.push({
-        key: `${message.chatId ?? `message-${i}`}:${i}:${reloadPointer}`,
+        key: `${presentationKey}:${i}:${reloadPointer}`,
         message,
         idx: i,
         img: message.role === 'user' ? userImage : charImage,
@@ -157,6 +203,7 @@
         isLastMemory: isMemoryLimitMessage(database.showMemoryLimit, lastMemoryId, message.chatId),
         scopeId: currentChatId ?? null,
         awaitInitialDisplayParse: shouldAwaitInitialDisplayParse(i, messages.length),
+        ...(generationDisplayProjection ? { generationDisplayProjection } : {}),
       })
     }
 
@@ -175,10 +222,9 @@
 
   function getLatestMessageAlignmentKey(): string | null {
     const chatRoomId = getCurrentChatRoomId()
-    const messageIndex = messages.length - 1
-    const message = messages[messageIndex]
-    if (!chatRoomId || !message) return null
-    return message.chatId ? `${chatRoomId}:id:${message.chatId}` : `${chatRoomId}:index:${messageIndex}`
+    const latestRow = chatRows[0]
+    if (!chatRoomId || !latestRow) return null
+    return `${chatRoomId}:row:${latestRow.key}`
   }
 
   function latestMessageUsesNaturalEnd(): boolean {
@@ -199,7 +245,7 @@
   const latestMessageSpacerEpsilon = 0.5
 
   function transcriptIsAtLatestPosition(): boolean {
-    return !!scrollContainer && Math.max(0, -scrollContainer.scrollTop) <= 1
+    return !scrollContainer || Math.max(0, -scrollContainer.scrollTop) <= 1
   }
 
   function appliedSpacerDomHeight(): number {
@@ -400,8 +446,58 @@
     latestMessageAlignmentPinned = false
   }
 
+  interface GenerationFollowState {
+    projectionKey: string
+    follow: boolean
+    userCancelled: boolean
+  }
+
+  let generationFollowState: GenerationFollowState | null = null
+  let previousRegenerateProjectionKey: string | null = null
+  let pendingRegenerateWasAtLatest = true
+  let transcriptUserIntentPending = false
+
+  function regenerateProjectionKey(projection: GenerationDisplayProjection | undefined): string | null {
+    return projection ? `${projection.operationId}:${projection.attemptNo}` : null
+  }
+
+  function reassertGenerationNaturalEnd(projectionKey: string): void {
+    void tick().then(() => {
+      if (
+        generationFollowState?.projectionKey === projectionKey &&
+        generationFollowState.follow &&
+        regenerateProjectionKey(activeRegenerateProjection) === projectionKey &&
+        scrollContainer
+      ) {
+        scrollContainer.scrollTop = 0
+      }
+    })
+  }
+
+  export const handleTranscriptUserInteraction = () => {
+    if (generationFollowState?.follow) transcriptUserIntentPending = true
+  }
+
   export const handleTranscriptScroll = () => {
     if (isAligningLatestMessage) return
+    if (generationFollowState?.follow) {
+      if (transcriptIsAtLatestPosition()) {
+        transcriptUserIntentPending = false
+        latestMessageAlignmentPinned = false
+        recomputeLatestMessageGeometry()
+        return
+      }
+      if (transcriptUserIntentPending) {
+        generationFollowState = { ...generationFollowState, follow: false, userCancelled: true }
+        transcriptUserIntentPending = false
+        latestMessageNaturalEndKey = null
+        cancelLatestMessageAlignment()
+        recomputeLatestMessageGeometry(true)
+        return
+      }
+      reassertGenerationNaturalEnd(generationFollowState.projectionKey)
+      return
+    }
     if (transcriptIsAtLatestPosition()) {
       latestMessageAlignmentPinned = !latestMessageUsesNaturalEnd()
       recomputeLatestMessageGeometry()
@@ -417,6 +513,88 @@
   let pendingEntryChatRoomId: string | null = null
   let visibleChatRoomId: string | null = null
   let previousIsGenerationActive = false
+
+  $effect.pre(() => {
+    const projectionKey = regenerateProjectionKey(activeRegenerateProjection)
+    if (projectionKey && projectionKey !== previousRegenerateProjectionKey) {
+      pendingRegenerateWasAtLatest = transcriptIsAtLatestPosition()
+    }
+  })
+
+  $effect(() => {
+    chatRows
+    const projection = activeRegenerateProjection
+    const projectionKey = regenerateProjectionKey(projection)
+    const currentChatRoomId = getCurrentChatRoomId()
+
+    if (projection?.targetMessageId) {
+      const inheritedKey = presentationKeyAliases[projection.targetMessageId] ?? projection.targetMessageId
+      const nextAliases = {
+        ...presentationKeyAliases,
+        [projection.targetMessageId]: inheritedKey,
+        ...(projection.generationId ? { [projection.generationId]: inheritedKey } : {}),
+      }
+      if (
+        presentationKeyAliases[projection.targetMessageId] !== inheritedKey ||
+        (projection.generationId && presentationKeyAliases[projection.generationId] !== inheritedKey)
+      ) {
+        presentationKeyAliases = nextAliases
+      }
+    }
+
+    if (
+      projection?.status === 'finalizing' &&
+      projection.generationId &&
+      messages.some(
+        (message) =>
+          message.role === 'char' &&
+          (message.chatId === projection.generationId ||
+            message.generationInfo?.generationId === projection.generationId),
+      )
+    ) {
+      finishGenerationDisplayProjection(projection)
+      return
+    }
+
+    if (projectionKey && projectionKey !== previousRegenerateProjectionKey) {
+      const database = getDatabase()
+      const follow =
+        database.autoScrollToNewMessage && (pendingRegenerateWasAtLatest || database.alwaysScrollToNewMessage)
+      generationFollowState = { projectionKey, follow, userCancelled: false }
+      transcriptUserIntentPending = false
+      if (follow) {
+        latestMessageNaturalEndKey = getLatestMessageAlignmentKey()
+        latestMessageAlignmentRun += 1
+        isAligningLatestMessage = false
+        latestMessageAlignmentPinned = false
+        latestMessageDerivedSpacerHeight = 0
+        applyLatestMessageSpacerHeight()
+        reassertGenerationNaturalEnd(projectionKey)
+      }
+      previousRegenerateProjectionKey = projectionKey
+      return
+    }
+
+    if (projectionKey && generationFollowState?.projectionKey === projectionKey && generationFollowState.follow) {
+      latestMessageNaturalEndKey = getLatestMessageAlignmentKey()
+      latestMessageDerivedSpacerHeight = 0
+      applyLatestMessageSpacerHeight()
+      reassertGenerationNaturalEnd(projectionKey)
+      return
+    }
+
+    if (!projectionKey && previousRegenerateProjectionKey) {
+      const settledFollow = generationFollowState
+      previousRegenerateProjectionKey = null
+      generationFollowState = null
+      transcriptUserIntentPending = false
+      if (settledFollow?.follow && !settledFollow.userCancelled && currentChatRoomId) {
+        latestMessageNaturalEndKey = null
+        recomputeLatestMessageGeometry(true)
+        void alignLatestMessageToStart(currentChatRoomId)
+      }
+    }
+  })
 
   onDestroy(() => {
     chatsComponentDestroyed = true
@@ -447,6 +625,7 @@
     const currentChatRoomId = getCurrentChatRoomId()
     const isSameChat = currentChatRoomId === previousChatRoomId
     if (didChatOwnerChange(previousChatRoomId, currentChatRoomId)) {
+      presentationKeyAliases = {}
       clearVisibleChat(visibleChatRoomId)
       setVisibleChat(currentChatRoomId)
       visibleChatRoomId = currentChatRoomId
@@ -576,10 +755,13 @@
     </div>
   {/if}
   {#each chatRows as row (row.key)}
-    <div class="chat-message-container" data-risu-dyna-icons={row.key === dynaIconRowKey ? 'true' : undefined}>
+    <div
+      class="chat-message-container"
+      data-risu-dyna-icons={row.key === dynaIconRowKey ? 'true' : undefined}
+      data-generation-display-projection={row.generationDisplayProjection ? 'regenerate' : undefined}>
       <Chat
-        message={row.message.data}
-        translation={row.message.translation ?? null}
+        message={row.generationDisplayProjection?.text ?? row.message.data}
+        translation={row.generationDisplayProjection ? null : (row.message.translation ?? null)}
         isLastMemory={row.isLastMemory}
         idx={row.idx}
         totalLength={messages.length}
@@ -596,10 +778,12 @@
         role={row.message.role}
         name={row.name}
         isComment={row.message.isComment ?? false}
-        isGenerationLoading={isGenerationActive &&
-          row.idx === messages.length - 1 &&
-          row.message.role === 'char' &&
-          row.message.data === ''}
+        isGenerationLoading={row.generationDisplayProjection !== undefined ||
+          (isGenerationActive &&
+            row.idx === messages.length - 1 &&
+            row.message.role === 'char' &&
+            row.message.data === '')}
+        isGenerationProjection={row.generationDisplayProjection !== undefined}
         isChatGenerating={isGenerationActive}
         halfStreamingTokensPerSecond={row.idx === messages.length - 1 && row.message.role === 'char'
           ? activeHalfStreamingTokensPerSecond
@@ -617,6 +801,30 @@
         generationPersistenceState={row.generationPersistenceState}
         {generationStage}
         disabled={row.message.disabled ?? false} />
+      {#if row.generationDisplayProjection}
+        <div
+          class="chat-generation-loading w-full"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+          data-generation-projection-loading>
+          <div class="chat-generation-loading-header">
+            <LoaderCircleIcon size={16} class="risu-ongoing-pulse animate-spin shrink-0" />
+            <span
+              >{activeHalfStreamingTokensPerSecond === undefined
+                ? generationLoadingText
+                : language.halfStreamingTokensPerSecond(activeHalfStreamingTokensPerSecond)}</span>
+          </div>
+          {#if activeHalfStreamingTokensPerSecond === undefined}
+            <div class="chat-generation-loading-track">
+              <div
+                class={`risu-ongoing-pulse chat-generation-loading-fill chat-generation-loading-stage-${normalizedGenerationStage}`}
+                style:width={`${generationLoadingProgress}%`}>
+              </div>
+            </div>
+          {/if}
+        </div>
+      {/if}
     </div>
   {/each}
 </div>

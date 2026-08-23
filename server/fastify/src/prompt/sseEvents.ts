@@ -88,6 +88,19 @@ export interface InfoEvent {
    * when nothing was persisted.
    */
   revision?: number
+  /**
+   * Negotiated in-place regenerate display contract. The operation/attempt and
+   * projection epoch fence transient text from stale replay viewers.
+   */
+  generationDisplayProjection?: {
+    version: 1
+    mode: 'regenerate'
+    targetMessageId: string
+    generationId: string
+    operationId: string
+    attemptNo: number
+    projectionEpoch: number
+  }
 }
 
 export interface TokenEvent {

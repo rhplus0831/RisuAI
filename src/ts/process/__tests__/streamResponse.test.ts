@@ -39,6 +39,10 @@ import { consumeStreamResponse } from '../postGeneration/streamResponse'
 import { markChatMessageMutationIntent } from '../../server/chatMessageMutationIntent'
 import { markChatBodyProjectionApplied } from '../../server/resourceState.svelte'
 import { halfStreamingProgress, resetHalfStreamingProgressForTests } from '../halfStreamingProgress'
+import {
+  generationDisplayProjections,
+  resetGenerationDisplayProjectionsForTests,
+} from '../generationDisplayProjection.svelte'
 
 const testDatabaseState = {
   get db() {
@@ -131,6 +135,7 @@ function streamingReq(
     halfStreamingProgressManaged?: boolean
     replayGapTruncated?: boolean
     continueBase?: string
+    generationDisplayProjection?: Extract<requestDataResponse, { type: 'streaming' }>['generationDisplayProjection']
   } = {},
 ): requestDataResponse & { type: 'streaming' } {
   return { type: 'streaming', result: stream, ...options } as requestDataResponse & { type: 'streaming' }
@@ -168,6 +173,56 @@ describe('consumeStreamResponse', () => {
       emoChanged: false,
     }))
     resetHalfStreamingProgressForTests()
+    resetGenerationDisplayProjectionsForTests()
+  })
+
+  it('streams negotiated regenerate text into a transient target projection', async () => {
+    const currentChar = seed()
+    currentChar.chats[0].message = [
+      { role: 'user', data: 'try again', chatId: 'user-1' },
+      { role: 'char', data: 'old reply', chatId: 'assistant-old' },
+    ]
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const displayProjection = {
+      operationId: 'operation-1',
+      attemptNo: 1,
+      characterId: 'cha-1',
+      chatId: 'chat-1',
+      mode: 'regenerate' as const,
+      targetMessageId: 'assistant-old',
+      generationId: 'gen-1',
+      projectionEpoch: 3,
+    }
+    const promise = consumeStreamResponse(
+      callArgs(streamingReq(stream, { generationDisplayProjection: displayProjection }), currentChar, ctrl.signal, {
+        skipEditOutput: true,
+      }),
+    )
+
+    push({ 'gen-1': 'new partial reply' })
+    close()
+    const result = await promise
+
+    expect(currentChar.chats[0].message).toEqual([
+      { role: 'user', data: 'try again', chatId: 'user-1' },
+      { role: 'char', data: 'old reply', chatId: 'assistant-old' },
+    ])
+    expect(get(generationDisplayProjections)).toEqual([
+      expect.objectContaining({
+        operationId: 'operation-1',
+        targetMessageId: 'assistant-old',
+        generationId: 'gen-1',
+        status: 'streaming',
+        text: 'new partial reply',
+      }),
+    ])
+    expect(result.projection).toMatchObject({
+      messageId: 'assistant-old',
+      generationId: 'gen-1',
+      appended: false,
+      displayProjection,
+    })
   })
 
   it('half-streaming keeps partial text hidden, reports throughput, and applies the final response once', async () => {

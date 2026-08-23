@@ -7,6 +7,7 @@ import {
   findChatGenerationActivity,
   finishChatGenerationActivity,
   resetChatGenerationActivitiesForTests,
+  updateChatGenerationActivityMetadata,
   updateChatGenerationActivityStage,
 } from './generationActivity.svelte'
 import {
@@ -53,6 +54,27 @@ describe('chat generation activity registry', () => {
     finishChatGenerationActivity(activityB.id)
     expect(findChatGenerationActivity(activityB.target)).toBeUndefined()
     expect(findChatGenerationActivity(activityA.target)?.stage).toBe(2)
+  })
+
+  it('attaches regenerate operation and attempt metadata after admission', () => {
+    const chat = target('char-a', 'chat-a', 0)
+    beginChatGenerationActivity({ target: chat, kind: 'message', mode: 'regenerate', targetMessageId: 'old' })
+
+    updateChatGenerationActivityMetadata(chat, {
+      operationId: 'operation-a',
+      generationId: 'generated-a',
+      attemptNo: 2,
+      projectionEpoch: 9,
+    })
+
+    expect(findChatGenerationActivity(chat)).toMatchObject({
+      mode: 'regenerate',
+      targetMessageId: 'old',
+      operationId: 'operation-a',
+      generationId: 'generated-a',
+      attemptNo: 2,
+      projectionEpoch: 9,
+    })
   })
 
   it('uses stable chat IDs before index fallbacks', () => {

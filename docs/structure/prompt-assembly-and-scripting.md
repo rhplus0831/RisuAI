@@ -63,6 +63,14 @@ secret-free envelope with `kind: "server-intent"`. Chat rendering and
 loading-state ownership is in the
 [Svelte Chat UI guide](../../src/docs/svelte-chat-ui.md).
 
+Operation-protocol regenerate clients additionally advertise
+`regenerateTargetProjection: 1`. For that path, regenerate truncation and any
+later replacement captured against the truncated working transcript remain
+prompt-only. The route emits an assembly `message_patch` only from an accepted
+assembly persistence result; ordinary working mutations remain available only
+to legacy viewers. `info.generationDisplayProjection` fences transient display
+text by operation, attempt, target message, generation, and projection epoch.
+
 ## Effective Configuration And Assembly Order
 
 Browser preflight in `src/ts/process/request/serverPromptAssembly.ts` decides
@@ -92,6 +100,14 @@ not rewrite global settings.
 
 The stage order is explicit in `server/fastify/src/prompt/assemble.ts` and is
 covered broadly by `server/fastify/__tests__/assemble.test.ts`.
+
+Assembly maintains separate working and authoritative submit transcripts. The
+working transcript is what CBS, triggers, Agent Presets, history, and prompt
+rendering observe. Regenerate removes its target only there. Route-owned input
+trigger, `editinput`, Agent Preset user-input, and history-inject changes update
+an identity-addressed authoritative snapshot. This prevents a later durable
+submit transform from persisting the regenerate truncation or prompt-only
+run-variable rewrites as an incidental full-transcript replacement.
 
 ## CBS Variables And History
 

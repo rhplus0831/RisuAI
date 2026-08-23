@@ -615,6 +615,13 @@ export interface AssemblyState {
   abortReason?: AssembleAbortReason
   // --- Typed mutation handoff (set while assembling) ---
   initialMessages?: Message[]
+  /**
+   * Authoritative submit-time transcript projection. Prompt-only transforms
+   * (notably regenerate truncation and run-var expansion) never write here.
+   * Route-owned submit transforms update rows in this snapshot by identity and
+   * `captureSubmitTranscript()` persists from it rather than the working prompt.
+   */
+  authoritativeMessages?: Message[]
   messageMutationCheckpoint?: Message[]
   initialScriptstate?: Record<string, string | number | boolean>
   initialLastMemory?: string
@@ -808,6 +815,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     cbsCallbackDiagnostics,
     warnedCbsCallbackNames: new Set<string>(),
     initialMessages,
+    authoritativeMessages: structuredClone(initialMessages) as Message[],
     messageMutationCheckpoint: initialMessages,
     initialScriptstate: cloneScriptstate(currentChat.scriptstate),
     initialLastMemory: currentChat.lastMemory,
@@ -1026,6 +1034,38 @@ function setMessageMutationCheckpointRow(state: AssemblyState, index: number, me
   state.messageMutationCheckpoint = next
 }
 
+function replaceAuthoritativeTranscript(state: AssemblyState, messages: readonly Message[]): void {
+  state.authoritativeMessages = structuredClone(messages) as Message[]
+}
+
+function upsertAuthoritativeMessage(state: AssemblyState, index: number, message: Message): void {
+  const messages = (state.authoritativeMessages ??= structuredClone(state.initialMessages ?? []) as Message[])
+  const messageId = message.chatId
+  const existingIndex = messageId ? messages.findIndex((candidate) => candidate.chatId === messageId) : -1
+  const next = structuredClone(message) as Message
+  if (existingIndex >= 0) {
+    messages[existingIndex] = next
+    return
+  }
+  if (index >= messages.length) {
+    messages.push(next)
+    return
+  }
+  messages.splice(Math.max(0, index), 0, next)
+}
+
+function updateAuthoritativeMessageById(
+  state: AssemblyState,
+  messageId: string | undefined,
+  update: (message: Message) => Message,
+): void {
+  if (!messageId) return
+  const messages = (state.authoritativeMessages ??= structuredClone(state.initialMessages ?? []) as Message[])
+  const index = messages.findIndex((message) => message.chatId === messageId)
+  if (index < 0) return
+  messages[index] = structuredClone(update(messages[index])) as Message
+}
+
 function appendUserMessageRow(state: AssemblyState): void {
   const userMessage = state.input.userMessage
   if (state.input.mode !== 'send' || typeof userMessage !== 'string') return
@@ -1060,6 +1100,7 @@ function appendUserMessageRow(state: AssemblyState): void {
       message: checkpointMessage,
     })
     setMessageMutationCheckpointRow(state, lastIndex, checkpointMessage)
+    upsertAuthoritativeMessage(state, lastIndex, checkpointMessage)
     syncWorkingTranscript(state)
     bumpHistoryCallbackMemo(state)
     return
@@ -1082,6 +1123,7 @@ function appendUserMessageRow(state: AssemblyState): void {
     message: checkpointMessage,
   })
   setMessageMutationCheckpointRow(state, index, checkpointMessage)
+  upsertAuthoritativeMessage(state, index, checkpointMessage)
   syncWorkingTranscript(state)
   bumpHistoryCallbackMemo(state)
 }
@@ -1177,6 +1219,7 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
   const rewritten = result.chat.message ?? []
   if (firstChangedMessageIndex(priorMessages, rewritten) !== undefined) {
     state.currentChat.message = rewritten
+    replaceAuthoritativeTranscript(state, rewritten)
     state.inputTriggerRewroteTranscript = true
     syncWorkingTranscript(state)
     captureMessageReplacement(state, 'input_trigger')
@@ -1269,6 +1312,7 @@ async function applyEditInput(state: AssemblyState): Promise<void> {
 
   if (text === rawUserMessage) return
   lastMessage.data = text
+  updateAuthoritativeMessageById(state, lastMessage.chatId, (message) => ({ ...message, data: text }))
   state.editInputTransformed = true
   syncWorkingTranscript(state)
   captureMessageReplacement(state, 'editinput')
@@ -1448,7 +1492,7 @@ function submitTranscriptReplacementRequired(state: AssemblyState): boolean {
 
 function captureSubmitTranscript(state: AssemblyState): void {
   if (!submitTranscriptReplacementRequired(state)) return
-  state.submitMessages = cloneMessages(persistentMessageRows(state), 'submitTranscript')
+  state.submitMessages = cloneMessages(state.authoritativeMessages ?? state.initialMessages ?? [], 'submitTranscript')
 }
 
 /**
@@ -1612,6 +1656,7 @@ function applyAgentPresetUserInputModifier(
   if (!current || current.data === modifier.outputText) return
 
   messages[index] = { ...current, data: modifier.outputText }
+  updateAuthoritativeMessageById(state, current.chatId, (message) => ({ ...message, data: modifier.outputText }))
   state.agentPresetInputTransformed = true
   if (state.agentPreset) state.agentPreset.userInputModified = true
   syncWorkingTranscript(state)
@@ -1918,6 +1963,7 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
         before: initial ? (structuredClone(initial) as Message) : mutation.before,
         message: mutation.after,
       })
+      updateAuthoritativeMessageById(state, mutation.messageId, () => mutation.after)
     }
     if (persistentInjectMutations.length > 0) {
       captureSubmitTranscript(state)

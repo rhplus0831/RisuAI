@@ -315,6 +315,10 @@ Important files:
   `AgentPresetProgress.svelte` and `PostGenerationScriptProgress.svelte`.
 - `src/ts/process/halfStreamingProgress.ts` owns half-streaming token counts and
   throughput for the active character/chat/generation target.
+- `src/ts/process/generationDisplayProjection.svelte.ts` owns transient,
+  attempt-fenced display text for negotiated targeted regenerate. It never
+  writes `Message.data`; presentation aliases let the generated message inherit
+  the target row key during terminal authority handoff.
 - `src/ts/process/reattach.ts` coordinates background recovery by durable
   `(databaseLineage, operationId)` authority. `jobId` and `attemptNo` remain
   expiring stream descriptors, while local viewer/activity state is only an
@@ -370,6 +374,17 @@ so the browser suppresses the old generation-result command in server-backed
 paths. The configured message-completion sound is emitted once through its
 ledgered successful terminal lifecycle, rather than from the selected chat
 component, so background and reattached generations retain the same behavior.
+
+For `regenerateTargetProjection: 1`, targeted admission registers a preparing
+projection before prompt assembly finishes. Cumulative provider text updates
+that projection instead of appending a synthetic assistant. Terminal handling
+installs the generated-id presentation alias, strictly hydrates the committed
+chat resource, and removes the projection only after the generated authority is
+observable. No-token failure or non-retaining cancellation simply drops the
+projection, leaving the original target untouched; retained partials use the
+same authoritative terminal handoff. Operation id plus attempt number rejects
+late frames, and reattach reuses the same projection rather than appending a
+duplicate row.
 `messageCompletionSound.ts` lazily shares one decoded bundled-audio buffer and
 `AudioContext`. `installCompletionAudioUnlock()` resumes and prepares that
 context from an eligible pointer or keyboard activation without starting an

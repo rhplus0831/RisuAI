@@ -297,6 +297,24 @@ admitted. Server assembly removes that row only from the working prompt, and
 generation finalization atomically replaces it while retaining reroll
 alternates. A failed regenerate therefore needs no browser transcript rollback.
 
+Negotiated fresh regenerate streams join
+`generationDisplayProjection.svelte.ts` to that authoritative target in
+`Chats.svelte`. `Chat.svelte` receives projected display text separately from
+the persisted row, keeps unsafe row controls unavailable during the operation,
+and leaves raw edit/copy/TTS/translation authority untouched. A mount-local
+presentation alias maps the terminal generation id back to the target's keyed
+wrapper, so the same row survives the authoritative ID replacement.
+
+Regenerate follow-bottom is operation-aware rather than message-count based.
+If the transcript was following latest (or the always-follow preference is
+enabled), projection admission enters the reverse scroller's natural end,
+zeros the spacer, and reasserts `scrollTop = 0` through streamed resize and ID
+handoff. Wheel, touch, pointer/scrollbar, or scrolling-key intent followed by a
+move away cancels follow; geometry-only scroll events are corrected without
+being mistaken for history navigation. Settlement then runs the ordinary
+latest-row alignment once, while a cancelled follow preserves the user's
+history position.
+
 Settling a chat-keyed message generation records a bounded, consume-once marker
 in `src/ts/process/chatSuggestionCompletion.svelte.ts`. `Suggestion.svelte`
 consumes only the open chat's marker: persisted suggestions satisfy it without
