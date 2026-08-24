@@ -29,7 +29,13 @@ import {
   peekCachedServerCommandRevision,
   setCachedServerCommandRevision,
 } from './commands'
-import { hydrateCharacterShell, stopSelectedCharacterShellHydration } from './characterShellHydration.svelte'
+import {
+  characterShellHydrationState,
+  hydrateCharacterShell,
+  resetCharacterShellHydrationStateForTests,
+  retryCharacterShellHydration,
+  startSelectedCharacterShellHydration,
+} from './characterShellHydration.svelte'
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void
@@ -68,7 +74,7 @@ function hydratedCharacter(name = 'Hydrated') {
 beforeEach(() => {
   setResourceWriteGuardEnabled(false)
   clearCachedServerCommandRevision()
-  stopSelectedCharacterShellHydration()
+  resetCharacterShellHydrationStateForTests()
   selectedCharID.set(0)
   testDatabaseState.db = {
     characters: [characterShell()],
@@ -79,6 +85,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  resetCharacterShellHydrationStateForTests()
   const database = JSON.parse(JSON.stringify(testDatabaseState.db))
   setResourceWriteGuardEnabled(false)
   testDatabaseState.db = database
@@ -97,7 +104,7 @@ describe('character shell hydration', () => {
 
     await expect(hydrateCharacterShell('char-1')).resolves.toBe(true)
 
-    expect(projectionState.fetchResource).toHaveBeenCalledWith('char-1')
+    expect(projectionState.fetchResource).toHaveBeenCalledWith('char-1', expect.any(AbortSignal))
     expect(isServerCharacterShell(testDatabaseState.db.characters[0])).toBe(false)
     expect(testDatabaseState.db.characters[0].name).toBe('Hydrated')
     expect(peekCachedServerCommandRevision()).toBe(5)
@@ -163,6 +170,41 @@ describe('character shell hydration', () => {
     expect(testDatabaseState.db.characters[0].name).toBe('Newer projection')
   })
 
+  it('does not apply detail after the target shell is deleted', async () => {
+    const response = deferred<{
+      status: 'ok'
+      revision: number
+      character: Record<string, unknown>
+    }>()
+    projectionState.fetchResource.mockReturnValue(response.promise)
+
+    const pending = hydrateCharacterShell('char-1')
+    testDatabaseState.db.characters.splice(0, 1)
+    response.resolve({ status: 'ok', revision: 2, character: hydratedCharacter('Deleted target') })
+
+    await expect(pending).resolves.toBe(false)
+    expect(testDatabaseState.db.characters).toEqual([])
+  })
+
+  it('supersedes an older request when a refreshed shell becomes authoritative', async () => {
+    const first = deferred<{ status: 'ok'; revision: number; character: Record<string, unknown> }>()
+    const second = deferred<{ status: 'ok'; revision: number; character: Record<string, unknown> }>()
+    projectionState.fetchResource.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+
+    const older = hydrateCharacterShell('char-1')
+    testDatabaseState.db.characters[0] = { ...characterShell(), name: 'Refreshed shell' } as any
+    const newer = hydrateCharacterShell('char-1', { supersede: true })
+    const olderSignal = projectionState.fetchResource.mock.calls[0]?.[1] as AbortSignal
+    expect(olderSignal.aborted).toBe(true)
+
+    first.resolve({ status: 'ok', revision: 2, character: hydratedCharacter('Stale detail') })
+    second.resolve({ status: 'ok', revision: 3, character: hydratedCharacter('Fresh detail') })
+
+    await expect(older).resolves.toBe(false)
+    await expect(newer).resolves.toBe(true)
+    expect(testDatabaseState.db.characters[0].name).toBe('Fresh detail')
+  })
+
   it('rejects a character row response older than the request-start revision', async () => {
     setCachedServerCommandRevision(6)
     projectionState.fetchResource.mockResolvedValue({
@@ -177,5 +219,70 @@ describe('character shell hydration', () => {
 
     expect(isServerCharacterShell(testDatabaseState.db.characters[0])).toBe(true)
     expect(testDatabaseState.db.characters[0].name).toBe('Shell')
+  })
+
+  it('deduplicates concurrent detail requests for the same shell', async () => {
+    const response = deferred<{
+      status: 'ok'
+      revision: number
+      character: Record<string, unknown>
+    }>()
+    projectionState.fetchResource.mockReturnValue(response.promise)
+
+    const first = hydrateCharacterShell('char-1')
+    const second = hydrateCharacterShell('char-1')
+    expect(projectionState.fetchResource).toHaveBeenCalledTimes(1)
+    response.resolve({ status: 'ok', revision: 1, character: hydratedCharacter() })
+
+    await expect(Promise.all([first, second])).resolves.toEqual([true, true])
+  })
+
+  it('aborts selected-shell work when selection changes', async () => {
+    projectionState.fetchResource.mockImplementation(
+      async (_characterId: string, signal: AbortSignal) =>
+        new Promise((resolve) => {
+          signal.addEventListener('abort', () => resolve({ status: 'unavailable' }), { once: true })
+        }),
+    )
+
+    startSelectedCharacterShellHydration()
+    const signal = projectionState.fetchResource.mock.calls[0]?.[1] as AbortSignal
+    expect(signal.aborted).toBe(false)
+    selectedCharID.set(-1)
+
+    await vi.waitFor(() => expect(signal.aborted).toBe(true))
+    expect(isServerCharacterShell(testDatabaseState.db.characters[0])).toBe(true)
+  })
+
+  it('times out a stalled request, retains the shell, and exposes retry state', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    projectionState.fetchResource.mockImplementation(
+      async (_characterId: string, signal: AbortSignal) =>
+        new Promise((resolve) => {
+          signal.addEventListener('abort', () => resolve({ status: 'unavailable' }), { once: true })
+        }),
+    )
+
+    const pending = hydrateCharacterShell('char-1', { timeoutMs: 25 })
+    await vi.advanceTimersByTimeAsync(25)
+
+    await expect(pending).resolves.toBe(false)
+    expect(isServerCharacterShell(testDatabaseState.db.characters[0])).toBe(true)
+    expect(characterShellHydrationState.rows['char-1']).toEqual({ status: 'error', error: 'timeout' })
+  })
+
+  it('retries a failed shell request and clears its error after detail applies', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    projectionState.fetchResource
+      .mockResolvedValueOnce({ status: 'unavailable' })
+      .mockResolvedValueOnce({ status: 'ok', revision: 1, character: hydratedCharacter('Retried') })
+
+    await expect(hydrateCharacterShell('char-1')).resolves.toBe(false)
+    expect(characterShellHydrationState.rows['char-1']?.status).toBe('error')
+    await expect(retryCharacterShellHydration('char-1')).resolves.toBe(true)
+
+    expect(characterShellHydrationState.rows['char-1']).toEqual({ status: 'ready', error: null })
+    expect(testDatabaseState.db.characters[0].name).toBe('Retried')
   })
 })

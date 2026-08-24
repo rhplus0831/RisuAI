@@ -13,6 +13,7 @@ import { get } from 'svelte/store'
 
 const localAssemblerState = vi.hoisted(() => ({ throwIfEntered: false }))
 const messageCompletionSoundState = vi.hoisted(() => ({ play: vi.fn() }))
+const characterHydrationState = vi.hoisted(() => ({ hydrate: vi.fn(async (_characterId: string) => true) }))
 const alertState = vi.hoisted(() => ({
   errors: [] as string[],
   confirmations: [] as string[],
@@ -53,6 +54,10 @@ vi.mock('../files/inlays', () => import('../__fixtures__/mocks/inlays'))
 
 vi.mock('../messageCompletionSound', () => ({
   playMessageCompletionSoundIfEnabled: messageCompletionSoundState.play,
+}))
+
+vi.mock('../../server/characterShellHydration.svelte', () => ({
+  hydrateCharacterShell: characterHydrationState.hydrate,
 }))
 
 vi.mock('../memory/hypav3', async (importActual) => {
@@ -141,6 +146,13 @@ beforeEach(() => {
   chatProcessStage.set(0)
   localAssemblerState.throwIfEntered = false
   messageCompletionSoundState.play.mockReset()
+  characterHydrationState.hydrate.mockReset()
+  characterHydrationState.hydrate.mockImplementation(async (characterId: string) => {
+    const character = testDatabaseState.db.characters.find((candidate) => candidate.chaId === characterId)
+    if (!character) return false
+    delete (character as unknown as Record<string, unknown>).__serverCharacterShell
+    return true
+  })
   alertState.errors = []
   alertState.confirmations = []
   alertState.confirmationResult = true
@@ -282,6 +294,29 @@ function queuePersonaPromptSave(prompt: string): string {
 }
 
 describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
+  it('hydrates a character shell before entering generation', async () => {
+    await seedEcho()
+    const character = testDatabaseState.db.characters[0] as unknown as Record<string, unknown>
+    const characterId = String(character.chaId)
+    character.__serverCharacterShell = true
+    setServerChatPrompt([{ role: 'user', content: 'hi' }], { promptText: 'hi' })
+    vi.stubGlobal('fetch', serverChatWithContextFetch)
+
+    await expect(chatModule.sendChat(-1, { preview: true })).resolves.toBe(true)
+    expect(characterHydrationState.hydrate).toHaveBeenCalledWith(characterId)
+  })
+
+  it('rejects generation when character detail hydration is not ready', async () => {
+    await seedEcho()
+    const character = testDatabaseState.db.characters[0] as unknown as Record<string, unknown>
+    character.__serverCharacterShell = true
+    characterHydrationState.hydrate.mockResolvedValueOnce(false)
+    vi.stubGlobal('fetch', serverChatWithContextFetch)
+
+    await expect(chatModule.sendChat(-1, { preview: true })).resolves.toBe(false)
+    expect(getServerChatCalls()).toHaveLength(0)
+  })
+
   it('routes mode=preview to /chat and fills previewFormated', async () => {
     await seedEcho()
     setServerChatPrompt(

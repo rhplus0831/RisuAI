@@ -67,6 +67,11 @@ import {
   startChatMessageHydration,
 } from './server/chatMessageHydration.svelte'
 import {
+  hydrateSelectedCharacterShell,
+  startSelectedCharacterShellHydration,
+  stopSelectedCharacterShellHydration,
+} from './server/characterShellHydration.svelte'
+import {
   isCharacterLorebookHydrated,
   recordHydratedCharacterLorebooks,
   resetLorebookHydration,
@@ -381,6 +386,7 @@ export async function loadWebInitialDatabase() {
   }
   setCachedServerCommandRevision(resources.revision)
   setAppliedServerResourceRevision(resources.revision)
+  startSelectedCharacterShellHydration()
   markReplacementDatabaseOwnershipRefreshed({ databaseLineage, writerEpoch })
   setServerCommandSuccessReconciler((event, coalescedEvents, localEffects) =>
     enqueueServerResourceSync(() =>
@@ -474,6 +480,7 @@ export function stopServerResourceEvents() {
   stopBridgePatchLifecycleFlush = null
   setServerCommandSuccessReconciler(null)
   setServerCommandConflictGapHandler(null)
+  stopSelectedCharacterShellHydration()
   if (serverResourceReconnectTimer) {
     clearTimeout(serverResourceReconnectTimer)
     serverResourceReconnectTimer = null
@@ -1851,6 +1858,7 @@ async function processAuthoritativeServerCommandEvents(events: readonly CommandE
 
     advanceKnownServerCommandRevision(result.revision)
     setAppliedServerResourceRevision(result.revision)
+    void hydrateSelectedCharacterShell({ supersede: true })
     return true
   } finally {
     selectionTracker.stop()

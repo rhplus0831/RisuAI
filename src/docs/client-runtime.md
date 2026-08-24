@@ -79,7 +79,10 @@ scroll coordinators, and shared completion-audio context unlocking before mounti
 5. Seed selected-character state only when the persisted character is visible
    as the selected character, reset body hydration, record
    already-resident lorebook coverage, and hydrate the selected prompt-template
-   owner before caching the common resource revision.
+   owner before caching the common resource revision. Start bounded selected
+   character-detail hydration after that revision is installed. While a summary
+   shell remains selected, the chat screen shows localized loading/retry state
+   and does not mount detail-only controls.
 6. Enable guarded resource writes and command-event reconciliation.
 7. Seed generation operations/jobs, writer-scoped generation-finalization and
    pending-effect state, and separate message/greeting translation recovery;

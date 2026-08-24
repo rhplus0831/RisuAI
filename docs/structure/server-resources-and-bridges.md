@@ -57,9 +57,12 @@ recovery, durable command dispatch, and compatibility bridges. Start from the
   on-demand.
 - Startup seeds the known-server and applied-resource revision cursors, enables
   the resource write guard, records operation/job projections, starts
-  generation reattach and pending-effect recovery, starts message/greeting
-  translation recovery and active-chat hydration, installs the bridge lifecycle
-  flush, and subscribes to `/api/v1/events`.
+  selected-character detail hydration, generation reattach and pending-effect
+  recovery, starts message/greeting translation recovery and active-chat
+  hydration, installs the bridge lifecycle flush, and subscribes to
+  `/api/v1/events`. Selected detail requests are deduplicated, abortable,
+  timeout-bounded, and revision/target fenced; their localized retry state does
+  not invalidate the coherent summary list.
 - Generation recovery treats the lineage-scoped operation projection as durable
   authority. Active jobs are live attachment hints and local activities are
   observer state. Runtime read-only bootstrap probes are epoch-fenced and

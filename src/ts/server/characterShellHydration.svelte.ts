@@ -6,72 +6,161 @@ import { peekCachedServerCommandRevision } from './commands'
 import { fetchServerCharacter } from './resourceReads'
 import { applyCharacterResource } from './resourceState.svelte'
 
-const inFlight = new Map<string, Promise<boolean>>()
+export const CHARACTER_SHELL_HYDRATION_TIMEOUT_MS = 15_000
+
+export type CharacterShellHydrationStatus = 'idle' | 'loading' | 'ready' | 'error'
+export type CharacterShellHydrationError = 'timeout' | 'unavailable' | 'invalid-response'
+
+export interface CharacterShellHydrationRowState {
+  status: CharacterShellHydrationStatus
+  error: CharacterShellHydrationError | null
+}
+
+export interface CharacterShellHydrationOptions {
+  signal?: AbortSignal | null
+  supersede?: boolean
+  timeoutMs?: number
+}
+
+interface InFlightCharacterHydration {
+  controller: AbortController
+  promise: Promise<boolean>
+}
+
+export const characterShellHydrationState = $state<{
+  rows: Record<string, CharacterShellHydrationRowState>
+}>({ rows: {} })
+
+const inFlight = new Map<string, InFlightCharacterHydration>()
 let stopSelectionSubscription: (() => void) | null = null
+let selectedRequestAbort: AbortController | null = null
 let shellHydrationGeneration = 0
 
 export function startSelectedCharacterShellHydration(): void {
   if (stopSelectionSubscription) return
   stopSelectionSubscription = selectedCharID.subscribe(() => {
-    void hydrateSelectedCharacterShell()
+    selectedRequestAbort?.abort()
+    selectedRequestAbort = new AbortController()
+    void hydrateSelectedCharacterShell({ signal: selectedRequestAbort.signal, supersede: true })
   })
 }
 
 export function stopSelectedCharacterShellHydration(): void {
   stopSelectionSubscription?.()
   stopSelectionSubscription = null
+  selectedRequestAbort?.abort()
+  selectedRequestAbort = null
+  for (const request of inFlight.values()) request.controller.abort()
   shellHydrationGeneration += 1
   inFlight.clear()
 }
 
-export async function hydrateSelectedCharacterShell(): Promise<boolean> {
+export async function hydrateSelectedCharacterShell(options: CharacterShellHydrationOptions = {}): Promise<boolean> {
   const index = get(selectedCharID)
   if (index < 0) return false
   const character = getDatabase().characters?.[index]
   if (!isServerCharacterShell(character)) return false
   const characterId = character?.chaId
   if (typeof characterId !== 'string' || characterId.trim() === '') return false
-  return hydrateCharacterShell(characterId)
+  return hydrateCharacterShell(characterId, options)
 }
 
-export async function hydrateCharacterShell(characterId: string): Promise<boolean> {
+export async function hydrateCharacterShell(
+  characterId: string,
+  options: CharacterShellHydrationOptions = {},
+): Promise<boolean> {
   const existing = getDatabase().characters?.find((candidate) => candidate?.chaId === characterId)
   if (!isServerCharacterShell(existing)) return false
 
   const current = inFlight.get(characterId)
-  if (current) return current
+  if (current && !options.supersede) return current.promise
+  if (current) {
+    current.controller.abort()
+    inFlight.delete(characterId)
+  }
+  if (options.signal?.aborted) return false
 
   const generation = shellHydrationGeneration
   const baselineRevision = peekCachedServerCommandRevision()
   const targetSnapshot = snapshotJson(existing)
+  const controller = new AbortController()
+  const timeoutMs = normalizedTimeoutMs(options.timeoutMs)
+  let timedOut = false
+  const abortFromCaller = () => controller.abort()
+  options.signal?.addEventListener('abort', abortFromCaller, { once: true })
+  const timeout = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
+  setCharacterShellHydrationState(characterId, 'loading', null)
   const request = (async () => {
-    const result = await fetchServerCharacter(characterId)
-    if (generation !== shellHydrationGeneration) return false
+    let result: Awaited<ReturnType<typeof fetchServerCharacter>>
+    try {
+      result = await fetchServerCharacter(characterId, controller.signal)
+    } catch (error) {
+      if (generation === shellHydrationGeneration && !controller.signal.aborted) {
+        if (targetStillMatches(characterId, targetSnapshot)) {
+          setCharacterShellHydrationState(characterId, 'error', 'unavailable')
+        }
+        shellHydrationWarning(characterId, error instanceof Error ? error.message : String(error))
+      }
+      return false
+    }
+    if (generation !== shellHydrationGeneration || controller.signal.aborted) {
+      if (timedOut && targetStillMatches(characterId, targetSnapshot)) {
+        setCharacterShellHydrationState(characterId, 'error', 'timeout')
+        shellHydrationWarning(characterId, 'request timed out')
+      }
+      return false
+    }
     if (result.status !== 'ok') {
+      const error = result.status === 'unavailable' ? 'unavailable' : 'invalid-response'
+      if (targetStillMatches(characterId, targetSnapshot)) {
+        setCharacterShellHydrationState(characterId, 'error', error)
+      }
       shellHydrationWarning(characterId, result.status === 'error' ? result.error : 'server resource read unavailable')
       return false
     }
     if (isOlderThanRevision(result.revision, baselineRevision)) {
+      if (targetStillMatches(characterId, targetSnapshot)) {
+        setCharacterShellHydrationState(characterId, 'error', 'invalid-response')
+      }
       return false
     }
-    const currentTarget = getDatabase().characters?.find((candidate) => candidate?.chaId === characterId)
-    if (!isServerCharacterShell(currentTarget) || snapshotJson(currentTarget) !== targetSnapshot) {
+    if (!targetStillMatches(characterId, targetSnapshot)) {
       return false
     }
 
     const applied = applyCharacterResource(result)
-    if (!applied) return false
+    if (!applied) {
+      if (targetStillMatches(characterId, targetSnapshot)) {
+        setCharacterShellHydrationState(characterId, 'error', 'invalid-response')
+      }
+      return false
+    }
+    setCharacterShellHydrationState(characterId, 'ready', null)
     void hydrateActiveChat()
     void hydrateActiveCharacterLorebook()
     return true
   })().finally(() => {
-    if (inFlight.get(characterId) === request) {
+    clearTimeout(timeout)
+    options.signal?.removeEventListener('abort', abortFromCaller)
+    if (inFlight.get(characterId)?.promise === request) {
       inFlight.delete(characterId)
     }
   })
 
-  inFlight.set(characterId, request)
+  inFlight.set(characterId, { controller, promise: request })
   return request
+}
+
+export function retryCharacterShellHydration(characterId: string): Promise<boolean> {
+  return hydrateCharacterShell(characterId, { supersede: true })
+}
+
+export function resetCharacterShellHydrationStateForTests(): void {
+  stopSelectedCharacterShellHydration()
+  characterShellHydrationState.rows = {}
 }
 
 function isOlderThanRevision(revision: number, comparisonRevision: number | null): boolean {
@@ -81,6 +170,25 @@ function isOlderThanRevision(revision: number, comparisonRevision: number | null
 function snapshotJson(value: unknown): string {
   const snapshot = JSON.stringify(value)
   return snapshot === undefined ? '__undefined__' : snapshot
+}
+
+function targetStillMatches(characterId: string, targetSnapshot: string): boolean {
+  const currentTarget = getDatabase().characters?.find((candidate) => candidate?.chaId === characterId)
+  return isServerCharacterShell(currentTarget) && snapshotJson(currentTarget) === targetSnapshot
+}
+
+function normalizedTimeoutMs(value: number | undefined): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? value
+    : CHARACTER_SHELL_HYDRATION_TIMEOUT_MS
+}
+
+function setCharacterShellHydrationState(
+  characterId: string,
+  status: CharacterShellHydrationStatus,
+  error: CharacterShellHydrationError | null,
+): void {
+  characterShellHydrationState.rows[characterId] = { status, error }
 }
 
 function shellHydrationWarning(characterId: string, message: string): void {

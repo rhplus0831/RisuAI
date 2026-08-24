@@ -1,7 +1,7 @@
 <script lang="ts">
   import { getCustomBackground, getEmotion } from '../../ts/characterState'
 
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { getDatabase, isServerCharacterShell } from 'src/ts/storage/database.svelte'
   import { CharEmotion, selectedCharID } from '../../ts/stores.svelte'
   import ResizeBox from './ResizeBox.svelte'
   import DefaultChatScreen from './DefaultChatScreen.svelte'
@@ -11,11 +11,16 @@
   import SideBarArrow from '../UI/GUI/SideBarArrow.svelte'
   import { createLatestBackgroundLoader } from './ChatScreenBackground'
   import LazyComponent from '../UI/LazyComponent.svelte'
+  import CharacterShellHydrationGate from './CharacterShellHydrationGate.svelte'
 
   const loadChatList = () => import('../Others/ChatList.svelte')
   const loadModuleChatMenu = () => import('../Setting/Pages/Module/ModuleChatMenu.svelte')
   let openChatList = $state(false)
   let openModuleList = $state(false)
+  let selectedCharacter = $derived($selectedCharID >= 0 ? getDatabase().characters?.[$selectedCharID] : undefined)
+  let selectedCharacterShellId = $derived(
+    isServerCharacterShell(selectedCharacter) ? (selectedCharacter?.chaId ?? null) : null,
+  )
 
   const wallPaper = `background: url(${defaultWallpaper})`
   const externalStyles = $derived.by(() => {
@@ -46,7 +51,9 @@
   })
 </script>
 
-{#if getDatabase().theme === 'waifu'}
+{#if selectedCharacterShellId}
+  <CharacterShellHydrationGate characterId={selectedCharacterShellId} />
+{:else if getDatabase().theme === 'waifu'}
   <div class="grow h-full flex justify-center relative" style={bgImg.length < 4 ? wallPaper : bgImg}>
     <SideBarArrow />
     <BackgroundDom />

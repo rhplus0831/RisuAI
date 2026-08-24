@@ -8,6 +8,7 @@ const refreshApi = vi.hoisted(() => ({
 const bootstrapApi = vi.hoisted(() => ({ fetchReadOnly: vi.fn() }))
 const sideEffects = vi.hoisted(() => ({
   hydrateActiveChat: vi.fn(async () => undefined),
+  hydrateSelectedCharacter: vi.fn(async () => true),
   resetChatHydration: vi.fn(),
   recordLorebooks: vi.fn(),
   resetLorebooks: vi.fn(),
@@ -38,6 +39,9 @@ vi.mock('./chatMessageHydration.svelte', () => ({
   applyServerChatMessagesResource: vi.fn(() => true),
   hydrateActiveChat: sideEffects.hydrateActiveChat,
   resetChatHydration: sideEffects.resetChatHydration,
+}))
+vi.mock('./characterShellHydration.svelte', () => ({
+  hydrateSelectedCharacterShell: sideEffects.hydrateSelectedCharacter,
 }))
 vi.mock('./lorebookBridge.svelte', () => ({
   applyServerCharacterLorebookResource: vi.fn(() => true),
@@ -182,6 +186,7 @@ describe('Realm import resource refresh', () => {
     expect(sideEffects.resetChatHydration).not.toHaveBeenCalled()
     expect(sideEffects.resetLorebooks).not.toHaveBeenCalled()
     expect(sideEffects.hydrateActiveChat).not.toHaveBeenCalled()
+    expect(sideEffects.hydrateSelectedCharacter).toHaveBeenCalledWith({ supersede: true })
     expect(sideEffects.triggerReattach).not.toHaveBeenCalled()
     expect(sideEffects.recordLorebooks).toHaveBeenCalledTimes(1)
     expect(peekCachedServerCommandRevision()).toBe(21)
@@ -221,6 +226,7 @@ describe('complete server resource refresh', () => {
     expect(get(selectedCharID)).toBe(1)
     expect(sideEffects.resetChatHydration).toHaveBeenCalledTimes(1)
     expect(sideEffects.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
+    expect(sideEffects.hydrateSelectedCharacter).toHaveBeenCalledWith({ supersede: true })
     expect(sideEffects.hydratePromptTemplate).toHaveBeenCalledWith({ force: true, minimumRevision: 5 })
     expect(sideEffects.applyGenerationBootstrap).toHaveBeenCalledWith(
       expect.objectContaining({ activeGenerationJobs: [{ chatId: 'chat-b', jobId: 'job-b' }] }),
@@ -340,6 +346,7 @@ describe('complete server resource refresh', () => {
     expect(peekAppliedServerResourceRevision()).toBeNull()
     expect(sideEffects.resetChatHydration).not.toHaveBeenCalled()
     expect(sideEffects.hydratePromptTemplate).not.toHaveBeenCalled()
+    expect(sideEffects.hydrateSelectedCharacter).not.toHaveBeenCalled()
     expect(bootstrapApi.fetchReadOnly).not.toHaveBeenCalled()
   })
 

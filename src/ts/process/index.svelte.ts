@@ -1,5 +1,5 @@
 import { get, writable } from 'svelte/store'
-import { type character, type MessageGenerationInfo } from '../storage/database.svelte'
+import { isServerCharacterShell, type character, type MessageGenerationInfo } from '../storage/database.svelte'
 import { getResourceDatabase as getDatabase } from '../server/resourceState.svelte'
 import { reportSendChatError } from './sendChatErrors'
 import { setupSendChatContext } from './sendChatContext'
@@ -62,6 +62,7 @@ import {
 import type { ServerGenerationEffectLedgerRef } from './request/serverChatEvents'
 import { isChatVisible, markChatUnread } from './chatUnread.svelte'
 import { registerGenerationProcessRuntime } from './generationRuntimeBridge'
+import { hydrateCharacterShell } from '../server/characterShellHydration.svelte'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -218,7 +219,13 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
 
   const generationTarget = arg.expectedTarget === undefined ? captureActiveChatTarget() : arg.expectedTarget
   if (!generationTarget) return false
-  const generationSettingsState = resolveActiveChatGenerationSettings({ target: generationTarget })
+  let generationSettingsState = resolveActiveChatGenerationSettings({ target: generationTarget })
+  if (generationSettingsState.character && isServerCharacterShell(generationSettingsState.character)) {
+    const characterId = generationSettingsState.character.chaId
+    if (!characterId || !(await hydrateCharacterShell(characterId))) return false
+    if (!isActiveChatTargetFresh(generationTarget)) return false
+    generationSettingsState = resolveActiveChatGenerationSettings({ target: generationTarget })
+  }
   if (!generationSettingsState.character || !generationSettingsState.chat) return false
   errorTarget = stablePostGenerationChatTarget(generationTarget.characterId, generationTarget.chatId)
   errorTargetMessageId =

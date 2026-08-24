@@ -135,16 +135,40 @@ confirmation that no compatibility tooling still consumes the broad response.
 
 ### 2D. Selected detail hydration and guards
 
-- [ ] Start `startSelectedCharacterShellHydration()` after the summary projection
+- [x] Start `startSelectedCharacterShellHydration()` after the summary projection
   and selected-character index are coherently applied.
-- [ ] Reuse per-character request deduplication, request-start revision fencing,
+- [x] Reuse per-character request deduplication, request-start revision fencing,
   and stale-target rejection in the existing hydration module.
-- [ ] Cancel or supersede older selection work. Deletion or selection churn must
+- [x] Cancel or supersede older selection work. Deletion or selection churn must
   not apply detail to the wrong row.
-- [ ] On failure, retain the list shell and expose a localized, per-character
+- [x] On failure, retain the list shell and expose a localized, per-character
   retry state rather than invalidating all startup resources.
-- [ ] Audit detail-only mutations and chat/generation entry points. They must
+- [x] Audit detail-only mutations and chat/generation entry points. They must
   hydrate first or return a typed readiness failure when given a shell.
+
+### 2D hydration decision (2026-08-24)
+
+Selected-shell hydration starts only after the initial common resource revision
+and selected index are installed. Full, gap, replacement, Realm-import, and
+targeted character refreshes explicitly re-check the selected row so replacing
+detail with a newer shell cannot leave it dormant when the numeric selection is
+unchanged.
+
+`characterShellHydration.svelte.ts` remains the single detail loader. Requests
+are deduplicated by character id, bounded to 15 seconds, and fenced by the
+request-start revision plus an exact target-shell snapshot. Selection changes
+abort their older request; authoritative shell refreshes supersede it. Late
+completion after abort, deletion, row replacement, or revision advance cannot
+apply. Failure leaves the shell resident and records a per-character error that
+the localized chat-screen gate exposes with an exact-character retry action.
+
+The chat screen does not mount detail-only UI while its selected row is a shell.
+Existing character bridge and selection guards continue to reject shells, and
+the non-UI generation entry point now hydrates the captured stable character
+before resolving generation settings; it returns its existing readiness failure
+when hydration cannot complete. The detail loader retriggers chat-body and
+character-lorebook hydration after detail applies so shell-time body work is
+preserved and the hydrated owner receives its scoped bodies.
 
 ## Verification
 

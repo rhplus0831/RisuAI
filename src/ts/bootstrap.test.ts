@@ -43,6 +43,11 @@ const hydrationApi = vi.hoisted(() => ({
   resetChatHydration: vi.fn(),
   startChatMessageHydration: vi.fn(),
 }))
+const characterHydrationApi = vi.hoisted(() => ({
+  hydrateSelected: vi.fn(async () => true),
+  startSelected: vi.fn(),
+  stopSelected: vi.fn(),
+}))
 
 const lorebookApi = vi.hoisted(() => ({
   isCharacterLorebookHydrated: vi.fn(() => true),
@@ -157,6 +162,11 @@ vi.mock('./server/activeWriterSession', async (importActual) => {
   return { ...actual, enterWriterTakeoverFlow: activeWriterApi.enterTakeover }
 })
 vi.mock('./server/chatMessageHydration.svelte', () => hydrationApi)
+vi.mock('./server/characterShellHydration.svelte', () => ({
+  hydrateSelectedCharacterShell: characterHydrationApi.hydrateSelected,
+  startSelectedCharacterShellHydration: characterHydrationApi.startSelected,
+  stopSelectedCharacterShellHydration: characterHydrationApi.stopSelected,
+}))
 vi.mock('./server/lorebookBridge.svelte', () => lorebookApi)
 vi.mock('./server/promptTemplateHydration', () => ({
   ensurePromptTemplateHydrated: promptTemplateApi.ensure,
@@ -626,6 +636,7 @@ describe('API-backed client bootstrap', () => {
       { characterId: 'char-a', greetingIndex: -1, settingsHash: 'settings-a', jobId: 'greeting-job-a' },
     ])
     expect(hydrationApi.startChatMessageHydration).toHaveBeenCalledTimes(1)
+    expect(characterHydrationApi.startSelected).toHaveBeenCalledTimes(1)
     expect(promptTemplateApi.ensure).toHaveBeenCalledWith({ minimumRevision: 5 })
     expect(eventApi.subscriptions[0]?.sinceRevision).toBe(5)
   })

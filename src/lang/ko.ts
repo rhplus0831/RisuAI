@@ -1894,6 +1894,8 @@ const languageKoreanBase = {
 } satisfies DeepPartial<typeof import('./en').languageEnglish>
 
 export const languageKorean = {
+  loadingCharacter: '캐릭터 불러오는 중…',
+  characterDataLoadFailed: '캐릭터 데이터를 불러오지 못했습니다.',
   ...languageKoreanBase,
   characterImportDroppedArchiveEntry: (fileName: string) => `압축 파일: ${fileName}`,
   characterImportDroppedInlineAsset: (index: number, name: string) =>

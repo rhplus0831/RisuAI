@@ -43,6 +43,7 @@ import { fetchServerBootstrapReadOnly } from './bootstrap'
 import { applyGenerationOperationBootstrap } from './generationOperations'
 import { recordFullResourceRefresh } from './protocolDiagnostics'
 import { ensurePromptTemplateHydrated } from './promptTemplateHydration'
+import { hydrateSelectedCharacterShell } from './characterShellHydration.svelte'
 import {
   refreshAllServerResources,
   refreshInvalidatedServerResources,
@@ -164,6 +165,7 @@ export async function refreshServerRealmImportResources(input: {
     }
     setCachedServerCommandRevision(result.revision)
     setAppliedServerResourceRevision(result.revision)
+    void hydrateSelectedCharacterShell({ supersede: true })
     return { status: 'ok', revision: result.revision }
   } finally {
     selectionTracker.stop()
@@ -224,6 +226,7 @@ async function completeFullServerResourceRefresh(
   reapplyPendingPromptTemplateStructuralProjections()
   setCachedServerCommandRevision(revision)
   setAppliedServerResourceRevision(revision)
+  void hydrateSelectedCharacterShell({ supersede: true })
   await refreshRuntimeJobs()
   triggerOpenChatGenerationReattach()
   return { status: 'ok', revision }
