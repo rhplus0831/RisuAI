@@ -159,6 +159,20 @@ describe('active writer browser session', () => {
     const reload = vi.fn()
     vi.stubGlobal('location', { reload })
     const activeWriterSession = await importActiveWriterSession()
+    const startupReadiness = await import('../startupReadiness')
+    for (const milestone of [
+      'entry',
+      'shell-mounted',
+      'observer-ready',
+      'writer-ready',
+      'plugins-ready',
+      'chat-ready',
+    ] as const) {
+      startupReadiness.recordStartupMilestone(milestone)
+    }
+    startupReadiness.settleStartupChatReadiness(true)
+    expect(startupReadiness.canMutate()).toBe(true)
+    expect(startupReadiness.canGenerate()).toBe(true)
 
     document.body.innerHTML = '<div id="app"><button>background action</button></div>'
     expect(
@@ -167,6 +181,9 @@ describe('active writer browser session', () => {
       }),
     ).toBe(true)
     expect(activeWriterSession.isWriterAccessLost()).toBe(true)
+    expect(startupReadiness.canRenderShell()).toBe(true)
+    expect(startupReadiness.canMutate()).toBe(false)
+    expect(startupReadiness.canGenerate()).toBe(false)
     expect(document.getElementById('app')?.classList.contains('risu-writer-takeover-pending')).toBe(true)
     const { canUseServerCommands } = await import('./commands')
     const { canUseServerEvents } = await import('./events')

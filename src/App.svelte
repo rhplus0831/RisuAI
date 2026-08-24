@@ -26,7 +26,8 @@
     SettingsMenuIndex,
     closePopupEditorSession,
   } from './ts/stores.svelte'
-  import { alertStore, loadedStore, LoadingStatusState, selectedCharID } from './ts/stores/coreStores.svelte'
+  import { alertStore, LoadingStatusState, selectedCharID } from './ts/stores/coreStores.svelte'
+  import { startupCoordinatorStore } from './ts/startupReadiness'
   import Sidebar from './lib/SideBars/Sidebar.svelte'
   import ChatScreen from './lib/ChatScreens/ChatScreen.svelte'
   import { showRealmInfoStore } from './ts/realmInfoStore'
@@ -107,7 +108,7 @@
   let routeChatIsOpen = $derived($currentRoute.kind === 'character' && typeof $currentRoute.chatId === 'string')
 
   $effect(() => {
-    if (!$loadedStore) return
+    if (!$startupCoordinatorStore.capabilities.canApplyRoutes) return
     const route = $currentRoute
     if (consumeStateDrivenRouteUpdate()) return
     untrack(() => {
@@ -116,7 +117,7 @@
   })
 
   $effect(() => {
-    if (!$loadedStore) return
+    if (!$startupCoordinatorStore.capabilities.canApplyRoutes) return
 
     // Read every state value that can drive the URL before checking the route
     // application guard. Route application writes these stores while the guard
@@ -284,7 +285,7 @@
       </div>
       <span class="absolute top-4 left-4 font-bold text-[#bbbbbb] text-md md:text-lg">RisyGTP 9+ Mytho Ultra Free</span>
     </div>
-  {:else if !$loadedStore}
+  {:else if !$startupCoordinatorStore.capabilities.canRenderShell}
     <div
       class="w-full h-full flex justify-center items-center text-textcolor text-xl bg-gray-900 flex-col"
       role="status"

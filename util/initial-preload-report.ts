@@ -252,7 +252,7 @@ export function formatInitialPreloadReport(report: InitialPreloadReport): string
   if (report.budgets) {
     lines.push(
       `Regression ceilings: ${report.budgets.regressionCeilings.passes ? 'PASS' : 'FAIL'} — ${report.budgets.regressionCeilings.totalGzipBytes} total / ${report.budgets.regressionCeilings.largestChunkGzipBytes} largest`,
-      `Milestone targets: ${report.budgets.milestoneTargets.passes ? 'PASS' : 'NOT YET'} — ${report.budgets.milestoneTargets.totalGzipBytes} total / ${report.budgets.milestoneTargets.largestChunkGzipBytes} largest`,
+      `Milestone gates: ${report.budgets.milestoneTargets.passes ? 'PASS' : 'FAIL'} — ${report.budgets.milestoneTargets.totalGzipBytes} total / ${report.budgets.milestoneTargets.largestChunkGzipBytes} largest`,
     )
   }
   lines.push('', ...report.files.map((file) => `${file.role}\t${file.rawBytes}\t${file.gzipBytes}\t${file.path}`))
@@ -288,7 +288,9 @@ export function runInitialPreloadReportCli(argv = process.argv.slice(2)): number
   process.stdout.write(human)
   if (options.jsonOutput) writeOutput(options.jsonOutput, `${JSON.stringify(report, null, 2)}\n`)
   if (options.textOutput) writeOutput(options.textOutput, human)
-  return report.budgets?.regressionCeilings.passes === false ? 1 : 0
+  return report.budgets?.regressionCeilings.passes === false || report.budgets?.milestoneTargets.passes === false
+    ? 1
+    : 0
 }
 
 const executedPath = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : ''

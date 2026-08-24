@@ -524,8 +524,8 @@ function hydrationWarning(scope: string, message: string): void {
 }
 
 /** Hydrate the currently-open chat's messages (no-op if already hydrated). */
-export async function hydrateActiveChat(options: { force?: boolean; loadPages?: number } = {}): Promise<void> {
-  await hydrateActiveChatWindow(options.loadPages ?? getInitialChatLoadPages(getDatabase()), {
+export async function hydrateActiveChat(options: { force?: boolean; loadPages?: number } = {}): Promise<boolean> {
+  return hydrateActiveChatWindow(options.loadPages ?? getInitialChatLoadPages(getDatabase()), {
     force: options.force,
   })
 }
@@ -1213,11 +1213,17 @@ export async function ensureAllChatsHydrated(options: BulkHydrationOptions = {})
 
 let wired = false
 let stopChatHydrationWiring: (() => void) | null = null
+let activeChatReadinessRefreshHook: (() => void) | null = null
 // Reactive mirror of the selected character index. `selectedCharID` is a store
 // (not $state), so the hydration effect can't track it directly; this mirror is
 // updated by a store subscription and read inside the effect, so the effect
 // re-runs — and re-tracks the *new* character's chatPage — on a character switch.
 let selectedCharMirror = $state(-1)
+
+/** Notify startup readiness when the reactive active-chat target changes. */
+export function setActiveChatReadinessRefreshHook(hook: (() => void) | null): void {
+  activeChatReadinessRefreshHook = hook
+}
 
 /**
  * Wire the hydration trigger: a reactive effect on the active chat id. It re-runs
@@ -1237,6 +1243,7 @@ export function startChatMessageHydration(): void {
       if (selectedCharMirror < 0) return
       const character = getDatabase().characters?.[selectedCharMirror]
       const chatId = character?.chats?.[character?.chatPage ?? 0]?.id
+      activeChatReadinessRefreshHook?.()
       if (chatId) void hydrateActiveChat()
       // Hydrate the open character's globalLore. This reads chaId only, so
       // writing the hydrated entries does not re-trigger the effect.

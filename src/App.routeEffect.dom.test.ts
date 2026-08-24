@@ -4,6 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppRoute } from './ts/router'
 import type { Database, character } from './ts/storage/database.svelte'
 import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes'
+import {
+  recordStartupMilestone,
+  resetStartupReadinessForTests,
+  revokeStartupWriterCapabilities,
+} from './ts/startupReadiness'
 
 const routePath = '/character/char-a/chat-a'
 const characterRoute: AppRoute = {
@@ -351,6 +356,10 @@ function seedStores() {
   } as unknown as Database)
 
   loadedStore.set(true)
+  resetStartupReadinessForTests()
+  for (const milestone of ['entry', 'shell-mounted', 'observer-ready', 'writer-ready'] as const) {
+    recordStartupMilestone(milestone)
+  }
   selectedCharID.set(0)
   sideBarStore.set(true)
   DynamicGUI.set(false)
@@ -411,6 +420,7 @@ describe('App route/refreeze mounted DOM behavior', () => {
       component = undefined
     }
     replaceResourceDatabase({} as Database)
+    resetStartupReadinessForTests()
     target.remove()
     vi.unstubAllEnvs()
     vi.clearAllMocks()
@@ -454,6 +464,21 @@ describe('App route/refreeze mounted DOM behavior', () => {
     expect(get(selectedCharID)).toBe(0)
     expect(window.location.pathname).toBe(routePath)
     expect(appRouteDomMocks.state.applyRouteCalls).toBe(1)
+  })
+
+  it('keeps the coherent shell readable while persistence-capable route application is revoked', async () => {
+    if (component) {
+      unmount(component)
+      component = undefined
+    }
+    appRouteDomMocks.state.applyRouteCalls = 0
+    revokeStartupWriterCapabilities()
+
+    await mountApp()
+
+    expect(target.querySelector('[role="status"]')).toBeNull()
+    expect(target.querySelector('[data-testid="side-chat-list"]')).not.toBeNull()
+    expect(appRouteDomMocks.state.applyRouteCalls).toBe(0)
   })
 
   it('retains state-to-route subscriptions while a route application owns the stores', async () => {

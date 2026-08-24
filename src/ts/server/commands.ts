@@ -64,6 +64,7 @@ import {
   normalizePromptRole,
   normalizePromptTemplate,
 } from '../process/promptTemplateNormalization'
+import { canMutate } from '../startupReadiness'
 
 export { notifyServerCommandLocalEffectApplied, subscribeServerCommandLocalEffectApplied }
 
@@ -74,6 +75,8 @@ export const SERVER_MUTATION_ID_HEADER = 'risu-mutation-id'
 export const SERVER_DATABASE_LINEAGE_HEADER = 'risu-database-lineage'
 const AGENT_PRESET_COLLECTION_ACKNOWLEDGEMENT_CERTIFICATE = 'agent-preset-collection-v1'
 const PRESET_REORDER_ACKNOWLEDGEMENT_CERTIFICATE = 'preset-reorder-v1'
+
+type ServerCommandAccess = 'ordinary' | 'bootstrap-initialize' | 'pending-replay'
 
 export {
   SERVER_SETTINGS_GROUP_BY_KEY,
@@ -2140,7 +2143,11 @@ export async function withDirectServerCommandEventReconciliation<T>(
 }
 
 export function canUseServerCommands(): boolean {
-  return !isWriterAccessLost()
+  return canUseServerCommandAccess('ordinary')
+}
+
+function canUseServerCommandAccess(access: ServerCommandAccess): boolean {
+  return !isWriterAccessLost() && (access !== 'ordinary' || canMutate())
 }
 
 /**
@@ -2217,7 +2224,15 @@ export async function getServerCommandBaseRevision(
   signal?: AbortSignal | null,
   keepalive = false,
 ): Promise<number | null> {
-  if (!canUseServerCommands()) return null
+  return getServerCommandBaseRevisionForAccess('ordinary', signal, keepalive)
+}
+
+async function getServerCommandBaseRevisionForAccess(
+  access: ServerCommandAccess,
+  signal?: AbortSignal | null,
+  keepalive = false,
+): Promise<number | null> {
+  if (!canUseServerCommandAccess(access)) return null
   if (cachedServerCommandRevision !== null) return cachedServerCommandRevision
 
   const auth = await getNodeServerProxyAuth()
@@ -2236,7 +2251,7 @@ export async function getServerCommandBaseRevision(
     return null
   }
 
-  if (!response.ok) return null
+  if (!canUseServerCommandAccess(access) || !response.ok) return null
 
   try {
     const body = (await response.json()) as { revision?: unknown }
@@ -2320,17 +2335,22 @@ export async function patchSettingsObjectFieldsCommand(
  * idempotently — it only writes when no database exists yet, so calling it
  * against an already-initialized server is a harmless no-op (`initialized: false`).
  */
-export async function initializeServerDatabase(
+export async function initializeServerDatabaseForBootstrap(
   signal?: AbortSignal | null,
 ): Promise<ServerCommandResult<{ initialized: boolean }>> {
-  return requestCommandJson('/state/initialize', {
-    method: 'POST',
-    body: {},
-    signal,
-    // The idempotent already-initialized branch performs no mutation and is the
-    // only command route that intentionally returns a revision without an event.
-    allowEventlessSuccess: (body) => body.initialized === false && !Object.prototype.hasOwnProperty.call(body, 'event'),
-  })
+  return requestCommandJson(
+    '/state/initialize',
+    {
+      method: 'POST',
+      body: {},
+      signal,
+      // The idempotent already-initialized branch performs no mutation and is the
+      // only command route that intentionally returns a revision without an event.
+      allowEventlessSuccess: (body) =>
+        body.initialized === false && !Object.prototype.hasOwnProperty.call(body, 'event'),
+    },
+    'bootstrap-initialize',
+  )
 }
 
 /**
@@ -2366,6 +2386,10 @@ export async function patchServerBackedSettings(input: PatchServerBackedSettings
   const rollbackEpoch = captureDestructiveRefreshEpoch()
   return enqueueServerCommandExecution(() =>
     withQueuedCommandExecutionContext(rollbackEpoch, input.mutationId, input.databaseLineage, async () => {
+      if (!canUseServerCommands()) {
+        runRollbackUnlessDestructiveRefreshChanged(input.rollback, rollbackEpoch)
+        return { status: 'unavailable' }
+      }
       const deferredRollback = input.failureRollbackDisposition ? input.rollback : undefined
       const executionInput = input.failureRollbackDisposition ? { ...input, rollback: undefined } : input
       const execute = () => executeServerBackedSettingsPatch(executionInput, grouped, rollbackEpoch)
@@ -5539,6 +5563,10 @@ export async function runServerCommand<T extends Record<string, unknown> = {}>(
   const rollbackEpoch = captureDestructiveRefreshEpoch()
   return enqueueServerCommandExecution(() =>
     withQueuedCommandExecutionContext(rollbackEpoch, input.mutationId, input.databaseLineage, async () => {
+      if (!canUseServerCommands()) {
+        runRollbackUnlessDestructiveRefreshChanged(input.rollback, rollbackEpoch)
+        return { status: 'unavailable' }
+      }
       let executionStarted = false
       const deferredRollback = input.failureRollbackDisposition ? input.rollback : undefined
       const executionInput = input.failureRollbackDisposition ? { ...input, rollback: undefined } : input
@@ -5596,11 +5624,23 @@ export async function runServerCommandSequence(
 ): Promise<ServerCommandResult | null> {
   if (!canUseServerCommands() || commands.length === 0) return null
 
+  return runServerCommandSequenceWithAccess('ordinary', commands, rollback, options)
+}
+
+function runServerCommandSequenceWithAccess(
+  access: ServerCommandAccess,
+  commands: readonly ServerCommandSequenceEntry[],
+  rollback?: (isCurrent: () => boolean) => void | Promise<void>,
+  options: ServerCommandTransportOptions = {},
+): Promise<ServerCommandResult | null> {
+  if (!canUseServerCommandAccess(access) || commands.length === 0) return Promise.resolve(null)
+
   const rollbackEpoch = captureDestructiveRefreshEpoch()
   return enqueueServerCommandExecution((batch) =>
-    withQueuedCommandExecutionContext(rollbackEpoch, options.mutationId, options.databaseLineage, () =>
-      executeServerCommandSequence(commands, rollback, rollbackEpoch, batch),
-    ),
+    withQueuedCommandExecutionContext(rollbackEpoch, options.mutationId, options.databaseLineage, async () => {
+      if (!canUseServerCommandAccess(access)) return null
+      return executeServerCommandSequence(commands, rollback, rollbackEpoch, batch, access)
+    }),
   )
 }
 
@@ -5621,22 +5661,26 @@ export async function replayDurableMutationRequests(
   databaseLineage: string,
 ): Promise<DurableMutationReplayResult> {
   if (requests.length === 0) return { status: 'ok' }
-  if (!canUseServerCommands()) return { status: 'unavailable' }
+  if (!canUseServerCommandAccess('pending-replay')) return { status: 'unavailable' }
   const factories = requests.map(
     (request): ServerCommandFactory =>
       (baseRevision) =>
-        requestCommandJson(request.path, {
-          method: request.method,
-          body: { ...cloneJsonValue(request.body), baseRevision },
-        }),
+        requestCommandJson(
+          request.path,
+          {
+            method: request.method,
+            body: { ...cloneJsonValue(request.body), baseRevision },
+          },
+          'pending-replay',
+        ),
   )
   const options = { mutationId, databaseLineage }
-  let failed = await runServerCommandSequence(factories, undefined, options)
+  let failed = await runServerCommandSequenceWithAccess('pending-replay', factories, undefined, options)
   // A different live writer may have advanced the revision while this tab was
   // gone. The 409 response advances the cached cursor; replay the same stable
   // receipt ids once so already-accepted prefix requests dedupe transactionally.
   if (failed?.status === 'conflict') {
-    failed = await runServerCommandSequence(factories, undefined, options)
+    failed = await runServerCommandSequenceWithAccess('pending-replay', factories, undefined, options)
   }
   return failed ?? { status: 'ok' }
 }
@@ -5653,7 +5697,7 @@ export async function replayDurableMutationRequestsInline(
   databaseLineage: string,
 ): Promise<DurableMutationReplayResult> {
   if (requests.length === 0) return { status: 'ok' }
-  if (!canUseServerCommands()) return { status: 'unavailable' }
+  if (!canUseServerCommandAccess('pending-replay')) return { status: 'unavailable' }
   const reconciliationBatch = activeServerCommandReconciliationBatch
   const rollbackEpoch = activeQueuedCommandDestructiveRefreshEpoch
   if (!reconciliationBatch || rollbackEpoch === null) return { status: 'unavailable' }
@@ -5663,10 +5707,14 @@ export async function replayDurableMutationRequestsInline(
   const factories = requests.map(
     (request): ServerCommandFactory =>
       (baseRevision) =>
-        requestCommandJson(request.path, {
-          method: request.method,
-          body: { ...cloneJsonValue(request.body), baseRevision },
-        }),
+        requestCommandJson(
+          request.path,
+          {
+            method: request.method,
+            body: { ...cloneJsonValue(request.body), baseRevision },
+          },
+          'pending-replay',
+        ),
   )
   const executeAttempt = async (): Promise<ServerCommandResult | null> => {
     const previousMutation = activeQueuedCommandMutation
@@ -5676,7 +5724,13 @@ export async function replayDurableMutationRequestsInline(
       requestIndex: 0,
     }
     try {
-      return await executeServerCommandSequence(factories, undefined, rollbackEpoch, reconciliationBatch)
+      return await executeServerCommandSequence(
+        factories,
+        undefined,
+        rollbackEpoch,
+        reconciliationBatch,
+        'pending-replay',
+      )
     } finally {
       activeQueuedCommandMutation = previousMutation
     }
@@ -5724,14 +5778,16 @@ async function executeServerCommandSequence(
   rollback: ((isCurrent: () => boolean) => void | Promise<void>) | undefined,
   rollbackEpoch: number,
   reconciliationBatch: ServerCommandReconciliationBatch,
+  access: ServerCommandAccess = 'ordinary',
 ): Promise<ServerCommandResult | null> {
   const acceptedRevisions: number[] = []
   for (const entry of commands) {
+    if (!canUseServerCommandAccess(access)) return { status: 'unavailable' }
     // The sequence owns rollback so it runs exactly once for the first failed
     // step. executeServerCommand still normalizes thrown factories to an error
     // result and defers every accepted event into this sequence's active batch.
     const command = typeof entry === 'function' ? entry : entry.command
-    const execute = () => executeServerCommand({ command }, rollbackEpoch)
+    const execute = () => executeServerCommand({ command }, rollbackEpoch, access)
     let result: ServerCommandResult
     try {
       result =
@@ -5765,10 +5821,15 @@ async function executeServerCommandSequence(
 async function executeServerCommand<T extends Record<string, unknown>>(
   input: RunServerPresetCommandInput<T>,
   rollbackEpoch: number,
+  access: ServerCommandAccess = 'ordinary',
 ): Promise<ServerCommandResult<T>> {
+  if (!canUseServerCommandAccess(access)) {
+    runRollbackUnlessDestructiveRefreshChanged(input.rollback, rollbackEpoch)
+    return { status: 'unavailable' }
+  }
   let result: ServerCommandResult<T>
   try {
-    const baseRevision = await getServerCommandBaseRevision(input.signal, input.keepalive)
+    const baseRevision = await getServerCommandBaseRevisionForAccess(access, input.signal, input.keepalive)
     if (baseRevision === null) {
       runRollbackUnlessDestructiveRefreshChanged(input.rollback, rollbackEpoch)
       return { status: 'error', error: 'Unable to read server command revision' }
@@ -5822,11 +5883,13 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
     deferOwnEventUntilResponse?: (event: CommandEvent) => boolean
     allowEventlessSuccess?: (body: Record<string, unknown>) => boolean
   },
+  access: ServerCommandAccess = 'ordinary',
 ): Promise<ServerCommandResult<T>> {
   const destructiveRefreshEpoch = activeQueuedCommandDestructiveRefreshEpoch ?? captureDestructiveRefreshEpoch()
-  if (!canUseServerCommands()) return { status: 'unavailable' }
+  if (!canUseServerCommandAccess(access)) return { status: 'unavailable' }
 
   const auth = await getNodeServerProxyAuth()
+  if (!canUseServerCommandAccess(access)) return { status: 'unavailable' }
   const mutation = nextQueuedCommandMutationRequest()
   const directReconciliation = init.deferOwnEventUntilResponse
     ? beginDirectServerCommandReconciliation(init.deferOwnEventUntilResponse)

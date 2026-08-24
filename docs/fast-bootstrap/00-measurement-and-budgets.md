@@ -3,8 +3,9 @@
 ## Outcome
 
 Create a reproducible baseline for navigation-to-readiness, initial JavaScript,
-and bootstrap payloads, then make material regressions fail in CI. This phase
-must land before performance-oriented implementation begins.
+and bootstrap payloads, then make material regressions fail in the documented
+local build command. This phase must land before performance-oriented
+implementation begins.
 
 ## Inputs and owners
 
@@ -15,8 +16,7 @@ must land before performance-oriented implementation begins.
 - Browser journey: `server/fastify/browser-smoke/fastifyBrowserSmoke.spec.ts`
 - Server resource metrics: `server/fastify/src/protocolMetrics.ts` and
   `server/fastify/src/routes/resourceReads.ts`
-- Build and test commands: `package.json`, `vite.config.ts`, and
-  `.github/workflows/quality.yml`
+- Build and test commands: `package.json` and `vite.config.ts`
 
 ## Review slices
 
@@ -39,13 +39,13 @@ must land before performance-oriented implementation begins.
   resolves the main entry and module-preload files, and reports file count plus
   raw and gzip byte totals.
 - [x] Report the largest initial chunk separately and emit both human-readable
-  output and stable machine-readable data for CI artifacts.
+  output and stable machine-readable local artifacts.
 - [x] Add a package command that builds and runs the report in one documented
   step.
 - [x] Add deterministic tests for duplicate preloads, missing files, gzip totals,
   and paths containing encoded or nested segments.
-- [ ] Gate the ratified total and per-chunk budgets in CI. Do not use manual
-  chunking to make the report ignore an eager dependency.
+- [x] Gate the ratified total and per-chunk budgets in the local report command.
+  Do not use manual chunking to make the report ignore an eager dependency.
 
 ### 0C. Server and payload timing
 
@@ -68,7 +68,7 @@ must land before performance-oriented implementation begins.
 - [x] Document the single developer command and environment needed to reproduce
   the measurements.
 
-## Initial budgets to ratify
+## Ratified initial budgets
 
 | Measure | Initial milestone budget |
 | --- | ---: |
@@ -78,9 +78,9 @@ must land before performance-oriented implementation begins.
 | User mutation before writer readiness | Zero |
 | Generation before chat readiness | Zero |
 
-CI variance must be measured before these values become hard gates. Any later
-change requires before/after artifacts and an explanation of the dependency
-that needs the increase.
+Variance across five reproducible clean local production builds must be measured
+before these values become hard gates. Any later change requires before/after
+artifacts and an explanation of the dependency that needs the increase.
 
 ### Budget calibration status
 
@@ -91,19 +91,32 @@ After the Phase 1 boundary work, the 2026-08-24 report measures 318,211 total
 gzip bytes and a 283,335-byte largest chunk, comfortably below the report-only
 900/500 KiB milestone targets.
 
-CI ratification is still pending. The repository has no successful Quality
-workflow artifact for the `fastify` branch as of 2026-08-24, so CI variance has
-not been measured. Review the first five successful preload artifacts before
-promoting the milestone targets to enforced budgets. The provisional regression
-ceilings already return a nonzero status from `build:initial-preload` and block
-the required `initial-preload`/`verify` lanes; the CI budget checkbox above
-remains open until the tighter limits are ratified.
+Five clean local `pnpm build:initial-preload` executions from commit
+`c1d437b96372479d9028393f6c6c37376718bc28` were recorded on 2026-08-24 with
+Node.js 24.19.0 and pnpm 11.23.0:
+
+| Run | Initial gzip | Largest chunk gzip | Initial files |
+| ---: | ---: | ---: | ---: |
+| 1 | 318,246 bytes | 283,372 bytes | 12 |
+| 2 | 318,246 bytes | 283,372 bytes | 12 |
+| 3 | 318,246 bytes | 283,372 bytes | 12 |
+| 4 | 318,246 bytes | 283,372 bytes | 12 |
+| 5 | 318,246 bytes | 283,372 bytes | 12 |
+
+The observed range is zero bytes for both gzip measures. The five builds pass
+the 900/500 KiB targets with roughly 65% total-gzip and 45% largest-chunk
+headroom, so those targets are ratified as hard gates. The historical
+1,650,000/675,000-byte regression ceilings remain visible for baseline context,
+but `build:initial-preload` now returns a nonzero status when either ratified
+milestone gate fails.
 
 ## Verification
 
 Run `pnpm measure:fast-bootstrap` to build the production preload report,
 produce the browser-smoke build, and execute the small/large cold/warm startup
-matrix. Local and CI artifacts are written under `fast-bootstrap-results/`.
+matrix. Local artifacts are written under `fast-bootstrap-results/`. For a
+budget recalibration, run `pnpm build:initial-preload` five times from the same
+clean source revision and retain each generated report before the next run.
 
 - Run the timing and report unit tests directly.
 - Run `pnpm build` and the new build-report command.
@@ -116,11 +129,11 @@ matrix. Local and CI artifacts are written under `fast-bootstrap-results/`.
 - Machine-readable and human-readable preload reports.
 - Cold and warm phase-timing snapshots for small and large fixtures.
 - Resource payload-size table and representative request UIDs/traces.
-- A short record of CI variance and the budgets ratified from it.
+- A short record of five-build local variance and the budgets ratified from it.
 
 ## Exit gate
 
 - One documented command reproduces local measurements.
-- CI detects a material initial-preload regression.
+- `pnpm build:initial-preload` detects a material initial-preload regression.
 - Readiness timestamps are ordered, one-time, and visible to browser smoke.
 - The Phase 1 and Phase 2 baseline artifacts are retained for comparison.

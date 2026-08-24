@@ -71,8 +71,7 @@ supports doing so.
 | Final integration | `pnpm test:all` |
 
 Run Prettier using the repository's normal command and do not commit local trace
-data, generated reports intended only as CI artifacts, `dist/`, or temporary
-fixture databases.
+data, generated measurement reports, `dist/`, or temporary fixture databases.
 
 ## Rollback matrix
 

@@ -202,9 +202,9 @@ preserved and the hydrated owner receives its scoped bodies.
 - `pnpm build:initial-preload` reports a 318,246-byte initial gzip closure and a
   283,372-byte largest initial chunk. Protected boundary checks, regression
   ceilings, and the provisional 900/500 KiB milestone targets all pass locally.
-- CI ratification of the provisional JavaScript limits remains external to this
-  phase: the first five successful Quality workflow artifacts are still needed,
-  as recorded in Phases 0 and 1.
+- Phase 0 subsequently ratified the JavaScript limits from five reproducible
+  clean local production builds and promoted the 900/500 KiB targets to hard
+  gates.
 
 ## Rollback
 

@@ -2,10 +2,11 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { gzipSync } from 'node:zlib'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createInitialPreloadReport,
   formatInitialPreloadReport,
+  runInitialPreloadReportCli,
   type InitialPreloadBudgets,
 } from './initial-preload-report.js'
 
@@ -26,6 +27,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
   fs.rmSync(distDir, { recursive: true, force: true })
 })
 
@@ -77,7 +79,7 @@ describe('initial preload report', () => {
     expect(() => createInitialPreloadReport(distDir)).toThrow('Initial JavaScript path escapes dist')
   })
 
-  it('reports regression ceilings separately from milestone targets', () => {
+  it('enforces ratified milestone gates separately from historical regression ceilings', () => {
     write('index.html', html('<script type="module" src="/entry.js"></script>'))
     write('entry.js', 'large enough to gzip')
     const gzipBytes = gzipSync('large enough to gzip', { level: 9 }).byteLength
@@ -94,6 +96,10 @@ describe('initial preload report', () => {
       milestoneTargets: { ...budgets.milestoneTargets, passes: false },
     })
     expect(formatInitialPreloadReport(report)).toContain('Regression ceilings: PASS')
-    expect(formatInitialPreloadReport(report)).toContain('Milestone targets: NOT YET')
+    expect(formatInitialPreloadReport(report)).toContain('Milestone gates: FAIL')
+
+    write('budgets.json', JSON.stringify(budgets))
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    expect(runInitialPreloadReportCli(['--dist', distDir, '--budget', path.join(distDir, 'budgets.json')])).toBe(1)
   })
 })

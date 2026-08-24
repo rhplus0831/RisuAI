@@ -13,6 +13,8 @@ This phase starts only after
 
 ## Current owners
 
+- Coordinator, readiness diagnostics, and startup-step retry:
+  `src/ts/startupReadiness.ts`
 - Bootstrap sequencing and event subscription: `src/ts/bootstrap.ts`
 - Runtime bootstrap transport: `src/ts/server/bootstrap.ts`
 - Writer state: `src/ts/server/activeWriterSession.ts`
@@ -46,55 +48,129 @@ bypass.
 
 ### 3A. Coordinator and diagnostics
 
-- [ ] Add one startup coordinator with monotonic phase transitions, attempt IDs,
+- [x] Add one startup coordinator with monotonic phase transitions, attempt IDs,
   per-capability failure state, and targeted retry.
-- [ ] Expose narrow selectors for `canRenderShell`, `canApplyRoutes`,
+- [x] Expose narrow selectors for `canRenderShell`, `canApplyRoutes`,
   `canMutate`, `pluginsReady`, and `canGenerate`.
-- [ ] Integrate the Phase 0 marks at the coordinator boundary rather than in
+- [x] Integrate the Phase 0 marks at the coordinator boundary rather than in
   individual screens.
-- [ ] Make retry idempotent: accepted mutations, listeners, timers, and already
+- [x] Make retry idempotent: accepted mutations, listeners, timers, and already
   successful phases must not be duplicated.
+
+#### 3A implementation record (2026-08-24)
+
+`startupReadiness.ts` now owns the monotonic milestone timeline, attempt and
+per-capability failure diagnostics, the five narrow selectors, targeted retry
+deduplication, and successful-step retention. `loadData()` uses coordinator
+steps for the writer/shell path, push runtime, plugin runtime, generation
+recovery, and background runtime. A retry resumes at the failed step instead of
+repeating completed recovery work or registering its listeners and timers
+again. Concurrent `loadData()` callers also share one attempt loop.
+
+At the 3A checkpoint this slice was deliberately behavior-preserving:
+`loadedStore` remained the UI compatibility boundary, and commands and routes
+did not consume the new capabilities until 3B and 3C. The browser-smoke hook
+exposes the serializable coordinator snapshot alongside the Phase 0 timeline.
+
+Focused coordinator/bootstrap/report tests pass 170 tests. `pnpm check`,
+`pnpm build:smoke`, the small/large cold/warm startup matrix, and
+`pnpm test:affected` pass; the affected frontend selection covers 5,068 tests
+across 332 files. The production preload report remains at 12 files, 318,621
+gzip bytes total, and a 283,372-byte largest chunk, so both ratified milestone
+gates pass.
 
 ### 3B. Writer sequence and command enforcement
 
-- [ ] Express the existing writer-critical sequence as coordinator steps without
+- [x] Express the existing writer-critical sequence as coordinator steps without
   changing its order.
-- [ ] Keep first-run initialization and internal replay behind named internal
+- [x] Keep first-run initialization and internal replay behind named internal
   capabilities while ordinary commands remain disabled.
-- [ ] Extend `canUseServerCommands()` so writer ownership alone is insufficient;
+- [x] Extend `canUseServerCommands()` so writer ownership alone is insufficient;
   ordinary calls also require `canMutate`.
-- [ ] Apply the same guard to the compatibility resource facade and any direct
+- [x] Apply the same guard to the compatibility resource facade and any direct
   programmatic command entry points.
-- [ ] Install the resource write guard before any early projection becomes
+- [x] Install the resource write guard before any early projection becomes
   visible.
-- [ ] Clear mutation and generation capability immediately when writer access is
+- [x] Clear mutation and generation capability immediately when writer access is
   lost, while allowing an authenticated observer projection to remain readable.
+
+`loadWebInitialDatabase({ coordinated: true })` now exposes the immutable
+writer sequence as ten retained steps, from owner adoption through event
+subscription. Ordinary command admission and queued execution require
+`canMutate`; only the named bootstrap initializer and exact durable pending
+replay receive private, module-scoped bypasses. The resource write guard is
+enabled before initial hydration. A writer-takeover response synchronously
+revokes route, mutation, and generation capabilities without hiding the
+coherent shell.
 
 ### 3C. Shell and `loadedStore` migration
 
-- [ ] Set `canRenderShell` only after writer recovery and Phase 2 shell resources
+- [x] Set `canRenderShell` only after writer recovery and Phase 2 shell resources
   are coherent for the conservative release.
-- [ ] Inventory every `loadedStore` read. Assign it to rendering, routing,
+- [x] Inventory every `loadedStore` read. Assign it to rendering, routing,
   mutation, generation, plugin, or background readiness.
-- [ ] Migrate consumers in bounded groups. Keep `loadedStore` only as a
+- [x] Migrate consumers in bounded groups. Keep `loadedStore` only as a
   documented compatibility derivation while migration is incomplete.
-- [ ] Give the compatibility alias an explicit deletion gate; do not add new
+- [x] Give the compatibility alias an explicit deletion gate; do not add new
   consumers.
-- [ ] Split the root render decision from persistence-capable route application.
+- [x] Split the root render decision from persistence-capable route application.
+
+`App.svelte` reads the coordinator store directly: `canRenderShell` controls the
+loading branch, while both route effects require `canApplyRoutes`. The visual
+settings needed by the root shell are installed before `writer-ready` is
+published. `loadedStore` is now a background-readiness compatibility alias used
+only by bootstrap completion/notification reconciliation and the browser-smoke
+compatibility helpers; it has no production UI or route consumer.
+
+The fixed deletion gate is Phase 7: replace the bootstrap loop and notification
+hook with explicit background readiness, migrate `isLoaded()`/`waitForLoaded()`
+smoke callers to `background-ready`, then remove the core-store declaration and
+compatibility re-export. New consumers must use a narrow capability instead.
 
 ### 3D. Route, chat, and event readiness
 
-- [ ] Let URL parsing happen early, but wait for `canApplyRoutes` before a route
+- [x] Let URL parsing happen early, but wait for `canApplyRoutes` before a route
   can persist selection or other server state.
-- [ ] Set `canGenerate` only after selected character detail, selected chat,
+- [x] Set `canGenerate` only after selected character detail, selected chat,
   prompt-template owner, plugins, generation reattachment, and recovered effects
   are ready.
-- [ ] Report the specific missing chat dependency instead of falling back to a
+- [x] Report the specific missing chat dependency instead of falling back to a
   generic global loading state.
-- [ ] Subscribe to events from the last coherently applied revision and test
+- [x] Subscribe to events from the last coherently applied revision and test
   events arriving between every coordinator transition.
-- [ ] Ensure a newer route or selected-character request supersedes older
+- [x] Ensure a newer route or selected-character request supersedes older
   in-flight hydration.
+
+The event subscription starts from the coherently applied post-replay revision
+before publishing `writer-ready`; replay/gap, stale-result, and command-event
+tests protect revision continuity across the later coordinator transitions.
+Generation staging, dispatch, retry, cancellation, and direct transport now
+require `canGenerate` at admission and execution time. Exact durable pending
+replay retains a private recovery path, but writer loss closes it too.
+
+Initial and subsequent selected-character changes run fenced detail/chat
+hydration. The reactive active-chat target also revokes generation readiness
+for same-character `chatPage` changes. A newer selection invalidates an older
+result. Missing character or chat state records
+`selected-character-hydration-failed` or
+`selected-chat-hydration-failed`, leaves the readable shell and background work
+available, and keeps `canGenerate` false until a later coherent selection
+clears the localized failure.
+
+#### Integrated Phase 3 evidence (2026-08-24)
+
+Focused coordinator, bootstrap, route DOM, command, writer-loss, generation,
+and resource tests pass. Local `pnpm test:affected` covers 515 frontend files
+and 6,425 tests, 4 gate files and 9 tests, and 152 server files with 3,298 tests
+passing and 1 skipped. `pnpm check`, `pnpm check:server`, `pnpm format:check`,
+the production and smoke builds, and all 5 targeted browser-smoke tests pass;
+the browser set includes the four-case small/large cold/warm startup matrix.
+
+The final production preload closure is 11 files and 318,707 gzip bytes total;
+the largest chunk is 283,372 gzip bytes. The 900 KiB total and 500 KiB largest
+milestone gates and the historical regression ceilings all pass. Every command
+in this evidence record ran locally without GitHub Actions or another external
+service.
 
 ## Failure and retry behavior
 

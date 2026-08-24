@@ -1,4 +1,5 @@
 import { getChatHydrationRuntime } from '../process/generationRuntimeBridge'
+import { revokeStartupWriterCapabilities } from '../startupReadiness'
 
 export const ACTIVE_WRITER_SESSION_HEADER = 'risu-writer-session'
 
@@ -69,6 +70,7 @@ export function resetWriterAccessLostForTests(): void {
 export function enterWriterTakeoverFlow(): void {
   if (writerAccessLost) return
   writerAccessLost = true
+  revokeStartupWriterCapabilities()
   setWriterTakeoverInteractionBlocked(true)
   void runWriterTakeoverFlow()
 }

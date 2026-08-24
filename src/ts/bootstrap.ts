@@ -16,9 +16,8 @@ import { fetchServerBootstrap, fetchServerBootstrapReadOnly, type ServerBootstra
 import { subscribeServerCommandEvents, type ServerMemoryEvent, type ServerMemoryJobSnapshot } from './server/events'
 import { publishServerMemoryJobEvent } from './server/memoryJobEvents'
 import {
-  canUseServerCommands,
   deferOwnServerCommandReconciliation,
-  initializeServerDatabase,
+  initializeServerDatabaseForBootstrap,
   notifyServerCommandLocalEffectApplied,
   peekAppliedServerResourceRevision,
   peekCachedServerCommandRevision,
@@ -64,6 +63,7 @@ import {
   hydrateActiveChat,
   invalidateChatHydration,
   resetChatHydration,
+  setActiveChatReadinessRefreshHook,
   startChatMessageHydration,
 } from './server/chatMessageHydration.svelte'
 import {
@@ -172,9 +172,15 @@ import {
   beginStartupAttempt,
   completeStartupAttempt,
   failStartupAttempt,
+  recordStartupCapabilityFailure,
   recordStartupMilestone,
+  retryStartupCapability,
+  runStartupStep,
+  settleStartupChatReadiness,
+  startupRetryTargetForMilestone,
   type StartupAttemptFailureCode,
   type StartupMilestone,
+  type StartupRetryTarget,
 } from './startupReadiness'
 
 setPendingMutationDiscardNotifier((key, error) => {
@@ -186,6 +192,18 @@ const TEXT_THEME_RUNTIME_KEYS = new Set(['textTheme', 'customTextTheme', 'font',
 const GUI_SIZE_RUNTIME_KEYS = new Set(['textAreaSize', 'textAreaTextSize', 'sideBarSize'])
 
 class FatalBootstrapError extends Error {}
+
+class StartupChatDependencyError extends Error {
+  constructor(
+    readonly failureCode: Extract<
+      StartupAttemptFailureCode,
+      'selected-character-hydration-failed' | 'selected-chat-hydration-failed'
+    >,
+    message: string,
+  ) {
+    super(message)
+  }
+}
 
 function hasProjectedRuntimeKey(keys: readonly string[], candidates: ReadonlySet<string>): boolean {
   return keys.some((key) => candidates.has(key))
@@ -222,6 +240,9 @@ let serverResourceEventWatchdogTimer: ReturnType<typeof setTimeout> | null = nul
 let stopServerResourceRecoveryListeners: (() => void) | null = null
 let reconnectPendingMutationReplay: Promise<void> | null = null
 let serverResourceRuntimeReplayEnabled = false
+let stopStartupChatReadinessSync: (() => void) | null = null
+let startupChatReadinessEpoch = 0
+let startupChatReadinessTarget: string | null = null
 
 function initialSelectedCharFromDatabase(db: Database): number {
   const currentChar = (db as { currentChar?: unknown }).currentChar
@@ -232,42 +253,79 @@ function initialSelectedCharFromDatabase(db: Database): number {
   return -1
 }
 
+let loadDataInFlight: Promise<void> | null = null
+
 /**
- * Loads the application data.
+ * Loads the application data. Concurrent callers share one attempt loop, and a
+ * retry resumes at its failed capability because successful coordinator steps
+ * are retained.
  */
-export async function loadData(): Promise<void> {
-  const loaded = get(loadedStore)
-  if (!loaded) {
-    const startupAttemptId = beginStartupAttempt()
-    let failureCode: StartupAttemptFailureCode = 'writer-bootstrap-failed'
-    let failureMilestone: StartupMilestone = 'observer-ready'
-    try {
-      const { initialChatHydration } = await loadWebInitialDatabase()
-      const db = getDatabase()
-      failureCode = 'push-initialization-failed'
-      failureMilestone = 'background-ready'
+export function loadData(): Promise<void> {
+  if (get(loadedStore)) return Promise.resolve()
+  if (loadDataInFlight) return loadDataInFlight
+
+  const running = loadDataUntilSettled().finally(() => {
+    loadDataInFlight = null
+  })
+  loadDataInFlight = running
+  return running
+}
+
+async function loadDataUntilSettled(): Promise<void> {
+  let retryTarget: StartupRetryTarget | null = null
+  while (!get(loadedStore)) {
+    const outcome = retryTarget
+      ? await retryStartupCapability(retryTarget, runLoadDataAttempt)
+      : await runLoadDataAttempt()
+    if (!outcome) return
+    retryTarget = outcome
+  }
+}
+
+async function runLoadDataAttempt(): Promise<StartupRetryTarget | null> {
+  const startupAttemptId = beginStartupAttempt()
+  let failureCode: StartupAttemptFailureCode = 'writer-bootstrap-failed'
+  let failureMilestone: StartupMilestone = 'observer-ready'
+  try {
+    await runStartupStep('writer-shell', () => loadWebInitialDatabase({ coordinated: true }))
+    const db = getDatabase()
+    failureCode = 'push-initialization-failed'
+    failureMilestone = 'background-ready'
+    await runStartupStep('push-runtime', async () => {
       await initializePushNotificationCoordinator()
       void reconcileChatCompletionPushNotificationSetting(db.notification === true)
-      LoadingStatusState.text = 'Loading Plugins...'
-      failureCode = 'plugin-initialization-failed'
-      failureMilestone = 'plugins-ready'
+    })
+    LoadingStatusState.text = 'Loading Plugins...'
+    failureCode = 'plugin-initialization-failed'
+    failureMilestone = 'plugins-ready'
+    await runStartupStep('plugin-runtime', async () => {
       await loadPlugins()
       startPluginRuntimeSync()
       recordStartupMilestone('plugins-ready')
-      failureCode = 'generation-recovery-failed'
-      failureMilestone = 'chat-ready'
-      await reconcilePendingRecoveredGenerationEffects()
-      failureCode = 'runtime-initialization-failed'
-      failureMilestone = 'background-ready'
+    })
+    failureCode = 'generation-recovery-failed'
+    failureMilestone = 'chat-ready'
+    await runStartupStep('generation-recovery', reconcilePendingRecoveredGenerationEffects)
+    try {
+      await runStartupStep('chat-readiness', ensureStartupChatReadiness)
+      settleStartupChatReadiness(true)
+    } catch (error) {
+      const dependencyError =
+        error instanceof StartupChatDependencyError
+          ? error
+          : new StartupChatDependencyError('selected-chat-hydration-failed', 'Selected chat hydration failed')
+      recordStartupCapabilityFailure(startupAttemptId, dependencyError.failureCode, 'chat-ready')
+      settleStartupChatReadiness(false)
+      console.warn(dependencyError.message)
+    }
+    startStartupChatReadinessSync(startupAttemptId)
+    failureCode = 'runtime-initialization-failed'
+    failureMilestone = 'background-ready'
+    await runStartupStep('background-runtime', async () => {
       LoadingStatusState.text = 'Checking For Format Update...'
 
       LoadingStatusState.text = 'Updating States...'
-      updateColorScheme()
-      updateTextThemeAndCSS()
-      updateReducedMotion()
-      updateHeightMode()
       updateErrorHandling()
-      updateGuisize()
       if (!localStorage.getItem('nightlyWarned') && window.location.hostname === 'nightly.risuai.xyz') {
         alertMd(language.nightlyWarning)
         await waitAlert()
@@ -279,9 +337,6 @@ export async function loadData(): Promise<void> {
         await waitAlert()
         localStorage.setItem('insecureOriginWarned', 'true')
       }
-      if (db.botSettingAtStart) {
-        botMakerMode.set(true)
-      }
       loadedStore.set(true)
       void reconcileChatCompletionPushNotificationSetting(getDatabase().notification === true)
       selectedCharID.set(initialSelectedCharFromDatabase(db))
@@ -290,47 +345,111 @@ export async function loadData(): Promise<void> {
       registerModelDynamic()
       moduleUpdate()
       recordStartupMilestone('background-ready')
-      completeStartupAttempt(startupAttemptId)
-      void initialChatHydration
-        .then(() => recordStartupMilestone('chat-ready'))
-        .catch(() => {
-          // Active-chat hydration remains non-blocking during Phase 0. A failed
-          // signal intentionally leaves chat/background readiness unpublished.
-        })
-    } catch (error) {
-      failStartupAttempt(startupAttemptId, failureCode, failureMilestone)
-      alertError(error)
-      await waitAlert()
-      if (error instanceof FatalBootstrapError) return
-      if (!get(loadedStore)) await loadData()
-    }
+    })
+    completeStartupAttempt(startupAttemptId)
+    return null
+  } catch (error) {
+    failStartupAttempt(startupAttemptId, failureCode, failureMilestone)
+    alertError(error)
+    await waitAlert()
+    if (error instanceof FatalBootstrapError) return null
+    return startupRetryTargetForMilestone(failureMilestone)
   }
 }
 
-export async function loadWebInitialDatabase() {
-  LoadingStatusState.text = 'Loading Server Data...'
-  const pendingMutationOwner = await readSinglePendingMutationOwner()
-  if (pendingMutationOwner) {
-    adoptPendingMutationWriterSessionId(pendingMutationOwner.writerSessionId)
-  }
-  let firstBootstrap = await fetchServerBootstrap()
-  if (firstBootstrap.status === 'active-writer-connected') {
-    const selection = await alertRequiredSelect(
-      [language.writerConnectDisconnectExisting, language.cancel],
-      language.writerConnectConflictBody,
-      language.writerConnectConflictTitle,
+async function ensureStartupChatReadiness(): Promise<void> {
+  if (!(await hydrateSelectedCharacterShell())) {
+    throw new StartupChatDependencyError(
+      'selected-character-hydration-failed',
+      'Selected character detail hydration failed',
     )
-    if (selection !== '0') {
-      throw new FatalBootstrapError(language.writerConnectCancelled)
+  }
+  if (!(await hydrateActiveChat())) {
+    throw new StartupChatDependencyError('selected-chat-hydration-failed', 'Selected chat hydration failed')
+  }
+}
+
+function startStartupChatReadinessSync(startupAttemptId: number): void {
+  if (stopStartupChatReadinessSync) return
+  startupChatReadinessTarget = currentStartupChatReadinessTarget()
+  const refreshReadiness = () => {
+    const target = currentStartupChatReadinessTarget()
+    if (target === startupChatReadinessTarget) return
+    startupChatReadinessTarget = target
+    const readinessEpoch = startupChatReadinessEpoch + 1
+    startupChatReadinessEpoch = readinessEpoch
+    settleStartupChatReadiness(false)
+    void ensureStartupChatReadiness()
+      .then(() => {
+        if (readinessEpoch === startupChatReadinessEpoch) settleStartupChatReadiness(true)
+      })
+      .catch((error) => {
+        if (readinessEpoch !== startupChatReadinessEpoch) return
+        const dependencyError =
+          error instanceof StartupChatDependencyError
+            ? error
+            : new StartupChatDependencyError('selected-chat-hydration-failed', 'Selected chat hydration failed')
+        recordStartupCapabilityFailure(startupAttemptId, dependencyError.failureCode, 'chat-ready')
+        console.warn(dependencyError.message)
+      })
+  }
+  let initialEmission = true
+  const stopSelectedCharacterSync = selectedCharID.subscribe(() => {
+    if (initialEmission) {
+      initialEmission = false
+      return
     }
-    firstBootstrap = await fetchServerBootstrap(null, { disconnectExistingWriter: true })
+    refreshReadiness()
+  })
+  setActiveChatReadinessRefreshHook(refreshReadiness)
+  stopStartupChatReadinessSync = () => {
+    stopSelectedCharacterSync()
+    setActiveChatReadinessRefreshHook(null)
+    startupChatReadinessTarget = null
   }
-  if (firstBootstrap.status !== 'ok') {
-    throw new Error(firstBootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : firstBootstrap.error)
-  }
-  const runtime = firstBootstrap.bootstrap.initialized
-    ? firstBootstrap.bootstrap
-    : await initializeFreshServerDatabase(firstBootstrap.bootstrap)
+}
+
+function currentStartupChatReadinessTarget(): string {
+  const selectedIndex = get(selectedCharID)
+  const character = getDatabase().characters?.[selectedIndex]
+  const chatId = character?.chats?.[character?.chatPage ?? 0]?.id
+  return `${selectedIndex}\u0000${character?.chaId ?? ''}\u0000${chatId ?? ''}`
+}
+
+export async function loadWebInitialDatabase(options: { coordinated?: boolean } = {}) {
+  const runWriterStep: typeof runStartupStep = options.coordinated
+    ? runStartupStep
+    : (_step, operation) => Promise.resolve().then(operation)
+  LoadingStatusState.text = 'Loading Server Data...'
+  await runWriterStep('writer-owner-adoption', async () => {
+    const pendingMutationOwner = await readSinglePendingMutationOwner()
+    if (pendingMutationOwner) {
+      adoptPendingMutationWriterSessionId(pendingMutationOwner.writerSessionId)
+    }
+  })
+  const firstBootstrap = await runWriterStep('writer-bootstrap', async () => {
+    let result = await fetchServerBootstrap()
+    if (result.status === 'active-writer-connected') {
+      const selection = await alertRequiredSelect(
+        [language.writerConnectDisconnectExisting, language.cancel],
+        language.writerConnectConflictBody,
+        language.writerConnectConflictTitle,
+      )
+      if (selection !== '0') {
+        throw new FatalBootstrapError(language.writerConnectCancelled)
+      }
+      result = await fetchServerBootstrap(null, { disconnectExistingWriter: true })
+    }
+    if (result.status !== 'ok') {
+      throw new Error(result.status === 'unavailable' ? 'Server bootstrap is unavailable' : result.error)
+    }
+    return result
+  })
+  const runtime = await runWriterStep('writer-initialize', () =>
+    firstBootstrap.bootstrap.initialized
+      ? firstBootstrap.bootstrap
+      : initializeFreshServerDatabase(firstBootstrap.bootstrap),
+  )
   configureGenerationOperationProtocol(runtime.generationOperationProtocol, runtime.databaseLineage)
   configureDisplaySourceProtocol(runtime.displaySourceProtocol, runtime.databaseLineage, runtime.writerEpoch)
 
@@ -347,74 +466,102 @@ export async function loadWebInitialDatabase() {
     writerSessionId: getActiveWriterSessionId(),
     databaseLineage,
   })
-  const pendingMutationPreparation = await preparePendingMutationOutbox({
-    writerSessionId: getActiveWriterSessionId(),
-    writerEpoch,
-    databaseLineage,
-    requestedWriterWasActive,
+  await runWriterStep('writer-outbox-prepare', async () => {
+    const pendingMutationPreparation = await preparePendingMutationOutbox({
+      writerSessionId: getActiveWriterSessionId(),
+      writerEpoch,
+      databaseLineage,
+      requestedWriterWasActive,
+    })
+    if (pendingMutationPreparation.discarded > 0) {
+      alertError(language.pendingMutationDiscarded)
+    }
   })
-  if (pendingMutationPreparation.discarded > 0) {
-    alertError(language.pendingMutationDiscarded)
-  }
-  await flushPendingMutationReceiptAcknowledgements()
-  const pendingMutationReplay = await replayPendingMutations()
-  const remainingPendingMutationRecords = await countBlockingPendingMutationRecords()
-  if (
-    pendingMutationReplay.retained > 0 ||
-    remainingPendingMutationRecords === null ||
-    remainingPendingMutationRecords > 0
-  ) {
-    throw new Error(language.pendingMutationReplayRetained)
-  }
+  await runWriterStep('writer-receipt-flush', flushPendingMutationReceiptAcknowledgements)
+  await runWriterStep('writer-pending-replay', async () => {
+    const pendingMutationReplay = await replayPendingMutations()
+    const remainingPendingMutationRecords = await countBlockingPendingMutationRecords()
+    if (
+      pendingMutationReplay.retained > 0 ||
+      remainingPendingMutationRecords === null ||
+      remainingPendingMutationRecords > 0
+    ) {
+      throw new Error(language.pendingMutationReplayRetained)
+    }
+  })
 
-  const resources = await loadInitialServerResources({ hooks: serverResourceInvalidationHooks })
-  if (resources.status !== 'ok') {
-    throw new Error(
-      resources.status === 'unavailable'
-        ? 'Server resource APIs are unavailable'
-        : `Server resource load failed: ${resources.error}`,
+  const resources = await runWriterStep('writer-resource-hydration', async () => {
+    // From this point on the resource database is an authoritative projection.
+    // Hydration and reconciliation use trusted apply scopes; raw compatibility
+    // writes must never be exposed, even during the initial projection.
+    setResourceWriteGuardEnabled(true)
+    const result = await loadInitialServerResources({ hooks: serverResourceInvalidationHooks })
+    if (result.status !== 'ok') {
+      throw new Error(
+        result.status === 'unavailable'
+          ? 'Server resource APIs are unavailable'
+          : `Server resource load failed: ${result.error}`,
+      )
+    }
+    return result
+  })
+
+  const database = await runWriterStep('writer-projection-install', async () => {
+    const result = getDatabase()
+    selectedCharID.set(initialSelectedCharFromDatabase(result))
+    resetChatHydration()
+    resetLorebookHydration()
+    recordHydratedCharacterLorebooks(result.characters)
+    if (!(await ensurePromptTemplateHydrated({ minimumRevision: resources.revision }))) {
+      throw new Error('Selected prompt-template owner hydration failed')
+    }
+    setCachedServerCommandRevision(resources.revision)
+    setAppliedServerResourceRevision(resources.revision)
+    startSelectedCharacterShellHydration()
+    markReplacementDatabaseOwnershipRefreshed({ databaseLineage, writerEpoch })
+    setServerCommandSuccessReconciler((event, coalescedEvents, localEffects) =>
+      enqueueServerResourceSync(() =>
+        processServerCommandEvents(coalescedEvents.length > 0 ? coalescedEvents : [event], localEffects),
+      ),
     )
-  }
-
-  const database = getDatabase()
-  selectedCharID.set(initialSelectedCharFromDatabase(database))
-  resetChatHydration()
-  resetLorebookHydration()
-  recordHydratedCharacterLorebooks(database.characters)
-  if (!(await ensurePromptTemplateHydrated({ minimumRevision: resources.revision }))) {
-    throw new Error('Selected prompt-template owner hydration failed')
-  }
-  setCachedServerCommandRevision(resources.revision)
-  setAppliedServerResourceRevision(resources.revision)
-  startSelectedCharacterShellHydration()
-  markReplacementDatabaseOwnershipRefreshed({ databaseLineage, writerEpoch })
-  setServerCommandSuccessReconciler((event, coalescedEvents, localEffects) =>
-    enqueueServerResourceSync(() =>
-      processServerCommandEvents(coalescedEvents.length > 0 ? coalescedEvents : [event], localEffects),
-    ),
-  )
-  setServerCommandConflictGapHandler(handleServerCommandConflictGap)
-  setResourceWriteGuardEnabled(true)
-  recordStartupMilestone('observer-ready')
-  applyGenerationOperationBootstrap(runtime, 'startup')
-  setPendingRecoveredGenerationEffects(runtime.pendingGenerationEffects ?? [])
-  setGenerationFinalizationPersistences(runtime.generationFinalizations ?? [])
-  startGenerationFinalizationPersistenceRefresh()
-  setActiveMessageTranslations(runtime.activeMessageTranslations ?? [])
-  setActiveGreetingTranslations(runtime.activeGreetingTranslations ?? [])
-  startActiveMessageTranslationRefresh()
-  startActiveGreetingTranslationRefresh()
-  startActiveGenerationReattach()
-  startChatMessageHydration()
-  const initialChatHydration = hydrateActiveChat()
-  stopBridgePatchLifecycleFlush?.()
-  stopBridgePatchLifecycleFlush = startBridgePatchLifecycleFlush()
-  serverResourceRuntimeReplayEnabled = false
-  await startServerResourceEvents({ replayPendingMutations: false })
-  serverResourceRuntimeReplayEnabled = true
+    setServerCommandConflictGapHandler(handleServerCommandConflictGap)
+    // The conservative shell boundary is writer-ready, so every visual and
+    // selection input used by the root UI must be coherent before events can
+    // publish that capability.
+    updateColorScheme()
+    updateTextThemeAndCSS()
+    updateReducedMotion()
+    updateHeightMode()
+    updateGuisize()
+    if (result.botSettingAtStart) botMakerMode.set(true)
+    recordStartupMilestone('observer-ready')
+    return result
+  })
+  await runWriterStep('writer-runtime-services', () => {
+    applyGenerationOperationBootstrap(runtime, 'startup')
+    setPendingRecoveredGenerationEffects(runtime.pendingGenerationEffects ?? [])
+    setGenerationFinalizationPersistences(runtime.generationFinalizations ?? [])
+    startGenerationFinalizationPersistenceRefresh()
+    setActiveMessageTranslations(runtime.activeMessageTranslations ?? [])
+    setActiveGreetingTranslations(runtime.activeGreetingTranslations ?? [])
+    startActiveMessageTranslationRefresh()
+    startActiveGreetingTranslationRefresh()
+    startActiveGenerationReattach()
+    startChatMessageHydration()
+    stopBridgePatchLifecycleFlush?.()
+    stopBridgePatchLifecycleFlush = startBridgePatchLifecycleFlush()
+  })
+  await runWriterStep('writer-event-subscription', async () => {
+    serverResourceRuntimeReplayEnabled = false
+    try {
+      await startServerResourceEvents({ replayPendingMutations: false })
+    } finally {
+      serverResourceRuntimeReplayEnabled = true
+    }
+  })
   normalizeLegacyCustomBackgroundSetting()
   showLegacyMemoryMigrationNoticeIfNeeded()
-  return { initialChatHydration }
+  return { database }
 }
 
 /**
@@ -424,11 +571,7 @@ export async function loadWebInitialDatabase() {
  * different client initialized the database first.
  */
 async function initializeFreshServerDatabase(initialRuntime: ServerBootstrapRuntime): Promise<ServerBootstrapRuntime> {
-  if (!canUseServerCommands()) {
-    throw new Error('Initial server database seed failed: server commands unavailable')
-  }
-
-  const result = await initializeServerDatabase()
+  const result = await initializeServerDatabaseForBootstrap()
   if (result.status === 'ok') {
     setCachedServerCommandRevision(result.revision)
     if (result.initialized === true) {
@@ -457,7 +600,7 @@ async function initializeFreshServerDatabase(initialRuntime: ServerBootstrapRunt
 }
 
 function serverCommandFailureMessage(
-  result: Exclude<Awaited<ReturnType<typeof initializeServerDatabase>>, { status: 'ok' }>,
+  result: Exclude<Awaited<ReturnType<typeof initializeServerDatabaseForBootstrap>>, { status: 'ok' }>,
 ): string {
   switch (result.status) {
     case 'conflict':
@@ -478,6 +621,11 @@ export function stopServerResourceEvents() {
   stopServerResourceRecoveryListeners = null
   stopBridgePatchLifecycleFlush?.()
   stopBridgePatchLifecycleFlush = null
+  stopStartupChatReadinessSync?.()
+  stopStartupChatReadinessSync = null
+  setActiveChatReadinessRefreshHook(null)
+  startupChatReadinessTarget = null
+  startupChatReadinessEpoch += 1
   setServerCommandSuccessReconciler(null)
   setServerCommandConflictGapHandler(null)
   stopSelectedCharacterShellHydration()

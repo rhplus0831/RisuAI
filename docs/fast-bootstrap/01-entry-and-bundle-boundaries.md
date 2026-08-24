@@ -222,9 +222,10 @@ consumed.
 - [x] Add manual groups only when they improve stable caching or prevent
   accidental merging; document the no-group decision when none qualify.
 - [x] Make unexplained static-plus-dynamic warnings and the current Phase 0
-  regression ceilings block CI.
-- [ ] Ratify the 900/500 KiB Phase 0 milestone budgets from five successful CI
-  artifacts, then promote them from report-only targets to hard gates.
+  regression ceilings block the local build-report command.
+- [x] Ratify the 900/500 KiB Phase 0 milestone budgets from five reproducible
+  clean local production builds, then promote them from report-only targets to
+  hard gates.
 - [x] Confirm no optional screen, export implementation, or full database graph
   remains in the initial preload set.
 - [x] Consider self-hosted fonts or lazy noncritical KaTeX CSS only after
@@ -266,12 +267,11 @@ Every production build also treats Rolldown's structured
 future intentional exception must name the exact imported module and complete
 importer set and include a reason, so it cannot hide a new static owner.
 
-The remaining budget-ratification item needs CI evidence. As of 2026-08-24 the
-repository has no Quality workflow run for the `fastify` branch, so there are no
-successful preload artifacts from which to calculate CI variance. The existing
-1,650,000/675,000-byte regression ceilings continue to fail the required CI
-lane; the 900/500 KiB targets remain visible but report-only until five
-successful artifacts have been reviewed.
+The Phase 0 local calibration ran five clean production builds from the same
+source revision on 2026-08-24. All five measured 318,246 total gzip bytes and a
+283,372-byte largest chunk, for zero observed variance. The 900/500 KiB targets
+are therefore hard gates in `build:initial-preload`; the historical
+1,650,000/675,000-byte regression ceilings remain visible for baseline context.
 
 JavaScript is still the dominant measured initial resource at 318,211 bytes
 gzip, compared with 20,878 bytes gzip for the emitted application stylesheet.

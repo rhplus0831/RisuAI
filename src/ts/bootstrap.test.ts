@@ -38,8 +38,9 @@ const hydrationApi = vi.hoisted(() => ({
   acknowledgeCreatedChatTranscriptLocalEffect: vi.fn(() => true),
   acknowledgeMessageMutationLocalEffect: vi.fn(() => true),
   applyMessageTranslationLocalEffect: vi.fn(() => true),
-  hydrateActiveChat: vi.fn(async () => undefined),
+  hydrateActiveChat: vi.fn(async () => true),
   invalidateChatHydration: vi.fn(),
+  readinessRefreshHook: null as null | (() => void),
   resetChatHydration: vi.fn(),
   startChatMessageHydration: vi.fn(),
 }))
@@ -161,7 +162,12 @@ vi.mock('./server/activeWriterSession', async (importActual) => {
   const actual = await importActual<typeof import('./server/activeWriterSession')>()
   return { ...actual, enterWriterTakeoverFlow: activeWriterApi.enterTakeover }
 })
-vi.mock('./server/chatMessageHydration.svelte', () => hydrationApi)
+vi.mock('./server/chatMessageHydration.svelte', () => ({
+  ...hydrationApi,
+  setActiveChatReadinessRefreshHook: (hook: (() => void) | null) => {
+    hydrationApi.readinessRefreshHook = hook
+  },
+}))
 vi.mock('./server/characterShellHydration.svelte', () => ({
   hydrateSelectedCharacterShell: characterHydrationApi.hydrateSelected,
   startSelectedCharacterShellHydration: characterHydrationApi.startSelected,
@@ -228,7 +234,7 @@ vi.mock('./server/commands', async (importActual) => {
   const actual = await importActual<typeof import('./server/commands')>()
   return {
     ...actual,
-    initializeServerDatabase: commandApi.initialize,
+    initializeServerDatabaseForBootstrap: commandApi.initialize,
     setServerCommandSuccessReconciler: (reconciler: typeof commandApi.reconciler) => {
       commandApi.reconciler = reconciler
       actual.setServerCommandSuccessReconciler(reconciler)
@@ -274,7 +280,7 @@ import {
   stopServerResourceEvents,
 } from './bootstrap'
 import { loadPlugins, startPluginRuntimeSync } from './plugins/plugins.svelte'
-import { alertError, alertRequiredSelect } from './alert'
+import { alertError, alertRequiredSelect, waitAlert } from './alert'
 import { language } from 'src/lang'
 import { updateHeightMode } from './gui/heightMode'
 import {
@@ -288,7 +294,12 @@ import {
 } from './server/commands'
 import { getActiveWriterSessionId } from './server/activeWriterSession'
 import { adoptReplacementDatabaseOwnership } from './server/replacementDatabaseOwnership'
-import { getStartupReadinessSnapshot, recordStartupMilestone, resetStartupReadinessForTests } from './startupReadiness'
+import {
+  getStartupCoordinatorSnapshot,
+  getStartupReadinessSnapshot,
+  recordStartupMilestone,
+  resetStartupReadinessForTests,
+} from './startupReadiness'
 import { getDatabase, setResourceWriteGuardEnabled, withTrustedResourceWrite } from './storage/database.svelte'
 import {
   applyCollectionsResource,
@@ -418,6 +429,7 @@ beforeEach(() => {
   ownershipApi.discard.mockReset()
   ownershipApi.reset.mockReset()
   eventApi.subscriptions = []
+  hydrationApi.readinessRefreshHook = null
   bridgeApi.start.mockReturnValue(bridgeApi.stop)
   pendingMutationApi.flushAcknowledgements.mockReset()
   pendingMutationApi.flushAcknowledgements.mockResolvedValue(undefined)
@@ -498,6 +510,224 @@ describe('API-backed client bootstrap', () => {
     expect(vi.mocked(loadPlugins).mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(startPluginRuntimeSync).mock.invocationCallOrder[0],
     )
+  })
+
+  it('retries a failed capability without repeating successful startup steps', async () => {
+    vi.mocked(loadPlugins).mockRejectedValueOnce(new Error('plugin startup failed')).mockResolvedValueOnce(undefined)
+
+    await loadData()
+
+    expect(bootstrapApi.fetch).toHaveBeenCalledOnce()
+    expect(pendingMutationApi.prepare).toHaveBeenCalledOnce()
+    expect(pendingMutationApi.replay).toHaveBeenCalledOnce()
+    expect(resourceApi.loadInitial).toHaveBeenCalledOnce()
+    expect(eventApi.subscribe).toHaveBeenCalledOnce()
+    expect(pushApi.initialize).toHaveBeenCalledOnce()
+    expect(loadPlugins).toHaveBeenCalledTimes(2)
+    expect(startPluginRuntimeSync).toHaveBeenCalledOnce()
+    expect(getStartupReadinessSnapshot().attempts).toEqual([
+      expect.objectContaining({
+        attemptId: 1,
+        failureCode: 'plugin-initialization-failed',
+        failureMilestone: 'plugins-ready',
+      }),
+      expect.objectContaining({ attemptId: 2, completedAtMs: expect.any(Number) }),
+    ])
+    expect(getStartupCoordinatorSnapshot()).toMatchObject({
+      capabilities: {
+        canRenderShell: true,
+        canApplyRoutes: true,
+        canMutate: true,
+        pluginsReady: true,
+        canGenerate: true,
+      },
+      failures: {},
+      completedSteps: [
+        'writer-owner-adoption',
+        'writer-bootstrap',
+        'writer-initialize',
+        'writer-outbox-prepare',
+        'writer-receipt-flush',
+        'writer-pending-replay',
+        'writer-resource-hydration',
+        'writer-projection-install',
+        'writer-runtime-services',
+        'writer-event-subscription',
+        'writer-shell',
+        'push-runtime',
+        'plugin-runtime',
+        'generation-recovery',
+        'chat-readiness',
+        'background-runtime',
+      ],
+    })
+  })
+
+  it('shares one coordinator attempt loop between concurrent startup callers', async () => {
+    let releasePlugins!: () => void
+    vi.mocked(loadPlugins).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releasePlugins = resolve
+        }),
+    )
+
+    const firstLoad = loadData()
+    const secondLoad = loadData()
+    expect(secondLoad).toBe(firstLoad)
+    await vi.waitFor(() => expect(loadPlugins).toHaveBeenCalledOnce())
+
+    releasePlugins()
+    await Promise.all([firstLoad, secondLoad])
+
+    expect(bootstrapApi.fetch).toHaveBeenCalledOnce()
+    expect(eventApi.subscribe).toHaveBeenCalledOnce()
+    expect(getStartupReadinessSnapshot().attempts).toHaveLength(1)
+  })
+
+  it('keeps event revisions contiguous across coordinator transitions', async () => {
+    let releasePush!: () => void
+    pushApi.initialize.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releasePush = resolve
+        }),
+    )
+    let releasePlugins!: () => void
+    vi.mocked(loadPlugins).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releasePlugins = resolve
+        }),
+    )
+    let releaseCharacter!: () => void
+    characterHydrationApi.hydrateSelected.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          releaseCharacter = () => resolve(true)
+        }),
+    )
+    let releaseWarning!: () => void
+    vi.mocked(waitAlert).mockImplementationOnce(
+      () =>
+        new Promise<Awaited<ReturnType<typeof waitAlert>>>((resolve) => {
+          releaseWarning = () => resolve({ type: 'none', msg: '' })
+        }),
+    )
+
+    const secureContextDescriptor = Object.getOwnPropertyDescriptor(window, 'isSecureContext')
+    Object.defineProperty(window, 'isSecureContext', { configurable: true, value: false })
+    localStorage.removeItem('insecureOriginWarned')
+    eventApi.subscribe.mockImplementationOnce(async (input) => {
+      eventApi.subscriptions.push(input)
+      input.onCommandEvent({ type: 'settings.updated', revision: 6, resource: 'settings' })
+      return { status: 'ok', unsubscribe: eventApi.unsubscribe }
+    })
+
+    let loading: Promise<void> | undefined
+    try {
+      loading = loadData()
+
+      await vi.waitFor(() => expect(pushApi.initialize).toHaveBeenCalledOnce())
+      expect(eventApi.subscriptions[0]?.sinceRevision).toBe(5)
+      await vi.waitFor(() => expect(peekAppliedServerResourceRevision()).toBe(6))
+
+      eventApi.subscriptions[0].onCommandEvent({ type: 'settings.updated', revision: 7, resource: 'settings' })
+      await vi.waitFor(() => expect(peekAppliedServerResourceRevision()).toBe(7))
+      releasePush()
+
+      await vi.waitFor(() => expect(loadPlugins).toHaveBeenCalledOnce())
+      eventApi.subscriptions[0].onCommandEvent({ type: 'settings.updated', revision: 8, resource: 'settings' })
+      await vi.waitFor(() => expect(peekAppliedServerResourceRevision()).toBe(8))
+      releasePlugins()
+
+      await vi.waitFor(() => expect(characterHydrationApi.hydrateSelected).toHaveBeenCalled())
+      eventApi.subscriptions[0].onCommandEvent({ type: 'settings.updated', revision: 9, resource: 'settings' })
+      await vi.waitFor(() => expect(peekAppliedServerResourceRevision()).toBe(9))
+      releaseCharacter()
+
+      await vi.waitFor(() => expect(waitAlert).toHaveBeenCalledOnce())
+      expect(getStartupReadinessSnapshot().phase).toBe('chat-ready')
+      eventApi.subscriptions[0].onCommandEvent({ type: 'settings.updated', revision: 10, resource: 'settings' })
+      await vi.waitFor(() => expect(peekAppliedServerResourceRevision()).toBe(10))
+      releaseWarning()
+
+      await loading
+      expect(getStartupReadinessSnapshot().phase).toBe('background-ready')
+      expect(resourceApi.refreshInvalidated.mock.calls.map(([events]) => events)).toEqual([
+        [expect.objectContaining({ revision: 6 })],
+        [expect.objectContaining({ revision: 7 })],
+        [expect.objectContaining({ revision: 8 })],
+        [expect.objectContaining({ revision: 9 })],
+        [expect.objectContaining({ revision: 10 })],
+      ])
+    } finally {
+      releasePush?.()
+      releasePlugins?.()
+      releaseCharacter?.()
+      releaseWarning?.()
+      await loading?.catch(() => undefined)
+      localStorage.removeItem('insecureOriginWarned')
+      if (secureContextDescriptor) Object.defineProperty(window, 'isSecureContext', secureContextDescriptor)
+      else Reflect.deleteProperty(window, 'isSecureContext')
+    }
+  })
+
+  it('reports the selected-character dependency without blocking the readable shell', async () => {
+    characterHydrationApi.hydrateSelected.mockResolvedValueOnce(false)
+
+    await loadData()
+
+    expect(get(loadedStore)).toBe(true)
+    expect(getStartupCoordinatorSnapshot()).toMatchObject({
+      capabilities: {
+        canRenderShell: true,
+        canMutate: true,
+        canGenerate: false,
+      },
+      failures: {
+        canGenerate: expect.objectContaining({ failureCode: 'selected-character-hydration-failed' }),
+      },
+    })
+    expect(hydrationApi.hydrateActiveChat).not.toHaveBeenCalled()
+
+    selectedCharID.set(0)
+    await vi.waitFor(() => expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true))
+    expect(getStartupCoordinatorSnapshot().failures.canGenerate).toBeUndefined()
+  })
+
+  it('fences same-character chat hydration and ignores an older target result', async () => {
+    await loadData()
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true)
+    hydrationApi.hydrateActiveChat.mockClear()
+
+    let releaseOlderChat!: (ready: boolean) => void
+    hydrationApi.hydrateActiveChat.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          releaseOlderChat = resolve
+        }),
+    )
+    withTrustedResourceWrite(() => {
+      const character = getDatabase().characters[1]
+      character.chats.push({ id: 'chat-b-new', message: [] } as never)
+      character.chatPage = 1
+    })
+    hydrationApi.readinessRefreshHook?.()
+
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(false)
+    await vi.waitFor(() => expect(hydrationApi.hydrateActiveChat).toHaveBeenCalledOnce())
+
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[1].chatPage = 0
+    })
+    hydrationApi.readinessRefreshHook?.()
+    await vi.waitFor(() => expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true))
+
+    releaseOlderChat(false)
+    await Promise.resolve()
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true)
+    expect(getStartupCoordinatorSnapshot().failures.canGenerate).toBeUndefined()
   })
 
   it('reconciles disabled device push state after the initial settings load', async () => {

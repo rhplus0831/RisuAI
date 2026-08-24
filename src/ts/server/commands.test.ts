@@ -9,6 +9,11 @@ import {
 } from '../personaMutationCertificate'
 import { serializeScriptDefinitionCollectionDigestInput } from './scriptDefinitionMutations'
 import { resetWriterAccessLostForTests } from './activeWriterSession'
+import {
+  recordStartupMilestone,
+  resetStartupReadinessForTests,
+  revokeStartupWriterCapabilities,
+} from '../startupReadiness'
 
 vi.mock('../platform', () => ({ isFastifyServer: true }))
 
@@ -83,7 +88,7 @@ import {
   peekAppliedServerResourceRevision,
   peekCachedServerCommandRevision,
   importPresetCommand,
-  initializeServerDatabase,
+  initializeServerDatabaseForBootstrap,
   mutateCharacterScriptsCommand,
   mutateGlobalScriptsCommand,
   mutateCharacterTriggersCommand,
@@ -265,6 +270,10 @@ function canonicalLoadoutSnapshot(id = 'loadout-a') {
 }
 
 beforeEach(() => {
+  resetStartupReadinessForTests()
+  for (const milestone of ['entry', 'shell-mounted', 'observer-ready', 'writer-ready'] as const) {
+    recordStartupMilestone(milestone)
+  }
   resetWriterAccessLostForTests()
   clearAppliedServerResourceRevision()
   clearCachedServerCommandRevision()
@@ -273,11 +282,78 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  resetStartupReadinessForTests()
   resetWriterAccessLostForTests()
   vi.unstubAllGlobals()
 })
 
 describe('server command API adapter', () => {
+  it('blocks ordinary APIs before writer readiness while allowing only initialization and pending replay', async () => {
+    resetStartupReadinessForTests()
+    const command = vi.fn()
+    const commandFetch = makeCommandFetch((url) =>
+      url.endsWith('/state/initialize')
+        ? {
+            revision: 1,
+            initialized: true,
+            event: { type: 'state.initialized', revision: 1, resource: 'state' },
+          }
+        : {
+            revision: 2,
+            event: { type: 'settings.updated', revision: 2, resource: 'settings' },
+          },
+    )
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(patchRuntimeSettings({ baseRevision: 0, patch: { maxContext: 4_000 } })).resolves.toEqual({
+      status: 'unavailable',
+    })
+    await expect(runServerCommand({ command })).resolves.toEqual({ status: 'unavailable' })
+    expect(command).not.toHaveBeenCalled()
+    expect(commandFetch.fetch).not.toHaveBeenCalled()
+
+    await expect(initializeServerDatabaseForBootstrap()).resolves.toMatchObject({ status: 'ok', revision: 1 })
+    await expect(
+      replayDurableMutationRequests(
+        [{ method: 'PATCH', path: '/settings/runtime', body: { patch: { maxContext: 8_000 } } }],
+        'pending-before-ready',
+        'database-a',
+      ),
+    ).resolves.toEqual({ status: 'ok' })
+    expect(commandFetch.fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('rechecks ordinary capability after a queued command loses writer ownership', async () => {
+    setCachedServerCommandRevision(1)
+    type HeldCommandResult = {
+      status: 'ok'
+      revision: number
+      event: { type: string; revision: number; resource: string }
+    }
+    let releaseFirst!: (result: HeldCommandResult) => void
+    const firstCommand = vi.fn(
+      (_baseRevision: number) =>
+        new Promise<HeldCommandResult>((resolve) => {
+          releaseFirst = resolve
+        }),
+    )
+    const secondCommand = vi.fn()
+
+    const first = runServerCommand({ command: firstCommand })
+    await vi.waitFor(() => expect(firstCommand).toHaveBeenCalledOnce())
+    const second = runServerCommand({ command: secondCommand })
+    revokeStartupWriterCapabilities()
+    releaseFirst({
+      status: 'ok',
+      revision: 2,
+      event: { type: 'settings.updated', revision: 2, resource: 'settings' },
+    })
+
+    await expect(first).resolves.toMatchObject({ status: 'ok' })
+    await expect(second).resolves.toEqual({ status: 'unavailable' })
+    expect(secondCommand).not.toHaveBeenCalled()
+  })
+
   it('patches runtime settings with the auth header and baseRevision', async () => {
     const event = { type: 'settings.updated', revision: 2, resource: 'settings' }
     const commandFetch = makeCommandFetch(() => ({ revision: 2, event }))
@@ -361,20 +437,20 @@ describe('server command API adapter', () => {
     const commandFetch = makeCommandFetch(() => responses.shift())
     vi.stubGlobal('fetch', commandFetch.fetch)
 
-    await expect(initializeServerDatabase()).resolves.toEqual({
+    await expect(initializeServerDatabaseForBootstrap()).resolves.toEqual({
       status: 'ok',
       revision: 7,
       initialized: false,
     })
-    await expect(initializeServerDatabase()).resolves.toEqual({
+    await expect(initializeServerDatabaseForBootstrap()).resolves.toEqual({
       status: 'error',
       error: 'Invalid command response',
     })
-    await expect(initializeServerDatabase()).resolves.toEqual({
+    await expect(initializeServerDatabaseForBootstrap()).resolves.toEqual({
       status: 'error',
       error: 'Invalid command response',
     })
-    await expect(initializeServerDatabase()).resolves.toEqual({
+    await expect(initializeServerDatabaseForBootstrap()).resolves.toEqual({
       status: 'ok',
       revision: 8,
       initialized: true,
@@ -387,7 +463,7 @@ describe('server command API adapter', () => {
     const commandFetch = makeCommandFetch(() => jsonResponse({ error: 'initialize_conflict' }, 409))
     vi.stubGlobal('fetch', commandFetch.fetch)
 
-    await expect(initializeServerDatabase()).resolves.toEqual({
+    await expect(initializeServerDatabaseForBootstrap()).resolves.toEqual({
       status: 'error',
       error: 'initialize_conflict',
       reason: 'initialize-conflict',

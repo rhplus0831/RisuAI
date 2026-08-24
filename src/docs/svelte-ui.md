@@ -87,7 +87,8 @@ for its disposable browser session.
 `src/App.svelte` renders these mutually exclusive branches in order:
 
 1. April 1 joke screen.
-2. Loading screen while `$loadedStore` is false.
+2. Loading screen while
+   `$startupCoordinatorStore.capabilities.canRenderShell` is false.
 3. `CustomGUISettingMenu` while `$CustomGUISettingMenuStore` is true.
 4. `Settings` while `$settingsOpen` is true.
 5. `GridCatalog` for the grid route.
@@ -139,17 +140,21 @@ Routes are not file-system based.
 Unknown settings and Playground slugs fall back to their default menu; they are
 not general not-found routes.
 
-`src/App.svelte` has two load-bearing effects. After `$loadedStore`, the
-URL-to-store effect consumes state-driven updates and calls
-`applyRouteToStores(route)` inside `untrack`. The store-to-URL effect skips
-while route application is active or pending, then calls `syncRouteFromState`.
-The `untrack` matters because route application closes state such as
+`src/App.svelte` has two load-bearing effects. Both wait for
+`$startupCoordinatorStore.capabilities.canApplyRoutes`. The URL-to-store effect
+then consumes state-driven updates and calls `applyRouteToStores(route)` inside
+`untrack`. The store-to-URL effect skips while route application is active or
+pending, then calls `syncRouteFromState`. The `untrack` matters because route
+application closes state such as
 `CustomGUISettingMenuStore`, `botMakerMode`, and `CharEmotion`; unrelated
 resource reactivity must not reapply a route and reset the sidebar.
 
 Important route and store facts:
 
-- `loadedStore` gates route application and the loading branch.
+- `canRenderShell` gates only the loading branch. `canApplyRoutes` separately
+  gates both persistence-capable route effects and is revoked on writer loss.
+- `loadedStore` is a temporary background-readiness compatibility alias with no
+  `App.svelte` consumer. New UI and route work must use narrow capabilities.
 - `src/ts/server/resourceState.svelte.ts` owns the settings, collections, and
   character resources that UI reads. Its compatibility proxy and snapshot
   helpers compose a database-shaped view over those slices; they do not own a

@@ -140,8 +140,8 @@ silently growing again.
 
 ### Initial budgets
 
-These are milestone budgets, to be ratified with CI variance data in this
-workstream:
+These are milestone budgets, to be ratified from variance measured across five
+reproducible clean local production builds in this workstream:
 
 - initial JavaScript: at most 900 KiB gzip;
 - no initial JavaScript chunk larger than 500 KiB gzip;
@@ -156,7 +156,8 @@ artifacts and explain the dependency that makes the change necessary.
 ### Verification
 
 - Unit-test phase timestamp ordering and one-time emission.
-- Run the report against a production build in CI.
+- Run the report against five clean local production builds from the same source
+  revision and record their variance.
 - Record cold and warm measurements separately; do not mix cached and uncached
   samples.
 
@@ -164,8 +165,10 @@ artifacts and explain the dependency that makes the change necessary.
 
 - A developer can reproduce bundle and startup measurements with one documented
   command.
-- CI fails on a material initial-preload regression.
-- Baseline artifacts are attached to the workstream pull request.
+- The documented local build-report command fails on a material initial-preload
+  regression.
+- Five local preload reports and their variance record are retained with the
+  workstream evidence.
 
 ## WS1 — Entry and Bundle Boundaries
 

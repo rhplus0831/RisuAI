@@ -40,6 +40,7 @@ vi.mock('../process/reattach', () => ({
 vi.mock('./activeWriterSession', () => ({
   activeWriterSessionHeader: () => ({ 'risu-writer-session': 'writer-a' }),
   handleActiveWriterStaleResponse: vi.fn(),
+  isWriterAccessLost: () => false,
 }))
 vi.mock('./commands', () => ({
   activeWriterSessionHeader: () => ({ 'risu-writer-session': 'writer-a' }),
@@ -87,6 +88,7 @@ import {
   submitStagedAcceptedSendOperation,
   submitStagedTargetedGenerationOperation,
 } from './generationOperations'
+import { recordStartupMilestone, resetStartupReadinessForTests, settleStartupChatReadiness } from '../startupReadiness'
 
 const operationId = '11111111-1111-4111-8111-111111111111'
 const messageId = '22222222-2222-4222-8222-222222222222'
@@ -134,6 +136,18 @@ function responseBody(state: GenerationOperationProjection['state'] = 'owned_by_
 
 beforeEach(() => {
   vi.clearAllMocks()
+  resetStartupReadinessForTests()
+  for (const milestone of [
+    'entry',
+    'shell-mounted',
+    'observer-ready',
+    'writer-ready',
+    'plugins-ready',
+    'chat-ready',
+  ] as const) {
+    recordStartupMilestone(milestone)
+  }
+  settleStartupChatReadiness(true)
   resetGenerationOperationClientForTests()
   let uuidIndex = 0
   vi.stubGlobal('crypto', {
@@ -157,10 +171,57 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  resetStartupReadinessForTests()
   resetGenerationOperationClientForTests()
 })
 
 describe('generation operation client', () => {
+  it('blocks ordinary staging and dispatch before chat readiness while allowing exact pending replay', async () => {
+    const staged = await stageAcceptedSendGenerationOperation({
+      target: { selectedCharID: 0, chatPage: 0, characterId: 'character-a', chatId: 'chat-a' },
+      message: 'hello',
+      generation: {
+        syntheticSayNothing: false,
+        resetMessages: false,
+        inlayAssetRefs: [],
+        clientContext: {},
+        clientCapabilities: {},
+      },
+    })
+    if ('status' in staged) throw new Error(staged.error)
+    resetStartupReadinessForTests()
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(responseBody()), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(submitStagedAcceptedSendOperation(staged)).resolves.toEqual({
+      status: 'retained',
+      error: 'Generation is not ready.',
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+    await expect(dispatchGenerationOperationPendingReplay(staged.handle, staged.intent)).resolves.toMatchObject({
+      disposition: 'succeeded',
+      result: { status: 'accepted' },
+    })
+    expect(fetchMock).toHaveBeenCalledOnce()
+
+    operationMocks.stage.mockClear()
+    await expect(
+      stageTargetedGenerationOperation({
+        target: { selectedCharID: 0, chatPage: 0, characterId: 'character-a', chatId: 'chat-a' },
+        mode: 'regenerate',
+        targetMessageId: 'message-a',
+        generation: {
+          syntheticSayNothing: false,
+          resetMessages: false,
+          inlayAssetRefs: [],
+          clientContext: {},
+          clientCapabilities: {},
+        },
+      }),
+    ).resolves.toEqual({ status: 'error', error: 'Generation is not ready.' })
+    expect(operationMocks.stage).not.toHaveBeenCalled()
+  })
+
   it('creates both UUIDs before durable staging and appends only after staging is ready', async () => {
     let releaseReady!: () => void
     const ready = new Promise<'persisted'>((resolve) => {

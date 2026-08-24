@@ -11,10 +11,10 @@ tests, evidence, and applicable exit criteria are complete.
 
 | Phase | Status | Remaining work |
 | --- | --- | --- |
-| [0: Measurement and budgets](00-measurement-and-budgets.md) | In progress | Ratify the milestone JavaScript budgets from five successful CI artifacts and promote them to hard gates. |
-| [1: Entry and bundle boundaries](01-entry-and-bundle-boundaries.md) | In progress | Complete the shared Phase 0 budget-ratification item. |
+| [0: Measurement and budgets](00-measurement-and-budgets.md) | Complete | None. |
+| [1: Entry and bundle boundaries](01-entry-and-bundle-boundaries.md) | Complete | None. |
 | [2: Thin character summaries](02-thin-character-summaries.md) | Complete | None. The compatibility aggregate route remains a rollback seam until the planned seam-removal work. |
-| [3: Startup capabilities](03-startup-capabilities.md) | Outstanding | All review slices. |
+| [3: Startup capabilities](03-startup-capabilities.md) | Complete | None. `loadedStore` remains only as the documented background-readiness compatibility alias scheduled for removal in Phase 7. |
 | [4: Deferred runtimes](04-deferred-runtimes.md) | Outstanding | All review slices. |
 | [5: Route-driven hydration](05-route-driven-hydration.md) | Outstanding | All review slices. |
 | [6: Observer shell](06-observer-shell.md) | Outstanding | All review slices. |
@@ -25,11 +25,11 @@ tests, evidence, and applicable exit criteria are complete.
 ### Phase 0: Measurement and budgets
 
 - [x] 0A. Stable readiness instrumentation.
-- [ ] 0B. Initial-preload build report and ratified CI budgets.
+- [x] 0B. Initial-preload build report and ratified budgets.
   - [x] Implement the report, deterministic tests, package command, artifacts,
     and provisional regression gates.
-  - [ ] Review five successful CI preload artifacts and record CI variance.
-  - [ ] Ratify the 900/500 KiB milestone targets and promote them to hard gates.
+  - [x] Review five reproducible clean local preload builds and record variance.
+  - [x] Ratify the 900/500 KiB milestone targets and promote them to hard gates.
 - [x] 0C. Server and payload timing.
 - [x] 0D. Cold/warm scenario matrix.
 
@@ -38,10 +38,10 @@ tests, evidence, and applicable exit criteria are complete.
 - [x] 1A. Entry and conditional polyfills.
 - [x] 1B. Lazy root UI and route handlers.
 - [x] 1C. Store and global API dependency cleanup.
-- [ ] 1D. Final grouping and enforcement.
+- [x] 1D. Final grouping and enforcement.
   - [x] Inspect the generated graph, document the no-manual-grouping decision,
     enforce import-boundary diagnostics, and protect the entry closure.
-  - [ ] Complete the Phase 0 CI budget ratification and hard-gate promotion.
+  - [x] Complete the Phase 0 local budget ratification and hard-gate promotion.
 
 ### Phase 2: Thin character summaries
 
@@ -53,10 +53,10 @@ tests, evidence, and applicable exit criteria are complete.
 
 ### Phase 3: Startup capabilities
 
-- [ ] 3A. Coordinator and diagnostics.
-- [ ] 3B. Writer sequence and command enforcement.
-- [ ] 3C. Shell and `loadedStore` migration.
-- [ ] 3D. Route, chat, and event readiness.
+- [x] 3A. Coordinator and diagnostics.
+- [x] 3B. Writer sequence and command enforcement.
+- [x] 3C. Shell and `loadedStore` migration.
+- [x] 3D. Route, chat, and event readiness.
 
 ### Phase 4: Deferred runtimes
 

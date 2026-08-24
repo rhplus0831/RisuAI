@@ -17,8 +17,10 @@ import { QuickSettings } from '../stores.svelte'
 import { generationOperationCancellations, generationOperationProjections } from './generationOperations'
 import { listPendingMutations } from './pendingMutationOutbox'
 import {
+  getStartupCoordinatorSnapshot,
   getStartupReadinessSnapshot,
   waitForStartupMilestone,
+  type StartupCoordinatorSnapshot,
   type StartupMilestone,
   type StartupReadinessSnapshot,
 } from '../startupReadiness'
@@ -46,6 +48,7 @@ export interface FastifyBrowserSmokeHook {
   getAppliedServerResourceRevision: () => number | null
   getDatabaseSnapshot: () => Database
   getLifecycleSnapshot: () => Promise<FastifyBrowserSmokeLifecycleSnapshot>
+  getStartupCoordinatorSnapshot: () => StartupCoordinatorSnapshot
   getStartupSnapshot: () => StartupReadinessSnapshot
   isLoaded: () => boolean
   patchRuntimeSettings: (patch: Record<string, unknown>) => Promise<ServerCommandResult>
@@ -103,6 +106,7 @@ export function installFastifyBrowserSmokeHook() {
         requests: structuredClone(intent.requests),
       })),
     }),
+    getStartupCoordinatorSnapshot,
     getStartupSnapshot: getStartupReadinessSnapshot,
     isLoaded: () => get(loadedStore),
     // Ride the real durable outbox path so the request carries the mutation

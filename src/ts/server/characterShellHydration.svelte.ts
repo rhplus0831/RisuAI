@@ -59,7 +59,8 @@ export async function hydrateSelectedCharacterShell(options: CharacterShellHydra
   const index = get(selectedCharID)
   if (index < 0) return false
   const character = getDatabase().characters?.[index]
-  if (!isServerCharacterShell(character)) return false
+  if (!character) return false
+  if (!isServerCharacterShell(character)) return true
   const characterId = character?.chaId
   if (typeof characterId !== 'string' || characterId.trim() === '') return false
   return hydrateCharacterShell(characterId, options)

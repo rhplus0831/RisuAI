@@ -10,11 +10,41 @@ export const STARTUP_MILESTONES = [
 
 export type StartupMilestone = (typeof STARTUP_MILESTONES)[number]
 
+export const STARTUP_CAPABILITIES = [
+  'canRenderShell',
+  'canApplyRoutes',
+  'canMutate',
+  'pluginsReady',
+  'canGenerate',
+] as const
+
+export type StartupCapability = (typeof STARTUP_CAPABILITIES)[number]
+export type StartupRetryTarget = StartupCapability | 'backgroundReady'
+export type StartupStep =
+  | 'writer-shell'
+  | 'writer-owner-adoption'
+  | 'writer-bootstrap'
+  | 'writer-initialize'
+  | 'writer-outbox-prepare'
+  | 'writer-receipt-flush'
+  | 'writer-pending-replay'
+  | 'writer-resource-hydration'
+  | 'writer-projection-install'
+  | 'writer-runtime-services'
+  | 'writer-event-subscription'
+  | 'chat-readiness'
+  | 'push-runtime'
+  | 'plugin-runtime'
+  | 'generation-recovery'
+  | 'background-runtime'
+
 export type StartupAttemptFailureCode =
   | 'writer-bootstrap-failed'
   | 'push-initialization-failed'
   | 'plugin-initialization-failed'
   | 'generation-recovery-failed'
+  | 'selected-character-hydration-failed'
+  | 'selected-chat-hydration-failed'
   | 'runtime-initialization-failed'
 
 export interface StartupAttemptSnapshot {
@@ -34,6 +64,25 @@ export interface StartupReadinessSnapshot {
   attempts: StartupAttemptSnapshot[]
 }
 
+export interface StartupCapabilityFailureSnapshot {
+  attemptId: number
+  failureCode: StartupAttemptFailureCode
+  failureMilestone: StartupMilestone
+  failedAtMs: number
+}
+
+export interface StartupCoordinatorSnapshot {
+  schemaVersion: 1
+  capabilities: Record<StartupCapability, boolean>
+  writerCapabilitiesRevoked: boolean
+  failures: Partial<Record<StartupRetryTarget, StartupCapabilityFailureSnapshot>>
+  completedSteps: StartupStep[]
+}
+
+export interface StartupCoordinatorReadable {
+  subscribe(run: (snapshot: StartupCoordinatorSnapshot) => void): () => void
+}
+
 export type StartupMilestoneRecordResult = 'duplicate' | 'pending' | 'transitioned'
 
 const MARK_PREFIX = 'risu:startup:'
@@ -45,7 +94,13 @@ const observedMilestoneTimes = new Map<StartupMilestone, number>()
 const transitionTimes = new Map<StartupMilestone, number>()
 const attempts: StartupAttemptState[] = []
 const readinessListeners = new Set<() => void>()
+const capabilityFailures = new Map<StartupRetryTarget, StartupCapabilityFailureSnapshot>()
+const completedStartupSteps = new Map<StartupStep, unknown>()
+const inFlightStartupSteps = new Map<StartupStep, Promise<unknown>>()
+const inFlightCapabilityRetries = new Map<StartupRetryTarget, Promise<unknown>>()
 let nextAttemptId = 1
+let writerCapabilitiesRevoked = false
+let chatGenerationReady = false
 
 function nowMs(): number {
   return globalThis.performance?.now?.() ?? Date.now()
@@ -88,6 +143,100 @@ function notifyReadinessListeners(): void {
   for (const listener of readinessListeners) listener()
 }
 
+function hasTransitioned(milestone: StartupMilestone): boolean {
+  return transitionTimes.has(milestone)
+}
+
+export function canRenderShell(): boolean {
+  return hasTransitioned('writer-ready')
+}
+
+export function canApplyRoutes(): boolean {
+  return hasTransitioned('writer-ready') && !writerCapabilitiesRevoked
+}
+
+export function canMutate(): boolean {
+  return hasTransitioned('writer-ready') && !writerCapabilitiesRevoked
+}
+
+export function pluginsReady(): boolean {
+  return hasTransitioned('plugins-ready')
+}
+
+export function canGenerate(): boolean {
+  return hasTransitioned('chat-ready') && chatGenerationReady && !writerCapabilitiesRevoked
+}
+
+/**
+ * Publish that initial chat dependency evaluation settled. The milestone may
+ * advance even when no route-selected chat exists, while canGenerate remains
+ * false until every generation dependency is coherent.
+ */
+export function settleStartupChatReadiness(ready: boolean): void {
+  const changed = chatGenerationReady !== ready
+  chatGenerationReady = ready
+  recordStartupMilestone('chat-ready')
+  if (changed) {
+    clearReadyCapabilityFailures()
+    notifyReadinessListeners()
+  }
+}
+
+/**
+ * Revoke writer-owned capabilities synchronously when this tab loses writer
+ * ownership. Milestones remain monotonic diagnostic history; a fresh page
+ * startup is responsible for establishing a new writer session.
+ */
+export function revokeStartupWriterCapabilities(): void {
+  if (writerCapabilitiesRevoked) return
+  writerCapabilitiesRevoked = true
+  notifyReadinessListeners()
+}
+
+function retryTargetReady(target: StartupRetryTarget): boolean {
+  switch (target) {
+    case 'canRenderShell':
+      return canRenderShell()
+    case 'canApplyRoutes':
+      return canApplyRoutes()
+    case 'canMutate':
+      return canMutate()
+    case 'pluginsReady':
+      return pluginsReady()
+    case 'canGenerate':
+      return canGenerate()
+    case 'backgroundReady':
+      return hasTransitioned('background-ready')
+  }
+}
+
+function clearReadyCapabilityFailures(): void {
+  for (const target of capabilityFailures.keys()) {
+    if (retryTargetReady(target)) capabilityFailures.delete(target)
+  }
+}
+
+function failureTargetsForMilestone(milestone: StartupMilestone): StartupRetryTarget[] {
+  switch (milestone) {
+    case 'entry':
+    case 'shell-mounted':
+    case 'observer-ready':
+      return ['canRenderShell']
+    case 'writer-ready':
+      return ['canApplyRoutes', 'canMutate', 'canGenerate']
+    case 'plugins-ready':
+      return ['pluginsReady', 'canGenerate']
+    case 'chat-ready':
+      return ['canGenerate']
+    case 'background-ready':
+      return ['backgroundReady']
+  }
+}
+
+export function startupRetryTargetForMilestone(milestone: StartupMilestone): StartupRetryTarget {
+  return failureTargetsForMilestone(milestone)[0]
+}
+
 function flushObservedMilestones(): boolean {
   let transitioned = false
   for (const milestone of STARTUP_MILESTONES) {
@@ -103,7 +252,10 @@ function flushObservedMilestones(): boolean {
     emitPerformanceEntries(milestone, transitionAtMs)
     transitioned = true
   }
-  if (transitioned) notifyReadinessListeners()
+  if (transitioned) {
+    clearReadyCapabilityFailures()
+    notifyReadinessListeners()
+  }
   return transitioned
 }
 
@@ -148,7 +300,109 @@ export function failStartupAttempt(
   attempt.failedAtMs = Math.max(attempt.startedAtMs, finiteTime(failedAtMs))
   attempt.failureCode = failureCode
   attempt.failureMilestone = failureMilestone
+  const failure: StartupCapabilityFailureSnapshot = {
+    attemptId,
+    failureCode,
+    failureMilestone,
+    failedAtMs: attempt.failedAtMs,
+  }
+  recordCapabilityFailureSnapshot(failure)
   notifyReadinessListeners()
+}
+
+function recordCapabilityFailureSnapshot(failure: StartupCapabilityFailureSnapshot): void {
+  for (const target of failureTargetsForMilestone(failure.failureMilestone)) {
+    if (!retryTargetReady(target)) capabilityFailures.set(target, failure)
+  }
+}
+
+/** Record a localized capability failure without failing unrelated startup work. */
+export function recordStartupCapabilityFailure(
+  attemptId: number,
+  failureCode: StartupAttemptFailureCode,
+  failureMilestone: StartupMilestone,
+  failedAtMs = nowMs(),
+): void {
+  recordCapabilityFailureSnapshot({
+    attemptId,
+    failureCode,
+    failureMilestone,
+    failedAtMs: finiteTime(failedAtMs),
+  })
+  notifyReadinessListeners()
+}
+
+/**
+ * Run one startup step at most once after it succeeds. Concurrent callers share
+ * the same in-flight work, while a failed step remains retryable. This lets a
+ * later startup attempt resume at the failed capability without replaying
+ * already successful listeners, timers, or recovery work.
+ */
+export function runStartupStep<T>(step: StartupStep, operation: () => Promise<T> | T): Promise<T> {
+  if (completedStartupSteps.has(step)) {
+    return Promise.resolve(completedStartupSteps.get(step) as T)
+  }
+  const existing = inFlightStartupSteps.get(step)
+  if (existing) return existing as Promise<T>
+
+  const running = Promise.resolve()
+    .then(operation)
+    .then((value) => {
+      completedStartupSteps.set(step, value)
+      notifyReadinessListeners()
+      return value
+    })
+    .finally(() => {
+      inFlightStartupSteps.delete(step)
+    })
+  inFlightStartupSteps.set(step, running)
+  return running
+}
+
+/**
+ * Deduplicate a targeted retry. The operation resumes through runStartupStep(),
+ * so already successful work remains cached even when an error occurred after
+ * an earlier capability became ready.
+ */
+export function retryStartupCapability<T>(target: StartupRetryTarget, operation: () => Promise<T> | T): Promise<T> {
+  const existing = inFlightCapabilityRetries.get(target)
+  if (existing) return existing as Promise<T>
+
+  const running = Promise.resolve()
+    .then(operation)
+    .finally(() => {
+      inFlightCapabilityRetries.delete(target)
+    })
+  inFlightCapabilityRetries.set(target, running)
+  return running
+}
+
+export function getStartupCoordinatorSnapshot(): StartupCoordinatorSnapshot {
+  return {
+    schemaVersion: 1,
+    capabilities: {
+      canRenderShell: canRenderShell(),
+      canApplyRoutes: canApplyRoutes(),
+      canMutate: canMutate(),
+      pluginsReady: pluginsReady(),
+      canGenerate: canGenerate(),
+    },
+    writerCapabilitiesRevoked,
+    failures: Object.fromEntries(
+      [...capabilityFailures].map(([target, failure]) => [target, { ...failure }]),
+    ) as Partial<Record<StartupRetryTarget, StartupCapabilityFailureSnapshot>>,
+    completedSteps: [...completedStartupSteps.keys()],
+  }
+}
+
+/** Svelte-compatible coordinator view for capability consumers. */
+export const startupCoordinatorStore: StartupCoordinatorReadable = {
+  subscribe(run) {
+    const listener = () => run(getStartupCoordinatorSnapshot())
+    readinessListeners.add(listener)
+    listener()
+    return () => readinessListeners.delete(listener)
+  },
 }
 
 export function getStartupReadinessSnapshot(): StartupReadinessSnapshot {
@@ -191,7 +445,13 @@ export function resetStartupReadinessForTests(): void {
   transitionTimes.clear()
   attempts.length = 0
   readinessListeners.clear()
+  capabilityFailures.clear()
+  completedStartupSteps.clear()
+  inFlightStartupSteps.clear()
+  inFlightCapabilityRetries.clear()
   nextAttemptId = 1
+  writerCapabilitiesRevoked = false
+  chatGenerationReady = false
 
   const perf = globalThis.performance
   for (const milestone of STARTUP_MILESTONES) {

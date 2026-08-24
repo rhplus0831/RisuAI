@@ -1,13 +1,25 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   beginStartupAttempt,
+  canApplyRoutes,
+  canGenerate,
+  canMutate,
+  canRenderShell,
   completeStartupAttempt,
   failStartupAttempt,
+  getStartupCoordinatorSnapshot,
   getStartupReadinessSnapshot,
+  pluginsReady,
   recordStartupMilestone,
   resetStartupReadinessForTests,
+  revokeStartupWriterCapabilities,
+  retryStartupCapability,
+  runStartupStep,
+  settleStartupChatReadiness,
   waitForStartupMilestone,
 } from './startupReadiness'
+
+beforeEach(resetStartupReadinessForTests)
 
 afterEach(() => {
   resetStartupReadinessForTests()
@@ -65,6 +77,101 @@ describe('startup readiness instrumentation', () => {
       { attemptId: 2, startedAtMs: 13, completedAtMs: 20 },
     ])
     expect(JSON.stringify(snapshot)).not.toMatch(/character|chat content|prompt|plugin storage|account/i)
+  })
+
+  it('derives narrow capabilities at coordinator-owned milestone boundaries', () => {
+    recordStartupMilestone('entry', 0)
+    recordStartupMilestone('shell-mounted', 1)
+    expect([canRenderShell(), canApplyRoutes(), canMutate(), pluginsReady(), canGenerate()]).toEqual([
+      false,
+      false,
+      false,
+      false,
+      false,
+    ])
+
+    recordStartupMilestone('observer-ready', 2)
+    expect(canRenderShell()).toBe(false)
+    expect(canMutate()).toBe(false)
+
+    recordStartupMilestone('writer-ready', 3)
+    expect(canRenderShell()).toBe(true)
+    expect(canApplyRoutes()).toBe(true)
+    expect(canMutate()).toBe(true)
+    expect(canGenerate()).toBe(false)
+
+    recordStartupMilestone('plugins-ready', 4)
+    expect(pluginsReady()).toBe(true)
+    expect(canGenerate()).toBe(false)
+
+    settleStartupChatReadiness(true)
+    expect(canGenerate()).toBe(true)
+  })
+
+  it('revokes writer-owned capabilities without hiding the readable shell or milestone history', () => {
+    for (const milestone of [
+      'entry',
+      'shell-mounted',
+      'observer-ready',
+      'writer-ready',
+      'plugins-ready',
+      'chat-ready',
+    ] as const) {
+      recordStartupMilestone(milestone)
+    }
+    settleStartupChatReadiness(true)
+
+    revokeStartupWriterCapabilities()
+
+    expect(canRenderShell()).toBe(true)
+    expect(canApplyRoutes()).toBe(false)
+    expect(canMutate()).toBe(false)
+    expect(canGenerate()).toBe(false)
+    expect(pluginsReady()).toBe(true)
+    expect(getStartupReadinessSnapshot().phase).toBe('chat-ready')
+    expect(getStartupCoordinatorSnapshot().writerCapabilitiesRevoked).toBe(true)
+  })
+
+  it('records per-capability failures and clears them when readiness is reached', () => {
+    recordStartupMilestone('entry', 0)
+    recordStartupMilestone('shell-mounted', 1)
+    const attemptId = beginStartupAttempt(2)
+    failStartupAttempt(attemptId, 'plugin-initialization-failed', 'plugins-ready', 3)
+
+    expect(getStartupCoordinatorSnapshot().failures).toEqual({
+      pluginsReady: expect.objectContaining({ attemptId, failureCode: 'plugin-initialization-failed' }),
+      canGenerate: expect.objectContaining({ attemptId, failureCode: 'plugin-initialization-failed' }),
+    })
+
+    recordStartupMilestone('observer-ready', 4)
+    recordStartupMilestone('writer-ready', 5)
+    recordStartupMilestone('plugins-ready', 6)
+    expect(getStartupCoordinatorSnapshot().failures.pluginsReady).toBeUndefined()
+    expect(getStartupCoordinatorSnapshot().failures.canGenerate).toBeDefined()
+
+    settleStartupChatReadiness(true)
+    expect(getStartupCoordinatorSnapshot().failures.canGenerate).toBeUndefined()
+  })
+
+  it('deduplicates successful steps and in-flight targeted retries', async () => {
+    const step = vi.fn(async () => 'ready')
+    await expect(runStartupStep('plugin-runtime', step)).resolves.toBe('ready')
+    await expect(runStartupStep('plugin-runtime', step)).resolves.toBe('ready')
+    expect(step).toHaveBeenCalledOnce()
+
+    let releaseRetry!: () => void
+    const retry = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseRetry = resolve
+        }),
+    )
+    const firstRetry = retryStartupCapability('canRenderShell', retry)
+    const secondRetry = retryStartupCapability('canRenderShell', retry)
+    await Promise.resolve()
+    expect(retry).toHaveBeenCalledOnce()
+    releaseRetry()
+    await Promise.all([firstRetry, secondRetry])
   })
 
   it('waits for a narrow milestone and rejects on timeout', async () => {

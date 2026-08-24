@@ -49,6 +49,15 @@ scroll coordinators, and shared completion-audio context unlocking before mounti
 `App.svelte`. It then optionally installs the Fastify browser smoke hook, calls
 `loadData()`, initializes hotkeys, and removes the preloading element.
 
+`src/ts/startupReadiness.ts` owns the startup coordinator and measurement
+timeline. It publishes a Svelte-readable snapshot plus `canRenderShell`,
+`canApplyRoutes`, `canMutate`, `pluginsReady`, and `canGenerate` selectors,
+attempt/failure diagnostics, and completed-step state. Successful startup steps
+are retained across retries, so a plugin or later-runtime failure does not
+repeat writer recovery, pending-mutation replay, resource loading, event
+subscription, or another completed runtime step. `App.svelte`, commands, and
+generation operations consume the narrow capabilities directly.
+
 `loadData()` in `src/ts/bootstrap.ts` performs the visible startup work:
 
 1. Adopt the sole pending-mutation writer identity, if one exists, then fetch
@@ -69,7 +78,8 @@ scroll coordinators, and shared completion-audio context unlocking before mounti
    its dependency-ordered commands. Secure contexts use a non-extractable
    WebCrypto key; plain-HTTP contexts use a separately stored raw AES key and
    the fallback cipher. Startup stops if retryable or unreadable rows remain.
-4. Fetch `/api/v1/settings`, `/api/v1/collections`, the version 1 character
+4. Enable the compatibility resource write guard, then fetch
+   `/api/v1/settings`, `/api/v1/collections`, the version 1 character
    summary projection at `/api/v1/characters`, and
    `/api/v1/inlay-assets` in parallel. The first three use hash-aware POSTs when
    IndexedDB/Web Crypto are available and otherwise fall back to full GETs.
@@ -83,28 +93,36 @@ scroll coordinators, and shared completion-audio context unlocking before mounti
    character-detail hydration after that revision is installed. While a summary
    shell remains selected, the chat screen shows localized loading/retry state
    and does not mount detail-only controls.
-6. Enable guarded resource writes and command-event reconciliation.
+6. Install the authoritative revision cursors and command reconciliation, apply
+   the root shell's visual settings, and publish `observer-ready`.
 7. Seed generation operations/jobs, writer-scoped generation-finalization and
    pending-effect state, and separate message/greeting translation recovery;
    then start operation reconciliation, effect recovery, refreshers, and live
    runner reattach.
-8. Start chat-message hydration, fetch the active chat body, start bridge patch
-   lifecycle flushing, and subscribe to server events.
+8. Start chat-message hydration and bridge patch lifecycle flushing, then
+   subscribe to server events from the coherently applied resource revision.
+   A successful subscription publishes `writer-ready`, which makes the shell,
+   ordinary commands, and persistence-capable route effects available.
 9. Initialize the push coordinator and reconcile both enabled and disabled
    notification states.
 10. Load plugins and start plugin runtime synchronization.
-11. Update color scheme, text theme, reduced-motion/animation state, height mode, error
-    handling, and GUI size CSS variables.
-12. Show the one-time insecure-origin warning when the page lacks a secure
-    context, then apply startup UI state such as `botSettingAtStart`.
-13. Set `loadedStore`, select the persisted character, install the resource and
-    module store effects, start DOM observers, register dynamic models, and run
-    module update. RisuRealm terms are requested only at the Realm download
-    boundary.
+11. Reconcile recovered generation effects, then hydrate the selected character
+    detail and active chat. Publish `chat-ready`; `canGenerate` becomes true only
+    when these dependencies are coherent. Selection changes rerun fenced
+    hydration, and a specific character/chat failure remains localized.
+12. Update error handling and show one-time nightly or insecure-origin warnings.
+    Set the background-compatibility `loadedStore`, reselect the persisted
+    character, install store/module effects and DOM observers, register dynamic
+    models, and publish `background-ready`. RisuRealm terms are requested only
+    at the Realm download boundary.
 
-Visible startup bugs often sit at the boundary between `loadedStore`,
-`selectedCharID`, resource application, route application, lazy body reads, and
-CSS variable updates.
+`loadedStore` no longer controls visible rendering or route application. It is a
+temporary background-readiness compatibility alias for the bootstrap loop,
+notification reconciliation, and browser-smoke helpers. Remove it after those
+callers use explicit `background-ready` state; do not add new consumers.
+Visible startup bugs often sit at the boundary between coordinator
+capabilities, `selectedCharID`, resource application, route application, lazy
+body reads, and CSS variable updates.
 
 ## Server Resources And Durable Mutations
 
@@ -522,9 +540,10 @@ precedence stays in the focused guides linked above.
 - Character resources intentionally provide message-free chat rows and can
   provide lorebook stubs. Active chat messages and lorebooks hydrate later from
   their concrete endpoints.
-- Route effects run only after `loadedStore`; a pre-load store write may not
-  mean the URL or visible shell has caught up.
-- CSS variables are applied after resources and settings load. A theme bug may
+- Route effects run only while `canApplyRoutes`; writer loss leaves the coherent
+  shell readable but prevents route-owned persistent selection changes.
+- CSS variables are applied before the conservative `writer-ready` shell
+  boundary. A theme bug may
   be runtime state, not component markup.
 - Plugins can add visible menu items and buttons. Check plugin stores before
   assuming a component owns every visible control.

@@ -181,7 +181,16 @@ async function measureNavigation(
   await expect
     .poll(() => page.evaluate(() => Boolean(window.__RISU_FASTIFY_BROWSER_SMOKE__)), { timeout: 20_000 })
     .toBe(true)
-  await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForStartupMilestone('background-ready', 30_000))
+  try {
+    await page.evaluate(() =>
+      window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForStartupMilestone('background-ready', 30_000),
+    )
+  } catch (error) {
+    const coordinator = await page.evaluate(() =>
+      window.__RISU_FASTIFY_BROWSER_SMOKE__!.getStartupCoordinatorSnapshot(),
+    )
+    throw new Error(`Background readiness failed: ${JSON.stringify(coordinator)}`, { cause: error })
+  }
   await page.waitForTimeout(50)
 
   const browserSnapshot = await page.evaluate(() => {
@@ -212,7 +221,10 @@ async function measureNavigation(
       request.startedAtEpochMs < writerReadyAt,
   ).length
   const generationsBeforeChatReady = requests.filter(
-    (request) => request.path.startsWith('/api/v1/generate/') && request.startedAtEpochMs < chatReadyAt,
+    (request) =>
+      request.method !== 'GET' &&
+      (request.path.startsWith('/api/v1/generate/') || request.path.startsWith('/api/v1/generation-operations')) &&
+      request.startedAtEpochMs < chatReadyAt,
   ).length
 
   return {

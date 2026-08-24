@@ -20,7 +20,7 @@ import {
   setActiveGenerationJobs,
   type GenerationJobProjectionSource,
 } from '../process/reattach'
-import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
+import { activeWriterSessionHeader, handleActiveWriterStaleResponse, isWriterAccessLost } from './activeWriterSession'
 import {
   getServerCommandBaseRevision,
   peekCachedServerCommandRevision,
@@ -43,12 +43,19 @@ import {
 } from './bootstrap'
 import { recordGenerationRecoveryEvent } from './protocolDiagnostics'
 import { getChatHydrationRuntime, registerGenerationOperationsRuntime } from '../process/generationRuntimeBridge'
+import { canGenerate } from '../startupReadiness'
 
 const GENERATION_OPERATIONS_ENDPOINT = '/api/v1/generation-operations'
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 const MAX_REVISION_RETRIES = 3
 const CANCELLATION_STATUS_TIMEOUT_MS = 10_000
 const CANCELLATION_RECONCILE_DELAYS_MS = [250, 500, 1_000, 2_000, 4_000, 5_000] as const
+
+type GenerationOperationAccess = 'ordinary' | 'pending-replay'
+
+function canUseGenerationOperationAccess(access: GenerationOperationAccess): boolean {
+  return !isWriterAccessLost() && (access === 'pending-replay' || canGenerate())
+}
 
 export interface GenerationOperationGenerationIntent {
   syntheticSayNothing: boolean
@@ -462,6 +469,9 @@ export async function stageAcceptedSendGenerationOperation(input: {
   draftGeneration?: unknown
   generation: GenerationOperationGenerationIntent
 }): Promise<StagedAcceptedSendOperation | { status: 'error'; error: string }> {
+  if (!canUseGenerationOperationAccess('ordinary')) {
+    return { status: 'error', error: 'Generation is not ready.' }
+  }
   if (!input.target.characterId || !input.target.chatId) {
     return { status: 'error', error: 'The active chat has no durable server identity.' }
   }
@@ -516,6 +526,9 @@ export async function stageTargetedGenerationOperation(input: {
   draftGeneration?: unknown
   generation: GenerationOperationGenerationIntent
 }): Promise<StagedTargetedGenerationOperation | { status: 'error'; error: string }> {
+  if (!canUseGenerationOperationAccess('ordinary')) {
+    return { status: 'error', error: 'Generation is not ready.' }
+  }
   if (!input.target.characterId || !input.target.chatId) {
     return { status: 'error', error: 'The active chat has no durable server identity.' }
   }
@@ -1226,7 +1239,9 @@ function applyCancellationAcknowledgement(
 async function dispatchGenerationOperationCancellation(
   handle: PendingMutationHandle,
   intent: DurableMutationIntent & { kind: 'generation-operation-cancel' },
+  access: GenerationOperationAccess,
 ): Promise<GenerationOperationCancellationResult> {
+  if (!canUseGenerationOperationAccess(access)) return { status: 'failed', error: 'Generation is not ready.' }
   if (!handle.databaseLineage) return { status: 'failed', error: 'The Stop intent has no database lineage.' }
   const persistence = await beginPendingMutationDispatch(handle)
   if (persistence !== 'persisted') return { status: 'failed', error: 'The Stop intent is not durably staged.' }
@@ -1243,6 +1258,7 @@ async function dispatchGenerationOperationCancellation(
           : `Unable to prepare Stop: ${String(error)}`,
     }
   }
+  if (!canUseGenerationOperationAccess(access)) return { status: 'failed', error: 'Generation is not ready.' }
   const controller = new AbortController()
   const deadline = setTimeout(() => controller.abort(), CANCELLATION_STATUS_TIMEOUT_MS)
   let response: Response
@@ -1307,7 +1323,9 @@ async function sendGenerationOperationCancellation(
     handle: PendingMutationHandle
     intent: DurableMutationIntent & { kind: 'generation-operation-cancel' }
   },
+  access: GenerationOperationAccess = 'ordinary',
 ): Promise<GenerationOperationCancellationResult> {
+  if (!canUseGenerationOperationAccess(access)) return { status: 'failed', error: 'Generation is not ready.' }
   const runtime = cancellationRuntime(operationId)
   if (runtime.inFlight) return runtime.inFlight
   const dispatch = (async (): Promise<GenerationOperationCancellationResult> => {
@@ -1376,7 +1394,7 @@ async function sendGenerationOperationCancellation(
     detachGenerationOperationViewers(operationId)
     let result: GenerationOperationCancellationResult
     try {
-      result = await dispatchGenerationOperationCancellation(handle, intent)
+      result = await dispatchGenerationOperationCancellation(handle, intent, access)
     } catch (error) {
       result = {
         status: 'failed',
@@ -1485,7 +1503,11 @@ function shouldDiscardOperationFailure(code: string | undefined, status: number)
 async function dispatchPendingGenerationOperation(
   handle: PendingMutationHandle,
   intent: DurableMutationIntent,
+  access: GenerationOperationAccess = 'ordinary',
 ): Promise<GenerationOperationDispatchResult> {
+  if (!canUseGenerationOperationAccess(access)) {
+    return { status: 'retained', error: 'Generation is not ready.' }
+  }
   if (
     !isGenerationOperationPendingIntent(intent) ||
     intent.kind === 'generation-operation-cancel' ||
@@ -1503,6 +1525,9 @@ async function dispatchPendingGenerationOperation(
   const auth = await getNodeServerProxyAuth()
   let revisionRetries = 0
   while (true) {
+    if (!canUseGenerationOperationAccess(access)) {
+      return { status: 'retained', error: 'Generation is not ready.' }
+    }
     let response: Response
     try {
       response = await fetch(`/api/v1${request.path}`, {
@@ -1637,6 +1662,9 @@ export async function retryGenerationOperation(
   operationId: string,
   expectedStateVersion: number,
 ): Promise<GenerationOperationDispatchResult> {
+  if (!canUseGenerationOperationAccess('ordinary')) {
+    return { status: 'retained', error: 'Generation is not ready.' }
+  }
   const retryRequestId = createProtocolUuid()
   const intent = operationIntentForRetry(operationId, retryRequestId, expectedStateVersion)
   const handle = stagePendingMutation(`generation-operation-retry:${operationId}`, intent)
@@ -1682,14 +1710,18 @@ export async function dispatchGenerationOperationPendingReplay(
       ...(previous?.attemptNo !== undefined ? { attemptNo: previous.attemptNo } : {}),
       ...(previous?.jobId ? { jobId: previous.jobId } : {}),
     }))
-    const result = await sendGenerationOperationCancellation(operationId, { handle, intent: cancellationIntent })
+    const result = await sendGenerationOperationCancellation(
+      operationId,
+      { handle, intent: cancellationIntent },
+      'pending-replay',
+    )
     if (result.status === 'failed') return { disposition: 'retained', result }
     return {
       disposition: cancellationDispositionIsTerminal(result.disposition) ? 'succeeded' : 'retained',
       result,
     }
   }
-  const result = await dispatchPendingGenerationOperation(handle, intent)
+  const result = await dispatchPendingGenerationOperation(handle, intent, 'pending-replay')
   if (result.status === 'accepted') return { disposition: 'succeeded', result }
   if (result.status === 'rejected') return { disposition: 'discarded', result }
   return { disposition: 'retained', result }

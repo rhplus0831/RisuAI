@@ -9,12 +9,15 @@ vi.mock('./resourceReads', () => ({
 }))
 
 import { selectedCharID } from '../stores.svelte'
-import { hydrateServerChatMessages } from '../storage/database.svelte'
+import { hydrateServerChatMessages, withTrustedResourceWrite } from '../storage/database.svelte'
 import { setResourceWriteGuardEnabled } from './resourceWriteGuard.svelte'
 import {
   isCharacterLorebookHydrationPending,
   isChatMessageHydrationPending,
   resetChatHydration,
+  setActiveChatReadinessRefreshHook,
+  startChatMessageHydration,
+  stopChatMessageHydration,
 } from './chatMessageHydration.svelte'
 import { markCharacterLorebookHydrated, resetLorebookHydration } from './lorebookBridge.svelte'
 import {
@@ -57,6 +60,8 @@ function seedTwoResidentChats() {
 }
 
 beforeEach(() => {
+  stopChatMessageHydration()
+  setActiveChatReadinessRefreshHook(null)
   resetChatHydration()
   resetLorebookHydration()
   resetGenerationFinalizationPersistencesForTests()
@@ -64,6 +69,8 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  stopChatMessageHydration()
+  setActiveChatReadinessRefreshHook(null)
   resetGenerationFinalizationPersistencesForTests()
   setResourceWriteGuardEnabled(false)
   selectedCharID.set(-1)
@@ -71,6 +78,23 @@ afterEach(() => {
 })
 
 describe('active-chat loading flag reactivity (real resource guard)', () => {
+  it('notifies readiness when chatPage changes within the selected character', () => {
+    setResourceWriteGuardEnabled(false)
+    seedTwoResidentChats()
+    const refreshReadiness = vi.fn()
+    setActiveChatReadinessRefreshHook(refreshReadiness)
+    startChatMessageHydration()
+    flushSync()
+    refreshReadiness.mockClear()
+
+    withTrustedResourceWrite(() => {
+      testDatabaseState.db.characters[0].chatPage = 1
+    })
+    flushSync()
+
+    expect(refreshReadiness).toHaveBeenCalledOnce()
+  })
+
   it('does not invalidate one chat finalization selector when another chat changes', () => {
     const foregroundSeen: number[] = []
     const backgroundSeen: number[] = []
