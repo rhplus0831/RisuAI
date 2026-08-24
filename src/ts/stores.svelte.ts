@@ -1,14 +1,9 @@
 import { writable } from 'svelte/store'
-import type { character, customscript } from './storage/database.svelte'
-import { type simpleCharacterArgument } from './parser/parser.svelte'
-import { moduleUpdate } from './process/modules'
-import { resetScriptCache } from './process/scripts'
-import type { hubType } from './characterCards'
-import type { ActiveChatTarget } from './chatCommands'
-import { getResourceDatabase } from './server/resourceState.svelte'
-import { alertStore, selectedCharID } from './stores/coreStores.svelte'
+import { resetRegisteredScriptCaches } from './process/scriptCacheInvalidation'
+import type { ActiveChatTarget } from './types/activeChatTarget'
+import type { hubType } from './types/risuHub'
 
-export { alertStore, selectedCharID } from './stores/coreStores.svelte'
+export { alertStore, loadedStore, LoadingStatusState, selectedCharID, selIdState } from './stores/coreStores.svelte'
 
 function updateSize() {
   SizeStore.set({
@@ -23,7 +18,6 @@ export const SizeStore = writable({
   h: 0,
 })
 
-export const loadedStore = writable(false)
 export const DynamicGUI = writable(false)
 export const sideBarClosing = writable(false)
 export const sideBarStore = writable(window.innerWidth > 1024)
@@ -70,10 +64,6 @@ export const MobileSearch = writable('')
 export const CharConfigSubMenu = writable(0)
 export const CustomGUISettingMenuStore = writable(false)
 export const hypaV3ModalOpen = writable(false)
-export const selIdState = $state({
-  selId: -1,
-})
-
 CustomCSSStore.subscribe((css) => {
   console.log(css)
   const q = document.querySelector('#customcss')
@@ -86,24 +76,6 @@ CustomCSSStore.subscribe((css) => {
     document.body.appendChild(s)
   }
 })
-
-export function createSimpleCharacter(char: character, customscript: customscript[] | undefined = char.customscript) {
-  if (!char) {
-    return null
-  }
-
-  const simpleChar: simpleCharacterArgument = {
-    type: 'simple',
-    customscript,
-    chaId: char.chaId,
-    additionalAssets: char.additionalAssets,
-    virtualscript: char.virtualscript,
-    emotionImages: char.emotionImages,
-    triggerscript: char.triggerscript,
-  }
-
-  return simpleChar
-}
 
 updateSize()
 window.addEventListener('resize', updateSize)
@@ -162,10 +134,6 @@ export function openChatGenerationTogglePresetListModal(target: ActiveChatTarget
 export function closeChatGenerationTogglePresetListModal() {
   openChatGenerationTogglePresetList.set(false)
 }
-
-export const LoadingStatusState = $state({
-  text: '',
-})
 
 export const QuickSettings = $state({
   open: false,
@@ -257,7 +225,7 @@ export const hotReloading = $state<string[]>([])
 
 export function reloadGuiAfterDefinitionChange() {
   ReloadChatPointer.set({})
-  resetScriptCache()
+  resetRegisteredScriptCaches()
   ReloadGUIPointer.update((value) => value + 1)
 }
 
@@ -277,82 +245,3 @@ export function reloadChatAt(index: number | string) {
     [chatIndex]: (value[chatIndex] ?? 0) + 1,
   }))
 }
-
-// The modules `$effect` below used to register its dependency on the modules
-// array via a whole-value snapshot — a deep clone of every
-// module (lorebook entries, scripts, and triggers included) on every fire,
-// discarded immediately. `moduleUpdate()` only consumes each module's
-// identity plus its `hideIcon` / `backgroundEmbedding` fields, so reading
-// exactly those (and the array length, for adds/removes) registers every
-// signal the effect needs with zero cloning. Exported for the regression
-// test, which proves an unrelated deep module edit no longer re-runs the
-// effect while the consumed fields still do.
-export interface ModuleUpdateSignalSource {
-  id?: string
-  hideIcon?: boolean
-  backgroundEmbedding?: string
-}
-
-export function readModuleUpdateSignals(modules: readonly ModuleUpdateSignalSource[] | undefined): void {
-  if (!modules) return
-  void modules.length
-  for (const module of modules) {
-    void module?.id
-    void module?.hideIcon
-    void module?.backgroundEmbedding
-  }
-}
-
-function isServerCharacterShellRow(character: unknown): boolean {
-  return (
-    !!character &&
-    typeof character === 'object' &&
-    !Array.isArray(character) &&
-    (character as { __serverCharacterShell?: unknown }).__serverCharacterShell === true
-  )
-}
-
-$effect.root(() => {
-  selectedCharID.subscribe((v) => {
-    selIdState.selId = v
-
-    const database = getResourceDatabase()
-    if (database.characters?.[selIdState.selId]) {
-      if (database.hypaV3 && database.hypaV3Presets?.[database.hypaV3PresetId]?.settings?.alwaysToggleOn) {
-        const char = database.characters[selIdState.selId]
-        if (!isServerCharacterShellRow(char) && !char.supaMemory && char.chaId) {
-          const characterId = char.chaId
-          void import('./characterCommands').then(({ setCharacterSupaMemory }) => {
-            setCharacterSupaMemory(characterId, true)
-          })
-        }
-      }
-    }
-  })
-  $effect(() => {
-    const database = getResourceDatabase()
-    const character = database.characters?.[selIdState.selId]
-    const chat = character?.chats?.[character.chatPage]
-    const selectedPromptPreset = database.promptPresets?.find(
-      (preset) => preset.id === chat?.generationSettings?.promptPresetId,
-    )
-    const effectiveAgentPresetId = Object.prototype.hasOwnProperty.call(chat?.generationSettings ?? {}, 'agentPresetId')
-      ? chat?.generationSettings?.agentPresetId
-      : database.agentPresetDefaultId
-    const selectedAgentPreset = database.agentPresets?.find((preset) => preset.id === effectiveAgentPresetId)
-    readModuleUpdateSignals(database.modules)
-    database.enabledModules
-    database.enabledModules?.length
-    chat?.modules?.length
-    chat?.generationSettings?.promptPresetId
-    chat?.generationSettings?.agentPresetId
-    selectedPromptPreset?.moduleIntergration
-    database.agentPresetDefaultId
-    selectedAgentPreset?.enabled
-    selectedAgentPreset?.moduleIntergration
-    character?.hideChatIcon
-    character?.backgroundHTML
-    database.moduleIntergration
-    moduleUpdate()
-  })
-})

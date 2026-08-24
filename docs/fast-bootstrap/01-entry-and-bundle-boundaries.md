@@ -90,16 +90,36 @@ intercepts real emitted JavaScript/CSS for offline and stale-chunk failures.
 
 ### 1C. Store and global API dependency cleanup
 
-- [ ] Move shell-safe stores and types behind a small dependency root. Importing
+- [x] Move shell-safe stores and types behind a small dependency root. Importing
   `loadedStore` or its Phase 3 replacement must not pull database, scripts,
   modules, character-card, chat-command, or complete resource-state code.
-- [ ] Update consumers incrementally; prevent a compatibility re-export from
+- [x] Update consumers incrementally; prevent a compatibility re-export from
   recreating the original eager graph.
 - [ ] Remove the static `streamsaver` import and load it inside the `LocalWriter`
   path only when a streamed download starts.
 - [ ] Inspect every Vite static-plus-dynamic warning and remove the static path
   that defeats the lazy boundary.
 - [ ] Add focused download and store-effect tests for the moved boundaries.
+
+### 1C store-boundary measurement (2026-08-24)
+
+| Measure | After 1B | Store boundary | Change |
+| --- | ---: | ---: | ---: |
+| Initial preload files | 11 | 12 | +1 |
+| Initial JavaScript gzip | 317,814 bytes | 318,269 bytes | +0.1% |
+| Largest initial chunk gzip | 283,335 bytes | 283,335 bytes | 0% |
+| Full database chunk raw | 2,199.21 kB | 1,850.14 kB | -15.9% |
+| Full database chunk gzip | 650.07 kB | 549.99 kB | -15.4% |
+| Ineffective dynamic-import warnings | 13 | 12 | -1 |
+
+The new 323-byte raw `coreStores` preload keeps shell readiness and selection on
+a stable singleton without evaluating persistence or feature implementations.
+The compatibility store module no longer installs resource/module effects or
+imports database, scripts, modules, character cards, chat commands, or complete
+resource state. Bootstrap now installs those runtime effects explicitly after
+loaded state and the selected character are published. The slight preload
+increase buys a reusable stable root; the meaningful graph reduction is the
+roughly 100 kB gzip removed from the full database cycle.
 
 ### 1D. Final grouping and enforcement
 

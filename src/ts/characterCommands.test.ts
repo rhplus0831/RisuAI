@@ -76,6 +76,7 @@ import * as pendingMutationOutboxModule from './server/pendingMutationOutbox'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
 import { selectedCharID, selIdState } from './stores.svelte'
+import { installStoreRuntimeEffects } from './stores/runtimeEffects.svelte'
 import { removeChar } from './characters'
 import {
   assertRollbackRestoresOnly,
@@ -2531,30 +2532,35 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
     } as any
     const charactersSize = JSON.stringify(testDatabaseState.db.characters).length
     const targetRowSize = JSON.stringify(testDatabaseState.db.characters[1]).length
+    const disposeRuntimeEffects = installStoreRuntimeEffects()
 
-    const instrumented = await withAsyncCloneInstrumentation(async () => {
+    try {
+      const instrumented = await withAsyncCloneInstrumentation(async () => {
+        selectedCharID.set(1)
+        expect(selIdState.selId).toBe(1)
+        await waitForCharacterPatch(calls, 'char-1')
+      })
+
+      expect(testDatabaseState.db.characters[1].supaMemory).toBe(true)
+      expect(instrumented.maxClonedSize).toBeLessThan(targetRowSize)
+      expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
+      expect(calls.find((call) => call.url === '/api/v1/commands/characters/char-1')).toEqual({
+        url: '/api/v1/commands/characters/char-1',
+        method: 'PATCH',
+        authHeader: 'character-command-token',
+        body: {
+          baseRevision: 10,
+          patch: { supaMemory: true },
+        },
+      })
+
+      selectedCharID.set(-1)
       selectedCharID.set(1)
-      expect(selIdState.selId).toBe(1)
-      await waitForCharacterPatch(calls, 'char-1')
-    })
-
-    expect(testDatabaseState.db.characters[1].supaMemory).toBe(true)
-    expect(instrumented.maxClonedSize).toBeLessThan(targetRowSize)
-    expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
-    expect(calls.find((call) => call.url === '/api/v1/commands/characters/char-1')).toEqual({
-      url: '/api/v1/commands/characters/char-1',
-      method: 'PATCH',
-      authHeader: 'character-command-token',
-      body: {
-        baseRevision: 10,
-        patch: { supaMemory: true },
-      },
-    })
-
-    selectedCharID.set(-1)
-    selectedCharID.set(1)
-    await flushAsyncWork()
-    expect(calls.filter((call) => call.url === '/api/v1/commands/characters/char-1')).toHaveLength(1)
+      await flushAsyncWork()
+      expect(calls.filter((call) => call.url === '/api/v1/commands/characters/char-1')).toHaveLength(1)
+    } finally {
+      disposeRuntimeEffects()
+    }
   })
 
   it('L34: selectedCharID auto-enable preserves all no-op gates', async () => {
@@ -2630,17 +2636,23 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
       ],
     ]
 
-    for (const [label, db] of cases) {
-      clearCachedServerCommandRevision()
-      calls.length = 0
-      selectedCharID.set(-1)
-      testDatabaseState.db = db as any
-      const beforeSupaMemory = testDatabaseState.db.characters?.[0]?.supaMemory
-      selectedCharID.set(0)
-      expect(selIdState.selId).toBe(0)
-      await flushAsyncWork()
-      expect(testDatabaseState.db.characters?.[0]?.supaMemory, label).toBe(beforeSupaMemory)
-      expect(calls, label).toHaveLength(0)
+    selectedCharID.set(-1)
+    const disposeRuntimeEffects = installStoreRuntimeEffects()
+    try {
+      for (const [label, db] of cases) {
+        clearCachedServerCommandRevision()
+        calls.length = 0
+        selectedCharID.set(-1)
+        testDatabaseState.db = db as any
+        const beforeSupaMemory = testDatabaseState.db.characters?.[0]?.supaMemory
+        selectedCharID.set(0)
+        expect(selIdState.selId).toBe(0)
+        await flushAsyncWork()
+        expect(testDatabaseState.db.characters?.[0]?.supaMemory, label).toBe(beforeSupaMemory)
+        expect(calls, label).toHaveLength(0)
+      }
+    } finally {
+      disposeRuntimeEffects()
     }
   })
 })

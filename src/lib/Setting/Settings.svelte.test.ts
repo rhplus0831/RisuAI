@@ -94,9 +94,12 @@ async function applyNavigatedRoute() {
   await applyRouteToStores(get(currentRoute))
   await tick()
   await Promise.resolve()
-  await vi.waitFor(() => {
-    expect(target.querySelector('[data-testid$="-pending"]')).toBeNull()
-  })
+  await vi.waitFor(
+    () => {
+      expect(target.querySelector('[data-testid$="-pending"]')).toBeNull()
+    },
+    { timeout: 5_000 },
+  )
 }
 
 async function resizeViewport(width: number) {

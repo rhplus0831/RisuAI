@@ -1,4 +1,4 @@
-import type { Database, character } from '../storage/database.svelte'
+import type { Database, character } from '../storage/databaseTypes'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
 import { normalizeAgentPresets, validateAgentPresetRecord } from '../agentPresetRecords'
 import {

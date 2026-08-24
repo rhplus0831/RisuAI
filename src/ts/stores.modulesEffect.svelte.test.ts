@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { flushSync } from 'svelte'
 
-import { readModuleUpdateSignals, type ModuleUpdateSignalSource } from './stores.svelte'
+import { readModuleUpdateSignals, type ModuleUpdateSignalSource } from './stores/runtimeEffects.svelte'
 import { withCloneInstrumentation } from './__tests__/cloneCostHarness'
 
 // Module update signals read only the fields consumed by moduleUpdate().

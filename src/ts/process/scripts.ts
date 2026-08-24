@@ -26,6 +26,7 @@ import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { canUseServerCommands } from '../server/commands'
 import { currentChatScopedSnapshot, dispatchUpdateMessageScoped } from '../chatCommands'
 import { getActivePromptPresetRegexScripts } from './promptPresetRegex'
+import { registerScriptCacheResetter } from './scriptCacheInvalidation'
 
 const dreg = /{{data}}/g
 const randomness = /\|\|\|/g
@@ -318,6 +319,8 @@ export function resetScriptCache() {
   processScriptCache = new Map()
   compiledRegexCache = new Map()
 }
+
+registerScriptCacheResetter(resetScriptCache)
 
 export async function processScriptFull(
   char: character | simpleCharacterArgument,

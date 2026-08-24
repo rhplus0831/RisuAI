@@ -4,15 +4,8 @@ import { get } from 'svelte/store'
 import streamSaver from 'streamsaver'
 import { type Database, defaultSdDataFunc, getDatabase, appVer, getCurrentCharacter } from './storage/database.svelte'
 import { checkRisuUpdate } from './update'
-import {
-  MobileGUI,
-  botMakerMode,
-  loadedStore,
-  LoadingStatusState,
-  selIdState,
-  reloadGuiDisplay,
-  bodyIntercepterStore,
-} from './stores.svelte'
+import { reloadGuiDisplay, bodyIntercepterStore } from './stores.svelte'
+import { selIdState } from './stores/coreStores.svelte'
 import { loadPlugins } from './plugins/plugins.svelte'
 import { alertError, alertMd, alertNormal, alertSelect, waitAlert } from './alert'
 import { characterURLImport } from './characterCards'

@@ -78,8 +78,10 @@ import {
 } from './server/scriptDefinitionBridge.svelte'
 import { serverAssetIdFromReference } from './server/assets'
 import { showRealmInfoStore } from './realmInfoStore'
+import type { hubType } from './types/risuHub'
 
 export { showRealmInfoStore } from './realmInfoStore'
+export type { hubType } from './types/risuHub'
 
 export const hubURL = '/api/v1/hub'
 export interface CharacterImportProcessOptions {
@@ -1933,27 +1935,6 @@ export function createBaseV3(char: character) {
     }
   }
   return card
-}
-
-export type hubType = {
-  name: string
-  desc: string
-  download: string
-  id: string
-  img: string
-  tags: string[]
-  viewScreen: 'none' | 'emotion' | 'imggen'
-  hasLore: boolean
-  hasEmotion: boolean
-  hasAsset: boolean
-  creator?: string
-  creatorName?: string
-  hot: number
-  license: string
-  authorname?: string
-  original?: string
-  type: string
-  hidden?: boolean
 }
 
 export interface RisuHubCatalogResult {

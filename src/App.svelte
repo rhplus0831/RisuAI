@@ -15,9 +15,6 @@
     personaListModalStore,
     chatGenerationTogglePresetListModalStore,
     CustomGUISettingMenuStore,
-    loadedStore,
-    alertStore,
-    LoadingStatusState,
     bookmarkListOpen,
     popupStore,
     easyPanelStore,
@@ -26,10 +23,10 @@
     irisStore,
     customSideBarConfigDialogStore,
     PlaygroundStore,
-    selectedCharID,
     SettingsMenuIndex,
     closePopupEditorSession,
   } from './ts/stores.svelte'
+  import { alertStore, loadedStore, LoadingStatusState, selectedCharID } from './ts/stores/coreStores.svelte'
   import Sidebar from './lib/SideBars/Sidebar.svelte'
   import ChatScreen from './lib/ChatScreens/ChatScreen.svelte'
   import { showRealmInfoStore } from './ts/realmInfoStore'

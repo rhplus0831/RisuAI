@@ -1,5 +1,5 @@
 import { get } from 'svelte/store'
-import { loadedStore, selectedCharID } from '../stores.svelte'
+import { loadedStore, selectedCharID } from '../stores/coreStores.svelte'
 import { getDatabase, type Database } from '../storage/database.svelte'
 import { getRerollBuffer, reroll, unReroll } from '../process/rerollNavigation.svelte'
 import { acceptedSendRecoveries } from '../process/acceptedSendRecoveryState'

@@ -99,6 +99,9 @@ import { registerRetainedChatProjection, type RetainedChatProjectionTarget } fro
 import { alertError } from './alert'
 import { language } from '../lang'
 import { reportWriterAccessLostMutation } from './server/activeWriterSession'
+import type { ActiveChatTarget } from './types/activeChatTarget'
+
+export type { ActiveChatTarget } from './types/activeChatTarget'
 
 export interface ChatStateSnapshot {
   characters: character[]
@@ -148,13 +151,6 @@ export interface ChatGenerationSettingsSaveOperation {
 }
 
 export const CHAT_IMPORT_TOO_LARGE_ERROR = 'chat_import_too_large'
-
-export interface ActiveChatTarget {
-  selectedCharID: number
-  chatPage: number
-  characterId: string | undefined
-  chatId: string | undefined
-}
 
 export interface AppendCurrentChatUserMessageForSendOptions {
   expectedTarget?: ActiveChatTarget | null

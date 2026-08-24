@@ -29,7 +29,6 @@
   import {
     selectedCharID,
     PlaygroundStore,
-    createSimpleCharacter,
     hypaV3ModalOpen,
     ScrollToMessageStore,
     additionalChatMenu,
@@ -37,6 +36,7 @@
     chatPanelStore,
     easyPanelStore,
   } from '../../ts/stores.svelte'
+  import { createSimpleCharacter } from '../../ts/simpleCharacter'
   import { RegexDisplayReloadPointer } from '../../ts/process/regexDisplayReload'
   import { onDestroy, tick, untrack } from 'svelte'
   import Chat from './Chat.svelte'

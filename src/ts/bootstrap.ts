@@ -1,6 +1,8 @@
 import { get } from 'svelte/store'
 import { getDatabase, setResourceWriteGuardEnabled, type Database } from './storage/database.svelte'
-import { botMakerMode, selectedCharID, loadedStore, LoadingStatusState } from './stores.svelte'
+import { botMakerMode } from './stores.svelte'
+import { loadedStore, LoadingStatusState, selectedCharID } from './stores/coreStores.svelte'
+import { installStoreRuntimeEffects } from './stores/runtimeEffects.svelte'
 import { loadPlugins, startPluginRuntimeSync } from './plugins/plugins.svelte'
 import { alertError, alertMd, alertRequiredSelect, waitAlert } from './alert'
 import { updateReducedMotion } from './gui/animation'
@@ -278,6 +280,7 @@ export async function loadData(): Promise<void> {
       loadedStore.set(true)
       void reconcileChatCompletionPushNotificationSetting(getDatabase().notification === true)
       selectedCharID.set(initialSelectedCharFromDatabase(db))
+      installStoreRuntimeEffects()
       startObserveDom()
       registerModelDynamic()
       moduleUpdate()

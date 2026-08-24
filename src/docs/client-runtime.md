@@ -91,8 +91,10 @@ scroll coordinators, and shared completion-audio context unlocking before mounti
     handling, and GUI size CSS variables.
 12. Show the one-time insecure-origin warning when the page lacks a secure
     context, then apply startup UI state such as `botSettingAtStart`.
-13. Set `loadedStore`, select the persisted character, start DOM observers,
-    register dynamic models, and run module update. RisuRealm terms are requested only at the Realm download boundary.
+13. Set `loadedStore`, select the persisted character, install the resource and
+    module store effects, start DOM observers, register dynamic models, and run
+    module update. RisuRealm terms are requested only at the Realm download
+    boundary.
 
 Visible startup bugs often sit at the boundary between `loadedStore`,
 `selectedCharID`, resource application, route application, lazy body reads, and
