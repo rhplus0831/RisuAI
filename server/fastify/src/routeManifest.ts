@@ -288,6 +288,34 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'character-summaries-read',
+    methods: GET_ONLY,
+    path: '/api/v1/characters/summaries',
+    auth: {
+      decision: 'required',
+      reason: 'Character summaries contain private character presentation and navigation metadata.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only versioned character summary route.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'character-summaries-cache-read',
+    methods: ['POST'],
+    path: '/api/v1/characters/summaries',
+    auth: {
+      decision: 'required',
+      reason: 'Hash-aware character summary reads return private presentation and navigation metadata.',
+    },
+    activeWriter: {
+      decision: 'read-only-post',
+      reason: 'Hash-aware character summary reading is read-only; POST carries the client cache inventory.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'character-order-read',
     methods: GET_ONLY,
     path: '/api/v1/characters/order',

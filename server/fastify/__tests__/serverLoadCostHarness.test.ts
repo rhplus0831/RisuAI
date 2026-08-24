@@ -13,6 +13,7 @@ import type { CompletionStreamFrame } from '../src/generation/frames.js'
 import {
   COLLECTION_FIELDS,
   insertAssetMetadataBatch,
+  loadCharacterSummariesForRead,
   loadPersisted,
   loadPersistedForAssembly,
   loadPersistedWithMessages,
@@ -47,6 +48,7 @@ import {
 } from './helpers/loadCostHarness.js'
 import type { GenerationChatRouteOptions } from '../src/routes/generationChat.js'
 import { buildLargeCorpusFixture, type LargeCorpusFixture } from '../../../src/ts/__tests__/largeCorpusFixture.js'
+import { isServerCharacterSummary } from '../../../src/ts/server/characterSummaryProtocol.js'
 
 // Prove the server load-count harness can pass a genuinely scoped hot path and
 // fail a path that performs a whole-corpus payload load on the shared
@@ -1270,6 +1272,26 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(body.character.chats).toHaveLength(3)
     expect(body.character.chats.every((chat: { message: unknown[] }) => chat.message.length === 0)).toBe(true)
     expect(body.character.oaiTTSConfig.apiKey).toBe(MASKED_PROVIDER_SECRET)
+  })
+
+  it('Phase 2: character summaries project bounded scalars without hydrating raw character or chat payloads', async () => {
+    const fixture = buildLargeCorpusFixture()
+    await importDatabase(fixture.database)
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      const observed = await withServerLoadInstrumentation(() => loadCharacterSummariesForRead(db))
+      expect(observed.loadCountByTable.characters ?? 0).toBe(0)
+      expect(observed.loadCountByTable.chats ?? 0).toBe(0)
+      expect(observed.corpusLoadCount).toBe(0)
+      expect(observed.result).toHaveLength(fixture.characters.length)
+      expect(observed.result.every(isServerCharacterSummary)).toBe(true)
+      expect(JSON.stringify(observed.result)).not.toContain(fixture.characters[0].desc)
+      expect(JSON.stringify(observed.result)).not.toContain('globalLore')
+      expect(JSON.stringify(observed.result)).not.toContain('generationSettings')
+    } finally {
+      db.close()
+    }
   })
 
   it('M6: collection reads skip character and chat table payload reads', async () => {

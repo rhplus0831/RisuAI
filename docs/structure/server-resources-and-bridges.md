@@ -320,7 +320,8 @@ DELETE commands are documented in
 | One settings group                                 | Cache `POST /api/v1/settings/:group`; full `GET` fallback                                        | Event-driven targeted invalidation                  |
 | Every split collection                             | Cache `POST /api/v1/collections`; full `GET` fallback                                            | `resourceReads.ts`, `collectionsResourceState`      |
 | One split collection                               | Cache `POST /api/v1/collections/:name`; full `GET` fallback                                      | Event-driven targeted invalidation                  |
-| Message-free character list/order/current          | Cache `POST /api/v1/characters`; full `GET` fallback                                             | `resourceReads.ts`, `charactersResourceState`       |
+| Legacy message-free character aggregate/order/current | Cache `POST /api/v1/characters`; full `GET` fallback                                          | `resourceReads.ts`, `charactersResourceState`       |
+| Version 1 character summaries/order/current        | Cache `POST /api/v1/characters/summaries`; full `GET` fallback                                   | Phase 2 browser migration staging                    |
 | Inlay metadata catalog                             | `GET /api/v1/inlay-assets`                                                                       | `inlayCatalog.ts`                                   |
 | Character order only                               | `GET /api/v1/characters/order`                                                                   | Character-order invalidation                        |
 | Character selection/interaction                    | `GET /api/v1/characters/:id/selection`                                                           | Character-selection invalidation                    |

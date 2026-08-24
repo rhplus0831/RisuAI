@@ -2,6 +2,10 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { backup as backupSqliteDatabase, DatabaseSync } from 'node:sqlite'
+import {
+  SERVER_CHARACTER_SHELL_MARKER,
+  type ServerCharacterSummary,
+} from '../../../src/ts/server/characterSummaryProtocol.js'
 import { createInitialDatabase } from './databaseDefaults.js'
 import { repairStoredChatGenerationSettings } from './chatGenerationSettingsStorage.js'
 import { DEFAULT_AUTOMATIC_BACKUP_RETENTION } from './config.js'
@@ -511,6 +515,26 @@ interface ChatRow {
   character_id: string
   position: number
   data_json: string
+}
+
+interface CharacterSummaryProjectionRow {
+  id: string
+  name: unknown
+  display_name: unknown
+  image: unknown
+  creator_notes: unknown
+  trash_time: unknown
+  creation_date: unknown
+  modification_date: unknown
+  last_interaction: unknown
+  chat_page: unknown
+}
+
+interface CharacterSummaryChatProjectionRow {
+  id: string
+  character_id: string
+  name: unknown
+  pinned: unknown
 }
 
 export interface CharacterSelectionRows {
@@ -1507,6 +1531,91 @@ export function loadCharacterRowsForRead(db: DatabaseSync, _dataDir: string): Js
   })
   if (settings?.enableLorebookStubs === true) stripCharacterGlobalLoreForRead(result)
   return result
+}
+
+/**
+ * Versioned list projection for startup and character pickers. SQLite extracts
+ * only the protocol-approved scalars; no raw character or chat JSON payload is
+ * returned to JavaScript.
+ */
+export function loadCharacterSummariesForRead(db: DatabaseSync): ServerCharacterSummary[] {
+  const characterRows = db
+    .prepare(
+      `
+      SELECT
+        id,
+        json_extract(data_json, '$.name') AS name,
+        json_extract(data_json, '$.displayName') AS display_name,
+        json_extract(data_json, '$.image') AS image,
+        json_extract(data_json, '$.creatorNotes') AS creator_notes,
+        json_extract(data_json, '$.trashTime') AS trash_time,
+        json_extract(data_json, '$.creation_date') AS creation_date,
+        json_extract(data_json, '$.modification_date') AS modification_date,
+        json_extract(data_json, '$.lastInteraction') AS last_interaction,
+        json_extract(data_json, '$.chatPage') AS chat_page
+      FROM characters
+      ORDER BY position
+    `,
+    )
+    .all() as unknown as CharacterSummaryProjectionRow[]
+
+  const chatRows = db
+    .prepare(
+      `
+      SELECT
+        id,
+        character_id,
+        json_extract(data_json, '$.name') AS name,
+        CASE WHEN json_extract(data_json, '$.pinned') = 1 THEN 1 ELSE 0 END AS pinned
+      FROM chats
+      ORDER BY character_id, position
+    `,
+    )
+    .all() as unknown as CharacterSummaryChatProjectionRow[]
+
+  const chatsByCharacterId = new Map<string, CharacterSummaryChatProjectionRow[]>()
+  for (const chat of chatRows) {
+    const chats = chatsByCharacterId.get(chat.character_id) ?? []
+    chats.push(chat)
+    chatsByCharacterId.set(chat.character_id, chats)
+  }
+
+  return characterRows.map((row) => {
+    const chats = chatsByCharacterId.get(row.id) ?? []
+    const chatIds = chats.map((chat) => chat.id)
+    const chatPage = integerOrNull(row.chat_page)
+    return {
+      [SERVER_CHARACTER_SHELL_MARKER]: true,
+      chaId: row.id,
+      type: 'character',
+      name: stringOrEmpty(row.name),
+      displayName: stringOrEmpty(row.display_name),
+      image: stringOrEmpty(row.image),
+      creatorNotes: stringOrEmpty(row.creator_notes),
+      trashTime: finiteNumberOrNull(row.trash_time),
+      creation_date: finiteNumberOrNull(row.creation_date),
+      modification_date: finiteNumberOrNull(row.modification_date),
+      lastInteraction: finiteNumberOrNull(row.last_interaction),
+      chatCount: chats.length,
+      activeChatId: chatPage !== null && chatPage >= 0 ? (chats[chatPage]?.id ?? null) : null,
+      chatIds,
+      pinnedChats: chats
+        .filter((chat) => chat.pinned === 1)
+        .map((chat) => ({ id: chat.id, name: stringOrEmpty(chat.name) })),
+    }
+  })
+}
+
+function stringOrEmpty(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+function finiteNumberOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function integerOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) ? value : null
 }
 
 export function loadPresetHydration(

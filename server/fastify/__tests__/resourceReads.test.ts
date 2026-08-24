@@ -12,6 +12,11 @@ import { setupAuthedClient } from './helpers/auth.js'
 import { PROMPT_SETTINGS_KEYS } from '../../../src/ts/promptSettings.js'
 import { BULK_RESOURCE_MAX_BODY_BYTES, BULK_RESOURCE_MAX_IDS } from '../src/routes/resourceReads.js'
 import { addAlternateMessage, replaceChatMessages } from '../src/messageStore.js'
+import {
+  SERVER_CHARACTER_SUMMARY_KEYS,
+  SERVER_CHARACTER_SUMMARY_VERSION,
+  isServerCharactersSummaryPayload,
+} from '../../../src/ts/server/characterSummaryProtocol.js'
 
 interface Harness {
   app: FastifyInstance
@@ -142,7 +147,14 @@ beforeEach(async () => {
           {
             chaId: 'char-a',
             name: 'Ada',
+            displayName: 'Ada Lovelace',
+            image: 'asset://ada',
+            creatorNotes: '# `en`\nFirst programmer',
+            trashTime: null,
+            creation_date: 1,
+            modification_date: 2,
             lastInteraction: 123,
+            chatPage: 0,
             desc: 'Full character detail',
             oaiTTSConfig: { apiKey: 'tts-secret' },
             globalLore: [{ key: ['Ada'], content: 'Character lore' }],
@@ -150,6 +162,7 @@ beforeEach(async () => {
               {
                 id: 'chat-a',
                 name: 'Chat A',
+                pinned: true,
                 message: [
                   { uid: 'message-a', role: 'user', data: 'one' },
                   { uid: 'message-b', role: 'char', data: 'two' },
@@ -843,27 +856,45 @@ describe('authenticated resource read routes', () => {
     })
   })
 
-  it('returns character/chat metadata with matching chat and lorebook stubs', async () => {
+  it('returns exact versioned character summaries and preserves scoped detail reads', async () => {
     const list = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/characters',
+      url: '/api/v1/characters/summaries',
       headers: authHeaders(),
     })
     expect(list.statusCode).toBe(200)
     expect(list.json()).toMatchObject({
+      version: SERVER_CHARACTER_SUMMARY_VERSION,
       revision,
       currentChar: 0,
       characterOrder: ['char-a', 'char-b'],
     })
+    expect(isServerCharactersSummaryPayload(list.json())).toBe(true)
     const listedAda = list.json().characters.find((character: { chaId?: string }) => character.chaId === 'char-a')
-    expect(listedAda).toMatchObject({
+    expect(Object.keys(listedAda)).toEqual(SERVER_CHARACTER_SUMMARY_KEYS)
+    expect(listedAda).toEqual({
+      __serverCharacterShell: true,
       chaId: 'char-a',
-      desc: 'Full character detail',
-      oaiTTSConfig: { apiKey: MASKED_PROVIDER_SECRET },
-      chats: [{ id: 'chat-a', name: 'Chat A', message: [] }],
+      type: 'character',
+      name: 'Ada',
+      displayName: 'Ada Lovelace',
+      image: 'asset://ada',
+      creatorNotes: '# `en`\nFirst programmer',
+      trashTime: null,
+      creation_date: 1,
+      modification_date: 2,
+      lastInteraction: 123,
+      chatCount: 1,
+      activeChatId: 'chat-a',
+      chatIds: ['chat-a'],
+      pinnedChats: [{ id: 'chat-a', name: 'Chat A' }],
     })
-    expect(listedAda).not.toHaveProperty('globalLore')
-    expect(listedAda.chats[0]).not.toHaveProperty('hypaV3Data')
+    for (const forbidden of ['chats', 'desc', 'oaiTTSConfig', 'globalLore', 'customscript', 'triggerscript']) {
+      expect(listedAda).not.toHaveProperty(forbidden)
+    }
+    expect(list.payload).not.toContain('tts-secret')
+    expect(list.payload).not.toContain('Character lore')
+    expect(list.payload).not.toContain('summary')
 
     const detail = await harness.app.inject({
       method: 'GET',
@@ -887,27 +918,24 @@ describe('authenticated resource read routes', () => {
     expect(missing.json().error).toBe('character_not_found')
   })
 
-  it('substitutes cached message-free character projections without depending on inventory order', async () => {
+  it('substitutes cached character summaries without depending on inventory order', async () => {
     const list = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/characters',
+      url: '/api/v1/characters/summaries',
       headers: authHeaders(),
     })
     const characters = list.json().characters as Array<Record<string, unknown>>
     const characterHashes = characters.map(jsonSha256)
-    const unmaskedAdaHash = jsonSha256({
-      ...characters[0],
-      oaiTTSConfig: { apiKey: 'tts-secret' },
-    })
 
     const cached = await harness.app.inject({
       method: 'POST',
-      url: '/api/v1/characters',
+      url: '/api/v1/characters/summaries',
       headers: authHeaders(),
-      payload: cachePayload({ characters: [characterHashes[1], unmaskedAdaHash, characterHashes[0]] }),
+      payload: cachePayload({ characters: [characterHashes[1], characterHashes[0]] }),
     })
     expect(cached.statusCode).toBe(200)
     expect(cached.json()).toEqual({
+      version: SERVER_CHARACTER_SUMMARY_VERSION,
       revision,
       cache: { version: 2, algorithm: 'sha256' },
       characters: characterHashes.map((hash) => ({ hash })),
@@ -918,7 +946,7 @@ describe('authenticated resource read routes', () => {
 
     const partial = await harness.app.inject({
       method: 'POST',
-      url: '/api/v1/characters',
+      url: '/api/v1/characters/summaries',
       headers: authHeaders(),
       payload: cachePayload({ characters: [characterHashes[0]] }),
     })

@@ -7,6 +7,7 @@ import { buildApp } from '../src/app.js'
 import { jsonPayloadBytes } from '../src/protocolMetrics.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import { buildLargeCorpusFixture } from '../../../src/ts/__tests__/largeCorpusFixture.js'
+import { isServerCharactersSummaryPayload } from '../../../src/ts/server/characterSummaryProtocol.js'
 
 interface Harness {
   app: FastifyInstance
@@ -144,18 +145,22 @@ describe('bootstrap and resource payload budgets', () => {
 
     const characters = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/characters',
+      url: '/api/v1/characters/summaries',
       headers: { 'risu-auth': assertion },
     })
     expect(characters.statusCode).toBe(200)
     const charactersBody = characters.json()
-    const characterChat = charactersBody.characters[0].chats[0]
-    expect(characterChat.message).toEqual([])
-    expect(characterChat.hypaV3Data).toBeUndefined()
+    expect(isServerCharactersSummaryPayload(charactersBody)).toBe(true)
+    expect(charactersBody.characters[0]).toMatchObject({
+      chatCount: 1,
+      activeChatId: 'chat-a',
+      chatIds: ['chat-a'],
+    })
+    expect(charactersBody.characters[0]).not.toHaveProperty('chats')
 
     const cachedCharacters = await harness.app.inject({
       method: 'POST',
-      url: '/api/v1/characters',
+      url: '/api/v1/characters/summaries',
       headers: { 'risu-auth': assertion, 'content-type': 'application/json' },
       payload: { cache: { version: 2, hashes: { characters: [] } } },
     })
@@ -192,17 +197,28 @@ describe('bootstrap and resource payload budgets', () => {
     expect(JSON.stringify(capturedMetrics)).not.toContain('Large message')
   })
 
-  it('holds the current aggregate character response to a stable large-corpus baseline', async () => {
+  it('keeps the large-corpus summary at least 80% smaller than the legacy aggregate', async () => {
     await importDatabase(buildLargeCorpusFixture().database)
     capturedMetrics.length = 0
 
-    const characters = await harness.app.inject({
+    const legacyCharacters = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/characters',
       headers: { 'risu-auth': assertion },
     })
+    expect(legacyCharacters.statusCode).toBe(200)
+
+    const characters = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters/summaries',
+      headers: { 'risu-auth': assertion },
+    })
 
     expect(characters.statusCode).toBe(200)
-    expect(latestMetric('resource_response', 'characters').payloadBytes).toBeLessThanOrEqual(80_000)
+    expect(isServerCharactersSummaryPayload(characters.json())).toBe(true)
+    const summaryPayloadBytes = jsonPayloadBytes(characters.json())!
+    const legacyPayloadBytes = jsonPayloadBytes(legacyCharacters.json())!
+    expect(latestMetric('resource_response', 'characters').payloadBytes).toBe(summaryPayloadBytes)
+    expect(summaryPayloadBytes).toBeLessThanOrEqual(legacyPayloadBytes * 0.2)
   })
 })

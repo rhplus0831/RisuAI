@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import { SERVER_CHARACTER_SUMMARY_VERSION } from '../../../../src/ts/server/characterSummaryProtocol.js'
 import type { AuthState } from '../auth.js'
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
@@ -13,6 +14,7 @@ import {
   loadCharacterLorebookHydration,
   loadCharacterLorebookHydrations,
   loadCharacterSelectionProjection,
+  loadCharacterSummariesForRead,
   loadCharacterRowsForRead,
   loadChatHydration,
   loadChatHydrationRange,
@@ -316,6 +318,44 @@ export function registerResourceReadRoutes(
       'characters',
       revision,
       {
+        revision,
+        cache: RESOURCE_CACHE_METADATA,
+        characters: substitution.value,
+        characterOrder: Array.isArray(settings.characterOrder) ? settings.characterOrder : [],
+        currentChar: Number.isInteger(settings.currentChar) ? settings.currentChar : -1,
+      },
+      cacheMetricFields(substitution),
+    )
+  })
+
+  app.get('/api/v1/characters/summaries', { exposeHeadRoute: false }, async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    const { revision } = getSchemaState(db)
+    const settings = loadPersistedDatabaseFields(db, dataDir, ['characterOrder', 'currentChar'])
+    return metricResourceResponse(req, reply, 'characters', revision, {
+      version: SERVER_CHARACTER_SUMMARY_VERSION,
+      revision,
+      characters: loadCharacterSummariesForRead(db),
+      characterOrder: Array.isArray(settings.characterOrder) ? settings.characterOrder : [],
+      currentChar: Number.isInteger(settings.currentChar) ? settings.currentChar : -1,
+    })
+  })
+
+  app.post<{ Body: unknown }>('/api/v1/characters/summaries', cacheReadRouteOptions(), async (req, reply) => {
+    const cacheRequest = parseResourceCacheRequest(req.body, ['characters'])
+    if (typeof cacheRequest === 'string') {
+      return sendInvalidResourceCacheRequest(reply, cacheRequest)
+    }
+    const { revision } = getSchemaState(db)
+    const settings = loadPersistedDatabaseFields(db, dataDir, ['characterOrder', 'currentChar'])
+    const substitution = substituteCachedArray(loadCharacterSummariesForRead(db), cacheRequest.hashes.get('characters'))
+    return metricResourceResponse(
+      req,
+      reply,
+      'characters',
+      revision,
+      {
+        version: SERVER_CHARACTER_SUMMARY_VERSION,
         revision,
         cache: RESOURCE_CACHE_METADATA,
         characters: substitution.value,

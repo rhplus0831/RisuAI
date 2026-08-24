@@ -66,18 +66,38 @@ projection that preserves the existing localized description behavior.
 
 ### 2B. Direct server projection
 
-- [ ] Add a repository query dedicated to summaries; do not load full character
+- [x] Add a repository query dedicated to summaries; do not load full character
   records and strip them after serialization.
-- [ ] Verify whether the current schema exposes every required summary value.
+- [x] Verify whether the current schema exposes every required summary value.
   If it does not, choose and document a migration, derived column, or bounded
   SQLite JSON projection before changing the endpoint.
 - [ ] Switch the authenticated GET and hash-aware POST `/api/v1/characters`
   routes to the summary query while preserving revision, cache authentication,
   character order, and current selection.
-- [ ] Keep `GET /api/v1/characters/:id` as the scoped detail read and lock its
+- [x] Keep `GET /api/v1/characters/:id` as the scoped detail read and lock its
   not-found and revision-race behavior with tests.
-- [ ] Add repository assertions proving chat/message/lore/Hypa blobs are neither
+- [x] Add repository assertions proving chat/message/lore/Hypa blobs are neither
   selected nor serialized.
+
+### 2B projection staging measurement (2026-08-24)
+
+`loadCharacterSummariesForRead()` uses bounded SQLite `json_extract` projections
+over `characters` and `chats`; no schema migration is required. The character
+query returns only the approved scalar fields and `chatPage`, while the chat
+query returns only id, owner id, name, and pinned state. The server load-cost
+harness reports zero raw `characters.data_json` or `chats.data_json` payload
+hydrates for this path.
+
+Authenticated GET and hash-aware POST staging routes are available at
+`/api/v1/characters/summaries`. The legacy `/api/v1/characters` aggregate remains
+the default until the Phase 2C browser cache and application path accepts version
+1 summaries; that migration will atomically promote the summary route and give
+the compatibility aggregate an explicitly named route.
+
+On the shared 12-character large fixture, the legacy response measured 77,855
+bytes and the version 1 summary measured 4,628 bytes, a 94.1% reduction. The
+server budget test enforces at least an 80% reduction rather than freezing those
+fixture-specific byte counts.
 
 ### 2C. Client summary application
 
