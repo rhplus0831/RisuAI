@@ -137,6 +137,22 @@ Importing `globalApi`, using ordinary object-URL downloads, and constructing a
 loads the dedicated chunk; subsequent streamed downloads reuse the loaded module
 while creating independent writable streams.
 
+### 1C redundant dynamic-import cleanup (2026-08-24)
+
+| Measure | Lazy StreamSaver | Redundant imports removed | Change |
+| --- | ---: | ---: | ---: |
+| Initial preload files | 12 | 12 | 0 |
+| Initial JavaScript gzip | 318,260 bytes | 318,215 bytes | effectively flat |
+| Largest initial chunk gzip | 283,335 bytes | 283,335 bytes | 0% |
+| Ineffective dynamic-import warnings | 12 | 9 | -3 |
+
+The `filePicker`, prompt-template hydration, and active-chat generation-settings
+implementations already had unavoidable static owners in the startup/chat graph.
+Their local dynamic imports could not create first-use chunks and only obscured
+evaluation order, so those call sites now use the existing static dependency.
+The remaining warnings are concentrated in character actions and generation
+recovery and still require explicit ownership cleanup.
+
 ### 1D. Final grouping and enforcement
 
 - [ ] Inspect the clean generated graph before adding `manualChunks`.

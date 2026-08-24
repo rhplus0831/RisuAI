@@ -100,6 +100,7 @@ import { alertError } from './alert'
 import { language } from '../lang'
 import { reportWriterAccessLostMutation } from './server/activeWriterSession'
 import type { ActiveChatTarget } from './types/activeChatTarget'
+import { guardActiveChatGenerationSettingsForSend } from './activeChatGenerationSettings'
 
 export type { ActiveChatTarget } from './types/activeChatTarget'
 
@@ -5024,9 +5025,7 @@ export async function appendCurrentChatUserMessageForSend(
     return { status: 'error', error: 'The active chat changed before the message could be appended.' }
   }
 
-  const readiness = await import('./activeChatGenerationSettings').then((module) =>
-    module.guardActiveChatGenerationSettingsForSend(),
-  )
+  const readiness = guardActiveChatGenerationSettingsForSend()
   if (readiness.status === 'error') {
     return { status: 'error', error: readiness.error }
   }

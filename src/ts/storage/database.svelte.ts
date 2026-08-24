@@ -13,6 +13,7 @@ import {
 } from './defaultPrompts'
 import { alertError, alertNormal, alertSelect } from '../alert'
 import { registerAlertDatabaseAccessor } from '../alertDatabase'
+import { selectSingleFile } from '../filePicker'
 import type { NAISettings } from '../process/models/nai'
 import { prebuiltNAIpresets, prebuiltPresets } from '../process/templates/templates'
 import { defaultColorScheme, type ColorScheme } from '../gui/colorscheme'
@@ -106,6 +107,7 @@ import {
 } from '../server/resourceState.svelte'
 import {
   capturePromptTemplateOwnerProjectionEpoch,
+  ensurePromptTemplateHydrated,
   hasPromptTemplateOwnerProjectionEpochChanged,
   isPromptTemplateHydrated,
   markPromptTemplateOwnerAcknowledgementTainted,
@@ -6953,7 +6955,6 @@ export async function downloadPreset(id: number, type: 'json' | 'risupreset' | '
     // Prompt-preset list resources contain metadata shells. Export is a
     // background consumer, so hydrate this explicit owner before taking the
     // serialization snapshot without replacing the visible selected template.
-    const { ensurePromptTemplateHydrated } = await import('../server/promptTemplateHydration')
     const hydrated = await ensurePromptTemplateHydrated({
       applyProjection: false,
       promptPresetId,
@@ -7027,7 +7028,6 @@ export async function importPreset(
   } | null = null,
 ): Promise<PresetImportOutcome | null> {
   if (!f) {
-    const { selectSingleFile } = await import('../filePicker')
     f = await selectSingleFile(['json', 'preset', 'risupreset', 'risup'])
   }
   if (!f) {
