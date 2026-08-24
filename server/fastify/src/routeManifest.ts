@@ -260,37 +260,37 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
-    id: 'characters-read',
+    id: 'character-aggregate-read',
     methods: GET_ONLY,
-    path: '/api/v1/characters',
+    path: '/api/v1/characters/aggregate',
     auth: {
       decision: 'required',
-      reason: 'Character listing returns private character and chat metadata.',
+      reason: 'The compatibility aggregate returns private character and chat metadata.',
     },
     activeWriter: {
       decision: 'not-applicable',
-      reason: 'Read-only character listing route.',
+      reason: 'Read-only compatibility aggregate route.',
     },
     streaming: 'none',
   },
   {
-    id: 'characters-cache-read',
+    id: 'character-aggregate-cache-read',
     methods: ['POST'],
-    path: '/api/v1/characters',
+    path: '/api/v1/characters/aggregate',
     auth: {
       decision: 'required',
-      reason: 'Hash-aware character reads return private character and chat metadata.',
+      reason: 'Hash-aware compatibility aggregate reads return private character and chat metadata.',
     },
     activeWriter: {
       decision: 'read-only-post',
-      reason: 'Hash-aware character reading is read-only; POST carries the client cache inventory.',
+      reason: 'Hash-aware compatibility aggregate reading is read-only; POST carries the client cache inventory.',
     },
     streaming: 'none',
   },
   {
-    id: 'character-summaries-read',
+    id: 'characters-read',
     methods: GET_ONLY,
-    path: '/api/v1/characters/summaries',
+    path: '/api/v1/characters',
     auth: {
       decision: 'required',
       reason: 'Character summaries contain private character presentation and navigation metadata.',
@@ -302,9 +302,9 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
-    id: 'character-summaries-cache-read',
+    id: 'characters-cache-read',
     methods: ['POST'],
-    path: '/api/v1/characters/summaries',
+    path: '/api/v1/characters',
     auth: {
       decision: 'required',
       reason: 'Hash-aware character summary reads return private presentation and navigation metadata.',

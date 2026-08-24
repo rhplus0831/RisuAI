@@ -212,7 +212,7 @@ async function persistedCharacterResources(harness: RouteBackedHarness): Promise
 }> {
   const res = await harness.app.inject({
     method: 'GET',
-    url: '/api/v1/characters',
+    url: '/api/v1/characters/aggregate',
     headers: { 'risu-auth': harness.authAssertion },
   })
   expect(res.statusCode).toBe(200)

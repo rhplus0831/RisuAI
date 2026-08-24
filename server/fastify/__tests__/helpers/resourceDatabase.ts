@@ -81,7 +81,7 @@ async function readConsistentResourceDatabase(read: (url: string) => Promise<Res
     const [settings, collections, characters] = await Promise.all([
       read('/api/v1/settings'),
       read('/api/v1/collections'),
-      read('/api/v1/characters'),
+      read('/api/v1/characters/aggregate'),
     ])
 
     if (settings.revision !== collections.revision || settings.revision !== characters.revision) continue

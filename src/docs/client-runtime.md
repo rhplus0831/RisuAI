@@ -70,7 +70,7 @@ scroll coordinators, and shared completion-audio context unlocking before mounti
    WebCrypto key; plain-HTTP contexts use a separately stored raw AES key and
    the fallback cipher. Startup stops if retryable or unreadable rows remain.
 4. Fetch `/api/v1/settings`, `/api/v1/collections`, the version 1 character
-   summary projection at `/api/v1/characters/summaries`, and
+   summary projection at `/api/v1/characters`, and
    `/api/v1/inlay-assets` in parallel. The first three use hash-aware POSTs when
    IndexedDB/Web Crypto are available and otherwise fall back to full GETs.
    Character summaries use a protocol-versioned cache namespace and exact

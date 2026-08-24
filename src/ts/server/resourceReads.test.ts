@@ -430,7 +430,7 @@ describe('server resource read clients', () => {
             collections: { ...completeCollections(), pluginCustomStorage: [] },
           })
         }
-        if (method === 'POST' && url === '/api/v1/characters/summaries') {
+        if (method === 'POST' && url === '/api/v1/characters') {
           return jsonResponse({
             version: SERVER_CHARACTER_SUMMARY_VERSION,
             revision: 1,
@@ -461,8 +461,8 @@ describe('server resource read clients', () => {
         'GET /api/v1/settings',
         'POST /api/v1/collections',
         'GET /api/v1/collections',
-        'POST /api/v1/characters/summaries',
-        'GET /api/v1/characters/summaries',
+        'POST /api/v1/characters',
+        'GET /api/v1/characters',
       ])
     } finally {
       await clearResourceCache()

@@ -145,7 +145,7 @@ describe('bootstrap and resource payload budgets', () => {
 
     const characters = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/characters/summaries',
+      url: '/api/v1/characters',
       headers: { 'risu-auth': assertion },
     })
     expect(characters.statusCode).toBe(200)
@@ -160,7 +160,7 @@ describe('bootstrap and resource payload budgets', () => {
 
     const cachedCharacters = await harness.app.inject({
       method: 'POST',
-      url: '/api/v1/characters/summaries',
+      url: '/api/v1/characters',
       headers: { 'risu-auth': assertion, 'content-type': 'application/json' },
       payload: { cache: { version: 2, hashes: { characters: [] } } },
     })
@@ -203,14 +203,14 @@ describe('bootstrap and resource payload budgets', () => {
 
     const legacyCharacters = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/characters',
+      url: '/api/v1/characters/aggregate',
       headers: { 'risu-auth': assertion },
     })
     expect(legacyCharacters.statusCode).toBe(200)
 
     const characters = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/characters/summaries',
+      url: '/api/v1/characters',
       headers: { 'risu-auth': assertion },
     })
 

@@ -35,7 +35,6 @@ import { isServerInlayCatalogPayload, type ServerInlayCatalogResourcePayload } f
 const SETTINGS_ENDPOINT = '/api/v1/settings'
 const COLLECTIONS_ENDPOINT = '/api/v1/collections'
 const CHARACTERS_ENDPOINT = '/api/v1/characters'
-const CHARACTER_SUMMARIES_ENDPOINT = `${CHARACTERS_ENDPOINT}/summaries`
 const INLAY_CATALOG_ENDPOINT = '/api/v1/inlay-assets'
 const CHARACTER_ORDER_ENDPOINT = `${CHARACTERS_ENDPOINT}/order`
 const SETTINGS_CACHE_KEY = 'settings:all'
@@ -404,29 +403,29 @@ async function requestCachedCharacters(
   signal: AbortSignal | null | undefined,
 ): Promise<ServerResourceJsonRequestResult> {
   const prepared = await prepareResourceCacheRequest([{ name: 'characters', key: CHARACTERS_CACHE_KEY }])
-  if (!prepared) return requestServerResourceJson(CHARACTER_SUMMARIES_ENDPOINT, signal)
+  if (!prepared) return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
 
-  const result = await requestServerResourceJson(CHARACTER_SUMMARIES_ENDPOINT, signal, {
+  const result = await requestServerResourceJson(CHARACTERS_ENDPOINT, signal, {
     method: 'POST',
     body: resourceCacheRequestBody(prepared.hashes),
   })
   if (result.status !== 'ok') {
-    return shouldFallbackToLegacyGet(result) ? requestServerResourceJson(CHARACTER_SUMMARIES_ENDPOINT, signal) : result
+    return shouldFallbackToLegacyGet(result) ? requestServerResourceJson(CHARACTERS_ENDPOINT, signal) : result
   }
 
   const record = isPlainRecord(result.body) ? result.body : null
   if (!record || !isResourceCacheMetadata(record.cache)) {
-    return requestServerResourceJson(CHARACTER_SUMMARIES_ENDPOINT, signal)
+    return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
   }
   const snapshot = prepared.snapshots.get('characters')
-  if (!snapshot) return requestServerResourceJson(CHARACTER_SUMMARIES_ENDPOINT, signal)
+  if (!snapshot) return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
 
   try {
     const resolved = await resolveResourceCacheArray(record.characters, snapshot, prepared.hashes.characters ?? [])
-    if (!resolved) return requestServerResourceJson(CHARACTER_SUMMARIES_ENDPOINT, signal)
+    if (!resolved) return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
     const { cache: _cache, ...responsePayload } = record
     const payload = readCharactersSummaryEnvelope({ ...responsePayload, characters: resolved.value })
-    if (!payload) return requestServerResourceJson(CHARACTER_SUMMARIES_ENDPOINT, signal)
+    if (!payload) return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
     await persistResourceCache([
       {
         key: CHARACTERS_CACHE_KEY,
@@ -439,7 +438,7 @@ async function requestCachedCharacters(
       body: payload,
     }
   } catch {
-    return requestServerResourceJson(CHARACTER_SUMMARIES_ENDPOINT, signal)
+    return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
   }
 }
 

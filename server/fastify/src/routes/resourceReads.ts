@@ -290,7 +290,7 @@ export function registerResourceReadRoutes(
     },
   )
 
-  app.get('/api/v1/characters', { exposeHeadRoute: false }, async (req, reply) => {
+  app.get('/api/v1/characters/aggregate', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
     const { revision } = getSchemaState(db)
     const settings = loadPersistedDatabaseFields(db, dataDir, ['characterOrder', 'currentChar'])
@@ -303,7 +303,7 @@ export function registerResourceReadRoutes(
     })
   })
 
-  app.post<{ Body: unknown }>('/api/v1/characters', cacheReadRouteOptions(), async (req, reply) => {
+  app.post<{ Body: unknown }>('/api/v1/characters/aggregate', cacheReadRouteOptions(), async (req, reply) => {
     const cacheRequest = parseResourceCacheRequest(req.body, ['characters'])
     if (typeof cacheRequest === 'string') {
       return sendInvalidResourceCacheRequest(reply, cacheRequest)
@@ -328,7 +328,7 @@ export function registerResourceReadRoutes(
     )
   })
 
-  app.get('/api/v1/characters/summaries', { exposeHeadRoute: false }, async (req, reply) => {
+  app.get('/api/v1/characters', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
     const { revision } = getSchemaState(db)
     const settings = loadPersistedDatabaseFields(db, dataDir, ['characterOrder', 'currentChar'])
@@ -341,7 +341,7 @@ export function registerResourceReadRoutes(
     })
   })
 
-  app.post<{ Body: unknown }>('/api/v1/characters/summaries', cacheReadRouteOptions(), async (req, reply) => {
+  app.post<{ Body: unknown }>('/api/v1/characters', cacheReadRouteOptions(), async (req, reply) => {
     const cacheRequest = parseResourceCacheRequest(req.body, ['characters'])
     if (typeof cacheRequest === 'string') {
       return sendInvalidResourceCacheRequest(reply, cacheRequest)

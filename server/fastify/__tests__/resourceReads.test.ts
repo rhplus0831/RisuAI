@@ -859,7 +859,7 @@ describe('authenticated resource read routes', () => {
   it('returns exact versioned character summaries and preserves scoped detail reads', async () => {
     const list = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/characters/summaries',
+      url: '/api/v1/characters',
       headers: authHeaders(),
     })
     expect(list.statusCode).toBe(200)
@@ -921,7 +921,7 @@ describe('authenticated resource read routes', () => {
   it('substitutes cached character summaries without depending on inventory order', async () => {
     const list = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/characters/summaries',
+      url: '/api/v1/characters',
       headers: authHeaders(),
     })
     const characters = list.json().characters as Array<Record<string, unknown>>
@@ -929,7 +929,7 @@ describe('authenticated resource read routes', () => {
 
     const cached = await harness.app.inject({
       method: 'POST',
-      url: '/api/v1/characters/summaries',
+      url: '/api/v1/characters',
       headers: authHeaders(),
       payload: cachePayload({ characters: [characterHashes[1], characterHashes[0]] }),
     })
@@ -946,7 +946,7 @@ describe('authenticated resource read routes', () => {
 
     const partial = await harness.app.inject({
       method: 'POST',
-      url: '/api/v1/characters/summaries',
+      url: '/api/v1/characters',
       headers: authHeaders(),
       payload: cachePayload({ characters: [characterHashes[0]] }),
     })
@@ -980,7 +980,7 @@ describe('authenticated resource read routes', () => {
 
     const aggregate = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/characters',
+      url: '/api/v1/characters/aggregate',
       headers: authHeaders(),
     })
     const detail = await harness.app.inject({

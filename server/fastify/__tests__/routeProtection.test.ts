@@ -355,7 +355,7 @@ describe('active-writer header validation', () => {
       { url: '/api/v1/collections', statusCode: 200 },
       { url: '/api/v1/collections/modules', statusCode: 200 },
       { url: '/api/v1/characters', statusCode: 200 },
-      { url: '/api/v1/characters/summaries', statusCode: 200 },
+      { url: '/api/v1/characters/aggregate', statusCode: 200 },
       { url: '/api/v1/characters/x/lorebook', statusCode: 200 },
       { url: '/api/v1/legacy-presets/x', statusCode: 404 },
       { url: '/api/v1/prompt-presets/x/template', statusCode: 404 },

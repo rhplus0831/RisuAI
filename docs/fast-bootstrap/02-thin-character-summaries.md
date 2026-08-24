@@ -71,7 +71,7 @@ projection that preserves the existing localized description behavior.
 - [x] Verify whether the current schema exposes every required summary value.
   If it does not, choose and document a migration, derived column, or bounded
   SQLite JSON projection before changing the endpoint.
-- [ ] Switch the authenticated GET and hash-aware POST `/api/v1/characters`
+- [x] Switch the authenticated GET and hash-aware POST `/api/v1/characters`
   routes to the summary query while preserving revision, cache authentication,
   character order, and current selection.
 - [x] Keep `GET /api/v1/characters/:id` as the scoped detail read and lock its
@@ -88,11 +88,10 @@ query returns only id, owner id, name, and pinned state. The server load-cost
 harness reports zero raw `characters.data_json` or `chats.data_json` payload
 hydrates for this path.
 
-Authenticated GET and hash-aware POST staging routes are available at
-`/api/v1/characters/summaries`. The legacy `/api/v1/characters` aggregate remains
-the default until the Phase 2C browser cache and application path accepts version
-1 summaries; that migration will atomically promote the summary route and give
-the compatibility aggregate an explicitly named route.
+Authenticated GET and hash-aware POST `/api/v1/characters` routes now serve the
+version 1 projection. The previous broad response remains temporarily available
+at the explicitly named `/api/v1/characters/aggregate` compatibility route for
+diagnostics and rollback; the browser never falls back to it automatically.
 
 On the shared 12-character large fixture, the legacy response measured 77,855
 bytes and the version 1 summary measured 4,628 bytes, a 94.1% reduction. The
@@ -114,8 +113,8 @@ fixture-specific byte counts.
 
 ### 2C client staging decision (2026-08-24)
 
-The browser now reads `/api/v1/characters/summaries` for startup, broad
-invalidation, and gap recovery. Its disposable IndexedDB namespace is
+The browser now reads `/api/v1/characters` for startup, broad invalidation, and
+gap recovery. Its disposable IndexedDB namespace is
 `characters:summary:v1`, so legacy aggregate hashes cannot satisfy a version 1
 summary request. Both GET and reconstructed hash-aware POST responses pass the
 exact shared envelope validator before application; validation failure remains
@@ -130,9 +129,9 @@ is retained only when its stable id and row revision exactly match the incoming
 summary revision, and complete refreshes can explicitly force shells even at an
 equal revision.
 
-The staging URL remains a rollback seam until the server route promotion. The
-next independently reviewable change moves this exact response to
-`/api/v1/characters` and renames the old aggregate explicitly.
+The explicit `/api/v1/characters/aggregate` route is the rollback and diagnostic
+seam. Its removal condition is completion of the Phase 2 shell/detail audits and
+confirmation that no compatibility tooling still consumes the broad response.
 
 ### 2D. Selected detail hydration and guards
 

@@ -212,8 +212,8 @@ coalesced event batch, then converts each resource key into concrete reads:
   settings-like resources still read `/api/v1/settings`.
 - Collection events read only the needed `/api/v1/collections/:name` entries.
 - Character selection and order read their narrow resources; only broad
-  character events read `/api/v1/characters/summaries`. Row-scoped character,
-  script, trigger, chat-metadata, and chat-folder events read
+  character events read `/api/v1/characters`. Row-scoped character, script,
+  trigger, chat-metadata, and chat-folder events read
   `/api/v1/characters/:id`.
 - Message and transcript events read the affected full chat body. A single
   `generation.persisted` event uses `generationMessageId` to read only the
@@ -323,8 +323,8 @@ DELETE commands are documented in
 | One settings group                                 | Cache `POST /api/v1/settings/:group`; full `GET` fallback                                        | Event-driven targeted invalidation                  |
 | Every split collection                             | Cache `POST /api/v1/collections`; full `GET` fallback                                            | `resourceReads.ts`, `collectionsResourceState`      |
 | One split collection                               | Cache `POST /api/v1/collections/:name`; full `GET` fallback                                      | Event-driven targeted invalidation                  |
-| Legacy message-free character aggregate/order/current | Cache `POST /api/v1/characters`; full `GET` fallback                                          | Phase 2 server rollback seam                         |
-| Version 1 character summaries/order/current        | Cache `POST /api/v1/characters/summaries`; full `GET` fallback                                   | `resourceReads.ts`, `charactersResourceState`        |
+| Legacy message-free character aggregate/order/current | Cache `POST /api/v1/characters/aggregate`; full `GET` fallback                                | Phase 2 diagnostic and rollback seam                 |
+| Version 1 character summaries/order/current        | Cache `POST /api/v1/characters`; full `GET` fallback                                             | `resourceReads.ts`, `charactersResourceState`        |
 | Inlay metadata catalog                             | `GET /api/v1/inlay-assets`                                                                       | `inlayCatalog.ts`                                   |
 | Character order only                               | `GET /api/v1/characters/order`                                                                   | Character-order invalidation                        |
 | Character selection/interaction                    | `GET /api/v1/characters/:id/selection`                                                           | Character-selection invalidation                    |
