@@ -118,6 +118,7 @@ import { loadV3Plugins } from './apiV3/v3.svelte'
 import {
   checkPluginUpdate,
   customProviderStore,
+  getPluginRuntimeState,
   getV2PluginAPIs,
   importPlugin,
   loadPlugins,
@@ -432,6 +433,33 @@ describe('plugin runtime synchronization', () => {
 
     await expect(loadPlugins()).rejects.toEqual(new UnsupportedPluginApiVersionError('unsupported-plugin', version))
     expect(loadV3Plugins).not.toHaveBeenCalled()
+    expect(getPluginRuntimeState()).toMatchObject({
+      phase: 'error',
+      error: expect.any(UnsupportedPluginApiVersionError),
+    })
+  })
+
+  it('reconciles an accepted projection that lands while the initial runtime load is pending', async () => {
+    const initialLoad = createDeferred<void>()
+    vi.mocked(loadV3Plugins).mockImplementationOnce(() => initialLoad.promise)
+
+    const loading = loadPlugins()
+    await vi.waitFor(() => expect(loadV3Plugins).toHaveBeenCalledOnce())
+    expect(getPluginRuntimeState()).toMatchObject({ phase: 'loading' })
+
+    withTrustedResourceWrite(() => {
+      getDatabase().plugins.push(seedPlugin('plugin-late'))
+    })
+    initialLoad.resolve(undefined)
+    await loading
+
+    expect(loadV3Plugins).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(loadV3Plugins).mock.calls[1][0].map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-late'])
+    expect(getPluginRuntimeState()).toMatchObject({
+      phase: 'ready',
+      targetSignature: pluginRuntimeSignature(getDatabase().plugins),
+      error: null,
+    })
   })
 
   it('ignores live argument edits but reloads external script and membership projections', async () => {

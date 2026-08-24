@@ -63,7 +63,7 @@ signature that fences late results when the owner changes.
 | Runtime projection services | Generation/job projections, translations, active selection; recovery and chat status consumers | Most owners expose idempotent starts and stops; bootstrap-level ownership remains for 4D | Currently writer-started; move chat/generation services after shell in 4D |
 | Server command-event subscription | Applied revision, writer session; resource invalidation, memory jobs, writer takeover | Epoch fencing, unsubscribe, watchdog/reconnect cleanup and retry | Records `writer-ready`; immutable readiness prerequisite |
 | Push coordinator and notification reconciliation | Projected notification setting and device-local retry ledger; notification settings UI | Coordinator coalescing and localized storage/cleanup/compensation retry | Background-only; now concurrent with plugin/chat work, with remaining UI/smoke work in 4B |
-| Plugin load and runtime synchronization | Accepted plugin projection; providers, UI hooks, output transforms, recovered plugin effects | Coalesced load queue and `stopPluginRuntimeSync()` | `pluginsReady` and `canGenerate`; complete consumer gating and localized retry in 4C |
+| Plugin load and runtime synchronization | Accepted plugin projection; providers, UI hooks, output transforms, recovered plugin effects | Coalesced load queue, localized retry, and `stopPluginRuntimeSync()` | `pluginsReady` and `canGenerate`; coherent runtime publication and consumer gating completed in 4C |
 | Selected character/chat/prompt hydration | Current selection, applied revision, effective prompt owner; transcript and prompt assembly | Request deduplication plus selection/chat/prompt target supersession | `canGenerate` only; prompt and chat failures leave shell/mutation ready |
 | Recovered generation effects | Pending durable effect ledger and coherent plugin runtime; output listeners and post-generation effects | Ledger idempotency and retained coordinator retry | Chat-critical after plugins; finish per-chat recovery ordering in 4D |
 | Error listeners, warnings, store effects, DOM observer, model discovery, and module refresh | Browser globals and projected settings; their owning notices/interactions | Bootstrap owns idempotent store, observer, and global-listener disposal; model errors are local | Background-only; moved behind the optional-runtime import boundary in 4B |
@@ -130,14 +130,50 @@ initial fetch here.
 
 ### 4C. Plugin readiness
 
-- [ ] Move `loadPlugins()` and runtime synchronization after shell readiness.
-- [ ] Set `pluginsReady` only after the projection and runtime are coherent.
-- [ ] Gate plugin providers, UI hooks, and output transforms on `pluginsReady`;
+- [x] Move `loadPlugins()` and runtime synchronization after shell readiness.
+- [x] Set `pluginsReady` only after the projection and runtime are coherent.
+- [x] Gate plugin providers, UI hooks, and output transforms on `pluginsReady`;
   ordinary non-plugin shell surfaces should remain usable.
-- [ ] Preserve accepted plugin projections that arrive before late plugin
+- [x] Preserve accepted plugin projections that arrive before late plugin
   startup. Runtime initialization must merge or acknowledge them instead of
   overwriting them with an older snapshot.
-- [ ] Scope plugin load failure to a localized status and retry.
+- [x] Scope plugin load failure to a localized status and retry.
+
+#### 4C implementation record (2026-08-25)
+
+Plugin initialization now begins only after `writer-shell`, and its failure no
+longer enters the global writer bootstrap retry loop. The shell, routes, and
+mutation capability remain available while a fixed localized status banner
+offers a plugin-only retry. Initial retry continues through recovered generation
+effects and selected-chat readiness without replaying writer bootstrap steps.
+
+The plugin owner publishes an explicit `idle` / `loading` / `ready` / `error`
+runtime state. `pluginsReady` is recorded only after the loaded runtime signature
+matches the latest accepted plugin projection. If a projection changes while a
+load is pending, the queue performs another load before publishing ready state;
+an obsolete failed pass likewise yields to a newer accepted projection. A V3
+load generation is atomic: if any plugin fails, every instance from that
+generation is unloaded so partial providers, frames, menus, or hooks cannot
+escape.
+
+Provider dispatch, provider model metadata, tokenizers, prompt and body
+interceptors, display-source transforms, output listeners, and plugin UI
+surfaces now consult the coherent runtime state. Custom providers and plugin
+menus, panels, and floating buttons publish empty or remain hidden while the
+runtime is loading or failed, leaving ordinary non-plugin surfaces usable.
+Generation readiness also tracks recovered generation effects separately from
+plugin initialization, preventing a successful late plugin retry from enabling
+generation before recovery settles.
+
+Focused tests cover delayed projection replacement, atomic V3 failure, consumer
+gates, localized startup failure, and targeted retry. `pnpm test:affected`
+passes 354 frontend files / 5,211 tests, with no affected server tests. The
+production bundle report remains inside both protected boundaries: the initial
+static closure is 11 files / 216 modules / 311.32 KiB gzip, and the immediate
+`appStartup` closure is 97 files / 1,026 modules / 1267.02 KiB gzip. This slice
+changes scheduling and coherent publication rather than claiming a plugin code
+size reduction; plugin consumers still retain the runtime in the immediate
+closure.
 
 ### 4D. Chat-specific readiness
 

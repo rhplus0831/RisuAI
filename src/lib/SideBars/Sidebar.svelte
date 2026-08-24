@@ -33,6 +33,7 @@
   import { getFileSrc, saveAsset } from 'src/ts/globalApi.svelte'
   import { alertConfirm, alertError, alertInput, alertNormal, alertSelect } from 'src/ts/alert'
   import SideChatList from './SideChatList.svelte'
+  import { pluginRuntimeStateStore } from '../../ts/plugins/plugins.svelte'
   import { sideBarSize } from 'src/ts/gui/guisize'
   import LazyComponent from '../UI/LazyComponent.svelte'
   import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte'
@@ -671,17 +672,19 @@
             <BarIcon onClick={openHomeRoute} ariaLabel={language.home}><HomeIcon /></BarIcon>
             <div class="mt-2"></div>
             <BarIcon onClick={openPlaygroundRoute} ariaLabel={language.playground.playground}><ShellIcon /></BarIcon>
-            {#each additionalHamburgerMenu as menu}
-              <div class="mt-2"></div>
-              <BarIcon
-                ariaLabel={menu.name}
-                onClick={() => {
-                  reseter()
-                  menu.callback()
-                }}>
-                <PluginDefinedIcon ico={menu} />
-              </BarIcon>
-            {/each}
+            {#if $pluginRuntimeStateStore.phase === 'ready'}
+              {#each additionalHamburgerMenu as menu}
+                <div class="mt-2"></div>
+                <BarIcon
+                  ariaLabel={menu.name}
+                  onClick={() => {
+                    reseter()
+                    menu.callback()
+                  }}>
+                  <PluginDefinedIcon ico={menu} />
+                </BarIcon>
+              {/each}
+            {/if}
             <div class="mt-2"></div>
             <BarIcon
               ariaLabel={language.grid}
@@ -975,17 +978,19 @@
             <BarIcon onClick={openHomeRoute} ariaLabel={language.home}><HomeIcon /></BarIcon>
             <div class="mt-2"></div>
             <BarIcon onClick={openPlaygroundRoute} ariaLabel={language.playground.playground}><ShellIcon /></BarIcon>
-            {#each additionalHamburgerMenu as menu}
-              <div class="mt-2"></div>
-              <BarIcon
-                ariaLabel={menu.name}
-                onClick={() => {
-                  reseter()
-                  menu.callback()
-                }}>
-                <PluginDefinedIcon ico={menu} />
-              </BarIcon>
-            {/each}
+            {#if $pluginRuntimeStateStore.phase === 'ready'}
+              {#each additionalHamburgerMenu as menu}
+                <div class="mt-2"></div>
+                <BarIcon
+                  ariaLabel={menu.name}
+                  onClick={() => {
+                    reseter()
+                    menu.callback()
+                  }}>
+                  <PluginDefinedIcon ico={menu} />
+                </BarIcon>
+              {/each}
+            {/if}
             <div class="mt-2"></div>
             <BarIcon
               ariaLabel={language.grid}

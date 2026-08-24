@@ -60,6 +60,7 @@ import type { ServerChatMessagePatch, ServerChatRestoration } from './request/se
 import { getRerollBuffer, getRerollId, resetRerollNavigation } from './rerollNavigation.svelte'
 import { acknowledgeHydratedGenerationPersistences, queuedGenerationPersistences } from './generationPersistenceState'
 import { addChatOutputListener, chatOutputListeners, type ChatOutputListenerArg } from '../plugins/chatOutputListeners'
+import { _setPluginRuntimePhaseForTesting } from '../plugins/plugins.svelte'
 import {
   beginGenerationDisplayProjection,
   generationDisplayProjections,
@@ -232,6 +233,7 @@ describe('server-backed terminal stable chat target (R-02)', () => {
   let originalDb: typeof testDatabaseState.db
 
   beforeEach(() => {
+    _setPluginRuntimePhaseForTesting('ready')
     originalDb = testDatabaseState.db
     resetRerollNavigation()
     inlayMock.run.mockReset()
@@ -250,6 +252,7 @@ describe('server-backed terminal stable chat target (R-02)', () => {
   })
 
   afterEach(() => {
+    _setPluginRuntimePhaseForTesting('idle')
     resetRerollNavigation()
     queuedGenerationPersistences.set([])
     chatOutputListeners.clear()

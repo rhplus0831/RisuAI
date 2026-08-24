@@ -14,7 +14,7 @@ vi.mock('../../modules', async (importActual) => {
 })
 
 import { customV3ProviderMetaStore } from '../../../plugins/apiV3/v3.svelte'
-import { pluginV2 } from '../../../plugins/plugins.svelte'
+import { _setPluginRuntimePhaseForTesting, pluginV2 } from '../../../plugins/plugins.svelte'
 import { setDatabase, type Database } from '../../../storage/database.svelte'
 import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer } from '../../../model/types'
 import { requestChatData, requestChatDataMain } from '../request'
@@ -48,6 +48,7 @@ function seedDb(overrides: Partial<Database> = {}): void {
 }
 
 beforeEach(() => {
+  _setPluginRuntimePhaseForTesting('ready')
   pluginV2.providers.clear()
   pluginV2.providerOptions.clear()
   customV3ProviderMetaStore.splice(0, customV3ProviderMetaStore.length, {
@@ -66,6 +67,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  _setPluginRuntimePhaseForTesting('idle')
   pluginV2.providers.clear()
   pluginV2.providerOptions.clear()
   customV3ProviderMetaStore.splice(0, customV3ProviderMetaStore.length)
@@ -73,6 +75,17 @@ afterEach(() => {
 })
 
 describe('V3 plugin provider response model ids', () => {
+  it('does not execute a provider from an incoherent plugin runtime', async () => {
+    const provider = vi.fn(async () => ({ success: true, content: 'must not run' }))
+    pluginV2.providers.set('provider-a', provider)
+    _setPluginRuntimePhaseForTesting('loading')
+
+    const result = await requestChatDataMain({ formated: [{ role: 'user', content: 'hello' }], bias: {} }, 'model')
+
+    expect(result).toMatchObject({ type: 'fail', model: pluginModelId })
+    expect(provider).not.toHaveBeenCalled()
+  })
+
   it.each([
     ['success', { success: true, content: 'complete' }, 'success'],
     ['failure', { success: false, content: 'rejected' }, 'fail'],

@@ -3,6 +3,7 @@ import {
   customProviderStore,
   getV2PluginAPIs,
   handlePluginInstallViaPlugin,
+  isPluginRuntimeReady,
   pluginV2,
   type PluginV2ProviderArgument,
   type PluginV2ProviderOptions,
@@ -857,7 +858,7 @@ const v3SyncedProviderRegistrations = new Map<string, V3ProviderRegistration>()
 const registeredV3ProviderUnloadCallbacks = new Set<string>()
 
 function syncCustomProviderStoreFromMap() {
-  customProviderStore.set(Array.from(pluginV2.providers.keys()))
+  customProviderStore.set(isPluginRuntimeReady() ? Array.from(pluginV2.providers.keys()) : [])
 }
 
 function getActiveV3ProviderRegistrations() {
@@ -1976,8 +1977,18 @@ export async function loadV3Plugins(plugins: RisuPlugin[]) {
     return
   }
 
-  const loadPromises = plugins.map((plugin) => executePluginV3(plugin, generation))
-  await Promise.all(loadPromises)
+  const loadResults = await Promise.allSettled(plugins.map((plugin) => executePluginV3(plugin, generation)))
+  if (generation !== activeV3Generation) return
+
+  const failure = loadResults.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+  if (!failure) return
+
+  await Promise.all(
+    v3PluginInstances
+      .filter((instance) => instance.generation === generation)
+      .map((instance) => unloadV3PluginInstance(instance)),
+  )
+  throw failure.reason
 }
 
 export async function executePluginV3(plugin: RisuPlugin, generation = ensureV3Generation()) {

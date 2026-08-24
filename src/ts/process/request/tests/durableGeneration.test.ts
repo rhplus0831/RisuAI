@@ -26,7 +26,7 @@ vi.mock('../../modules', async (importActual) => {
 })
 
 import { setDatabase, type character, type Chat, type Database } from '../../../storage/database.svelte'
-import { pluginV2 } from '../../../plugins/plugins.svelte'
+import { _setPluginRuntimePhaseForTesting, pluginV2 } from '../../../plugins/plugins.svelte'
 import { resolveDurableGeneration, type DurableGenerationRoute } from '../durableGeneration'
 import type { ServerPromptAssemblyInput } from '../serverPromptAssembly'
 
@@ -73,11 +73,13 @@ function expectNonDurable(route: DurableGenerationRoute): string {
 }
 
 beforeEach(() => {
+  _setPluginRuntimePhaseForTesting('ready')
   moduleState.triggers = []
   seedDb()
 })
 
 afterEach(() => {
+  _setPluginRuntimePhaseForTesting('idle')
   pluginV2.editinput.clear()
   pluginV2.editoutput.clear()
   pluginV2.editprocess.clear()

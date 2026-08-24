@@ -13,6 +13,11 @@ export const languageEnglish = {
     'A part of the app could not load while offline. Your current page is still open; try the action again after the connection returns.',
   preloadStaleError: 'The app has been updated. Refresh the page to load the current version.',
   preloadReload: 'Reload',
+  pluginRuntime: {
+    failed: 'Plugins could not start. The rest of the app is still available.',
+    retry: 'Retry plugins',
+    retrying: 'Retrying plugins…',
+  },
   loadingCharacter: 'Loading character…',
   characterDataLoadFailed: 'Character data could not be loaded.',
   characterCreationQueued:

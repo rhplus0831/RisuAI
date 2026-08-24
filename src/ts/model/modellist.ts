@@ -13,7 +13,7 @@ import { OpenAIModels } from './providers/openai'
 import { AnthropicModels } from './providers/anthropic'
 import { GoogleModels } from './providers/google'
 import { providerOperationCredential, requestProviderOperation } from '../server/providerOperations'
-import { customProviderStore, pluginV2 } from '../plugins/plugins.svelte'
+import { customProviderStore, isPluginRuntimeReady, pluginV2 } from '../plugins/plugins.svelte'
 import { get } from 'svelte/store'
 import { customV3ProviderMetaStore } from '../plugins/apiV3/v3.svelte'
 
@@ -806,7 +806,7 @@ export function getModelInfo(id?: string | null): LLMModel {
   }
 
   if (id.startsWith('pluginmodel:::')) {
-    const pluginModel = customV3ProviderMetaStore.find((model) => model.id === id)
+    const pluginModel = isPluginRuntimeReady() ? customV3ProviderMetaStore.find((model) => model.id === id) : undefined
     if (pluginModel) {
       return pluginModel
     }
@@ -843,7 +843,7 @@ export function getModelList<T extends boolean>(
   }
   const pluginGroup: GetModelListGroup = {
     providerName: 'Plugins',
-    models: customV3ProviderMetaStore,
+    models: isPluginRuntimeReady() ? customV3ProviderMetaStore : [],
   }
 
   if (arg.groupedByProvider) {

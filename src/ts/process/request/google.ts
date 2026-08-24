@@ -17,6 +17,7 @@ import {
   type LLMParameter,
 } from './shared'
 import { bodyIntercepterStore } from 'src/ts/stores.svelte'
+import { isPluginRuntimeReady } from 'src/ts/plugins/plugins.svelte'
 import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
 
 type GeminiFunctionCall = {
@@ -799,7 +800,7 @@ async function requestGoogle(
       }
     }
 
-    if (data?.usageMetadata) {
+    if (data?.usageMetadata && isPluginRuntimeReady()) {
       for (const interceptor of bodyIntercepterStore) {
         try {
           await interceptor.callback(
@@ -1322,11 +1323,13 @@ function wrapToolStream(
             continue
           }
 
-          for (const interceptor of bodyIntercepterStore) {
-            try {
-              await interceptor.callback(value, 'meta_gemini_stream')
-            } catch (e) {
-              console.error(e)
+          if (isPluginRuntimeReady()) {
+            for (const interceptor of bodyIntercepterStore) {
+              try {
+                await interceptor.callback(value, 'meta_gemini_stream')
+              } catch (e) {
+                console.error(e)
+              }
             }
           }
           return controller.close()

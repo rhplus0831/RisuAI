@@ -16,6 +16,7 @@ import {
   retryStartupCapability,
   runStartupStep,
   settleStartupChatReadiness,
+  settleStartupGenerationRecoveryReadiness,
   waitForStartupMilestone,
 } from './startupReadiness'
 
@@ -105,6 +106,9 @@ describe('startup readiness instrumentation', () => {
     expect(canGenerate()).toBe(false)
 
     settleStartupChatReadiness(true)
+    expect(canGenerate()).toBe(false)
+
+    settleStartupGenerationRecoveryReadiness(true)
     expect(canGenerate()).toBe(true)
   })
 
@@ -120,6 +124,7 @@ describe('startup readiness instrumentation', () => {
       recordStartupMilestone(milestone)
     }
     settleStartupChatReadiness(true)
+    settleStartupGenerationRecoveryReadiness(true)
 
     revokeStartupWriterCapabilities()
 
@@ -150,6 +155,7 @@ describe('startup readiness instrumentation', () => {
     expect(getStartupCoordinatorSnapshot().failures.canGenerate).toBeDefined()
 
     settleStartupChatReadiness(true)
+    settleStartupGenerationRecoveryReadiness(true)
     expect(getStartupCoordinatorSnapshot().failures.canGenerate).toBeUndefined()
   })
 

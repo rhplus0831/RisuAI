@@ -10,7 +10,7 @@ import {
 } from '../../model/modelProfileResolver'
 import { LLMFlags, LLMFormat, type LLMModel } from '../../model/modellist'
 import { risuChatParser, risuEscape, risuUnescape } from '../../parser/parser.svelte'
-import { pluginProcess, pluginV2 } from '../../plugins/plugins.svelte'
+import { isPluginRuntimeReady, pluginProcess, pluginV2 } from '../../plugins/plugins.svelte'
 import { getCurrentCharacter, getCurrentChat, getDatabase, type character } from '../../storage/database.svelte'
 import { getNodeServerProxyAuth } from '../../storage/fastifyStorage'
 import { tokenizeNum } from '../../tokenizer'
@@ -677,7 +677,7 @@ export async function requestChatData(
         }
       }
 
-      if (pluginV2.replacerbeforeRequest.size > 0) {
+      if (isPluginRuntimeReady() && pluginV2.replacerbeforeRequest.size > 0) {
         for (const replacer of pluginV2.replacerbeforeRequest) {
           arg.formated = await replacer(arg.formated, model)
         }
@@ -725,7 +725,7 @@ export async function requestChatData(
         da.result = risuEscape(da.result)
       }
 
-      if (da.type === 'success' && pluginV2.replacerafterRequest.size > 0) {
+      if (da.type === 'success' && isPluginRuntimeReady() && pluginV2.replacerafterRequest.size > 0) {
         for (const replacer of pluginV2.replacerafterRequest) {
           da.result = await replacer(da.result, model)
         }
@@ -1497,7 +1497,7 @@ async function requestPlugin(arg: RequestDataArgumentExtended): Promise<requestD
     const maxTokens = arg.maxTokens
     const bias = arg.biasString
     const model = isV3Model ? arg.aiModel.replace('pluginmodel:::', '') : db.currentPluginProvider
-    const v2Function = pluginV2.providers.get(model)
+    const v2Function = isPluginRuntimeReady() ? pluginV2.providers.get(model) : undefined
 
     if (arg.previewBody) {
       return {

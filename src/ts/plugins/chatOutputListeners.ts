@@ -14,6 +14,11 @@ export type ChatOutputListenerArg = {
 export type ChatOutputListener = (arg: ChatOutputListenerArg) => void | Promise<void>
 
 export const chatOutputListeners = new Set<ChatOutputListener>()
+let runtimeReady = () => true
+
+export function setChatOutputRuntimeReadyPredicate(predicate: () => boolean): void {
+  runtimeReady = predicate
+}
 
 export function addChatOutputListener(mode: string, listener: ChatOutputListener): void {
   if (mode !== 'output') throw new Error(`chat listener mode ${mode} not found`)
@@ -26,7 +31,7 @@ export function removeChatOutputListener(mode: string, listener: ChatOutputListe
 }
 
 export async function runChatOutputListeners(arg: ChatOutputListenerArg): Promise<void> {
-  if (chatOutputListeners.size === 0) return
+  if (!runtimeReady() || chatOutputListeners.size === 0) return
 
   const snapshot: ChatOutputListenerArg = {
     char: safeStructuredClone(arg.char),

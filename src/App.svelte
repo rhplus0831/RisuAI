@@ -28,6 +28,7 @@
   } from './ts/stores.svelte'
   import { alertStore, LoadingStatusState, selectedCharID } from './ts/stores/coreStores.svelte'
   import { startupCoordinatorStore } from './ts/startupReadiness'
+  import { pluginRuntimeStateStore } from './ts/plugins/plugins.svelte'
   import Sidebar from './lib/SideBars/Sidebar.svelte'
   import ChatScreen from './lib/ChatScreens/ChatScreen.svelte'
   import { showRealmInfoStore } from './ts/realmInfoStore'
@@ -75,6 +76,25 @@
   let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
   let aprilFoolsPage = $state(0)
   let keepingSessionAlive = $state(false)
+  let retryingPluginRuntime = $state(false)
+  let pluginStartupFailed = $derived($startupCoordinatorStore.failures.pluginsReady !== undefined)
+  let pluginRuntimeFailed = $derived($pluginRuntimeStateStore.phase === 'error')
+
+  async function retryPlugins(): Promise<void> {
+    if (retryingPluginRuntime) return
+    retryingPluginRuntime = true
+    try {
+      if (pluginStartupFailed) {
+        const { retryPluginStartup } = await import('./ts/bootstrap')
+        await retryPluginStartup()
+      } else {
+        const { retryPluginRuntime } = await import('./ts/plugins/plugins.svelte')
+        await retryPluginRuntime()
+      }
+    } finally {
+      retryingPluginRuntime = false
+    }
+  }
 
   function getMainDropEffect(event: DragEvent): DataTransfer['dropEffect'] {
     const types = event.dataTransfer?.types
@@ -214,6 +234,25 @@
       }
     }
   }}>
+  {#if $startupCoordinatorStore.capabilities.canRenderShell && (pluginStartupFailed || pluginRuntimeFailed)}
+    <div
+      class="fixed top-3 left-1/2 z-50 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-3 rounded-md border border-yellow-600 bg-bg px-4 py-3 text-sm shadow-lg"
+      role="status"
+      aria-live="polite"
+      data-plugin-runtime-status>
+      <span>{language.pluginRuntime.failed}</span>
+      <button
+        type="button"
+        class="shrink-0 rounded bg-yellow-700 px-3 py-1.5 text-white disabled:cursor-wait disabled:opacity-60"
+        disabled={retryingPluginRuntime}
+        onclick={(event) => {
+          event.stopPropagation()
+          void retryPlugins()
+        }}>
+        {retryingPluginRuntime ? language.pluginRuntime.retrying : language.pluginRuntime.retry}
+      </button>
+    </div>
+  {/if}
   {#if aprilFools}
     <div class="bg-[#212121] w-full h-screen min-h-screen text-black flex relative">
       <div class="w-full max-w-3xl mx-auto py-8 px-4 flex justify-center items-center">

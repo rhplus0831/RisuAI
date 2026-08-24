@@ -2,7 +2,7 @@ import { getDatabase } from '../../storage/database.svelte'
 import type { character, Chat, Database, triggerscript } from '../../storage/database.svelte'
 import { LLMFlags } from '../../model/types'
 import { getModuleTriggers } from '../modules'
-import { pluginV2 } from '../../plugins/plugins.svelte'
+import { isPluginRuntimeReady, pluginV2 } from '../../plugins/plugins.svelte'
 import { applyEffectivePresetComposition, databaseKeyForModelPresetField, MODEL_PRESET_FIELDS } from '../../presetSplit'
 import {
   modelProfileGenerationBlockReason,
@@ -96,6 +96,7 @@ function triggersUseInteractiveLua(triggers: triggerscript[] | undefined): boole
  * server-side execution path from being silently added.
  */
 function hasPluginV2EditSet(): boolean {
+  if (!isPluginRuntimeReady()) return false
   return (
     pluginV2.editinput.size > 0 ||
     pluginV2.editoutput.size > 0 ||

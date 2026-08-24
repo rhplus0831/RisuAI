@@ -55,6 +55,7 @@ vi.mock('./model/modellist', () => ({
 }))
 
 vi.mock('./plugins/plugins.svelte', () => ({
+  isPluginRuntimeReady: () => true,
   pluginV2: {
     providerOptions: new Map(),
   },

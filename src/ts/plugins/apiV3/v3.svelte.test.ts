@@ -122,6 +122,7 @@ vi.mock('../plugins.svelte', () => ({
     },
   }),
   handlePluginInstallViaPlugin: vi.fn(),
+  isPluginRuntimeReady: vi.fn(() => true),
   pluginV2: mockPluginV2,
 }))
 
@@ -1609,6 +1610,21 @@ describe('V3 plugin permissions', () => {
 })
 
 describe('V3 plugin lifecycle cleanup', () => {
+  it('removes a partially loaded generation when another plugin fails', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    const failure = new Error('permission prompt failed')
+    const pluginA = seedV3Plugin('plugin-a')
+    const pluginB = seedV3Plugin('plugin-b')
+    mockDbState.db.plugins = [pluginA, pluginB]
+    vi.mocked(alertConfirm).mockResolvedValueOnce(true).mockRejectedValueOnce(failure)
+
+    await expect(loadV3Plugins([pluginA, pluginB])).rejects.toBe(failure)
+
+    expect(getV3PluginInstance('plugin-a')).toBeUndefined()
+    expect(getV3PluginInstance('plugin-b')).toBeUndefined()
+    expect(document.querySelectorAll('iframe')).toHaveLength(0)
+  })
+
   it('M7/v4-L37: loadV3Plugins unloads every existing V3 instance from a snapshot', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {})
     const removeSpy = vi.spyOn(window, 'removeEventListener')

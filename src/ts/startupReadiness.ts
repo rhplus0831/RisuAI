@@ -103,6 +103,7 @@ const inFlightCapabilityRetries = new Map<StartupRetryTarget, Promise<unknown>>(
 let nextAttemptId = 1
 let writerCapabilitiesRevoked = false
 let chatGenerationReady = false
+let generationRecoveryReady = false
 
 function nowMs(): number {
   return globalThis.performance?.now?.() ?? Date.now()
@@ -166,7 +167,21 @@ export function pluginsReady(): boolean {
 }
 
 export function canGenerate(): boolean {
-  return hasTransitioned('chat-ready') && chatGenerationReady && !writerCapabilitiesRevoked
+  return (
+    hasTransitioned('chat-ready') &&
+    pluginsReady() &&
+    generationRecoveryReady &&
+    chatGenerationReady &&
+    !writerCapabilitiesRevoked
+  )
+}
+
+/** Generation recovery is a separate dependency from selected-chat hydration. */
+export function settleStartupGenerationRecoveryReadiness(ready: boolean): void {
+  if (generationRecoveryReady === ready) return
+  generationRecoveryReady = ready
+  clearReadyCapabilityFailures()
+  notifyReadinessListeners()
 }
 
 /**
@@ -454,6 +469,7 @@ export function resetStartupReadinessForTests(): void {
   nextAttemptId = 1
   writerCapabilitiesRevoked = false
   chatGenerationReady = false
+  generationRecoveryReady = false
 
   const perf = globalThis.performance
   for (const milestone of STARTUP_MILESTONES) {

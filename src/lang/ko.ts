@@ -1,4 +1,9 @@
 const languageKoreanBase = {
+  pluginRuntime: {
+    failed: '플러그인을 시작할 수 없습니다. 앱의 나머지 기능은 계속 사용할 수 있습니다.',
+    retry: '플러그인 다시 시도',
+    retrying: '플러그인 다시 시도 중…',
+  },
   characterCreationQueued:
     '새 캐릭터가 이 기기에 저장되어 대기열에 추가되었습니다. 서버에서 아직 승인되지 않았으며 자동으로 다시 시도합니다.',
   characterCreationFailed: '캐릭터를 생성할 수 없습니다. 임시 캐릭터를 제거했습니다.',

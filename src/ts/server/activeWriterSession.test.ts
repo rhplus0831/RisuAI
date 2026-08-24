@@ -171,6 +171,7 @@ describe('active writer browser session', () => {
       startupReadiness.recordStartupMilestone(milestone)
     }
     startupReadiness.settleStartupChatReadiness(true)
+    startupReadiness.settleStartupGenerationRecoveryReadiness(true)
     expect(startupReadiness.canMutate()).toBe(true)
     expect(startupReadiness.canGenerate()).toBe(true)
 

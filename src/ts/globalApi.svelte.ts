@@ -5,7 +5,7 @@ import { type Database, defaultSdDataFunc, getDatabase, appVer, getCurrentCharac
 import { checkRisuUpdate } from './update'
 import { reloadGuiDisplay, bodyIntercepterStore } from './stores.svelte'
 import { selIdState } from './stores/coreStores.svelte'
-import { loadPlugins } from './plugins/plugins.svelte'
+import { isPluginRuntimeReady, loadPlugins } from './plugins/plugins.svelte'
 import { alertError, alertMd, alertNormal, alertSelect, waitAlert } from './alert'
 import { characterURLImport } from './characterCards'
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from './storage/defaultPrompts'
@@ -683,7 +683,7 @@ export async function globalFetch(url: string, arg: GlobalFetchArgs = {}): Promi
       !arg.plainFetchDeforce &&
       !useLocalNetworkRoute
 
-    if (arg.interceptor) {
+    if (arg.interceptor && isPluginRuntimeReady()) {
       for (const interceptor of bodyIntercepterStore) {
         try {
           arg.body = (await interceptor.callback(arg.body, arg.interceptor)) || arg.body
@@ -894,7 +894,7 @@ export async function pluginGlobalFetch(url: string, arg: GlobalFetchArgs = {}):
       return { ok: false, data: 'aborted', headers: {}, status: 400 }
     }
 
-    if (arg.interceptor) {
+    if (arg.interceptor && isPluginRuntimeReady()) {
       for (const interceptor of bodyIntercepterStore) {
         try {
           arg.body = (await interceptor.callback(arg.body, arg.interceptor)) || arg.body
@@ -1482,7 +1482,7 @@ async function fetchNativeInternal(
     realBody = undefined
   } else if (typeof arg.body === 'string') {
     let body: string = arg.body
-    if (useInterceptor) {
+    if (useInterceptor && isPluginRuntimeReady()) {
       for (const interceptor of bodyIntercepterStore) {
         try {
           body = (await interceptor.callback(body, arg.interceptor)) || body

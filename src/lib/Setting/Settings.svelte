@@ -30,6 +30,7 @@
   import LazyComponent from '../UI/LazyComponent.svelte'
   import { alertConfirm } from 'src/ts/alert'
   import { closeSettingsRoute, navigate } from 'src/ts/router'
+  import { pluginRuntimeStateStore } from 'src/ts/plugins/plugins.svelte'
 
   const loadUserSettings = () => import('./Pages/UserSettings.svelte')
   const loadBotSettings = () => import('./Pages/BotSettings.svelte')
@@ -301,12 +302,14 @@
               <BoxIcon size={20} />
               <span>{language.settingsNavSupporters}</span>
             </button>
-            {#each additionalSettingsMenu as menu}
-              <button class={navButtonClass(false)} onclick={menu.callback}>
-                <PluginDefinedIcon ico={menu} />
-                <span>{menu.name}</span>
-              </button>
-            {/each}
+            {#if $pluginRuntimeStateStore.phase === 'ready'}
+              {#each additionalSettingsMenu as menu}
+                <button class={navButtonClass(false)} onclick={menu.callback}>
+                  <PluginDefinedIcon ico={menu} />
+                  <span>{menu.name}</span>
+                </button>
+              {/each}
+            {/if}
 
             {#if getDatabase().enableRisuaiProTools}
               <button

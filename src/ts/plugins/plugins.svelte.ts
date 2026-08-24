@@ -1,4 +1,4 @@
-import { get, writable } from 'svelte/store'
+import { get, readonly, writable } from 'svelte/store'
 import { language } from '../../lang'
 import { getCurrentCharacter, getDatabase, setDatabase, setDatabaseLite } from '../storage/database.svelte'
 import { alertConfirm, alertError, alertPluginConfirm } from '../alert'
@@ -67,10 +67,48 @@ import {
   addChatOutputListener,
   chatOutputListeners,
   removeChatOutputListener,
+  setChatOutputRuntimeReadyPredicate,
   type ChatOutputListener,
 } from './chatOutputListeners'
 
 export const customProviderStore = writable([] as string[])
+
+export type PluginRuntimePhase = 'idle' | 'loading' | 'ready' | 'error'
+
+export interface PluginRuntimeState {
+  phase: PluginRuntimePhase
+  targetSignature: string | null
+  error: unknown | null
+}
+
+const initialPluginRuntimeState: PluginRuntimeState = {
+  phase: 'idle',
+  targetSignature: null,
+  error: null,
+}
+const pluginRuntimeStateWritable = writable(initialPluginRuntimeState)
+let pluginRuntimeStateSnapshot = initialPluginRuntimeState
+
+function publishPluginRuntimeState(state: PluginRuntimeState): void {
+  pluginRuntimeStateSnapshot = state
+  pluginRuntimeStateWritable.set(state)
+}
+
+export const pluginRuntimeStateStore = readonly(pluginRuntimeStateWritable)
+
+export function getPluginRuntimeState(): PluginRuntimeState {
+  return { ...pluginRuntimeStateSnapshot }
+}
+
+export function isPluginRuntimeReady(): boolean {
+  return pluginRuntimeStateSnapshot.phase === 'ready'
+}
+
+export function _setPluginRuntimePhaseForTesting(phase: PluginRuntimePhase): void {
+  publishPluginRuntimeState({ phase, targetSignature: null, error: null })
+}
+
+setChatOutputRuntimeReadyPredicate(isPluginRuntimeReady)
 
 interface ProviderPlugin {
   name: string
@@ -663,6 +701,8 @@ export function stopPluginRuntimeSync(): void {
   stopPluginRuntimeSyncEffect = null
   pluginRuntimeSyncState.suppressionDepth = 0
   pluginRuntimeSyncState.targetSignature = null
+  customProviderStore.set([])
+  publishPluginRuntimeState(initialPluginRuntimeState)
 }
 
 let pluginLoadQueue: Promise<void> | null = null
@@ -675,9 +715,33 @@ async function runQueuedPluginLoads() {
     const db = getDatabase()
 
     const plugins = acceptedPluginRuntimeProjection(db.plugins ?? [])
-    for (const plugin of plugins) assertSupportedPluginApiVersion(plugin)
+    const signature = pluginRuntimeSignature(plugins)
+    customProviderStore.set([])
+    publishPluginRuntimeState({ phase: 'loading', targetSignature: signature, error: null })
 
-    await loadV3Plugins(plugins.filter((plugin) => plugin.enabled))
+    try {
+      for (const plugin of plugins) assertSupportedPluginApiVersion(plugin)
+      await loadV3Plugins(plugins.filter((plugin) => plugin.enabled))
+    } catch (error) {
+      const latestSignature = pluginRuntimeSignature(acceptedPluginRuntimeProjection(getDatabase().plugins ?? []))
+      if (latestSignature !== signature) {
+        pluginRuntimeSyncState.targetSignature = latestSignature
+        pluginLoadQueued = true
+        continue
+      }
+      publishPluginRuntimeState({ phase: 'error', targetSignature: signature, error })
+      throw error
+    }
+
+    const latestSignature = pluginRuntimeSignature(acceptedPluginRuntimeProjection(getDatabase().plugins ?? []))
+    if (latestSignature !== signature) {
+      pluginRuntimeSyncState.targetSignature = latestSignature
+      pluginLoadQueued = true
+      continue
+    }
+
+    customProviderStore.set(Array.from(pluginV2.providers.keys()))
+    publishPluginRuntimeState({ phase: 'ready', targetSignature: signature, error: null })
   }
 }
 
@@ -697,6 +761,17 @@ export function loadPlugins(): Promise<void> {
     }
   })
   return pluginLoadQueue
+}
+
+/** Explicit retry for a localized runtime reload failure after startup. */
+export async function retryPluginRuntime(): Promise<boolean> {
+  try {
+    await loadPlugins()
+    startPluginRuntimeSync()
+    return true
+  } catch {
+    return false
+  }
 }
 
 export type PluginV2ProviderArgument = {

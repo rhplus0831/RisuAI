@@ -88,7 +88,12 @@ import {
   submitStagedAcceptedSendOperation,
   submitStagedTargetedGenerationOperation,
 } from './generationOperations'
-import { recordStartupMilestone, resetStartupReadinessForTests, settleStartupChatReadiness } from '../startupReadiness'
+import {
+  recordStartupMilestone,
+  resetStartupReadinessForTests,
+  settleStartupChatReadiness,
+  settleStartupGenerationRecoveryReadiness,
+} from '../startupReadiness'
 
 const operationId = '11111111-1111-4111-8111-111111111111'
 const messageId = '22222222-2222-4222-8222-222222222222'
@@ -147,6 +152,7 @@ beforeEach(() => {
   ] as const) {
     recordStartupMilestone(milestone)
   }
+  settleStartupGenerationRecoveryReadiness(true)
   settleStartupChatReadiness(true)
   resetGenerationOperationClientForTests()
   let uuidIndex = 0

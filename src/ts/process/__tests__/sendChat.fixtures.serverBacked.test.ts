@@ -127,6 +127,7 @@ import { setResourceWriteGuardEnabled } from '../../server/resourceWriteGuard.sv
 import { defaultMainPrompt } from '../../storage/defaultPrompts'
 import { abortChat, chatProcessStage, doingChat, previewBody, previewFormated, sendChat } from '../index.svelte'
 import { addChatOutputListener, chatOutputListeners } from '../../plugins/chatOutputListeners'
+import { _setPluginRuntimePhaseForTesting } from '../../plugins/plugins.svelte'
 import { buildApp } from '../../../../server/fastify/src/app'
 import { setupAuthedClient } from '../../../../server/fastify/__tests__/helpers/auth'
 import type {
@@ -476,6 +477,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
   })
 
   beforeEach(() => {
+    _setPluginRuntimePhaseForTesting('ready')
     resetProviderState()
     resetSideEffectCalls()
     resetServerCompletionCalls()
@@ -488,6 +490,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
 
   let cleanups: (() => void)[] = []
   afterEach(() => {
+    _setPluginRuntimePhaseForTesting('idle')
     setResourceWriteGuardEnabled(false)
     while (cleanups.length > 0) cleanups.pop()!()
     vi.unstubAllGlobals()
@@ -1105,6 +1108,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     uuidState.counter = 0
     contextCommandRevision = 1
     setResourceWriteGuardEnabled(false)
+    _setPluginRuntimePhaseForTesting('ready')
     chatOutputListeners.clear()
     terminalEffectMocks.notify.mockClear()
     terminalEffectMocks.embedding.mockClear()
@@ -1114,6 +1118,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
   let cleanups: (() => void)[] = []
   afterEach(() => {
     setResourceWriteGuardEnabled(false)
+    _setPluginRuntimePhaseForTesting('idle')
     chatOutputListeners.clear()
     while (cleanups.length > 0) cleanups.pop()!()
   })

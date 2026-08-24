@@ -167,6 +167,7 @@ import {
   retryStartupCapability,
   runStartupStep,
   settleStartupChatReadiness,
+  settleStartupGenerationRecoveryReadiness,
   startupRetryTargetForMilestone,
   type StartupAttemptFailureCode,
   type StartupMilestone,
@@ -280,22 +281,13 @@ async function loadDataUntilSettled(): Promise<void> {
 
 async function runLoadDataAttempt(): Promise<StartupRetryTarget | null> {
   const startupAttemptId = beginStartupAttempt()
-  let failureCode: StartupAttemptFailureCode = 'writer-bootstrap-failed'
-  let failureMilestone: StartupMilestone = 'observer-ready'
+  const failureCode: StartupAttemptFailureCode = 'writer-bootstrap-failed'
+  const failureMilestone: StartupMilestone = 'observer-ready'
   try {
     await runStartupStep('writer-shell', () => loadWebInitialDatabase({ coordinated: true }))
     const backgroundReadiness = runStartupStep('background-readiness', settleStartupBackgroundReadiness)
-    LoadingStatusState.text = 'Loading Plugins...'
-    failureCode = 'plugin-initialization-failed'
-    failureMilestone = 'plugins-ready'
-    await runStartupStep('plugin-runtime', async () => {
-      await loadPlugins()
-      startPluginRuntimeSync()
-      recordStartupMilestone('plugins-ready')
-    })
-    failureCode = 'generation-recovery-failed'
-    failureMilestone = 'chat-ready'
-    await runStartupStep('generation-recovery', reconcilePendingRecoveredGenerationEffects)
+    const pluginRuntimeReady = await settleStartupPluginRuntime(startupAttemptId)
+    if (pluginRuntimeReady) await settleStartupGenerationRecovery(startupAttemptId)
     try {
       await runStartupStep('chat-readiness', ensureStartupChatReadiness)
       settleStartupChatReadiness(true)
@@ -322,6 +314,65 @@ async function runLoadDataAttempt(): Promise<StartupRetryTarget | null> {
     if (error instanceof FatalBootstrapError) return null
     return startupRetryTargetForMilestone(failureMilestone)
   }
+}
+
+async function settleStartupPluginRuntime(startupAttemptId: number): Promise<boolean> {
+  LoadingStatusState.text = 'Loading Plugins...'
+  try {
+    await runStartupStep('plugin-runtime', async () => {
+      await loadPlugins()
+      startPluginRuntimeSync()
+      recordStartupMilestone('plugins-ready')
+    })
+    return true
+  } catch (error) {
+    settleStartupGenerationRecoveryReadiness(false)
+    recordStartupCapabilityFailure(startupAttemptId, 'plugin-initialization-failed', 'plugins-ready')
+    console.warn('Plugin runtime initialization failed:', error)
+    return false
+  }
+}
+
+async function settleStartupGenerationRecovery(startupAttemptId: number): Promise<boolean> {
+  try {
+    await runStartupStep('generation-recovery', reconcilePendingRecoveredGenerationEffects)
+    settleStartupGenerationRecoveryReadiness(true)
+    return true
+  } catch (error) {
+    settleStartupGenerationRecoveryReadiness(false)
+    recordStartupCapabilityFailure(startupAttemptId, 'generation-recovery-failed', 'chat-ready')
+    console.warn('Generation recovery initialization failed:', error)
+    return false
+  }
+}
+
+/** Localized retry used by the plugin-readiness status surface. */
+export function retryPluginStartup(): Promise<boolean> {
+  return retryStartupCapability('pluginsReady', async () => {
+    const startupAttemptId = beginStartupAttempt()
+    const pluginRuntimeReady = await settleStartupPluginRuntime(startupAttemptId)
+    if (!pluginRuntimeReady) {
+      completeStartupAttempt(startupAttemptId)
+      return false
+    }
+
+    const generationRecoveryReady = await settleStartupGenerationRecovery(startupAttemptId)
+    if (generationRecoveryReady) {
+      try {
+        await runStartupStep('chat-readiness', ensureStartupChatReadiness)
+        settleStartupChatReadiness(true)
+      } catch (error) {
+        const dependencyError =
+          error instanceof StartupChatDependencyError
+            ? error
+            : new StartupChatDependencyError('selected-chat-hydration-failed', 'Selected chat hydration failed')
+        recordStartupCapabilityFailure(startupAttemptId, dependencyError.failureCode, 'chat-ready')
+        settleStartupChatReadiness(false)
+      }
+    }
+    completeStartupAttempt(startupAttemptId)
+    return generationRecoveryReady
+  })
 }
 
 async function settleStartupBackgroundReadiness(): Promise<void> {

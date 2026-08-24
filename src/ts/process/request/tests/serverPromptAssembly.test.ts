@@ -28,7 +28,7 @@ vi.mock('../../modules', async (importActual) => {
 import { setDatabase, type character, type Chat, type Database } from '../../../storage/database.svelte'
 import { LLMFlags } from '../../../model/modellist'
 import { MASKED_PROVIDER_SECRET } from '../../../providerSecretMask'
-import { pluginV2 } from '../../../plugins/plugins.svelte'
+import { _setPluginRuntimePhaseForTesting, pluginV2 } from '../../../plugins/plugins.svelte'
 import {
   resolveServerPromptAssembly,
   type ServerPromptAssemblyInput,
@@ -81,10 +81,12 @@ function expectUnsupported(route: ServerPromptAssemblyRoute): string {
 }
 
 beforeEach(() => {
+  _setPluginRuntimePhaseForTesting('ready')
   seedDb()
 })
 
 afterEach(() => {
+  _setPluginRuntimePhaseForTesting('idle')
   // The pluginV2 registry is a module singleton; a content case adds to it.
   pluginV2.editinput.clear()
   pluginV2.editoutput.clear()
@@ -95,6 +97,13 @@ afterEach(() => {
 })
 
 describe('resolveServerPromptAssembly', () => {
+  it('ignores partial plugin transform registrations until runtime readiness', () => {
+    pluginV2.editinput.add((() => {}) as never)
+    _setPluginRuntimePhaseForTesting('loading')
+
+    expect(resolveServerPromptAssembly(makeInput())).toEqual({ type: 'server' })
+  })
+
   describe('server — the supported pure-text-send subset', () => {
     it('routes a plain user-message send to server', () => {
       expect(resolveServerPromptAssembly(makeInput())).toEqual({ type: 'server' })

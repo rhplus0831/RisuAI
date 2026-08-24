@@ -293,6 +293,7 @@ import {
   createGlobalErrorHandlers,
   loadData,
   loadWebInitialDatabase,
+  retryPluginStartup,
   stopDeferredStartupRuntimes,
   stopServerResourceEvents,
 } from './bootstrap'
@@ -532,7 +533,8 @@ describe('API-backed client bootstrap', () => {
     )
   })
 
-  it('retries a failed capability without repeating successful startup steps', async () => {
+  it('localizes plugin startup failure and retries it without repeating successful startup steps', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     vi.mocked(loadPlugins).mockRejectedValueOnce(new Error('plugin startup failed')).mockResolvedValueOnce(undefined)
 
     await loadData()
@@ -543,14 +545,31 @@ describe('API-backed client bootstrap', () => {
     expect(resourceApi.loadInitial).toHaveBeenCalledOnce()
     expect(eventApi.subscribe).toHaveBeenCalledOnce()
     expect(pushApi.initialize).toHaveBeenCalledOnce()
+    expect(loadPlugins).toHaveBeenCalledOnce()
+    expect(startPluginRuntimeSync).not.toHaveBeenCalled()
+    expect(get(loadedStore)).toBe(true)
+    expect(alertError).not.toHaveBeenCalled()
+    expect(getStartupCoordinatorSnapshot()).toMatchObject({
+      capabilities: {
+        canRenderShell: true,
+        canApplyRoutes: true,
+        canMutate: true,
+        pluginsReady: false,
+        canGenerate: false,
+      },
+      failures: {
+        pluginsReady: expect.objectContaining({ failureCode: 'plugin-initialization-failed' }),
+        canGenerate: expect.objectContaining({ failureCode: 'plugin-initialization-failed' }),
+      },
+    })
+    expect(consoleWarn).toHaveBeenCalledWith('Plugin runtime initialization failed:', expect.any(Error))
+
+    await expect(retryPluginStartup()).resolves.toBe(true)
+
     expect(loadPlugins).toHaveBeenCalledTimes(2)
     expect(startPluginRuntimeSync).toHaveBeenCalledOnce()
     expect(getStartupReadinessSnapshot().attempts).toEqual([
-      expect.objectContaining({
-        attemptId: 1,
-        failureCode: 'plugin-initialization-failed',
-        failureMilestone: 'plugins-ready',
-      }),
+      expect.objectContaining({ attemptId: 1, completedAtMs: expect.any(Number) }),
       expect.objectContaining({ attemptId: 2, completedAtMs: expect.any(Number) }),
     ])
     expect(getStartupCoordinatorSnapshot()).toMatchObject({

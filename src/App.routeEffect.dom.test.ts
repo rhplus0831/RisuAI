@@ -5,6 +5,8 @@ import type { AppRoute } from './ts/router'
 import type { Database, character } from './ts/storage/database.svelte'
 import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes'
 import {
+  beginStartupAttempt,
+  recordStartupCapabilityFailure,
   recordStartupMilestone,
   resetStartupReadinessForTests,
   revokeStartupWriterCapabilities,
@@ -86,6 +88,11 @@ vi.mock('./lang', () => ({
     grid: 'Grid',
     home: 'Home',
     menu: 'Menu',
+    pluginRuntime: {
+      failed: 'Plugins could not start. The rest of the app is still available.',
+      retry: 'Retry plugins',
+      retrying: 'Retrying plugins…',
+    },
     playground: { playground: 'Playground' },
     settings: 'Settings',
     successImport: 'Imported',
@@ -99,6 +106,11 @@ vi.mock('src/lang', () => ({
     grid: 'Grid',
     home: 'Home',
     menu: 'Menu',
+    pluginRuntime: {
+      failed: 'Plugins could not start. The rest of the app is still available.',
+      retry: 'Retry plugins',
+      retrying: 'Retrying plugins…',
+    },
     playground: { playground: 'Playground' },
     settings: 'Settings',
     successImport: 'Imported',
@@ -464,6 +476,17 @@ describe('App route/refreeze mounted DOM behavior', () => {
     expect(get(selectedCharID)).toBe(0)
     expect(window.location.pathname).toBe(routePath)
     expect(appRouteDomMocks.state.applyRouteCalls).toBe(1)
+  })
+
+  it('keeps the shell mounted and shows a localized plugin retry status', async () => {
+    const attemptId = beginStartupAttempt()
+    recordStartupCapabilityFailure(attemptId, 'plugin-initialization-failed', 'plugins-ready')
+    await tick()
+
+    expect(target.querySelector('[data-plugin-runtime-status]')).not.toBeNull()
+    expect(target.textContent).toContain('Plugins could not start')
+    expect(target.querySelector('button')?.textContent).toContain('Retry plugins')
+    expect(target.querySelector('[data-testid="app-marker"]')).not.toBeNull()
   })
 
   it('keeps the coherent shell readable while persistence-capable route application is revoked', async () => {

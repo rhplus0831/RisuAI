@@ -1,5 +1,5 @@
 import { sha256Hex } from '../sha256Fallback'
-import { pluginV2 } from '../plugins/plugins.svelte'
+import { isPluginRuntimeReady, pluginV2 } from '../plugins/plugins.svelte'
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse, isWriterAccessLost } from './activeWriterSession'
 import {
@@ -97,7 +97,9 @@ export function resetDisplaySourceClientForTests(): void {
 }
 
 export async function requestServerDisplaySource(input: ServerDisplaySourceInput): Promise<ServerDisplaySourceResult> {
-  if (pluginV2.editdisplay.size > 0) return { status: 'fallback', reason: 'browser_editdisplay_plugin' }
+  if (isPluginRuntimeReady() && pluginV2.editdisplay.size > 0) {
+    return { status: 'fallback', reason: 'browser_editdisplay_plugin' }
+  }
   if (!canUseDisplaySourceProtocol()) return { status: 'fallback', reason: 'protocol_unavailable' }
   if (!input.chatId || !input.character?.chaId) return { status: 'fallback', reason: 'target_unavailable' }
   if (new TextEncoder().encode(input.source).byteLength > DISPLAY_SOURCE_LIMITS.maxSourceBytes) {

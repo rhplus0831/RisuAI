@@ -361,6 +361,7 @@ import {
   selectedCharID,
 } from 'src/ts/stores.svelte'
 import { presetTemplate, type Database, type Message } from 'src/ts/storage/database.svelte'
+import { _setPluginRuntimePhaseForTesting } from 'src/ts/plugins/plugins.svelte'
 import {
   createActiveChatGenerationSettingsIncompleteMessage,
   resolveActiveChatGenerationSettings,
@@ -755,6 +756,7 @@ function findButtonByText(text: string): HTMLButtonElement | undefined {
 }
 
 beforeEach(() => {
+  _setPluginRuntimePhaseForTesting('ready')
   defaultChatScreenTestChatController.reset()
   resetChatGenerationActivitiesForTests()
   resetChatUnreadForTests()
@@ -813,6 +815,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  _setPluginRuntimePhaseForTesting('idle')
   if (component) {
     unmount(component)
     component = undefined

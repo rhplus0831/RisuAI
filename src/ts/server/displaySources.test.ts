@@ -16,8 +16,13 @@ import {
   resetDisplaySourceClientForTests,
 } from './displaySources'
 
+const pluginRuntime = vi.hoisted(() => ({ ready: true }))
+
 vi.mock('../storage/fastifyStorage', () => ({ getNodeServerProxyAuth: vi.fn(async () => 'display-auth') }))
-vi.mock('../plugins/plugins.svelte', () => ({ pluginV2: { editdisplay: new Set() } }))
+vi.mock('../plugins/plugins.svelte', () => ({
+  isPluginRuntimeReady: () => pluginRuntime.ready,
+  pluginV2: { editdisplay: new Set() },
+}))
 
 interface DisplayRequestBody {
   baseRevision: number
@@ -65,6 +70,7 @@ async function successfulDisplayResponse(body: DisplayRequestBody, revision: num
 
 describe('browser display source batching bridge', () => {
   beforeEach(() => {
+    pluginRuntime.ready = true
     resetWriterAccessLostForTests()
     resetDisplaySourceClientForTests()
     clearCachedServerCommandRevision()
@@ -244,5 +250,28 @@ describe('browser display source batching bridge', () => {
       }),
     ).resolves.toEqual({ status: 'fallback', reason: 'browser_editdisplay_plugin' })
     expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('ignores a partial editdisplay registration while plugin runtime is not ready', async () => {
+    pluginRuntime.ready = false
+    pluginV2.editdisplay.add(async (source) => source)
+    const fetchSpy = vi.fn(async (_input: RequestInfo | URL, init: RequestInit = {}) => {
+      const body = JSON.parse(String(init.body)) as DisplayRequestBody
+      return successfulDisplayResponse(body, 8)
+    })
+    vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
+
+    await expect(
+      requestServerDisplaySource({
+        chatId: 'chat-a',
+        character: { chaId: 'char-a' },
+        index: 0,
+        role: 'assistant',
+        firstMessage: false,
+        layer: 'original',
+        source: 'body',
+      }),
+    ).resolves.toMatchObject({ status: 'ok', displaySource: 'BODY' })
+    expect(fetchSpy).toHaveBeenCalledOnce()
   })
 })

@@ -37,6 +37,7 @@
     easyPanelStore,
   } from '../../ts/stores.svelte'
   import { createSimpleCharacter } from '../../ts/simpleCharacter'
+  import { pluginRuntimeStateStore } from '../../ts/plugins/plugins.svelte'
   import { RegexDisplayReloadPointer } from '../../ts/process/regexDisplayReload'
   import { onDestroy, tick, untrack } from 'svelte'
   import Chat from './Chat.svelte'
@@ -2847,7 +2848,7 @@
           {@render composerSurface(false)}
         {/if}
 
-        {#if chatPanelStore.length > 0}
+        {#if $pluginRuntimeStateStore.phase === 'ready' && chatPanelStore.length > 0}
           <div class="chat-screen-content-width my-2 flex flex-col gap-2">
             {#each chatPanelStore as panel (`${panel.pluginName}:${panel.id}`)}
               <section
@@ -3115,20 +3116,22 @@
             </button>
           {/if}
 
-          {#each additionalChatMenu as menu}
-            <button
-              type="button"
-              role="menuitem"
-              data-default-chat-menu-item
-              class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors"
-              onclick={() => {
-                menu.callback()
-                closeChatMenu()
-              }}>
-              <PluginDefinedIcon ico={menu} />
-              <span class="ml-2">{menu.name}</span>
-            </button>
-          {/each}
+          {#if $pluginRuntimeStateStore.phase === 'ready'}
+            {#each additionalChatMenu as menu}
+              <button
+                type="button"
+                role="menuitem"
+                data-default-chat-menu-item
+                class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors"
+                onclick={() => {
+                  menu.callback()
+                  closeChatMenu()
+                }}>
+                <PluginDefinedIcon ico={menu} />
+                <span class="ml-2">{menu.name}</span>
+              </button>
+            {/each}
+          {/if}
 
           {#if getDatabase().showMenuHypaMemoryModal && getDatabase().hypaV3}
             <button
@@ -3237,7 +3240,7 @@
   <InputHookPickerDialog kind="btw" hooks={btwHooks} close={() => (showBtwHookDialog = false)} select={selectBtwHook} />
 {/if}
 
-{#if additionalFloatingActionButtons.length > 0}
+{#if $pluginRuntimeStateStore.phase === 'ready' && additionalFloatingActionButtons.length > 0}
   <div class="fixed top-4 right-4 flex flex-col gap-3 z-50">
     {#each additionalFloatingActionButtons as button}
       <button
