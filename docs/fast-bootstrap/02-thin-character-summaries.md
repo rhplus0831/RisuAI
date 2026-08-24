@@ -156,11 +156,14 @@ unchanged.
 
 `characterShellHydration.svelte.ts` remains the single detail loader. Requests
 are deduplicated by character id, bounded to 15 seconds, and fenced by the
-request-start revision plus an exact target-shell snapshot. Selection changes
-abort their older request; authoritative shell refreshes supersede it. Late
-completion after abort, deletion, row replacement, or revision advance cannot
-apply. Failure leaves the shell resident and records a per-character error that
-the localized chat-screen gate exposes with an exact-character retry action.
+request-start revision plus the resident target-shell row identity. The identity
+fence permits independently fenced transcript or lorebook hydration to finish
+while the detail request is active, but still rejects an authoritative row
+replacement. Selection changes abort their older request; authoritative shell
+refreshes supersede it. Late completion after abort, deletion, row replacement,
+or revision advance cannot apply. Failure leaves the shell resident and records
+a per-character error that the localized chat-screen gate exposes with an
+exact-character retry action.
 
 The chat screen does not mount detail-only UI while its selected row is a shell.
 Existing character bridge and selection guards continue to reject shells, and
@@ -186,6 +189,22 @@ preserved and the hydrated owner receives its scoped bodies.
 - List/greeting behavior with a shell in the relevant Sidebar, Grid, and
   `DefaultChatScreen` DOM tests.
 - `pnpm test:affected`, followed by the Phase 0 large-fixture payload report.
+
+### Phase 2 verification record (2026-08-24)
+
+- The large-fixture server report measures the version 1 summary response at
+  4,628 bytes versus 77,855 bytes for the explicit aggregate response, a 94.1%
+  reduction. The read-shape harness confirms two bounded SQLite projection
+  queries and no full character or chat JSON loads.
+- The focused payload, resource-read, and load-cost suite passes all 58 tests.
+  The full server suite passes 3,298 tests with one skip; the full frontend unit
+  suite passes 6,399 tests across 514 files, and `pnpm check` reports no errors.
+- `pnpm build:initial-preload` reports a 318,246-byte initial gzip closure and a
+  283,372-byte largest initial chunk. Protected boundary checks, regression
+  ceilings, and the provisional 900/500 KiB milestone targets all pass locally.
+- CI ratification of the provisional JavaScript limits remains external to this
+  phase: the first five successful Quality workflow artifacts are still needed,
+  as recorded in Phases 0 and 1.
 
 ## Rollback
 
