@@ -7554,6 +7554,7 @@ describe('durable chat and folder structure dispatch', () => {
 
       expect(
         applyCharactersResource({
+          version: 1,
           revision: 12,
           characters: [authoritativeCharacter],
           characterOrder: ['char-a'],

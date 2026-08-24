@@ -159,6 +159,17 @@ function metadataCharacter(chaId: string, name: string, chatId = `chat-${chaId}`
   } as unknown as character
 }
 
+function characterSummaryShell(chaId: string, name: string, chatId = `chat-${chaId}`): character {
+  return {
+    __serverCharacterShell: true,
+    chaId,
+    name,
+    chats: [{ id: chatId, name: '', message: [] }],
+    chatPage: 0,
+    chatFolders: [],
+  } as unknown as character
+}
+
 function completeCollections(pluginCustomStorage: Record<string, unknown> = {}) {
   return Object.fromEntries(
     SERVER_COLLECTION_NAMES.map((name) => [name, name === 'pluginCustomStorage' ? pluginCustomStorage : []]),
@@ -173,6 +184,7 @@ function seedResources(revision = 1): void {
     summaries: [{ text: 'resident summary', chatMemos: [], isImportant: false }],
   }
   applyCharactersResource({
+    version: 1,
     revision,
     characters: [ada, metadataCharacter('char-b', 'Bea', 'chat-b', [{ role: 'user', data: 'resident-b' }])],
     characterOrder: ['char-a', 'char-b'],
@@ -189,6 +201,7 @@ function fullReadMocks(revision: number): void {
   })
   api.characters.mockResolvedValue({
     status: 'ok',
+    version: 1,
     revision,
     characters: [
       metadataCharacter('char-a', 'Ada refreshed', 'chat-a'),
@@ -356,6 +369,7 @@ describe('API-backed resource invalidation', () => {
     })
     api.characters.mockResolvedValue({
       status: 'ok',
+      version: 1,
       revision: 5,
       characters: [authoritativeCharacter],
       characterOrder: ['char-a'],
@@ -399,6 +413,7 @@ describe('API-backed resource invalidation', () => {
     api.characters
       .mockResolvedValueOnce({
         status: 'ok',
+        version: 1,
         revision: 6,
         characters: [],
         characterOrder: [],
@@ -406,6 +421,7 @@ describe('API-backed resource invalidation', () => {
       })
       .mockResolvedValueOnce({
         status: 'ok',
+        version: 1,
         revision: 7,
         characters: [],
         characterOrder: [],
@@ -424,6 +440,7 @@ describe('API-backed resource invalidation', () => {
     api.collections.mockResolvedValue({ status: 'ok', revision: 3, collections: completeCollections() })
     api.characters.mockResolvedValue({
       status: 'ok',
+      version: 1,
       revision: 3,
       characters: [],
       characterOrder: [],
@@ -577,6 +594,7 @@ describe('API-backed resource invalidation', () => {
     }>()
     const charactersResponse = deferred<{
       status: 'ok'
+      version: 1
       revision: number
       characters: character[]
       characterOrder: string[]
@@ -601,6 +619,7 @@ describe('API-backed resource invalidation', () => {
     collectionsResponse.resolve({ status: 'ok', revision: 2, collections: completeCollections() })
     charactersResponse.resolve({
       status: 'ok',
+      version: 1,
       revision: 2,
       characters: [metadataCharacter('char-a', 'Ada restored', 'chat-a')],
       characterOrder: ['char-a'],
@@ -937,6 +956,7 @@ describe('API-backed resource invalidation', () => {
     authoritativeCharacter.chats[0].generationSettings = { agentPresetId: 'agent-delete' } as never
     api.characters.mockResolvedValue({
       status: 'ok',
+      version: 1,
       revision: 2,
       characters: [authoritativeCharacter],
       characterOrder: ['char-a'],
@@ -1136,6 +1156,7 @@ describe('API-backed resource invalidation', () => {
     }))
     api.characters.mockResolvedValue({
       status: 'ok',
+      version: 1,
       revision: 2,
       characters: [metadataCharacter('char-a', 'Ada'), metadataCharacter('char-b', 'Bea')],
       characterOrder: ['char-a', 'char-b'],
@@ -1440,15 +1461,16 @@ describe('API-backed resource invalidation', () => {
     })
   })
 
-  it('refreshes only character shells for a character-created event and preserves resident bodies', async () => {
+  it('refreshes only character shells for a character-created event without retaining resident detail', async () => {
     seedResources(20)
     api.characters.mockResolvedValue({
       status: 'ok',
+      version: 1,
       revision: 21,
       characters: [
-        metadataCharacter('char-a', 'Ada refreshed', 'chat-a'),
-        metadataCharacter('char-b', 'Bea refreshed', 'chat-b'),
-        metadataCharacter('char-imported', 'Imported', 'chat-imported'),
+        characterSummaryShell('char-a', 'Ada refreshed', 'chat-a'),
+        characterSummaryShell('char-b', 'Bea refreshed', 'chat-b'),
+        characterSummaryShell('char-imported', 'Imported', 'chat-imported'),
       ],
       characterOrder: ['char-a', 'char-b', 'char-imported'],
       currentChar: 0,
@@ -1478,9 +1500,9 @@ describe('API-backed resource invalidation', () => {
     expect(api.lorebooks).not.toHaveBeenCalled()
     expect(sideEffects.reattach).not.toHaveBeenCalled()
     expect(getResourceDatabase().characters).toMatchObject([
-      { chaId: 'char-a', name: 'Ada refreshed', chats: [{ message: [{ data: 'resident-a' }] }] },
-      { chaId: 'char-b', name: 'Bea refreshed', chats: [{ message: [{ data: 'resident-b' }] }] },
-      { chaId: 'char-imported', name: 'Imported', chats: [{ message: [] }] },
+      { __serverCharacterShell: true, chaId: 'char-a', name: 'Ada refreshed', chats: [{ message: [] }] },
+      { __serverCharacterShell: true, chaId: 'char-b', name: 'Bea refreshed', chats: [{ message: [] }] },
+      { __serverCharacterShell: true, chaId: 'char-imported', name: 'Imported', chats: [{ message: [] }] },
     ])
   })
 
@@ -2291,6 +2313,7 @@ describe('API-backed resource invalidation', () => {
       }))
       api.characters.mockResolvedValue({
         status: 'ok',
+        version: 1,
         revision: 2,
         characters: [metadataCharacter('char-a', 'Ada authoritative')],
         characterOrder: ['char-a'],

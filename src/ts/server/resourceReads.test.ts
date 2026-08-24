@@ -8,6 +8,11 @@ vi.mock('../storage/fastifyStorage', () => ({
 import { SERVER_COLLECTION_NAMES } from './resourceState.svelte'
 import { clearResourceCache, sha256JsonValue } from './resourceCache'
 import {
+  SERVER_CHARACTER_SHELL_MARKER,
+  SERVER_CHARACTER_SUMMARY_VERSION,
+  type ServerCharacterSummary,
+} from './characterSummaryProtocol'
+import {
   fetchServerCharacter,
   fetchServerCharacterOrder,
   fetchServerCharacterSelection,
@@ -57,6 +62,37 @@ function completeCollections(): Record<string, unknown> {
   return Object.fromEntries(
     SERVER_COLLECTION_NAMES.map((name) => [name, name === 'pluginCustomStorage' ? { plugin: { count: 1 } } : []]),
   )
+}
+
+function characterSummary(overrides: Partial<ServerCharacterSummary> = {}): ServerCharacterSummary {
+  return {
+    [SERVER_CHARACTER_SHELL_MARKER]: true,
+    chaId: 'char-a',
+    type: 'character',
+    name: 'Ada',
+    displayName: 'Ada Lovelace',
+    image: 'asset://ada',
+    creatorNotes: 'First programmer',
+    trashTime: null,
+    creation_date: 1,
+    modification_date: 2,
+    lastInteraction: 3,
+    chatCount: 2,
+    activeChatId: 'chat-a',
+    chatIds: ['chat-a', 'chat-b'],
+    pinnedChats: [{ id: 'chat-b', name: 'Pinned' }],
+    ...overrides,
+  }
+}
+
+function characterSummaryEnvelope(revision: number, characters: ServerCharacterSummary[] = [characterSummary()]) {
+  return {
+    version: SERVER_CHARACTER_SUMMARY_VERSION,
+    revision,
+    characters,
+    characterOrder: characters.map((character) => character.chaId),
+    currentChar: characters.length > 0 ? 0 : -1,
+  }
 }
 
 afterEach(() => {
@@ -394,13 +430,14 @@ describe('server resource read clients', () => {
             collections: { ...completeCollections(), pluginCustomStorage: [] },
           })
         }
-        if (method === 'POST' && url === '/api/v1/characters') {
+        if (method === 'POST' && url === '/api/v1/characters/summaries') {
           return jsonResponse({
+            version: SERVER_CHARACTER_SUMMARY_VERSION,
             revision: 1,
             cache: { version: 2, algorithm: 'sha256' },
             characters: [
               {
-                value: { chaId: 'char-a', chats: [{ id: 'chat-a', message: [{ data: 'not-a-shell' }] }] },
+                value: { ...characterSummary(), chats: [] },
               },
             ],
             characterOrder: ['char-a'],
@@ -411,12 +448,7 @@ describe('server resource read clients', () => {
         if (url === '/api/v1/collections') {
           return jsonResponse({ revision: 2, collections: completeCollections() })
         }
-        return jsonResponse({
-          revision: 2,
-          characters: [{ chaId: 'char-a', chats: [{ id: 'chat-a', message: [] }] }],
-          characterOrder: ['char-a'],
-          currentChar: 0,
-        })
+        return jsonResponse(characterSummaryEnvelope(2))
       }) as unknown as typeof fetch,
     )
 
@@ -429,20 +461,20 @@ describe('server resource read clients', () => {
         'GET /api/v1/settings',
         'POST /api/v1/collections',
         'GET /api/v1/collections',
-        'POST /api/v1/characters',
-        'GET /api/v1/characters',
+        'POST /api/v1/characters/summaries',
+        'GET /api/v1/characters/summaries',
       ])
     } finally {
       await clearResourceCache()
     }
   })
 
-  it('reuses whole settings and message-free character rows from IndexedDB', async () => {
+  it('reuses whole settings and versioned character summaries from IndexedDB', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     await clearResourceCache()
 
     const settings = { language: 'en', currentChar: 0, agentPresets: [{ id: 'agent-a', steps: [] }] }
-    const characters = [{ chaId: 'char-a', name: 'Ada', chats: [{ id: 'chat-a', message: [] }] }]
+    const characters = [characterSummary()]
     const settingsHash = await sha256JsonValue(settings)
     const characterHash = await sha256JsonValue(characters[0])
     const requestBodies: Record<string, Array<Record<string, any>>> = { settings: [], characters: [] }
@@ -461,6 +493,7 @@ describe('server resource read clients', () => {
           })
         }
         return jsonResponse({
+          version: SERVER_CHARACTER_SUMMARY_VERSION,
           revision: requestCount,
           cache: { version: 2, algorithm: 'sha256' },
           characters: requestCount === 1 ? characters.map((value) => ({ value })) : [{ hash: characterHash }],
@@ -472,9 +505,28 @@ describe('server resource read clients', () => {
 
     try {
       await expect(fetchServerSettings()).resolves.toMatchObject({ status: 'ok', settings })
-      await expect(fetchServerCharacters()).resolves.toMatchObject({ status: 'ok', characters })
+      await expect(fetchServerCharacters()).resolves.toMatchObject({
+        status: 'ok',
+        version: SERVER_CHARACTER_SUMMARY_VERSION,
+        characters: [
+          {
+            [SERVER_CHARACTER_SHELL_MARKER]: true,
+            chaId: 'char-a',
+            chatCount: 2,
+            chats: [
+              { id: 'chat-a', name: '', message: [] },
+              { id: 'chat-b', name: 'Pinned', pinned: true, message: [] },
+            ],
+            chatPage: 0,
+          },
+        ],
+      })
       await expect(fetchServerSettings()).resolves.toMatchObject({ status: 'ok', settings })
-      await expect(fetchServerCharacters()).resolves.toMatchObject({ status: 'ok', characters })
+      await expect(fetchServerCharacters()).resolves.toMatchObject({
+        status: 'ok',
+        version: SERVER_CHARACTER_SUMMARY_VERSION,
+        characters: [{ [SERVER_CHARACTER_SHELL_MARKER]: true, chaId: 'char-a' }],
+      })
 
       expect(requestBodies.settings?.[0]?.cache.hashes.settings).toEqual([])
       expect(requestBodies.settings?.[1]?.cache.hashes.settings).toEqual([settingsHash])
@@ -502,29 +554,23 @@ describe('server resource read clients', () => {
     })
   })
 
-  it('reads message-free character metadata and rejects embedded transcripts', async () => {
+  it('reads exact versioned character summaries and rejects detail fields', async () => {
     const responses = [
+      characterSummaryEnvelope(4),
       {
-        revision: 4,
-        characters: [{ chaId: 'char-a', name: 'Ada', chats: [{ id: 'chat-a', message: [] }] }],
+        ...characterSummaryEnvelope(5),
+        characters: [{ ...characterSummary(), chats: [] }],
         characterOrder: ['char-a'],
-        currentChar: 0,
-      },
-      {
-        revision: 5,
-        characters: [
-          { chaId: 'char-a', name: 'Ada', chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'secret' }] }] },
-        ],
-        characterOrder: ['char-a'],
-        currentChar: 0,
       },
     ]
     stubResourceFetch(() => responses.shift())
 
     await expect(fetchServerCharacters()).resolves.toMatchObject({
       status: 'ok',
+      version: SERVER_CHARACTER_SUMMARY_VERSION,
       revision: 4,
       currentChar: 0,
+      characters: [{ [SERVER_CHARACTER_SHELL_MARKER]: true, chats: expect.any(Array) }],
     })
     await expect(fetchServerCharacters()).resolves.toEqual({
       status: 'error',

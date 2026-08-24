@@ -40,14 +40,17 @@ recovery, durable command dispatch, and compatibility bridges. Start from the
   rows owned by the current writer and lineage block root-resource hydration;
   terminal disposal and notices are contract-specific.
 - `loadInitialServerResources()` concurrently reads settings, collections, and
-  characters through their hash-aware POST resources (with compatible full GET
-  fallback), plus `/api/v1/inlay-assets`. All four responses must report one
-  common revision. Concurrent writes that split the revisions cause the
-  complete read set to retry, up to `FULL_RESOURCE_REFRESH_MAX_ATTEMPTS`.
+  version 1 character summaries through their hash-aware POST resources (with
+  compatible full GET fallback), plus `/api/v1/inlay-assets`. All four responses
+  must report one common revision. Concurrent writes that split the revisions
+  cause the complete read set to retry, up to
+  `FULL_RESOURCE_REFRESH_MAX_ATTEMPTS`.
 - The consistent response set is applied through one trusted resource scope.
   The settings, collections, and characters state objects keep their own
-  revision/status/error metadata. The character list contains message-free chat
-  rows; chat messages, per-chat Hypa V3 data, and reroll alternates remain lazy.
+  revision/status/error metadata. Strictly validated character summaries become
+  marker-bearing compatibility shells with empty chat identity stubs; character
+  detail, chat messages, per-chat Hypa V3 data, lore, and reroll alternates
+  remain lazy.
 - The collection response carries prompt-preset and legacy bot-preset shells.
   Startup hydrates the selected modern prompt-template owner separately before
   enabling normal command/event reconciliation; legacy preset bodies remain
@@ -209,8 +212,8 @@ coalesced event batch, then converts each resource key into concrete reads:
   settings-like resources still read `/api/v1/settings`.
 - Collection events read only the needed `/api/v1/collections/:name` entries.
 - Character selection and order read their narrow resources; only broad
-  character events read `/api/v1/characters`. Row-scoped character, script,
-  trigger, chat-metadata, and chat-folder events read
+  character events read `/api/v1/characters/summaries`. Row-scoped character,
+  script, trigger, chat-metadata, and chat-folder events read
   `/api/v1/characters/:id`.
 - Message and transcript events read the affected full chat body. A single
   `generation.persisted` event uses `generationMessageId` to read only the
@@ -320,8 +323,8 @@ DELETE commands are documented in
 | One settings group                                 | Cache `POST /api/v1/settings/:group`; full `GET` fallback                                        | Event-driven targeted invalidation                  |
 | Every split collection                             | Cache `POST /api/v1/collections`; full `GET` fallback                                            | `resourceReads.ts`, `collectionsResourceState`      |
 | One split collection                               | Cache `POST /api/v1/collections/:name`; full `GET` fallback                                      | Event-driven targeted invalidation                  |
-| Legacy message-free character aggregate/order/current | Cache `POST /api/v1/characters`; full `GET` fallback                                          | `resourceReads.ts`, `charactersResourceState`       |
-| Version 1 character summaries/order/current        | Cache `POST /api/v1/characters/summaries`; full `GET` fallback                                   | Phase 2 browser migration staging                    |
+| Legacy message-free character aggregate/order/current | Cache `POST /api/v1/characters`; full `GET` fallback                                          | Phase 2 server rollback seam                         |
+| Version 1 character summaries/order/current        | Cache `POST /api/v1/characters/summaries`; full `GET` fallback                                   | `resourceReads.ts`, `charactersResourceState`        |
 | Inlay metadata catalog                             | `GET /api/v1/inlay-assets`                                                                       | `inlayCatalog.ts`                                   |
 | Character order only                               | `GET /api/v1/characters/order`                                                                   | Character-order invalidation                        |
 | Character selection/interaction                    | `GET /api/v1/characters/:id/selection`                                                           | Character-selection invalidation                    |

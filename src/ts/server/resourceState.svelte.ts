@@ -19,6 +19,7 @@ import type { PromptItemMutationOperation, PromptTemplateOwnerStateSnapshot } fr
 import { applySettingsRuntimeProjectionEffects } from './settingsRuntimeProjectionHooks'
 import { applyPendingSettingsProjectionOverlays } from './settingsPendingProjection'
 import { reapplyRetainedCharacterProjections } from './chatRetainedProjection'
+import { SERVER_CHARACTER_SHELL_MARKER, SERVER_CHARACTER_SUMMARY_VERSION } from './characterSummaryProtocol'
 
 let nextCharacterRowProjectionEpoch = 0
 let characterRowProjectionBaseline = 0
@@ -442,6 +443,7 @@ export interface ServerAgentPresetCollectionMutationLocalEffectPayload {
 }
 
 export interface ServerCharactersResourcePayload {
+  version: typeof SERVER_CHARACTER_SUMMARY_VERSION
   revision: number
   characters: character[]
   characterOrder: Database['characterOrder']
@@ -2046,6 +2048,7 @@ export function applyCharactersResource(
   payload: ServerCharactersResourcePayload,
   options: { preserveResidentChatBodies?: boolean } = {},
 ): boolean {
+  if (payload.version !== SERVER_CHARACTER_SUMMARY_VERSION) return false
   if (isOlderRevision(payload.revision, charactersResourceState.listRevision)) return false
   if (isOlderRevision(payload.revision, charactersResourceState.orderRevision)) return false
   if (isOlderRevision(payload.revision, charactersResourceState.selectionRevision)) return false
@@ -2064,11 +2067,19 @@ export function applyCharactersResource(
     : null
   charactersResourceState.characters = payload.characters.map((candidate) => {
     const nextCharacter = cloneJsonValue(candidate)
+    const existing = existingById?.get(candidate.chaId)
+    if (isCharacterSummaryShell(nextCharacter)) {
+      const existingRevision = charactersResourceState.rowRevisions[candidate.chaId]
+      if (existing && !isCharacterSummaryShell(existing) && existingRevision === payload.revision) {
+        return cloneJsonValue(existing)
+      }
+      return nextCharacter
+    }
     const appliesLorebookBody =
       nextCharacter.globalLore !== undefined &&
       !hasNewerCharacterLorebookBodyResourceRevision(nextCharacter.chaId, payload.revision)
     if (appliesLorebookBody) appliedLorebookBodyIds.add(nextCharacter.chaId)
-    return preserveResidentCharacterChatBodies(nextCharacter, existingById?.get(candidate.chaId), payload.revision)
+    return preserveResidentCharacterChatBodies(nextCharacter, existing, payload.revision)
   })
   if (preserveResidentChatBodies) {
     markRemovedCharacterBodyProjections(previousCharacters, charactersResourceState.characters)
@@ -2764,6 +2775,15 @@ function markResourceDatabaseChanged(): void {
     return
   }
   resourceDatabaseFacadeEpoch += 1
+}
+
+function isCharacterSummaryShell(value: unknown): boolean {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    (value as Record<string, unknown>)[SERVER_CHARACTER_SHELL_MARKER] === true
+  )
 }
 
 function preserveResidentCharacterChatBodies(

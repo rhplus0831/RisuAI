@@ -101,16 +101,38 @@ fixture-specific byte counts.
 
 ### 2C. Client summary application
 
-- [ ] Update client payload types and validation to require the contract version,
+- [x] Update client payload types and validation to require the contract version,
   shell marker, and exact summary shape.
-- [ ] Apply the whole summary list at one coherent server revision without
+- [x] Apply the whole summary list at one coherent server revision without
   presenting it as confirmed character detail.
-- [ ] Keep summary objects usable by list, folder, selection, and route UI while
+- [x] Keep summary objects usable by list, folder, selection, and route UI while
   detail hydration is pending.
-- [ ] Preserve existing resident detail only where the projection fence proves
+- [x] Preserve existing resident detail only where the projection fence proves
   it belongs to the same character and is not older than the applied revision.
-- [ ] Ensure full refresh and gap recovery cannot silently promote a shell to a
+- [x] Ensure full refresh and gap recovery cannot silently promote a shell to a
   detail record.
+
+### 2C client staging decision (2026-08-24)
+
+The browser now reads `/api/v1/characters/summaries` for startup, broad
+invalidation, and gap recovery. Its disposable IndexedDB namespace is
+`characters:summary:v1`, so legacy aggregate hashes cannot satisfy a version 1
+summary request. Both GET and reconstructed hash-aware POST responses pass the
+exact shared envelope validator before application; validation failure remains
+an error and never falls back to the legacy aggregate.
+
+Validated summaries are converted into marker-bearing compatibility shells.
+The shells synthesize only empty chat identity stubs needed by existing list,
+folder, pinned-chat, active-route, unread, and generation projections; they do
+not synthesize character detail. A summary apply never carries resident
+messages, Hypa data, or lore into a newer shell. An already hydrated detail row
+is retained only when its stable id and row revision exactly match the incoming
+summary revision, and complete refreshes can explicitly force shells even at an
+equal revision.
+
+The staging URL remains a rollback seam until the server route promotion. The
+next independently reviewable change moves this exact response to
+`/api/v1/characters` and renames the old aggregate explicitly.
 
 ### 2D. Selected detail hydration and guards
 

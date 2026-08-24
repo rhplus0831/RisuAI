@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { character } from '../storage/database.svelte'
+import { isServerCharacterShell, type character } from '../storage/database.svelte'
 import type { AgentPresetStepRecord } from '../agentPresetRecords'
 import type { TranslatorPresetStep } from '../translator/presets'
 import {
@@ -81,6 +81,17 @@ function metadataCharacter(chaId: string, name: string): character {
     chaId,
     name,
     chats: [],
+  } as unknown as character
+}
+
+function characterSummaryShell(chaId: string, name: string, chatId = 'chat-a'): character {
+  return {
+    __serverCharacterShell: true,
+    chaId,
+    name,
+    chats: [{ id: chatId, name: '', message: [] }],
+    chatPage: 0,
+    chatFolders: [],
   } as unknown as character
 }
 
@@ -171,6 +182,7 @@ describe('resource-scoped database state', () => {
     applySettingsResource({ revision: 12, settings: { language: 'en' } })
     applyCollectionsResource({ revision: 12, collections: completeCollections() })
     applyCharactersResource({
+      version: 1,
       revision: 12,
       characters: [metadataCharacter('char-a', 'Before')],
       characterOrder: ['char-a'],
@@ -184,6 +196,7 @@ describe('resource-scoped database state', () => {
     expect(applyCollectionsResource({ revision: 3, collections: completeCollections() })).toBe(true)
     expect(
       applyCharactersResource({
+        version: 1,
         revision: 3,
         characters: [metadataCharacter('char-b', 'Restored')],
         characterOrder: ['char-b'],
@@ -203,6 +216,7 @@ describe('resource-scoped database state', () => {
     })
     applyCollectionsResource({ revision: 5, collections: completeCollections() })
     applyCharactersResource({
+      version: 1,
       revision: 4,
       characters: [metadataCharacter('char-a', 'Ada')],
       characterOrder: ['char-a'],
@@ -220,6 +234,7 @@ describe('resource-scoped database state', () => {
     expect(areServerDatabaseResourcesReady()).toBe(true)
 
     applyCharactersResource({
+      version: 1,
       revision: 6,
       characters: [metadataCharacter('char-a', 'Ada')],
       characterOrder: ['char-a'],
@@ -232,6 +247,7 @@ describe('resource-scoped database state', () => {
     applySettingsResource({ revision: 1, settings: { language: 'en' } })
     applyCollectionsResource({ revision: 1, collections: completeCollections() })
     applyCharactersResource({
+      version: 1,
       revision: 1,
       characters: [metadataCharacter('char-a', 'Ada')],
       characterOrder: ['char-a'],
@@ -1873,6 +1889,7 @@ describe('resource-scoped database state', () => {
     ada.globalLore = [characterEntry] as never
     ada.chats = [{ id: 'chat-a', message: [], localLore: [chatEntry] }] as never
     applyCharactersResource({
+      version: 1,
       revision: 3,
       characters: [ada],
       characterOrder: ['char-a'],
@@ -2048,6 +2065,7 @@ describe('resource-scoped database state', () => {
     ada.globalLore = [{ id: 'malformed' }] as never
     ada.chats = [{ id: 'chat-a', message: [], localLore: [canonicalLorebookEntry('chat-entry')] }] as never
     applyCharactersResource({
+      version: 1,
       revision: 3,
       characters: [ada],
       characterOrder: ['char-a'],
@@ -2221,6 +2239,7 @@ describe('resource-scoped database state', () => {
   it('merges character details by stable id and drops stale rows', () => {
     const beforeCollection = captureCharacterRowProjectionEpoch('char-a')
     applyCharactersResource({
+      version: 1,
       revision: 3,
       characters: [metadataCharacter('char-a', 'Old')],
       characterOrder: ['char-a'],
@@ -2237,8 +2256,78 @@ describe('resource-scoped database state', () => {
     expect(getResourceDatabase().characters[0]?.name).toBe('New')
   })
 
+  it('never carries resident detail bodies into a newer summary shell', () => {
+    const detail = metadataCharacter('char-a', 'Hydrated')
+    detail.desc = 'Resident detail'
+    detail.globalLore = [{ key: 'resident', content: 'secret' }] as never
+    detail.chats = [{ id: 'chat-a', name: 'Resident chat', message: [{ role: 'user', data: 'secret' }] }] as never
+    applyCharactersResource({
+      version: 1,
+      revision: 3,
+      characters: [detail],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    })
+
+    expect(
+      applyCharactersResource({
+        version: 1,
+        revision: 4,
+        characters: [characterSummaryShell('char-a', 'Summary')],
+        characterOrder: ['char-a'],
+        currentChar: 0,
+      }),
+    ).toBe(true)
+
+    const applied = getResourceDatabase().characters[0]
+    expect(isServerCharacterShell(applied)).toBe(true)
+    expect(applied.name).toBe('Summary')
+    expect(applied.chats[0].message).toEqual([])
+    expect(Object.hasOwn(applied, 'desc')).toBe(false)
+    expect(Object.hasOwn(applied, 'globalLore')).toBe(false)
+  })
+
+  it('preserves resident detail only for an equal-revision summary refresh', () => {
+    const detail = metadataCharacter('char-a', 'Hydrated')
+    detail.desc = 'Resident detail'
+    applyCharactersResource({
+      version: 1,
+      revision: 3,
+      characters: [detail],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    })
+
+    expect(
+      applyCharactersResource({
+        version: 1,
+        revision: 3,
+        characters: [characterSummaryShell('char-a', 'Summary')],
+        characterOrder: ['char-a'],
+        currentChar: 0,
+      }),
+    ).toBe(true)
+    expect(isServerCharacterShell(getResourceDatabase().characters[0])).toBe(false)
+    expect(getResourceDatabase().characters[0].desc).toBe('Resident detail')
+
+    expect(
+      applyCharactersResource(
+        {
+          version: 1,
+          revision: 3,
+          characters: [characterSummaryShell('char-a', 'Forced shell')],
+          characterOrder: ['char-a'],
+          currentChar: 0,
+        },
+        { preserveResidentChatBodies: false },
+      ),
+    ).toBe(true)
+    expect(isServerCharacterShell(getResourceDatabase().characters[0])).toBe(true)
+  })
+
   it('acknowledges an optimistic character patch without replacing a newer live value', () => {
     applyCharactersResource({
+      version: 1,
       revision: 3,
       characters: [metadataCharacter('char-a', 'Old'), metadataCharacter('char-b', 'Bea')],
       characterOrder: ['char-a', 'char-b'],
@@ -2263,6 +2352,7 @@ describe('resource-scoped database state', () => {
 
   it('fences optimistic character collection mutations without replacing newer list, order, or selection edits', () => {
     applyCharactersResource({
+      version: 1,
       revision: 3,
       characters: [metadataCharacter('char-a', 'Ada'), metadataCharacter('char-b', 'Bea')],
       characterOrder: ['char-a', 'char-b'],
@@ -2317,6 +2407,7 @@ describe('resource-scoped database state', () => {
 
   it('acknowledges a non-selecting first character create while retaining an empty selection', () => {
     applyCharactersResource({
+      version: 1,
       revision: 1,
       characters: [],
       characterOrder: [],
@@ -2342,6 +2433,7 @@ describe('resource-scoped database state', () => {
 
   it('rejects character collection acknowledgements when the optimistic projection is unsafe', () => {
     applyCharactersResource({
+      version: 1,
       revision: 3,
       characters: [metadataCharacter('char-a', 'Ada')],
       characterOrder: ['char-a'],
@@ -2383,6 +2475,7 @@ describe('resource-scoped database state', () => {
 
   it('acknowledges a character patch after a newer optimistic delete removed the row', () => {
     applyCharactersResource({
+      version: 1,
       revision: 3,
       characters: [metadataCharacter('char-a', 'Old')],
       characterOrder: ['char-a'],
@@ -2405,6 +2498,7 @@ describe('resource-scoped database state', () => {
 
   it('keeps narrow pointers newer than settings and resolves selection by character id', () => {
     applyCharactersResource({
+      version: 1,
       revision: 5,
       characters: [metadataCharacter('char-a', 'Ada'), metadataCharacter('char-b', 'Bea')],
       characterOrder: ['char-a', 'char-b'],
@@ -2448,6 +2542,7 @@ describe('resource-scoped database state', () => {
       3,
     )
     applyCharactersResource({
+      version: 1,
       revision: 4,
       characters: [metadataCharacter('char-a', 'Ada'), metadataCharacter('char-b', 'Bea')],
       characterOrder: ['char-a', 'char-b'],
@@ -2480,6 +2575,7 @@ describe('resource-scoped database state', () => {
     const ada = metadataCharacter('char-a', 'Ada')
     ada.chats = [{ id: 'chat-a', message: [], scriptstate: { $score: 'newer' } }] as never
     applyCharactersResource({
+      version: 1,
       revision: 5,
       characters: [ada, metadataCharacter('char-b', 'Bea')],
       characterOrder: ['char-b', 'char-a'],
@@ -2499,6 +2595,7 @@ describe('resource-scoped database state', () => {
     const ada = metadataCharacter('char-a', 'Ada')
     ada.lastInteraction = 200
     applyCharactersResource({
+      version: 1,
       revision: 5,
       characters: [ada, metadataCharacter('char-b', 'Bea')],
       characterOrder: ['char-a', 'char-b'],
@@ -2527,6 +2624,7 @@ describe('resource-scoped database state', () => {
     ] as never
     ada.chatPage = 1
     applyCharactersResource({
+      version: 1,
       revision: 5,
       characters: [ada],
       characterOrder: ['char-a'],
@@ -2559,6 +2657,7 @@ describe('resource-scoped database state', () => {
       } as unknown as (typeof resident.chats)[number],
     ]
     applyCharactersResource({
+      version: 1,
       revision: 1,
       characters: [resident],
       characterOrder: ['char-a'],
@@ -2571,6 +2670,7 @@ describe('resource-scoped database state', () => {
     ]
     expect(
       applyCharactersResource({
+        version: 1,
         revision: 2,
         characters: [refreshed],
         characterOrder: ['char-a'],
@@ -2594,6 +2694,7 @@ describe('resource-scoped database state', () => {
     const resident = metadataCharacter('char-a', 'Resident')
     resident.globalLore = [{ key: 'resident', content: 'kept' }] as never
     applyCharactersResource({
+      version: 1,
       revision: 1,
       characters: [resident],
       characterOrder: ['char-a'],
@@ -2610,6 +2711,7 @@ describe('resource-scoped database state', () => {
     listed.globalLore = [{ key: 'stale-listed', content: 'must not replace' }] as never
     expect(
       applyCharactersResource({
+        version: 1,
         revision: 3,
         characters: [listed],
         characterOrder: ['char-a'],
@@ -2636,6 +2738,7 @@ describe('resource-scoped database state', () => {
       { id: 'chat-a', message: [], generationSettings: pendingSettings } as unknown as (typeof resident.chats)[number],
     ]
     applyCharactersResource({
+      version: 1,
       revision: 1,
       characters: [resident],
       characterOrder: ['char-a'],
@@ -2662,6 +2765,7 @@ describe('resource-scoped database state', () => {
       ]
       expect(
         applyCharactersResource({
+          version: 1,
           revision: 3,
           characters: [listed],
           characterOrder: ['char-a'],

@@ -1,4 +1,11 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
+import type { Chat, character } from '../storage/database.svelte'
+import {
+  SERVER_CHARACTER_SUMMARY_VERSION,
+  isServerCharactersSummaryPayload,
+  type ServerCharacterSummary,
+  type ServerCharactersSummaryPayload,
+} from './characterSummaryProtocol'
 import { SERVER_SETTINGS_KEYS_BY_GROUP, isSettingsGroup, type SettingsGroup } from './settingsGroups'
 import {
   isResourceCacheMetadata,
@@ -28,10 +35,11 @@ import { isServerInlayCatalogPayload, type ServerInlayCatalogResourcePayload } f
 const SETTINGS_ENDPOINT = '/api/v1/settings'
 const COLLECTIONS_ENDPOINT = '/api/v1/collections'
 const CHARACTERS_ENDPOINT = '/api/v1/characters'
+const CHARACTER_SUMMARIES_ENDPOINT = `${CHARACTERS_ENDPOINT}/summaries`
 const INLAY_CATALOG_ENDPOINT = '/api/v1/inlay-assets'
 const CHARACTER_ORDER_ENDPOINT = `${CHARACTERS_ENDPOINT}/order`
 const SETTINGS_CACHE_KEY = 'settings:all'
-const CHARACTERS_CACHE_KEY = 'characters'
+const CHARACTERS_CACHE_KEY = `characters:summary:v${SERVER_CHARACTER_SUMMARY_VERSION}`
 
 type ServerResourceJsonRequestResult =
   | { status: 'ok'; body: unknown }
@@ -147,22 +155,17 @@ export async function fetchServerCharacters(
   const result = await requestCachedCharacters(signal)
   if (result.status !== 'ok') return resourceReadFailure(result)
 
-  const record = readRevisionEnvelope(result.body)
-  if (
-    !record ||
-    !Array.isArray(record.characters) ||
-    !record.characters.every(isMessageFreeCharacter) ||
-    !Array.isArray(record.characterOrder) ||
-    !Number.isInteger(record.currentChar)
-  ) {
+  const payload = readCharactersSummaryEnvelope(result.body)
+  if (!payload) {
     return { status: 'error', error: 'Invalid characters response' }
   }
   return {
     status: 'ok',
-    revision: record.revision,
-    characters: record.characters as unknown as ServerCharactersResourcePayload['characters'],
-    characterOrder: record.characterOrder as ServerCharactersResourcePayload['characterOrder'],
-    currentChar: record.currentChar as number,
+    version: payload.version,
+    revision: payload.revision,
+    characters: payload.characters.map(characterSummaryToShell),
+    characterOrder: payload.characterOrder as ServerCharactersResourcePayload['characterOrder'],
+    currentChar: payload.currentChar,
   }
 }
 
@@ -401,34 +404,29 @@ async function requestCachedCharacters(
   signal: AbortSignal | null | undefined,
 ): Promise<ServerResourceJsonRequestResult> {
   const prepared = await prepareResourceCacheRequest([{ name: 'characters', key: CHARACTERS_CACHE_KEY }])
-  if (!prepared) return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
+  if (!prepared) return requestServerResourceJson(CHARACTER_SUMMARIES_ENDPOINT, signal)
 
-  const result = await requestServerResourceJson(CHARACTERS_ENDPOINT, signal, {
+  const result = await requestServerResourceJson(CHARACTER_SUMMARIES_ENDPOINT, signal, {
     method: 'POST',
     body: resourceCacheRequestBody(prepared.hashes),
   })
   if (result.status !== 'ok') {
-    return shouldFallbackToLegacyGet(result) ? requestServerResourceJson(CHARACTERS_ENDPOINT, signal) : result
+    return shouldFallbackToLegacyGet(result) ? requestServerResourceJson(CHARACTER_SUMMARIES_ENDPOINT, signal) : result
   }
 
   const record = isPlainRecord(result.body) ? result.body : null
   if (!record || !isResourceCacheMetadata(record.cache)) {
-    return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
+    return requestServerResourceJson(CHARACTER_SUMMARIES_ENDPOINT, signal)
   }
   const snapshot = prepared.snapshots.get('characters')
-  if (!snapshot) return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
+  if (!snapshot) return requestServerResourceJson(CHARACTER_SUMMARIES_ENDPOINT, signal)
 
   try {
     const resolved = await resolveResourceCacheArray(record.characters, snapshot, prepared.hashes.characters ?? [])
-    if (!resolved) return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
-    if (
-      readRevisionEnvelope(record) === null ||
-      !resolved.value.every(isMessageFreeCharacter) ||
-      !Array.isArray(record.characterOrder) ||
-      !Number.isInteger(record.currentChar)
-    ) {
-      return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
-    }
+    if (!resolved) return requestServerResourceJson(CHARACTER_SUMMARIES_ENDPOINT, signal)
+    const { cache: _cache, ...responsePayload } = record
+    const payload = readCharactersSummaryEnvelope({ ...responsePayload, characters: resolved.value })
+    if (!payload) return requestServerResourceJson(CHARACTER_SUMMARIES_ENDPOINT, signal)
     await persistResourceCache([
       {
         key: CHARACTERS_CACHE_KEY,
@@ -438,11 +436,35 @@ async function requestCachedCharacters(
     ])
     return {
       status: 'ok',
-      body: { ...record, characters: resolved.value },
+      body: payload,
     }
   } catch {
-    return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
+    return requestServerResourceJson(CHARACTER_SUMMARIES_ENDPOINT, signal)
   }
+}
+
+function readCharactersSummaryEnvelope(value: unknown): ServerCharactersSummaryPayload | null {
+  return isServerCharactersSummaryPayload(value) ? value : null
+}
+
+function characterSummaryToShell(summary: ServerCharacterSummary): character {
+  const pinnedChatsById = new Map(summary.pinnedChats.map((chat) => [chat.id, chat]))
+  const chats = summary.chatIds.map((id) => {
+    const pinned = pinnedChatsById.get(id)
+    return {
+      id,
+      name: pinned?.name ?? '',
+      ...(pinned ? { pinned: true } : {}),
+      message: [],
+    } as Chat
+  })
+  const activeChatIndex = summary.activeChatId === null ? -1 : summary.chatIds.indexOf(summary.activeChatId)
+  return {
+    ...summary,
+    chats,
+    chatPage: activeChatIndex >= 0 ? activeChatIndex : 0,
+    chatFolders: [],
+  } as unknown as character
 }
 
 function collectionCacheKey(name: ServerCollectionName, aggregate: boolean): string {
