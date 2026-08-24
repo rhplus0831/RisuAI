@@ -218,15 +218,68 @@ consumed.
 
 ### 1D. Final grouping and enforcement
 
-- [ ] Inspect the clean generated graph before adding `manualChunks`.
-- [ ] Add only a few behavior-oriented manual groups when they improve stable
-  caching or prevent accidental merging; document why each group exists.
-- [ ] Make unexplained static-plus-dynamic warnings and Phase 0 budget failures
-  block CI.
-- [ ] Confirm no optional screen, export implementation, or full database graph
+- [x] Inspect the clean generated graph before adding `manualChunks`.
+- [x] Add manual groups only when they improve stable caching or prevent
+  accidental merging; document the no-group decision when none qualify.
+- [x] Make unexplained static-plus-dynamic warnings and the current Phase 0
+  regression ceilings block CI.
+- [ ] Ratify the 900/500 KiB Phase 0 milestone budgets from five successful CI
+  artifacts, then promote them from report-only targets to hard gates.
+- [x] Confirm no optional screen, export implementation, or full database graph
   remains in the initial preload set.
-- [ ] Consider self-hosted fonts or lazy noncritical KaTeX CSS only after
+- [x] Consider self-hosted fonts or lazy noncritical KaTeX CSS only after
   JavaScript is no longer the dominant startup cost.
+
+### 1D generated-graph decision (2026-08-24)
+
+| Measure | Clean automatic graph |
+| --- | ---: |
+| Generated JavaScript chunks | 367 |
+| Initial static files | 12 |
+| Initial static modules | 216 |
+| Initial JavaScript gzip | 318,211 bytes |
+| Largest initial chunk gzip | 283,335 bytes |
+| Immediate `appStartup` files | 99 |
+| Immediate `appStartup` modules | 1,026 |
+| Immediate `appStartup` gzip | 1,294,302 bytes |
+| Ineffective dynamic-import warnings | 0 |
+| Manual chunk groups | 0 |
+
+The generated graph was inspected before changing Vite grouping. Rolldown's
+automatic graph already preserves the behavior boundaries created in 1A-1C:
+route and modal facades remain dynamic entries, while very large WebLLM,
+tokenizer, Monaco, transformer, and token-data payloads remain outside the
+initial closure. No manual group demonstrated a caching or boundary improvement,
+so `manualChunks` remains unset. Grouping those packages by name would create a
+second source of ownership that could merge unrelated first-use paths or make a
+future static dependency look harmless.
+
+`build:initial-preload` now emits a module-level graph as JSON and text, compares
+the entry's computed static closure with the module entry/preloads actually
+written to `index.html`, and fails when they differ. The same gate rejects the
+registered optional surfaces, export implementations, StreamSaver, or the full
+database implementation if any enter that closure. The current graph has no
+such violations.
+
+Every production build also treats Rolldown's structured
+`INEFFECTIVE_DYNAMIC_IMPORT` diagnostic as fatal. There are no exceptions. A
+future intentional exception must name the exact imported module and complete
+importer set and include a reason, so it cannot hide a new static owner.
+
+The remaining budget-ratification item needs CI evidence. As of 2026-08-24 the
+repository has no Quality workflow run for the `fastify` branch, so there are no
+successful preload artifacts from which to calculate CI variance. The existing
+1,650,000/675,000-byte regression ceilings continue to fail the required CI
+lane; the 900/500 KiB targets remain visible but report-only until five
+successful artifacts have been reviewed.
+
+JavaScript is still the dominant measured initial resource at 318,211 bytes
+gzip, compared with 20,878 bytes gzip for the emitted application stylesheet.
+The externally hosted KaTeX stylesheet and decorative Google fonts are therefore
+left unchanged in this slice. Revisit self-hosting or lazy stylesheet loading
+with resource-timing evidence after the JavaScript startup work, since changing
+them now would add font-swap, offline, and equation-layout behavior without
+addressing the dominant cost.
 
 ## Verification per slice
 

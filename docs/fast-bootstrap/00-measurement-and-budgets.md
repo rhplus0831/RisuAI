@@ -86,10 +86,18 @@ that needs the increase.
 
 Two local production reports on 2026-08-23 measured 1,632,861-1,632,865
 total gzip bytes and 668,641-668,643 gzip bytes for the largest chunk. The
-provisional regression ceilings are 1,650,000 and 675,000 bytes respectively;
-the 900/500 KiB milestone targets remain report-only. Review the first five
-successful CI artifacts before treating the regression ceilings as ratified or
-tightening them. The CI budget checkbox above remains open until that review.
+provisional regression ceilings are 1,650,000 and 675,000 bytes respectively.
+After the Phase 1 boundary work, the 2026-08-24 report measures 318,211 total
+gzip bytes and a 283,335-byte largest chunk, comfortably below the report-only
+900/500 KiB milestone targets.
+
+CI ratification is still pending. The repository has no successful Quality
+workflow artifact for the `fastify` branch as of 2026-08-24, so CI variance has
+not been measured. Review the first five successful preload artifacts before
+promoting the milestone targets to enforced budgets. The provisional regression
+ceilings already return a nonzero status from `build:initial-preload` and block
+the required `initial-preload`/`verify` lanes; the CI budget checkbox above
+remains open until the tighter limits are ratified.
 
 ## Verification
 
