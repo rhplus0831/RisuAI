@@ -4,6 +4,7 @@ import wasm from 'vite-plugin-wasm'
 import strip from '@rollup/plugin-strip'
 import tailwindcss from '@tailwindcss/vite'
 import { createBundleBoundaryReportPlugin } from './util/bundle-boundary-report'
+import { createViteBuildWarningPolicy } from './util/vite-warning-policy'
 // https://vite.dev/config/
 export default defineConfig(({ command, mode }) => {
   return {
@@ -44,6 +45,9 @@ export default defineConfig(({ command, mode }) => {
       minify: 'oxc',
       chunkSizeWarningLimit: 2000,
       manifest: process.env.VITE_FASTIFY_BROWSER_SMOKE === 'TRUE' ? 'vite-assets-manifest.json' : false,
+      rolldownOptions: {
+        onLog: createViteBuildWarningPolicy(process.cwd()),
+      },
     },
 
     optimizeDeps: {

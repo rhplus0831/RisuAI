@@ -122,4 +122,5 @@ export const nodeTestFiles = [
   'util/analyze-database.test.ts',
   'util/bundle-boundary-report.test.ts',
   'util/initial-preload-report.test.ts',
+  'util/vite-warning-policy.test.ts',
 ] as const
