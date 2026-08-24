@@ -197,9 +197,14 @@ conservative allowlist in `vitest.node-tests.ts` runs validated pure tests in
 Node without loading `happy-dom`; new frontend tests default to the Svelte /
 `happy-dom` project until deliberately promoted. Both projects retain browser
 resolve conditions, the `src` alias, and `vitest.setup.ts` to mock `katex` and
-install the shared production `safeStructuredClone` helper.
-`vitest.setup.test.ts` protects its native, fallback, and global-restoration
-semantics. Root Vitest excludes explicit gate tests unless
+install the shared production `safeStructuredClone` helper. The DOM project
+also loads `vitest.dom.setup.ts`, which blocks unexpected fetches resolving to
+loopback port `3000` and reports the originating stack; tests that perform
+network-shaped work must stub `fetch` explicitly and await fire-and-forget
+command drains before teardown. `vitest.setup.test.ts` protects the shared
+native, fallback, and global-restoration semantics, while
+`vitest.fetchGuard.test.ts` protects the DOM fetch boundary. Root Vitest
+excludes explicit gate tests unless
 `RISU_TEST_INCLUDE_GATES=true` is set.
 `pnpm test:gates`, the
 `pnpm test:gates:*` sub-lanes, `pnpm test:frontend:all`, and

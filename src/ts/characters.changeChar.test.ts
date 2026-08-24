@@ -31,10 +31,10 @@ vi.mock('./characterCards', () => ({
 }))
 
 import { alertAddCharacter } from './alert'
-import { clearCachedServerCommandRevision } from './server/commands'
+import { clearCachedServerCommandRevision, drainServerCommandExecutionForTests } from './server/commands'
 import { stopSelectedCharacterShellHydration } from './server/characterShellHydration.svelte'
 import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
+import { charactersResourceState, getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
 import { isServerCharacterShell, type character, type Database } from './storage/database.svelte'
 import { addCharacter, changeChar } from './characters'
@@ -154,12 +154,6 @@ async function waitForCharacterRowFetch(calls: CapturedFetch[]): Promise<void> {
   })
 }
 
-async function flushAsyncWork(ticks = 4): Promise<void> {
-  for (let tick = 0; tick < ticks; tick += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 0))
-  }
-}
-
 beforeEach(() => {
   vi.mocked(alertAddCharacter).mockReset()
   characterCardsState.importCharacter.mockReset()
@@ -206,7 +200,7 @@ describe('changeChar shell selection freshness', () => {
     await changeChar(0)
 
     expect(get(selectedCharID)).toBe(0)
-    await flushAsyncWork()
+    await drainServerCommandExecutionForTests()
     expect(selectedCharacterCommandIds(calls)).toEqual(['char-b', 'char-a'])
   })
 
@@ -228,7 +222,7 @@ describe('changeChar shell selection freshness', () => {
       }),
     )
     await delayedSelection
-    await flushAsyncWork()
+    await drainServerCommandExecutionForTests()
 
     expect(isServerCharacterShell(testDatabaseState.db.characters[0])).toBe(false)
     expect(testDatabaseState.db.characters[0].name).toBe('Hydrated A')
@@ -249,7 +243,7 @@ describe('changeChar shell selection freshness', () => {
     const pendingSelection = changeChar(0)
     await waitForCharacterRowFetch(calls)
 
-    testDatabaseState.db.characters = [testDatabaseState.db.characters[1], testDatabaseState.db.characters[0]]
+    charactersResourceState.characters.reverse()
     selectedCharID.set(0)
     ;(testDatabaseState.db as any).currentChar = 0
     characterRow.resolve(
@@ -291,7 +285,7 @@ describe('changeChar shell selection freshness', () => {
     )
 
     await pendingSelection
-    await flushAsyncWork()
+    await drainServerCommandExecutionForTests()
 
     expect(testDatabaseState.db.characters.map((candidate) => candidate.chaId)).toEqual(['char-b'])
     expect(get(selectedCharID)).toBe(0)

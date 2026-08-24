@@ -18,7 +18,7 @@ export default defineProject({
     allowOnly: false,
     pool: 'threads',
     environment: 'happy-dom',
-    setupFiles: ['vitest.setup.ts'],
+    setupFiles: ['vitest.setup.ts', 'vitest.dom.setup.ts'],
     exclude: ['**/node_modules/**', 'server/**', ...nodeTestFiles, ...(includeExplicitGates ? [] : explicitGateTests)],
   },
 })

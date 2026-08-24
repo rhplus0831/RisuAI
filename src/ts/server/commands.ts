@@ -1810,6 +1810,25 @@ const directServerCommandReconciliations = new Set<DirectServerCommandReconcilia
 let activeQueuedCommandDestructiveRefreshEpoch: number | null = null
 let activeQueuedCommandMutation: { id: string; databaseLineage: string; requestIndex: number } | null = null
 
+/**
+ * Wait until command work enqueued before this call and its reconciliation has
+ * settled. Tests use this instead of timer guesses when production deliberately
+ * dispatches a mutation without exposing its promise to the caller.
+ */
+export async function drainServerCommandExecutionForTests(earlierWork?: PromiseLike<unknown>): Promise<void> {
+  await earlierWork
+
+  while (true) {
+    const observedTail = serverCommandExecutionTail
+    await observedTail
+    const observedBatch = activeServerCommandReconciliationBatch
+    if (observedBatch) await observedBatch.completion
+    await Promise.resolve()
+
+    if (observedTail === serverCommandExecutionTail && activeServerCommandReconciliationBatch === null) return
+  }
+}
+
 async function withQueuedCommandExecutionContext<T>(
   epoch: number,
   mutationId: string | undefined,
