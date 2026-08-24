@@ -1,5 +1,7 @@
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
 import { recordAssetByteRead } from './protocolDiagnostics'
+import { setCachedServerCommandRevision } from './commands'
+import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 
 const SERVER_ASSET_ID_RE = /^[a-f0-9]{64}$/
 const LOCAL_ASSET_PATH_RE = /^assets\/([a-f0-9]{64})\.[a-z0-9]+$/i
@@ -64,7 +66,6 @@ async function advanceServerAssetRevision(revision: unknown): Promise<void> {
   // A new asset bumps the repository revision; advance the cached command
   // revision so the next command does not race on a stale baseRevision.
   if (typeof revision === 'number') {
-    const { setCachedServerCommandRevision } = await import('./commands')
     setCachedServerCommandRevision(revision)
   }
 }
@@ -147,6 +148,5 @@ export async function readServerAssetBytes(loc: string, options: ReadServerAsset
 }
 async function resolveServerAssetAuth(auth: string | undefined): Promise<string> {
   if (auth !== undefined) return auth
-  const { getNodeServerProxyAuth } = await import('../storage/fastifyStorage')
   return getNodeServerProxyAuth()
 }

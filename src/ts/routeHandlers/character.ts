@@ -2,6 +2,8 @@ import { get } from 'svelte/store'
 import { characterRoutePath, type AppRoute } from '../routerRoute'
 import { getResourceDatabase as getDatabase } from '../server/resourceState.svelte'
 import { OpenRealmStore, PlaygroundStore, selectedCharID, settingsOpen } from '../stores.svelte'
+import { findCharacterIndexbyId } from '../characterState'
+import { changeChar } from '../characters'
 
 interface CharacterRouteContext {
   isFresh: () => boolean
@@ -12,10 +14,6 @@ export async function applyCharacterRoute(
   route: Extract<AppRoute, { kind: 'character' }>,
   context: CharacterRouteContext,
 ): Promise<void> {
-  const [{ findCharacterIndexbyId }, { changeChar }] = await Promise.all([
-    import('../characterState'),
-    import('../characters'),
-  ])
   if (!context.isFresh()) return
 
   const index = findCharacterIndexbyId(route.chaId)

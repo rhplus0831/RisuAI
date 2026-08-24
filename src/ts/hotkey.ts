@@ -44,6 +44,7 @@ import { captureActiveChatTarget, isActiveChatTargetFresh } from './chatCommands
 import { closeSettingsRoute, navigate, openSettingsRoute } from './router'
 import { findChatGenerationActivity } from './process/generationActivity.svelte'
 import { requestActiveModuleEditorLeave } from './moduleEditorLeaveGuard'
+import { changeChar } from './characters'
 
 export function initHotkey() {
   const handleHotkeyKeydown = async (ev: KeyboardEvent): Promise<void> => {
@@ -459,7 +460,6 @@ export async function changeToAdjacentCharacter(direction: 'previous' | 'next'):
 
   PlaygroundStore.set(0)
   OpenRealmStore.set(false)
-  const { changeChar } = await import('./characters')
   await changeChar(targetIndex)
   return true
 }

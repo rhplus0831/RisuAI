@@ -75,6 +75,7 @@
     resolveActiveChatGenerationSettings,
   } from 'src/ts/activeChatGenerationSettings'
   import { resolveChatBoundPersonaId } from 'src/ts/personaModuleLinks'
+  import { exportAllChats, exportChat, importChat, matchesAllChatsExportFence } from 'src/ts/characters'
 
   interface Props {
     chara: character
@@ -1002,14 +1003,6 @@
   async function exportAllAndMaybeResetChats(): Promise<void> {
     const characterId = chara.chaId
     if (!characterId) return
-    let characterTransfers: typeof import('src/ts/characters')
-    try {
-      characterTransfers = await import('src/ts/characters')
-    } catch (error) {
-      alertError(error as Error)
-      return
-    }
-    const { exportAllChats, matchesAllChatsExportFence } = characterTransfers
     const exportResult = await exportAllChats(characterId)
     if (!exportResult.success) return
 
@@ -1061,7 +1054,6 @@
   async function exportChatOnDemand(chatId: string): Promise<void> {
     if (!chara.chaId) return
     try {
-      const { exportChat } = await import('src/ts/characters')
       await exportChat({ characterId: chara.chaId, chatId })
     } catch (error) {
       alertError(error as Error)
@@ -1070,7 +1062,6 @@
 
   async function importChatOnDemand(): Promise<void> {
     try {
-      const { importChat } = await import('src/ts/characters')
       await importChat()
     } catch (error) {
       alertError(error as Error)

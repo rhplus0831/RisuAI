@@ -723,9 +723,7 @@ function forgetTerminalCancellationJob(
 ): void {
   const jobId = operation.currentAttempt?.jobId
   if (!jobId) return
-  void import('../process/reattach')
-    .then(({ forgetActiveGenerationJob }) => forgetActiveGenerationJob(jobId, outcome))
-    .catch((error) => console.error(error))
+  forgetActiveGenerationJob(jobId, outcome)
 }
 
 function cancellationTargetFromOperation(

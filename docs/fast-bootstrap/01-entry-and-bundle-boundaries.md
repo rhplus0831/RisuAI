@@ -153,6 +153,23 @@ evaluation order, so those call sites now use the existing static dependency.
 The remaining warnings are concentrated in character actions and generation
 recovery and still require explicit ownership cleanup.
 
+### 1C action and recovery import cleanup (2026-08-24)
+
+| Measure | Redundant imports removed | Action/recovery cleanup | Change |
+| --- | ---: | ---: | ---: |
+| Initial preload files | 12 | 12 | 0 |
+| Initial JavaScript gzip | 318,215 bytes | 318,201 bytes | effectively flat |
+| Largest initial chunk gzip | 283,335 bytes | 283,335 bytes | 0% |
+| Ineffective dynamic-import warnings | 9 | 5 | -4 |
+
+Character actions, terminal error targeting, reattach-state access, and server
+asset helpers now use their existing static owners directly. Static conversion
+of bootstrap/hydration imports widened real initialization cycles, so those
+changes were rolled back. The remaining five warnings are the core generation
+runtime cycle: operations, hydration, transport, orchestration, and recovered
+effects. They require a runtime-bridge split to remove evaluation-order deferral
+without eagerly importing the implementations.
+
 ### 1D. Final grouping and enforcement
 
 - [ ] Inspect the clean generated graph before adding `manualChunks`.

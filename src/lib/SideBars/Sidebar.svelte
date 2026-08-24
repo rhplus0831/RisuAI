@@ -76,6 +76,7 @@
   import { activeGenerationJobs, generationJobLifecycles } from 'src/ts/process/reattach'
   import { markChatRead, unreadChatIds } from 'src/ts/process/chatUnread.svelte'
   import UnreadIndicator from './UnreadIndicator.svelte'
+  import { addCharacter, changeChar } from '../../ts/characters'
 
   const loadCharConfig = () => import('./CharConfig.svelte')
   const loadDevTool = () => import('./DevTool.svelte')
@@ -353,7 +354,6 @@
   async function openCharacterRoute(index: number) {
     const character = getDatabase().characters?.[index]
     if (!character?.chaId) {
-      const { changeChar } = await import('../../ts/characters')
       changeChar(index, { reseter })
       return
     }
@@ -952,7 +952,6 @@
         <BaseRoundedButton
           ariaLabel={language.addCharacter}
           onClick={async () => {
-            const { addCharacter } = await import('../../ts/characters')
             addCharacter({ reseter })
           }}
           ><svg viewBox="0 0 24 24" width="1.2em" height="1.2em"

@@ -13,6 +13,8 @@ import {
 import { recordGenerationRecoveryEvent } from '../server/protocolDiagnostics'
 import { subscribeBrowserLifecycleRecovery } from '../server/lifecycleRecovery'
 import { setCachedServerCommandRevision } from '../server/commands'
+import { reportSendChatError } from './sendChatErrors'
+import { stablePostGenerationChatTarget } from './postGeneration/stableTarget'
 
 /**
  * Durable generations still running server-side, as surfaced by the bootstrap
@@ -948,10 +950,6 @@ async function reconcileAbsentGenerationJobs(
       continue
     }
     if (operation && (operation.state === 'terminal_failed' || operation.state === 'invalidated')) {
-      const [{ reportSendChatError }, { stablePostGenerationChatTarget }] = await Promise.all([
-        import('./sendChatErrors'),
-        import('./postGeneration/stableTarget'),
-      ])
       reportSendChatError(operation.lastError ?? 'Generation failed.', {
         target: stablePostGenerationChatTarget(operation.characterId, operation.chatId),
         ...(operation.resultMessageId ? { messageId: operation.resultMessageId } : {}),
