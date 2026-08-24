@@ -48,9 +48,9 @@ CSS, and plugin execution.
 
 `src/main.ts` listens for `vite:preloadError` before mounting the app. A failed
 lazy chunk logs the event and displays the localized `language.preloadError`
-alert so the user can refresh. `src/ts/globalApi.svelte.ts` statically imports
-`streamsaver`; `LocalWriter.init()` uses that import to create its writable
-download stream.
+alert so the user can refresh. `src/ts/globalApi.svelte.ts` loads `streamsaver`
+inside `LocalWriter.init()`, so ordinary downloads and imports of the global API
+do not fetch the streamed-download implementation.
 
 `src/LiteMain.svelte` is not the live entrypoint. Live Lite behavior comes from
 `VITE_RISU_LITE`, `src/ts/lite.ts`, and consumers in settings, themes, and

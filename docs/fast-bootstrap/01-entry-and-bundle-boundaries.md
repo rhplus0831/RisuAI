@@ -95,11 +95,11 @@ intercepts real emitted JavaScript/CSS for offline and stale-chunk failures.
   modules, character-card, chat-command, or complete resource-state code.
 - [x] Update consumers incrementally; prevent a compatibility re-export from
   recreating the original eager graph.
-- [ ] Remove the static `streamsaver` import and load it inside the `LocalWriter`
+- [x] Remove the static `streamsaver` import and load it inside the `LocalWriter`
   path only when a streamed download starts.
 - [ ] Inspect every Vite static-plus-dynamic warning and remove the static path
   that defeats the lazy boundary.
-- [ ] Add focused download and store-effect tests for the moved boundaries.
+- [x] Add focused download and store-effect tests for the moved boundaries.
 
 ### 1C store-boundary measurement (2026-08-24)
 
@@ -120,6 +120,22 @@ resource state. Bootstrap now installs those runtime effects explicitly after
 loaded state and the selected character are published. The slight preload
 increase buys a reusable stable root; the meaningful graph reduction is the
 roughly 100 kB gzip removed from the full database cycle.
+
+### 1C streamed-download measurement (2026-08-24)
+
+| Measure | Store boundary | Lazy StreamSaver | Change |
+| --- | ---: | ---: | ---: |
+| Initial preload files | 12 | 12 | 0 |
+| Initial JavaScript gzip | 318,269 bytes | 318,260 bytes | effectively flat |
+| Full database chunk raw | 1,850.14 kB | 1,846.58 kB | -3.56 kB |
+| Full database chunk gzip | 549.99 kB | 548.71 kB | -1.28 kB |
+| First-use StreamSaver chunk raw | included above | 3,846 bytes | deferred |
+| First-use StreamSaver chunk gzip | included above | 1,761 bytes | deferred |
+
+Importing `globalApi`, using ordinary object-URL downloads, and constructing a
+`LocalWriter` no longer evaluates StreamSaver. The first `LocalWriter.init()`
+loads the dedicated chunk; subsequent streamed downloads reuse the loaded module
+while creating independent writable streams.
 
 ### 1D. Final grouping and enforcement
 
