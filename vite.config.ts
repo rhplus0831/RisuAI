@@ -3,6 +3,7 @@ import { svelte, vitePreprocess } from '@sveltejs/vite-plugin-svelte'
 import wasm from 'vite-plugin-wasm'
 import strip from '@rollup/plugin-strip'
 import tailwindcss from '@tailwindcss/vite'
+import { createBundleBoundaryReportPlugin } from './util/bundle-boundary-report'
 // https://vite.dev/config/
 export default defineConfig(({ command, mode }) => {
   return {
@@ -16,6 +17,9 @@ export default defineConfig(({ command, mode }) => {
         ? strip({
             include: '**/*.(mjs|js|svelte|ts)',
           })
+        : null,
+      command === 'build' && process.env.VITE_FAST_BOOTSTRAP_REPORT === 'TRUE'
+        ? createBundleBoundaryReportPlugin(process.cwd())
         : null,
     ],
 

@@ -45,6 +45,14 @@ interface InitialReference {
   role: InitialPreloadFileReport['role']
 }
 
+export function readInitialPreloadFilePaths(distDir: string): string[] {
+  const htmlPath = path.join(distDir, 'index.html')
+  const html = fs.readFileSync(htmlPath, 'utf8')
+  return [
+    ...new Set(initialReferences(html).map((item) => resolveInitialReference(distDir, item.reference).reportPath)),
+  ].sort()
+}
+
 interface CliOptions {
   distDir: string
   jsonOutput?: string

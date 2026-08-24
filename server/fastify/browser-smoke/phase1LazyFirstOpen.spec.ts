@@ -5,6 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { languageEnglish } from '../../../src/lang/en.js'
+import { phase1LazyBoundarySources } from '../../../util/fast-bootstrap-boundaries.js'
 import { buildApp } from '../src/app.js'
 import { setupBrowserSmokeAuth } from './auth.js'
 
@@ -279,6 +280,7 @@ test('smoke manifest accounts for every Phase 1B lazy boundary', async () => {
   ])
 
   expect(expectedSources.size).toBe(59)
+  expect(expectedSources).toEqual(new Set(phase1LazyBoundarySources))
   for (const source of expectedSources) {
     const chunk = manifest[source]
     expect(chunk, `missing Vite manifest entry for ${source}`).toBeDefined()

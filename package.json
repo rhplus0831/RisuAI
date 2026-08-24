@@ -9,8 +9,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build --sourcemap",
+    "report:bundle-boundaries": "tsx util/bundle-boundary-report.ts --dist dist --input dist/bundle-boundary-report.json --json fast-bootstrap-results/bundle-boundaries.json --text fast-bootstrap-results/bundle-boundaries.txt",
     "report:initial-preload": "tsx util/initial-preload-report.ts --dist dist --budget util/initial-preload-budgets.json --json fast-bootstrap-results/initial-preload.json --text fast-bootstrap-results/initial-preload.txt",
-    "build:initial-preload": "pnpm build && pnpm report:initial-preload",
+    "build:initial-preload": "cross-env VITE_FAST_BOOTSTRAP_REPORT=TRUE pnpm build && pnpm report:bundle-boundaries && pnpm report:initial-preload",
     "measure:fast-bootstrap": "pnpm build:initial-preload && pnpm build:smoke && playwright test -c playwright.fastify-smoke.config.ts server/fastify/browser-smoke/phase0StartupMatrix.spec.ts",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",

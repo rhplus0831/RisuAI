@@ -120,5 +120,6 @@ export const nodeTestFiles = [
   'src/ts/translator/presets.test.ts',
   'util/affected-tests.test.ts',
   'util/analyze-database.test.ts',
+  'util/bundle-boundary-report.test.ts',
   'util/initial-preload-report.test.ts',
 ] as const
