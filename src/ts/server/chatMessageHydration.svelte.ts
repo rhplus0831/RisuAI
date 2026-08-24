@@ -1213,7 +1213,7 @@ export async function ensureAllChatsHydrated(options: BulkHydrationOptions = {})
 
 let wired = false
 let stopChatHydrationWiring: (() => void) | null = null
-let activeChatReadinessRefreshHook: (() => void) | null = null
+let activeChatReadinessRefreshHook: ((options?: { force?: boolean }) => void) | null = null
 // Reactive mirror of the selected character index. `selectedCharID` is a store
 // (not $state), so the hydration effect can't track it directly; this mirror is
 // updated by a store subscription and read inside the effect, so the effect
@@ -1221,8 +1221,13 @@ let activeChatReadinessRefreshHook: (() => void) | null = null
 let selectedCharMirror = $state(-1)
 
 /** Notify startup readiness when the reactive active-chat target changes. */
-export function setActiveChatReadinessRefreshHook(hook: (() => void) | null): void {
+export function setActiveChatReadinessRefreshHook(hook: ((options?: { force?: boolean }) => void) | null): void {
   activeChatReadinessRefreshHook = hook
+}
+
+/** Re-evaluate generation readiness even when the selected target id is unchanged. */
+export function requestActiveChatReadinessRefresh(): void {
+  activeChatReadinessRefreshHook?.({ force: true })
 }
 
 /**

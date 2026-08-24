@@ -502,6 +502,16 @@ function isOpenChatTargetFresh(target: ActiveChatTarget): boolean {
 
 const reattachingJobIds = new Set<string>()
 let reattachQueued = false
+let reattachReadinessPredicate = () => true
+
+/**
+ * Keep reattachment dormant until the owner of selected-chat readiness says
+ * plugin and hydration dependencies are coherent. Tests and non-bootstrap
+ * callers retain the historical ready-by-default behavior.
+ */
+export function setActiveGenerationReattachReadinessPredicate(predicate: () => boolean): void {
+  reattachReadinessPredicate = predicate
+}
 
 function captureReattachProjection(job: ActiveGenerationJob): ReattachProjectionCapture {
   return {
@@ -626,12 +636,25 @@ export function triggerOpenChatGenerationReattach(): void {
  * transport failures receive a small, bounded retry budget.
  */
 export async function maybeReattachOpenChatGeneration(): Promise<void> {
-  if (reattachDisabled || generationObservationPaused()) return
+  if (reattachDisabled || !reattachReadinessPredicate() || generationObservationPaused()) return
   const target = openChatTarget()
   if (!target?.chatId) return
   const job = get(activeGenerationJobs).find((entry) => entry.chatId === target.chatId)
   if (!job) return
   await reattachGenerationJob(job, target)
+}
+
+/**
+ * Start observation for the currently-open durable job and wait only until the
+ * observer has crossed its first scheduling boundary. A live stream may remain
+ * active, but startup can then safely publish selected-chat readiness because
+ * the job has been claimed by the reattach path.
+ */
+export async function prepareOpenChatGenerationReattach(): Promise<void> {
+  if (reattachDisabled || !reattachReadinessPredicate() || generationObservationPaused()) return
+  const reattach = maybeReattachOpenChatGeneration()
+  await Promise.resolve()
+  void reattach
 }
 
 async function reattachGenerationJob(job: ActiveGenerationJob, target: ActiveChatTarget): Promise<void> {

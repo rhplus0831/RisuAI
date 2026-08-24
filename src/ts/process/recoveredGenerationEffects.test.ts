@@ -3,6 +3,7 @@ import type { ServerGenerationEffectLedgerRef } from './request/serverChatEvents
 
 const state = vi.hoisted(() => ({
   order: [] as string[],
+  pluginRuntimeReady: true,
   db: {
     igpPrompt: 'IGP prompt',
     emotionProcesser: 'embedding',
@@ -35,11 +36,13 @@ const state = vi.hoisted(() => ({
 vi.mock('../storage/database.svelte', () => ({ getDatabase: () => state.db }))
 vi.mock('../plugins/chatOutputListeners', () => ({
   chatOutputListeners: new Set([vi.fn()]),
+  isChatOutputRuntimeReady: () => state.pluginRuntimeReady,
   runChatOutputListeners: vi.fn(async () => {
     state.order.push('plugin_output')
   }),
 }))
-vi.mock('../server/chatMessageHydration.svelte', () => ({ hydrateChatMessages: vi.fn() }))
+const hydration = vi.hoisted(() => ({ hydrateChatMessages: vi.fn(async () => undefined) }))
+vi.mock('../server/chatMessageHydration.svelte', () => hydration)
 vi.mock('./postGeneration/igp', () => ({
   evaluateIgp: vi.fn(async () => {
     state.order.push('igp')
@@ -77,8 +80,10 @@ vi.mock('./generationEffectLedger', async (importOriginal) => {
 })
 
 import {
+  reconcilePendingRecoveredGenerationEffects,
   reconcileAcceptedSendGenerationEffects,
   reconcileRecoveredGenerationEffects,
+  setPendingRecoveredGenerationEffects,
 } from './recoveredGenerationEffects'
 
 const ref: ServerGenerationEffectLedgerRef = {
@@ -94,8 +99,11 @@ const ref: ServerGenerationEffectLedgerRef = {
 
 beforeEach(() => {
   state.order = []
+  state.pluginRuntimeReady = true
   ledger.calls = []
   ledger.receipts.clear()
+  hydration.hydrateChatMessages.mockReset()
+  hydration.hydrateChatMessages.mockResolvedValue(undefined)
 })
 
 describe('late recovered generation effects', () => {
@@ -124,6 +132,43 @@ describe('late recovered generation effects', () => {
     await expect(reconcileRecoveredGenerationEffects(ref)).resolves.toEqual({ durableEffectsReconciled: true })
 
     expect(state.order).toEqual(['plugin_output', 'emotion_image_state'])
+  })
+
+  it('does not receipt recovered plugin output while the plugin runtime is incoherent', async () => {
+    state.pluginRuntimeReady = false
+
+    await expect(reconcileRecoveredGenerationEffects(ref)).rejects.toThrow('Plugin runtime is not ready')
+
+    expect(ledger.receipts.has('plugin_output')).toBe(false)
+    expect(state.order).toEqual([])
+  })
+
+  it('retains pending bootstrap effects when strict chat hydration must be retried', async () => {
+    setPendingRecoveredGenerationEffects([
+      {
+        ledgerVersion: 1,
+        databaseLineage: 'lineage-a',
+        keyType: 'operation',
+        keyId: 'operation-a',
+        kind: 'plugin_output',
+        effectClass: 'durable',
+        operationId: 'operation-a',
+        generationId: 'generation-a',
+        characterId: 'character-a',
+        chatId: 'chat-a',
+        messageId: 'message-a',
+        status: 'pending',
+        createdAt: '2026-08-25T00:00:00.000Z',
+        updatedAt: '2026-08-25T00:00:00.000Z',
+      },
+    ])
+    hydration.hydrateChatMessages.mockRejectedValueOnce(new Error('chat body unavailable'))
+
+    await expect(reconcilePendingRecoveredGenerationEffects()).rejects.toThrow('chat body unavailable')
+    await expect(reconcilePendingRecoveredGenerationEffects()).resolves.toBeUndefined()
+
+    expect(hydration.hydrateChatMessages).toHaveBeenCalledTimes(2)
+    expect(hydration.hydrateChatMessages).toHaveBeenLastCalledWith('chat-a', { force: true, strict: true })
   })
 
   it('derives a generation-keyed ledger reference for pre-ref compatibility transcripts', async () => {

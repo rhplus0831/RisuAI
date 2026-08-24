@@ -177,14 +177,14 @@ closure.
 
 ### 4D. Chat-specific readiness
 
-- [ ] Hydrate only the selected character/chat and selected prompt-template
+- [x] Hydrate only the selected character/chat and selected prompt-template
   owner after shell readiness.
 - [x] Show a message skeleton while the selected chat body is loading.
-- [ ] Reattach active generation and reconcile recovered generation effects
+- [x] Reattach active generation and reconcile recovered generation effects
   before enabling generation for that chat.
-- [ ] Derive `canGenerate` from selected detail, chat, prompt owner, plugins, and
+- [x] Derive `canGenerate` from selected detail, chat, prompt owner, plugins, and
   recovery state; do not set it merely because background scheduling began.
-- [ ] Supersede late work when route, character, chat, or prompt owner changes.
+- [x] Supersede late work when route, character, chat, or prompt owner changes.
 
 #### 4D implementation record (in progress, 2026-08-25)
 
@@ -194,6 +194,28 @@ shell remain mounted and usable, and the existing whole-transcript cover remains
 reserved for cold parsing of already-resident message rows. Focused DOM coverage
 passes 101 tests; the affected lane passes 4 frontend files / 114 tests with no
 affected server tests.
+
+Selected-character and active-chat hydration owners now start in a retained
+coordinator step after `writer-ready`, rather than from writer runtime setup.
+Plugin loading and durable recovered-effect reconciliation settle before the
+selected detail, chat body, and prompt owner can open the reattach barrier. If
+the selected chat owns an active durable job, startup waits until its observer
+crosses the first scheduling boundary before publishing generation readiness;
+the stream itself may continue normally while the existing per-chat activity
+guard prevents a second generation.
+
+`pluginsReady` and `canGenerate` now follow the live coherent plugin runtime as
+well as their monotonic diagnostic milestone. A same-target full resource refresh
+forces selected-chat readiness back through hydration, and a recovered plugin
+output effect fails retryably instead of receiving a completion receipt when
+plugins are not coherent. Strict recovered-chat hydration failures likewise keep
+their pending bootstrap refs for retry. Focused readiness, bootstrap, reattach,
+hydration, effect, and generation tests pass. Route kind/path is also part of the
+coordinator target, so a route-only transition increments the readiness epoch and
+cannot be overwritten by an older hydration result. `pnpm test:affected` passes
+330 frontend files / 5,085 tests with no affected server tests. The production
+report also remains inside both protected boundaries at 311.34 KiB initial gzip
+and 1267.47 KiB for the immediate `appStartup` closure.
 
 ## Verification
 

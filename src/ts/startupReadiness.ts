@@ -32,6 +32,7 @@ export type StartupStep =
   | 'writer-projection-install'
   | 'writer-runtime-services'
   | 'writer-event-subscription'
+  | 'chat-hydration-runtime'
   | 'chat-readiness'
   | 'push-runtime'
   | 'plugin-runtime'
@@ -104,6 +105,7 @@ let nextAttemptId = 1
 let writerCapabilitiesRevoked = false
 let chatGenerationReady = false
 let generationRecoveryReady = false
+let pluginRuntimeCoherent = true
 
 function nowMs(): number {
   return globalThis.performance?.now?.() ?? Date.now()
@@ -163,7 +165,15 @@ export function canMutate(): boolean {
 }
 
 export function pluginsReady(): boolean {
-  return hasTransitioned('plugins-ready')
+  return hasTransitioned('plugins-ready') && pluginRuntimeCoherent
+}
+
+/** Keep capability selectors aligned with the live, reloadable plugin runtime. */
+export function settleStartupPluginRuntimeReadiness(ready: boolean): void {
+  if (pluginRuntimeCoherent === ready) return
+  pluginRuntimeCoherent = ready
+  clearReadyCapabilityFailures()
+  notifyReadinessListeners()
 }
 
 export function canGenerate(): boolean {
@@ -470,6 +480,7 @@ export function resetStartupReadinessForTests(): void {
   writerCapabilitiesRevoked = false
   chatGenerationReady = false
   generationRecoveryReady = false
+  pluginRuntimeCoherent = true
 
   const perf = globalThis.performance
   for (const milestone of STARTUP_MILESTONES) {

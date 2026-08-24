@@ -41,6 +41,7 @@ const hydrationApi = vi.hoisted(() => ({
   hydrateActiveChat: vi.fn(async () => true),
   invalidateChatHydration: vi.fn(),
   readinessRefreshHook: null as null | (() => void),
+  requestReadinessRefresh: vi.fn(),
   resetChatHydration: vi.fn(),
   startChatMessageHydration: vi.fn(),
 }))
@@ -66,6 +67,8 @@ const promptTemplateApi = vi.hoisted(() => ({
 }))
 
 const runtimeApi = vi.hoisted(() => ({
+  prepareOpenChatGenerationReattach: vi.fn(async () => undefined),
+  setActiveGenerationReattachReadinessPredicate: vi.fn(),
   setActiveGenerationJobs: vi.fn(),
   setGenerationFinalizationPersistences: vi.fn(),
   startGenerationFinalizationPersistenceRefresh: vi.fn(),
@@ -172,6 +175,7 @@ vi.mock('./server/activeWriterSession', async (importActual) => {
 })
 vi.mock('./server/chatMessageHydration.svelte', () => ({
   ...hydrationApi,
+  requestActiveChatReadinessRefresh: hydrationApi.requestReadinessRefresh,
   setActiveChatReadinessRefreshHook: (hook: (() => void) | null) => {
     hydrationApi.readinessRefreshHook = hook
   },
@@ -212,6 +216,8 @@ vi.mock('./server/durableMutationDispatch', () => ({
   setPendingMutationDiscardNotifier: vi.fn(),
 }))
 vi.mock('./process/reattach', () => ({
+  prepareOpenChatGenerationReattach: runtimeApi.prepareOpenChatGenerationReattach,
+  setActiveGenerationReattachReadinessPredicate: runtimeApi.setActiveGenerationReattachReadinessPredicate,
   setActiveGenerationJobs: runtimeApi.setActiveGenerationJobs,
   startActiveGenerationReattach: runtimeApi.startActiveGenerationReattach,
   triggerOpenChatGenerationReattach: runtimeApi.triggerOpenChatGenerationReattach,
@@ -251,6 +257,7 @@ vi.mock('./server/commands', async (importActual) => {
 })
 
 vi.mock('./plugins/plugins.svelte', () => ({
+  isPluginRuntimeReady: () => true,
   loadPlugins: vi.fn(async () => undefined),
   startPluginRuntimeSync: vi.fn(),
   stopPluginRuntimeSync: optionalRuntimeApi.stopPluginSync,
@@ -348,6 +355,7 @@ import {
 import { getServerResourceApplyEpoch } from './server/resourceWriteGuard.svelte'
 import { captureDestructiveRefreshEpoch, createDestructiveRefreshToken } from './server/staleStateGuards'
 import { loadedStore, selectedCharID } from './stores.svelte'
+import { currentRoute } from './router'
 import { updateReducedMotion } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
 import { updateGuisize } from './gui/guisize'
@@ -440,6 +448,7 @@ beforeEach(() => {
   seedResourceDatabase()
   loadedStore.set(false)
   selectedCharID.set(-1)
+  currentRoute.set({ kind: 'home', path: '/' })
   clearCachedServerCommandRevision()
   clearAppliedServerResourceRevision()
 
@@ -530,6 +539,23 @@ describe('API-backed client bootstrap', () => {
     expect(startPluginRuntimeSync).toHaveBeenCalledOnce()
     expect(vi.mocked(loadPlugins).mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(startPluginRuntimeSync).mock.invocationCallOrder[0],
+    )
+  })
+
+  it('starts selected hydration after writer readiness and prepares reattach after chat dependencies', async () => {
+    await loadData()
+
+    expect(eventApi.subscribe.mock.invocationCallOrder[0]).toBeLessThan(
+      characterHydrationApi.startSelected.mock.invocationCallOrder[0],
+    )
+    expect(eventApi.subscribe.mock.invocationCallOrder[0]).toBeLessThan(
+      hydrationApi.startChatMessageHydration.mock.invocationCallOrder[0],
+    )
+    expect(promptTemplateApi.ensure.mock.invocationCallOrder[0]).toBeLessThan(
+      runtimeApi.startActiveGenerationReattach.mock.invocationCallOrder[0],
+    )
+    expect(runtimeApi.startActiveGenerationReattach.mock.invocationCallOrder[0]).toBeLessThan(
+      runtimeApi.prepareOpenChatGenerationReattach.mock.invocationCallOrder[0],
     )
   })
 
@@ -870,6 +896,32 @@ describe('API-backed client bootstrap', () => {
     expect(getStartupCoordinatorSnapshot().failures.canGenerate).toBeUndefined()
   })
 
+  it('supersedes selected-chat readiness when only the route identity changes', async () => {
+    await loadData()
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true)
+    characterHydrationApi.hydrateSelected.mockClear()
+
+    let releaseOlderRoute!: (ready: boolean) => void
+    characterHydrationApi.hydrateSelected.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          releaseOlderRoute = resolve
+        }),
+    )
+    currentRoute.set({ kind: 'settings', path: '/settings/model', section: 'model', index: 17 })
+
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(false)
+    await vi.waitFor(() => expect(characterHydrationApi.hydrateSelected).toHaveBeenCalledOnce())
+
+    currentRoute.set({ kind: 'character', path: '/character/char-b/chat-b', chaId: 'char-b', chatId: 'chat-b' })
+    await vi.waitFor(() => expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true))
+
+    releaseOlderRoute(true)
+    await Promise.resolve()
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true)
+    expect(getStartupCoordinatorSnapshot().failures.canGenerate).toBeUndefined()
+  })
+
   it('reconciles disabled device push state after the initial settings load', async () => {
     await loadData()
 
@@ -968,7 +1020,7 @@ describe('API-backed client bootstrap', () => {
     expect(pushApi.reconcile).toHaveBeenCalledWith(true)
   })
 
-  it('loads resource APIs, seeds the resource revision, and starts runtime services', async () => {
+  it('loads resource APIs and writer runtime services without starting selected hydration owners', async () => {
     await loadWebInitialDatabase()
 
     expect(bootstrapApi.fetch).toHaveBeenCalledTimes(1)
@@ -1005,8 +1057,8 @@ describe('API-backed client bootstrap', () => {
     expect(runtimeApi.setActiveGreetingTranslations).toHaveBeenCalledWith([
       { characterId: 'char-a', greetingIndex: -1, settingsHash: 'settings-a', jobId: 'greeting-job-a' },
     ])
-    expect(hydrationApi.startChatMessageHydration).toHaveBeenCalledTimes(1)
-    expect(characterHydrationApi.startSelected).toHaveBeenCalledTimes(1)
+    expect(hydrationApi.startChatMessageHydration).not.toHaveBeenCalled()
+    expect(characterHydrationApi.startSelected).not.toHaveBeenCalled()
     expect(promptTemplateApi.ensure).not.toHaveBeenCalled()
     expect(eventApi.subscriptions[0]?.sinceRevision).toBe(5)
   })
@@ -4914,6 +4966,7 @@ describe('API-backed client bootstrap', () => {
     await vi.waitFor(() => expect(peekAppliedServerResourceRevision()).toBe(12))
     expect(hydrationApi.resetChatHydration).toHaveBeenCalledTimes(2)
     expect(hydrationApi.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
+    expect(hydrationApi.requestReadinessRefresh).toHaveBeenCalledOnce()
     expect(promptTemplateApi.ensure).toHaveBeenLastCalledWith({ force: true, minimumRevision: 12 })
     expect(runtimeApi.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
   })

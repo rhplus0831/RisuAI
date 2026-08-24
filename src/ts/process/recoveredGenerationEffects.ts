@@ -1,5 +1,5 @@
 import { getDatabase, type Message } from '../storage/database.svelte'
-import { chatOutputListeners, runChatOutputListeners } from '../plugins/chatOutputListeners'
+import { chatOutputListeners, isChatOutputRuntimeReady, runChatOutputListeners } from '../plugins/chatOutputListeners'
 import { hydrateChatMessages } from '../server/chatMessageHydration.svelte'
 import type { PendingGenerationEffect } from '../server/bootstrap'
 import { evaluateIgp } from './postGeneration/igp'
@@ -44,11 +44,11 @@ export async function reconcilePendingRecoveredGenerationEffects(): Promise<void
     const ref = generationEffectRefFromPending(effect)
     refs.set(`${ref.databaseLineage}:${ref.generationId}`, ref)
   }
-  bootstrapPendingEffects = []
   for (const ref of refs.values()) {
-    await hydrateChatMessages(ref.chatId, { force: true, strict: true }).catch(() => {})
+    await hydrateChatMessages(ref.chatId, { force: true, strict: true })
     await reconcileRecoveredGenerationEffects(ref)
   }
+  bootstrapPendingEffects = []
 }
 
 export async function reconcileAcceptedSendGenerationEffects(
@@ -83,6 +83,7 @@ export async function reconcileRecoveredGenerationEffects(
   // transcript before IGP appends its durable prompt output.
   const plugin = await runLedgeredGenerationEffect(ref, 'plugin_output', 'late_recovery', async (effectContext) => {
     const resolution = resolveGeneration(ref)
+    if (!isChatOutputRuntimeReady()) throw new Error('Plugin runtime is not ready for recovered output effects')
     if (!resolution || chatOutputListeners.size === 0) return skippedGenerationEffect('not_configured')
     await runChatOutputListeners({
       char: resolution.character,

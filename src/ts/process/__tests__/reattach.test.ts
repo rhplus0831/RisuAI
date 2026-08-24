@@ -131,11 +131,13 @@ import {
   forgetActiveGenerationJob,
   generationJobLifecycles,
   maybeReattachOpenChatGeneration,
+  prepareOpenChatGenerationReattach,
   refreshActiveGenerationJobsFromBootstrap,
   refreshGenerationJobFromBootstrap,
   rememberActiveGenerationJob,
   resetGenerationJobLifecyclesForTests,
   retryGenerationJobReattach,
+  setActiveGenerationReattachReadinessPredicate,
   setActiveGenerationJobs,
   startActiveGenerationReattach,
   stopGenerationJob,
@@ -232,11 +234,30 @@ beforeEach(() => {
   h.generationOperationProjections.set([])
   h.doingChat.set(false)
   resetGenerationJobLifecyclesForTests()
+  setActiveGenerationReattachReadinessPredicate(() => true)
   setActiveGenerationJobs([])
   resetChatGenerationActivitiesForTests()
 })
 
 describe('reattach open-chat generation (Phase 4)', () => {
+  it('holds a selected durable job until chat readiness opens the reattach barrier', async () => {
+    openChat('chat-1')
+    setActiveGenerationJobs([{ chatId: 'chat-1', jobId: 'job-held' }])
+    let ready = false
+    setActiveGenerationReattachReadinessPredicate(() => ready)
+
+    await maybeReattachOpenChatGeneration()
+    expect(h.sendChat).not.toHaveBeenCalled()
+    expect(get(activeGenerationJobs)).toEqual([{ chatId: 'chat-1', jobId: 'job-held' }])
+
+    ready = true
+    await prepareOpenChatGenerationReattach()
+
+    await vi.waitFor(() => {
+      expect(h.sendChat).toHaveBeenCalledWith(-1, expect.objectContaining({ reattachJobId: 'job-held' }))
+    })
+  })
+
   it('deduplicates malformed same-chat protocol candidates by epoch, version, attempt, and job id', () => {
     const older = {
       chatId: 'chat-1',

@@ -70,6 +70,7 @@ import {
   setChatOutputRuntimeReadyPredicate,
   type ChatOutputListener,
 } from './chatOutputListeners'
+import { settleStartupPluginRuntimeReadiness } from '../startupReadiness'
 
 export const customProviderStore = writable([] as string[])
 
@@ -92,6 +93,7 @@ let pluginRuntimeStateSnapshot = initialPluginRuntimeState
 function publishPluginRuntimeState(state: PluginRuntimeState): void {
   pluginRuntimeStateSnapshot = state
   pluginRuntimeStateWritable.set(state)
+  settleStartupPluginRuntimeReadiness(state.phase === 'ready')
 }
 
 export const pluginRuntimeStateStore = readonly(pluginRuntimeStateWritable)

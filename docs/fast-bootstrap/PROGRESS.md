@@ -15,7 +15,7 @@ tests, evidence, and applicable exit criteria are complete.
 | [1: Entry and bundle boundaries](01-entry-and-bundle-boundaries.md) | Complete | None. |
 | [2: Thin character summaries](02-thin-character-summaries.md) | Complete | None. The compatibility aggregate route remains a rollback seam until the planned seam-removal work. |
 | [3: Startup capabilities](03-startup-capabilities.md) | Complete | None. `loadedStore` remains only as the documented background-readiness compatibility alias scheduled for removal in Phase 7. |
-| [4: Deferred runtimes](04-deferred-runtimes.md) | In progress | Finish the Phase 5B-owned inlay item, then review slice 4D. |
+| [4: Deferred runtimes](04-deferred-runtimes.md) | In progress | Finish the Phase 5B-owned inlay item. |
 | [5: Route-driven hydration](05-route-driven-hydration.md) | Outstanding | All review slices. |
 | [6: Observer shell](06-observer-shell.md) | Outstanding | All review slices. |
 | [7: Hardening and rollout](07-hardening-and-rollout.md) | Outstanding | All review slices and the final initiative evidence package. |
@@ -63,7 +63,7 @@ tests, evidence, and applicable exit criteria are complete.
 - [x] 4A. Classify and schedule work.
 - [ ] 4B. Shell-independent optional work.
 - [x] 4C. Plugin readiness.
-- [ ] 4D. Chat-specific readiness.
+- [x] 4D. Chat-specific readiness.
 
 ### Phase 5: Route-driven hydration
 

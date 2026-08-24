@@ -20,6 +20,10 @@ export function setChatOutputRuntimeReadyPredicate(predicate: () => boolean): vo
   runtimeReady = predicate
 }
 
+export function isChatOutputRuntimeReady(): boolean {
+  return runtimeReady()
+}
+
 export function addChatOutputListener(mode: string, listener: ChatOutputListener): void {
   if (mode !== 'output') throw new Error(`chat listener mode ${mode} not found`)
   chatOutputListeners.add(listener)

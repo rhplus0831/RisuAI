@@ -2,7 +2,13 @@ import { get } from 'svelte/store'
 import { getDatabase, setResourceWriteGuardEnabled, type Database } from './storage/database.svelte'
 import { botMakerMode } from './stores.svelte'
 import { loadedStore, LoadingStatusState, selectedCharID } from './stores/coreStores.svelte'
-import { loadPlugins, startPluginRuntimeSync, stopPluginRuntimeSync } from './plugins/plugins.svelte'
+import { currentRoute } from './router'
+import {
+  isPluginRuntimeReady,
+  loadPlugins,
+  startPluginRuntimeSync,
+  stopPluginRuntimeSync,
+} from './plugins/plugins.svelte'
 import { alertError, alertMd, alertRequiredSelect, waitAlert } from './alert'
 import { updateReducedMotion } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
@@ -59,6 +65,7 @@ import {
   hydrateActiveChat,
   invalidateChatHydration,
   resetChatHydration,
+  requestActiveChatReadinessRefresh,
   setActiveChatReadinessRefreshHook,
   startChatMessageHydration,
 } from './server/chatMessageHydration.svelte'
@@ -72,7 +79,12 @@ import {
   recordHydratedCharacterLorebooks,
   resetLorebookHydration,
 } from './server/lorebookBridge.svelte'
-import { startActiveGenerationReattach, triggerOpenChatGenerationReattach } from './process/reattach'
+import {
+  prepareOpenChatGenerationReattach,
+  setActiveGenerationReattachReadinessPredicate,
+  startActiveGenerationReattach,
+  triggerOpenChatGenerationReattach,
+} from './process/reattach'
 import { subscribeBrowserLifecycleRecovery } from './server/lifecycleRecovery'
 import {
   setGenerationFinalizationPersistences,
@@ -236,10 +248,16 @@ let serverResourceRuntimeReplayEnabled = false
 let stopStartupChatReadinessSync: (() => void) | null = null
 let startupChatReadinessEpoch = 0
 let startupChatReadinessTarget: string | null = null
+let startupChatReattachReady = false
+let startupGenerationRecoveryReady = false
 let stopStoreRuntimeEffects: (() => void) | null = null
 let stopDomObserver: (() => void) | null = null
 let stopGlobalErrorHandlers: (() => void) | null = null
 let stopPushRuntime: (() => void) | null = null
+
+setActiveGenerationReattachReadinessPredicate(
+  () => startupChatReattachReady && startupGenerationRecoveryReady && isPluginRuntimeReady(),
+)
 
 function initialSelectedCharFromDatabase(db: Database): number {
   const currentChar = (db as { currentChar?: unknown }).currentChar
@@ -285,6 +303,10 @@ async function runLoadDataAttempt(): Promise<StartupRetryTarget | null> {
   const failureMilestone: StartupMilestone = 'observer-ready'
   try {
     await runStartupStep('writer-shell', () => loadWebInitialDatabase({ coordinated: true }))
+    await runStartupStep('chat-hydration-runtime', () => {
+      startSelectedCharacterShellHydration()
+      startChatMessageHydration()
+    })
     const backgroundReadiness = runStartupStep('background-readiness', settleStartupBackgroundReadiness)
     const pluginRuntimeReady = await settleStartupPluginRuntime(startupAttemptId)
     if (pluginRuntimeReady) await settleStartupGenerationRecovery(startupAttemptId)
@@ -326,6 +348,7 @@ async function settleStartupPluginRuntime(startupAttemptId: number): Promise<boo
     })
     return true
   } catch (error) {
+    startupGenerationRecoveryReady = false
     settleStartupGenerationRecoveryReadiness(false)
     recordStartupCapabilityFailure(startupAttemptId, 'plugin-initialization-failed', 'plugins-ready')
     console.warn('Plugin runtime initialization failed:', error)
@@ -334,11 +357,14 @@ async function settleStartupPluginRuntime(startupAttemptId: number): Promise<boo
 }
 
 async function settleStartupGenerationRecovery(startupAttemptId: number): Promise<boolean> {
+  startupGenerationRecoveryReady = false
   try {
     await runStartupStep('generation-recovery', reconcilePendingRecoveredGenerationEffects)
+    startupGenerationRecoveryReady = true
     settleStartupGenerationRecoveryReadiness(true)
     return true
   } catch (error) {
+    startupGenerationRecoveryReady = false
     settleStartupGenerationRecoveryReadiness(false)
     recordStartupCapabilityFailure(startupAttemptId, 'generation-recovery-failed', 'chat-ready')
     console.warn('Generation recovery initialization failed:', error)
@@ -449,6 +475,7 @@ async function reconcileProjectedPushNotificationSetting(enabled: boolean): Prom
 }
 
 async function ensureStartupChatReadiness(): Promise<void> {
+  startupChatReattachReady = false
   if (!(await hydrateSelectedCharacterShell())) {
     throw new StartupChatDependencyError(
       'selected-character-hydration-failed',
@@ -470,14 +497,17 @@ async function ensureStartupChatReadiness(): Promise<void> {
       'Selected prompt-template owner hydration failed',
     )
   }
+  startupChatReattachReady = true
+  startActiveGenerationReattach()
+  await prepareOpenChatGenerationReattach()
 }
 
 function startStartupChatReadinessSync(startupAttemptId: number): void {
   if (stopStartupChatReadinessSync) return
   startupChatReadinessTarget = currentStartupChatReadinessTarget()
-  const refreshReadiness = () => {
+  const refreshReadiness = (options: { force?: boolean } = {}) => {
     const target = currentStartupChatReadinessTarget()
-    if (target === startupChatReadinessTarget) return
+    if (!options.force && target === startupChatReadinessTarget) return
     startupChatReadinessTarget = target
     const readinessEpoch = startupChatReadinessEpoch + 1
     startupChatReadinessEpoch = readinessEpoch
@@ -504,20 +534,30 @@ function startStartupChatReadinessSync(startupAttemptId: number): void {
     }
     refreshReadiness()
   })
+  let initialRouteEmission = true
+  const stopRouteSync = currentRoute.subscribe(() => {
+    if (initialRouteEmission) {
+      initialRouteEmission = false
+      return
+    }
+    refreshReadiness()
+  })
   setActiveChatReadinessRefreshHook(refreshReadiness)
   stopStartupChatReadinessSync = () => {
     stopSelectedCharacterSync()
+    stopRouteSync()
     setActiveChatReadinessRefreshHook(null)
     startupChatReadinessTarget = null
   }
 }
 
 function currentStartupChatReadinessTarget(): string {
+  const route = get(currentRoute)
   const selectedIndex = get(selectedCharID)
   const character = getDatabase().characters?.[selectedIndex]
   const chatId = character?.chats?.[character?.chatPage ?? 0]?.id
   const promptPresetId = currentStartupPromptTemplateOwnerId()
-  return `${selectedIndex}\u0000${character?.chaId ?? ''}\u0000${chatId ?? ''}\u0000${promptPresetId ?? ''}`
+  return `${route.kind}\u0000${route.path}\u0000${selectedIndex}\u0000${character?.chaId ?? ''}\u0000${chatId ?? ''}\u0000${promptPresetId ?? ''}`
 }
 
 function currentStartupPromptTemplateOwnerId(): string | null {
@@ -636,7 +676,6 @@ export async function loadWebInitialDatabase(options: { coordinated?: boolean } 
     recordHydratedCharacterLorebooks(result.characters)
     setCachedServerCommandRevision(resources.revision)
     setAppliedServerResourceRevision(resources.revision)
-    startSelectedCharacterShellHydration()
     markReplacementDatabaseOwnershipRefreshed({ databaseLineage, writerEpoch })
     setServerCommandSuccessReconciler((event, coalescedEvents, localEffects) =>
       enqueueServerResourceSync(() =>
@@ -665,8 +704,6 @@ export async function loadWebInitialDatabase(options: { coordinated?: boolean } 
     setActiveGreetingTranslations(runtime.activeGreetingTranslations ?? [])
     startActiveMessageTranslationRefresh()
     startActiveGreetingTranslationRefresh()
-    startActiveGenerationReattach()
-    startChatMessageHydration()
     stopBridgePatchLifecycleFlush?.()
     stopBridgePatchLifecycleFlush = startBridgePatchLifecycleFlush()
   })
@@ -2103,6 +2140,7 @@ async function processAuthoritativeServerCommandEvents(events: readonly CommandE
       resetChatHydration()
       resetLorebookHydration()
       recordHydratedCharacterLorebooks(getDatabase().characters)
+      requestActiveChatReadinessRefresh()
       void hydrateActiveChat({ force: true })
     } else {
       recordHydratedCharacterLorebooks(getDatabase().characters)

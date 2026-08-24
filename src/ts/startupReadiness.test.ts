@@ -17,6 +17,7 @@ import {
   runStartupStep,
   settleStartupChatReadiness,
   settleStartupGenerationRecoveryReadiness,
+  settleStartupPluginRuntimeReadiness,
   waitForStartupMilestone,
 } from './startupReadiness'
 
@@ -109,6 +110,14 @@ describe('startup readiness instrumentation', () => {
     expect(canGenerate()).toBe(false)
 
     settleStartupGenerationRecoveryReadiness(true)
+    expect(canGenerate()).toBe(true)
+
+    settleStartupPluginRuntimeReadiness(false)
+    expect(pluginsReady()).toBe(false)
+    expect(canGenerate()).toBe(false)
+
+    settleStartupPluginRuntimeReadiness(true)
+    expect(pluginsReady()).toBe(true)
     expect(canGenerate()).toBe(true)
   })
 
