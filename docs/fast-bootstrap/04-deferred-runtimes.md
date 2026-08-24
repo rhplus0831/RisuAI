@@ -179,12 +179,21 @@ closure.
 
 - [ ] Hydrate only the selected character/chat and selected prompt-template
   owner after shell readiness.
-- [ ] Show a message skeleton while the selected chat body is loading.
+- [x] Show a message skeleton while the selected chat body is loading.
 - [ ] Reattach active generation and reconcile recovered generation effects
   before enabling generation for that chat.
 - [ ] Derive `canGenerate` from selected detail, chat, prompt owner, plugins, and
   recovery state; do not set it merely because background scheduling began.
 - [ ] Supersede late work when route, character, chat, or prompt owner changes.
+
+#### 4D implementation record (in progress, 2026-08-25)
+
+An unresolved selected-chat body now renders three accessible, message-shaped
+placeholder rows inside the transcript column. The composer and surrounding
+shell remain mounted and usable, and the existing whole-transcript cover remains
+reserved for cold parsing of already-resident message rows. Focused DOM coverage
+passes 101 tests; the affected lane passes 4 frontend files / 114 tests with no
+affected server tests.
 
 ## Verification
 

@@ -40,6 +40,7 @@ const shellMocks = vi.hoisted(() => ({
   hydrateActiveChatFully: vi.fn(async () => undefined),
   hydrateActiveChatWindow: vi.fn(async () => undefined),
   hydrationFailed: false,
+  hydrationPending: false,
   currentRouteSubscribers: new Set<(value: unknown) => void>(),
   currentRouteValue: {
     kind: 'character',
@@ -203,7 +204,7 @@ vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
   hydrateActiveChat: shellMocks.hydrateActiveChat,
   hydrateActiveChatFully: shellMocks.hydrateActiveChatFully,
   hydrateActiveChatWindow: shellMocks.hydrateActiveChatWindow,
-  isChatMessageHydrationPending: () => false,
+  isChatMessageHydrationPending: () => shellMocks.hydrationPending,
 }))
 
 vi.mock('src/ts/router', () => ({
@@ -359,6 +360,7 @@ function greetingBubble(): HTMLElement | null {
 beforeEach(() => {
   shellMocks.hydrateActiveChat.mockClear()
   shellMocks.hydrationFailed = false
+  shellMocks.hydrationPending = false
   shellMocks.activeGenerationTarget!.set(null)
   shellMocks.activeChatGenerations!.set([])
   shellMocks.activeGenerationJobs!.set([])
@@ -432,6 +434,27 @@ describe('chat history hydration failure', () => {
     await tick()
 
     expect(shellMocks.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
+  })
+})
+
+describe('chat history hydration loading', () => {
+  it('keeps the composer mounted while showing message-shaped transcript placeholders', async () => {
+    shellMocks.hydrationPending = true
+    seedDatabase(makeHydratedCharacter())
+
+    const error = tryMount()
+    await tick()
+
+    expect(error).toBeNull()
+    const skeleton = target.querySelector<HTMLElement>('[data-chat-message-skeleton]')
+    expect(skeleton).toBeTruthy()
+    expect(skeleton?.getAttribute('role')).toBe('status')
+    expect(skeleton?.getAttribute('aria-busy')).toBe('true')
+    expect(skeleton?.textContent).toContain('loadingChat')
+    expect(skeleton?.querySelectorAll('[data-chat-skeleton-row]')).toHaveLength(3)
+    expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    expect(skeleton?.contains(target.querySelector('[data-testid="default-chat-composer"]'))).toBe(false)
+    expect(target.querySelector('[data-testid="chat-display-loading"]')).toBeNull()
   })
 })
 

@@ -2283,7 +2283,7 @@
       Loading...
     </div>
   {/if}
-  {#if $selectedCharID >= 0 && (activeChatMessagesLoading || activeChatDisplayLoading)}
+  {#if $selectedCharID >= 0 && activeChatDisplayLoading}
     <!-- Keep this below App's z-30 responsive sidebar dialog. On wide layouts
          the sidebar is in flow, but on narrow layouts it overlays this full-width chat root. -->
     <div
@@ -2292,7 +2292,7 @@
       aria-live="polite"
       aria-busy="true"
       data-chat-loading-cover
-      data-testid={activeChatDisplayLoading && !activeChatMessagesLoading ? 'chat-display-loading' : undefined}>
+      data-testid="chat-display-loading">
       <div class="flex flex-col items-center text-textcolor2">
         <LoaderCircleIcon size={24} class="risu-ongoing-pulse mb-3 animate-spin" aria-hidden="true" />
         <span class="text-sm">{language.loadingChat}</span>
@@ -2860,7 +2860,37 @@
           </div>
         {/if}
 
-        {#if getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message?.[0]?.data?.startsWith(coldStorageHeader)}
+        {#if activeChatMessagesLoading}
+          <div
+            class="chat-screen-content-width flex w-full flex-col gap-5 px-4 py-8"
+            role="status"
+            aria-live="polite"
+            aria-busy="true"
+            data-chat-loading-cover
+            data-chat-message-skeleton>
+            <span class="sr-only">{language.loadingChat}</span>
+            <div class="flex w-full justify-start" data-chat-skeleton-row>
+              <div class="w-3/4 max-w-xl animate-pulse rounded-2xl rounded-bl-sm bg-darkbg p-4">
+                <div class="mb-3 h-3 w-1/4 rounded-full bg-selected"></div>
+                <div class="mb-2 h-3 w-full rounded-full bg-selected"></div>
+                <div class="h-3 w-2/3 rounded-full bg-selected"></div>
+              </div>
+            </div>
+            <div class="flex w-full justify-end" data-chat-skeleton-row>
+              <div class="w-2/3 max-w-lg animate-pulse rounded-2xl rounded-br-sm bg-selected p-4">
+                <div class="mb-2 h-3 w-full rounded-full bg-darkbg"></div>
+                <div class="h-3 w-1/2 rounded-full bg-darkbg"></div>
+              </div>
+            </div>
+            <div class="flex w-full justify-start" data-chat-skeleton-row>
+              <div class="w-4/5 max-w-2xl animate-pulse rounded-2xl rounded-bl-sm bg-darkbg p-4">
+                <div class="mb-3 h-3 w-1/5 rounded-full bg-selected"></div>
+                <div class="mb-2 h-3 w-5/6 rounded-full bg-selected"></div>
+                <div class="h-3 w-3/5 rounded-full bg-selected"></div>
+              </div>
+            </div>
+          </div>
+        {:else if getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message?.[0]?.data?.startsWith(coldStorageHeader)}
           {#await preLoadChat($selectedCharID, getDatabase().characters[$selectedCharID].chatPage)}
             <div class="chat-screen-content-width w-full flex justify-center text-textcolor2 italic mb-12">
               {language.loadingChatData}
