@@ -82,7 +82,7 @@ export async function hydrateCharacterShell(
 
   const generation = shellHydrationGeneration
   const baselineRevision = peekCachedServerCommandRevision()
-  const targetSnapshot = snapshotJson(existing)
+  const targetShell = existing
   const controller = new AbortController()
   const timeoutMs = normalizedTimeoutMs(options.timeoutMs)
   let timedOut = false
@@ -99,7 +99,7 @@ export async function hydrateCharacterShell(
       result = await fetchServerCharacter(characterId, controller.signal)
     } catch (error) {
       if (generation === shellHydrationGeneration && !controller.signal.aborted) {
-        if (targetStillMatches(characterId, targetSnapshot)) {
+        if (targetStillMatches(characterId, targetShell)) {
           setCharacterShellHydrationState(characterId, 'error', 'unavailable')
         }
         shellHydrationWarning(characterId, error instanceof Error ? error.message : String(error))
@@ -107,7 +107,7 @@ export async function hydrateCharacterShell(
       return false
     }
     if (generation !== shellHydrationGeneration || controller.signal.aborted) {
-      if (timedOut && targetStillMatches(characterId, targetSnapshot)) {
+      if (timedOut && targetStillMatches(characterId, targetShell)) {
         setCharacterShellHydrationState(characterId, 'error', 'timeout')
         shellHydrationWarning(characterId, 'request timed out')
       }
@@ -115,25 +115,25 @@ export async function hydrateCharacterShell(
     }
     if (result.status !== 'ok') {
       const error = result.status === 'unavailable' ? 'unavailable' : 'invalid-response'
-      if (targetStillMatches(characterId, targetSnapshot)) {
+      if (targetStillMatches(characterId, targetShell)) {
         setCharacterShellHydrationState(characterId, 'error', error)
       }
       shellHydrationWarning(characterId, result.status === 'error' ? result.error : 'server resource read unavailable')
       return false
     }
     if (isOlderThanRevision(result.revision, baselineRevision)) {
-      if (targetStillMatches(characterId, targetSnapshot)) {
+      if (targetStillMatches(characterId, targetShell)) {
         setCharacterShellHydrationState(characterId, 'error', 'invalid-response')
       }
       return false
     }
-    if (!targetStillMatches(characterId, targetSnapshot)) {
+    if (!targetStillMatches(characterId, targetShell)) {
       return false
     }
 
     const applied = applyCharacterResource(result)
     if (!applied) {
-      if (targetStillMatches(characterId, targetSnapshot)) {
+      if (targetStillMatches(characterId, targetShell)) {
         setCharacterShellHydrationState(characterId, 'error', 'invalid-response')
       }
       return false
@@ -167,14 +167,12 @@ function isOlderThanRevision(revision: number, comparisonRevision: number | null
   return comparisonRevision !== null && revision < comparisonRevision
 }
 
-function snapshotJson(value: unknown): string {
-  const snapshot = JSON.stringify(value)
-  return snapshot === undefined ? '__undefined__' : snapshot
-}
-
-function targetStillMatches(characterId: string, targetSnapshot: string): boolean {
+function targetStillMatches(characterId: string, targetShell: unknown): boolean {
   const currentTarget = getDatabase().characters?.find((candidate) => candidate?.chaId === characterId)
-  return isServerCharacterShell(currentTarget) && snapshotJson(currentTarget) === targetSnapshot
+  // Chat-message and lorebook hydration intentionally mutate nested body fields
+  // on the same shell while this row request is in flight. Preserve those
+  // independently fenced writes, but reject any actual row replacement.
+  return isServerCharacterShell(currentTarget) && currentTarget === targetShell
 }
 
 function normalizedTimeoutMs(value: number | undefined): number {

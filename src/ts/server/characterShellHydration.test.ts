@@ -23,6 +23,7 @@ import {
   mergeServerResourceCharacterRow,
   mergeServerResourceFields,
   setResourceWriteGuardEnabled,
+  withTrustedResourceWrite,
 } from '../storage/database.svelte'
 import {
   clearCachedServerCommandRevision,
@@ -139,6 +140,38 @@ describe('character shell hydration', () => {
     expect(testDatabaseState.db.characters[0].name).toBe('Hydrated after settings')
     expect(testDatabaseState.db.language).toBe('ko')
     expect(peekCachedServerCommandRevision()).toBe(6)
+  })
+
+  it('accepts detail after scoped transcript hydration mutates the same shell', async () => {
+    setCachedServerCommandRevision(5)
+    setResourceWriteGuardEnabled(true)
+    const response = deferred<{
+      status: 'ok'
+      revision: number
+      mode: 'character-row'
+      characterId: string
+      character: Record<string, unknown>
+    }>()
+    projectionState.fetchResource.mockReturnValue(response.promise)
+
+    const pending = hydrateCharacterShell('char-1')
+    withTrustedResourceWrite(() => {
+      const shell = testDatabaseState.db.characters[0]
+      shell.chats[0].message = [{ role: 'user', data: 'Hydrated transcript' }] as any
+    })
+    response.resolve({
+      status: 'ok',
+      revision: 5,
+      mode: 'character-row',
+      characterId: 'char-1',
+      character: hydratedCharacter('Hydrated after transcript'),
+    })
+
+    await expect(pending).resolves.toBe(true)
+
+    expect(isServerCharacterShell(testDatabaseState.db.characters[0])).toBe(false)
+    expect(testDatabaseState.db.characters[0].name).toBe('Hydrated after transcript')
+    expect(testDatabaseState.db.characters[0].chats[0].message).toEqual([{ role: 'user', data: 'Hydrated transcript' }])
   })
 
   it('rejects a response after the target character row changes during hydration', async () => {
