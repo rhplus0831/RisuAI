@@ -1,7 +1,9 @@
 import { mount, tick, unmount } from 'svelte'
 import type { Component } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { language } from 'src/lang'
 import LazyComponent, { type LazyComponentLoader } from './LazyComponent.svelte'
+import LazyComponentHarness from './LazyComponent.testHarness.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -34,6 +36,7 @@ describe('LazyComponent', () => {
     if (component) unmount(component)
     component = undefined
     target.remove()
+    vi.restoreAllMocks()
   })
 
   it('keeps an accessible loading surface until the component resolves', async () => {
@@ -43,8 +46,10 @@ describe('LazyComponent', () => {
     await settle()
 
     const pending = target.querySelector('[data-testid="lazy-component-pending"]')
+    const host = target.querySelector('[data-risu-lazy-surface="lazy-component"]')
     expect(pending?.getAttribute('role')).toBe('status')
     expect(pending?.getAttribute('aria-busy')).toBe('true')
+    expect(host?.getAttribute('data-risu-lazy-state')).toBe('pending')
     expect(target.querySelector('[data-testid="lazy-component-loaded"]')).toBeNull()
 
     loading.resolve(await import('./LazyComponent.testStub.svelte'))
@@ -52,6 +57,7 @@ describe('LazyComponent', () => {
 
     expect(target.querySelector('[data-testid="lazy-component-pending"]')).toBeNull()
     expect(target.querySelector('[data-testid="lazy-component-loaded"]')?.textContent).toBe('Ready')
+    expect(host?.getAttribute('data-risu-lazy-state')).toBe('ready')
   })
 
   it('shows a focused recovery action and retries after a failed load', async () => {
@@ -68,6 +74,8 @@ describe('LazyComponent', () => {
     const retry = error?.querySelector<HTMLButtonElement>('button')
     expect(error?.getAttribute('role')).toBe('alert')
     expect(document.activeElement).toBe(retry)
+    expect(error?.textContent).toContain(language.preloadStaleError)
+    expect(error?.querySelectorAll('button')).toHaveLength(2)
 
     retry?.click()
     await settle()
@@ -77,6 +85,41 @@ describe('LazyComponent', () => {
     second.resolve(await import('./LazyComponent.testStub.svelte'))
     await settle()
     expect(target.querySelector('[data-testid="lazy-component-loaded"]')).not.toBeNull()
+  })
+
+  it('captures offline state when the load fails and keeps recovery actions local', async () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    const loader = vi.fn<LazyComponentLoader>().mockRejectedValue(new Error('offline'))
+    component = mount(LazyComponent, { target, props: { loader } })
+    await settle()
+
+    const error = target.querySelector('[data-testid="lazy-component-error"]')
+    const buttons = error?.querySelectorAll('button') ?? []
+    expect(error?.textContent).toContain(language.preloadOfflineError)
+    expect(buttons).toHaveLength(2)
+    expect(buttons[0]?.textContent).toBe(language.retry)
+    expect(buttons[1]?.textContent).toBe(language.preloadReload)
+    expect(document.activeElement).toBe(buttons[0])
+  })
+
+  it('ignores a superseded loader failure while the current attempt remains pending', async () => {
+    const first = deferred<{ default: Component<any> }>()
+    const second = deferred<{ default: Component<any> }>()
+    const loaders: LazyComponentLoader[] = [() => first.promise, () => second.promise]
+    component = mount(LazyComponentHarness, { target, props: { loaders, testId: 'stale-attempt' } })
+    await settle()
+    ;(component as unknown as { selectLoader: (index: number) => void }).selectLoader(1)
+    await settle()
+    first.reject(new Error('superseded'))
+    await settle()
+
+    const host = target.querySelector('[data-risu-lazy-surface="stale-attempt"]')
+    expect(host?.getAttribute('data-risu-lazy-state')).toBe('pending')
+    expect(target.querySelector('[data-testid="stale-attempt-error"]')).toBeNull()
+
+    second.resolve(await import('./LazyComponent.testStub.svelte'))
+    await settle()
+    expect(host?.getAttribute('data-risu-lazy-state')).toBe('ready')
   })
 
   it('preserves the original modal opener across loading and loaded focus traps', async () => {

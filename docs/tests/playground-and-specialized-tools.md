@@ -4,7 +4,7 @@ Last audited: 2026-08-02.
 
 This area covers the Playground route and durable starter chat, parser/tokenizer/Jinja/syntax surfaces, image generation and translation, embeddings, subtitles/transcription, translation, inlay asset browsing, MCP tool execution, Iris, and DevTool imports. Provider/media adapters are analyzed in [Providers, Models, and Media](providers-models-and-media.md), MCP runtime and permissions in [Plugins, Modules, and MCP](plugins-modules-and-mcp.md), and parser/script engines in [Scripting, Parsing, and Automation](scripting-parsing-and-automation.md).
 
-The suite is strong on stale request ownership, cancellation, cleanup, retry, control naming, and partial-success behavior. It is weakest where the browser is the product: canvas selection, Blob URLs, codecs, AudioContext, downloads, contenteditable, file pickers, workers, and MCP transport are mocked. No Playground tool has a real browser smoke journey.
+The suite is strong on stale request ownership, cancellation, cleanup, retry, control naming, and partial-success behavior. The production-browser first-open matrix now opens every Playground route against its real emitted JavaScript/CSS entry and covers delayed, offline, and stale assets. It remains weakest where the browser is the product after loading: canvas selection, Blob URLs, codecs, AudioContext, downloads, contenteditable, file pickers, workers, and MCP transport are still mocked.
 
 ## Parser, tokenizer, Jinja, syntax, docs, navigation, and conversion
 

@@ -24,6 +24,10 @@ function showEntryLoadError(error: unknown): void {
 }
 
 window.addEventListener('vite:preloadError', (event) => {
+  // Before the shell mounts, the entry preloader is the only recoverable error
+  // surface. Once it is gone, allow the dynamic import promise to reject so the
+  // owning LazyComponent can render its local retry/reload controls.
+  if (!document.getElementById('preloading')) return
   event.preventDefault()
   showEntryLoadError(event)
 })

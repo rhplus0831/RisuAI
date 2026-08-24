@@ -3089,6 +3089,7 @@
             <button
               type="button"
               role="menuitem"
+              data-testid="default-chat-open-chat-list"
               data-default-chat-menu-item
               class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors"
               onclick={() => {
@@ -3200,6 +3201,7 @@
           <button
             type="button"
             role="menuitem"
+            data-testid="default-chat-open-modules"
             data-default-chat-menu-item
             class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors"
             onclick={() => {

@@ -88,7 +88,6 @@ describe('raw chat generation caller allowlist', () => {
       { file: 'src/ts/hotkey.ts', localName: 'sendChat', calls: 1 },
       { file: 'src/ts/plugins/apiV3/v3.svelte.ts', localName: 'processSendChat', calls: 1 },
       { file: 'src/ts/process/acceptedSendCoordinator.svelte.ts', localName: 'sendChat', calls: 2 },
-      { file: 'src/ts/process/reattach.ts', localName: 'sendChat', calls: 1 },
     ])
 
     const internalCoordinator = moduleSource('src/ts/process/index.svelte.ts')
@@ -101,7 +100,9 @@ describe('raw chat generation caller allowlist', () => {
     expect(moduleSource('src/ts/process/acceptedSendCoordinator.svelte.ts')).toContain(
       'async function attemptGeneration',
     )
-    expect(moduleSource('src/ts/process/reattach.ts')).toContain('reattachJobId: job.jobId')
+    const reattach = moduleSource('src/ts/process/reattach.ts')
+    expect(reattach).toContain('getGenerationProcessRuntime()')
+    expect(reattach).toContain('reattachJobId: job.jobId')
   })
 
   it('keeps every Wave 3 append-and-generate caller on the capability-gated atomic submit path', () => {

@@ -1063,6 +1063,7 @@
           class:text-textcolor2={!$botMakerMode || devTool}>{language.character}</button>
         {#if getDatabase().enableDevTools}
           <button
+            data-testid="sidebar-developer-tools-button"
             aria-label={language.enableDevTools}
             aria-pressed={devTool}
             onclick={() => {

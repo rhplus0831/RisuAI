@@ -62,7 +62,7 @@ treated as completion.
   application in `src/ts/router.ts`.
 - [x] Dynamically load character, persona, Playground, settings, and chat route
   handlers only for matching routes.
-- [ ] Add first-open tests for every lazy route and modal family, including CSS,
+- [x] Add first-open tests for every lazy route and modal family, including CSS,
   focus restoration, no transient blank screen, and offline/stale chunk failure.
 
 ### 1B implementation measurement (2026-08-24)
@@ -84,9 +84,35 @@ owned by `routerRoute.ts`; persistence-capable settings, persona, Playground,
 character, and chat application lives behind route-specific dynamic handlers.
 
 The reusable lazy host has focused pending, failure, retry, stale-attempt, and
-modal focus-restoration coverage. The final 1B test checkbox remains open until
-the production-browser first-open matrix covers every registered family and
-intercepts real emitted JavaScript/CSS for offline and stale-chunk failures.
+modal focus-restoration coverage. The production-browser matrix now uses a
+smoke-only Vite asset manifest to account for all 59 registered first-use
+entries without hard-coding chunk hashes. It opens all 22 Settings route states,
+all 13 Playground tool routes, Grid, character/sidebar panels, chat dialogs, and
+the App-owned modal host against the real Fastify-served production build.
+
+The matrix delays emitted JavaScript and CSS separately, proves the shell never
+goes blank, checks applied lazy CSS, and verifies modal focus containment and
+opener restoration. Offline JavaScript and stale CSS failures remain local to
+their lazy owner and recover through route-preserving reload when Chromium's
+module map has cached a failed hashed entry. The global `vite:preloadError`
+listener now prevents default only while the entry preloader exists; after the
+shell mounts, the owning lazy promise is allowed to reject into its localized
+recovery surface.
+
+### 1B production-browser verification measurement (2026-08-24)
+
+| Measure | Before matrix | First-open matrix | Change |
+| --- | ---: | ---: | ---: |
+| Registered first-use entries covered | ad hoc | 59 | enforced by smoke manifest |
+| Initial preload files | 12 | 12 | 0 |
+| Initial JavaScript gzip | 318,199 bytes | 318,211 bytes | +12 bytes |
+| Largest initial chunk gzip | 283,335 bytes | 283,335 bytes | 0 |
+
+The manifest is emitted only by `build:smoke`; ordinary production output and
+its preload membership are unchanged apart from the small entry error-boundary
+fix. `phase1LazyFirstOpen.spec.ts` runs seven bounded Chromium cases rather than
+one browser case per component, while its manifest inventory makes a newly
+registered lazy entry fail until it is classified and covered.
 
 ### 1C. Store and global API dependency cleanup
 

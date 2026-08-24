@@ -19,7 +19,7 @@
   type LazyComponentState =
     | { kind: 'idle' | 'pending' }
     | { kind: 'ready'; component: Component<any> }
-    | { kind: 'error'; error: unknown }
+    | { kind: 'error'; error: unknown; offline: boolean }
 
   let {
     loader,
@@ -46,13 +46,28 @@
       },
       (error: unknown) => {
         if (currentAttempt !== attempt) return
-        loadState = { kind: 'error', error }
+        loadState = {
+          kind: 'error',
+          error,
+          offline: typeof navigator !== 'undefined' && navigator.onLine === false,
+        }
       },
     )
   }
 
   function retry(): void {
+    // Chromium keeps failed ESM fetches in the page's module map. Once an
+    // offline failure regains connectivity, reloading the current URL is the
+    // only reliable way to retry the same hashed entry and its CSS graph.
+    if (loadState.kind === 'error' && loadState.offline && navigator.onLine !== false) {
+      reload()
+      return
+    }
     loadComponent(loader)
+  }
+
+  function reload(): void {
+    window.location.reload()
   }
 
   function handleModalKeydown(event: KeyboardEvent): void {
@@ -63,9 +78,7 @@
   }
 
   let errorMessage = $derived(
-    typeof navigator !== 'undefined' && navigator.onLine === false
-      ? language.preloadOfflineError
-      : language.preloadStaleError,
+    loadState.kind === 'error' && loadState.offline ? language.preloadOfflineError : language.preloadStaleError,
   )
 
   $effect(() => {
@@ -87,7 +100,13 @@
   })
 </script>
 
-<div class:contents={!modal} class:h-full={fill} class:w-full={fill} use:lazyModalFocusOrigin={modal}>
+<div
+  data-risu-lazy-surface={testId}
+  data-risu-lazy-state={loadState.kind}
+  class:contents={!modal}
+  class:h-full={fill}
+  class:w-full={fill}
+  use:lazyModalFocusOrigin={modal}>
   {#if loadState.kind === 'ready'}
     {@const LoadedComponent = loadState.component}
     <LoadedComponent {...componentProps} />
@@ -116,6 +135,10 @@
               type="button"
               class="rounded-md border border-darkborderc px-3 py-2 text-textcolor hover:bg-selected focus:bg-selected"
               onclick={retry}>{language.retry}</button>
+            <button
+              type="button"
+              class="rounded-md border border-darkborderc px-3 py-2 text-textcolor hover:bg-selected focus:bg-selected"
+              onclick={reload}>{language.preloadReload}</button>
             {#if onDismiss}
               <button
                 type="button"
@@ -144,6 +167,10 @@
             type="button"
             class="rounded-md border border-darkborderc px-3 py-2 text-textcolor hover:bg-selected focus:bg-selected"
             onclick={retry}>{language.retry}</button>
+          <button
+            type="button"
+            class="rounded-md border border-darkborderc px-3 py-2 text-textcolor hover:bg-selected focus:bg-selected"
+            onclick={reload}>{language.preloadReload}</button>
         </div>
       {/if}
     </div>

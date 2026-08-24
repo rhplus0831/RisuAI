@@ -12,6 +12,8 @@ import { peekAppliedServerResourceRevision, type ServerCommandResult } from './c
 import { dispatchDurableServerBackedSettingsPatch } from './settingsBridge.svelte'
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { alertNormal } from '../alert'
+import { navigate } from '../router'
+import { QuickSettings } from '../stores.svelte'
 import { generationOperationCancellations, generationOperationProjections } from './generationOperations'
 import { listPendingMutations } from './pendingMutationOutbox'
 import {
@@ -57,6 +59,8 @@ export interface FastifyBrowserSmokeHook {
   swipeRerollBack: () => Promise<void>
   swipeRerollForward: () => Promise<void>
   showAlert: (message: string) => void
+  navigateTo: (path: string) => void
+  setQuickSettingsOpen: (open: boolean) => void
 }
 
 declare global {
@@ -118,6 +122,10 @@ export function installFastifyBrowserSmokeHook() {
     swipeRerollBack: () => unReroll(),
     swipeRerollForward: () => reroll({ sendChatMain: async () => true, closeMenu: () => {} }),
     showAlert: (message) => alertNormal(message),
+    navigateTo: (path) => navigate(path),
+    setQuickSettingsOpen: (open) => {
+      QuickSettings.open = open
+    },
   }
 }
 

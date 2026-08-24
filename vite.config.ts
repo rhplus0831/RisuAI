@@ -39,6 +39,7 @@ export default defineConfig(({ command, mode }) => {
       target: 'baseline-widely-available',
       minify: 'oxc',
       chunkSizeWarningLimit: 2000,
+      manifest: process.env.VITE_FASTIFY_BROWSER_SMOKE === 'TRUE' ? 'vite-assets-manifest.json' : false,
     },
 
     optimizeDeps: {
