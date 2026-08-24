@@ -8,7 +8,7 @@ must land before performance-oriented implementation begins.
 
 ## Inputs and owners
 
-- Baseline and initial budgets: [`PLAN.md`](../../PLAN.md#ws0--measurement-and-regression-budgets)
+- Baseline and initial budgets: [`PLAN.md`](PLAN.md#ws0--measurement-and-regression-budgets)
 - Browser entry and initial HTML: `src/main.ts`, `index.html`
 - Startup coordinator today: `src/ts/bootstrap.ts`
 - Browser-smoke hook: `src/ts/server/browserSmoke.ts`

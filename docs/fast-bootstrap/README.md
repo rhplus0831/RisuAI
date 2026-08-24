@@ -1,8 +1,10 @@
 # Fast Bootstrap Execution Guide
 
-This directory turns [`PLAN.md`](../../PLAN.md) into reviewable implementation
-phases. `PLAN.md` remains the requirements source of truth; these files are the
+This directory turns [`PLAN.md`](PLAN.md) into reviewable implementation phases.
+`PLAN.md` remains the requirements source of truth; these files are the
 execution runbooks for sequencing, code ownership, verification, and handoff.
+Current completion state and remaining work are recorded in
+[`PROGRESS.md`](PROGRESS.md).
 
 ## Phase index
 
