@@ -263,6 +263,7 @@ export interface PushNotificationCoordinator {
   retryCompensation(): Promise<ServerBackedSettingsPersistenceOutcome>
   retryStorage(): Promise<void>
   retryCleanup(): Promise<PushNotificationSettingReconcileOutcome>
+  dispose(): void
 }
 
 export interface CreatePushNotificationCoordinatorDependencies {
@@ -303,6 +304,8 @@ export function createPushNotificationCoordinator(
   let suppressNextSettledCompensationRollbackEnable = false
   let queuedCompensationGeneration = 0
   let queuedCompensationCleanup: (() => void) | null = null
+  let suppressionResetTimer: ReturnType<typeof setTimeout> | null = null
+  let lifecycleGeneration = 0
 
   function updateState(patch: Partial<PushNotificationCoordinatorState>): void {
     stateSnapshot = { ...stateSnapshot, ...patch }
@@ -339,10 +342,12 @@ export function createPushNotificationCoordinator(
 
   async function initialize(): Promise<void> {
     if (initializationPromise) return initializationPromise
+    const generation = lifecycleGeneration
     initializationPromise = (async () => {
       try {
         updateState({ phase: 'hydrating', operationError: null })
         const hydration = await desiredStateApplier.hydrate()
+        if (generation !== lifecycleGeneration) return
         updateState({
           phase: 'idle',
           pendingEndpoints: [...hydration.pendingEndpoints],
@@ -354,8 +359,10 @@ export function createPushNotificationCoordinator(
         const revision = ++coordinatorRevision
         updateState({ phase: 'startup-cleanup', operationError: null })
         const outcome = await transportReconciler.reconcile(false, { force: true })
+        if (generation !== lifecycleGeneration) return
         recordCleanupOutcome(outcome, revision)
       } catch (error) {
+        if (generation !== lifecycleGeneration) return
         initializationPromise = null
         updateState({ phase: 'idle', operationError: error })
         throw error
@@ -380,7 +387,9 @@ export function createPushNotificationCoordinator(
       queuedCompensationCleanup = null
       if (settlement === 'failed') {
         suppressNextSettledCompensationRollbackEnable = true
-        setTimeout(() => {
+        if (suppressionResetTimer !== null) clearTimeout(suppressionResetTimer)
+        suppressionResetTimer = setTimeout(() => {
+          suppressionResetTimer = null
           suppressNextSettledCompensationRollbackEnable = false
         }, 0)
       }
@@ -505,6 +514,20 @@ export function createPushNotificationCoordinator(
     return recordCleanupOutcome(outcome, revision)
   }
 
+  function dispose(): void {
+    lifecycleGeneration += 1
+    coordinatorRevision += 1
+    initializationPromise = null
+    clearQueuedCompensationSettlement()
+    if (suppressionResetTimer !== null) {
+      clearTimeout(suppressionResetTimer)
+      suppressionResetTimer = null
+    }
+    suppressCompensationRollbackEnable = false
+    suppressNextSettledCompensationRollbackEnable = false
+    updateState(initialState)
+  }
+
   return {
     state: readonly(stateWritable),
     initialize,
@@ -512,6 +535,7 @@ export function createPushNotificationCoordinator(
     retryCompensation,
     retryStorage,
     retryCleanup,
+    dispose,
   }
 }
 
@@ -527,6 +551,10 @@ export function reconcileChatCompletionPushNotificationSetting(
   enabled: boolean,
 ): Promise<PushNotificationSettingReconcileOutcome> {
   return pushNotificationCoordinator.reconcile(enabled)
+}
+
+export function stopPushNotificationCoordinator(): void {
+  pushNotificationCoordinator.dispose()
 }
 
 export function retryChatCompletionPushNotificationCompensation(): Promise<ServerBackedSettingsPersistenceOutcome> {

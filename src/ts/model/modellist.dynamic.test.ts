@@ -98,4 +98,29 @@ describe('registerModelDynamic provider operations', () => {
     })
     expect(LLMModels.some((model) => model.id === 'dynamic_google_audit-embedding-model')).toBe(false)
   })
+
+  it('preserves newer persisted model choices when late discovery completes', async () => {
+    let releaseGoogle!: (value: { models: any[] }) => void
+    const googleModels = new Promise<{ models: any[] }>((resolve) => {
+      releaseGoogle = resolve
+    })
+    database.value.aiModel = 'persisted-model'
+    database.value.subModel = 'persisted-submodel'
+    providerOperations.request.mockImplementation(async (operation: string) => {
+      if (operation === 'google.models') return googleModels
+      if (operation === 'anthropic.models') return { data: [] }
+      throw new Error(`unexpected operation: ${operation}`)
+    })
+
+    const discovery = registerModelDynamic()
+    await vi.waitFor(() => expect(providerOperations.request).toHaveBeenCalledWith('google.models', expect.any(Object)))
+
+    database.value.aiModel = 'newer-model'
+    database.value.subModel = 'newer-submodel'
+    releaseGoogle({ models: [] })
+    await discovery
+
+    expect(database.value.aiModel).toBe('newer-model')
+    expect(database.value.subModel).toBe('newer-submodel')
+  })
 })

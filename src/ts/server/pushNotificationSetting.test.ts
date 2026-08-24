@@ -101,6 +101,7 @@ function controlledQueuedReceipt(mutationId = 'settings-notification-false') {
   }
   return {
     receipt,
+    listenerCount: () => listeners.size,
     settle(settlement: ServerBackedSettingsFinalSettlement) {
       settled = settlement
       for (const listener of [...listeners]) listener(settlement)
@@ -310,6 +311,54 @@ describe('push notification setting reconciliation', () => {
 
     expect(outcome).toMatchObject({ compensation: 'queued' })
     expect(get(coordinator.state).compensation).toBe('accepted')
+  })
+
+  it('disposes queued settlement work idempotently and ignores its late result', async () => {
+    const queued = controlledQueuedReceipt()
+    const coordinator = createPushNotificationCoordinator({
+      enablePushNotifications: vi.fn(async () => ({
+        status: 'fallback' as const,
+        reason: 'vapid-unavailable' as const,
+      })),
+      disablePushNotifications: vi.fn(async () => disabledResult()),
+      persistSettingsPatch: vi.fn(async () => queued.receipt),
+      retryStorage: memoryRetryStorage().storage,
+    })
+
+    await coordinator.reconcile(true)
+    expect(queued.listenerCount()).toBe(1)
+
+    coordinator.dispose()
+    coordinator.dispose()
+    expect(queued.listenerCount()).toBe(0)
+    expect(get(coordinator.state)).toMatchObject({ phase: 'idle', compensation: null })
+
+    queued.settle('failed')
+    await Promise.resolve()
+    expect(get(coordinator.state)).toMatchObject({ phase: 'idle', compensation: null })
+  })
+
+  it('fences late initialization after disposal', async () => {
+    const hydration = deferred<{ pendingEndpoints: string[]; localInspectionPending: boolean }>()
+    const disablePushNotifications = vi.fn(async () => disabledResult())
+    const coordinator = createPushNotificationCoordinator({
+      enablePushNotifications: vi.fn(async () => ({ status: 'enabled' as const, endpoint: 'unused' })),
+      disablePushNotifications,
+      persistSettingsPatch: vi.fn(async () => ({ status: 'accepted' as const })),
+      retryStorage: {
+        loadPendingCleanup: vi.fn(() => hydration.promise),
+        savePendingCleanup: vi.fn(async () => undefined),
+      },
+    })
+
+    const initialization = coordinator.initialize()
+    await vi.waitFor(() => expect(get(coordinator.state).phase).toBe('hydrating'))
+    coordinator.dispose()
+    hydration.resolve({ pendingEndpoints: ['https://push.example/stale'], localInspectionPending: false })
+    await initialization
+
+    expect(disablePushNotifications).not.toHaveBeenCalled()
+    expect(get(coordinator.state)).toMatchObject({ phase: 'idle', pendingEndpoints: [] })
   })
 
   it.each(['accepted', 'failed'] as const)(

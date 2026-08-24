@@ -2,16 +2,12 @@ import { get } from 'svelte/store'
 import { getDatabase, setResourceWriteGuardEnabled, type Database } from './storage/database.svelte'
 import { botMakerMode } from './stores.svelte'
 import { loadedStore, LoadingStatusState, selectedCharID } from './stores/coreStores.svelte'
-import { installStoreRuntimeEffects } from './stores/runtimeEffects.svelte'
-import { loadPlugins, startPluginRuntimeSync } from './plugins/plugins.svelte'
+import { loadPlugins, startPluginRuntimeSync, stopPluginRuntimeSync } from './plugins/plugins.svelte'
 import { alertError, alertMd, alertRequiredSelect, waitAlert } from './alert'
 import { updateReducedMotion } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
 import { language } from 'src/lang'
-import { startObserveDom } from './observer.svelte'
 import { updateGuisize } from './gui/guisize'
-import { moduleUpdate } from './process/modules'
-import { registerModelDynamic } from './model/modellist'
 import { fetchServerBootstrap, fetchServerBootstrapReadOnly, type ServerBootstrapRuntime } from './server/bootstrap'
 import { subscribeServerCommandEvents, type ServerMemoryEvent, type ServerMemoryJobSnapshot } from './server/events'
 import { publishServerMemoryJobEvent } from './server/memoryJobEvents'
@@ -88,10 +84,6 @@ import {
   startActiveGreetingTranslationRefresh,
 } from './server/greetingTranslations.svelte'
 import { applyServerMemoryJobEvent, applyServerMemoryJobSnapshot } from './server/memoryJobProjection.svelte'
-import {
-  initializePushNotificationCoordinator,
-  reconcileChatCompletionPushNotificationSetting,
-} from './server/pushNotificationSetting'
 import { loadInitialServerResources, refreshInvalidatedServerResources } from './server/resourceInvalidation'
 import {
   forceServerDatabaseReplacementRefresh,
@@ -162,8 +154,6 @@ import {
 } from './server/promptTemplateHydration'
 import { setSettingsRuntimeProjectionHook } from './server/settingsRuntimeProjectionHooks'
 import { updateHeightMode } from './gui/heightMode'
-import { normalizeLegacyCustomBackgroundSetting } from './server/customBackgroundSetting'
-import { showLegacyMemoryMigrationNoticeIfNeeded } from './process/legacyMemoryMigrationNotice'
 import {
   reconcilePendingRecoveredGenerationEffects,
   setPendingRecoveredGenerationEffects,
@@ -219,7 +209,7 @@ setSettingsRuntimeProjectionHook((keys) => {
   if (keys.includes('animationSpeed') || keys.includes('reducedMotion')) updateReducedMotion()
   if (keys.includes('heightMode')) updateHeightMode()
   if (get(loadedStore) && keys.includes('notification')) {
-    void reconcileChatCompletionPushNotificationSetting(getDatabase().notification === true)
+    void reconcileProjectedPushNotificationSetting(getDatabase().notification === true)
   }
 })
 
@@ -245,6 +235,10 @@ let serverResourceRuntimeReplayEnabled = false
 let stopStartupChatReadinessSync: (() => void) | null = null
 let startupChatReadinessEpoch = 0
 let startupChatReadinessTarget: string | null = null
+let stopStoreRuntimeEffects: (() => void) | null = null
+let stopDomObserver: (() => void) | null = null
+let stopGlobalErrorHandlers: (() => void) | null = null
+let stopPushRuntime: (() => void) | null = null
 
 function initialSelectedCharFromDatabase(db: Database): number {
   const currentChar = (db as { currentChar?: unknown }).currentChar
@@ -317,7 +311,7 @@ async function runLoadDataAttempt(): Promise<StartupRetryTarget | null> {
     startStartupChatReadinessSync(startupAttemptId)
     await backgroundReadiness
     loadedStore.set(true)
-    void reconcileChatCompletionPushNotificationSetting(getDatabase().notification === true)
+    await reconcileProjectedPushNotificationSetting(getDatabase().notification === true)
     recordStartupMilestone('background-ready')
     completeStartupAttempt(startupAttemptId)
     return null
@@ -333,8 +327,11 @@ async function runLoadDataAttempt(): Promise<StartupRetryTarget | null> {
 async function settleStartupBackgroundReadiness(): Promise<void> {
   const results = await Promise.allSettled([
     runStartupStep('push-runtime', async () => {
+      const pushRuntime = await import('./server/pushNotificationSetting')
+      stopPushRuntime ??= pushRuntime.stopPushNotificationCoordinator
+      const { initializePushNotificationCoordinator, reconcileChatCompletionPushNotificationSetting } = pushRuntime
       await initializePushNotificationCoordinator()
-      void reconcileChatCompletionPushNotificationSetting(getDatabase().notification === true)
+      await reconcileChatCompletionPushNotificationSetting(getDatabase().notification === true)
     }),
     runStartupStep('background-runtime', async () => {
       LoadingStatusState.text = 'Checking For Format Update...'
@@ -352,10 +349,20 @@ async function settleStartupBackgroundReadiness(): Promise<void> {
         await waitAlert()
         localStorage.setItem('insecureOriginWarned', 'true')
       }
-      installStoreRuntimeEffects()
-      startObserveDom()
-      registerModelDynamic()
-      moduleUpdate()
+      const [runtimeEffects, observer, modelList, modules, customBackground, legacyMemoryNotice] = await Promise.all([
+        import('./stores/runtimeEffects.svelte'),
+        import('./observer.svelte'),
+        import('./model/modellist'),
+        import('./process/modules'),
+        import('./server/customBackgroundSetting'),
+        import('./process/legacyMemoryMigrationNotice'),
+      ])
+      stopStoreRuntimeEffects ??= runtimeEffects.installStoreRuntimeEffects()
+      stopDomObserver ??= observer.startObserveDom()
+      customBackground.normalizeLegacyCustomBackgroundSetting()
+      legacyMemoryNotice.showLegacyMemoryMigrationNoticeIfNeeded()
+      await modelList.registerModelDynamic()
+      modules.moduleUpdate()
     }),
   ])
 
@@ -365,6 +372,29 @@ async function settleStartupBackgroundReadiness(): Promise<void> {
       console.warn(`Failed to initialize ${labels[index]}:`, result.reason)
     }
   })
+}
+
+/** App/remount cleanup for optional and plugin runtimes that may outlive SSE. */
+export function stopDeferredStartupRuntimes(): void {
+  stopGlobalErrorHandlers?.()
+  stopGlobalErrorHandlers = null
+  stopStoreRuntimeEffects?.()
+  stopStoreRuntimeEffects = null
+  stopDomObserver?.()
+  stopDomObserver = null
+  stopPushRuntime?.()
+  stopPushRuntime = null
+  stopPluginRuntimeSync()
+}
+
+async function reconcileProjectedPushNotificationSetting(enabled: boolean): Promise<void> {
+  try {
+    const pushRuntime = await import('./server/pushNotificationSetting')
+    stopPushRuntime ??= pushRuntime.stopPushNotificationCoordinator
+    await pushRuntime.reconcileChatCompletionPushNotificationSetting(enabled)
+  } catch (error) {
+    console.warn('Failed to reconcile projected push notification setting:', error)
+  }
 }
 
 async function ensureStartupChatReadiness(): Promise<void> {
@@ -597,8 +627,6 @@ export async function loadWebInitialDatabase(options: { coordinated?: boolean } 
       serverResourceRuntimeReplayEnabled = true
     }
   })
-  normalizeLegacyCustomBackgroundSetting()
-  showLegacyMemoryMigrationNoticeIfNeeded()
   return { database }
 }
 
@@ -2136,9 +2164,14 @@ export function createGlobalErrorHandlers() {
 }
 
 function updateErrorHandling() {
+  if (stopGlobalErrorHandlers) return
   const { errorHandler, rejectHandler } = createGlobalErrorHandlers()
   window.addEventListener('error', errorHandler)
   window.addEventListener('unhandledrejection', rejectHandler)
+  stopGlobalErrorHandlers = () => {
+    window.removeEventListener('error', errorHandler)
+    window.removeEventListener('unhandledrejection', rejectHandler)
+  }
 }
 
 function getGlobalErrorLogPayload(event: ErrorEvent | Event): unknown {

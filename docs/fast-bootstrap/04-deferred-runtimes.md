@@ -66,14 +66,14 @@ signature that fences late results when the owner changes.
 | Plugin load and runtime synchronization | Accepted plugin projection; providers, UI hooks, output transforms, recovered plugin effects | Coalesced load queue and `stopPluginRuntimeSync()` | `pluginsReady` and `canGenerate`; complete consumer gating and localized retry in 4C |
 | Selected character/chat/prompt hydration | Current selection, applied revision, effective prompt owner; transcript and prompt assembly | Request deduplication plus selection/chat/prompt target supersession | `canGenerate` only; prompt and chat failures leave shell/mutation ready |
 | Recovered generation effects | Pending durable effect ledger and coherent plugin runtime; output listeners and post-generation effects | Ledger idempotency and retained coordinator retry | Chat-critical after plugins; finish per-chat recovery ordering in 4D |
-| Error listeners, warnings, store effects, DOM observer, model discovery, and module refresh | Browser globals and projected settings; their owning notices/interactions | Store effects are disposable; DOM/error listener production cleanup is still missing; model errors are local | Background-only; cleanup, model selection fencing, and import deferral remain in 4B |
-| Legacy background normalization and migration notice | Projected compatibility settings/database; background styling and one-time notice | Notice uses per-database deduplication; no explicit lifecycle cleanup | Move out of writer-shell in 4B after compatibility impact is covered |
+| Error listeners, warnings, store effects, DOM observer, model discovery, and module refresh | Browser globals and projected settings; their owning notices/interactions | Bootstrap owns idempotent store, observer, and global-listener disposal; model errors are local | Background-only; moved behind the optional-runtime import boundary in 4B |
+| Legacy background normalization and migration notice | Projected compatibility settings/database; background styling and one-time notice | Notice uses per-database deduplication; no persistent lifecycle resource | Moved out of writer-shell and into optional background setup in 4B |
 
-This slice changes scheduling, not all code-loading boundaries. `bootstrap.ts`
-still statically imports push, plugin, recovery, observer, model, and notice
-owners, and other immediate consumers may also retain those modules. Each 4B-4D
-move must inspect the production bundle graph before claiming a download or
-evaluation reduction.
+This slice initially changed scheduling rather than every code-loading boundary.
+The 4B follow-up moves the push, observer, model, module, compatibility, notice,
+and store-effect imports behind background `import()` calls. Plugin and recovery
+owners remain static for 4C-4D, and other immediate consumers can still retain a
+deferred bootstrap owner in the production closure.
 
 Focused coordinator, bootstrap, prompt-target reactivity, and push tests pass
 198 tests at this checkpoint. The focused bootstrap cases hold push unresolved
@@ -83,15 +83,50 @@ status, and reject an older same-chat prompt-owner result.
 
 ### 4B. Shell-independent optional work
 
-- [ ] Move push initialization and notification reconciliation after the shell.
+- [x] Move push initialization and notification reconciliation after the shell.
   Push failure must not clear shell, writer, or chat readiness.
 - [ ] Load the inlay catalog on first inlay use or noncompeting idle prefetch.
-- [ ] Start dynamic model discovery after persisted model choices are visible;
+- [x] Start dynamic model discovery after persisted model choices are visible;
   late results must not reset a still-valid selection.
-- [ ] Move update checks, nightly/insecure warnings, and nonessential observers
+- [x] Move update checks, nightly/insecure warnings, and nonessential observers
   out of the critical path. Preserve accessibility and required security
   behavior while avoiding a global wait.
-- [ ] Give every moved timer, observer, and subscription an idempotent cleanup.
+- [x] Give every moved timer, observer, and subscription an idempotent cleanup.
+
+#### 4B implementation record (2026-08-24)
+
+Bootstrap now requests push initialization/reconciliation and the optional
+browser-runtime group only after `writer-shell`; they run concurrently with
+plugin/chat readiness.
+The optional group owns global error handlers, nightly/insecure-origin warnings,
+store effects, the non-layout DOM observer, dynamic model discovery, module
+refresh, custom-background normalization, and the legacy-memory notice. The
+deployment-level update check remains a no-op and does not schedule startup
+work.
+
+`stopDeferredStartupRuntimes()` now owns idempotent app/remount teardown without
+being coupled to writer/SSE loss. It disposes store effects, the DOM observer,
+global error listeners, plugin synchronization, and the push coordinator. Push
+teardown also removes queued settlement subscriptions, clears its transient
+timer, and fences late initialization results. The DOM observer can be stopped
+and restarted without duplicating listeners.
+
+Dynamic discovery starts only after persisted settings and the shell projection
+are visible, and bootstrap awaits catalog settlement only on the background
+branch. A controlled late-result test mutates both selected model fields while
+the provider request is pending and proves the newer choices survive.
+
+The production report passes both protected boundaries: the initial static
+closure is 11 files / 216 modules / 311.23 KiB gzip, and the immediate
+`appStartup` closure is 98 files / 1026 modules / 1266.90 KiB gzip. The report
+also shows `pushNotificationSetting` and `customBackgroundSetting` remain in the
+immediate closure through other consumers, so this checkpoint claims scheduling
+and bootstrap-import isolation, not a network-byte reduction.
+
+The only unfinished 4B item is the inlay catalog. It is still part of the
+aggregate `loadInitialServerResources()` response and should move with Phase 5B
+route-driven resource hydration rather than introduce a second competing
+initial fetch here.
 
 ### 4C. Plugin readiness
 

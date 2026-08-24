@@ -9,6 +9,7 @@ import {
   _resetDomObserverForTesting,
   resetBgmObserverForChatSwitch,
   startObserveDom,
+  stopObserveDom,
 } from './observer.svelte'
 
 async function flushMutationObserver() {
@@ -35,6 +36,26 @@ afterEach(() => {
 })
 
 describe('startObserveDom', () => {
+  it('stops observing new nodes until the optional runtime is restarted', async () => {
+    startObserveDom()
+    stopObserveDom()
+
+    const stoppedCodeBlock = document.createElement('pre')
+    stoppedCodeBlock.setAttribute('x-hl-lang', 'js')
+    const stoppedListener = vi.spyOn(stoppedCodeBlock, 'addEventListener')
+    document.body.appendChild(stoppedCodeBlock)
+    await flushMutationObserver()
+    expect(countListenerAdds(stoppedListener, 'contextmenu')).toBe(0)
+
+    startObserveDom()
+    const restartedCodeBlock = document.createElement('pre')
+    restartedCodeBlock.setAttribute('x-hl-lang', 'ts')
+    const restartedListener = vi.spyOn(restartedCodeBlock, 'addEventListener')
+    document.body.appendChild(restartedCodeBlock)
+    await flushMutationObserver()
+    expect(countListenerAdds(restartedListener, 'contextmenu')).toBe(1)
+  })
+
   it('M14: repeated observer starts bind one contextmenu listener per code block', () => {
     const codeBlock = document.createElement('pre')
     codeBlock.setAttribute('x-hl-lang', 'js')

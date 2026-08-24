@@ -94,6 +94,14 @@ const activeWriterApi = vi.hoisted(() => ({ enterTakeover: vi.fn() }))
 const pushApi = vi.hoisted(() => ({
   initialize: vi.fn(async () => undefined),
   reconcile: vi.fn(async () => ({ status: 'applied' })),
+  stop: vi.fn(),
+}))
+const optionalRuntimeApi = vi.hoisted(() => ({
+  disposeStoreEffects: vi.fn(),
+  installStoreEffects: vi.fn(),
+  startObserver: vi.fn(),
+  stopObserver: vi.fn(),
+  stopPluginSync: vi.fn(),
 }))
 
 interface TestCommandEvent {
@@ -245,6 +253,7 @@ vi.mock('./server/commands', async (importActual) => {
 vi.mock('./plugins/plugins.svelte', () => ({
   loadPlugins: vi.fn(async () => undefined),
   startPluginRuntimeSync: vi.fn(),
+  stopPluginRuntimeSync: optionalRuntimeApi.stopPluginSync,
 }))
 vi.mock('./alert', () => ({
   alertError: vi.fn(),
@@ -256,7 +265,13 @@ vi.mock('./gui/animation', () => ({ updateReducedMotion: vi.fn() }))
 vi.mock('./gui/colorscheme', () => ({ updateColorScheme: vi.fn(), updateTextThemeAndCSS: vi.fn() }))
 vi.mock('./gui/guisize', () => ({ updateGuisize: vi.fn() }))
 vi.mock('./gui/heightMode', () => ({ updateHeightMode: vi.fn() }))
-vi.mock('./observer.svelte', () => ({ startObserveDom: vi.fn() }))
+vi.mock('./observer.svelte', () => ({
+  startObserveDom: optionalRuntimeApi.startObserver,
+  stopObserveDom: optionalRuntimeApi.stopObserver,
+}))
+vi.mock('./stores/runtimeEffects.svelte', () => ({
+  installStoreRuntimeEffects: optionalRuntimeApi.installStoreEffects,
+}))
 vi.mock('./process/modules', () => ({
   getModuleAssets: vi.fn(() => []),
   getModuleLorebooks: vi.fn(() => []),
@@ -270,6 +285,7 @@ vi.mock('./model/modellist', () => ({
 vi.mock('./server/pushNotificationSetting', () => ({
   initializePushNotificationCoordinator: pushApi.initialize,
   reconcileChatCompletionPushNotificationSetting: pushApi.reconcile,
+  stopPushNotificationCoordinator: pushApi.stop,
 }))
 
 import {
@@ -277,6 +293,7 @@ import {
   createGlobalErrorHandlers,
   loadData,
   loadWebInitialDatabase,
+  stopDeferredStartupRuntimes,
   stopServerResourceEvents,
 } from './bootstrap'
 import { loadPlugins, startPluginRuntimeSync } from './plugins/plugins.svelte'
@@ -415,6 +432,7 @@ beforeEach(() => {
   resetStartupReadinessForTests()
   recordStartupMilestone('entry', 0)
   recordStartupMilestone('shell-mounted', 1)
+  stopDeferredStartupRuntimes()
   stopServerResourceEvents()
   setResourceWriteGuardEnabled(false)
   resetServerResourceState()
@@ -425,6 +443,8 @@ beforeEach(() => {
   clearAppliedServerResourceRevision()
 
   vi.clearAllMocks()
+  optionalRuntimeApi.installStoreEffects.mockReturnValue(optionalRuntimeApi.disposeStoreEffects)
+  optionalRuntimeApi.startObserver.mockReturnValue(optionalRuntimeApi.stopObserver)
   ownershipApi.count.mockClear()
   ownershipApi.discard.mockReset()
   ownershipApi.reset.mockReset()
@@ -473,6 +493,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  stopDeferredStartupRuntimes()
   stopServerResourceEvents()
   resetStartupReadinessForTests()
   vi.useRealTimers()
@@ -604,6 +625,28 @@ describe('API-backed client bootstrap', () => {
     expect(get(loadedStore)).toBe(true)
     expect(alertError).not.toHaveBeenCalled()
     expect(consoleWarn).toHaveBeenCalledWith('Failed to initialize push runtime:', pushFailure)
+  })
+
+  it('owns idempotent cleanup for deferred app and plugin runtimes', async () => {
+    const addEventListener = vi.spyOn(window, 'addEventListener')
+    const removeEventListener = vi.spyOn(window, 'removeEventListener')
+
+    await loadData()
+
+    expect(optionalRuntimeApi.installStoreEffects).toHaveBeenCalledOnce()
+    expect(optionalRuntimeApi.startObserver).toHaveBeenCalledOnce()
+    expect(addEventListener.mock.calls.filter(([type]) => type === 'error')).toHaveLength(1)
+    expect(addEventListener.mock.calls.filter(([type]) => type === 'unhandledrejection')).toHaveLength(1)
+
+    stopDeferredStartupRuntimes()
+    stopDeferredStartupRuntimes()
+
+    expect(optionalRuntimeApi.disposeStoreEffects).toHaveBeenCalledOnce()
+    expect(optionalRuntimeApi.stopObserver).toHaveBeenCalledOnce()
+    expect(pushApi.stop).toHaveBeenCalledOnce()
+    expect(optionalRuntimeApi.stopPluginSync).toHaveBeenCalledTimes(2)
+    expect(removeEventListener.mock.calls.filter(([type]) => type === 'error')).toHaveLength(1)
+    expect(removeEventListener.mock.calls.filter(([type]) => type === 'unhandledrejection')).toHaveLength(1)
   })
 
   it('shares one coordinator attempt loop between concurrent startup callers', async () => {
@@ -902,7 +945,7 @@ describe('API-backed client bootstrap', () => {
       ),
     ).toBe(true)
 
-    expect(pushApi.reconcile).toHaveBeenCalledOnce()
+    await vi.waitFor(() => expect(pushApi.reconcile).toHaveBeenCalledOnce())
     expect(pushApi.reconcile).toHaveBeenCalledWith(true)
   })
 

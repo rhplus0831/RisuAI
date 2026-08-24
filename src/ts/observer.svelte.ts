@@ -209,21 +209,21 @@ function scheduleBodyRetry() {
   }, 50)
 }
 
-export function startObserveDom() {
+export function startObserveDom(): () => void {
   if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') {
-    return
+    return stopObserveDom
   }
 
   const body = document.body
   if (!body) {
     scheduleBodyRetry()
-    return
+    return stopObserveDom
   }
 
   observeNodeAndDescendants(body)
 
   if (domObserver && observedBody === body) {
-    return
+    return stopObserveDom
   }
 
   domObserver?.disconnect()
@@ -235,20 +235,25 @@ export function startObserveDom() {
     childList: true,
     subtree: true,
   })
+  return stopObserveDom
 }
 
-export function _resetDomObserverForTesting() {
+/** App/remount lifecycle cleanup for the optional DOM observer runtime. */
+export function stopObserveDom(): void {
   domObserver?.disconnect()
   domObserver = null
   observedBody = null
-  observedCodeBlocks = new WeakSet()
-  observedControlNodes = new WeakSet()
-  stopCurrentBgm()
-
   if (bodyRetryTimer !== null) {
     clearTimeout(bodyRetryTimer)
     bodyRetryTimer = null
   }
+}
+
+export function _resetDomObserverForTesting() {
+  stopObserveDom()
+  observedCodeBlocks = new WeakSet()
+  observedControlNodes = new WeakSet()
+  stopCurrentBgm()
 }
 
 export function _getBgmElementForTesting() {
