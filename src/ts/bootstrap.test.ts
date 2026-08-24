@@ -446,8 +446,7 @@ beforeEach(() => {
   pendingMutationApi.readOwner.mockReset()
   pendingMutationApi.readOwner.mockResolvedValue(null)
   pendingMutationApi.replay.mockResolvedValue({ attempted: 0, discarded: 0, retained: 0, succeeded: 0 })
-  promptTemplateApi.ensure.mockClear()
-  promptTemplateApi.ensure.mockResolvedValue(true)
+  promptTemplateApi.ensure.mockReset().mockResolvedValue(true)
   promptTemplateApi.hasOwnerEpochChanged.mockReset()
   promptTemplateApi.hasOwnerEpochChanged.mockReturnValue(false)
   promptTemplateApi.isHydrated.mockReset()
@@ -542,7 +541,7 @@ describe('API-backed client bootstrap', () => {
         canGenerate: true,
       },
       failures: {},
-      completedSteps: [
+      completedSteps: expect.arrayContaining([
         'writer-owner-adoption',
         'writer-bootstrap',
         'writer-initialize',
@@ -559,8 +558,52 @@ describe('API-backed client bootstrap', () => {
         'generation-recovery',
         'chat-readiness',
         'background-runtime',
-      ],
+        'background-readiness',
+      ]),
     })
+  })
+
+  it('allows plugin and chat readiness to complete while push initialization is delayed', async () => {
+    let releasePush!: () => void
+    pushApi.initialize.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releasePush = resolve
+        }),
+    )
+
+    const loading = loadData()
+
+    await vi.waitFor(() => expect(loadPlugins).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true))
+    expect(getStartupCoordinatorSnapshot().capabilities).toMatchObject({
+      canRenderShell: true,
+      canMutate: true,
+      pluginsReady: true,
+    })
+    expect(get(loadedStore)).toBe(false)
+
+    releasePush()
+    await loading
+    expect(get(loadedStore)).toBe(true)
+  })
+
+  it('isolates a failed push initialization from shell, mutation, and chat readiness', async () => {
+    const pushFailure = new Error('push storage unavailable')
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    pushApi.initialize.mockRejectedValueOnce(pushFailure)
+
+    await loadData()
+
+    expect(getStartupCoordinatorSnapshot().capabilities).toMatchObject({
+      canRenderShell: true,
+      canMutate: true,
+      pluginsReady: true,
+      canGenerate: true,
+    })
+    expect(get(loadedStore)).toBe(true)
+    expect(alertError).not.toHaveBeenCalled()
+    expect(consoleWarn).toHaveBeenCalledWith('Failed to initialize push runtime:', pushFailure)
   })
 
   it('shares one coordinator attempt loop between concurrent startup callers', async () => {
@@ -730,6 +773,41 @@ describe('API-backed client bootstrap', () => {
     expect(getStartupCoordinatorSnapshot().failures.canGenerate).toBeUndefined()
   })
 
+  it('fences same-chat prompt hydration and ignores an older owner result', async () => {
+    await loadData()
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true)
+    promptTemplateApi.ensure.mockClear()
+
+    let releaseOlderPrompt!: (ready: boolean) => void
+    promptTemplateApi.ensure.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          releaseOlderPrompt = resolve
+        }),
+    )
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[1].chats[0].generationSettings = { promptPresetId: 'prompt-older' }
+    })
+    hydrationApi.readinessRefreshHook?.()
+
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(false)
+    await vi.waitFor(() =>
+      expect(promptTemplateApi.ensure).toHaveBeenCalledWith({ promptPresetId: 'prompt-older', minimumRevision: 5 }),
+    )
+
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[1].chats[0].generationSettings = { promptPresetId: 'prompt-newer' }
+    })
+    hydrationApi.readinessRefreshHook?.()
+    await vi.waitFor(() => expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true))
+    expect(promptTemplateApi.ensure).toHaveBeenCalledWith({ promptPresetId: 'prompt-newer', minimumRevision: 5 })
+
+    releaseOlderPrompt(false)
+    await Promise.resolve()
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true)
+    expect(getStartupCoordinatorSnapshot().failures.canGenerate).toBeUndefined()
+  })
+
   it('reconciles disabled device push state after the initial settings load', async () => {
     await loadData()
 
@@ -867,7 +945,7 @@ describe('API-backed client bootstrap', () => {
     ])
     expect(hydrationApi.startChatMessageHydration).toHaveBeenCalledTimes(1)
     expect(characterHydrationApi.startSelected).toHaveBeenCalledTimes(1)
-    expect(promptTemplateApi.ensure).toHaveBeenCalledWith({ minimumRevision: 5 })
+    expect(promptTemplateApi.ensure).not.toHaveBeenCalled()
     expect(eventApi.subscriptions[0]?.sinceRevision).toBe(5)
   })
 
@@ -1019,14 +1097,29 @@ describe('API-backed client bootstrap', () => {
     expect(eventApi.subscribe).not.toHaveBeenCalled()
   })
 
-  it('does not complete startup when the selected prompt-template owner cannot be hydrated', async () => {
+  it('keeps shell and mutation readiness when the selected prompt-template owner cannot be hydrated', async () => {
     promptTemplateApi.ensure.mockResolvedValueOnce(false)
 
-    await expect(loadWebInitialDatabase()).rejects.toThrow('Selected prompt-template owner hydration failed')
+    await loadData()
 
-    expect(peekCachedServerCommandRevision()).toBeNull()
-    expect(peekAppliedServerResourceRevision()).toBeNull()
-    expect(eventApi.subscribe).not.toHaveBeenCalled()
+    expect(peekCachedServerCommandRevision()).toBe(5)
+    expect(peekAppliedServerResourceRevision()).toBe(5)
+    expect(eventApi.subscribe).toHaveBeenCalledOnce()
+    expect(promptTemplateApi.ensure).toHaveBeenCalledWith({ promptPresetId: null, minimumRevision: 5 })
+    expect(getStartupCoordinatorSnapshot()).toMatchObject({
+      capabilities: {
+        canRenderShell: true,
+        canMutate: true,
+        canGenerate: false,
+      },
+      failures: {
+        canGenerate: expect.objectContaining({ failureCode: 'selected-prompt-template-hydration-failed' }),
+      },
+    })
+
+    selectedCharID.set(0)
+    await vi.waitFor(() => expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true))
+    expect(promptTemplateApi.ensure).toHaveBeenCalledTimes(2)
   })
 
   it('refreshes the targeted API resources for a contiguous command event', async () => {
@@ -4769,7 +4862,7 @@ describe('API-backed client bootstrap', () => {
     resourceApi.refreshInvalidated.mockResolvedValueOnce({ status: 'ok', revision: 12, scope: 'full' })
     eventApi.subscriptions[0].onCommandEvent({ type: 'state.changed', revision: 9, resource: 'state' })
 
-    await vi.waitFor(() => expect(promptTemplateApi.ensure).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(promptTemplateApi.ensure).toHaveBeenCalledOnce())
     expect(promptTemplateApi.ensure).toHaveBeenLastCalledWith({ force: true, minimumRevision: 12 })
     expect(peekAppliedServerResourceRevision()).toBe(5)
     expect(hydrationApi.resetChatHydration).toHaveBeenCalledTimes(2)

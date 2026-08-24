@@ -30,13 +30,56 @@ module and tests before moving its invocation or import boundary.
 
 ### 4A. Classify and schedule work
 
-- [ ] Record each current bootstrap side effect, its required inputs, first
+- [x] Record each current bootstrap side effect, its required inputs, first
   consumer, cleanup function, retry semantics, and capability impact.
-- [ ] Distinguish code-loading from work scheduling. A deferred call that remains
+- [x] Distinguish code-loading from work scheduling. A deferred call that remains
   statically imported may still keep Phase 1's entry graph large.
-- [ ] Add a small scheduler or coordinator steps instead of untracked `void`
+- [x] Add a small scheduler or coordinator steps instead of untracked `void`
   calls when completion affects a named capability.
-- [ ] Keep genuinely background tasks out of the global readiness state.
+- [x] Keep genuinely background tasks out of the global readiness state.
+
+#### 4A implementation record (2026-08-24)
+
+The retained startup-step coordinator now starts one `background-readiness`
+branch immediately after `writer-shell`. Push and optional background setup run
+concurrently inside that branch, while plugin, recovery, and selected-chat work
+continue on the capability-critical branch. Optional failures settle locally and
+cannot enter the writer/plugin/chat retry path. The diagnostic
+`background-ready` milestone and temporary `loadedStore` alias are still
+published only after chat-critical and optional scheduling have both settled.
+
+The first dependency correction also moved selected prompt-template hydration
+out of `writer-projection-install`. Prompt readiness now uses the applied
+post-replay revision, the active chat's prompt override (falling back to the
+selected global prompt owner), a prompt-specific failure code, and a target
+signature that fences late results when the owner changes.
+
+| Startup work | Required inputs and first consumer | Cleanup and retry | Capability impact / Phase 4 disposition |
+| --- | --- | --- | --- |
+| Import-time discard notifier and settings projection hook | Language strings, projected setting keys; durable outbox reporting and visual/push reconciliation | Module-singleton setters; no app-lifecycle disposer | No readiness capability; retain, but do not add heavier imports to these hooks |
+| Writer owner adoption, bootstrap/takeover, first-run initialization, outbox preparation, receipt flush, and pending replay | Writer session, epoch, lineage, encrypted outbox; command admission and authoritative hydration | Retained coordinator steps; exact replay retry and ownership fencing | Immutable writer-critical path |
+| Full initial resource projection and write guard | Authenticated settings, collections, character summaries, inlay catalog, common revision; root resource database | Bounded coherent-read retry; destructive-refresh fencing | Shell/writer critical until Phase 5 replaces the aggregate; inlay removal belongs to Phase 5B |
+| Projection install and visual shell settings | Applied resource revision and selected character; root shell/sidebar | Retained step, hydration generations, command reconciler teardown | Records `observer-ready`; prompt hydration removed from this path |
+| Runtime projection services | Generation/job projections, translations, active selection; recovery and chat status consumers | Most owners expose idempotent starts and stops; bootstrap-level ownership remains for 4D | Currently writer-started; move chat/generation services after shell in 4D |
+| Server command-event subscription | Applied revision, writer session; resource invalidation, memory jobs, writer takeover | Epoch fencing, unsubscribe, watchdog/reconnect cleanup and retry | Records `writer-ready`; immutable readiness prerequisite |
+| Push coordinator and notification reconciliation | Projected notification setting and device-local retry ledger; notification settings UI | Coordinator coalescing and localized storage/cleanup/compensation retry | Background-only; now concurrent with plugin/chat work, with remaining UI/smoke work in 4B |
+| Plugin load and runtime synchronization | Accepted plugin projection; providers, UI hooks, output transforms, recovered plugin effects | Coalesced load queue and `stopPluginRuntimeSync()` | `pluginsReady` and `canGenerate`; complete consumer gating and localized retry in 4C |
+| Selected character/chat/prompt hydration | Current selection, applied revision, effective prompt owner; transcript and prompt assembly | Request deduplication plus selection/chat/prompt target supersession | `canGenerate` only; prompt and chat failures leave shell/mutation ready |
+| Recovered generation effects | Pending durable effect ledger and coherent plugin runtime; output listeners and post-generation effects | Ledger idempotency and retained coordinator retry | Chat-critical after plugins; finish per-chat recovery ordering in 4D |
+| Error listeners, warnings, store effects, DOM observer, model discovery, and module refresh | Browser globals and projected settings; their owning notices/interactions | Store effects are disposable; DOM/error listener production cleanup is still missing; model errors are local | Background-only; cleanup, model selection fencing, and import deferral remain in 4B |
+| Legacy background normalization and migration notice | Projected compatibility settings/database; background styling and one-time notice | Notice uses per-database deduplication; no explicit lifecycle cleanup | Move out of writer-shell in 4B after compatibility impact is covered |
+
+This slice changes scheduling, not all code-loading boundaries. `bootstrap.ts`
+still statically imports push, plugin, recovery, observer, model, and notice
+owners, and other immediate consumers may also retain those modules. Each 4B-4D
+move must inspect the production bundle graph before claiming a download or
+evaluation reduction.
+
+Focused coordinator, bootstrap, prompt-target reactivity, and push tests pass
+198 tests at this checkpoint. The focused bootstrap cases hold push unresolved
+while `pluginsReady` and `canGenerate` become true, isolate a rejected push from
+shell/mutation/chat readiness, preserve prompt failure as a generation-only
+status, and reject an older same-chat prompt-owner result.
 
 ### 4B. Shell-independent optional work
 

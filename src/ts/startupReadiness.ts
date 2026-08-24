@@ -37,6 +37,7 @@ export type StartupStep =
   | 'plugin-runtime'
   | 'generation-recovery'
   | 'background-runtime'
+  | 'background-readiness'
 
 export type StartupAttemptFailureCode =
   | 'writer-bootstrap-failed'
@@ -45,6 +46,7 @@ export type StartupAttemptFailureCode =
   | 'generation-recovery-failed'
   | 'selected-character-hydration-failed'
   | 'selected-chat-hydration-failed'
+  | 'selected-prompt-template-hydration-failed'
   | 'runtime-initialization-failed'
 
 export interface StartupAttemptSnapshot {

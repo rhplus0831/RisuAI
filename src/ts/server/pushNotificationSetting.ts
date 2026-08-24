@@ -340,20 +340,26 @@ export function createPushNotificationCoordinator(
   async function initialize(): Promise<void> {
     if (initializationPromise) return initializationPromise
     initializationPromise = (async () => {
-      updateState({ phase: 'hydrating' })
-      const hydration = await desiredStateApplier.hydrate()
-      updateState({
-        phase: 'idle',
-        pendingEndpoints: [...hydration.pendingEndpoints],
-        localInspectionPending: hydration.localInspectionPending,
-        retryStorageError: hydration.retryStorageError,
-      })
-      if (hydration.pendingEndpoints.length === 0 && !hydration.localInspectionPending) return
+      try {
+        updateState({ phase: 'hydrating', operationError: null })
+        const hydration = await desiredStateApplier.hydrate()
+        updateState({
+          phase: 'idle',
+          pendingEndpoints: [...hydration.pendingEndpoints],
+          localInspectionPending: hydration.localInspectionPending,
+          retryStorageError: hydration.retryStorageError,
+        })
+        if (hydration.pendingEndpoints.length === 0 && !hydration.localInspectionPending) return
 
-      const revision = ++coordinatorRevision
-      updateState({ phase: 'startup-cleanup', operationError: null })
-      const outcome = await transportReconciler.reconcile(false, { force: true })
-      recordCleanupOutcome(outcome, revision)
+        const revision = ++coordinatorRevision
+        updateState({ phase: 'startup-cleanup', operationError: null })
+        const outcome = await transportReconciler.reconcile(false, { force: true })
+        recordCleanupOutcome(outcome, revision)
+      } catch (error) {
+        initializationPromise = null
+        updateState({ phase: 'idle', operationError: error })
+        throw error
+      }
     })()
     return initializationPromise
   }

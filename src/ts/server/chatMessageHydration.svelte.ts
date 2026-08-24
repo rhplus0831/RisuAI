@@ -1242,7 +1242,12 @@ export function startChatMessageHydration(): void {
     $effect(() => {
       if (selectedCharMirror < 0) return
       const character = getDatabase().characters?.[selectedCharMirror]
-      const chatId = character?.chats?.[character?.chatPage ?? 0]?.id
+      const chat = character?.chats?.[character?.chatPage ?? 0]
+      const chatId = chat?.id
+      // Startup generation readiness also owns the effective prompt-template
+      // dependency. Reading the chat override here makes a same-chat owner
+      // change revoke stale readiness before a new template finishes loading.
+      chat?.generationSettings?.promptPresetId
       activeChatReadinessRefreshHook?.()
       if (chatId) void hydrateActiveChat()
       // Hydrate the open character's globalLore. This reads chaId only, so

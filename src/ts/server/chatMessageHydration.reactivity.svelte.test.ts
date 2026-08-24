@@ -95,6 +95,23 @@ describe('active-chat loading flag reactivity (real resource guard)', () => {
     expect(refreshReadiness).toHaveBeenCalledOnce()
   })
 
+  it('notifies readiness when the active chat prompt-template owner changes', () => {
+    setResourceWriteGuardEnabled(false)
+    seedTwoResidentChats()
+    const refreshReadiness = vi.fn()
+    setActiveChatReadinessRefreshHook(refreshReadiness)
+    startChatMessageHydration()
+    flushSync()
+    refreshReadiness.mockClear()
+
+    withTrustedResourceWrite(() => {
+      testDatabaseState.db.characters[0].chats[0].generationSettings = { promptPresetId: 'prompt-b' }
+    })
+    flushSync()
+
+    expect(refreshReadiness).toHaveBeenCalledOnce()
+  })
+
   it('does not invalidate one chat finalization selector when another chat changes', () => {
     const foregroundSeen: number[] = []
     const backgroundSeen: number[] = []

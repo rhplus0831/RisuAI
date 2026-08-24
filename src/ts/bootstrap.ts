@@ -197,7 +197,9 @@ class StartupChatDependencyError extends Error {
   constructor(
     readonly failureCode: Extract<
       StartupAttemptFailureCode,
-      'selected-character-hydration-failed' | 'selected-chat-hydration-failed'
+      | 'selected-character-hydration-failed'
+      | 'selected-chat-hydration-failed'
+      | 'selected-prompt-template-hydration-failed'
     >,
     message: string,
   ) {
@@ -288,13 +290,7 @@ async function runLoadDataAttempt(): Promise<StartupRetryTarget | null> {
   let failureMilestone: StartupMilestone = 'observer-ready'
   try {
     await runStartupStep('writer-shell', () => loadWebInitialDatabase({ coordinated: true }))
-    const db = getDatabase()
-    failureCode = 'push-initialization-failed'
-    failureMilestone = 'background-ready'
-    await runStartupStep('push-runtime', async () => {
-      await initializePushNotificationCoordinator()
-      void reconcileChatCompletionPushNotificationSetting(db.notification === true)
-    })
+    const backgroundReadiness = runStartupStep('background-readiness', settleStartupBackgroundReadiness)
     LoadingStatusState.text = 'Loading Plugins...'
     failureCode = 'plugin-initialization-failed'
     failureMilestone = 'plugins-ready'
@@ -319,9 +315,28 @@ async function runLoadDataAttempt(): Promise<StartupRetryTarget | null> {
       console.warn(dependencyError.message)
     }
     startStartupChatReadinessSync(startupAttemptId)
-    failureCode = 'runtime-initialization-failed'
-    failureMilestone = 'background-ready'
-    await runStartupStep('background-runtime', async () => {
+    await backgroundReadiness
+    loadedStore.set(true)
+    void reconcileChatCompletionPushNotificationSetting(getDatabase().notification === true)
+    recordStartupMilestone('background-ready')
+    completeStartupAttempt(startupAttemptId)
+    return null
+  } catch (error) {
+    failStartupAttempt(startupAttemptId, failureCode, failureMilestone)
+    alertError(error)
+    await waitAlert()
+    if (error instanceof FatalBootstrapError) return null
+    return startupRetryTargetForMilestone(failureMilestone)
+  }
+}
+
+async function settleStartupBackgroundReadiness(): Promise<void> {
+  const results = await Promise.allSettled([
+    runStartupStep('push-runtime', async () => {
+      await initializePushNotificationCoordinator()
+      void reconcileChatCompletionPushNotificationSetting(getDatabase().notification === true)
+    }),
+    runStartupStep('background-runtime', async () => {
       LoadingStatusState.text = 'Checking For Format Update...'
 
       LoadingStatusState.text = 'Updating States...'
@@ -337,24 +352,19 @@ async function runLoadDataAttempt(): Promise<StartupRetryTarget | null> {
         await waitAlert()
         localStorage.setItem('insecureOriginWarned', 'true')
       }
-      loadedStore.set(true)
-      void reconcileChatCompletionPushNotificationSetting(getDatabase().notification === true)
-      selectedCharID.set(initialSelectedCharFromDatabase(db))
       installStoreRuntimeEffects()
       startObserveDom()
       registerModelDynamic()
       moduleUpdate()
-      recordStartupMilestone('background-ready')
-    })
-    completeStartupAttempt(startupAttemptId)
-    return null
-  } catch (error) {
-    failStartupAttempt(startupAttemptId, failureCode, failureMilestone)
-    alertError(error)
-    await waitAlert()
-    if (error instanceof FatalBootstrapError) return null
-    return startupRetryTargetForMilestone(failureMilestone)
-  }
+    }),
+  ])
+
+  const labels = ['push runtime', 'optional background runtime'] as const
+  results.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      console.warn(`Failed to initialize ${labels[index]}:`, result.reason)
+    }
+  })
 }
 
 async function ensureStartupChatReadiness(): Promise<void> {
@@ -366,6 +376,18 @@ async function ensureStartupChatReadiness(): Promise<void> {
   }
   if (!(await hydrateActiveChat())) {
     throw new StartupChatDependencyError('selected-chat-hydration-failed', 'Selected chat hydration failed')
+  }
+  const promptPresetId = currentStartupPromptTemplateOwnerId()
+  if (
+    !(await ensurePromptTemplateHydrated({
+      promptPresetId,
+      minimumRevision: peekAppliedServerResourceRevision() ?? undefined,
+    }))
+  ) {
+    throw new StartupChatDependencyError(
+      'selected-prompt-template-hydration-failed',
+      'Selected prompt-template owner hydration failed',
+    )
   }
 }
 
@@ -413,7 +435,26 @@ function currentStartupChatReadinessTarget(): string {
   const selectedIndex = get(selectedCharID)
   const character = getDatabase().characters?.[selectedIndex]
   const chatId = character?.chats?.[character?.chatPage ?? 0]?.id
-  return `${selectedIndex}\u0000${character?.chaId ?? ''}\u0000${chatId ?? ''}`
+  const promptPresetId = currentStartupPromptTemplateOwnerId()
+  return `${selectedIndex}\u0000${character?.chaId ?? ''}\u0000${chatId ?? ''}\u0000${promptPresetId ?? ''}`
+}
+
+function currentStartupPromptTemplateOwnerId(): string | null {
+  const database = getDatabase()
+  const selectedIndex = get(selectedCharID)
+  const character = database.characters?.[selectedIndex]
+  const chat = character?.chats?.[character?.chatPage ?? 0]
+  const chatPromptPresetId = chat?.generationSettings?.promptPresetId
+  if (typeof chatPromptPresetId === 'string' && chatPromptPresetId.trim() !== '') {
+    return chatPromptPresetId.trim()
+  }
+
+  const selectedPromptPresetIndex = database.promptPresetsId
+  if (!Number.isInteger(selectedPromptPresetIndex) || selectedPromptPresetIndex < 0) return null
+  const selectedPromptPreset = database.promptPresets?.[selectedPromptPresetIndex]
+  return typeof selectedPromptPreset?.id === 'string' && selectedPromptPreset.id.trim() !== ''
+    ? selectedPromptPreset.id
+    : null
 }
 
 export async function loadWebInitialDatabase(options: { coordinated?: boolean } = {}) {
@@ -512,9 +553,6 @@ export async function loadWebInitialDatabase(options: { coordinated?: boolean } 
     resetChatHydration()
     resetLorebookHydration()
     recordHydratedCharacterLorebooks(result.characters)
-    if (!(await ensurePromptTemplateHydrated({ minimumRevision: resources.revision }))) {
-      throw new Error('Selected prompt-template owner hydration failed')
-    }
     setCachedServerCommandRevision(resources.revision)
     setAppliedServerResourceRevision(resources.revision)
     startSelectedCharacterShellHydration()
