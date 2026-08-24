@@ -27,16 +27,42 @@ the visible shell boundary until this phase is complete.
 
 ### 2A. Versioned summary contract
 
-- [ ] Define a shared, versioned response shape and an exact allowed-field list.
-- [ ] Include `__serverCharacterShell`, `chaId`, type, name, display image
+- [x] Define a shared, versioned response shape and an exact allowed-field list.
+- [x] Include `__serverCharacterShell`, `chaId`, type, name, display image
   reference, trash state, creation/modification/last-interaction metadata, and
   only list count/latest-message metadata proven necessary by current consumers.
-- [ ] Exclude chats, messages, alternate bodies, global lore, Hypa data, prompts,
+- [x] Exclude chats, messages, alternate bodies, global lore, Hypa data, prompts,
   scripts, triggers, and all other detail payloads.
-- [ ] Inventory sidebar, grid, folder, reorder, selection, and route consumers;
+- [x] Inventory sidebar, grid, folder, reorder, selection, and route consumers;
   record the concrete UI use that justifies every summary field.
-- [ ] Add exact-field contract tests so adding a new field is a deliberate
+- [x] Add exact-field contract tests so adding a new field is a deliberate
   protocol change rather than incidental serialization.
+
+### 2A contract decision (2026-08-24)
+
+`src/ts/server/characterSummaryProtocol.ts` owns version 1, the exact envelope
+and row key lists, and the runtime validators shared by the browser and Fastify.
+Every row emits all keys; absent optional scalar values use `null` or an empty
+string so cache hashes do not change because a serializer omitted a property.
+
+| Summary field | Current consumer and reason |
+| --- | --- |
+| `__serverCharacterShell`, `chaId`, `type` | Shell/detail guards, stable selection, route identity, reorder, and folder membership |
+| `name`, `displayName`, `image` | Sidebar, Grid, mobile rows, home recent characters, and pinned-chat labels |
+| `creatorNotes` | Grid cards render the localized creator-note description before character selection; keep this list-visible field until route-scoped Grid data can replace it |
+| `trashTime` | Grid active/trash filtering and restore targeting |
+| `creation_date`, `modification_date`, `lastInteraction` | Required character-card metadata and current recent-character sorting/relative-time UI |
+| `chatCount` | Mobile character rows display the chat count without receiving chat records |
+| `activeChatId` | Grid and home recent-character navigation preserve the selected chat without receiving `chatPage` or chat records |
+| `chatIds` | Sidebar unread, generation, and recovery indicators map chat-scoped runtime state to a character without chat records |
+| `pinnedChats` (`id`, `name`) | Desktop and home pinned-chat rails need only the stable route id and visible label |
+
+No current list consumer requires latest-message metadata, so version 1 omits
+it. The contract rejects `chats`, messages, lore, Hypa data, prompts, scripts,
+triggers, unknown row keys, unknown pinned-chat keys, duplicate identities, and
+inconsistent chat counts or references. `creatorNotes` is the only intentionally
+retained detail-like string; its removal condition is a route-scoped Grid
+projection that preserves the existing localized description behavior.
 
 ### 2B. Direct server projection
 

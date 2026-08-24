@@ -54,6 +54,7 @@ import {
 import { type HypaV3Settings, type HypaV3Preset, createHypaV3Preset } from '../process/memory/hypav3'
 import { normalizeTranslatorPresetState, type TranslatorPreset } from '../translator/presets'
 import { safeStructuredClone } from '../polyfill'
+import { SERVER_CHARACTER_SHELL_MARKER } from '../server/characterSummaryProtocol'
 import {
   canUseServerCommands,
   createModelPresetCommand,
@@ -3483,7 +3484,7 @@ export function mergeServerResourceFields(fields: Partial<Database>) {
   })
 }
 
-export const SERVER_CHARACTER_SHELL_MARKER = '__serverCharacterShell'
+export { SERVER_CHARACTER_SHELL_MARKER } from '../server/characterSummaryProtocol'
 
 export function isServerCharacterShell(character: unknown): boolean {
   return (
