@@ -42,6 +42,7 @@ import {
   type ServerBootstrapRuntime,
 } from './bootstrap'
 import { recordGenerationRecoveryEvent } from './protocolDiagnostics'
+import { getChatHydrationRuntime, registerGenerationOperationsRuntime } from '../process/generationRuntimeBridge'
 
 const GENERATION_OPERATIONS_ENDPOINT = '/api/v1/generation-operations'
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
@@ -1571,7 +1572,7 @@ export async function submitStagedAcceptedSendOperation(
   if (result.status === 'accepted') {
     if (result.response.append?.disposition !== 'accepted') staged.rollbackOptimisticAppend()
     else if (staged.target.chatId) {
-      const { acknowledgeMessageMutationLocalEffect } = await import('./chatMessageHydration.svelte')
+      const { acknowledgeMessageMutationLocalEffect } = getChatHydrationRuntime()
       acknowledgeMessageMutationLocalEffect(staged.target.chatId)
     }
   } else if (result.status === 'rejected') {
@@ -1693,3 +1694,14 @@ export async function dispatchGenerationOperationPendingReplay(
   if (result.status === 'rejected') return { disposition: 'discarded', result }
   return { disposition: 'retained', result }
 }
+
+registerGenerationOperationsRuntime({
+  applyGenerationOperationBootstrap,
+  generationOperationProjections,
+  generationOperationStreamForActiveJob,
+  isProtocolGenerationOperationJob,
+  readGenerationOperationStatus,
+  retireGenerationOperationViewers,
+  retryGenerationOperation,
+  stopGenerationOperation,
+})

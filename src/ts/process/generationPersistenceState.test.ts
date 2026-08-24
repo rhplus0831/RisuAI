@@ -51,6 +51,7 @@ import {
   startGenerationFinalizationPersistenceRefresh,
 } from './generationPersistenceState'
 import { clearRetainedChatProjections, reapplyRetainedChatBodyProjections } from '../server/chatRetainedProjection'
+import { registerGenerationOperationsRuntime, registerRecoveredEffectsRuntime } from './generationRuntimeBridge'
 
 function seedMessages(messages: Message[]): void {
   persistenceStateMocks.database = {
@@ -71,6 +72,13 @@ function currentMessages(): Message[] {
 }
 
 beforeEach(() => {
+  registerGenerationOperationsRuntime({
+    applyGenerationOperationBootstrap: persistenceStateMocks.applyGenerationOperationBootstrap,
+  } as never)
+  registerRecoveredEffectsRuntime({
+    reconcilePendingRecoveredGenerationEffects: persistenceStateMocks.reconcilePendingRecoveredGenerationEffects,
+    setPendingRecoveredGenerationEffects: persistenceStateMocks.setPendingRecoveredGenerationEffects,
+  })
   vi.useFakeTimers()
   persistenceStateMocks.database = { characters: [] }
   persistenceStateMocks.fetchBootstrap.mockReset()

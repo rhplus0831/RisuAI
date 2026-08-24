@@ -147,6 +147,13 @@ import {
   finishChatGenerationActivity,
   resetChatGenerationActivitiesForTests,
 } from '../generationActivity.svelte'
+import {
+  registerChatHydrationRuntime,
+  registerGenerationOperationsRuntime,
+  registerGenerationProcessRuntime,
+  registerRecoveredEffectsRuntime,
+  registerServerChatRuntime,
+} from '../generationRuntimeBridge'
 
 function openChat(chatId: string): void {
   h.database = {
@@ -169,6 +176,30 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 beforeEach(() => {
+  registerGenerationProcessRuntime({
+    clearActiveGenerationAbortController: h.clearActiveGenerationAbortController,
+    createActiveGenerationAbortController: h.createActiveGenerationAbortController,
+    sendChat: h.sendChat,
+  } as never)
+  registerGenerationOperationsRuntime({
+    applyGenerationOperationBootstrap: h.applyGenerationOperationBootstrap,
+    generationOperationProjections: h.generationOperationProjections,
+    generationOperationStreamForActiveJob: h.generationOperationStreamForActiveJob,
+    isProtocolGenerationOperationJob: h.isProtocolGenerationOperationJob,
+    readGenerationOperationStatus: vi.fn(async () => ({ status: 'retained', error: 'test status probe' })),
+    retireGenerationOperationViewers: h.retireGenerationOperationViewers,
+    retryGenerationOperation: h.retryGenerationOperation,
+    stopGenerationOperation: h.stopGenerationOperation,
+  } as never)
+  registerChatHydrationRuntime({ hydrateChatMessages: h.hydrateChatMessages } as never)
+  registerServerChatRuntime({
+    cancelServerChatGeneration: h.cancelServerChatGeneration,
+    retireGenerationJobViewers: h.retireGenerationJobViewers,
+  } as never)
+  registerRecoveredEffectsRuntime({
+    reconcilePendingRecoveredGenerationEffects: vi.fn(async () => undefined),
+    setPendingRecoveredGenerationEffects: vi.fn(),
+  })
   h.database = { characters: [] }
   h.selectedCharID.set(-1)
   h.sendChat.mockReset()

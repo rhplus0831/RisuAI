@@ -45,6 +45,7 @@ import { reapplyRetainedChatBodyProjections } from './chatRetainedProjection'
 import { acknowledgeHydratedGenerationPersistences } from '../process/generationPersistenceState'
 import { transcriptHasReplyForAcceptedSend } from '../process/acceptedSendRecoveryState'
 import { reconcileGenerationOperationTranscriptHydration } from './generationOperations'
+import { registerChatHydrationRuntime } from '../process/generationRuntimeBridge'
 
 export const BULK_HYDRATION_BATCH_SIZE = 32
 export const ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW = DEFAULT_CHAT_LOAD_INITIAL_PAGES
@@ -1259,3 +1260,9 @@ export function stopChatMessageHydration(): void {
   charLorebookInFlight.clear()
   pendingChatHydrationFreshness.clear()
 }
+
+registerChatHydrationRuntime({
+  acknowledgeMessageMutationLocalEffect,
+  hydrateChatMessages,
+  stopChatMessageHydration,
+})

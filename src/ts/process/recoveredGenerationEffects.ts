@@ -17,6 +17,7 @@ import {
 } from './generationEffectLedger'
 import type { ServerGenerationEffectLedgerRef } from './request/serverChatEvents'
 import type { ActiveChatTarget } from '../chatCommands'
+import { registerRecoveredEffectsRuntime } from './generationRuntimeBridge'
 
 let bootstrapPendingEffects: PendingGenerationEffect[] = []
 
@@ -227,3 +228,8 @@ function findAcceptedAssistant(
   if (acceptedIndex < 0 || message?.role !== 'char') return undefined
   return { character, chat, message, characterIndex, chatIndex, messageIndex }
 }
+
+registerRecoveredEffectsRuntime({
+  reconcilePendingRecoveredGenerationEffects,
+  setPendingRecoveredGenerationEffects,
+})

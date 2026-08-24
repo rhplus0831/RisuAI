@@ -1,3 +1,5 @@
+import { getChatHydrationRuntime } from '../process/generationRuntimeBridge'
+
 export const ACTIVE_WRITER_SESSION_HEADER = 'risu-writer-session'
 
 // Keep the writer identity stable across same-tab reloads, including mobile notification resumes.
@@ -158,7 +160,6 @@ async function runWriterTakeoverFlow(): Promise<void> {
     greetingTranslations,
     generationReattach,
     generationPersistence,
-    chatHydration,
     { language },
     { alertError, alertRequiredSelect },
   ] = await Promise.all([
@@ -167,7 +168,6 @@ async function runWriterTakeoverFlow(): Promise<void> {
     import('./greetingTranslations.svelte'),
     import('../process/reattach'),
     import('../process/generationPersistenceState'),
-    import('./chatMessageHydration.svelte'),
     import('../../lang'),
     import('../alert'),
   ])
@@ -177,7 +177,7 @@ async function runWriterTakeoverFlow(): Promise<void> {
   greetingTranslations.stopActiveGreetingTranslationRefresh()
   generationReattach.stopActiveGenerationReattach()
   generationPersistence.stopGenerationFinalizationPersistenceRefresh()
-  chatHydration.stopChatMessageHydration()
+  getChatHydrationRuntime().stopChatMessageHydration()
 
   writerAccessLostMutationNotifier = () => alertError(language.writerAccessLostMutation)
   const selectionPromise = alertRequiredSelect(

@@ -4,6 +4,7 @@ import { findGenerationOperationIdForTarget, stopGenerationOperation } from '../
 import { findChatGenerationActivity } from './generationActivity.svelte'
 import { abortInputHookActivity } from './inputHookActivity.svelte'
 import { activeGenerationJobs } from './reattach'
+import { getServerChatRuntime } from './generationRuntimeBridge'
 
 export const abortChat = writable(false)
 
@@ -37,6 +38,6 @@ export function abortActiveGeneration(): void {
       void stopGenerationOperation(job.operationId)
       return
     }
-    void import('./request/serverChat').then(({ cancelServerChatGeneration }) => cancelServerChatGeneration(job.jobId))
+    void getServerChatRuntime().cancelServerChatGeneration(job.jobId)
   }
 }

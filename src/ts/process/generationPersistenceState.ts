@@ -5,6 +5,7 @@ import { registerRetainedChatProjection } from '../server/chatRetainedProjection
 import type { GenerationFinalizationProjectionFence, GenerationFinalizationState } from '../server/bootstrap'
 import { getDatabase, type Message } from '../storage/database.svelte'
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
+import { getGenerationOperationsRuntime, getRecoveredEffectsRuntime } from './generationRuntimeBridge'
 
 export interface QueuedGenerationPersistence {
   chatId: string
@@ -148,10 +149,8 @@ async function refreshGenerationFinalizationPersistences(): Promise<void> {
     const { fetchServerBootstrapReadOnly } = await import('../server/bootstrap')
     const result = await fetchServerBootstrapReadOnly(null, { cacheRevision: false })
     if (refreshEnabled && result.status === 'ok' && result.bootstrap.generationFinalizations) {
-      const [{ applyGenerationOperationBootstrap }, recoveredGenerationEffects] = await Promise.all([
-        import('../server/generationOperations'),
-        import('./recoveredGenerationEffects'),
-      ])
+      const { applyGenerationOperationBootstrap } = getGenerationOperationsRuntime()
+      const recoveredGenerationEffects = getRecoveredEffectsRuntime()
       applyGenerationOperationBootstrap(result.bootstrap, 'bootstrap')
       setGenerationFinalizationPersistences(result.bootstrap.generationFinalizations)
       recoveredGenerationEffects.setPendingRecoveredGenerationEffects(result.bootstrap.pendingGenerationEffects ?? [])

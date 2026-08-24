@@ -61,6 +61,7 @@ import {
 } from './generationEffectLedger'
 import type { ServerGenerationEffectLedgerRef } from './request/serverChatEvents'
 import { isChatVisible, markChatUnread } from './chatUnread.svelte'
+import { registerGenerationProcessRuntime } from './generationRuntimeBridge'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -714,3 +715,9 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     }
   }
 }
+
+registerGenerationProcessRuntime({
+  clearActiveGenerationAbortController,
+  createActiveGenerationAbortController,
+  sendChat,
+})

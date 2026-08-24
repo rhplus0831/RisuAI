@@ -97,7 +97,7 @@ intercepts real emitted JavaScript/CSS for offline and stale-chunk failures.
   recreating the original eager graph.
 - [x] Remove the static `streamsaver` import and load it inside the `LocalWriter`
   path only when a streamed download starts.
-- [ ] Inspect every Vite static-plus-dynamic warning and remove the static path
+- [x] Inspect every Vite static-plus-dynamic warning and remove the static path
   that defeats the lazy boundary.
 - [x] Add focused download and store-effect tests for the moved boundaries.
 
@@ -169,6 +169,26 @@ changes were rolled back. The remaining five warnings are the core generation
 runtime cycle: operations, hydration, transport, orchestration, and recovered
 effects. They require a runtime-bridge split to remove evaluation-order deferral
 without eagerly importing the implementations.
+
+### 1C generation runtime bridge (2026-08-24)
+
+| Measure | Action/recovery cleanup | Runtime bridge | Change |
+| --- | ---: | ---: | ---: |
+| Initial preload files | 12 | 12 | 0 |
+| Initial JavaScript gzip | 318,201 bytes | 318,199 bytes | effectively flat |
+| Largest initial chunk gzip | 283,335 bytes | 283,335 bytes | 0% |
+| Ineffective dynamic-import warnings | 5 | 0 | -5 |
+
+A lightweight generation runtime bridge, with type-only references to its
+implementations, now owns capability registration for operations, hydration,
+transport, orchestration, and recovered effects. Their existing static
+production owners register implementations during module evaluation;
+cycle-deferring callers read the registered capabilities without importing back
+through the strongly connected component. Missing registration fails loudly,
+and focused tests cover registration, recovery, writer takeover, hydration,
+operations, and transport. The reattach path retains an explicit microtask
+boundary so a same-turn chat switch still wins before a projected job is
+consumed.
 
 ### 1D. Final grouping and enforcement
 

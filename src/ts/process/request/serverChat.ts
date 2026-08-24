@@ -68,6 +68,7 @@ import {
 } from '../../server/generationOperations'
 import { recordGenerationRecoveryEvent } from '../../server/protocolDiagnostics'
 import type { GenerationDisplayProjectionRef } from '../generationDisplayProjection.svelte'
+import { registerServerChatRuntime } from '../generationRuntimeBridge'
 
 const CHAT_ENDPOINT = '/api/v1/generate/chat'
 const INCOMPLETE_CHAT_GENERATION_SETTINGS_ERROR = 'chat_generation_settings_incomplete'
@@ -1429,3 +1430,5 @@ export async function requestServerChatGeneration(
 
   return ready
 }
+
+registerServerChatRuntime({ cancelServerChatGeneration, retireGenerationJobViewers })

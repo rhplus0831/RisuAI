@@ -64,6 +64,8 @@ function stubCryptoSessionId(sessionId: string) {
 
 async function importActiveWriterSession() {
   vi.resetModules()
+  const { registerChatHydrationRuntime } = await import('../process/generationRuntimeBridge')
+  registerChatHydrationRuntime({ stopChatMessageHydration: takeoverMocks.stopHydration } as never)
   return await import('./activeWriterSession')
 }
 

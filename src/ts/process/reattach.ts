@@ -15,6 +15,13 @@ import { subscribeBrowserLifecycleRecovery } from '../server/lifecycleRecovery'
 import { setCachedServerCommandRevision } from '../server/commands'
 import { reportSendChatError } from './sendChatErrors'
 import { stablePostGenerationChatTarget } from './postGeneration/stableTarget'
+import {
+  getChatHydrationRuntime,
+  getGenerationOperationsRuntime,
+  getGenerationProcessRuntime,
+  getRecoveredEffectsRuntime,
+  getServerChatRuntime,
+} from './generationRuntimeBridge'
 
 /**
  * Durable generations still running server-side, as surfaced by the bootstrap
@@ -640,10 +647,12 @@ async function reattachGenerationJob(job: ActiveGenerationJob, target: ActiveCha
     lastError: previousLifecycle?.lastError,
   })
   try {
+    // Keep the scheduling boundary that runtime module loading used to provide,
+    // so a same-turn chat switch wins before this job is consumed.
+    await Promise.resolve()
     const { sendChat, createActiveGenerationAbortController, clearActiveGenerationAbortController } =
-      await import('./index.svelte')
-    const { generationOperationStreamForActiveJob, isProtocolGenerationOperationJob } =
-      await import('../server/generationOperations')
+      getGenerationProcessRuntime()
+    const { generationOperationStreamForActiveJob, isProtocolGenerationOperationJob } = getGenerationOperationsRuntime()
     if (!isOpenChatTargetFresh(target) || !reattachProjectionStillCurrent(capture)) {
       return
     }
@@ -723,7 +732,7 @@ export async function retryGenerationJobReattach(jobId: string): Promise<void> {
   if (!requestedJob || !target?.chatId || target.chatId !== requestedJob.chatId) return
 
   if (!job && requestedJob.operationId) {
-    const { generationOperationProjections, retryGenerationOperation } = await import('../server/generationOperations')
+    const { generationOperationProjections, retryGenerationOperation } = getGenerationOperationsRuntime()
     const operation = get(generationOperationProjections).find(
       (candidate) => candidate.operationId === requestedJob.operationId,
     )
@@ -747,10 +756,8 @@ export async function retryGenerationJobReattach(jobId: string): Promise<void> {
     lastError: previousLifecycle?.lastError,
   })
   if (reattachingJobIds.has(job.jobId) || findChatGenerationActivity(target)) {
-    const [{ retireGenerationJobViewers }, { retireGenerationOperationViewers }] = await Promise.all([
-      import('./request/serverChat'),
-      import('../server/generationOperations'),
-    ])
+    const { retireGenerationJobViewers } = getServerChatRuntime()
+    const { retireGenerationOperationViewers } = getGenerationOperationsRuntime()
     retireGenerationJobViewers(job.jobId)
     if (job.operationId) retireGenerationOperationViewers(job.operationId)
     triggerOpenChatGenerationReattach()
@@ -773,7 +780,7 @@ async function hydrateReconciledChats(
   options: { strict?: boolean } = {},
 ): Promise<boolean> {
   if (jobs.length === 0) return true
-  const { hydrateChatMessages } = await import('../server/chatMessageHydration.svelte')
+  const { hydrateChatMessages } = getChatHydrationRuntime()
   const results = await Promise.allSettled(
     [...new Set(jobs.map((job) => job.chatId))].map((chatId) =>
       hydrateChatMessages(chatId, { force: true, strict: options.strict }),
@@ -842,14 +849,14 @@ export async function stopGenerationJob(jobId: string) {
   if (!requestedJob) return
   const job = authoritativeGenerationJobForChat(requestedJob.chatId) ?? requestedJob
   if (job.operationId) {
-    const { isProtocolGenerationOperationJob, stopGenerationOperation } = await import('../server/generationOperations')
+    const { isProtocolGenerationOperationJob, stopGenerationOperation } = getGenerationOperationsRuntime()
     if (!isProtocolGenerationOperationJob(job)) {
-      const { cancelServerChatGeneration } = await import('./request/serverChat')
+      const { cancelServerChatGeneration } = getServerChatRuntime()
       return cancelServerChatGeneration(job.jobId)
     }
     return stopGenerationOperation(job.operationId)
   }
-  const { cancelServerChatGeneration } = await import('./request/serverChat')
+  const { cancelServerChatGeneration } = getServerChatRuntime()
   return cancelServerChatGeneration(job.jobId)
 }
 
@@ -931,7 +938,7 @@ async function reconcileAbsentGenerationJobs(
   }
 
   const hydrated = await hydrateReconciledChats(absentJobs, { strict: true })
-  const { generationOperationProjections } = await import('../server/generationOperations')
+  const { generationOperationProjections } = getGenerationOperationsRuntime()
   const operations = get(generationOperationProjections)
   for (const job of absentJobs) {
     const operation = job.operationId
@@ -1003,10 +1010,8 @@ async function retireSupersededGenerationObservers(
   if (activeChatIds.size === 0) return
   const jobs = [...previousJobs, ...currentJobs].filter((job) => activeChatIds.has(job.chatId))
   if (jobs.length === 0) return
-  const [{ retireGenerationJobViewers }, { retireGenerationOperationViewers }] = await Promise.all([
-    import('./request/serverChat'),
-    import('../server/generationOperations'),
-  ])
+  const { retireGenerationJobViewers } = getServerChatRuntime()
+  const { retireGenerationOperationViewers } = getGenerationOperationsRuntime()
   for (const job of jobs) {
     retireGenerationJobViewers(job.jobId)
     if (job.operationId) retireGenerationOperationViewers(job.operationId)
@@ -1018,7 +1023,7 @@ async function applyGenerationRecoveryBootstrap(
   source: GenerationJobProjectionSource,
 ): Promise<void> {
   const previousJobs = [...authoritativeGenerationJobsById.values()]
-  const { applyGenerationOperationBootstrap } = await import('../server/generationOperations')
+  const { applyGenerationOperationBootstrap } = getGenerationOperationsRuntime()
   const applied = applyGenerationOperationBootstrap(runtime.bootstrap, source)
   if (!applied) return
   if (runtime.bootstrap.generationFinalizations) {
@@ -1029,7 +1034,7 @@ async function applyGenerationRecoveryBootstrap(
     await retireSupersededGenerationObservers(previousJobs, [...authoritativeGenerationJobsById.values()])
   }
   if ((runtime.bootstrap.pendingGenerationEffects?.length ?? 0) > 0) {
-    const recoveredGenerationEffects = await import('./recoveredGenerationEffects')
+    const recoveredGenerationEffects = getRecoveredEffectsRuntime()
     recoveredGenerationEffects.setPendingRecoveredGenerationEffects(runtime.bootstrap.pendingGenerationEffects ?? [])
     await recoveredGenerationEffects.reconcilePendingRecoveredGenerationEffects().catch(() => undefined)
   }
@@ -1071,7 +1076,7 @@ async function refreshGenerationAuthority(
     try {
       const { fetchServerBootstrapReadOnly } = await import('../server/bootstrap')
       if (options.operationId) {
-        const { readGenerationOperationStatus } = await import('../server/generationOperations')
+        const { readGenerationOperationStatus } = getGenerationOperationsRuntime()
         const status = await settleBeforeAbort(
           readGenerationOperationStatus(options.operationId, controller.signal),
           controller.signal,
