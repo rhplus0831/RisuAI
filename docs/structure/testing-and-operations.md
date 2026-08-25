@@ -90,6 +90,10 @@ default, because agent mode bypasses authentication; set `RISU_AGENT_DEV_HOST`
 explicitly only when a wider bind is intentional.
 The spawned API uses `tsx watch`, so API source edits restart it; use
 `pnpm api:dev:flag` when you need edit-triggered restarts to be manual.
+Vite scans all production TypeScript and Svelte modules for dependencies during
+startup, including lazy routes and optional frontend features, while excluding
+tests, fixtures, declarations, and test harnesses. The resulting pre-bundle is
+cached under `node_modules/.vite/` for later `dev:agent` and `dev:human` runs.
 
 In agent mode without an explicit `RISU_API_DATA_DIR`, the runner prepares
 `data-agent/` before spawning Fastify. Default `clone` mode takes an online

@@ -51,6 +51,17 @@ export default defineConfig(({ command, mode }) => {
     },
 
     optimizeDeps: {
+      // Scan every production frontend module up front so dependencies behind
+      // lazy routes and optional features are optimized before they are opened.
+      // Vite's default index.html crawl only follows the initial application
+      // graph and can otherwise trigger a later dependency re-bundle/reload.
+      entries: [
+        'src/**/*.{ts,svelte}',
+        '!src/**/*.d.ts',
+        '!src/**/*.test.*',
+        '!src/**/*.test[A-Z-]*',
+        '!src/**/{tests,__tests__,__fixtures__,testHarness}/**',
+      ],
       needsInterop: ['@mlc-ai/web-tokenizers'],
     },
 
