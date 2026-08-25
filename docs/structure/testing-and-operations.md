@@ -35,7 +35,7 @@ pin a `packageManager`; the lockfile is pnpm lockfile v9.
 | `pnpm test:server`                 | Run Fastify/server Vitest tests.                                                                                                                                              |
 | `pnpm test:compat-harness`         | Compare pinned local/Fastify generation matrices against a prepared pre-Fastify worktree; opt-in and not part of `test:all`.                                                 |
 | `pnpm test:smoke`                  | Alias for `pnpm smoke:fastify-browser`.                                                                                                                                       |
-| `pnpm test:all`                    | Run format, Svelte, strict server/browser-smoke TypeScript, frontend tests, explicit gates, the UI coverage gate, server tests, and browser smoke; preserve any failing lane. |
+| `pnpm test:all`                    | Run format, Svelte, strict server/browser-smoke TypeScript, frontend tests, explicit gates, the UI coverage gate, server tests, and browser smoke with bounded concurrency; preserve every failing lane. |
 | `pnpm coverage:ui-map`             | Run the focused UI coverage gate and write text/JSON reports to `coverage/ui-map`; use `coverage:ui-map:html` for an on-demand HTML report.                                   |
 | `pnpm api:test`                    | Compatibility alias for `pnpm test:server`.                                                                                                                                   |
 | `pnpm smoke:fastify-browser`       | Build the smoke client without production sourcemaps, then run Playwright Fastify browser smoke.                                                                             |
@@ -345,6 +345,18 @@ dependencies at the path declared in `test/compat-harness/run.ts`. Set
 artifacts. It is excluded from `pnpm test:all` because that external worktree is
 not a normal checkout prerequisite.
 
+`pnpm test:all` runs up to two ordinary lanes concurrently by default. Set
+`RISU_TEST_ALL_JOBS` or pass `--jobs <count>` to tune that outer limit, and use
+`--dry-run` to inspect the lane graph. Browser smoke runs outside that pool and
+waits for `check:server` because declaration checking and the smoke build both
+use `dist/`; its stateful tests remain serial within each spec while two locally
+isolated spec files may run concurrently. The focused UI coverage rerun waits
+for `test:frontend`. The render/clone performance gates run with one Vitest
+worker and no file parallelism. The Fastify/server lane also runs outside the
+concurrent pool because it contains deadline and load-cost assertions. These
+isolated phases keep concurrent load from invalidating timing checks. Every lane
+still runs when another lane fails, and the aggregate exits nonzero at the end.
+
 Config details: `vitest.config.ts` composes two thread-pool projects. The
 conservative allowlist in `vitest.node-tests.ts` runs validated pure tests in
 Node without loading `happy-dom`; new frontend tests default to the Svelte /
@@ -364,8 +376,9 @@ excludes explicit gate tests unless
 `pnpm coverage:frontend` set that variable for the lanes that intentionally
 include those files. Server Vitest uses Node, forks, a 15s test timeout, and
 sets `RISU_DIRECT_REALM_IMPORT_TEST` only when the Realm import test is directly
-selected. Playwright smoke is serial, one-worker Chromium with trace retained on
-failure, and rejects focused tests when CI is truthy.
+selected. Playwright smoke keeps tests within each file serial; local runs use
+two file workers, while CI stays at one worker. It retains Chromium traces on
+failure and rejects focused tests when CI is truthy.
 Both Vitest configs set `allowOnly: false`. Directly selecting
 `realmImport.test.ts` also enables its otherwise skipped 7,000-asset stress case.
 
@@ -561,7 +574,8 @@ The focused UI coverage job runs when `src/` or its runner/build configuration
 changes and uploads its report. Playwright failure traces/results are also
 uploaded. A final `verify` job preserves the aggregate pass/fail contract while
 allowing independent lanes to finish after another lane fails. The local
-`pnpm test:all` command remains the unconditional pre-merge equivalent.
+`pnpm test:all` command remains the unconditional pre-merge equivalent, using
+bounded local concurrency and isolated load-sensitive phases.
 
 The container path (`Dockerfile`, `docker-compose.yml`, `.dockerignore`) was
 removed on 2026-07-22; the project does not currently ship a Docker image, and

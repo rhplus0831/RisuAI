@@ -1,10 +1,14 @@
 import { defineConfig, devices } from '@playwright/test'
 
+const isCi = Boolean(process.env.CI)
+
 export default defineConfig({
   testDir: './server/fastify/browser-smoke',
-  forbidOnly: !!process.env.CI,
+  forbidOnly: isCi,
   fullyParallel: false,
-  workers: 1,
+  // Stateful tests within a spec stay serial; independent files use isolated
+  // random-port Fastify/data harnesses and can share a local machine safely.
+  workers: isCi ? 1 : 2,
   timeout: 30_000,
   reporter: 'list',
   use: {

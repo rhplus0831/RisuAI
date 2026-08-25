@@ -10,7 +10,7 @@ The suite is strongest at the application's highest-risk state and protocol boun
 
 Assertions are commonly exact and stateful: request bodies and headers, SSE frame order, SQLite rows and revisions, IndexedDB outbox contents, rollback scope, visible DOM state, and resource cleanup are all checked.
 
-The main weakness is integration depth rather than raw case count. Most frontend tests run in happy-dom with mocked network/storage/browser APIs; most provider tests mock upstream services; and the serial Playwright suite covers selected built-browser/Fastify/SQLite journeys. The Phase 7 fast-bootstrap matrix now provides isolated response-loss replay, offline replay, event-gap recovery, multi-tab writer takeover, observer promotion, direct-link, and optional-runtime failure journeys. There is still no normal composer-to-stream-to-durable-reload browser journey, page-crash/reload outbox journey combined with writer transfer, or destructive backup-restore/outbox-quarantine journey. CI also enforces only a deliberately small UI coverage sentinel, not the much broader frontend or backend coverage maps.
+The main weakness is integration depth rather than raw case count. Most frontend tests run in happy-dom with mocked network/storage/browser APIs; most provider tests mock upstream services; and the per-file-serial Playwright suite covers selected built-browser/Fastify/SQLite journeys. The Phase 7 fast-bootstrap matrix now provides isolated response-loss replay, offline replay, event-gap recovery, multi-tab writer takeover, observer promotion, direct-link, and optional-runtime failure journeys. There is still no normal composer-to-stream-to-durable-reload browser journey, page-crash/reload outbox journey combined with writer transfer, or destructive backup-restore/outbox-quarantine journey. CI also enforces only a deliberately small UI coverage sentinel, not the much broader frontend or backend coverage maps.
 
 ## Index
 
@@ -53,10 +53,10 @@ The main weakness is integration depth rather than raw case count. Most frontend
 | `pnpm test:gates:audit`  | The two mounted visible-state audit gates under `src/lib/_audit`                                             |
 | `pnpm test:server`       | Node/Fastify/SQLite tests discovered by `server/fastify/vitest.config.ts`                                     |
 | `pnpm test:compat-harness` | Opt-in golden comparison with the pinned pre-Fastify worktree; requires the external baseline and is not in `test:all` |
-| `pnpm test:smoke`        | Serial Chromium tests under `server/fastify/browser-smoke`                                                    |
+| `pnpm test:smoke`        | Per-file-serial Chromium specs; two local file workers, one in CI                                             |
 | `pnpm measure:fast-bootstrap` | Production preload/boundary reports plus the small/large cold/warm startup matrix                         |
 | `pnpm verify:fast-bootstrap:phase7` | Complete fast-bootstrap measurement plus direct-link, replay, event-gap, writer, observer, and optional-runtime journeys |
-| `pnpm test:all`          | The quality-workflow aggregate: formatting, both type checks, frontend, gates, UI map, server, and smoke      |
+| `pnpm test:all`          | Bounded-parallel quality aggregate with dist-dependent and load-sensitive lanes isolated                      |
 | `pnpm coverage:frontend` | Broad frontend report, including gates; not part of `test:all`                                                |
 | `pnpm coverage:backend`  | Broad Fastify report; not part of `test:all`                                                                  |
 | `pnpm coverage:ui-map`   | Six-file repeated UI sentinel with aggregate line/statement/function/branch floors of 8%/7%/5%/4%; text/JSON output |
@@ -65,10 +65,19 @@ The main weakness is integration depth rather than raw case count. Most frontend
 All Vitest projects reject focused tests. The frontend runner composes a
 validated Node allowlist with the default Svelte/happy-dom project; add a test to
 `vitest.node-tests.ts` only after it passes in Node without Svelte rune transform
-or DOM dependencies. Playwright is serial, retains traces on failure, and sets
-`forbidOnly` in CI. The normally skipped 7,000-display-asset Realm stress case is
-enabled by running `realmImport.test.ts` directly. Broad frontend and backend
-coverage are report-only; only the focused UI map has thresholds.
+or DOM dependencies. Playwright keeps each spec serial, uses two local file
+workers (one in CI), retains traces on failure, and sets `forbidOnly` in CI. The
+normally skipped 7,000-display-asset Realm stress case is enabled by running
+`realmImport.test.ts` directly. Broad frontend and backend coverage are
+report-only; only the focused UI map has thresholds.
+
+`test:all` defaults to two concurrent outer lanes; override it with
+`RISU_TEST_ALL_JOBS=<count>` or `--jobs <count>`, and inspect the schedule with
+`--dry-run`. It waits to build browser smoke until the server typecheck has
+finished writing client declarations under `dist/`, waits to collect the UI map
+until the ordinary frontend run is complete, and runs browser smoke, server, and
+performance lanes outside the outer pool. Smoke uses its own bounded file-level
+parallelism; the other isolated lanes contain load-sensitive checks.
 
 `server/fastify/vitest.config.ts` roots discovery at `server/fastify/` and
 includes `__tests__/**/*.test.ts`. The package aliases keep `pnpm test` on
@@ -97,7 +106,7 @@ for fixtures, budgets, artifact interpretation, and request-trace correlation.
 
 ## Major gaps
 
-- **Too few complete browser journeys.** The serial Chromium suite cannot cover the number of independently tested layers. Missing high-value journeys include normal composer streaming and reload, crash/replay, two-tab writer transfer, profile creation-to-generation, Hypa jobs, multi-step loadouts/modules, and destructive backup restore with queued outbox work.
+- **Too few complete browser journeys.** The per-file-serial Chromium suite cannot cover the number of independently tested layers. Missing high-value journeys include normal composer streaming and reload, crash/replay, two-tab writer transfer, profile creation-to-generation, Hypa jobs, multi-step loadouts/modules, and destructive backup restore with queued outbox work.
 - **Mocked external and browser behavior.** Provider APIs, Web Push, Web Speech/AudioContext, image decoding/canvas/compression, workers, IndexedDB quota/upgrade failure, Web Locks, and most service-worker behavior are simulated. Deterministic unit tests should remain, but bounded opt-in canaries and a few real-browser media/storage cases are needed.
 - **Coverage and CI governance are narrow.** The enforced UI map samples six files with low aggregate thresholds; the much broader frontend/backend maps have no floors or changed-file policy. CI does not publish retained Playwright traces and test results. Important low-covered seams include browser Hypa implementations, plugin safety/sandbox branches, parsing/script orchestration, some provider adapters, backend CBS/lorebook/trigger effects, Realm card conversion, and several runtime/error branches.
 - **Duplicated client/server contracts can drift.** Capability eligibility, command routes, SSE event names, prompt/lore behavior, preset schemas, asset-owner catalogs, and provider option matrices are hand-maintained on both sides. Independent tests provide defense in depth, but shared typed fixtures or parity checks are missing.
