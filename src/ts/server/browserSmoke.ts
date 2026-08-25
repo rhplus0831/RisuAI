@@ -12,10 +12,13 @@ import { peekAppliedServerResourceRevision, type ServerCommandResult } from './c
 import { dispatchDurableServerBackedSettingsPatch } from './settingsBridge.svelte'
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { alertNormal } from '../alert'
-import { navigate } from '../router'
+import { currentRoute, navigate } from '../router'
+import type { AppRoute } from '../routerRoute'
 import { QuickSettings } from '../stores.svelte'
 import { generationOperationCancellations, generationOperationProjections } from './generationOperations'
 import { listPendingMutations } from './pendingMutationOutbox'
+import { clearResourceCache } from './resourceCache'
+import { currentRouteResourceLoadState, type RouteResourceLoadState } from './routeResourceLoader'
 import {
   getStartupCoordinatorSnapshot,
   getStartupReadinessSnapshot,
@@ -45,9 +48,12 @@ export interface FastifyBrowserSmokeLifecycleSnapshot {
 export interface FastifyBrowserSmokeHook {
   assertDirectProjectionWriteRejected: () => boolean
   activeWriterHeaders: () => Promise<Record<string, string>>
+  clearResourceCache: () => Promise<void>
   getAppliedServerResourceRevision: () => number | null
   getDatabaseSnapshot: () => Database
+  getCurrentRoute: () => AppRoute
   getLifecycleSnapshot: () => Promise<FastifyBrowserSmokeLifecycleSnapshot>
+  getRouteResourceLoadState: () => RouteResourceLoadState
   getStartupCoordinatorSnapshot: () => StartupCoordinatorSnapshot
   getStartupSnapshot: () => StartupReadinessSnapshot
   isLoaded: () => boolean
@@ -86,7 +92,9 @@ export function installFastifyBrowserSmokeHook() {
       }
       return false
     },
+    clearResourceCache,
     getAppliedServerResourceRevision: peekAppliedServerResourceRevision,
+    getCurrentRoute: () => structuredClone(get(currentRoute)),
     getDatabaseSnapshot: () => getDatabase({ snapshot: true }),
     getLifecycleSnapshot: async () => ({
       acceptedSendRecoveries: structuredClone(get(acceptedSendRecoveries)),
@@ -108,6 +116,7 @@ export function installFastifyBrowserSmokeHook() {
     }),
     getStartupCoordinatorSnapshot,
     getStartupSnapshot: getStartupReadinessSnapshot,
+    getRouteResourceLoadState: currentRouteResourceLoadState,
     isLoaded: () => get(loadedStore),
     // Ride the real durable outbox path so the request carries the mutation
     // receipt + database-lineage headers. The Journey 3 lineage-recovery gate
