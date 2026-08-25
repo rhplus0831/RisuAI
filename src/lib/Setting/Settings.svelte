@@ -31,6 +31,7 @@
   import { alertConfirm } from 'src/ts/alert'
   import { closeSettingsRoute, navigate } from 'src/ts/router'
   import { pluginRuntimeStateStore } from 'src/ts/plugins/plugins.svelte'
+  import { prefetchRouteIntent, type RouteModuleLoader } from 'src/ts/routeIntentPrefetch'
 
   const loadUserSettings = () => import('./Pages/UserSettings.svelte')
   const loadBotSettings = () => import('./Pages/BotSettings.svelte')
@@ -52,6 +53,29 @@
   const loadRequestHistorySettings = () => import('./Pages/RequestHistorySettings.svelte')
   const loadSourceCode = () => import('./Pages/SourceCode.svelte')
   const loadThanksPage = () => import('./Pages/ThanksPage.svelte')
+
+  const settingsRouteLoaders: Record<string, RouteModuleLoader> = {
+    '/settings/backup': loadUserSettings,
+    '/settings/model': loadBotSettings,
+    '/settings/prompt-settings': loadBotSettings,
+    '/settings/bot-preset': loadBotSettings,
+    '/settings/other-bots': loadOtherBotSettings,
+    '/settings/display': loadDisplaySettings,
+    '/settings/plugins': loadPluginSettings,
+    '/settings/advanced': loadAdvancedSettings,
+    '/settings/global-lorebook': loadGlobalLoreBookSettings,
+    '/settings/global-regex': loadGlobalRegex,
+    '/settings/language': loadLanguageSettings,
+    '/settings/accessibility': loadAccessibilitySettings,
+    '/settings/persona': loadPersonaSettings,
+    '/settings/modules': loadModuleSettings,
+    '/settings/hotkeys': loadHotkeySettings,
+    '/settings/agent-presets': loadAgentPresetSettings,
+    '/settings/input-hooks': loadInputHookSettings,
+    '/settings/request-history': loadRequestHistorySettings,
+    '/settings/source-code': loadSourceCode,
+    '/settings/supporter': loadThanksPage,
+  }
 
   let supporterConfirmOpen = $state(false)
   let viewportWidth = $state(window.innerWidth)
@@ -100,6 +124,14 @@
   function goBackToSettingsList() {
     navigate('/settings', { replace: true })
   }
+
+  function preloadSettingsRouteFromEvent(event: Event): void {
+    if (!(event.target instanceof Element)) return
+    const target = event.target.closest<HTMLElement>('[data-risu-route-intent]')
+    const path = target?.dataset.risuRouteIntent
+    const loader = path ? settingsRouteLoaders[path] : undefined
+    if (path && loader) prefetchRouteIntent(path, [loader])
+  }
 </script>
 
 <svelte:window onresize={updateViewportWidth} />
@@ -114,12 +146,17 @@
         class="flex h-full flex-col gap-4 overflow-y-auto relative rs-setting-cont-3 shrink-0 px-3 py-4 pt-8"
         class:w-full={mobileSettingsLayout}
         class:bg-darkbg={!$MobileGUI}
-        class:bg-bgcolor={$MobileGUI}>
+        class:bg-bgcolor={$MobileGUI}
+        role="navigation"
+        aria-label={language.settings}
+        onpointerover={preloadSettingsRouteFromEvent}
+        onfocusin={preloadSettingsRouteFromEvent}>
         {#if !$isLite}
           <div class="flex flex-col gap-1">
             <span class="px-2 text-xs font-semibold uppercase text-textcolor2">{language.settingsGroupChatSetup}</span>
             <button
               class={navButtonClass($SettingsMenuIndex === 17)}
+              data-risu-route-intent="/settings/model"
               onclick={() => {
                 navigate('/settings/model')
               }}>
@@ -128,6 +165,7 @@
             </button>
             <button
               class={navButtonClass($SettingsMenuIndex === 18 || $SettingsMenuIndex === 13)}
+              data-risu-route-intent="/settings/prompt-settings"
               onclick={() => {
                 navigate('/settings/prompt-settings')
               }}>
@@ -136,6 +174,7 @@
             </button>
             <button
               class={navButtonClass($SettingsMenuIndex === 19)}
+              data-risu-route-intent="/settings/agent-presets"
               onclick={() => {
                 navigate('/settings/agent-presets')
               }}>
@@ -144,6 +183,7 @@
             </button>
             <button
               class={navButtonClass($SettingsMenuIndex === 20)}
+              data-risu-route-intent="/settings/input-hooks"
               onclick={() => {
                 navigate('/settings/input-hooks')
               }}>
@@ -153,6 +193,7 @@
             {#if getDatabase().botPresets?.length > 0}
               <button
                 class={navButtonClass($SettingsMenuIndex === 1)}
+                data-risu-route-intent="/settings/bot-preset"
                 onclick={() => {
                   navigate('/settings/bot-preset')
                 }}>
@@ -162,6 +203,7 @@
             {/if}
             <button
               class={navButtonClass($SettingsMenuIndex === 12)}
+              data-risu-route-intent="/settings/persona"
               onclick={() => {
                 navigate('/settings/persona')
               }}>
@@ -175,6 +217,7 @@
               >{language.settingsGroupCapabilities}</span>
             <button
               class={navButtonClass($SettingsMenuIndex === 2)}
+              data-risu-route-intent="/settings/other-bots"
               onclick={() => {
                 navigate('/settings/other-bots')
               }}>
@@ -183,6 +226,7 @@
             </button>
             <button
               class={navButtonClass($SettingsMenuIndex === 14)}
+              data-risu-route-intent="/settings/modules"
               onclick={() => {
                 navigate('/settings/modules')
               }}>
@@ -191,6 +235,7 @@
             </button>
             <button
               class={navButtonClass($SettingsMenuIndex === 4)}
+              data-risu-route-intent="/settings/plugins"
               onclick={() => {
                 navigate('/settings/plugins')
               }}>
@@ -205,6 +250,7 @@
           {#if !$isLite}
             <button
               class={navButtonClass($SettingsMenuIndex === 3)}
+              data-risu-route-intent="/settings/display"
               onclick={() => {
                 navigate('/settings/display')
               }}>
@@ -214,6 +260,7 @@
           {/if}
           <button
             class={navButtonClass($SettingsMenuIndex === 10)}
+            data-risu-route-intent="/settings/language"
             onclick={() => {
               navigate('/settings/language')
             }}>
@@ -223,6 +270,7 @@
           {#if !$isLite}
             <button
               class={navButtonClass($SettingsMenuIndex === 11)}
+              data-risu-route-intent="/settings/accessibility"
               onclick={() => {
                 navigate('/settings/accessibility')
               }}>
@@ -232,6 +280,7 @@
           {/if}
           <button
             class={navButtonClass($SettingsMenuIndex === 15)}
+            data-risu-route-intent="/settings/hotkeys"
             onclick={() => {
               navigate('/settings/hotkeys')
             }}>
@@ -244,6 +293,7 @@
           <span class="px-2 text-xs font-semibold uppercase text-textcolor2">{language.settingsGroupData}</span>
           <button
             class={navButtonClass($SettingsMenuIndex === 0)}
+            data-risu-route-intent="/settings/backup"
             onclick={() => {
               navigate('/settings/backup')
             }}>
@@ -252,6 +302,7 @@
           </button>
           <button
             class={navButtonClass($SettingsMenuIndex === 21)}
+            data-risu-route-intent="/settings/request-history"
             onclick={() => {
               navigate('/settings/request-history')
             }}>
@@ -261,6 +312,7 @@
           {#if !$isLite && getDatabase().showGlobalLorebookAndRegex}
             <button
               class={navButtonClass($SettingsMenuIndex === 8)}
+              data-risu-route-intent="/settings/global-lorebook"
               onclick={() => {
                 navigate('/settings/global-lorebook')
               }}>
@@ -269,6 +321,7 @@
             </button>
             <button
               class={navButtonClass($SettingsMenuIndex === 9)}
+              data-risu-route-intent="/settings/global-regex"
               onclick={() => {
                 navigate('/settings/global-regex')
               }}>
@@ -284,6 +337,7 @@
               >{language.settingsGroupAboutAdvanced}</span>
             <button
               class={navButtonClass($SettingsMenuIndex === 6)}
+              data-risu-route-intent="/settings/advanced"
               onclick={() => {
                 navigate('/settings/advanced')
               }}>
@@ -292,13 +346,17 @@
             </button>
             <button
               class={navButtonClass($SettingsMenuIndex === 22)}
+              data-risu-route-intent="/settings/source-code"
               onclick={() => {
                 navigate('/settings/source-code')
               }}>
               <GithubIcon size={20} />
               <span>{language.settingsNavSourceCode}</span>
             </button>
-            <button class={navButtonClass($SettingsMenuIndex === 77)} onclick={openSupporterThanks}>
+            <button
+              class={navButtonClass($SettingsMenuIndex === 77)}
+              data-risu-route-intent="/settings/supporter"
+              onclick={openSupporterThanks}>
               <BoxIcon size={20} />
               <span>{language.settingsNavSupporters}</span>
             </button>

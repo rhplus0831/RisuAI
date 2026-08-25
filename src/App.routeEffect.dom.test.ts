@@ -85,7 +85,11 @@ vi.mock('src/ts/router', createRouteMock)
 
 vi.mock('./ts/server/routeResourceLoader', async () => {
   const { writable } = await import('svelte/store')
-  return { routeResourceLoadState: writable({ error: null, routeKey: routePath, status: 'ready' }) }
+  return {
+    prefetchCharacterRouteResource: vi.fn(),
+    prefetchRoutePathResources: vi.fn(),
+    routeResourceLoadState: writable({ error: null, routeKey: routePath, status: 'ready' }),
+  }
 })
 
 vi.mock('./lang', () => ({
@@ -95,12 +99,14 @@ vi.mock('./lang', () => ({
     grid: 'Grid',
     home: 'Home',
     menu: 'Menu',
+    loading: 'Loading',
     pluginRuntime: {
       failed: 'Plugins could not start. The rest of the app is still available.',
       retry: 'Retry plugins',
       retrying: 'Retrying plugins…',
     },
     playground: { playground: 'Playground' },
+    retry: 'Retry',
     settings: 'Settings',
     successImport: 'Imported',
   },
@@ -113,12 +119,14 @@ vi.mock('src/lang', () => ({
     grid: 'Grid',
     home: 'Home',
     menu: 'Menu',
+    loading: 'Loading',
     pluginRuntime: {
       failed: 'Plugins could not start. The rest of the app is still available.',
       retry: 'Retry plugins',
       retrying: 'Retrying plugins…',
     },
     playground: { playground: 'Playground' },
+    retry: 'Retry',
     settings: 'Settings',
     successImport: 'Imported',
   },
@@ -312,6 +320,7 @@ import {
 } from './ts/observerRouteIntent'
 
 const { default: App } = await import('./App.svelte')
+const { routeResourceLoadState } = await import('./ts/server/routeResourceLoader')
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -436,6 +445,7 @@ describe('App route/refreeze mounted DOM behavior', () => {
     if (appRouteDomMocks.state.exports) {
       appRouteDomMocks.state.exports.currentRoute.set(characterRoute)
     }
+    routeResourceLoadState.set({ error: null, routeKey: routePath, status: 'ready' })
     seedStores()
     await mountApp()
   })
@@ -524,6 +534,47 @@ describe('App route/refreeze mounted DOM behavior', () => {
     expect(target.textContent).toContain('Plugins could not start')
     expect(target.querySelector('button')?.textContent).toContain('Retry plugins')
     expect(target.querySelector('[data-testid="app-marker"]')).not.toBeNull()
+  })
+
+  it('keeps route content mounted and suppresses the pending indicator for warm transitions', async () => {
+    vi.useFakeTimers()
+    try {
+      expect(target.querySelector('[data-testid="app-marker"]')).not.toBeNull()
+
+      routeResourceLoadState.set({ error: null, routeKey: 'character:char-b:', status: 'loading' })
+      await tick()
+
+      const content = target.querySelector<HTMLElement>('[data-risu-route-content]')
+      expect(content).not.toBeNull()
+      expect(content?.hasAttribute('inert')).toBe(true)
+      expect(target.querySelector('[data-testid="app-marker"]')).not.toBeNull()
+      expect(target.querySelector('[data-testid="route-resource-loading"]')).toBeNull()
+
+      routeResourceLoadState.set({ error: null, routeKey: 'character:char-b:', status: 'ready' })
+      await tick()
+      await vi.advanceTimersByTimeAsync(200)
+
+      expect(content?.hasAttribute('inert')).toBe(false)
+      expect(target.querySelector('[data-testid="route-resource-loading"]')).toBeNull()
+      expect(target.querySelector('[data-testid="app-marker"]')).not.toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shows a compact delayed pending status without unmounting route content', async () => {
+    vi.useFakeTimers()
+    try {
+      routeResourceLoadState.set({ error: null, routeKey: 'character:char-b:', status: 'loading' })
+      await tick()
+      await vi.advanceTimersByTimeAsync(151)
+      await tick()
+
+      expect(target.querySelector('[data-testid="route-resource-loading"]')?.textContent).toContain('Loading')
+      expect(target.querySelector('[data-testid="app-marker"]')).not.toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('keeps the coherent shell readable while persistence-capable route application is revoked', async () => {

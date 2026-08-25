@@ -3,6 +3,7 @@
   import { language } from 'src/lang'
   import { PlaygroundStore, SizeStore } from 'src/ts/stores.svelte'
   import { navigate } from 'src/ts/router'
+  import { prefetchRouteIntent, type RouteModuleLoader } from 'src/ts/routeIntentPrefetch'
   import LazyComponent from '../UI/LazyComponent.svelte'
 
   const loadPlaygroundEmbedding = () => import('./PlaygroundEmbedding.svelte')
@@ -19,6 +20,32 @@
   const loadPlaygroundInlayExplorer = () => import('./PlaygroundInlayExplorer.svelte')
   const loadToolConversion = () => import('./ToolConversion.svelte')
 
+  const playgroundRouteLoaders: Record<string, RouteModuleLoader | undefined> = {
+    '/playground/chat': undefined,
+    '/playground/cbs': loadPlaygroundDocs,
+    '/playground/embedding': loadPlaygroundEmbedding,
+    '/playground/tokenizer': loadPlaygroundTokenizer,
+    '/playground/syntax': loadPlaygroundSyntax,
+    '/playground/jinja': loadPlaygroundJinja,
+    '/playground/image-gen': loadPlaygroundImageGen,
+    '/playground/parser': loadPlaygroundParser,
+    '/playground/subtitles': loadPlaygroundSubtitle,
+    '/playground/image-trans': loadPlaygroundImageTrans,
+    '/playground/translation': loadPlaygroundTranslation,
+    '/playground/mcp': loadPlaygroundMcp,
+    '/inlay': loadPlaygroundInlayExplorer,
+    '/playground/tools': loadToolConversion,
+  }
+
+  function preloadPlaygroundRouteFromEvent(event: Event): void {
+    if (!(event.target instanceof Element)) return
+    const target = event.target.closest<HTMLElement>('[data-risu-route-intent]')
+    const path = target?.dataset.risuRouteIntent
+    if (!path || !Object.prototype.hasOwnProperty.call(playgroundRouteLoaders, path)) return
+    const loader = playgroundRouteLoaders[path]
+    prefetchRouteIntent(path, loader ? [loader] : [])
+  }
+
   let easterEggTouch = $state(0)
 </script>
 
@@ -27,9 +54,15 @@
     <h2 class="text-4xl text-textcolor my-6 font-black relative">
       {language.playground.playground}
     </h2>
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 w-full max-w-4xl p-2">
+    <div
+      class="grid grid-cols-1 gap-4 md:grid-cols-2 w-full max-w-4xl p-2"
+      role="group"
+      aria-label={language.playground.playground}
+      onpointerover={preloadPlaygroundRouteFromEvent}
+      onfocusin={preloadPlaygroundRouteFromEvent}>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1 md:col-span-2"
+        data-risu-route-intent="/playground/chat"
         onclick={() => {
           navigate('/playground/chat')
         }}>
@@ -37,6 +70,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/cbs"
         onclick={() => {
           navigate('/playground/cbs')
         }}>
@@ -44,6 +78,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/embedding"
         onclick={() => {
           navigate('/playground/embedding')
         }}>
@@ -51,6 +86,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/tokenizer"
         onclick={() => {
           navigate('/playground/tokenizer')
         }}>
@@ -58,6 +94,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/syntax"
         onclick={() => {
           navigate('/playground/syntax')
         }}>
@@ -65,6 +102,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/jinja"
         onclick={() => {
           navigate('/playground/jinja')
         }}>
@@ -72,6 +110,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/image-gen"
         onclick={() => {
           navigate('/playground/image-gen')
         }}>
@@ -79,6 +118,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/parser"
         onclick={() => {
           navigate('/playground/parser')
         }}>
@@ -86,6 +126,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/subtitles"
         onclick={() => {
           navigate('/playground/subtitles')
         }}>
@@ -93,6 +134,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/image-trans"
         onclick={() => {
           navigate('/playground/image-trans')
         }}>
@@ -100,6 +142,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/translation"
         onclick={() => {
           navigate('/playground/translation')
         }}>
@@ -107,6 +150,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/mcp"
         onclick={() => {
           navigate('/playground/mcp')
         }}>
@@ -114,6 +158,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/inlay"
         onclick={() => {
           navigate('/inlay')
         }}>
@@ -121,6 +166,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/tools"
         onclick={() => {
           navigate('/playground/tools')
         }}>

@@ -81,7 +81,10 @@ capabilities consumed by the shell and protocol adapters:
   persist, while `finishRouteResources()` hydrates targets knowable only after
   selection. Requirement reads are deduplicated, minimum-revision fenced, and
   aborted when superseded by newer navigation. A route-local failure leaves the
-  shell ready and exposes Retry. Only the root shell has a cross-field atomic
+  mounted shell and prior route content intact and exposes a compact Retry
+  status. Intent prefetch uses the same request registry so matching navigation
+  can join rather than restart it; bounded post-startup character warming remains
+  idle-only and data-saver aware. Only the root shell has a cross-field atomic
   barrier; granular route resources apply independently behind the write guard.
 - Generation recovery treats the lineage-scoped operation projection as durable
   authority. Active jobs are live attachment hints and local activities are

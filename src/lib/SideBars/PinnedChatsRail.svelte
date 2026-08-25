@@ -14,6 +14,7 @@
     unreadChatIds?: ReadonlySet<string>
     rounded: boolean
     onOpen: (item: PinnedChatItem) => void
+    onPrefetch?: (item: PinnedChatItem) => void
     isInert?: boolean
   }
 
@@ -24,6 +25,7 @@
     unreadChatIds = new Set(),
     rounded,
     onOpen,
+    onPrefetch = () => {},
     isInert = false,
   }: Props = $props()
 </script>
@@ -42,8 +44,11 @@
       <div
         class="relative flex w-full flex-col items-center rounded-md"
         class:bg-selected={isCurrent}
+        role="group"
         data-risu-pinned-chat={item.chatId}
-        data-risu-pinned-chat-current={isCurrent ? 'true' : 'false'}>
+        data-risu-pinned-chat-current={isCurrent ? 'true' : 'false'}
+        onpointerenter={() => onPrefetch(item)}
+        onfocusin={() => onPrefetch(item)}>
         <SidebarAvatar
           src={item.characterImage ? getCharImage(item.characterImage, 'plain') : '/none.webp'}
           size="42"

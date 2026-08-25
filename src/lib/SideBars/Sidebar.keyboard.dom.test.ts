@@ -218,6 +218,23 @@ afterEach(() => {
 })
 
 describe('Sidebar character keyboard activation', () => {
+  it('prefetches a desktop character on pointer or keyboard intent', async () => {
+    const prefetchCharacter = vi.fn()
+    component = mount(Sidebar, { target, props: { prefetchCharacter } })
+    await tick()
+
+    const character = target.querySelector<HTMLElement>('[data-char-id="char-a"]')
+    const row = character?.closest<HTMLElement>('[role="listitem"]')
+    expect(character).toBeTruthy()
+    expect(row).toBeTruthy()
+
+    row?.dispatchEvent(new Event('pointerenter'))
+    character?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+
+    expect(prefetchCharacter).toHaveBeenNthCalledWith(1, 'char-a')
+    expect(prefetchCharacter).toHaveBeenNthCalledWith(2, 'char-a')
+  })
+
   it('shows every character even when retired Mood Light metadata is still present', async () => {
     setDatabaseLite({
       characterOrder: ['char-private', 'char-normal'],

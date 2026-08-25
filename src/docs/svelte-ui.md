@@ -159,8 +159,10 @@ runtime/first-use surfaces. `applyRouteToStores()` calls
 `prepareRouteResources()` before mutating route-backed stores and
 `finishRouteResources()` after selection exposes any remaining chat/prompt
 target. Newer navigation aborts older route work. The App render switch owns the
-route-local loading/error/Retry UI, so a failed optional route does not discard
-the coherent shell.
+route-local loading/error/Retry UI. It keeps the last coherent route content
+mounted and inert while the target settles, leaves navigation available to
+supersede the request, suppresses warm-transition flashes with a short delay,
+and shows a compact pending or Retry status instead of replacing the shell.
 
 `src/App.svelte` has two load-bearing effects. Both wait for
 `$startupCoordinatorStore.capabilities.canApplyRoutes`. The URL-to-store effect
@@ -193,6 +195,10 @@ Important route and store facts:
 - `navigateToCharacterChatMessage` queues a single bookmark jump until route
   application, then the chat surface expands and hydrates the required window.
 - Character-sidebar view mode is stored in the active history entry.
+- Character, pinned-chat, settings, and Playground navigation intent warms the
+  exact likely target. Matching navigation joins an in-flight resource read;
+  optional startup completion also schedules at most three likely character
+  details sequentially while the browser is idle and not data-saving.
 - An active durable generation canonicalizes character/chat navigation to its
   owner, and delayed route work is fenced against newer navigation. A missing
   chat ID canonicalizes to the bare selected-character route; the focused guard

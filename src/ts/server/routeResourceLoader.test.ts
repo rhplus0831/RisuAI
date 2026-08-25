@@ -52,8 +52,10 @@ import {
   ensureResourceSurfaces,
   finishRouteResources,
   prefetchCharacterRouteResource,
+  prefetchRoutePathResources,
   prepareRouteResources,
   routeResourceLoadState,
+  startLikelyCharacterRouteWarmup,
   stopRouteResourceLoader,
 } from './routeResourceLoader'
 import {
@@ -284,6 +286,161 @@ describe('route resource loader', () => {
       { characterIds: ['char-a'], minimumRevision: 4 },
       { signal: expect.any(AbortSignal) },
     )
+  })
+
+  it('promotes matching character intent so navigation joins the in-flight read', async () => {
+    loaderMocks.requirements = [
+      requirement({ kind: 'projection', projection: 'selected-character', purposes: ['render'] }),
+    ]
+    const gridRoute = { kind: 'grid', path: '/grid' } as const
+    await prepareRouteResources(gridRoute)
+    await finishRouteResources(gridRoute)
+    withTrustedResourceWrite(() =>
+      applyCharactersResource({
+        version: 1,
+        revision: 4,
+        characters: [
+          {
+            __serverCharacterShell: true,
+            chaId: 'char-a',
+            type: 'character',
+            name: 'Ada',
+            chats: [],
+            chatPage: 0,
+            chatFolders: [],
+          } as never,
+        ],
+        characterOrder: ['char-a'],
+        currentChar: 0,
+      }),
+    )
+    const read = deferred<{ status: 'ok'; revision: number; scope: 'targeted' }>()
+    loaderMocks.refresh.mockReturnValue(read.promise)
+    let idleCallback: (() => void) | null = null
+    Object.defineProperty(window, 'requestIdleCallback', {
+      configurable: true,
+      value: vi.fn((callback: () => void) => {
+        idleCallback = callback
+        return 7
+      }),
+    })
+    Object.defineProperty(window, 'cancelIdleCallback', { configurable: true, value: vi.fn() })
+
+    prefetchCharacterRouteResource('char-a')
+    const characterRoute = { kind: 'character', path: '/character/char-a', chaId: 'char-a' } as const
+    const navigation = prepareRouteResources(characterRoute)
+
+    expect(idleCallback).not.toBeNull()
+    expect(window.cancelIdleCallback).toHaveBeenCalledWith(7)
+    expect(loaderMocks.refresh).toHaveBeenCalledOnce()
+
+    read.resolve({ status: 'ok', revision: 5, scope: 'targeted' })
+    await expect(navigation).resolves.toBe(true)
+    await expect(finishRouteResources(characterRoute)).resolves.toBe(true)
+    expect(loaderMocks.refresh).toHaveBeenCalledOnce()
+  })
+
+  it('prefetches the exact declared resources for an intended settings route', async () => {
+    const gridRoute = { kind: 'grid', path: '/grid' } as const
+    await prepareRouteResources(gridRoute)
+    await finishRouteResources(gridRoute)
+    loaderMocks.requirements = [requirement({ kind: 'settings-group', group: 'display', purposes: ['render'] })]
+    let idleCallback: (() => void) | null = null
+    Object.defineProperty(window, 'requestIdleCallback', {
+      configurable: true,
+      value: vi.fn((callback: () => void) => {
+        idleCallback = callback
+        return 11
+      }),
+    })
+    Object.defineProperty(window, 'cancelIdleCallback', { configurable: true, value: vi.fn() })
+
+    prefetchRoutePathResources('/settings/display')
+    expect(loaderMocks.refresh).not.toHaveBeenCalled()
+    expect(idleCallback).not.toBeNull()
+
+    idleCallback?.()
+    await vi.waitFor(() => expect(loaderMocks.refresh).toHaveBeenCalledOnce())
+    expect(loaderMocks.refresh).toHaveBeenCalledWith(
+      { settingsGroups: ['display'], minimumRevision: 4 },
+      { signal: expect.any(AbortSignal) },
+    )
+  })
+
+  it('warms at most three likely character details sequentially after startup', async () => {
+    loaderMocks.requirements = []
+    const route = { kind: 'grid', path: '/grid' } as const
+    await prepareRouteResources(route)
+    await finishRouteResources(route)
+    withTrustedResourceWrite(() =>
+      applyCharactersResource({
+        version: 1,
+        revision: 4,
+        characters: [
+          {
+            __serverCharacterShell: true,
+            chaId: 'char-a',
+            type: 'character',
+            name: 'Ada',
+            lastInteraction: 10,
+            pinnedChats: [],
+            chats: [],
+          },
+          {
+            __serverCharacterShell: true,
+            chaId: 'char-b',
+            type: 'character',
+            name: 'Bea',
+            lastInteraction: 30,
+            pinnedChats: [],
+            chats: [],
+          },
+          {
+            __serverCharacterShell: true,
+            chaId: 'char-c',
+            type: 'character',
+            name: 'Cy',
+            lastInteraction: 5,
+            pinnedChats: [{ id: 'chat-c', name: 'Pinned' }],
+            chats: [],
+          },
+          {
+            __serverCharacterShell: true,
+            chaId: 'char-d',
+            type: 'character',
+            name: 'Dee',
+            lastInteraction: 20,
+            pinnedChats: [],
+            chats: [],
+          },
+        ] as never,
+        characterOrder: ['char-a', 'char-b', 'char-c', 'char-d'],
+        currentChar: 0,
+      }),
+    )
+    const idleCallbacks: Array<() => void> = []
+    Object.defineProperty(window, 'requestIdleCallback', {
+      configurable: true,
+      value: vi.fn((callback: () => void) => {
+        idleCallbacks.push(callback)
+        return idleCallbacks.length
+      }),
+    })
+    Object.defineProperty(window, 'cancelIdleCallback', { configurable: true, value: vi.fn() })
+
+    startLikelyCharacterRouteWarmup(10)
+    for (let index = 0; index < 3; index += 1) {
+      await vi.waitFor(() => expect(idleCallbacks[index]).toBeTypeOf('function'))
+      idleCallbacks[index]!()
+      await vi.waitFor(() => expect(loaderMocks.refresh).toHaveBeenCalledTimes(index + 1))
+    }
+
+    expect(loaderMocks.refresh.mock.calls.map(([target]) => target.characterIds?.[0])).toEqual([
+      'char-c',
+      'char-b',
+      'char-d',
+    ])
+    expect(window.requestIdleCallback).toHaveBeenCalledTimes(3)
   })
 
   it('rejects a standalone response superseded after request start', async () => {

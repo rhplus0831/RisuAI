@@ -5,20 +5,30 @@
     children?: import('svelte').Snippet
     interactive?: boolean
     ariaLabel?: string
+    onIntent?: () => void
   }
 
-  let { onClick = () => {}, additionalStyle = '', children, interactive = true, ariaLabel }: Props = $props()
+  let {
+    onClick = () => {},
+    additionalStyle = '',
+    children,
+    interactive = true,
+    ariaLabel,
+    onIntent = () => {},
+  }: Props = $props()
 </script>
 
 {#await additionalStyle}
   {#if interactive}
-    <button onclick={onClick} class="ico" aria-label={ariaLabel}>{@render children?.()}</button>
+    <button onclick={onClick} onpointerenter={onIntent} onfocus={onIntent} class="ico" aria-label={ariaLabel}
+      >{@render children?.()}</button>
   {:else}
     <div class="ico" aria-hidden="true">{@render children?.()}</div>
   {/if}
 {:then as}
   {#if interactive}
-    <button onclick={onClick} class="ico" style={as} aria-label={ariaLabel}>{@render children?.()}</button>
+    <button onclick={onClick} onpointerenter={onIntent} onfocus={onIntent} class="ico" style={as} aria-label={ariaLabel}
+      >{@render children?.()}</button>
   {:else}
     <div class="ico" style={as} aria-hidden="true">{@render children?.()}</div>
   {/if}

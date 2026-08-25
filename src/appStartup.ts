@@ -13,7 +13,8 @@ import {
   installPushNotificationForegroundCleanup,
   installPushNotificationNavigationListener,
 } from './ts/server/pushNotifications'
-import { recordStartupMilestone } from './ts/startupReadiness'
+import { backgroundReady, recordStartupMilestone } from './ts/startupReadiness'
+import { startLikelyCharacterRouteWarmup } from './ts/server/routeResourceLoader'
 
 export function startApplication() {
   installRouter()
@@ -32,7 +33,9 @@ export function startApplication() {
   if (import.meta.env.VITE_FASTIFY_BROWSER_SMOKE === 'TRUE') {
     installFastifyBrowserSmokeHook()
   }
-  void loadData()
+  void loadData().then(() => {
+    if (backgroundReady()) startLikelyCharacterRouteWarmup()
+  })
   initHotkey()
   document.getElementById('preloading')?.remove()
 

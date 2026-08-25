@@ -2,6 +2,10 @@ import { get, type Writable } from 'svelte/store'
 import { mount, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const routeIntentMocks = vi.hoisted(() => ({ prefetch: vi.fn() }))
+
+vi.mock('src/ts/routeIntentPrefetch', () => ({ prefetchRouteIntent: routeIntentMocks.prefetch }))
+
 const navigationMocks = vi.hoisted(() => ({
   navigate: vi.fn(),
 }))
@@ -90,6 +94,7 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.append(target)
   navigationMocks.navigate.mockReset()
+  routeIntentMocks.prefetch.mockReset()
   ;(PlaygroundStore as Writable<number>).set(4)
   ;(OpenRealmStore as Writable<boolean>).set(true)
 })
@@ -111,6 +116,22 @@ describe('Playground and main-menu navigation', () => {
     expect(back?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
     back!.click()
     expect(navigationMocks.navigate).toHaveBeenCalledWith('/playground')
+  })
+
+  it('warms the exact Playground tool on pointer and keyboard intent', async () => {
+    ;(PlaygroundStore as Writable<number>).set(1)
+    component = mount(PlaygroundMenu, { target })
+
+    const embedding = target.querySelector<HTMLElement>('[data-risu-route-intent="/playground/embedding"]')
+    const inlay = target.querySelector<HTMLElement>('[data-risu-route-intent="/inlay"]')
+    expect(embedding).toBeTruthy()
+    expect(inlay).toBeTruthy()
+
+    embedding?.dispatchEvent(new Event('pointerover', { bubbles: true }))
+    inlay?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+
+    expect(routeIntentMocks.prefetch).toHaveBeenNthCalledWith(1, '/playground/embedding', [expect.any(Function)])
+    expect(routeIntentMocks.prefetch).toHaveBeenNthCalledWith(2, '/inlay', [expect.any(Function)])
   })
 
   it('names the Realm icon-only back control and preserves its store transition', () => {

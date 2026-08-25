@@ -154,6 +154,27 @@ describe('PinnedChatsRail current route', () => {
     expect(onOpen).toHaveBeenCalledWith(pinnedChats[0])
   })
 
+  it('prefetches the owning character on pointer and keyboard intent', async () => {
+    const onPrefetch = vi.fn()
+    component = mount(PinnedChatsRail, {
+      target,
+      props: {
+        items: pinnedChats,
+        generatingChatIds: new Set<string>(),
+        rounded: false,
+        onOpen: vi.fn(),
+        onPrefetch,
+      },
+    })
+    await tick()
+
+    pinnedRow('chat-a').dispatchEvent(new Event('pointerenter'))
+    pinnedAction('chat-b').dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+
+    expect(onPrefetch).toHaveBeenNthCalledWith(1, pinnedChats[0])
+    expect(onPrefetch).toHaveBeenNthCalledWith(2, pinnedChats[1])
+  })
+
   it('renders an accessible unread indicator for the exact pinned chat', async () => {
     const onOpen = vi.fn()
     component = mount(PinnedChatsRail, {

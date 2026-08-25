@@ -10,6 +10,12 @@ const supporterSpies = vi.hoisted(() => ({
   loadSupporters: vi.fn(),
 }))
 
+const routeIntentSpies = vi.hoisted(() => ({
+  prefetch: vi.fn(),
+}))
+
+vi.mock('src/ts/routeIntentPrefetch', () => ({ prefetchRouteIntent: routeIntentSpies.prefetch }))
+
 vi.mock('src/ts/server/routeResourceLoader', () => ({
   finishRouteResources: vi.fn(async () => true),
   prepareRouteResources: vi.fn(async () => true),
@@ -130,6 +136,7 @@ describe('Settings supporter tab', () => {
     alertSpies.alertConfirm.mockReset()
     alertSpies.alertConfirm.mockResolvedValue(false)
     supporterSpies.loadSupporters.mockClear()
+    routeIntentSpies.prefetch.mockReset()
     vi.stubGlobal('fetch', vi.fn())
 
     target = document.createElement('div')
@@ -212,6 +219,19 @@ describe('Settings supporter tab', () => {
     expect(settingsButton(language.settingsNavAgentPresets)).toBeTruthy()
     expect(settingsButton(language.settingsNavInputHooks)).toBeTruthy()
     expect(settingsButton(language.settingsNavLegacyBotPresets)).toBeUndefined()
+  })
+
+  it('warms the exact settings page on pointer or keyboard intent', () => {
+    const modelButton = settingsButton(language.settingsNavModelProfiles)
+    const promptButton = settingsButton(language.settingsNavPromptPresets)
+    expect(modelButton).toBeTruthy()
+    expect(promptButton).toBeTruthy()
+
+    modelButton?.dispatchEvent(new Event('pointerover', { bubbles: true }))
+    promptButton?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+
+    expect(routeIntentSpies.prefetch).toHaveBeenNthCalledWith(1, '/settings/model', [expect.any(Function)])
+    expect(routeIntentSpies.prefetch).toHaveBeenNthCalledWith(2, '/settings/prompt-settings', [expect.any(Function)])
   })
 
   it('updates a selected settings page layout across the responsive breakpoint', async () => {

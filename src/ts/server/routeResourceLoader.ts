@@ -1,5 +1,5 @@
 import { get, writable } from 'svelte/store'
-import type { AppRoute } from '../routerRoute'
+import { characterRoutePath, parseRoute, type AppRoute } from '../routerRoute'
 import { routeKey } from '../routerRoute'
 import { hydrateActiveChat } from './chatMessageHydration.svelte'
 import { peekAppliedServerResourceRevision } from './commands'
@@ -56,10 +56,14 @@ interface InFlightRequirementLoad {
   signal: AbortSignal | null
 }
 
-interface PendingCharacterPrefetch {
-  characterId: string
+interface PendingRoutePrefetch {
   controller: AbortController
   idleHandle: number | null
+  key: string
+  promise: Promise<void> | null
+  requirements: ResourceRequirement[]
+  route: AppRoute
+  source: 'background' | 'intent'
 }
 
 const initialState: RouteResourceLoadState = { error: null, routeKey: null, status: 'idle' }
@@ -67,13 +71,17 @@ const initialState: RouteResourceLoadState = { error: null, routeKey: null, stat
 export const routeResourceLoadState = writable<RouteResourceLoadState>(initialState)
 
 let activeRouteLoad: ActiveRouteLoad | null = null
-let pendingCharacterPrefetch: PendingCharacterPrefetch | null = null
+let pendingRoutePrefetch: PendingRoutePrefetch | null = null
+let backgroundCharacterWarmupStarted = false
+let backgroundCharacterWarmupQueue: string[] = []
 const deferredSurfaceRequests = new Map<string, Promise<void>>()
 const requirementRequests = new Map<string, InFlightRequirementLoad>()
 
+export const BACKGROUND_CHARACTER_WARMUP_LIMIT = 3
+
 /** Load the non-shell resources needed before route stores can be applied safely. */
 export async function prepareRouteResources(route: AppRoute): Promise<boolean> {
-  cancelCharacterPrefetch()
+  promoteMatchingRoutePrefetch(route)
   const key = routeKey(route)
   activeRouteLoad?.controller.abort()
   const controller = new AbortController()
@@ -133,6 +141,7 @@ export async function finishRouteResources(route: AppRoute): Promise<boolean> {
 
   if (!isCurrentRouteLoad(load)) return false
   routeResourceLoadState.set({ error: null, routeKey: load.key, status: 'ready' })
+  scheduleNextBackgroundCharacterWarmup()
   return true
 }
 
@@ -161,54 +170,189 @@ export function ensureResourceSurfaces(surfaceIds: readonly ResourceSurfaceId[])
 export function stopRouteResourceLoader(): void {
   activeRouteLoad?.controller.abort()
   activeRouteLoad = null
-  cancelCharacterPrefetch()
+  cancelRoutePrefetch()
+  backgroundCharacterWarmupStarted = false
+  backgroundCharacterWarmupQueue = []
   routeResourceLoadState.set(initialState)
 }
 
-/** Prefetch only the hovered grid row, and only while the browser is idle. */
+/** Prefetch a likely character route without hydrating its chat or prompt body. */
 export function prefetchCharacterRouteResource(characterId: string): void {
+  if (!characterId.trim()) return
+  const resident = charactersResourceState.characters.find((candidate) => candidate?.chaId === characterId)
+  if (!resident || (resident as unknown as Record<string, unknown>)[SERVER_CHARACTER_SHELL_MARKER] !== true) return
+  scheduleRoutePrefetch(parseRoute(characterRoutePath(characterId)), 'intent', [selectedCharacterRequirement()])
+}
+
+/** Prefetch the pre-route data for an exact settings, Playground, grid, or inlay target. */
+export function prefetchRoutePathResources(path: string): void {
+  scheduleRoutePrefetch(parseRoute(path), 'intent')
+}
+
+/** Warm a small, likely-next set after optional startup work has settled. */
+export function startLikelyCharacterRouteWarmup(limit = BACKGROUND_CHARACTER_WARMUP_LIMIT): void {
+  if (backgroundCharacterWarmupStarted || !canRunBackgroundWarmup()) return
+  backgroundCharacterWarmupStarted = true
+  backgroundCharacterWarmupQueue = likelyCharacterWarmupIds(
+    Math.max(0, Math.min(limit, BACKGROUND_CHARACTER_WARMUP_LIMIT)),
+  )
+  scheduleNextBackgroundCharacterWarmup()
+}
+
+function scheduleRoutePrefetch(
+  route: AppRoute,
+  source: PendingRoutePrefetch['source'],
+  requirements = preRouteRequirements(route),
+): boolean {
   if (
     typeof window === 'undefined' ||
     typeof window.requestIdleCallback !== 'function' ||
-    !characterId.trim() ||
-    get(routeResourceLoadState).status !== 'ready'
+    get(routeResourceLoadState).status !== 'ready' ||
+    !requirements.some((requirement) => !requirementIsReady(requirement, route))
   ) {
-    return
+    return false
   }
-  const resident = charactersResourceState.characters.find((candidate) => candidate?.chaId === characterId)
-  if (!resident || (resident as unknown as Record<string, unknown>)[SERVER_CHARACTER_SHELL_MARKER] !== true) return
-  if (pendingCharacterPrefetch?.characterId === characterId) return
 
-  cancelCharacterPrefetch()
-  const controller = new AbortController()
-  const prefetch: PendingCharacterPrefetch = { characterId, controller, idleHandle: null }
-  pendingCharacterPrefetch = prefetch
-  prefetch.idleHandle = window.requestIdleCallback(
-    () => {
-      prefetch.idleHandle = null
-      if (pendingCharacterPrefetch !== prefetch || controller.signal.aborted) return
-      void refreshServerResourceTargets(
-        {
-          characterIds: [characterId],
-          minimumRevision: peekAppliedServerResourceRevision() ?? undefined,
-        },
-        { signal: controller.signal },
-      ).finally(() => {
-        if (pendingCharacterPrefetch === prefetch) pendingCharacterPrefetch = null
-      })
-    },
-    { timeout: 750 },
-  )
+  const key = routeKey(route)
+  if (pendingRoutePrefetch?.key === key) return true
+  if (source === 'background' && pendingRoutePrefetch?.source === 'intent') return false
+
+  cancelRoutePrefetch()
+  const prefetch: PendingRoutePrefetch = {
+    controller: new AbortController(),
+    idleHandle: null,
+    key,
+    promise: null,
+    requirements,
+    route,
+    source,
+  }
+  pendingRoutePrefetch = prefetch
+  prefetch.idleHandle = window.requestIdleCallback(() => startRoutePrefetch(prefetch), { timeout: 750 })
+  return true
 }
 
-function cancelCharacterPrefetch(): void {
-  const prefetch = pendingCharacterPrefetch
+function startRoutePrefetch(prefetch: PendingRoutePrefetch): void {
+  if (pendingRoutePrefetch !== prefetch || prefetch.controller.signal.aborted || prefetch.promise) return
+  prefetch.idleHandle = null
+  const minimumRevision = peekAppliedServerResourceRevision() ?? undefined
+  prefetch.promise = Promise.all(
+    prefetch.requirements.map((requirement) =>
+      safeLoadRequirement(requirement, prefetch.route, prefetch.controller.signal, minimumRevision),
+    ),
+  )
+    .then(() => undefined)
+    .finally(() => {
+      if (pendingRoutePrefetch === prefetch) pendingRoutePrefetch = null
+      scheduleNextBackgroundCharacterWarmup()
+    })
+}
+
+function promoteMatchingRoutePrefetch(route: AppRoute): void {
+  const prefetch = pendingRoutePrefetch
   if (!prefetch) return
-  pendingCharacterPrefetch = null
+  if (!routePrefetchMatches(prefetch.route, route)) {
+    cancelRoutePrefetch()
+    return
+  }
+  if (prefetch.idleHandle === null) return
+  window.cancelIdleCallback(prefetch.idleHandle)
+  prefetch.idleHandle = null
+  startRoutePrefetch(prefetch)
+}
+
+function cancelRoutePrefetch(): void {
+  const prefetch = pendingRoutePrefetch
+  if (!prefetch) return
+  pendingRoutePrefetch = null
   prefetch.controller.abort()
   if (prefetch.idleHandle !== null && typeof window !== 'undefined') {
     window.cancelIdleCallback(prefetch.idleHandle)
   }
+}
+
+function routePrefetchMatches(prefetchedRoute: AppRoute, route: AppRoute): boolean {
+  if (prefetchedRoute.kind === 'character' && route.kind === 'character') {
+    return prefetchedRoute.chaId === route.chaId
+  }
+  return routeKey(prefetchedRoute) === routeKey(route)
+}
+
+function preRouteRequirements(route: AppRoute): ResourceRequirement[] {
+  const surfaces = resourceSurfacesForRoute(route).filter((surface) => surface !== 'shared:app-shell')
+  return resolveResourceRequirements(surfaces).filter((requirement) => !isPostRouteRequirement(requirement))
+}
+
+function scheduleNextBackgroundCharacterWarmup(): void {
+  if (
+    !backgroundCharacterWarmupStarted ||
+    pendingRoutePrefetch ||
+    get(routeResourceLoadState).status !== 'ready' ||
+    !canRunBackgroundWarmup()
+  ) {
+    return
+  }
+
+  while (backgroundCharacterWarmupQueue.length > 0) {
+    const characterId = backgroundCharacterWarmupQueue.shift()
+    if (!characterId) continue
+    const resident = charactersResourceState.characters.find((candidate) => candidate?.chaId === characterId)
+    if (!resident || (resident as unknown as Record<string, unknown>)[SERVER_CHARACTER_SHELL_MARKER] !== true) continue
+    if (
+      scheduleRoutePrefetch(parseRoute(characterRoutePath(characterId)), 'background', [selectedCharacterRequirement()])
+    )
+      return
+  }
+}
+
+function selectedCharacterRequirement(): ResourceRequirement {
+  return { kind: 'projection', projection: 'selected-character', purposes: ['render', 'interact'] }
+}
+
+function likelyCharacterWarmupIds(limit: number): string[] {
+  const selectedIndex = charactersResourceState.currentChar
+  return charactersResourceState.characters
+    .map((character, index) => ({ character, index }))
+    .filter(({ character }) => {
+      const row = character as unknown as Record<string, unknown> | undefined
+      return (
+        typeof character?.chaId === 'string' &&
+        character.chaId.trim() !== '' &&
+        row?.[SERVER_CHARACTER_SHELL_MARKER] === true &&
+        !(typeof row.trashTime === 'number' && Number.isFinite(row.trashTime))
+      )
+    })
+    .sort((left, right) => {
+      const leftRow = left.character as unknown as Record<string, unknown>
+      const rightRow = right.character as unknown as Record<string, unknown>
+      const leftPinned = Array.isArray(leftRow.pinnedChats) && leftRow.pinnedChats.length > 0 ? 1 : 0
+      const rightPinned = Array.isArray(rightRow.pinnedChats) && rightRow.pinnedChats.length > 0 ? 1 : 0
+      if (leftPinned !== rightPinned) return rightPinned - leftPinned
+      const leftInteraction = typeof leftRow.lastInteraction === 'number' ? leftRow.lastInteraction : -1
+      const rightInteraction = typeof rightRow.lastInteraction === 'number' ? rightRow.lastInteraction : -1
+      if (leftInteraction !== rightInteraction) return rightInteraction - leftInteraction
+      const leftDistance = selectedIndex >= 0 ? Math.abs(left.index - selectedIndex) : left.index
+      const rightDistance = selectedIndex >= 0 ? Math.abs(right.index - selectedIndex) : right.index
+      return leftDistance - rightDistance
+    })
+    .slice(0, limit)
+    .map(({ character }) => character!.chaId)
+}
+
+function canRunBackgroundWarmup(): boolean {
+  if (
+    typeof window === 'undefined' ||
+    typeof navigator === 'undefined' ||
+    typeof window.requestIdleCallback !== 'function'
+  )
+    return false
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return false
+  const connection = (
+    navigator as Navigator & {
+      connection?: { effectiveType?: string; saveData?: boolean }
+    }
+  ).connection
+  return connection?.saveData !== true && !['slow-2g', '2g'].includes(connection?.effectiveType ?? '')
 }
 
 function isCurrentRouteLoad(load: ActiveRouteLoad): boolean {

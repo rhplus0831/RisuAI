@@ -53,7 +53,8 @@
     retryCurrentRouteApplication,
     syncRouteFromState,
   } from './ts/router'
-  import { routeResourceLoadState } from './ts/server/routeResourceLoader'
+  import { prefetchCharacterRouteResource, routeResourceLoadState } from './ts/server/routeResourceLoader'
+  import { prefetchRouteIntent } from './ts/routeIntentPrefetch'
   import { modalFocusTrap } from './ts/gui/modalFocusTrap'
   import { alertError } from './ts/alert'
   import { hasDragType, RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes'
@@ -77,6 +78,15 @@
   const loadIrisModal = () => import('./lib/Others/IrisModal.svelte')
   const loadCustomSidebarConfig = () => import('./lib/Others/CustomSidebarConfig.svelte')
 
+  const preloadSettingsRoute = () =>
+    prefetchRouteIntent('/settings', [loadSettings, () => import('./ts/routeHandlers/settings')])
+  const preloadGridRoute = () => prefetchRouteIntent('/grid', [loadGrid])
+  const preloadPlaygroundRoute = () =>
+    prefetchRouteIntent('/playground', [
+      () => import('./lib/Playground/PlaygroundMenu.svelte'),
+      () => import('./ts/routeHandlers/playground'),
+    ])
+
   let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
   let aprilFoolsPage = $state(0)
   let keepingSessionAlive = $state(false)
@@ -89,6 +99,22 @@
       $startupCoordinatorStore.capabilities.canRenderShell &&
       !$startupCoordinatorStore.capabilities.canApplyRoutes,
   )
+  let renderedRouteKind = $state($currentRoute.kind)
+  let routeLoadingVisible = $state(false)
+  let routeContentBlocked = $derived(
+    $routeResourceLoadState.status === 'loading' || $routeResourceLoadState.status === 'error',
+  )
+
+  $effect(() => {
+    if ($routeResourceLoadState.status !== 'loading') {
+      routeLoadingVisible = false
+      return
+    }
+    const timer = window.setTimeout(() => {
+      routeLoadingVisible = true
+    }, 150)
+    return () => window.clearTimeout(timer)
+  })
 
   async function retryPlugins(): Promise<void> {
     if (retryingPluginRuntime) return
@@ -141,10 +167,15 @@
     if (!canApplyRoutes) return
     const observerIntent = peekObserverRouteIntent()
     const route = observerIntent?.route ?? $currentRoute
-    if (consumeStateDrivenRouteUpdate()) return
+    if (consumeStateDrivenRouteUpdate()) {
+      renderedRouteKind = route.kind
+      return
+    }
     untrack(() => {
       void applyRouteToStores(route).then((applied) => {
-        if (applied && observerIntent) consumeObserverRouteIntent(observerIntent.sequence)
+        if (!applied) return
+        renderedRouteKind = route.kind
+        if (observerIntent) consumeObserverRouteIntent(observerIntent.sequence)
       })
     })
   })
@@ -190,7 +221,7 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <main
   data-risu-visual-viewport-shell
-  class="flex bg-bg w-full h-full max-w-100vw text-textcolor"
+  class="relative flex bg-bg w-full h-full max-w-100vw text-textcolor"
   ondragover={(e) => {
     if (isAppInternalDrag(e)) return
     if (!$startupCoordinatorStore.capabilities.canMutate) {
@@ -374,39 +405,44 @@
     </div>
   {:else if preWriterObserverMode}
     <ObserverShell />
-  {:else if $routeResourceLoadState.status === 'loading'}
-    <div
-      class="w-full h-full flex justify-center items-center text-textcolor bg-bg flex-col"
-      data-testid="route-resource-loading"
-      role="status"
-      aria-live="polite"
-      aria-busy="true">
-      <span>Loading route…</span>
-    </div>
-  {:else if $routeResourceLoadState.status === 'error'}
-    <div
-      class="w-full h-full flex justify-center items-center text-textcolor bg-bg flex-col gap-3 px-6 text-center"
-      data-testid="route-resource-error"
-      role="alert">
-      <span>{$routeResourceLoadState.error ?? 'This route could not be loaded.'}</span>
-      <button class="rounded border border-textcolor2 px-4 py-2" onclick={() => void retryCurrentRouteApplication()}>
-        Retry
-      </button>
-    </div>
   {:else if $CustomGUISettingMenuStore}
-    <LazyComponent loader={loadCustomGUISettingMenu} fill testId="custom-gui-settings" />
+    <div
+      class="flex h-full min-w-0 grow"
+      data-risu-route-content
+      inert={routeContentBlocked}
+      aria-busy={$routeResourceLoadState.status === 'loading'}>
+      <LazyComponent loader={loadCustomGUISettingMenu} fill testId="custom-gui-settings" />
+    </div>
   {:else if $settingsOpen}
-    <LazyComponent loader={loadSettings} fill label={language.settings} testId="settings" />
-  {:else if $currentRoute.kind === 'grid'}
-    <LazyComponent
-      loader={loadGrid}
-      componentProps={{ endGrid: closeGridRoute }}
-      fill
-      label={language.grid}
-      testId="character-grid" />
+    <div
+      class="flex h-full min-w-0 grow"
+      data-risu-route-content
+      inert={routeContentBlocked}
+      aria-busy={$routeResourceLoadState.status === 'loading'}>
+      <LazyComponent loader={loadSettings} fill label={language.settings} testId="settings" />
+    </div>
+  {:else if renderedRouteKind === 'grid'}
+    <div
+      class="flex h-full min-w-0 grow"
+      data-risu-route-content
+      inert={routeContentBlocked}
+      aria-busy={$routeResourceLoadState.status === 'loading'}>
+      <LazyComponent
+        loader={loadGrid}
+        componentProps={{ endGrid: closeGridRoute }}
+        fill
+        label={language.grid}
+        testId="character-grid" />
+    </div>
   {:else}
     {#if !$DynamicGUI}
-      <Sidebar openGrid={openGridRoute} hidden={!$sideBarStore} />
+      <Sidebar
+        openGrid={openGridRoute}
+        hidden={!$sideBarStore}
+        prefetchCharacter={prefetchCharacterRouteResource}
+        {preloadSettingsRoute}
+        {preloadGridRoute}
+        {preloadPlaygroundRoute} />
     {:else if $sideBarStore}
       <div
         data-modal-root
@@ -417,10 +453,44 @@
         tabindex="-1"
         class="fixed top-0 w-full h-full left-0 z-30 flex flex-row items-center"
         onkeydown={handleResponsiveSidebarKeydown}>
-        <Sidebar openGrid={openGridRoute} hidden={false} />
+        <Sidebar
+          openGrid={openGridRoute}
+          hidden={false}
+          prefetchCharacter={prefetchCharacterRouteResource}
+          {preloadSettingsRoute}
+          {preloadGridRoute}
+          {preloadPlaygroundRoute} />
       </div>
     {/if}
-    <ChatScreen />
+    <div
+      class="flex h-full min-w-0 grow"
+      data-risu-route-content
+      inert={routeContentBlocked}
+      aria-busy={$routeResourceLoadState.status === 'loading'}>
+      <ChatScreen />
+    </div>
+  {/if}
+  {#if routeLoadingVisible}
+    <div
+      class="pointer-events-none fixed top-3 left-1/2 z-40 -translate-x-1/2 rounded-md border border-darkborderc bg-bgcolor/95 px-4 py-2 text-sm text-textcolor shadow-lg"
+      data-testid="route-resource-loading"
+      role="status"
+      aria-live="polite"
+      aria-busy="true">
+      <span>{language.loading}</span>
+    </div>
+  {:else if $routeResourceLoadState.status === 'error'}
+    <div
+      class="fixed top-3 left-1/2 z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-3 rounded-md border border-darkborderc bg-bgcolor px-4 py-3 text-sm text-textcolor shadow-lg"
+      data-testid="route-resource-error"
+      role="alert">
+      <span>{$routeResourceLoadState.error ?? 'This route could not be loaded.'}</span>
+      <button
+        class="shrink-0 rounded border border-textcolor2 px-3 py-1.5"
+        onclick={() => void retryCurrentRouteApplication()}>
+        {language.retry}
+      </button>
+    </div>
   {/if}
   {#if $alertStore.type !== 'none'}
     <LazyComponent loader={loadAlert} modal testId="alert" />

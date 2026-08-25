@@ -205,12 +205,17 @@ lineage transition still performs the authoritative full refresh; normal event
 traffic no longer recreates the startup fan-out.
 
 Route generations and selection-aware request keys fence late responses. The
-catalog surfaces use nonblocking pointer hover to prefetch the most likely
-character detail, and first inlay navigation loads the catalog through the same
-manifest path. Plugin, background-effects, and chat-generation bootstrap owners
-also declare and ensure their deferred manifest surfaces, so their dependencies
-remain explicit without becoming shell render barriers. Joined deferred work
-retries if its route-owned request was aborted.
+catalog, desktop-sidebar, and pinned-chat surfaces use nonblocking pointer or
+focus intent to prefetch the most likely character detail. Matching navigation
+promotes and joins that request instead of aborting and restarting it. Settings
+and Playground navigation intent similarly warms the exact manifest resources
+and code chunk. After optional startup settles, a data-saver-aware idle queue
+warms at most three pinned/recent likely character details sequentially. First
+inlay navigation still loads the catalog through the same manifest path. Plugin,
+background-effects, and chat-generation bootstrap owners also declare and ensure
+their deferred manifest surfaces, so their dependencies remain explicit without
+becoming shell render barriers. Joined deferred work retries if its route-owned
+request was aborted.
 
 The Fastify browser smoke asserts that aggregate settings, collections,
 characters, and inlay reads are absent from initial shell startup, while the

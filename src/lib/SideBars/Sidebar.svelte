@@ -377,9 +377,25 @@
   interface Props {
     openGrid?: any
     hidden?: boolean
+    prefetchCharacter?: (characterId: string) => void
+    preloadGridRoute?: () => void
+    preloadPlaygroundRoute?: () => void
+    preloadSettingsRoute?: () => void
   }
 
-  let { openGrid = () => {}, hidden = false }: Props = $props()
+  let {
+    openGrid = () => {},
+    hidden = false,
+    prefetchCharacter = () => {},
+    preloadGridRoute = () => {},
+    preloadPlaygroundRoute = () => {},
+    preloadSettingsRoute = () => {},
+  }: Props = $props()
+
+  function prefetchCharacterAt(index: number): void {
+    const characterId = getDatabase().characters?.[index]?.chaId
+    if (characterId) prefetchCharacter(characterId)
+  }
 
   sideBarClosing.set(false)
 
@@ -616,6 +632,8 @@
     <button
       class="flex items-center justify-center py-2 flex-col gap-1 w-full"
       class:text-textcolor2={!$settingsOpen}
+      onpointerenter={preloadSettingsRoute}
+      onfocus={preloadSettingsRoute}
       onclick={openSettingsRoute}>
       <Settings />
       <span class="text-xs">{language.settings}</span>
@@ -623,6 +641,8 @@
     <button
       class="flex items-center justify-center py-2 flex-col gap-1 w-full"
       class:text-textcolor2={!($selectedCharID >= 0)}
+      onpointerenter={preloadGridRoute}
+      onfocus={preloadGridRoute}
       onclick={() => {
         reseter()
         openGrid()
@@ -633,6 +653,8 @@
     <button
       class="flex items-center justify-center py-2 flex-col gap-1 w-full"
       class:text-textcolor2={!($selectedCharID < 0 && $PlaygroundStore !== 0)}
+      onpointerenter={preloadPlaygroundRoute}
+      onfocus={preloadPlaygroundRoute}
       onclick={openPlaygroundRoute}>
       <ShellIcon />
       <span class="text-xs">{language.playground.playground}</span>
@@ -643,7 +665,8 @@
       {warningChatIds}
       unreadChatIds={$unreadChatIds}
       rounded={IconRounded}
-      onOpen={openPinnedChat} />
+      onOpen={openPinnedChat}
+      onPrefetch={(item) => prefetchCharacter(item.characterId)} />
   </div>
 {:else}
   <div
@@ -667,11 +690,15 @@
         {#if menuMode === 1}
           <div
             class="absolute w-20 min-w-20 flex border-b-selected border-b bg-bgcolor flex-col items-center pt-2 rounded-b-md z-20 pb-2">
-            <BarIcon onClick={openSettingsRoute} ariaLabel={language.settings}><Settings /></BarIcon>
+            <BarIcon onClick={openSettingsRoute} onIntent={preloadSettingsRoute} ariaLabel={language.settings}
+              ><Settings /></BarIcon>
             <div class="mt-2"></div>
             <BarIcon onClick={openHomeRoute} ariaLabel={language.home}><HomeIcon /></BarIcon>
             <div class="mt-2"></div>
-            <BarIcon onClick={openPlaygroundRoute} ariaLabel={language.playground.playground}><ShellIcon /></BarIcon>
+            <BarIcon
+              onClick={openPlaygroundRoute}
+              onIntent={preloadPlaygroundRoute}
+              ariaLabel={language.playground.playground}><ShellIcon /></BarIcon>
             {#if $pluginRuntimeStateStore.phase === 'ready'}
               {#each additionalHamburgerMenu as menu}
                 <div class="mt-2"></div>
@@ -688,6 +715,7 @@
             <div class="mt-2"></div>
             <BarIcon
               ariaLabel={language.grid}
+              onIntent={preloadGridRoute}
               onClick={() => {
                 reseter()
                 openGrid()
@@ -703,6 +731,7 @@
       unreadChatIds={$unreadChatIds}
       rounded={IconRounded}
       onOpen={openNarrowPinnedChat}
+      onPrefetch={(item) => prefetchCharacter(item.characterId)}
       isInert={menuMode === 1} />
     <div
       class="flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0"
@@ -754,6 +783,12 @@
             if (position) avatarDragStart(position, e)
           }}
           ondragend={sidebarCharacterDrag.clear}
+          onpointerenter={() => {
+            if (char.type === 'normal') prefetchCharacterAt(char.index)
+          }}
+          onfocusin={() => {
+            if (char.type === 'normal') prefetchCharacterAt(char.index)
+          }}
           ondragover={avatarDragOver}
           ondrop={(e) => {
             const position = sidebarItemPosition(char)
@@ -883,6 +918,8 @@
                     if (position) avatarDragStart(position, e)
                   }}
                   ondragend={sidebarCharacterDrag.clear}
+                  onpointerenter={() => prefetchCharacterAt(char2.index)}
+                  onfocusin={() => prefetchCharacterAt(char2.index)}
                   ondragover={avatarDragOver}
                   ondrop={(e) => {
                     const position = characterOrderPosition(getDatabase().characters[char2.index]?.chaId)
@@ -973,11 +1010,15 @@
         {#if menuMode === 1}
           <div
             class="absolute bottom-full w-20 min-w-20 flex border-t-selected border-t bg-bgcolor flex-col items-center pt-2 rounded-t-md z-20 pb-2">
-            <BarIcon onClick={openSettingsRoute} ariaLabel={language.settings}><Settings /></BarIcon>
+            <BarIcon onClick={openSettingsRoute} onIntent={preloadSettingsRoute} ariaLabel={language.settings}
+              ><Settings /></BarIcon>
             <div class="mt-2"></div>
             <BarIcon onClick={openHomeRoute} ariaLabel={language.home}><HomeIcon /></BarIcon>
             <div class="mt-2"></div>
-            <BarIcon onClick={openPlaygroundRoute} ariaLabel={language.playground.playground}><ShellIcon /></BarIcon>
+            <BarIcon
+              onClick={openPlaygroundRoute}
+              onIntent={preloadPlaygroundRoute}
+              ariaLabel={language.playground.playground}><ShellIcon /></BarIcon>
             {#if $pluginRuntimeStateStore.phase === 'ready'}
               {#each additionalHamburgerMenu as menu}
                 <div class="mt-2"></div>
@@ -994,6 +1035,7 @@
             <div class="mt-2"></div>
             <BarIcon
               ariaLabel={language.grid}
+              onIntent={preloadGridRoute}
               onClick={() => {
                 reseter()
                 openGrid()
