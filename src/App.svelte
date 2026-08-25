@@ -57,6 +57,7 @@
   import { modalFocusTrap } from './ts/gui/modalFocusTrap'
   import { alertError } from './ts/alert'
   import { hasDragType, RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes'
+  import { consumeObserverRouteIntent, peekObserverRouteIntent } from './ts/observerRouteIntent'
 
   const loadAlert = () => import('./lib/Others/AlertComp.svelte')
   const loadRealmPopup = () => import('./lib/UI/Realm/LazyRealmPopUp.svelte')
@@ -137,10 +138,13 @@
 
   $effect(() => {
     if (!$startupCoordinatorStore.capabilities.canApplyRoutes) return
-    const route = $currentRoute
+    const observerIntent = peekObserverRouteIntent()
+    const route = observerIntent?.route ?? $currentRoute
     if (consumeStateDrivenRouteUpdate()) return
     untrack(() => {
-      void applyRouteToStores(route)
+      void applyRouteToStores(route).then((applied) => {
+        if (applied && observerIntent) consumeObserverRouteIntent(observerIntent.sequence)
+      })
     })
   })
 

@@ -17,7 +17,7 @@ tests, evidence, and applicable exit criteria are complete.
 | [3: Startup capabilities](03-startup-capabilities.md) | Complete | None. `loadedStore` remains only as the documented background-readiness compatibility alias scheduled for removal in Phase 7. |
 | [4: Deferred runtimes](04-deferred-runtimes.md) | Complete | None. |
 | [5: Route-driven hydration](05-route-driven-hydration.md) | Complete | None. |
-| [6: Observer shell](06-observer-shell.md) | In progress | 6C, 6D, and the Phase 6 exit evidence. |
+| [6: Observer shell](06-observer-shell.md) | In progress | 6D and the Phase 6 exit evidence. |
 | [7: Hardening and rollout](07-hardening-and-rollout.md) | Outstanding | All review slices and the final initiative evidence package. |
 
 ## Task checklist
@@ -76,7 +76,7 @@ tests, evidence, and applicable exit criteria are complete.
 
 - [x] 6A. Flag and observer projection.
 - [x] 6B. Read-only interaction and local intent.
-- [ ] 6C. Writer recovery and safe promotion.
+- [x] 6C. Writer recovery and safe promotion.
 - [ ] 6D. Permanent observer and retry behavior.
 
 ### Phase 7: Hardening and rollout

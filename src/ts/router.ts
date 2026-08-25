@@ -271,12 +271,12 @@ export function setCharacterSidebarViewMode(view: 'chat' | 'character'): void {
   replaceCurrentHistoryState(previousState)
 }
 
-export async function applyRouteToStores(route: AppRoute): Promise<void> {
+export async function applyRouteToStores(route: AppRoute): Promise<boolean> {
   const applicationEpoch = ++routeApplicationEpoch
   const isFreshRouteApplication = () => applicationEpoch === routeApplicationEpoch
   applyingRoute = true
   try {
-    if (!(await prepareRouteResources(route)) || !isFreshRouteApplication()) return
+    if (!(await prepareRouteResources(route)) || !isFreshRouteApplication()) return false
     closeRouteBlockingViews()
     switch (route.kind) {
       case 'home': {
@@ -288,7 +288,7 @@ export async function applyRouteToStores(route: AppRoute): Promise<void> {
       }
       case 'settings': {
         const { applySettingsRoute } = await import('./routeHandlers/settings')
-        if (!isFreshRouteApplication()) return
+        if (!isFreshRouteApplication()) return false
         await applySettingsRoute(route, {
           isFresh: isFreshRouteApplication,
           replacePath: (path) =>
@@ -305,19 +305,19 @@ export async function applyRouteToStores(route: AppRoute): Promise<void> {
       }
       case 'inlay': {
         const { applyPlaygroundRoute } = await import('./routeHandlers/playground')
-        if (!isFreshRouteApplication()) return
+        if (!isFreshRouteApplication()) return false
         await applyPlaygroundRoute(route, isFreshRouteApplication)
         break
       }
       case 'playground': {
         const { applyPlaygroundRoute } = await import('./routeHandlers/playground')
-        if (!isFreshRouteApplication()) return
+        if (!isFreshRouteApplication()) return false
         await applyPlaygroundRoute(route, isFreshRouteApplication)
         break
       }
       case 'character': {
         const { applyCharacterRoute } = await import('./routeHandlers/character')
-        if (!isFreshRouteApplication()) return
+        if (!isFreshRouteApplication()) return false
         await applyCharacterRoute(route, {
           isFresh: isFreshRouteApplication,
           replacePath: (path) => commitPath(path, { replace: true, stateDriven: true }),
@@ -334,8 +334,8 @@ export async function applyRouteToStores(route: AppRoute): Promise<void> {
         break
       }
     }
-    if (!isFreshRouteApplication()) return
-    await finishRouteResources(route)
+    if (!isFreshRouteApplication()) return false
+    return finishRouteResources(route)
   } finally {
     queueMicrotask(() => {
       if (!isFreshRouteApplication()) return
@@ -348,7 +348,7 @@ export async function applyRouteToStores(route: AppRoute): Promise<void> {
   }
 }
 
-export function retryCurrentRouteApplication(): Promise<void> {
+export function retryCurrentRouteApplication(): Promise<boolean> {
   return applyRouteToStores(get(currentRoute))
 }
 

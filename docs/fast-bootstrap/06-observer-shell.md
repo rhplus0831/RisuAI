@@ -15,7 +15,7 @@ This is a separate rollout, not part of the conservative Phase 3 release.
   justify an early read.
 - [x] Phase 3 guards prove direct and UI-originated writes cannot bypass
   `canMutate` or `canApplyRoutes`.
-- [ ] Observer-to-writer event and revision transitions have focused test
+- [x] Observer-to-writer event and revision transitions have focused test
   coverage.
 - [x] Read-only controls have a consistent accessible treatment and localized
   status/retry text.
@@ -124,16 +124,43 @@ Verification:
 
 ### 6C. Writer recovery and safe promotion
 
-- [ ] Run owner adoption, writer takeover, outbox preparation, receipt
+- [x] Run owner adoption, writer takeover, outbox preparation, receipt
   acknowledgement, and pending replay in their Phase 3 order.
-- [ ] Fetch and apply an authoritative post-replay shell projection at the new
+- [x] Fetch and apply an authoritative post-replay shell projection at the new
   coherent revision.
-- [ ] Discard or supersede every observer-era projection that is older than the
+- [x] Discard or supersede every observer-era projection that is older than the
   promotion revision.
-- [ ] Enable writer readiness only after the refreshed projection, revision
+- [x] Enable writer readiness only after the refreshed projection, revision
   cursor, event reconciliation, and command guard are installed.
-- [ ] Reconcile the latest local route/selection intent once. Avoid a write when
+- [x] Reconcile the latest local route/selection intent once. Avoid a write when
   the authoritative state already matches it.
+
+#### 6C implementation record (2026-08-25)
+
+Promotion retains the Phase 3 order: durable owner adoption, explicit takeover
+when required, outbox ownership preparation, receipt acknowledgement, pending
+mutation replay, and only then the authoritative shell read. The post-replay
+shell replaces observer summaries and optional detail at its coherent revision;
+both cached command authority and the applied event cursor are advanced to that
+revision before the command reconciler and SSE subscription are installed.
+`writer-ready` remains closed until the subscription accepts that cursor.
+
+The root route effect now prefers the latest memory-only observer intent during
+the first writer-safe route application. It consumes that exact sequence only
+when route preparation and post-route hydration succeed, so a newer or failed
+intent remains available. Existing character/chat route guards make promotion
+a command no-op when the authoritative selection already matches the intent.
+
+Verification:
+
+- focused bootstrap promotion/order, coherent shell fencing, route no-op,
+  intent sequencing, and App DOM coverage — 230 tests passed;
+- `pnpm test:affected` — 334 frontend files / 5,109 tests passed; no Fastify
+  test was selected for the client-only change;
+- `pnpm check`, `pnpm check:server`, and `pnpm format:check` — passed;
+- `pnpm build:initial-preload` — 11 files, 319,499 gzip bytes total, and a
+  284,108-byte largest chunk; all boundary, regression, and milestone gates
+  passed.
 
 ### 6D. Permanent observer and retry behavior
 

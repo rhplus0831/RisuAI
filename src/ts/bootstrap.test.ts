@@ -98,7 +98,7 @@ const pendingMutationApi = vi.hoisted(() => ({
 }))
 const ownershipApi = vi.hoisted(() => ({ count: vi.fn(() => 0), discard: vi.fn(), reset: vi.fn() }))
 const memoryApi = vi.hoisted(() => ({ publish: vi.fn(), applyEvent: vi.fn(() => true), applySnapshot: vi.fn() }))
-const activeWriterApi = vi.hoisted(() => ({ enterTakeover: vi.fn() }))
+const activeWriterApi = vi.hoisted(() => ({ adoptPendingOwner: vi.fn(), enterTakeover: vi.fn() }))
 const pushApi = vi.hoisted(() => ({
   initialize: vi.fn(async () => undefined),
   reconcile: vi.fn(async () => ({ status: 'applied' })),
@@ -181,7 +181,14 @@ vi.mock('./server/resourceRefresh', () => ({
 vi.mock('./server/events', () => ({ subscribeServerCommandEvents: eventApi.subscribe }))
 vi.mock('./server/activeWriterSession', async (importActual) => {
   const actual = await importActual<typeof import('./server/activeWriterSession')>()
-  return { ...actual, enterWriterTakeoverFlow: activeWriterApi.enterTakeover }
+  return {
+    ...actual,
+    adoptPendingMutationWriterSessionId: (sessionId: string) => {
+      activeWriterApi.adoptPendingOwner(sessionId)
+      return actual.adoptPendingMutationWriterSessionId(sessionId)
+    },
+    enterWriterTakeoverFlow: activeWriterApi.enterTakeover,
+  }
 })
 vi.mock('./server/chatMessageHydration.svelte', () => ({
   ...hydrationApi,
@@ -465,6 +472,7 @@ beforeEach(() => {
   clearAppliedServerResourceRevision()
 
   vi.clearAllMocks()
+  activeWriterApi.adoptPendingOwner.mockClear()
   optionalRuntimeApi.installStoreEffects.mockReturnValue(optionalRuntimeApi.disposeStoreEffects)
   optionalRuntimeApi.startObserver.mockReturnValue(optionalRuntimeApi.stopObserver)
   ownershipApi.count.mockClear()
@@ -573,6 +581,76 @@ describe('API-backed client bootstrap', () => {
 
     expect(resourceApi.loadInitial).toHaveBeenCalledTimes(2)
     expect(resourceApi.loadInitial).toHaveBeenNthCalledWith(2, { hooks: resourceApi.hooks })
+    expect(getStartupCoordinatorSnapshot().capabilities).toMatchObject({
+      canRenderShell: true,
+      canApplyRoutes: true,
+      canMutate: true,
+    })
+  })
+
+  it('keeps writer capability closed until the post-replay projection and event cursor are installed', async () => {
+    __observerShellFlagTestHooks.setOverride(true)
+    let releaseEvents!: (value: { status: 'ok'; unsubscribe: typeof eventApi.unsubscribe }) => void
+    eventApi.subscribe.mockImplementationOnce((input) => {
+      eventApi.subscriptions.push(input)
+      return new Promise((resolve) => {
+        releaseEvents = resolve
+      })
+    })
+    resourceApi.loadInitial
+      .mockImplementationOnce(async () => {
+        replaceResourceDatabase(
+          {
+            characters: [
+              {
+                __serverCharacterShell: true,
+                chaId: 'observer-char',
+                name: 'Observer summary',
+                creatorNotes: 'stale observer detail',
+              },
+            ],
+            characterOrder: ['observer-char'],
+            currentChar: 0,
+          } as never,
+          5,
+        )
+        return { status: 'ok', revision: 5, scope: 'shell' }
+      })
+      .mockImplementationOnce(async () => {
+        replaceResourceDatabase(
+          {
+            characters: [
+              { chaId: 'char-a', name: 'Authoritative Ada', chatPage: 0, chats: [{ id: 'chat-a', message: [] }] },
+              { chaId: 'char-b', name: 'Authoritative Bea', chatPage: 0, chats: [{ id: 'chat-b', message: [] }] },
+            ],
+            characterOrder: ['char-a', 'char-b'],
+            currentChar: 1,
+          } as never,
+          8,
+        )
+        return { status: 'ok', revision: 8, scope: 'shell' }
+      })
+
+    const loading = loadData()
+
+    await vi.waitFor(() => expect(eventApi.subscribe).toHaveBeenCalledOnce())
+    expect(getStartupCoordinatorSnapshot().capabilities).toMatchObject({
+      canRenderShell: true,
+      canApplyRoutes: false,
+      canMutate: false,
+    })
+    expect(getDatabase().characters.map((character) => character.chaId)).toEqual(['char-a', 'char-b'])
+    expect(getDatabase().characters[0]?.name).toBe('Authoritative Ada')
+    expect(getDatabase().characters.some((character) => character.chaId === 'observer-char')).toBe(false)
+    expect(get(selectedCharID)).toBe(1)
+    expect(peekCachedServerCommandRevision()).toBe(8)
+    expect(peekAppliedServerResourceRevision()).toBe(8)
+    expect(commandApi.reconciler).not.toBeNull()
+    expect(eventApi.subscriptions[0]?.sinceRevision).toBe(8)
+
+    releaseEvents({ status: 'ok', unsubscribe: eventApi.unsubscribe })
+    await loading
+
     expect(getStartupCoordinatorSnapshot().capabilities).toMatchObject({
       canRenderShell: true,
       canApplyRoutes: true,
@@ -1156,6 +1234,41 @@ describe('API-backed client bootstrap', () => {
     expect(characterHydrationApi.startSelected).not.toHaveBeenCalled()
     expect(promptTemplateApi.ensure).not.toHaveBeenCalled()
     expect(eventApi.subscriptions[0]?.sinceRevision).toBe(5)
+  })
+
+  it('preserves the Phase 3 owner, takeover, outbox, receipt, replay, projection, and event order', async () => {
+    pendingMutationApi.readOwner.mockResolvedValueOnce({
+      writerSessionId: 'recovered-writer',
+      writerEpoch: 1,
+      databaseLineage: 'database-a',
+    })
+    bootstrapApi.fetch
+      .mockResolvedValueOnce({ status: 'active-writer-connected', error: 'active_writer_connected' })
+      .mockResolvedValueOnce(runtimeBootstrap({ requestedWriterWasActive: false, writerEpoch: 2 }))
+
+    await loadWebInitialDatabase()
+
+    expect(pendingMutationApi.readOwner.mock.invocationCallOrder[0]).toBeLessThan(
+      activeWriterApi.adoptPendingOwner.mock.invocationCallOrder[0],
+    )
+    expect(activeWriterApi.adoptPendingOwner.mock.invocationCallOrder[0]).toBeLessThan(
+      bootstrapApi.fetch.mock.invocationCallOrder[0],
+    )
+    expect(bootstrapApi.fetch.mock.invocationCallOrder[1]).toBeLessThan(
+      pendingMutationApi.prepare.mock.invocationCallOrder[0],
+    )
+    expect(pendingMutationApi.prepare.mock.invocationCallOrder[0]).toBeLessThan(
+      pendingMutationApi.flushAcknowledgements.mock.invocationCallOrder[0],
+    )
+    expect(pendingMutationApi.flushAcknowledgements.mock.invocationCallOrder[0]).toBeLessThan(
+      pendingMutationApi.replay.mock.invocationCallOrder[0],
+    )
+    expect(pendingMutationApi.replay.mock.invocationCallOrder[0]).toBeLessThan(
+      resourceApi.loadInitial.mock.invocationCallOrder[0],
+    )
+    expect(resourceApi.loadInitial.mock.invocationCallOrder[0]).toBeLessThan(
+      eventApi.subscribe.mock.invocationCallOrder[0],
+    )
   })
 
   it('prompts before explicitly disconnecting a still-connected writer', async () => {

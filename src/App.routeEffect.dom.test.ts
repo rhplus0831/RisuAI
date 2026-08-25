@@ -60,7 +60,7 @@ async function createRouteMock() {
         if (appRouteDomMocks.state.applyRouteCalls > 1) {
           appRouteDomMocks.state.resetSidebarTab()
         }
-        return Promise.resolve(route)
+        return Promise.resolve(true)
       }),
       closeGridRoute: appRouteDomMocks.closeGridRoute,
       consumeStateDrivenRouteUpdate: () => false,
@@ -306,6 +306,11 @@ import {
   sideBarStore,
 } from './ts/stores.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from './ts/server/resourceState.svelte'
+import {
+  peekObserverRouteIntent,
+  recordObserverRouteIntent,
+  resetObserverRouteIntentForTests,
+} from './ts/observerRouteIntent'
 
 const { default: App } = await import('./App.svelte')
 
@@ -404,6 +409,7 @@ function seedStores() {
   loadoutModalStore.open = false
   irisStore.open = false
   customSideBarConfigDialogStore.open = false
+  resetObserverRouteIntentForTests()
 }
 
 async function mountApp() {
@@ -443,6 +449,7 @@ describe('App route/refreeze mounted DOM behavior', () => {
     }
     replaceResourceDatabase({} as Database)
     resetStartupReadinessForTests()
+    resetObserverRouteIntentForTests()
     target.remove()
     vi.unstubAllEnvs()
     vi.clearAllMocks()
@@ -520,6 +527,7 @@ describe('App route/refreeze mounted DOM behavior', () => {
       component = undefined
     }
     appRouteDomMocks.state.applyRouteCalls = 0
+    vi.mocked(appRouteDomMocks.state.exports?.applyRouteToStores as (...args: any[]) => Promise<boolean>).mockClear()
     resetStartupReadinessForTests()
     configureStartupObserverShell(true)
     for (const milestone of ['entry', 'shell-mounted', 'observer-ready'] as const) {
@@ -542,6 +550,23 @@ describe('App route/refreeze mounted DOM behavior', () => {
 
     expect(dropEvent.defaultPrevented).toBe(true)
     expect(appRouteDomMocks.importCharacterProcess).not.toHaveBeenCalled()
+
+    const olderIntent = recordObserverRouteIntent({ kind: 'home', path: '/' })
+    const latestRoute: AppRoute = {
+      kind: 'character',
+      path: '/character/char-a/chat-a',
+      chaId: 'char-a',
+      chatId: 'chat-a',
+    }
+    const latestIntent = recordObserverRouteIntent(latestRoute)
+    expect(latestIntent.sequence).toBeGreaterThan(olderIntent.sequence)
+    appRouteDomMocks.state.exports?.currentRoute.set(latestRoute)
+    recordStartupMilestone('writer-ready')
+
+    await vi.waitFor(() => expect(appRouteDomMocks.state.applyRouteCalls).toBe(1))
+    expect(appRouteDomMocks.state.exports?.applyRouteToStores).toHaveBeenCalledOnce()
+    expect(appRouteDomMocks.state.exports?.applyRouteToStores).toHaveBeenCalledWith(latestRoute)
+    await vi.waitFor(() => expect(peekObserverRouteIntent()).toBeNull())
   })
 
   it('retains state-to-route subscriptions while a route application owns the stores', async () => {

@@ -902,6 +902,31 @@ describe('router character route freshness', () => {
     expect(router.hasPendingRouteApplication()).toBe(false)
   })
 
+  it('does not persist a reconciled observer route when authoritative character and chat selection already match', async () => {
+    const router = await importRouterAt('/character/char-a/chat-a')
+    const stores = await import('./stores.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    replaceResourceDatabase({
+      characters: [
+        {
+          chaId: 'char-a',
+          chatPage: 0,
+          chats: [{ id: 'chat-a', name: 'Chat A', message: [] }],
+        },
+      ],
+    } as any)
+    stores.selectedCharID.set(0)
+    routerMocks.findCharacterIndexbyId.mockReturnValue(0)
+
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
+
+    expect(routerMocks.changeChar).not.toHaveBeenCalled()
+    expect(routerMocks.changeChatTo).not.toHaveBeenCalled()
+    expect(get(stores.selectedCharID)).toBe(0)
+    expect(window.location.pathname).toBe('/character/char-a/chat-a')
+  })
+
   it('canonicalizes a missing character to home during generation and preserves back-forward history', async () => {
     const router = await importRouterAt('/character/char-a/chat-owner')
     const stores = await import('./stores.svelte')

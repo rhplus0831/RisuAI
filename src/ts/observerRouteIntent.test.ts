@@ -38,4 +38,12 @@ describe('observer route intent', () => {
     expect(consumeObserverRouteIntent(latest.sequence)).toEqual(latest)
     expect(consumeObserverRouteIntent(latest.sequence)).toBeNull()
   })
+
+  it('keeps a newer intent when an older reconciliation finishes late', () => {
+    const older = recordObserverRouteIntent({ kind: 'character', path: '/character/a', chaId: 'a' })
+    const newer = recordObserverRouteIntent({ kind: 'character', path: '/character/b', chaId: 'b' })
+
+    expect(consumeObserverRouteIntent(older.sequence)).toBeNull()
+    expect(peekObserverRouteIntent()).toEqual(newer)
+  })
 })

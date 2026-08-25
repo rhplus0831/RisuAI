@@ -7,6 +7,7 @@ vi.mock('../../lang', () => ({ changeLanguage: languageSideEffects.change }))
 
 import { clearAppliedServerResourceRevision, peekAppliedServerResourceRevision } from './commands'
 import {
+  applyCharacterResource,
   applyCharactersResource,
   applySettingsGroupResource,
   charactersResourceState,
@@ -148,6 +149,38 @@ describe('coherent shell hydration', () => {
     })
     expect(settingsResourceState.shellRevision).toBe(5)
     expect(peekAppliedServerResourceRevision()).toBe(5)
+  })
+
+  it('replaces observer-era detail with the authoritative promotion shell', () => {
+    expect(applyServerShellResource(shellResource(5, 'en'))).toBe(true)
+    expect(
+      withTrustedResourceWrite(() =>
+        applyCharacterResource({
+          revision: 5,
+          character: {
+            chaId: 'char-a',
+            type: 'character',
+            name: 'Observer detail',
+            desc: 'stale observer-only body',
+            chats: [{ id: 'chat-a', name: 'Observer chat', message: [] }],
+            chatPage: 0,
+            chatFolders: [],
+          } as character,
+        }),
+      ),
+    ).toBe(true)
+    expect(getResourceDatabase().characters[0]?.desc).toBe('stale observer-only body')
+
+    expect(applyServerShellResource(shellResource(6, 'ko'))).toBe(true)
+
+    expect(getResourceDatabase().characters[0]).toMatchObject({
+      __serverCharacterShell: true,
+      chaId: 'char-a',
+      name: 'Ada',
+      chats: [],
+    })
+    expect(getResourceDatabase().characters[0]?.desc).toBeUndefined()
+    expect(peekAppliedServerResourceRevision()).toBe(6)
   })
 
   it('fences settings-group responses older than the shell without claiming a full settings read', () => {
