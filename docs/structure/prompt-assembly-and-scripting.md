@@ -194,11 +194,15 @@ though scriptstate is restored per target. Client disconnects abort queued or
 active display stages rather than leaving a superseded chat on the service's
 exclusive execution tail.
 
-The cache has one active namespace keyed by database lineage, writer epoch,
-ephemeral page session, language, both viewport dimensions, and protocol
-version. Entries use SHA-256 over canonical display dependencies rather than a
-global revision. Stable rows use a byte-aware LRU; growing generation prefixes
-are coalesced and explicitly bypass it. The transform version is part of each
+The cache retains up to four recently active namespaces keyed exactly by
+database lineage, writer epoch, ephemeral page session, language, both viewport
+dimensions, and protocol version. Returning to one of those exact contexts can
+reuse its entries, while different contexts never cross-hit. Entry count and
+UTF-8 byte limits apply across all retained namespaces; namespace and entry
+eviction are LRU-bounded, and completion from an evicted in-flight namespace
+cannot repopulate it. Entries use SHA-256 over canonical display dependencies
+rather than a global revision. Growing generation prefixes are coalesced and
+explicitly bypass reusable storage. The transform version is part of each
 dependency key, so the per-target ephemeral-state contract cannot reuse entries
 from the former durable-display-state behavior.
 

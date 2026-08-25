@@ -21,6 +21,7 @@ export interface DisplaySourceCacheStats {
   uncacheableBypasses: number
   oversizeBypasses: number
   staleCompletions: number
+  namespaces: number
   entries: number
   bytes: number
 }
@@ -39,19 +40,23 @@ interface CacheNamespace {
 }
 
 export interface DisplaySourceCacheOptions {
+  maxNamespaces?: number
   maxEntries?: number
   maxBytes?: number
   maxEntryBytes?: number
 }
 
 export class DisplaySourceCache {
+  readonly maxNamespaces: number
   readonly maxEntries: number
   readonly maxBytes: number
   readonly maxEntryBytes: number
 
-  private namespace: CacheNamespace | null = null
+  private readonly namespaces = new Map<string, CacheNamespace>()
   private nextGeneration = 1
-  private counters: Omit<DisplaySourceCacheStats, 'entries' | 'bytes'> = {
+  private totalEntries = 0
+  private totalBytes = 0
+  private counters: Omit<DisplaySourceCacheStats, 'namespaces' | 'entries' | 'bytes'> = {
     hits: 0,
     misses: 0,
     inflightJoins: 0,
@@ -63,22 +68,28 @@ export class DisplaySourceCache {
   }
 
   constructor(options: DisplaySourceCacheOptions = {}) {
+    this.maxNamespaces = Math.max(1, Math.floor(options.maxNamespaces ?? 4))
     this.maxEntries = options.maxEntries ?? 512
     this.maxBytes = options.maxBytes ?? 16 * 1024 * 1024
     this.maxEntryBytes = options.maxEntryBytes ?? 512 * 1024
   }
 
   activate(namespaceId: string): number {
-    if (this.namespace?.id === namespaceId) return this.namespace.generation
-    if (this.namespace) this.counters.namespaceRetirements += 1
-    this.namespace = {
+    const existing = this.namespaces.get(namespaceId)
+    if (existing) {
+      this.touchNamespace(existing)
+      return existing.generation
+    }
+    const namespace: CacheNamespace = {
       id: namespaceId,
       generation: this.nextGeneration++,
       completed: new Map(),
       inflight: new Map(),
       bytes: 0,
     }
-    return this.namespace.generation
+    this.namespaces.set(namespaceId, namespace)
+    this.enforceNamespaceLimit()
+    return namespace.generation
   }
 
   async resolve(
@@ -87,7 +98,7 @@ export class DisplaySourceCache {
     load: () => Promise<DisplaySourceCacheLoadResult>,
   ): Promise<DisplaySourceCacheResult> {
     this.activate(namespaceId)
-    const namespace = this.namespace!
+    const namespace = this.namespaces.get(namespaceId)!
     const cached = namespace.completed.get(key)
     if (cached) {
       namespace.completed.delete(key)
@@ -119,14 +130,16 @@ export class DisplaySourceCache {
         this.counters.oversizeBypasses += 1
         return { ...result.value, cacheStatus: 'miss' }
       }
-      if (this.namespace !== namespace || this.namespace.generation !== generation) {
+      if (this.namespaces.get(namespaceId) !== namespace || namespace.generation !== generation) {
         this.counters.staleCompletions += 1
         return { ...result.value, cacheStatus: 'miss' }
       }
 
       namespace.completed.set(key, { value: result.value, bytes })
       namespace.bytes += bytes
-      this.evict(namespace)
+      this.totalEntries += 1
+      this.totalBytes += bytes
+      this.enforceEntryLimits()
       return { ...result.value, cacheStatus: 'miss' }
     } finally {
       namespace.inflight.delete(key)
@@ -136,24 +149,52 @@ export class DisplaySourceCache {
   stats(): DisplaySourceCacheStats {
     return {
       ...this.counters,
-      entries: this.namespace?.completed.size ?? 0,
-      bytes: this.namespace?.bytes ?? 0,
+      namespaces: this.namespaces.size,
+      entries: this.totalEntries,
+      bytes: this.totalBytes,
     }
   }
 
   clear(): void {
-    if (this.namespace) this.counters.namespaceRetirements += 1
-    this.namespace = null
+    this.counters.namespaceRetirements += this.namespaces.size
+    this.namespaces.clear()
+    this.totalEntries = 0
+    this.totalBytes = 0
   }
 
-  private evict(namespace: CacheNamespace): void {
-    while (namespace.completed.size > this.maxEntries || namespace.bytes > this.maxBytes) {
-      const oldestKey = namespace.completed.keys().next().value
-      if (oldestKey === undefined) break
-      const oldest = namespace.completed.get(oldestKey)
-      namespace.completed.delete(oldestKey)
-      namespace.bytes -= oldest?.bytes ?? 0
-      this.counters.evictions += 1
+  private touchNamespace(namespace: CacheNamespace): void {
+    this.namespaces.delete(namespace.id)
+    this.namespaces.set(namespace.id, namespace)
+  }
+
+  private enforceNamespaceLimit(): void {
+    while (this.namespaces.size > this.maxNamespaces) {
+      const oldestId = this.namespaces.keys().next().value
+      if (oldestId === undefined) break
+      const retired = this.namespaces.get(oldestId)
+      this.namespaces.delete(oldestId)
+      this.totalEntries -= retired?.completed.size ?? 0
+      this.totalBytes -= retired?.bytes ?? 0
+      this.counters.namespaceRetirements += 1
+    }
+  }
+
+  private enforceEntryLimits(): void {
+    while (this.totalEntries > this.maxEntries || this.totalBytes > this.maxBytes) {
+      let evicted = false
+      for (const namespace of this.namespaces.values()) {
+        const oldestKey = namespace.completed.keys().next().value
+        if (oldestKey === undefined) continue
+        const oldest = namespace.completed.get(oldestKey)
+        namespace.completed.delete(oldestKey)
+        namespace.bytes -= oldest?.bytes ?? 0
+        this.totalEntries -= 1
+        this.totalBytes -= oldest?.bytes ?? 0
+        this.counters.evictions += 1
+        evicted = true
+        break
+      }
+      if (!evicted) break
     }
   }
 }

@@ -191,19 +191,28 @@ describe('POST /api/v1/chats/:chatId/display-sources', () => {
     const unsubscribeMetrics = subscribeProtocolMetrics((metric) => observedMetrics.push(metric))
     let response
     let cachedResponse
+    let alternateNamespaceResponse
+    let reusedNamespaceResponse
     try {
-      const sendRequest = () =>
+      const sendRequest = (payload = request) =>
         harness.app.inject({
           method: 'POST',
           url: '/api/v1/chats/chat-1/display-sources',
           // The route is a read-only POST; a stale writer header must not gate display projection.
           headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-old' },
-          payload: request,
+          payload,
         })
       response = await assertScopedLoadOnHotPath(sendRequest, {
         allowTables: ['modules', 'prompt_presets', 'personas'],
       })
       cachedResponse = await assertScopedLoadOnHotPath(sendRequest, {
+        allowTables: ['modules', 'prompt_presets', 'personas'],
+      })
+      alternateNamespaceResponse = await assertScopedLoadOnHotPath(
+        () => sendRequest({ ...request, context: { ...request.context, pageSessionId: 'page-b' } }),
+        { allowTables: ['modules', 'prompt_presets', 'personas'] },
+      )
+      reusedNamespaceResponse = await assertScopedLoadOnHotPath(sendRequest, {
         allowTables: ['modules', 'prompt_presets', 'personas'],
       })
     } finally {
@@ -235,8 +244,10 @@ describe('POST /api/v1/chats/:chatId/display-sources', () => {
       ],
     })
     expect(cachedResponse.statusCode).toBe(200)
+    expect(alternateNamespaceResponse.statusCode).toBe(200)
+    expect(reusedNamespaceResponse.statusCode).toBe(200)
     const batchMetrics = observedMetrics.filter((metric) => metric.metric === 'display_source_batch')
-    expect(batchMetrics).toHaveLength(2)
+    expect(batchMetrics).toHaveLength(4)
     expect(batchMetrics[0]).toMatchObject({
       queueDepth: 0,
       transcriptMessageCount: 2,
@@ -249,6 +260,8 @@ describe('POST /api/v1/chats/:chatId/display-sources', () => {
       targetFingerprintMs: expect.any(Number),
     })
     expect(batchMetrics[1]).toMatchObject({ batchCacheHitCount: 2, batchCacheMissCount: 0 })
+    expect(batchMetrics[2]).toMatchObject({ batchCacheHitCount: 0, batchCacheMissCount: 2 })
+    expect(batchMetrics[3]).toMatchObject({ batchCacheHitCount: 2, batchCacheMissCount: 0 })
 
     const persistedDb = openDatabase(harness.dataDir)
     try {

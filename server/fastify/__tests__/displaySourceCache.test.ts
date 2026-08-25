@@ -30,7 +30,7 @@ describe('DisplaySourceCache', () => {
   })
 
   it('retires old namespaces and cannot populate one from a stale completion', async () => {
-    const cache = new DisplaySourceCache()
+    const cache = new DisplaySourceCache({ maxNamespaces: 1 })
     let release!: () => void
     const gate = new Promise<void>((resolve) => {
       release = resolve
@@ -47,6 +47,53 @@ describe('DisplaySourceCache', () => {
     await stale
 
     expect(cache.stats()).toMatchObject({ namespaceRetirements: 1, staleCompletions: 1, entries: 0 })
+  })
+
+  it('reuses recently active namespaces without crossing their identities', async () => {
+    const cache = new DisplaySourceCache({ maxNamespaces: 2 })
+    let loads = 0
+    const load = (displaySource: string) => async () => {
+      loads += 1
+      return {
+        value: { displaySource, dependencyFingerprint: displaySource },
+        cacheable: true,
+      }
+    }
+
+    await expect(cache.resolve('namespace-a', 'shared-key', load('a'))).resolves.toMatchObject({
+      displaySource: 'a',
+      cacheStatus: 'miss',
+    })
+    await expect(cache.resolve('namespace-b', 'shared-key', load('b'))).resolves.toMatchObject({
+      displaySource: 'b',
+      cacheStatus: 'miss',
+    })
+    await expect(cache.resolve('namespace-a', 'shared-key', load('unexpected'))).resolves.toMatchObject({
+      displaySource: 'a',
+      cacheStatus: 'hit',
+    })
+
+    expect(loads).toBe(2)
+    expect(cache.stats()).toMatchObject({ namespaces: 2, entries: 2, namespaceRetirements: 0 })
+  })
+
+  it('retires the least-recent namespace and enforces aggregate entry bounds', async () => {
+    const cache = new DisplaySourceCache({ maxNamespaces: 2, maxEntries: 2, maxBytes: 100 })
+    const load = (displaySource: string) => async () => ({
+      value: { displaySource, dependencyFingerprint: displaySource },
+      cacheable: true,
+    })
+
+    await cache.resolve('namespace-a', 'a', load('a'))
+    await cache.resolve('namespace-b', 'b', load('b'))
+    cache.activate('namespace-a')
+    await cache.resolve('namespace-c', 'c', load('c'))
+
+    await expect(cache.resolve('namespace-a', 'a', load('unexpected'))).resolves.toMatchObject({ cacheStatus: 'hit' })
+    expect(cache.stats()).toMatchObject({ namespaces: 2, entries: 2, bytes: 2, namespaceRetirements: 1 })
+
+    await cache.resolve('namespace-a', 'a-2', load('aa'))
+    expect(cache.stats()).toMatchObject({ namespaces: 2, entries: 2, bytes: 3, evictions: 1 })
   })
 
   it('enforces byte/entry bounds and bypasses durable or oversized results', async () => {

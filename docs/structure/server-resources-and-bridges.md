@@ -332,14 +332,15 @@ encrypted intents represent unsent local work and must not be cleared as a cache
 
 Intermediate message display has a separate non-authoritative cache owned by
 `server/fastify/src/displaySourceCache.ts`. It stores only completed,
-side-effect-free `displaySource` text in one active page/viewport/writer
-namespace and is bounded by entry count, aggregate UTF-8 bytes, and per-entry
-bytes. Namespace replacement retires the prior LRU; an old in-flight completion
-may finish but cannot populate the replacement. Streaming prefixes explicitly
+side-effect-free `displaySource` text in up to four exact
+page/viewport/writer namespaces and is bounded by global entry count, aggregate
+UTF-8 bytes, and per-entry bytes. Namespace activation is LRU; capacity
+retirement removes that namespace's completed entries, and an evicted in-flight
+completion may finish but cannot repopulate it. Streaming prefixes explicitly
 bypass reusable storage; other completed runs bypass it only when the caller
-marks them uncacheable. Display scriptstate is isolated per target and discarded,
-so it never creates a durable write-based cache bypass. This cache creates no
-SQLite rows, revisions, backup data, or hydration fields.
+marks them uncacheable. Display scriptstate is isolated per target and
+discarded, so it never creates a durable write-based cache bypass. This cache
+creates no SQLite rows, revisions, backup data, or hydration fields.
 
 The inlay catalog intentionally bypasses the hash cache. Its read joins
 `inlay_catalog` metadata to authoritative `assets` metadata; revisioned PUT and
