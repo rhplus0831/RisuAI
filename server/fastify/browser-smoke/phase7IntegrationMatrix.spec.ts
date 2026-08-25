@@ -44,6 +44,7 @@ interface Phase7IntegrationArtifact {
   directLinks: DirectLinkCase[]
   recoveryJourneys: RecoveryJourney[]
   writerJourneys: WriterJourney[]
+  optionalRuntimeJourneys: OptionalRuntimeJourney[]
 }
 
 interface DirectLinkCase {
@@ -72,6 +73,16 @@ interface WriterJourney {
   newWriterMutationAccepted: boolean
 }
 
+interface OptionalRuntimeJourney {
+  runtime: 'background-resources' | 'inlay-catalog'
+  mode: 'failed' | 'slow'
+  canRenderShell: boolean
+  canMutate: boolean
+  canGenerate: boolean
+  localizedFailure: boolean
+  retrySucceeded: boolean
+}
+
 const outputDir = path.resolve('fast-bootstrap-results')
 const artifact: Phase7IntegrationArtifact = {
   schemaVersion: 1,
@@ -79,6 +90,7 @@ const artifact: Phase7IntegrationArtifact = {
   directLinks: [],
   recoveryJourneys: [],
   writerJourneys: [],
+  optionalRuntimeJourneys: [],
 }
 
 test.setTimeout(240_000)
@@ -471,6 +483,153 @@ test('Phase 7 multi-tab journey denies observer mutation, then safely promotes a
   }
 })
 
+test('Phase 7 background runtimes cannot delay or fail shell, mutation, and chat readiness', async ({ browser }) => {
+  for (const mode of ['slow', 'failed'] as const) {
+    const harness = await startFastBootstrapHarness(smallFastBootstrapFixture(), {
+      temporaryDirectoryPrefix: `risu-phase7-background-${mode}-`,
+    })
+    const context = await browser.newContext()
+    try {
+      await setObserverShellMode(context, 'disabled')
+      const page = await context.newPage()
+      const requested = deferred<void>()
+      const release = deferred<void>()
+      await page.route('**/api/v1/settings/display', async (route) => {
+        requested.resolve()
+        if (mode === 'failed') {
+          await route.fulfill({
+            status: 503,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: 'phase7_optional_runtime_failure' }),
+          })
+          return
+        }
+        await release.promise
+        await route.continue()
+      })
+
+      const navigation = page.goto(
+        `${harness.baseUrl}/character/fast-bootstrap-small-character/fast-bootstrap-small-chat`,
+        {
+          waitUntil: 'domcontentloaded',
+        },
+      )
+      await requested.promise
+      await waitForSmokeHook(page)
+      await expect
+        .poll(() =>
+          page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getStartupCoordinatorSnapshot().capabilities),
+        )
+        .toMatchObject({ canRenderShell: true, canMutate: true, pluginsReady: true, canGenerate: true })
+
+      if (mode === 'slow') {
+        expect(await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getStartupSnapshot().phase)).not.toBe(
+          'background-ready',
+        )
+        release.resolve()
+      }
+      await page.evaluate(() =>
+        window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForStartupMilestone('background-ready', 30_000),
+      )
+      const coordinator = await page.evaluate(() =>
+        window.__RISU_FASTIFY_BROWSER_SMOKE__!.getStartupCoordinatorSnapshot(),
+      )
+      expect(coordinator.failures).toEqual({})
+
+      artifact.optionalRuntimeJourneys.push({
+        runtime: 'background-resources',
+        mode,
+        canRenderShell: coordinator.capabilities.canRenderShell,
+        canMutate: coordinator.capabilities.canMutate,
+        canGenerate: coordinator.capabilities.canGenerate,
+        localizedFailure: mode === 'failed',
+        retrySucceeded: mode === 'slow',
+      })
+    } finally {
+      await context.close().catch(() => undefined)
+      await closeFastBootstrapHarness(harness)
+    }
+  }
+})
+
+test('Phase 7 inlay runtime stays route-local when slow or failed and recovers through Retry', async ({ browser }) => {
+  for (const mode of ['slow', 'failed'] as const) {
+    const harness = await startFastBootstrapHarness(smallFastBootstrapFixture(), {
+      temporaryDirectoryPrefix: `risu-phase7-inlay-${mode}-`,
+    })
+    const context = await browser.newContext()
+    try {
+      await setObserverShellMode(context, 'disabled')
+      const page = await context.newPage()
+      await page.goto(harness.baseUrl, { waitUntil: 'domcontentloaded' })
+      await waitForSmokeHook(page)
+      await page.evaluate(() =>
+        window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForStartupMilestone('background-ready', 30_000),
+      )
+
+      const requested = deferred<void>()
+      const release = deferred<void>()
+      await page.route('**/api/v1/inlay-assets', async (route) => {
+        requested.resolve()
+        if (mode === 'failed') {
+          await route.fulfill({
+            status: 503,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: 'phase7_inlay_failure' }),
+          })
+          return
+        }
+        await release.promise
+        await route.continue()
+      })
+
+      await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.navigateTo('/inlay'))
+      await requested.promise
+      const coordinator = await page.evaluate(() =>
+        window.__RISU_FASTIFY_BROWSER_SMOKE__!.getStartupCoordinatorSnapshot(),
+      )
+      expect(coordinator.capabilities).toMatchObject({ canRenderShell: true, canMutate: true })
+
+      if (mode === 'slow') {
+        await expect(page.getByTestId('route-resource-loading')).toBeVisible()
+        expect(await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getRouteResourceLoadState())).toEqual({
+          routeKey: 'inlay',
+          status: 'loading',
+          error: null,
+        })
+        release.resolve()
+      } else {
+        await expect(page.getByTestId('route-resource-error')).toBeVisible()
+        expect(
+          await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getRouteResourceLoadState()),
+        ).toMatchObject({ routeKey: 'inlay', status: 'error' })
+        await page.unroute('**/api/v1/inlay-assets')
+        await page.getByRole('button', { name: 'Retry', exact: true }).click()
+      }
+
+      await expect
+        .poll(() => page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getRouteResourceLoadState()))
+        .toEqual({ routeKey: 'inlay', status: 'ready', error: null })
+      expect(
+        await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getStartupCoordinatorSnapshot().capabilities),
+      ).toMatchObject({ canRenderShell: true, canMutate: true })
+
+      artifact.optionalRuntimeJourneys.push({
+        runtime: 'inlay-catalog',
+        mode,
+        canRenderShell: coordinator.capabilities.canRenderShell,
+        canMutate: coordinator.capabilities.canMutate,
+        canGenerate: coordinator.capabilities.canGenerate,
+        localizedFailure: mode === 'failed',
+        retrySucceeded: true,
+      })
+    } finally {
+      await context.close().catch(() => undefined)
+      await closeFastBootstrapHarness(harness)
+    }
+  }
+})
+
 async function runRolloutStartupCase(
   browser: Browser,
   fixture: RolloutStartupCase['fixture'],
@@ -661,6 +820,24 @@ function formatIntegrationArtifact(artifact: Phase7IntegrationArtifact): string 
         entry.observerCommandsBeforePromotion,
         entry.oldWriterCommandsAfterTakeover,
         entry.newWriterMutationAccepted,
+      ].join('\t'),
+    )
+  }
+  lines.push(
+    '',
+    'Optional runtimes',
+    'runtime\tmode\tcan_render_shell\tcan_mutate\tcan_generate\tlocalized_failure\tretry_succeeded',
+  )
+  for (const entry of artifact.optionalRuntimeJourneys) {
+    lines.push(
+      [
+        entry.runtime,
+        entry.mode,
+        entry.canRenderShell,
+        entry.canMutate,
+        entry.canGenerate,
+        entry.localizedFailure,
+        entry.retrySucceeded,
       ].join('\t'),
     )
   }
