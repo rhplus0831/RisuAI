@@ -11,14 +11,57 @@ supports doing so.
 
 ### 7A. Integration matrix
 
-- [ ] Run cold and warm Phase 0 scenarios on small and large fixtures.
-- [ ] Run multi-tab writer takeover, takeover denial, offline recovery, pending
+- [x] Run cold and warm Phase 0 scenarios on small and large fixtures.
+- [x] Run multi-tab writer takeover, takeover denial, offline recovery, pending
   outbox replay, receipt acknowledgement, and event-gap recovery end to end.
-- [ ] Run empty-cache direct links for every Phase 5 route family.
-- [ ] Run slow/failing optional-runtime scenarios from Phase 4.
-- [ ] Run observer flag-off and flag-on browser journeys.
-- [ ] Triage every budget or readiness failure; do not loosen a threshold without
+- [x] Run empty-cache direct links for every Phase 5 route family.
+- [x] Run slow/failing optional-runtime scenarios from Phase 4.
+- [x] Run observer flag-off and flag-on browser journeys.
+- [x] Triage every budget or readiness failure; do not loosen a threshold without
   before/after evidence and a recorded dependency.
+
+#### 7A implementation record (2026-08-25)
+
+`pnpm verify:fast-bootstrap:phase7` is the one-command gate for this slice. It
+runs the production initial-preload build and boundary reports, rebuilds the
+browser-smoke bundle, records the Phase 0 cold/warm small/large matrix, and then
+runs the Phase 7 browser integration matrix. The browser matrix uses a
+disposable authenticated Fastify server and imported fixture for every
+ownership or failure-isolation journey; it does not share writer identity,
+outbox state, or SQLite data between journeys.
+
+The Phase 7 artifact records all of the following in both JSON and tabular text:
+
+- observer flag-off and flag-on startup boundaries for small and large
+  fixtures, including zero mutation requests before writer readiness and zero
+  generation requests before chat readiness;
+- 43 empty-cache direct links derived from the production route manifest,
+  covering every Settings, Playground, home, grid, inlay, not-found,
+  character, and character-chat resource surface;
+- offline-before-send replay and response-lost-after-commit replay, both using
+  the retained mutation ID, advancing the server by exactly one revision,
+  emptying the encrypted outbox, and acknowledging the durable receipt;
+- a real `event_replay_unavailable` response created by removing one persisted
+  event before reconnect, followed by all four authoritative resource-family
+  reads and restored mutation capability;
+- observer denial, explicit takeover, old-writer demotion, and a successful
+  mutation from only the promoted writer; and
+- slow and failed background-resource reads on a selected-chat deep link, plus
+  slow and failed inlay catalog reads with route-local Retry recovery.
+
+The recorded verification run passed all seven Phase 7 browser journeys and
+the Phase 0 matrix. Cold/warm background readiness was 759.70/284.90 ms for the
+small fixture and 766.20/338.00 ms for the large fixture. The production
+initial preload was 312.44 KiB gzip with a 277.83 KiB largest initial file,
+passing both the 900/500 KiB milestone gates and the retained regression
+ceilings. No budget or readiness threshold was changed. Generated reports stay
+under the ignored `fast-bootstrap-results/` directory and are refreshed by the
+gate rather than committed.
+
+The final `pnpm test:all` verification also passed: formatting, Svelte and
+TypeScript checks, 524 frontend files / 6,542 tests, 4 audit-gate files / 9
+tests, 6 UI-map files / 203 tests with coverage thresholds, the full Fastify
+server lane, and all 33 browser-smoke journeys.
 
 ### 7B. Telemetry and privacy
 

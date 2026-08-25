@@ -18,7 +18,7 @@ tests, evidence, and applicable exit criteria are complete.
 | [4: Deferred runtimes](04-deferred-runtimes.md) | Complete | None. |
 | [5: Route-driven hydration](05-route-driven-hydration.md) | Complete | None. |
 | [6: Observer shell](06-observer-shell.md) | Complete | None. The temporary observer rollout remains default-off for Phase 7 rollout review. |
-| [7: Hardening and rollout](07-hardening-and-rollout.md) | Outstanding | All review slices and the final initiative evidence package. |
+| [7: Hardening and rollout](07-hardening-and-rollout.md) | Outstanding | Review slices 7B-7D and the final initiative evidence package. |
 
 ## Task checklist
 
@@ -81,7 +81,7 @@ tests, evidence, and applicable exit criteria are complete.
 
 ### Phase 7: Hardening and rollout
 
-- [ ] 7A. Integration matrix.
+- [x] 7A. Integration matrix.
 - [ ] 7B. Telemetry and privacy.
 - [ ] 7C. Documentation and developer workflow.
 - [ ] 7D. Rollout and transition-seam removal.
