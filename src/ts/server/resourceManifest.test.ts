@@ -1,0 +1,200 @@
+import { existsSync } from 'node:fs'
+import { describe, expect, it } from 'vitest'
+import { parseRoute } from '../routerRoute'
+import {
+  PLAYGROUND_RESOURCE_SURFACE_BY_INDEX,
+  RESOURCE_PROJECTION_NAMES,
+  RESOURCE_PURPOSES,
+  RESOURCE_SURFACE_MANIFEST,
+  SETTINGS_RESOURCE_SURFACE_BY_INDEX,
+  STANDALONE_SETTING_NAMES,
+  resolveResourceRequirements,
+  resourceRequirementIdentity,
+  resourceSurfacesForRoute,
+  type ResourceRequirement,
+  type ResourceSurfaceId,
+} from './resourceManifest'
+import { SERVER_COLLECTION_NAMES } from './resourceState.svelte'
+import { SERVER_SETTINGS_GROUP_BY_KEY, SERVER_SETTINGS_KEYS_BY_GROUP, SETTINGS_GROUPS } from './settingsGroups'
+
+const canonicalSettingsRoutes = [
+  ['/settings/backup', 0],
+  ['/settings/bot-preset', 1],
+  ['/settings/other-bots', 2],
+  ['/settings/display', 3],
+  ['/settings/plugins', 4],
+  ['/settings/advanced', 6],
+  ['/settings/communities', 7],
+  ['/settings/global-lorebook', 8],
+  ['/settings/global-regex', 9],
+  ['/settings/language', 10],
+  ['/settings/accessibility', 11],
+  ['/settings/persona', 12],
+  ['/settings/prompt', 13],
+  ['/settings/modules', 14],
+  ['/settings/hotkeys', 15],
+  ['/settings/model', 17],
+  ['/settings/prompt-settings', 18],
+  ['/settings/agent-presets', 19],
+  ['/settings/input-hooks', 20],
+  ['/settings/request-history', 21],
+  ['/settings/source-code', 22],
+  ['/settings/supporter', 77],
+] as const
+
+const canonicalPlaygroundRoutes = [
+  ['/playground', 1],
+  ['/playground/chat', 2],
+  ['/playground/embedding', 3],
+  ['/playground/tokenizer', 4],
+  ['/playground/syntax', 5],
+  ['/playground/jinja', 6],
+  ['/playground/image-gen', 7],
+  ['/playground/parser', 8],
+  ['/playground/subtitles', 9],
+  ['/playground/image-trans', 10],
+  ['/playground/translation', 11],
+  ['/playground/mcp', 12],
+  ['/playground/cbs', 13],
+  ['/playground/inlays', 14],
+  ['/playground/tools', 101],
+] as const
+
+describe('route resource manifest', () => {
+  it('declares valid resources, purposes, and source owners for every surface', () => {
+    const purposes = new Set(RESOURCE_PURPOSES)
+    const settingsGroups = new Set(SETTINGS_GROUPS)
+    const collections = new Set(SERVER_COLLECTION_NAMES)
+    const standaloneSettings = new Set(STANDALONE_SETTING_NAMES)
+    const projections = new Set(RESOURCE_PROJECTION_NAMES)
+
+    for (const [surfaceId, surface] of Object.entries(RESOURCE_SURFACE_MANIFEST)) {
+      expect(surface.owners.length, `${surfaceId} has no declared consumer`).toBeGreaterThan(0)
+      for (const owner of surface.owners) {
+        expect(existsSync(owner), `${surfaceId} owner does not exist: ${owner}`).toBe(true)
+      }
+
+      const identities = surface.requirements.map(resourceRequirementIdentity)
+      expect(new Set(identities).size, `${surfaceId} repeats a requirement`).toBe(identities.length)
+
+      for (const requirement of surface.requirements) {
+        expect(requirement.purposes.length, `${surfaceId} requirement has no purpose`).toBeGreaterThan(0)
+        for (const purpose of requirement.purposes) expect(purposes.has(purpose)).toBe(true)
+
+        switch (requirement.kind) {
+          case 'settings-group':
+            expect(settingsGroups.has(requirement.group)).toBe(true)
+            if (requirement.keys) {
+              expect(requirement.keys.length).toBeGreaterThan(0)
+              for (const key of requirement.keys) {
+                expect(
+                  SERVER_SETTINGS_KEYS_BY_GROUP[requirement.group].includes(key),
+                  `${surfaceId} assigns ${key} to ${requirement.group}`,
+                ).toBe(true)
+              }
+            }
+            break
+          case 'collection':
+            expect(collections.has(requirement.collection)).toBe(true)
+            break
+          case 'standalone-setting':
+            expect(standaloneSettings.has(requirement.setting)).toBe(true)
+            break
+          case 'projection':
+            expect(projections.has(requirement.projection)).toBe(true)
+            break
+        }
+      }
+    }
+  })
+
+  it('keeps granular-read contract gaps explicit', () => {
+    const declaredStandaloneSettings = new Set(
+      Object.values(RESOURCE_SURFACE_MANIFEST).flatMap((surface) =>
+        surface.requirements.flatMap((requirement) =>
+          requirement.kind === 'standalone-setting' ? [requirement.setting] : [],
+        ),
+      ),
+    )
+
+    for (const setting of STANDALONE_SETTING_NAMES) {
+      expect(SERVER_SETTINGS_GROUP_BY_KEY).not.toHaveProperty(setting)
+      for (const keys of Object.values(SERVER_SETTINGS_KEYS_BY_GROUP)) expect(keys).not.toContain(setting)
+      expect(declaredStandaloneSettings).toContain(setting)
+    }
+  })
+
+  it.each(canonicalSettingsRoutes)('maps %s to its declared settings surface', (path, index) => {
+    const route = parseRoute(path)
+    expect(route).toMatchObject({ kind: 'settings', index })
+    expect(resourceSurfacesForRoute(route)).toEqual([
+      'shared:app-shell',
+      'shared:settings-shell',
+      SETTINGS_RESOURCE_SURFACE_BY_INDEX[index],
+    ])
+  })
+
+  it.each(canonicalPlaygroundRoutes)('maps %s to its declared Playground surface', (path, index) => {
+    const route = parseRoute(path)
+    expect(route).toMatchObject({ kind: 'playground', index })
+    const expected: ResourceSurfaceId[] = [
+      'shared:app-shell',
+      'shared:playground-shell',
+      PLAYGROUND_RESOURCE_SURFACE_BY_INDEX[index],
+    ]
+    if (index === 2) expected.push('runtime:chat-generation')
+    expect(resourceSurfacesForRoute(route)).toEqual(expected)
+  })
+
+  it('maps every non-indexed route family and distinguishes an open chat', () => {
+    expect(resourceSurfacesForRoute(parseRoute('/'))).toEqual(['shared:app-shell', 'route:home'])
+    expect(resourceSurfacesForRoute(parseRoute('/grid'))).toEqual(['shared:app-shell', 'route:grid'])
+    expect(resourceSurfacesForRoute(parseRoute('/inlay'))).toEqual(['shared:app-shell', 'route:inlay'])
+    expect(resourceSurfacesForRoute(parseRoute('/missing'))).toEqual(['shared:app-shell', 'route:not-found'])
+    expect(resourceSurfacesForRoute(parseRoute('/character/a'))).toEqual(['shared:app-shell', 'route:character'])
+    expect(resourceSurfacesForRoute(parseRoute('/character/a/chat-b'))).toEqual([
+      'shared:app-shell',
+      'route:character',
+      'route:character-chat',
+      'runtime:chat-generation',
+    ])
+  })
+
+  it('keeps the app shell free of route collections and detail projections', () => {
+    const shellRequirements: readonly ResourceRequirement[] = RESOURCE_SURFACE_MANIFEST['shared:app-shell'].requirements
+    expect(shellRequirements.some((requirement) => requirement.kind === 'collection')).toBe(false)
+
+    const shellProjections = shellRequirements.flatMap((requirement) =>
+      requirement.kind === 'projection' ? [requirement.projection] : [],
+    )
+    expect(shellProjections).toEqual(['character-summaries', 'character-selection'])
+    expect(shellProjections).not.toContain('selected-character')
+    expect(shellProjections).not.toContain('selected-chat')
+    expect(shellProjections).not.toContain('inlay-catalog')
+  })
+
+  it('deduplicates inherited requirements and combines purposes and exact keys', () => {
+    const requirements = resolveResourceRequirements(['shared:settings-shell', 'settings:global-regex'])
+    const identities = requirements.map(resourceRequirementIdentity)
+    expect(new Set(identities).size).toBe(identities.length)
+
+    const advanced = requirements.find(
+      (requirement) => requirement.kind === 'settings-group' && requirement.group === 'advanced',
+    )
+    expect(advanced).toMatchObject({
+      kind: 'settings-group',
+      group: 'advanced',
+      keys: ['doNotWarnExternalServers', 'showGlobalLorebookAndRegex', 'globalscript'],
+      purposes: ['render', 'interact', 'mutate'],
+    })
+  })
+
+  it('lets a complete group requirement dominate inherited exact-key requirements', () => {
+    const requirements = resolveResourceRequirements(['shared:app-shell', 'settings:display'])
+    const display = requirements.find(
+      (requirement) => requirement.kind === 'settings-group' && requirement.group === 'display',
+    )
+    expect(display).toMatchObject({ kind: 'settings-group', group: 'display' })
+    expect(display).not.toHaveProperty('keys')
+  })
+})

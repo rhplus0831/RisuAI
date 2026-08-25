@@ -42,15 +42,56 @@ This table is a hypothesis to validate against actual component reads:
 
 ### 5A. Consumer inventory and manifest contract
 
-- [ ] Inventory every settings-group and collection read by routed components,
+- [x] Inventory every settings-group and collection read by routed components,
   shared layout, effects, derived stores, and imported helpers.
-- [ ] Record whether each read is needed to render, interact, mutate, generate,
+- [x] Record whether each read is needed to render, interact, mutate, generate,
   or only prefill an optional editor.
-- [ ] Turn the validated inventory into a typed/testable manifest keyed by route
+- [x] Turn the validated inventory into a typed/testable manifest keyed by route
   or surface family.
-- [ ] Add a static or test-time assertion that consumers declare their resource
+- [x] Add a static or test-time assertion that consumers declare their resource
   ownership. Document justified shared dependencies instead of copying them into
   every route.
+
+#### 5A implementation record
+
+The typed inventory lives in `src/ts/server/resourceManifest.ts`. It separates
+shared app/settings/Playground shells, routed pages, deferred runtimes, and
+first-use overlays. Route resolution composes those surfaces and merges repeated
+requirements while preserving the audited purpose tags: `render`, `interact`,
+`mutate`, `generate`, and `editor-prefill`.
+
+Shared dependencies are inherited instead of copied into each route:
+
+- every route inherits the app shell;
+- settings routes additionally inherit the settings navigation shell;
+- Playground routes additionally inherit the Playground shell;
+- open character chats and the synthetic Playground chat compose the chat
+  generation runtime;
+- optional overlays and background/plugin/translation runtimes remain separate
+  first-use or scheduled surfaces and do not become route render barriers.
+
+The audit also found legacy top-level values that no granular settings-group
+read currently owns: `selectedPersona`, `botPresetsId`, `modelPresetsId`,
+`promptPresetsId`, `loreBookPage`, `personaPrompt`, `userIcon`, and `userNote`.
+The manifest models them as standalone requirements so 5B/5C cannot
+accidentally assume a settings-group endpoint returns them. The settings shell's
+use of the complete `botPresets` collection solely to decide whether one legacy
+navigation entry is visible is also recorded as a candidate for a smaller
+projection, not folded into the app shell.
+
+`src/ts/server/resourceManifest.test.ts` asserts that all declared consumer
+paths exist, exact settings keys belong to their declared groups, every
+canonical settings and Playground route maps to a surface, standalone gaps stay
+explicit, shared requirements merge deterministically, and the app shell
+contains no route collection, selected detail, chat detail, or inlay catalog.
+
+Verification:
+
+- `pnpm exec vitest run src/ts/server/resourceManifest.test.ts` — 43 tests
+  passed.
+- `pnpm test:affected` — the affected frontend lane passed; no server test was
+  selected for the behavior-neutral client contract.
+- `pnpm check` — zero errors and zero warnings.
 
 ### 5B. Minimal coherent shell resource
 
