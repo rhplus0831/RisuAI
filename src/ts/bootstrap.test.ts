@@ -369,6 +369,7 @@ import { currentRoute } from './router'
 import { updateReducedMotion } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
 import { updateGuisize } from './gui/guisize'
+import { __observerShellFlagTestHooks } from './observerShellFlag'
 
 function runtimeBootstrap(overrides: Record<string, unknown> = {}) {
   return {
@@ -448,6 +449,7 @@ function seedResourceDatabase() {
 }
 
 beforeEach(() => {
+  __observerShellFlagTestHooks.setOverride(false)
   resetStartupReadinessForTests()
   recordStartupMilestone('entry', 0)
   recordStartupMilestone('shell-mounted', 1)
@@ -514,6 +516,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  __observerShellFlagTestHooks.setOverride(null)
   stopDeferredStartupRuntimes()
   stopServerResourceEvents()
   resetStartupReadinessForTests()
@@ -522,6 +525,79 @@ afterEach(() => {
 })
 
 describe('API-backed client bootstrap', () => {
+  it('keeps the conservative writer-first boundary when the observer flag is disabled', async () => {
+    await loadData()
+
+    expect(bootstrapApi.fetchReadOnly).not.toHaveBeenCalled()
+    expect(resourceApi.loadInitial).toHaveBeenCalledOnce()
+    expect(resourceApi.loadInitial).toHaveBeenCalledWith({ hooks: resourceApi.hooks })
+    expect(getStartupCoordinatorSnapshot()).toMatchObject({
+      observerShellEnabled: false,
+      capabilities: {
+        canRenderShell: true,
+        canApplyRoutes: true,
+        canMutate: true,
+      },
+    })
+  })
+
+  it('renders a coherent observer shell before delayed writer recovery without enabling writes', async () => {
+    __observerShellFlagTestHooks.setOverride(true)
+    let releaseWriter!: (value: ReturnType<typeof runtimeBootstrap>) => void
+    bootstrapApi.fetch.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseWriter = resolve
+        }),
+    )
+
+    const loading = loadData()
+
+    await vi.waitFor(() => expect(resourceApi.loadInitial).toHaveBeenCalledOnce())
+    expect(bootstrapApi.fetchReadOnly).toHaveBeenCalledWith(null, { cacheRevision: false })
+    expect(resourceApi.loadInitial).toHaveBeenNthCalledWith(1)
+    expect(getStartupCoordinatorSnapshot()).toMatchObject({
+      observerShellEnabled: true,
+      capabilities: {
+        canRenderShell: true,
+        canApplyRoutes: false,
+        canMutate: false,
+        canGenerate: false,
+      },
+    })
+    expect(peekAppliedServerResourceRevision()).toBe(5)
+    expect(eventApi.subscribe).not.toHaveBeenCalled()
+
+    releaseWriter(runtimeBootstrap())
+    await loading
+
+    expect(resourceApi.loadInitial).toHaveBeenCalledTimes(2)
+    expect(resourceApi.loadInitial).toHaveBeenNthCalledWith(2, { hooks: resourceApi.hooks })
+    expect(getStartupCoordinatorSnapshot().capabilities).toMatchObject({
+      canRenderShell: true,
+      canApplyRoutes: true,
+      canMutate: true,
+    })
+  })
+
+  it('falls back to writer-first startup when the optional observer read fails', async () => {
+    __observerShellFlagTestHooks.setOverride(true)
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    resourceApi.loadInitial
+      .mockResolvedValueOnce({ status: 'error', error: 'observer shell unavailable' })
+      .mockResolvedValueOnce({ status: 'ok', revision: 6, scope: 'shell' })
+
+    await loadData()
+
+    expect(resourceApi.loadInitial).toHaveBeenCalledTimes(2)
+    expect(consoleWarn).toHaveBeenCalledWith('Observer shell load failed: observer shell unavailable')
+    expect(getStartupCoordinatorSnapshot().capabilities).toMatchObject({
+      canRenderShell: true,
+      canApplyRoutes: true,
+      canMutate: true,
+    })
+  })
+
   it('retries startup after the user acknowledges a transient bootstrap failure', async () => {
     bootstrapApi.fetch.mockResolvedValueOnce({ status: 'unavailable' }).mockResolvedValueOnce(runtimeBootstrap())
 

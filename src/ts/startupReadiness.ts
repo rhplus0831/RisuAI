@@ -21,6 +21,7 @@ export const STARTUP_CAPABILITIES = [
 export type StartupCapability = (typeof STARTUP_CAPABILITIES)[number]
 export type StartupRetryTarget = StartupCapability | 'backgroundReady'
 export type StartupStep =
+  | 'observer-shell'
   | 'writer-shell'
   | 'writer-owner-adoption'
   | 'writer-bootstrap'
@@ -77,6 +78,7 @@ export interface StartupCapabilityFailureSnapshot {
 export interface StartupCoordinatorSnapshot {
   schemaVersion: 1
   capabilities: Record<StartupCapability, boolean>
+  observerShellEnabled: boolean
   writerCapabilitiesRevoked: boolean
   failures: Partial<Record<StartupRetryTarget, StartupCapabilityFailureSnapshot>>
   completedSteps: StartupStep[]
@@ -102,6 +104,7 @@ const completedStartupSteps = new Map<StartupStep, unknown>()
 const inFlightStartupSteps = new Map<StartupStep, Promise<unknown>>()
 const inFlightCapabilityRetries = new Map<StartupRetryTarget, Promise<unknown>>()
 let nextAttemptId = 1
+let observerShellEnabled = false
 let writerCapabilitiesRevoked = false
 let chatGenerationReady = false
 let generationRecoveryReady = false
@@ -153,7 +156,15 @@ function hasTransitioned(milestone: StartupMilestone): boolean {
 }
 
 export function canRenderShell(): boolean {
-  return hasTransitioned('writer-ready')
+  return hasTransitioned('writer-ready') || (observerShellEnabled && hasTransitioned('observer-ready'))
+}
+
+/** Configure the temporary Phase 6 observer rollout before startup publishes readiness. */
+export function configureStartupObserverShell(enabled: boolean): void {
+  if (observerShellEnabled === enabled) return
+  observerShellEnabled = enabled
+  clearReadyCapabilityFailures()
+  notifyReadinessListeners()
 }
 
 export function canApplyRoutes(): boolean {
@@ -414,6 +425,7 @@ export function getStartupCoordinatorSnapshot(): StartupCoordinatorSnapshot {
       pluginsReady: pluginsReady(),
       canGenerate: canGenerate(),
     },
+    observerShellEnabled,
     writerCapabilitiesRevoked,
     failures: Object.fromEntries(
       [...capabilityFailures].map(([target, failure]) => [target, { ...failure }]),
@@ -477,6 +489,7 @@ export function resetStartupReadinessForTests(): void {
   inFlightStartupSteps.clear()
   inFlightCapabilityRetries.clear()
   nextAttemptId = 1
+  observerShellEnabled = false
   writerCapabilitiesRevoked = false
   chatGenerationReady = false
   generationRecoveryReady = false

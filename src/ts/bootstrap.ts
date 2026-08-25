@@ -3,6 +3,7 @@ import { getDatabase, setResourceWriteGuardEnabled, type Database } from './stor
 import { botMakerMode } from './stores.svelte'
 import { loadedStore, LoadingStatusState, selectedCharID } from './stores/coreStores.svelte'
 import { currentRoute } from './router'
+import { isPreWriterObserverShellEnabled } from './observerShellFlag'
 import {
   isPluginRuntimeReady,
   loadPlugins,
@@ -174,6 +175,7 @@ import {
 import {
   beginStartupAttempt,
   completeStartupAttempt,
+  configureStartupObserverShell,
   failStartupAttempt,
   recordStartupCapabilityFailure,
   recordStartupMilestone,
@@ -302,7 +304,12 @@ async function runLoadDataAttempt(): Promise<StartupRetryTarget | null> {
   const startupAttemptId = beginStartupAttempt()
   const failureCode: StartupAttemptFailureCode = 'writer-bootstrap-failed'
   const failureMilestone: StartupMilestone = 'observer-ready'
+  const observerShellEnabled = isPreWriterObserverShellEnabled()
+  configureStartupObserverShell(observerShellEnabled)
   try {
+    if (observerShellEnabled) {
+      await runStartupStep('observer-shell', loadPreWriterObserverShell)
+    }
     await runStartupStep('writer-shell', () => loadWebInitialDatabase({ coordinated: true }))
     await runStartupStep('chat-hydration-runtime', () => {
       startSelectedCharacterShellHydration()
@@ -337,6 +344,38 @@ async function runLoadDataAttempt(): Promise<StartupRetryTarget | null> {
     if (error instanceof FatalBootstrapError) return null
     return startupRetryTargetForMilestone(failureMilestone)
   }
+}
+
+async function loadPreWriterObserverShell(): Promise<boolean> {
+  LoadingStatusState.text = 'Loading Server Data...'
+  const runtime = await fetchServerBootstrapReadOnly(null, { cacheRevision: false })
+  if (runtime.status !== 'ok' || !runtime.bootstrap.initialized) {
+    if (runtime.status === 'error') console.warn(`Observer bootstrap failed: ${runtime.error}`)
+    return false
+  }
+
+  // The observer projection is authenticated server state, not a recovered or
+  // optimistic mutation. Install the guard before any part of it can render.
+  setResourceWriteGuardEnabled(true)
+  const resources = await loadInitialServerResources()
+  if (resources.status !== 'ok') {
+    if (resources.status === 'error') console.warn(`Observer shell load failed: ${resources.error}`)
+    return false
+  }
+
+  const database = getDatabase()
+  selectedCharID.set(initialSelectedCharFromDatabase(database))
+  resetChatHydration()
+  resetLorebookHydration()
+  setAppliedServerResourceRevision(resources.revision)
+  updateColorScheme()
+  updateTextThemeAndCSS()
+  updateReducedMotion()
+  updateHeightMode()
+  updateGuisize()
+  if (database.botSettingAtStart) botMakerMode.set(true)
+  recordStartupMilestone('observer-ready')
+  return true
 }
 
 async function settleStartupPluginRuntime(startupAttemptId: number): Promise<boolean> {

@@ -6,6 +6,7 @@ import {
   canMutate,
   canRenderShell,
   completeStartupAttempt,
+  configureStartupObserverShell,
   failStartupAttempt,
   getStartupCoordinatorSnapshot,
   getStartupReadinessSnapshot,
@@ -119,6 +120,22 @@ describe('startup readiness instrumentation', () => {
     settleStartupPluginRuntimeReadiness(true)
     expect(pluginsReady()).toBe(true)
     expect(canGenerate()).toBe(true)
+  })
+
+  it('renders at observer readiness only when the rollout is enabled', () => {
+    recordStartupMilestone('entry', 0)
+    recordStartupMilestone('shell-mounted', 1)
+    configureStartupObserverShell(true)
+    recordStartupMilestone('observer-ready', 2)
+
+    expect(canRenderShell()).toBe(true)
+    expect(canApplyRoutes()).toBe(false)
+    expect(canMutate()).toBe(false)
+    expect(canGenerate()).toBe(false)
+    expect(getStartupCoordinatorSnapshot().observerShellEnabled).toBe(true)
+
+    configureStartupObserverShell(false)
+    expect(canRenderShell()).toBe(false)
   })
 
   it('revokes writer-owned capabilities without hiding the readable shell or milestone history', () => {

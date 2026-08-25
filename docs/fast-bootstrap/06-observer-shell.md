@@ -11,15 +11,15 @@ This is a separate rollout, not part of the conservative Phase 3 release.
 
 ## Preconditions
 
-- [ ] Phase 2 summary payload and Phase 5 shell resource are small enough to
+- [x] Phase 2 summary payload and Phase 5 shell resource are small enough to
   justify an early read.
-- [ ] Phase 3 guards prove direct and UI-originated writes cannot bypass
+- [x] Phase 3 guards prove direct and UI-originated writes cannot bypass
   `canMutate` or `canApplyRoutes`.
 - [ ] Observer-to-writer event and revision transitions have focused test
   coverage.
 - [ ] Read-only controls have a consistent accessible treatment and localized
   status/retry text.
-- [ ] The observer feature flag exists and defaults off.
+- [x] The observer feature flag exists and defaults off.
 
 ## Current seams to reuse
 
@@ -41,15 +41,46 @@ expanding runtime bootstrap implicitly.
 
 ### 6A. Flag and observer projection
 
-- [ ] Add a temporary, documented rollout flag with a default-off production
+- [x] Add a temporary, documented rollout flag with a default-off production
   value and a deterministic test override.
-- [ ] Authenticate and fetch the minimal shell projection without acquiring
+- [x] Authenticate and fetch the minimal shell projection without acquiring
   writer ownership.
-- [ ] Apply it behind the resource write guard at one coherent revision.
-- [ ] Expose observer readiness without enabling route persistence, mutation, or
+- [x] Apply it behind the resource write guard at one coherent revision.
+- [x] Expose observer readiness without enabling route persistence, mutation, or
   generation.
-- [ ] Subscribe or establish a safe revision cursor so events between the early
+- [x] Subscribe or establish a safe revision cursor so events between the early
   read and writer promotion cannot be lost.
+
+#### 6A implementation record (2026-08-25)
+
+`VITE_FAST_BOOTSTRAP_OBSERVER=TRUE` enables the temporary observer boundary;
+the production default remains off. Unit tests can override the flag directly,
+and browser-smoke builds may choose `enabled` or `disabled` through the scoped
+`risu:fast-bootstrap-observer-shell` session-storage key. Normal production
+builds ignore that storage key.
+
+The flag-on path performs an authenticated read-only bootstrap without caching
+its revision as command authority, installs the resource write guard, and
+applies the existing coherent shell before writer acquisition begins. The
+applied shell revision is retained as the safe cursor; the later post-replay
+writer shell and SSE subscription continue to replace it from an equal or newer
+revision. A failed or uninitialized observer read falls back to the unchanged
+writer-first path. `canRenderShell` may now become true at `observer-ready` only
+while the flag is enabled; route application, ordinary mutation, and generation
+still require writer readiness.
+
+Verification:
+
+- focused flag, readiness, bootstrap, transport, shell, command, and route DOM
+  coverage — 365 tests passed;
+- `pnpm test:affected` — 334 frontend files / 5,109 tests passed; no Fastify
+  test was selected for the client-only change;
+- `pnpm check`, `pnpm check:server`, and `pnpm format:check` — passed;
+- `pnpm build:initial-preload` — 11 files, 318,844 gzip bytes total, and a
+  283,451-byte largest chunk; all boundary, regression, and milestone gates
+  passed;
+- `pnpm build:smoke` and the targeted Phase 0 small/large cold/warm browser
+  matrix — passed.
 
 ### 6B. Read-only interaction and local intent
 
