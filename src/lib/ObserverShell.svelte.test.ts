@@ -10,6 +10,7 @@ const observerShellMocks = vi.hoisted(() => ({
   hydrateCharacterShell: vi.fn(async () => true),
   hydrationState: { rows: {} as Record<string, { status: string; error: string | null }> },
   navigate: vi.fn(),
+  retryObserverWriterPromotion: vi.fn(async () => false),
   routerExports: undefined as
     | {
         characterRoutePath: (characterId: string, chatId?: string) => string
@@ -43,6 +44,9 @@ vi.mock('../ts/server/characterShellHydration.svelte', () => ({
   characterShellHydrationState: observerShellMocks.hydrationState,
   hydrateCharacterShell: observerShellMocks.hydrateCharacterShell,
 }))
+vi.mock('../ts/bootstrap', () => ({
+  retryObserverWriterPromotion: observerShellMocks.retryObserverWriterPromotion,
+}))
 
 import {
   clearPendingMutationOutbox,
@@ -52,6 +56,7 @@ import {
 } from '../ts/server/pendingMutationOutbox'
 import { replaceResourceDatabase } from '../ts/server/resourceState.svelte'
 import { peekObserverRouteIntent, resetObserverRouteIntentForTests } from '../ts/observerRouteIntent'
+import { resetObserverShellLifecycleForTests, setObserverShellLifecycleMode } from '../ts/observerShellLifecycle.svelte'
 import { selectedCharID } from '../ts/stores.svelte'
 
 const { default: ObserverShell } = await import('./ObserverShell.svelte')
@@ -137,8 +142,10 @@ describe('pre-writer ObserverShell', () => {
       requestedWriterWasActive: true,
     })
     resetObserverRouteIntentForTests()
+    resetObserverShellLifecycleForTests()
     observerShellMocks.hydrationState.rows = {}
     observerShellMocks.hydrateCharacterShell.mockReset().mockResolvedValue(true)
+    observerShellMocks.retryObserverWriterPromotion.mockReset().mockResolvedValue(false)
     observerShellMocks.navigate.mockClear()
     observerShellMocks.routerExports?.currentRoute.set({ kind: 'home', path: '/' })
     selectedCharID.set(-1)
@@ -156,6 +163,7 @@ describe('pre-writer ObserverShell', () => {
     await clearPendingMutationOutbox()
     resetPendingMutationOutboxForTests()
     resetObserverRouteIntentForTests()
+    resetObserverShellLifecycleForTests()
     replaceResourceDatabase({} as Database)
     target.remove()
     vi.restoreAllMocks()
@@ -215,5 +223,23 @@ describe('pre-writer ObserverShell', () => {
     expect(target.querySelector('button[aria-label="Open chat Detailed chat"]')).not.toBeNull()
     expect(await countPendingMutationRecords()).toBe(0)
     expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('keeps the observer visible with targeted retry status and restores focus after failure', async () => {
+    setObserverShellLifecycleMode('writer-lost')
+    await tick()
+
+    const retry = target.querySelector<HTMLButtonElement>('[data-observer-writer-retry]')
+    expect(target.querySelector('[data-observer-lifecycle-status]')?.textContent).toContain(
+      'Write access moved to another session',
+    )
+    expect(retry?.textContent).toContain('Retry write access')
+
+    retry?.click()
+    await vi.waitFor(() => expect(observerShellMocks.retryObserverWriterPromotion).toHaveBeenCalledOnce())
+    await tick()
+
+    expect(document.activeElement).toBe(retry)
+    expect(target.querySelector('[data-observer-shell]')).not.toBeNull()
   })
 })

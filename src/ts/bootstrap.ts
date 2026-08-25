@@ -41,10 +41,13 @@ import {
 } from './server/commands'
 import {
   adoptPendingMutationWriterSessionId,
+  beginWriterAccessRecovery,
+  completeWriterAccessRecovery,
   enterWriterTakeoverFlow,
   getActiveWriterSessionId,
   peekActiveWriterSessionId,
 } from './server/activeWriterSession'
+import { observerShellLifecycleStore, setObserverShellLifecycleMode } from './observerShellLifecycle.svelte'
 import { startBridgePatchLifecycleFlush } from './server/bridgeFlush'
 import { replayPendingMutations } from './server/pendingMutationReplay'
 import { applyGenerationOperationBootstrap, configureGenerationOperationProtocol } from './server/generationOperations'
@@ -69,6 +72,7 @@ import {
   requestActiveChatReadinessRefresh,
   setActiveChatReadinessRefreshHook,
   startChatMessageHydration,
+  stopChatMessageHydration,
 } from './server/chatMessageHydration.svelte'
 import {
   hydrateSelectedCharacterShell,
@@ -84,17 +88,24 @@ import {
   prepareOpenChatGenerationReattach,
   setActiveGenerationReattachReadinessPredicate,
   startActiveGenerationReattach,
+  stopActiveGenerationReattach,
   triggerOpenChatGenerationReattach,
 } from './process/reattach'
 import { subscribeBrowserLifecycleRecovery } from './server/lifecycleRecovery'
 import {
   setGenerationFinalizationPersistences,
   startGenerationFinalizationPersistenceRefresh,
+  stopGenerationFinalizationPersistenceRefresh,
 } from './process/generationPersistenceState'
-import { setActiveMessageTranslations, startActiveMessageTranslationRefresh } from './server/messageTranslationJobs'
+import {
+  setActiveMessageTranslations,
+  startActiveMessageTranslationRefresh,
+  stopActiveMessageTranslationRefresh,
+} from './server/messageTranslationJobs'
 import {
   setActiveGreetingTranslations,
   startActiveGreetingTranslationRefresh,
+  stopActiveGreetingTranslationRefresh,
 } from './server/greetingTranslations.svelte'
 import { applyServerMemoryJobEvent, applyServerMemoryJobSnapshot } from './server/memoryJobProjection.svelte'
 import { loadInitialServerResources, refreshInvalidatedServerResources } from './server/resourceInvalidation'
@@ -174,11 +185,14 @@ import {
 } from './process/recoveredGenerationEffects'
 import {
   beginStartupAttempt,
+  canRenderShell,
+  canMutate,
   completeStartupAttempt,
   configureStartupObserverShell,
   failStartupAttempt,
   recordStartupCapabilityFailure,
   recordStartupMilestone,
+  restoreStartupWriterCapabilities,
   retryStartupCapability,
   runStartupStep,
   settleStartupChatReadiness,
@@ -272,6 +286,7 @@ function initialSelectedCharFromDatabase(db: Database): number {
 }
 
 let loadDataInFlight: Promise<void> | null = null
+let observerWriterPromotionRetryInFlight: Promise<boolean> | null = null
 
 /**
  * Loads the application data. Concurrent callers share one attempt loop, and a
@@ -303,7 +318,6 @@ async function loadDataUntilSettled(): Promise<void> {
 async function runLoadDataAttempt(): Promise<StartupRetryTarget | null> {
   const startupAttemptId = beginStartupAttempt()
   const failureCode: StartupAttemptFailureCode = 'writer-bootstrap-failed'
-  const failureMilestone: StartupMilestone = 'observer-ready'
   const observerShellEnabled = isPreWriterObserverShellEnabled()
   configureStartupObserverShell(observerShellEnabled)
   try {
@@ -338,7 +352,20 @@ async function runLoadDataAttempt(): Promise<StartupRetryTarget | null> {
     completeStartupAttempt(startupAttemptId)
     return null
   } catch (error) {
+    const observerReady = observerShellEnabled && canRenderShell()
+    const failureMilestone: StartupMilestone = observerReady ? 'writer-ready' : 'observer-ready'
+    if (
+      observerShellEnabled &&
+      get(observerShellLifecycleStore).mode !== 'takeover-denied' &&
+      get(observerShellLifecycleStore).mode !== 'auth-lost'
+    ) {
+      setObserverShellLifecycleMode('unavailable')
+    }
     failStartupAttempt(startupAttemptId, failureCode, failureMilestone)
+    if (observerReady) {
+      console.warn('Writer startup deferred while the observer shell remains available:', error)
+      return null
+    }
     alertError(error)
     await waitAlert()
     if (error instanceof FatalBootstrapError) return null
@@ -347,6 +374,7 @@ async function runLoadDataAttempt(): Promise<StartupRetryTarget | null> {
 }
 
 async function loadPreWriterObserverShell(): Promise<boolean> {
+  setObserverShellLifecycleMode('waiting')
   LoadingStatusState.text = 'Loading Server Data...'
   const runtime = await fetchServerBootstrapReadOnly(null, { cacheRevision: false })
   if (runtime.status !== 'ok' || !runtime.bootstrap.initialized) {
@@ -376,6 +404,68 @@ async function loadPreWriterObserverShell(): Promise<boolean> {
   if (database.botSettingAtStart) botMakerMode.set(true)
   recordStartupMilestone('observer-ready')
   return true
+}
+
+/** Idempotent targeted takeover/recovery used by the permanent observer UI. */
+export function retryObserverWriterPromotion(): Promise<boolean> {
+  if (observerWriterPromotionRetryInFlight) return observerWriterPromotionRetryInFlight
+
+  const retry = (async () => {
+    setObserverShellLifecycleMode('retrying')
+    if (!get(loadedStore)) {
+      await loadData()
+      return canMutate()
+    }
+
+    const startupAttemptId = beginStartupAttempt()
+    const recoveringLostWriter = beginWriterAccessRecovery()
+    try {
+      await loadWebInitialDatabase()
+      if (!serverResourceEventSubscription) {
+        throw new Error('Server event subscription is unavailable')
+      }
+      startSelectedCharacterShellHydration()
+      startChatMessageHydration()
+      try {
+        await ensureStartupChatReadiness()
+        settleStartupChatReadiness(true)
+      } catch (error) {
+        const dependencyError =
+          error instanceof StartupChatDependencyError
+            ? error
+            : new StartupChatDependencyError('selected-chat-hydration-failed', 'Selected chat hydration failed')
+        recordStartupCapabilityFailure(startupAttemptId, dependencyError.failureCode, 'chat-ready')
+        settleStartupChatReadiness(false)
+      }
+      startStartupChatReadinessSync(startupAttemptId)
+      restoreStartupWriterCapabilities()
+      if (recoveringLostWriter) completeWriterAccessRecovery(true)
+      setObserverShellLifecycleMode('promoted')
+      completeStartupAttempt(startupAttemptId)
+      return canMutate()
+    } catch (error) {
+      stopFailedWriterPromotionRuntimes()
+      if (recoveringLostWriter) completeWriterAccessRecovery(false)
+      setObserverShellLifecycleMode('unavailable')
+      failStartupAttempt(startupAttemptId, 'writer-bootstrap-failed', 'writer-ready')
+      console.warn('Observer writer promotion retry failed:', error)
+      return false
+    }
+  })().finally(() => {
+    if (observerWriterPromotionRetryInFlight === retry) observerWriterPromotionRetryInFlight = null
+  })
+
+  observerWriterPromotionRetryInFlight = retry
+  return retry
+}
+
+function stopFailedWriterPromotionRuntimes(): void {
+  stopServerResourceEvents()
+  stopActiveMessageTranslationRefresh()
+  stopActiveGreetingTranslationRefresh()
+  stopActiveGenerationReattach()
+  stopGenerationFinalizationPersistenceRefresh()
+  stopChatMessageHydration()
 }
 
 async function settleStartupPluginRuntime(startupAttemptId: number): Promise<boolean> {
@@ -650,6 +740,7 @@ export async function loadWebInitialDatabase(options: { coordinated?: boolean } 
         language.writerConnectConflictTitle,
       )
       if (selection !== '0') {
+        setObserverShellLifecycleMode('takeover-denied')
         throw new FatalBootstrapError(language.writerConnectCancelled)
       }
       result = await fetchServerBootstrap(null, { disconnectExistingWriter: true })
@@ -887,6 +978,7 @@ async function startServerResourceEvents(options: { replayPendingMutations?: boo
     serverResourceEventSubscription = subscription
     recordServerResourceEventFrame(eventEpoch)
     recordStartupMilestone('writer-ready')
+    setObserverShellLifecycleMode('promoted')
     if (options.replayPendingMutations !== false) triggerReconnectPendingMutationReplay()
     if (hasPendingReplacementDatabaseRefresh()) {
       enqueueServerResourceSync(async () => {
@@ -896,9 +988,11 @@ async function startServerResourceEvents(options: { replayPendingMutations?: boo
       })
     }
   } else if (subscription.status === 'error') {
+    setObserverShellLifecycleMode('unavailable')
     console.warn(`Server event subscription failed: ${subscription.error}`)
     scheduleServerResourceReconnect(eventEpoch)
   } else if (subscription.status === 'replay-unavailable') {
+    setObserverShellLifecycleMode('unavailable')
     console.warn(`Server event replay unavailable at revision ${subscription.currentRevision}; refreshing resources`)
     enqueueServerResourceSync(async () => {
       if (!isCurrentServerResourceEventEpoch(eventEpoch)) return
@@ -2250,6 +2344,10 @@ async function reconcileReplacementDatabaseOwnership(): Promise<{
     databaseLineage,
   })
   const adoption = await adoptReplacementDatabaseOwnership(ownership)
+  if (adoption.ownershipChanged) {
+    const { discardObserverProjectionState } = await import('./observerProjectionLifecycle')
+    await discardObserverProjectionState('lineage-change')
+  }
   if (adoption.discarded > 0) alertError(language.backupQueuedChangesDiscarded)
   return { ownership, ownershipChanged: adoption.ownershipChanged }
 }

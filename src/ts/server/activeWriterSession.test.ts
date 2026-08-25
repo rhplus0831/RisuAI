@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { get } from 'svelte/store'
 
 const STORAGE_KEY = 'risu:active-writer-session-id'
 const takeoverMocks = vi.hoisted(() => ({
@@ -190,10 +191,31 @@ describe('active writer browser session', () => {
     const { canUseServerEvents } = await import('./events')
     expect(canUseServerCommands()).toBe(false)
     expect(canUseServerEvents()).toBe(false)
+    const { observerShellLifecycleStore } = await import('../observerShellLifecycle.svelte')
+    expect(get(observerShellLifecycleStore).mode).toBe('writer-lost')
 
     await vi.waitFor(() => expect(takeoverMocks.alertRequiredSelect).toHaveBeenCalledOnce())
     await vi.advanceTimersByTimeAsync(1_000)
     expect(reload).not.toHaveBeenCalled()
+    activeWriterSession.resetWriterAccessLostForTests()
+  })
+
+  it('opens only the recovery transport latch and re-latches it after a failed attempt', async () => {
+    const activeWriterSession = await importActiveWriterSession()
+    const startupReadiness = await import('../startupReadiness')
+    for (const milestone of ['entry', 'shell-mounted', 'observer-ready', 'writer-ready'] as const) {
+      startupReadiness.recordStartupMilestone(milestone)
+    }
+    activeWriterSession.enterWriterTakeoverFlow()
+
+    expect(activeWriterSession.beginWriterAccessRecovery()).toBe(true)
+    expect(activeWriterSession.isWriterAccessLost()).toBe(false)
+    expect(startupReadiness.canMutate()).toBe(false)
+
+    activeWriterSession.completeWriterAccessRecovery(false)
+    expect(activeWriterSession.isWriterAccessLost()).toBe(true)
+    expect(startupReadiness.canMutate()).toBe(false)
+
     activeWriterSession.resetWriterAccessLostForTests()
   })
 
@@ -259,6 +281,8 @@ describe('active writer browser session', () => {
     expect(document.getElementById('risu-offline-frozen-banner')?.textContent).toContain('offline and read-only')
     expect(reload).not.toHaveBeenCalled()
     expect(document.getElementById('app')?.classList.contains('risu-writer-takeover-pending')).toBe(false)
+    const { observerShellLifecycleStore } = await import('../observerShellLifecycle.svelte')
+    expect(get(observerShellLifecycleStore).mode).toBe('offline')
 
     const laterTextarea = document.createElement('textarea')
     const appRoot = document.getElementById('app')
@@ -281,6 +305,12 @@ describe('active writer browser session', () => {
       attributeFilter: ['contenteditable', 'readonly', 'type'],
     })
     expect(laterTextarea.readOnly).toBe(true)
+
+    expect(activeWriterSession.beginWriterAccessRecovery()).toBe(true)
+    activeWriterSession.completeWriterAccessRecovery(true)
+    expect(activeWriterSession.isWriterAccessLost()).toBe(false)
+    expect(document.getElementById('risu-offline-frozen-banner')).toBeNull()
+    expect(document.getElementById('app')?.classList.contains('risu-offline-frozen')).toBe(false)
   })
 
   it('notifies once and reloads when a terminal durable predecessor loses its rollback', async () => {

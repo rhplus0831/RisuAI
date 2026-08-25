@@ -49,8 +49,10 @@ const hydrationApi = vi.hoisted(() => ({
   requestReadinessRefresh: vi.fn(),
   resetChatHydration: vi.fn(),
   startChatMessageHydration: vi.fn(),
+  stopChatMessageHydration: vi.fn(),
 }))
 const characterHydrationApi = vi.hoisted(() => ({
+  clear: vi.fn(),
   hydrateSelected: vi.fn(async () => true),
   startSelected: vi.fn(),
   stopSelected: vi.fn(),
@@ -69,6 +71,7 @@ const promptTemplateApi = vi.hoisted(() => ({
   isTainted: vi.fn(() => false),
   markProjectionApplied: vi.fn(),
   peekOwnerRevision: vi.fn((): number | null => 5),
+  reset: vi.fn(),
 }))
 
 const runtimeApi = vi.hoisted(() => ({
@@ -77,12 +80,16 @@ const runtimeApi = vi.hoisted(() => ({
   setActiveGenerationJobs: vi.fn(),
   setGenerationFinalizationPersistences: vi.fn(),
   startGenerationFinalizationPersistenceRefresh: vi.fn(),
+  stopGenerationFinalizationPersistenceRefresh: vi.fn(),
   startActiveGenerationReattach: vi.fn(),
+  stopActiveGenerationReattach: vi.fn(),
   triggerOpenChatGenerationReattach: vi.fn(),
   setActiveMessageTranslations: vi.fn(),
   startActiveMessageTranslationRefresh: vi.fn(),
+  stopActiveMessageTranslationRefresh: vi.fn(),
   setActiveGreetingTranslations: vi.fn(),
   startActiveGreetingTranslationRefresh: vi.fn(),
+  stopActiveGreetingTranslationRefresh: vi.fn(),
   applyGenerationOperationBootstrap: vi.fn(),
   configureGenerationOperationProtocol: vi.fn(),
 }))
@@ -198,6 +205,7 @@ vi.mock('./server/chatMessageHydration.svelte', () => ({
   },
 }))
 vi.mock('./server/characterShellHydration.svelte', () => ({
+  clearCharacterShellHydrationState: characterHydrationApi.clear,
   hydrateSelectedCharacterShell: characterHydrationApi.hydrateSelected,
   startSelectedCharacterShellHydration: characterHydrationApi.startSelected,
   stopSelectedCharacterShellHydration: characterHydrationApi.stopSelected,
@@ -210,6 +218,7 @@ vi.mock('./server/promptTemplateHydration', () => ({
   isPromptTemplateOwnerAcknowledgementTainted: promptTemplateApi.isTainted,
   markPromptTemplateProjectionApplied: promptTemplateApi.markProjectionApplied,
   peekPromptTemplateOwnerRevision: promptTemplateApi.peekOwnerRevision,
+  resetPromptTemplateHydration: promptTemplateApi.reset,
 }))
 vi.mock('./server/bridgeFlush', () => ({
   startBridgePatchLifecycleFlush: bridgeApi.start,
@@ -237,19 +246,23 @@ vi.mock('./process/reattach', () => ({
   setActiveGenerationReattachReadinessPredicate: runtimeApi.setActiveGenerationReattachReadinessPredicate,
   setActiveGenerationJobs: runtimeApi.setActiveGenerationJobs,
   startActiveGenerationReattach: runtimeApi.startActiveGenerationReattach,
+  stopActiveGenerationReattach: runtimeApi.stopActiveGenerationReattach,
   triggerOpenChatGenerationReattach: runtimeApi.triggerOpenChatGenerationReattach,
 }))
 vi.mock('./process/generationPersistenceState', () => ({
   setGenerationFinalizationPersistences: runtimeApi.setGenerationFinalizationPersistences,
   startGenerationFinalizationPersistenceRefresh: runtimeApi.startGenerationFinalizationPersistenceRefresh,
+  stopGenerationFinalizationPersistenceRefresh: runtimeApi.stopGenerationFinalizationPersistenceRefresh,
 }))
 vi.mock('./server/messageTranslationJobs', () => ({
   setActiveMessageTranslations: runtimeApi.setActiveMessageTranslations,
   startActiveMessageTranslationRefresh: runtimeApi.startActiveMessageTranslationRefresh,
+  stopActiveMessageTranslationRefresh: runtimeApi.stopActiveMessageTranslationRefresh,
 }))
 vi.mock('./server/greetingTranslations.svelte', () => ({
   setActiveGreetingTranslations: runtimeApi.setActiveGreetingTranslations,
   startActiveGreetingTranslationRefresh: runtimeApi.startActiveGreetingTranslationRefresh,
+  stopActiveGreetingTranslationRefresh: runtimeApi.stopActiveGreetingTranslationRefresh,
 }))
 vi.mock('./server/generationOperations', () => ({
   applyGenerationOperationBootstrap: runtimeApi.applyGenerationOperationBootstrap,
@@ -317,6 +330,7 @@ import {
   createGlobalErrorHandlers,
   loadData,
   loadWebInitialDatabase,
+  retryObserverWriterPromotion,
   retryPluginStartup,
   stopDeferredStartupRuntimes,
   stopServerResourceEvents,
@@ -377,6 +391,7 @@ import { updateReducedMotion } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
 import { updateGuisize } from './gui/guisize'
 import { __observerShellFlagTestHooks } from './observerShellFlag'
+import { observerShellLifecycleStore, resetObserverShellLifecycleForTests } from './observerShellLifecycle.svelte'
 
 function runtimeBootstrap(overrides: Record<string, unknown> = {}) {
   return {
@@ -457,6 +472,7 @@ function seedResourceDatabase() {
 
 beforeEach(() => {
   __observerShellFlagTestHooks.setOverride(false)
+  resetObserverShellLifecycleForTests()
   resetStartupReadinessForTests()
   recordStartupMilestone('entry', 0)
   recordStartupMilestone('shell-mounted', 1)
@@ -525,6 +541,7 @@ beforeEach(() => {
 
 afterEach(() => {
   __observerShellFlagTestHooks.setOverride(null)
+  resetObserverShellLifecycleForTests()
   stopDeferredStartupRuntimes()
   stopServerResourceEvents()
   resetStartupReadinessForTests()
@@ -658,6 +675,70 @@ describe('API-backed client bootstrap', () => {
     })
   })
 
+  it('shares a targeted observer promotion retry without duplicating replay or event subscription', async () => {
+    __observerShellFlagTestHooks.setOverride(true)
+    let releaseRetryEvents!: (value: { status: 'ok'; unsubscribe: typeof eventApi.unsubscribe }) => void
+    eventApi.subscribe.mockImplementation(async (input) => {
+      eventApi.subscriptions.push(input)
+      if (eventApi.subscriptions.length === 1) {
+        return { status: 'error', error: 'event stream unavailable' }
+      }
+      return new Promise((resolve) => {
+        releaseRetryEvents = resolve
+      })
+    })
+    pendingMutationApi.replay
+      .mockResolvedValueOnce({ attempted: 1, discarded: 0, retained: 0, succeeded: 1 })
+      .mockResolvedValueOnce({ attempted: 0, discarded: 0, retained: 0, succeeded: 0 })
+
+    await loadData()
+
+    expect(getStartupCoordinatorSnapshot().capabilities.canMutate).toBe(false)
+    expect(get(observerShellLifecycleStore).mode).toBe('unavailable')
+
+    const firstRetry = retryObserverWriterPromotion()
+    const secondRetry = retryObserverWriterPromotion()
+
+    expect(secondRetry).toBe(firstRetry)
+    await vi.waitFor(() => expect(eventApi.subscribe).toHaveBeenCalledTimes(2))
+    expect(get(observerShellLifecycleStore).mode).toBe('retrying')
+    expect(bootstrapApi.fetch).toHaveBeenCalledTimes(2)
+    expect(pendingMutationApi.replay).toHaveBeenCalledTimes(2)
+    expect(resourceApi.loadInitial).toHaveBeenCalledTimes(3)
+    expect(eventApi.unsubscribe).not.toHaveBeenCalled()
+
+    releaseRetryEvents({ status: 'ok', unsubscribe: eventApi.unsubscribe })
+    await expect(Promise.all([firstRetry, secondRetry])).resolves.toEqual([true, true])
+
+    expect(eventApi.subscribe).toHaveBeenCalledTimes(2)
+    expect(pendingMutationApi.replay).toHaveBeenCalledTimes(2)
+    expect(get(observerShellLifecycleStore).mode).toBe('promoted')
+    expect(getStartupCoordinatorSnapshot().capabilities.canMutate).toBe(true)
+  })
+
+  it('returns a failed promotion to a stable observer and stops partially restarted writer runtimes', async () => {
+    __observerShellFlagTestHooks.setOverride(true)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    eventApi.subscribe.mockImplementation(async (input) => {
+      eventApi.subscriptions.push(input)
+      return { status: 'error', error: 'event stream unavailable' }
+    })
+
+    await loadData()
+    expect(get(observerShellLifecycleStore).mode).toBe('unavailable')
+
+    await expect(retryObserverWriterPromotion()).resolves.toBe(false)
+
+    expect(getStartupCoordinatorSnapshot().capabilities.canMutate).toBe(false)
+    expect(get(observerShellLifecycleStore).mode).toBe('unavailable')
+    expect(eventApi.subscribe).toHaveBeenCalledTimes(2)
+    expect(runtimeApi.stopActiveMessageTranslationRefresh).toHaveBeenCalledOnce()
+    expect(runtimeApi.stopActiveGreetingTranslationRefresh).toHaveBeenCalledOnce()
+    expect(runtimeApi.stopActiveGenerationReattach).toHaveBeenCalledOnce()
+    expect(runtimeApi.stopGenerationFinalizationPersistenceRefresh).toHaveBeenCalledOnce()
+    expect(hydrationApi.stopChatMessageHydration).toHaveBeenCalledOnce()
+  })
+
   it('falls back to writer-first startup when the optional observer read fails', async () => {
     __observerShellFlagTestHooks.setOverride(true)
     const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -695,6 +776,62 @@ describe('API-backed client bootstrap', () => {
         { attemptId: 2, completedAtMs: expect.any(Number) },
       ],
     })
+  })
+
+  it('settles into a useful observer after writer bootstrap failure and retries only on request', async () => {
+    __observerShellFlagTestHooks.setOverride(true)
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    bootstrapApi.fetch.mockResolvedValueOnce({ status: 'unavailable' }).mockResolvedValueOnce(runtimeBootstrap())
+
+    await loadData()
+
+    expect(bootstrapApi.fetch).toHaveBeenCalledOnce()
+    expect(alertError).not.toHaveBeenCalled()
+    expect(waitAlert).not.toHaveBeenCalled()
+    expect(get(loadedStore)).toBe(false)
+    expect(getStartupCoordinatorSnapshot().capabilities).toMatchObject({
+      canRenderShell: true,
+      canApplyRoutes: false,
+      canMutate: false,
+    })
+    expect(get(observerShellLifecycleStore).mode).toBe('unavailable')
+    expect(consoleWarn).toHaveBeenCalledWith(
+      'Writer startup deferred while the observer shell remains available:',
+      expect.any(Error),
+    )
+
+    await expect(retryObserverWriterPromotion()).resolves.toBe(true)
+
+    expect(bootstrapApi.fetch).toHaveBeenCalledTimes(2)
+    expect(pendingMutationApi.replay).toHaveBeenCalledOnce()
+    expect(eventApi.subscribe).toHaveBeenCalledOnce()
+    expect(get(loadedStore)).toBe(true)
+    expect(get(observerShellLifecycleStore).mode).toBe('promoted')
+  })
+
+  it('keeps the observer shell after explicit takeover denial and permits a later targeted retry', async () => {
+    __observerShellFlagTestHooks.setOverride(true)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    bootstrapApi.fetch
+      .mockResolvedValueOnce({ status: 'active-writer-connected', error: 'active_writer_connected' })
+      .mockResolvedValueOnce(runtimeBootstrap())
+    vi.mocked(alertRequiredSelect).mockResolvedValueOnce('1')
+
+    await loadData()
+
+    expect(getStartupCoordinatorSnapshot().capabilities).toMatchObject({
+      canRenderShell: true,
+      canApplyRoutes: false,
+      canMutate: false,
+    })
+    expect(get(observerShellLifecycleStore).mode).toBe('takeover-denied')
+    expect(resourceApi.loadInitial).toHaveBeenCalledOnce()
+    expect(pendingMutationApi.prepare).not.toHaveBeenCalled()
+
+    await expect(retryObserverWriterPromotion()).resolves.toBe(true)
+
+    expect(bootstrapApi.fetch).toHaveBeenCalledTimes(2)
+    expect(get(observerShellLifecycleStore).mode).toBe('promoted')
   })
 
   it('starts plugin runtime synchronization after the initial plugin load', async () => {
@@ -1302,6 +1439,7 @@ describe('API-backed client bootstrap', () => {
     expect(bootstrapApi.fetch).toHaveBeenCalledOnce()
     expect(resourceApi.loadInitial).not.toHaveBeenCalled()
     expect(pendingMutationApi.prepare).not.toHaveBeenCalled()
+    expect(get(observerShellLifecycleStore).mode).toBe('takeover-denied')
   })
 
   it('stops before hydration when transient failures leave encrypted changes queued', async () => {

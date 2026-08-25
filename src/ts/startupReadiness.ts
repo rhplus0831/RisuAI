@@ -231,6 +231,14 @@ export function revokeStartupWriterCapabilities(): void {
   notifyReadinessListeners()
 }
 
+/** Re-open writer capabilities only after an in-place recovery reinstalls every writer fence. */
+export function restoreStartupWriterCapabilities(): void {
+  if (!writerCapabilitiesRevoked || !hasTransitioned('writer-ready')) return
+  writerCapabilitiesRevoked = false
+  clearReadyCapabilityFailures()
+  notifyReadinessListeners()
+}
+
 function retryTargetReady(target: StartupRetryTarget): boolean {
   switch (target) {
     case 'canRenderShell':

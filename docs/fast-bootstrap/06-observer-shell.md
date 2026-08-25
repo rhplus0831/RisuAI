@@ -164,14 +164,57 @@ Verification:
 
 ### 6D. Permanent observer and retry behavior
 
-- [ ] On takeover denial, timeout, or writer loss, retain a useful observer shell
+- [x] On takeover denial, timeout, or writer loss, retain a useful observer shell
   with explicit status and targeted retry.
-- [ ] Retrying takeover must not repeat an accepted mutation, duplicate event
+- [x] Retrying takeover must not repeat an accepted mutation, duplicate event
   subscriptions, or replay stale local intent.
-- [ ] A later foreign writer event must revoke local mutation/generation
+- [x] A later foreign writer event must revoke local mutation/generation
   capability immediately without blanking authenticated observer data.
-- [ ] Define when observer detail/cache state is discarded on auth loss,
+- [x] Define when observer detail/cache state is discarded on auth loss,
   database replacement, or lineage change.
+
+#### 6D implementation record (2026-08-25)
+
+The observer shell now has localized live states for waiting, retrying, explicit
+takeover denial, writer unavailability, writer loss, offline mode, auth loss,
+and successful promotion. Once an authenticated observer projection is ready,
+a writer bootstrap failure settles into that useful view instead of entering
+the writer-first alert retry loop. A native retry button runs one shared
+promotion attempt and restores focus after failure.
+
+Targeted promotion reuses the complete Phase 3 writer sequence and does not
+open writer capability until the post-replay projection and event subscription
+are installed. Concurrent clicks share the same promise. A failed attempt
+re-latches lost-writer transport access and stops its event reconnect,
+translation, generation, persistence, and chat-hydration runtimes, leaving the
+observer stable for another explicit retry. Existing exact outbox ownership and
+receipt semantics prevent already accepted mutations from being replayed, and
+the revision-safe observer intent sequence from 6C prevents stale navigation
+from being consumed.
+
+A foreign writer event still revokes mutation and generation synchronously,
+but flag-on clients now switch back to the authenticated observer shell instead
+of blanking it. The discard policy is explicit: authentication loss clears the
+route intent, optional hydration state, disposable resource cache, authenticated
+resource projection, selection, and command/event revisions. Database
+replacement or lineage change clears observer-era intent, optional hydration,
+and cache identities while retaining the last authenticated shell until its
+authoritative replacement is ready.
+
+Verification:
+
+- focused lifecycle, bootstrap retry, writer-loss, resource auth/replacement,
+  observer DOM, readiness, and App DOM coverage — 245 tests passed;
+- `pnpm test:affected` — 360 frontend files / 5,302 tests passed; no Fastify
+  Vitest file was selected;
+- `pnpm check`, `pnpm check:server`, and `pnpm format:check` — passed;
+- `pnpm build:initial-preload` — 11 files, 319,936 gzip bytes total, and a
+  284,499-byte largest chunk; all boundary, regression, and milestone gates
+  passed;
+- browser smoke covers the default-off application and a deterministic
+  flag-on, two-context denial/promotion/writer-loss path. The new Phase 6 path
+  passed, and two unrelated accepted-send timing flakes observed in full-suite
+  runs each passed on isolated rerun.
 
 ## Verification
 

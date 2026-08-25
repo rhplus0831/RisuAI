@@ -13,6 +13,7 @@ import {
   pluginsReady,
   recordStartupMilestone,
   resetStartupReadinessForTests,
+  restoreStartupWriterCapabilities,
   revokeStartupWriterCapabilities,
   retryStartupCapability,
   runStartupStep,
@@ -161,6 +162,13 @@ describe('startup readiness instrumentation', () => {
     expect(pluginsReady()).toBe(true)
     expect(getStartupReadinessSnapshot().phase).toBe('chat-ready')
     expect(getStartupCoordinatorSnapshot().writerCapabilitiesRevoked).toBe(true)
+
+    restoreStartupWriterCapabilities()
+
+    expect(canApplyRoutes()).toBe(true)
+    expect(canMutate()).toBe(true)
+    expect(canGenerate()).toBe(true)
+    expect(getStartupCoordinatorSnapshot().writerCapabilitiesRevoked).toBe(false)
   })
 
   it('records per-capability failures and clears them when readiness is reached', () => {

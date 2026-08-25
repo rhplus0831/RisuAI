@@ -1,8 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { IDBFactory } from 'fake-indexeddb'
 
+const observerProjectionLifecycle = vi.hoisted(() => ({
+  discard: vi.fn(async () => undefined),
+}))
+
 vi.mock('../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'resource-auth-token',
+}))
+vi.mock('../observerProjectionLifecycle', () => ({
+  discardObserverProjectionState: observerProjectionLifecycle.discard,
 }))
 
 import { SERVER_COLLECTION_NAMES } from './resourceState.svelte'
@@ -153,10 +160,22 @@ function shellEnvelope(revision: number) {
 }
 
 afterEach(() => {
+  observerProjectionLifecycle.discard.mockClear()
   vi.unstubAllGlobals()
 })
 
 describe('server resource read clients', () => {
+  it('discards the authenticated observer projection before reporting an authorization loss', async () => {
+    stubResourceFetch(() => jsonResponse({ error: 'unauthorized' }, 401))
+
+    await expect(fetchServerSettings()).resolves.toEqual({
+      status: 'error',
+      error: 'unauthorized',
+    })
+    expect(observerProjectionLifecycle.discard).toHaveBeenCalledOnce()
+    expect(observerProjectionLifecycle.discard).toHaveBeenCalledWith('auth-loss')
+  })
+
   it('reads and validates one coherent shell response', async () => {
     const controller = new AbortController()
     const responses = [shellEnvelope(7), { ...shellEnvelope(8), revision: 9 }]

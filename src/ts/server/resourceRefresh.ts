@@ -63,6 +63,7 @@ export type ServerResourceRefreshResult =
 let serverResourceRefreshPromise: Promise<ServerResourceRefreshResult> | null = null
 let serverResourceRefreshPending = false
 let serverDatabaseReplacementRefreshPending = false
+let serverDatabaseReplacementDiscardPromise: Promise<void> | null = null
 
 export const serverResourceInvalidationHooks: ServerResourceInvalidationHooks = {
   reapplyPendingPresetProjections,
@@ -114,6 +115,9 @@ export function forceServerDatabaseReplacementRefresh(
   options: { resource?: string } = {},
 ): Promise<ServerResourceRefreshResult> {
   serverDatabaseReplacementRefreshPending = true
+  serverDatabaseReplacementDiscardPromise ??= import('../observerProjectionLifecycle').then(
+    ({ discardObserverProjectionState }) => discardObserverProjectionState('database-replacement'),
+  )
   clearCachedServerCommandRevision()
   clearAppliedServerResourceRevision()
   return forceServerResourceRefresh(reason, options)
@@ -179,6 +183,16 @@ async function runServerResourceRefresh(): Promise<ServerResourceRefreshResult> 
     serverResourceRefreshPending = false
     if (serverDatabaseReplacementRefreshPending) {
       serverDatabaseReplacementRefreshPending = false
+      const discardPromise = serverDatabaseReplacementDiscardPromise
+      if (discardPromise) {
+        try {
+          await discardPromise
+        } finally {
+          if (serverDatabaseReplacementDiscardPromise === discardPromise) {
+            serverDatabaseReplacementDiscardPromise = null
+          }
+        }
+      }
       // A replacement request can join an older full refresh that was already
       // reading the previous database. Reset again after that iteration drains
       // so its higher revision cannot fence out the replacement snapshot.

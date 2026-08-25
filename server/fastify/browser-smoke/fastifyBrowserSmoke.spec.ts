@@ -319,12 +319,15 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
   for (const resource of ['settings', 'collections', 'characters']) {
     const path = `/api/v1/${resource}`
     await expect.poll(() => resourceCacheRequests.filter((entry) => entry.path === path).length).toBeGreaterThan(0)
-    const latest = resourceCacheRequests.filter((entry) => entry.path === path).at(-1)
-    const hasCachedHash = Object.values(latest?.hashes ?? {}).some(
-      (hashes) =>
-        Array.isArray(hashes) && hashes.some((hash) => typeof hash === 'string' && /^[a-f0-9]{64}$/.test(hash)),
-    )
-    expect(hasCachedHash).toBe(resource === 'collections')
+    const requests = resourceCacheRequests.filter((entry) => entry.path === path)
+    const hasCachedHash = (entry: (typeof requests)[number] | undefined) =>
+      Object.values(entry?.hashes ?? {}).some(
+        (hashes) =>
+          Array.isArray(hashes) && hashes.some((hash) => typeof hash === 'string' && /^[a-f0-9]{64}$/.test(hash)),
+      )
+    // The in-test database import changes lineage; its replacement refresh
+    // must not advertise cache identities from the superseded database.
+    expect(hasCachedHash(requests.at(-1))).toBe(false)
   }
   expect(apiRequests.filter((entry) => /^((GET)|(POST)) \/api\/v1\/storage\//.test(entry))).toEqual([])
   await expect
@@ -334,6 +337,87 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
       ),
     )
     .toEqual([])
+})
+
+test('flagged observer shell survives denial and cross-tab writer takeover without mutation', async ({ browser }) => {
+  test.setTimeout(60_000)
+  await importDatabase(harness.app, browserSmokeAssertion, browserSmokeDatabase())
+  const writerContext = await browser.newContext()
+  const observerContext = await browser.newContext()
+  const observerFlagKey = 'risu:fast-bootstrap-observer-shell'
+  await Promise.all([
+    writerContext.addInitScript((key) => {
+      try {
+        sessionStorage.setItem(key, 'enabled')
+      } catch {}
+    }, observerFlagKey),
+    observerContext.addInitScript((key) => {
+      try {
+        sessionStorage.setItem(key, 'enabled')
+      } catch {}
+    }, observerFlagKey),
+  ])
+  const writerPage = await writerContext.newPage()
+  const observerPage = await observerContext.newPage()
+  const observerCommandRequests: string[] = []
+  observerPage.on('request', (request) => {
+    const url = new URL(request.url())
+    if (url.pathname.startsWith('/api/v1/commands/')) {
+      observerCommandRequests.push(`${request.method()} ${url.pathname}`)
+    }
+  })
+
+  try {
+    await writerPage.goto(harness.baseUrl)
+    await waitForBrowserSmokeLoaded(writerPage)
+
+    await observerPage.goto(harness.baseUrl)
+    await expect(observerPage.locator('[data-observer-shell]')).toBeVisible()
+    await expect(observerPage.getByRole('button', { name: 'Cancel', exact: true })).toBeVisible()
+    await observerPage.getByRole('button', { name: 'Cancel', exact: true }).click()
+
+    await expect(observerPage.locator('[data-observer-lifecycle-status]')).toContainText(
+      'Another session still has write access',
+    )
+    expect(
+      await observerPage.evaluate(() =>
+        window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot().characters.map((character) => character.chaId),
+      ),
+    ).toContain('char-smoke')
+
+    await observerPage.getByRole('button', { name: 'Open Smoke Character', exact: true }).click()
+    await expect(observerPage).toHaveURL(/\/character\/char-smoke$/)
+    expect(observerCommandRequests).toEqual([])
+
+    await observerPage.getByRole('button', { name: 'Retry write access', exact: true }).click()
+    await expect(observerPage.getByRole('button', { name: 'Disconnect existing client', exact: true })).toBeVisible()
+    await observerPage.getByRole('button', { name: 'Disconnect existing client', exact: true }).click()
+    await waitForBrowserSmokeLoaded(observerPage)
+
+    await expect(observerPage.locator('[data-observer-shell]')).toHaveCount(0)
+    await expect(observerPage.locator('[data-char-id="char-smoke"]')).toBeVisible()
+    expect(observerCommandRequests).toEqual([])
+
+    await expect(writerPage.locator('[data-observer-shell]')).toBeVisible()
+    await expect
+      .poll(() =>
+        writerPage.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getStartupCoordinatorSnapshot().capabilities),
+      )
+      .toMatchObject({ canApplyRoutes: false, canGenerate: false, canMutate: false })
+    expect(
+      await writerPage.evaluate(() =>
+        window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot().characters.map((character) => character.chaId),
+      ),
+    ).toContain('char-smoke')
+
+    await writerPage.getByRole('button', { name: 'Stay on this page (offline)', exact: true }).click()
+    await expect(writerPage.locator('[data-observer-lifecycle-status]')).toContainText(
+      'This tab is staying in read-only mode',
+    )
+    await expect(writerPage.getByRole('button', { name: 'Retry write access', exact: true })).toBeVisible()
+  } finally {
+    await Promise.all([writerContext.close(), observerContext.close()])
+  }
 })
 
 test('core chat controls and blocking alerts remain accessible across responsive viewports', async ({ page }) => {

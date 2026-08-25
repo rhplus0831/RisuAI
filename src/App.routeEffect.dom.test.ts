@@ -569,6 +569,31 @@ describe('App route/refreeze mounted DOM behavior', () => {
     await vi.waitFor(() => expect(peekObserverRouteIntent()).toBeNull())
   })
 
+  it('returns immediately to the authenticated observer shell after writer capability is revoked', async () => {
+    if (component) {
+      unmount(component)
+      component = undefined
+    }
+    resetStartupReadinessForTests()
+    configureStartupObserverShell(true)
+    for (const milestone of ['entry', 'shell-mounted', 'observer-ready', 'writer-ready'] as const) {
+      recordStartupMilestone(milestone)
+    }
+    appRouteDomMocks.state.applyRouteCalls = 0
+    await mountApp()
+
+    expect(target.querySelector('[data-testid="app-marker"]')).not.toBeNull()
+    expect(getResourceDatabase().characters[0]?.chaId).toBe('char-a')
+
+    revokeStartupWriterCapabilities()
+    await tick()
+
+    expect(target.querySelector('[data-testid="observer-shell-marker"]')).not.toBeNull()
+    expect(target.querySelector('[data-testid="side-chat-list"]')).toBeNull()
+    expect(getResourceDatabase().characters[0]?.chaId).toBe('char-a')
+    expect(get(selectedCharID)).toBe(0)
+  })
+
   it('retains state-to-route subscriptions while a route application owns the stores', async () => {
     const router = appRouteDomMocks.state.exports
     if (!router) throw new Error('Router mock was not initialized')

@@ -584,6 +584,10 @@ async function requestServerResourceJson(
     // responses fail the resource-specific envelope validation.
   }
   if (!response.ok) {
+    if (response.status === 401) {
+      const { discardObserverProjectionState } = await import('../observerProjectionLifecycle')
+      await discardObserverProjectionState('auth-loss')
+    }
     return {
       status: 'error',
       error: errorMessageFromBody(body, `HTTP ${response.status}`),

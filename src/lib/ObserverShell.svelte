@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { tick } from 'svelte'
   import { language } from '../lang'
+  import { observerShellLifecycleStore, type ObserverShellLifecycleMode } from '../ts/observerShellLifecycle.svelte'
   import { hydrateCharacterShell, characterShellHydrationState } from '../ts/server/characterShellHydration.svelte'
   import { getResourceDatabase as getDatabase } from '../ts/server/resourceState.svelte'
   import { isServerCharacterShell } from '../ts/storage/database.svelte'
@@ -26,6 +28,10 @@
   let shellChatCount = $derived(
     selectedIsShell ? ((selectedCharacter as unknown as { chatCount?: number }).chatCount ?? 0) : selectedChats.length,
   )
+  let retryWriterButton: HTMLButtonElement | undefined = $state()
+  let writerRetryAvailable = $derived(
+    ['takeover-denied', 'unavailable', 'writer-lost', 'offline'].includes($observerShellLifecycleStore.mode),
+  )
 
   $effect(() => {
     recordObserverRouteIntent($currentRoute)
@@ -46,6 +52,36 @@
   function loadDetails(characterId: string): void {
     void hydrateCharacterShell(characterId, { supersede: true })
   }
+
+  function lifecycleStatus(mode: ObserverShellLifecycleMode): string {
+    switch (mode) {
+      case 'retrying':
+        return language.observerShell.statusRetrying
+      case 'takeover-denied':
+        return language.observerShell.statusTakeoverDenied
+      case 'unavailable':
+        return language.observerShell.statusUnavailable
+      case 'writer-lost':
+        return language.observerShell.statusWriterLost
+      case 'offline':
+        return language.observerShell.statusOffline
+      case 'auth-lost':
+        return language.observerShell.statusAuthLost
+      case 'promoted':
+        return language.observerShell.statusPromoted
+      default:
+        return language.observerShell.status
+    }
+  }
+
+  async function retryWriterPromotion(): Promise<void> {
+    const { retryObserverWriterPromotion } = await import('../ts/bootstrap')
+    const promoted = await retryObserverWriterPromotion()
+    if (!promoted) {
+      await tick()
+      retryWriterButton?.focus()
+    }
+  }
 </script>
 
 <div class="flex h-full w-full flex-col overflow-hidden bg-bg text-textcolor" data-observer-shell>
@@ -57,7 +93,27 @@
       data-observer-read-only-status>
       <div>
         <h1 class="text-lg font-semibold">{language.observerShell.title}</h1>
-        <p class="text-sm text-textcolor2">{language.observerShell.status}</p>
+        <p class="text-sm text-textcolor2" data-observer-lifecycle-status>
+          {lifecycleStatus($observerShellLifecycleStore.mode)}
+        </p>
+        {#if writerRetryAvailable}
+          <button
+            bind:this={retryWriterButton}
+            type="button"
+            class="mt-2 rounded-md border border-textcolor/30 px-3 py-2 text-sm hover:bg-textcolor/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+            data-observer-writer-retry
+            onclick={() => void retryWriterPromotion()}>
+            {language.observerShell.retryWriter}
+          </button>
+        {:else if $observerShellLifecycleStore.mode === 'retrying'}
+          <button
+            type="button"
+            class="mt-2 cursor-wait rounded-md border border-textcolor/30 px-3 py-2 text-sm opacity-60"
+            data-observer-writer-retry
+            disabled>
+            {language.observerShell.retryingWriter}
+          </button>
+        {/if}
       </div>
       <span class="w-fit rounded-full border border-yellow-600/60 bg-yellow-600/10 px-3 py-1 text-sm">
         {language.observerShell.readOnlyBadge}

@@ -160,6 +160,11 @@ export function retryCharacterShellHydration(characterId: string): Promise<boole
 }
 
 export function resetCharacterShellHydrationStateForTests(): void {
+  clearCharacterShellHydrationState()
+}
+
+/** Abort and forget optional detail reads whose auth/lineage scope is obsolete. */
+export function clearCharacterShellHydrationState(): void {
   stopSelectedCharacterShellHydration()
   characterShellHydrationState.rows = {}
 }

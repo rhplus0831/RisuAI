@@ -1,4 +1,5 @@
 import { getChatHydrationRuntime } from '../process/generationRuntimeBridge'
+import { setObserverShellLifecycleMode } from '../observerShellLifecycle.svelte'
 import { revokeStartupWriterCapabilities } from '../startupReadiness'
 
 export const ACTIVE_WRITER_SESSION_HEADER = 'risu-writer-session'
@@ -65,14 +66,39 @@ export function resetWriterAccessLostForTests(): void {
   writerAccessLostMutationReported = false
   writerAccessLostMutationNotifier = null
   setWriterTakeoverInteractionBlocked(false)
+  leaveFrozenOfflineState()
 }
 
 export function enterWriterTakeoverFlow(): void {
   if (writerAccessLost) return
   writerAccessLost = true
   revokeStartupWriterCapabilities()
+  setObserverShellLifecycleMode('writer-lost')
   setWriterTakeoverInteractionBlocked(true)
   void runWriterTakeoverFlow()
+}
+
+/** Temporarily admit bootstrap/replay transports while ordinary UI mutation remains revoked. */
+export function beginWriterAccessRecovery(): boolean {
+  if (!writerAccessLost) return false
+  writerAccessLost = false
+  setWriterTakeoverInteractionBlocked(true)
+  return true
+}
+
+/** Settle an in-place takeover retry after bootstrap either reinstalls every fence or fails. */
+export function completeWriterAccessRecovery(success: boolean): void {
+  if (success) {
+    writerAccessLost = false
+    writerAccessLostMutationReported = false
+    writerAccessLostMutationNotifier = null
+    setWriterTakeoverInteractionBlocked(false)
+    leaveFrozenOfflineState()
+    return
+  }
+
+  writerAccessLost = true
+  setWriterTakeoverInteractionBlocked(false)
 }
 
 export function isActiveWriterStaleErrorBody(body: unknown): boolean {
@@ -195,6 +221,7 @@ async function runWriterTakeoverFlow(): Promise<void> {
     return
   }
   setWriterTakeoverInteractionBlocked(false)
+  setObserverShellLifecycleMode('offline')
   enterFrozenOfflineState({
     message: language.writerOfflineBanner,
     refresh: language.writerOfflineRefresh,
@@ -251,6 +278,16 @@ function enterFrozenOfflineState(labels: { message: string; refresh: string }): 
       attributeFilter: ['contenteditable', 'readonly', 'type'],
     })
   }
+}
+
+function leaveFrozenOfflineState(): void {
+  offlineFreezeObserver?.disconnect()
+  offlineFreezeObserver = null
+  if (typeof document === 'undefined') return
+  document.getElementById(OFFLINE_BANNER_ID)?.remove()
+  const appRoot = document.getElementById('app')
+  appRoot?.classList.remove(OFFLINE_FROZEN_CLASS)
+  appRoot?.classList.remove(WRITER_TAKEOVER_PENDING_CLASS)
 }
 
 function freezeEditableTree(node: Node): void {
