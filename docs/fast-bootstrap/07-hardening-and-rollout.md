@@ -104,6 +104,11 @@ cohorts. Every cohort emitted all seven ordered milestones, exactly one
 completed attempt, no fatal attempt failure, taxonomy-valid localized
 diagnostics, and one consistent rollout-mode label. Generated telemetry evidence
 stays in the ignored `fast-bootstrap-results/phase7-integration.json` artifact.
+The dependency-aware `pnpm test:affected --base d59267075` verification also
+passed 337 frontend files / 5,134 tests and 59 server files / 1,528 tests with
+one existing skip. The final `pnpm verify:fast-bootstrap:phase7` gate passed the
+Phase 0 matrix and all seven Phase 7 journeys; initial preload remained within
+budget at 312.98 KiB gzip with a 277.83 KiB largest initial file.
 
 ### 7C. Documentation and developer workflow
 
