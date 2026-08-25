@@ -1,14 +1,12 @@
-export const STARTUP_MILESTONES = [
-  'entry',
-  'shell-mounted',
-  'observer-ready',
-  'writer-ready',
-  'plugins-ready',
-  'chat-ready',
-  'background-ready',
-] as const
+import {
+  STARTUP_TELEMETRY_MILESTONES,
+  type StartupTelemetryFailureCode,
+  type StartupTelemetryMilestone,
+} from './server/startupTelemetryProtocol'
 
-export type StartupMilestone = (typeof STARTUP_MILESTONES)[number]
+export const STARTUP_MILESTONES = STARTUP_TELEMETRY_MILESTONES
+
+export type StartupMilestone = StartupTelemetryMilestone
 
 export const STARTUP_CAPABILITIES = [
   'canRenderShell',
@@ -41,15 +39,7 @@ export type StartupStep =
   | 'background-runtime'
   | 'background-readiness'
 
-export type StartupAttemptFailureCode =
-  | 'writer-bootstrap-failed'
-  | 'push-initialization-failed'
-  | 'plugin-initialization-failed'
-  | 'generation-recovery-failed'
-  | 'selected-character-hydration-failed'
-  | 'selected-chat-hydration-failed'
-  | 'selected-prompt-template-hydration-failed'
-  | 'runtime-initialization-failed'
+export type StartupAttemptFailureCode = StartupTelemetryFailureCode
 
 export interface StartupAttemptSnapshot {
   attemptId: number

@@ -130,6 +130,20 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'startup-telemetry',
+    methods: ['POST'],
+    path: '/api/v1/telemetry/startup',
+    auth: {
+      decision: 'required',
+      reason: 'Startup diagnostics describe an authenticated browser session.',
+    },
+    activeWriter: {
+      decision: 'stateless-helper',
+      reason: 'Emits bounded diagnostic metadata without mutating authoritative user state.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'settings-read',
     methods: GET_ONLY,
     path: '/api/v1/settings',

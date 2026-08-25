@@ -55,6 +55,7 @@ import { registerRequestHistoryRoutes } from './routes/requestHistory.js'
 import { registerRealmImportRoutes } from './routes/realmImport.js'
 import { registerSaveRoutes } from './routes/save.js'
 import { registerStreamJobRoutes } from './routes/streamJobs.js'
+import { registerStartupTelemetryRoutes } from './routes/startupTelemetry.js'
 import { registerTtsRoutes, type TtsSynthesisRouteOptions } from './routes/tts.js'
 import {
   SUPPORTED_ASSET_CONTENT_TYPES,
@@ -327,6 +328,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     greetingTranslationJobRegistry,
   )
   registerActiveWriterGuard(app, activeWriterState)
+  registerStartupTelemetryRoutes(app, authState)
   registerResourceReadRoutes(app, db, authState, config.dataDir)
   registerSaveRoutes(app, db, authState, config.dataDir, commandEventSink, {
     maxExpandedImportBytes: config.bodyLimit,

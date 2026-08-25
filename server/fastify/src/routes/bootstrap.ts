@@ -32,6 +32,7 @@ import {
 import { listGenerationFinalizationRetryProjections } from '../generationFinalizationRetry.js'
 import { listPendingClientGenerationEffects } from '../generationEffects.js'
 import { DISPLAY_SOURCE_PROTOCOL_VERSION } from '../../../../src/ts/process/displaySourceProtocol.js'
+import { STARTUP_TELEMETRY_PROTOCOL_VERSION } from '../../../../src/ts/server/startupTelemetryProtocol.js'
 
 export const ASSET_BASE_URL = '/api/v1/assets'
 export const WRITER_OBSERVER_SESSION_HEADER = 'risu-writer-observer-session'
@@ -95,6 +96,9 @@ export function registerBootstrapRoutes(
       assetBaseUrl: ASSET_BASE_URL,
       generationOperationProtocol: { version: GENERATION_OPERATION_PROTOCOL_VERSION },
       displaySourceProtocol: { version: DISPLAY_SOURCE_PROTOCOL_VERSION },
+      ...(protocolMetricsEnabled()
+        ? { startupTelemetry: { version: STARTUP_TELEMETRY_PROTOCOL_VERSION, sampleRate: 1 as const } }
+        : {}),
       generationOperationProjectionEpoch,
       generationOperations,
       // Transient running generations so a returning client, even after a full
