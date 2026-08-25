@@ -1,20 +1,14 @@
 import { expect, test, type Browser, type Page } from '@playwright/test'
-import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
-import type { FastifyInstance } from 'fastify'
 import { buildLargeCorpusFixture } from '../../../src/ts/__tests__/largeCorpusFixture.js'
 import type { StartupReadinessSnapshot } from '../../../src/ts/startupReadiness.js'
-import { buildApp } from '../src/app.js'
 import { subscribeProtocolMetrics } from '../src/protocolMetrics.js'
-import { setupBrowserSmokeAuth } from './auth.js'
-
-interface Harness {
-  app: FastifyInstance
-  baseUrl: string
-  dataDir: string
-}
+import {
+  closeFastBootstrapHarness,
+  smallFastBootstrapFixture,
+  startFastBootstrapHarness,
+} from './fastBootstrapHarness.js'
 
 interface ApiRequestRecord {
   method: string
@@ -84,7 +78,7 @@ test.afterAll(() => {
 test('Phase 0 startup matrix keeps cold and warm small/large populations separate', async ({ browser }, testInfo) => {
   process.env.RISU_PROTOCOL_METRICS = '1'
   const cases = [
-    ...(await runFixturePair(browser, 'small', smallFixtureDatabase())),
+    ...(await runFixturePair(browser, 'small', smallFastBootstrapFixture())),
     ...(await runFixturePair(browser, 'large', buildLargeCorpusFixture().database)),
   ]
 
@@ -119,14 +113,12 @@ async function runFixturePair(
   fixture: StartupMatrixCase['fixture'],
   database: Record<string, unknown>,
 ): Promise<StartupMatrixCase[]> {
-  const harness = await startHarness()
+  const harness = await startFastBootstrapHarness(database)
   const metrics: SafeProtocolMetric[] = []
   const unsubscribeMetrics = subscribeProtocolMetrics((metric) => metrics.push(safeProtocolMetric(metric)))
   let context: Awaited<ReturnType<Browser['newContext']>> | undefined
 
   try {
-    const assertion = await setupBrowserSmokeAuth(harness.app)
-    await importDatabase(harness.app, assertion, database)
     metrics.length = 0
 
     context = await browser.newContext()
@@ -162,8 +154,7 @@ async function runFixturePair(
   } finally {
     unsubscribeMetrics()
     await context?.close().catch(() => undefined)
-    await harness.app.close().catch(() => undefined)
-    fs.rmSync(harness.dataDir, { recursive: true, force: true })
+    await closeFastBootstrapHarness(harness)
   }
 }
 
@@ -312,88 +303,4 @@ function formatMatrixArtifact(artifact: StartupMatrixArtifact): string {
 
 function formatNumber(value: number | undefined): string {
   return value === undefined ? '' : value.toFixed(2)
-}
-
-async function startHarness(): Promise<Harness> {
-  process.env.LOG_LEVEL = 'silent'
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-fast-bootstrap-matrix-'))
-  const { app } = await buildApp({
-    config: {
-      host: '127.0.0.1',
-      port: 0,
-      dataDir,
-      bodyLimit: 20 * 1024 * 1024,
-      importMaxBytes: Number.POSITIVE_INFINITY,
-      trustProxy: false,
-      hubUrl: 'https://sv.risuai.xyz',
-      staticRoot: path.resolve('dist'),
-      requestTrace: { mode: 'agent' },
-    },
-    assetGc: false,
-    memoryWorker: false,
-  })
-  await app.listen({ host: '127.0.0.1', port: 0 })
-  const address = app.server.address()
-  if (!address || typeof address === 'string') throw new Error('Startup matrix harness did not bind to a TCP port')
-  return { app, baseUrl: `http://127.0.0.1:${address.port}`, dataDir }
-}
-
-async function importDatabase(
-  app: FastifyInstance,
-  assertion: string,
-  database: Record<string, unknown>,
-): Promise<void> {
-  const writerSession = `startup-matrix-import-${randomUUID()}`
-  const registered = await app.inject({
-    method: 'GET',
-    url: '/api/v1/bootstrap',
-    headers: { 'risu-auth': assertion, 'risu-writer-session': writerSession },
-  })
-  expect(registered.statusCode).toBe(200)
-  const imported = await app.inject({
-    method: 'POST',
-    url: '/api/v1/import/risusave',
-    headers: { 'risu-auth': assertion, 'risu-writer-session': writerSession },
-    payload: { database },
-  })
-  expect(imported.statusCode).toBe(200)
-}
-
-function smallFixtureDatabase(): Record<string, unknown> {
-  return {
-    version: 1,
-    didFirstSetup: true,
-    formatversion: 5,
-    currentChar: 0,
-    characterOrder: ['phase0-small-character'],
-    characters: [
-      {
-        chaId: 'phase0-small-character',
-        type: 'character',
-        name: 'Phase 0 Small Character',
-        chats: [
-          {
-            id: 'phase0-small-chat',
-            name: 'Phase 0 Small Chat',
-            note: '',
-            localLore: [],
-            message: [],
-          },
-        ],
-        chatPage: 0,
-        customscript: [],
-        firstMessage: '',
-        globalLore: [],
-        viewScreen: 'none',
-        emotionImages: [],
-      },
-    ],
-    botPresets: [],
-    loadouts: [],
-    modules: [],
-    personas: [],
-    plugins: [],
-    pluginCustomStorage: {},
-    language: 'en',
-  }
 }
