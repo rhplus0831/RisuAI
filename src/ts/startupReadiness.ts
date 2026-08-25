@@ -170,6 +170,15 @@ function hasTransitioned(milestone: StartupMilestone): boolean {
   return transitionTimes.has(milestone)
 }
 
+/**
+ * Report whether optional startup work has settled without reintroducing a
+ * global UI gate. This uses the semantic signal rather than the ordered public
+ * phase so a localized earlier capability failure cannot keep bootstrap open.
+ */
+export function backgroundReady(): boolean {
+  return observedMilestoneTimes.has('background-ready')
+}
+
 export function canRenderShell(): boolean {
   return hasTransitioned('writer-ready') || (observerShellEnabled && hasTransitioned('observer-ready'))
 }
@@ -267,7 +276,7 @@ function retryTargetReady(target: StartupRetryTarget): boolean {
     case 'canGenerate':
       return canGenerate()
     case 'backgroundReady':
-      return hasTransitioned('background-ready')
+      return backgroundReady()
   }
 }
 

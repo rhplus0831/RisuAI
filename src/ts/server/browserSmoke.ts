@@ -1,5 +1,5 @@
 import { get } from 'svelte/store'
-import { loadedStore, selectedCharID } from '../stores/coreStores.svelte'
+import { selectedCharID } from '../stores/coreStores.svelte'
 import { getDatabase, type Database } from '../storage/database.svelte'
 import { getRerollBuffer, reroll, unReroll } from '../process/rerollNavigation.svelte'
 import { acceptedSendRecoveries } from '../process/acceptedSendRecoveryState'
@@ -20,6 +20,7 @@ import { listPendingMutationReceiptAcknowledgements, listPendingMutations } from
 import { clearResourceCache } from './resourceCache'
 import { currentRouteResourceLoadState, type RouteResourceLoadState } from './routeResourceLoader'
 import {
+  backgroundReady,
   getStartupCoordinatorSnapshot,
   getStartupReadinessSnapshot,
   waitForStartupMilestone,
@@ -125,7 +126,7 @@ export function installFastifyBrowserSmokeHook() {
     getStartupCoordinatorSnapshot,
     getStartupSnapshot: getStartupReadinessSnapshot,
     getRouteResourceLoadState: currentRouteResourceLoadState,
-    isLoaded: () => get(loadedStore),
+    isLoaded: backgroundReady,
     // Ride the real durable outbox path so the request carries the mutation
     // receipt + database-lineage headers. The Journey 3 lineage-recovery gate
     // depends on this: an untagged command released after an import only gets
@@ -151,19 +152,5 @@ export function installFastifyBrowserSmokeHook() {
 }
 
 function waitForLoaded(timeoutMs = 10_000): Promise<void> {
-  if (get(loadedStore)) return Promise.resolve()
-
-  return new Promise((resolve, reject) => {
-    const timeout = window.setTimeout(() => {
-      unsubscribe()
-      reject(new Error('Timed out waiting for RisuAI to load'))
-    }, timeoutMs)
-
-    const unsubscribe = loadedStore.subscribe((loaded) => {
-      if (!loaded) return
-      window.clearTimeout(timeout)
-      unsubscribe()
-      resolve()
-    })
-  })
+  return waitForStartupMilestone('background-ready', timeoutMs)
 }

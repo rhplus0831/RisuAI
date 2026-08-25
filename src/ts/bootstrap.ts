@@ -1,7 +1,7 @@
 import { get } from 'svelte/store'
 import { getDatabase, setResourceWriteGuardEnabled, type Database } from './storage/database.svelte'
 import { botMakerMode } from './stores.svelte'
-import { loadedStore, LoadingStatusState, selectedCharID } from './stores/coreStores.svelte'
+import { LoadingStatusState, selectedCharID } from './stores/coreStores.svelte'
 import { currentRoute } from './router'
 import { isPreWriterObserverShellEnabled } from './observerShellFlag'
 import {
@@ -184,6 +184,7 @@ import {
   setPendingRecoveredGenerationEffects,
 } from './process/recoveredGenerationEffects'
 import {
+  backgroundReady,
   beginStartupAttempt,
   canRenderShell,
   canMutate,
@@ -239,7 +240,7 @@ setSettingsRuntimeProjectionHook((keys) => {
   if (hasProjectedRuntimeKey(keys, GUI_SIZE_RUNTIME_KEYS)) updateGuisize()
   if (keys.includes('animationSpeed') || keys.includes('reducedMotion')) updateReducedMotion()
   if (keys.includes('heightMode')) updateHeightMode()
-  if (get(loadedStore) && keys.includes('notification')) {
+  if (backgroundReady() && keys.includes('notification')) {
     void reconcileProjectedPushNotificationSetting(getDatabase().notification === true)
   }
 })
@@ -296,7 +297,7 @@ let observerWriterPromotionRetryInFlight: Promise<boolean> | null = null
  */
 export function loadData(): Promise<void> {
   startStartupTelemetryPublisher()
-  if (get(loadedStore)) return Promise.resolve()
+  if (backgroundReady()) return Promise.resolve()
   if (loadDataInFlight) return loadDataInFlight
 
   const running = loadDataUntilSettled().finally(() => {
@@ -308,7 +309,7 @@ export function loadData(): Promise<void> {
 
 async function loadDataUntilSettled(): Promise<void> {
   let retryTarget: StartupRetryTarget | null = null
-  while (!get(loadedStore)) {
+  while (!backgroundReady()) {
     const outcome = retryTarget
       ? await retryStartupCapability(retryTarget, runLoadDataAttempt)
       : await runLoadDataAttempt()
@@ -350,7 +351,6 @@ async function runLoadDataAttempt(): Promise<StartupRetryTarget | null> {
     }
     startStartupChatReadinessSync(startupAttemptId)
     await backgroundReadiness
-    loadedStore.set(true)
     await reconcileProjectedPushNotificationSetting(getDatabase().notification === true)
     recordStartupMilestone('background-ready')
     completeStartupAttempt(startupAttemptId)
@@ -416,7 +416,7 @@ export function retryObserverWriterPromotion(): Promise<boolean> {
 
   const retry = (async () => {
     setObserverShellLifecycleMode('retrying')
-    if (!get(loadedStore)) {
+    if (!backgroundReady()) {
       await loadData()
       return canMutate()
     }

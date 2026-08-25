@@ -351,6 +351,7 @@ import {
 import { getActiveWriterSessionId } from './server/activeWriterSession'
 import { adoptReplacementDatabaseOwnership } from './server/replacementDatabaseOwnership'
 import {
+  backgroundReady,
   getStartupCoordinatorSnapshot,
   getStartupReadinessSnapshot,
   recordStartupMilestone,
@@ -385,7 +386,7 @@ import {
 } from './server/resourceState.svelte'
 import { getServerResourceApplyEpoch } from './server/resourceWriteGuard.svelte'
 import { captureDestructiveRefreshEpoch, createDestructiveRefreshToken } from './server/staleStateGuards'
-import { loadedStore, selectedCharID } from './stores.svelte'
+import { selectedCharID } from './stores.svelte'
 import { currentRoute } from './router'
 import { updateReducedMotion } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
@@ -481,7 +482,6 @@ beforeEach(() => {
   setResourceWriteGuardEnabled(false)
   resetServerResourceState()
   seedResourceDatabase()
-  loadedStore.set(false)
   selectedCharID.set(-1)
   currentRoute.set({ kind: 'home', path: '/' })
   clearCachedServerCommandRevision()
@@ -764,7 +764,7 @@ describe('API-backed client bootstrap', () => {
 
     expect(alertError).toHaveBeenCalledOnce()
     expect(bootstrapApi.fetch).toHaveBeenCalledTimes(2)
-    expect(get(loadedStore)).toBe(true)
+    expect(backgroundReady()).toBe(true)
     expect(getStartupReadinessSnapshot()).toMatchObject({
       phase: 'background-ready',
       attempts: [
@@ -788,7 +788,7 @@ describe('API-backed client bootstrap', () => {
     expect(bootstrapApi.fetch).toHaveBeenCalledOnce()
     expect(alertError).not.toHaveBeenCalled()
     expect(waitAlert).not.toHaveBeenCalled()
-    expect(get(loadedStore)).toBe(false)
+    expect(backgroundReady()).toBe(false)
     expect(getStartupCoordinatorSnapshot().capabilities).toMatchObject({
       canRenderShell: true,
       canApplyRoutes: false,
@@ -805,7 +805,7 @@ describe('API-backed client bootstrap', () => {
     expect(bootstrapApi.fetch).toHaveBeenCalledTimes(2)
     expect(pendingMutationApi.replay).toHaveBeenCalledOnce()
     expect(eventApi.subscribe).toHaveBeenCalledOnce()
-    expect(get(loadedStore)).toBe(true)
+    expect(backgroundReady()).toBe(true)
     expect(get(observerShellLifecycleStore).mode).toBe('promoted')
   })
 
@@ -875,7 +875,7 @@ describe('API-backed client bootstrap', () => {
     expect(pushApi.initialize).toHaveBeenCalledOnce()
     expect(loadPlugins).toHaveBeenCalledOnce()
     expect(startPluginRuntimeSync).not.toHaveBeenCalled()
-    expect(get(loadedStore)).toBe(true)
+    expect(backgroundReady()).toBe(true)
     expect(alertError).not.toHaveBeenCalled()
     expect(getStartupCoordinatorSnapshot()).toMatchObject({
       capabilities: {
@@ -949,11 +949,11 @@ describe('API-backed client bootstrap', () => {
       canMutate: true,
       pluginsReady: true,
     })
-    expect(get(loadedStore)).toBe(false)
+    expect(backgroundReady()).toBe(false)
 
     releasePush()
     await loading
-    expect(get(loadedStore)).toBe(true)
+    expect(backgroundReady()).toBe(true)
   })
 
   it('isolates a failed push initialization from shell, mutation, and chat readiness', async () => {
@@ -969,7 +969,7 @@ describe('API-backed client bootstrap', () => {
       pluginsReady: true,
       canGenerate: true,
     })
-    expect(get(loadedStore)).toBe(true)
+    expect(backgroundReady()).toBe(true)
     expect(alertError).not.toHaveBeenCalled()
     expect(consoleWarn).toHaveBeenCalledWith('Failed to initialize push runtime:', pushFailure)
   })
@@ -1111,7 +1111,7 @@ describe('API-backed client bootstrap', () => {
 
     await loadData()
 
-    expect(get(loadedStore)).toBe(true)
+    expect(backgroundReady()).toBe(true)
     expect(getStartupCoordinatorSnapshot()).toMatchObject({
       capabilities: {
         canRenderShell: true,
@@ -1253,7 +1253,7 @@ describe('API-backed client bootstrap', () => {
 
     const loading = loadData()
     await vi.waitFor(() => expect(loadPlugins).toHaveBeenCalledOnce())
-    expect(get(loadedStore)).toBe(false)
+    expect(backgroundReady()).toBe(false)
 
     expect(
       applySettingsGroupResource(
@@ -1539,7 +1539,7 @@ describe('API-backed client bootstrap', () => {
     expect(bootstrapApi.fetch).toHaveBeenCalledTimes(1)
     expect(bootstrapApi.fetchReadOnly).not.toHaveBeenCalled()
     expect(resourceApi.loadInitial).not.toHaveBeenCalled()
-    expect(get(loadedStore)).toBe(false)
+    expect(backgroundReady()).toBe(false)
     expect(alertError).toHaveBeenCalledTimes(1)
     expect(alertError).toHaveBeenCalledWith(
       expect.objectContaining({ message: expect.stringContaining('database appears damaged') }),

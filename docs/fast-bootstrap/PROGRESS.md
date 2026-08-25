@@ -14,7 +14,7 @@ tests, evidence, and applicable exit criteria are complete.
 | [0: Measurement and budgets](00-measurement-and-budgets.md) | Complete | None. |
 | [1: Entry and bundle boundaries](01-entry-and-bundle-boundaries.md) | Complete | None. |
 | [2: Thin character summaries](02-thin-character-summaries.md) | Complete | None. The compatibility aggregate route remains a rollback seam until the planned seam-removal work. |
-| [3: Startup capabilities](03-startup-capabilities.md) | Complete | None. `loadedStore` remains only as the documented background-readiness compatibility alias scheduled for removal in Phase 7. |
+| [3: Startup capabilities](03-startup-capabilities.md) | Complete | None. The Phase 7 seam-removal slice removed the temporary background-readiness alias. |
 | [4: Deferred runtimes](04-deferred-runtimes.md) | Complete | None. |
 | [5: Route-driven hydration](05-route-driven-hydration.md) | Complete | None. |
 | [6: Observer shell](06-observer-shell.md) | Complete | None. The temporary observer rollout remains default-off for Phase 7 rollout review. |

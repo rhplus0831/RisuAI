@@ -119,15 +119,16 @@ generation operations consume the narrow capabilities directly.
     these dependencies and plugins are coherent. Selection changes rerun fenced
     hydration, and a specific character/chat failure remains localized.
 12. Update error handling and show one-time nightly or insecure-origin warnings.
-    Set the background-compatibility `loadedStore`, reselect the persisted
-    character, install store/module effects and DOM observers, register dynamic
-    models, and publish `background-ready`. RisuRealm terms are requested only
-    at the Realm download boundary.
+    Reselect the persisted character, install store/module effects and DOM
+    observers, register dynamic models, reconcile the projected notification
+    state, and publish `background-ready`. RisuRealm terms are requested only at
+    the Realm download boundary.
 
-`loadedStore` no longer controls visible rendering or route application. It is a
-temporary background-readiness compatibility alias for the bootstrap loop,
-notification reconciliation, and browser-smoke helpers. Remove it after those
-callers use explicit `background-ready` state; do not add new consumers.
+`backgroundReady()` is the coordinator-owned completion selector for optional
+startup work. It consumes the semantic signal rather than the ordered telemetry
+phase, so a localized earlier optional-capability failure cannot keep the
+bootstrap loop open. It is not a visible-rendering or route-application gate;
+those consumers continue to use `canRenderShell` and `canApplyRoutes`.
 Visible startup bugs often sit at the boundary between coordinator
 capabilities, `selectedCharID`, resource application, route application, lazy
 body reads, and CSS variable updates.

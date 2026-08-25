@@ -294,7 +294,6 @@ import {
   easyPanelStore,
   hypaV3ModalOpen,
   irisStore,
-  loadedStore,
   loadoutModalStore,
   openPersonaList,
   openPresetList,
@@ -382,7 +381,6 @@ function seedStores() {
     showMenuChatList: false,
   } as unknown as Database)
 
-  loadedStore.set(true)
   resetStartupReadinessForTests()
   for (const milestone of ['entry', 'shell-mounted', 'observer-ready', 'writer-ready'] as const) {
     recordStartupMilestone(milestone)

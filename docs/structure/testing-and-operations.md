@@ -413,8 +413,9 @@ visible optimistic change and the visible rollback after settlement.
 Use helper Vitest for pure helpers and resource-invalidation calculations,
 Svelte DOM Vitest for state-to-DOM contracts, and sparse Fastify browser smoke
 for end-to-end boot/API/SSE wiring. Add state-to-DOM coverage when touching
-resource slice state, `selectedCharID`, `chatPage`, `loadedStore`, authoritative
-resource applies, bootstrap/refresh/SSE, optimistic command helpers, bridge
+resource slice state, `selectedCharID`, `chatPage`, startup readiness,
+authoritative resource applies, bootstrap/refresh/SSE, optimistic command
+helpers, bridge
 watchers, router selection, array create/delete/reorder flows, `$derived`,
 `$effect`, keyed lists, memo signatures, or render dependency keys.
 

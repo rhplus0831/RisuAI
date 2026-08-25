@@ -45,8 +45,10 @@ branch immediately after `writer-shell`. Push and optional background setup run
 concurrently inside that branch, while plugin, recovery, and selected-chat work
 continue on the capability-critical branch. Optional failures settle locally and
 cannot enter the writer/plugin/chat retry path. The diagnostic
-`background-ready` milestone and temporary `loadedStore` alias are still
-published only after chat-critical and optional scheduling have both settled.
+`background-ready` milestone and, at the Phase 4 checkpoint, the temporary
+`loadedStore` alias were published only after chat-critical and optional
+scheduling had both settled. Phase 7 later removed the alias in favor of the
+coordinator-owned semantic milestone selector.
 
 The first dependency correction also moved selected prompt-template hydration
 out of `writer-projection-install`. Prompt readiness now uses the applied

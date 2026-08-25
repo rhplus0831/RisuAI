@@ -156,12 +156,36 @@ largest initial file. No generated artifacts were committed.
   rollback control.
 - [ ] Remove the legacy full-character compatibility route after no supported
   client depends on it.
-- [ ] Remove the `loadedStore` compatibility alias after all consumers use narrow
+- [x] Remove the `loadedStore` compatibility alias after all consumers use narrow
   capabilities.
 - [ ] Remove temporary measurement or compatibility code that has no ongoing
   regression value.
 - [ ] Remove the observer flag only after the rollout window passes and the
   rollback decision is explicit.
+
+#### 7D seam-removal record: `loadedStore` (2026-08-25)
+
+The final compatibility consumers were bootstrap completion, projected push
+notification reconciliation, observer promotion retry selection, and the
+browser-smoke `isLoaded()`/`waitForLoaded()` helpers. They now use the
+coordinator-owned `backgroundReady()` semantic selector or wait directly for
+`background-ready`. The selector intentionally reads the observed semantic
+signal rather than the ordered telemetry phase: an earlier localized optional
+failure may keep the public phase behind while background work has still
+settled. Visible rendering, routes, mutations, plugins, and generation remain
+on their existing narrow capabilities.
+
+The core-store declaration and compatibility re-export were removed, as were
+the obsolete test setup and import-safety assertion. Focused readiness,
+bootstrap, route DOM, and store import-safety verification passed 201 tests.
+Both type-check lanes passed, and `pnpm test:affected` passed 345 frontend files
+and 5,195 tests with no affected server test files. The final
+`pnpm verify:fast-bootstrap:phase7` run passed the Phase 0 matrix and all seven
+Phase 7 browser journeys; initial preload remained within budget at 312.98 KiB
+gzip with a 277.83 KiB largest initial file.
+
+The remaining 7D items are independent rollout or supported-client decisions;
+this removal does not enable observer mode or remove a server route or flag.
 
 ## Required verification by milestone
 
@@ -183,7 +207,7 @@ data, generated measurement reports, `dist/`, or temporary fixture databases.
 | --- | --- |
 | Entry/bundle slice | Revert the independent lazy boundary |
 | Character summary migration | Temporarily route the client to the legacy aggregate |
-| Capability migration | Use the documented `loadedStore` compatibility derivation during its migration window |
+| Capability migration | Revert the seam-removal change; any temporary alias must derive from coordinator-owned `backgroundReady()` |
 | Deferred runtime | Restore only the owning scheduler step without changing capability meanings |
 | Route hydration | Restore the affected route manifest family, not the entire initial fan-out |
 | Observer shell | Disable the rollout flag and return to the conservative post-replay shell |

@@ -9,7 +9,6 @@ selectedCharID.subscribe((value) => {
   selIdState.selId = value
 })
 
-export const loadedStore = writable(false)
 export const alertStore = writable({
   type: 'none',
   msg: 'n',

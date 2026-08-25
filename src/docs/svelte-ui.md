@@ -175,8 +175,9 @@ Important route and store facts:
 
 - `canRenderShell` gates only the loading branch. `canApplyRoutes` separately
   gates both persistence-capable route effects and is revoked on writer loss.
-- `loadedStore` is a temporary background-readiness compatibility alias with no
-  `App.svelte` consumer. New UI and route work must use narrow capabilities.
+- Optional-work completion is exposed as the coordinator-owned
+  `backgroundReady()` selector, not as a Svelte UI store. It does not gate
+  `App.svelte`; new UI and route work must use their narrow capabilities.
 - `src/ts/server/resourceState.svelte.ts` owns the settings, collections, and
   character resources that UI reads. Its compatibility proxy and snapshot
   helpers compose a database-shaped view over those slices; they do not own a

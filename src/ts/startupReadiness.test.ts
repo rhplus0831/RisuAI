@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  backgroundReady,
   beginStartupAttempt,
   canApplyRoutes,
   canGenerate,
@@ -121,6 +122,10 @@ describe('startup readiness instrumentation', () => {
     settleStartupPluginRuntimeReadiness(true)
     expect(pluginsReady()).toBe(true)
     expect(canGenerate()).toBe(true)
+
+    expect(backgroundReady()).toBe(false)
+    recordStartupMilestone('background-ready', 7)
+    expect(backgroundReady()).toBe(true)
   })
 
   it('renders at observer readiness only when the rollout is enabled', () => {
@@ -137,6 +142,17 @@ describe('startup readiness instrumentation', () => {
 
     configureStartupObserverShell(false)
     expect(canRenderShell()).toBe(false)
+  })
+
+  it('settles background work even when an earlier localized milestone cannot transition', () => {
+    recordStartupMilestone('entry', 0)
+    recordStartupMilestone('shell-mounted', 1)
+    recordStartupMilestone('observer-ready', 2)
+    recordStartupMilestone('writer-ready', 3)
+
+    expect(recordStartupMilestone('background-ready', 4)).toBe('pending')
+    expect(getStartupReadinessSnapshot().phase).toBe('writer-ready')
+    expect(backgroundReady()).toBe(true)
   })
 
   it('revokes writer-owned capabilities without hiding the readable shell or milestone history', () => {

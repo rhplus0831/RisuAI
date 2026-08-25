@@ -3,7 +3,7 @@ import { resetRegisteredScriptCaches } from './process/scriptCacheInvalidation'
 import type { ActiveChatTarget } from './types/activeChatTarget'
 import type { hubType } from './types/risuHub'
 
-export { alertStore, loadedStore, LoadingStatusState, selectedCharID, selIdState } from './stores/coreStores.svelte'
+export { alertStore, LoadingStatusState, selectedCharID, selIdState } from './stores/coreStores.svelte'
 
 function updateSize() {
   SizeStore.set({

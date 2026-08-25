@@ -118,14 +118,19 @@ coherent shell.
 `App.svelte` reads the coordinator store directly: `canRenderShell` controls the
 loading branch, while both route effects require `canApplyRoutes`. The visual
 settings needed by the root shell are installed before `writer-ready` is
-published. `loadedStore` is now a background-readiness compatibility alias used
-only by bootstrap completion/notification reconciliation and the browser-smoke
-compatibility helpers; it has no production UI or route consumer.
+published. At the 3C checkpoint, `loadedStore` remained only as a
+background-readiness compatibility alias for bootstrap completion/notification
+reconciliation and the browser-smoke compatibility helpers; it had no
+production UI or route consumer.
 
 The fixed deletion gate is Phase 7: replace the bootstrap loop and notification
 hook with explicit background readiness, migrate `isLoaded()`/`waitForLoaded()`
 smoke callers to `background-ready`, then remove the core-store declaration and
-compatibility re-export. New consumers must use a narrow capability instead.
+compatibility re-export. That gate was completed on 2026-08-25. Bootstrap and
+the retained smoke helper names now use the coordinator-owned
+`backgroundReady()` selector or wait for the semantic `background-ready`
+milestone; no store declaration or re-export remains. New consumers must use a
+narrow capability instead.
 
 ### 3D. Route, chat, and event readiness
 

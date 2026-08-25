@@ -95,9 +95,9 @@ needs instead of comparing phase names.
 - Run `pnpm build` plus the bundle report for entry-graph or startup-boundary
   changes, `pnpm build:smoke` plus targeted browser smoke for capability changes,
   and `pnpm test:all` only at final integration.
-- Keep `loadedStore`, the full character aggregate, and the observer rollout
-  flag only for the periods named in the runbooks. Each temporary seam needs a
-  removal condition.
+- Keep the full character aggregate and observer rollout flag only for the
+  periods named in the runbooks. Each temporary seam needs a removal condition;
+  the Phase 7 ledger records the completed `loadedStore` removal separately.
 
 The focused test maps are
 [Browser State Sync and Recovery](../tests/browser-state-sync-and-recovery.md),

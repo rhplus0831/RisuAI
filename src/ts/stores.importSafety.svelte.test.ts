@@ -24,7 +24,6 @@ describe('shell-safe store imports', () => {
     ])
 
     expect(forbiddenEvaluations).toEqual([])
-    expect(compatibilityStores.loadedStore).toBe(coreStores.loadedStore)
     expect(compatibilityStores.LoadingStatusState).toBe(coreStores.LoadingStatusState)
     expect(compatibilityStores.selectedCharID).toBe(coreStores.selectedCharID)
     expect(compatibilityStores.selIdState).toBe(coreStores.selIdState)
