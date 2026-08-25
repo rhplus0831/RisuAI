@@ -65,13 +65,45 @@ server lane, and all 33 browser-smoke journeys.
 
 ### 7B. Telemetry and privacy
 
-- [ ] Emit phase duration, attempt count, and stable failure reason through the
+- [x] Emit phase duration, attempt count, and stable failure reason through the
   existing metrics/tracing facilities.
-- [ ] Exclude character, chat, message, prompt, plugin-storage, credential,
+- [x] Exclude character, chat, message, prompt, plugin-storage, credential,
   account, and route-content values.
-- [ ] Document enablement, sampling, retention, aggregation, and the failure-code
+- [x] Document enablement, sampling, retention, aggregation, and the failure-code
   taxonomy before using measurements for rollout decisions.
-- [ ] Confirm telemetry failure cannot change a readiness capability.
+- [x] Confirm telemetry failure cannot change a readiness capability.
+
+#### 7B implementation record (2026-08-25)
+
+The browser now publishes versioned, exact-key startup metadata through the
+authenticated, observer-safe `POST /api/v1/telemetry/startup` route. Fastify
+advertises collection only when `RISU_PROTOCOL_METRICS` is enabled. Version 1
+uses full sampling within that server cohort and reports entry-relative phase
+durations, attempt duration/count, observer rollout mode, and the stable failure
+taxonomy. The publisher starts before the first startup attempt, backfills the
+entry and shell milestones, bounds its pending queue to 64 and each request to
+32 events, and drops auth/transport failures without retries or readiness
+coupling. Optional background failures now use the existing push/runtime codes
+instead of remaining console-only.
+
+The ingestion contract rejects unknown keys, arbitrary strings, content fields,
+out-of-range values, oversized batches, and bodies over 16 KiB. It never accepts
+character, chat, message, prompt, plugin-storage, credential, account, or route
+values. Request tracing records only omitted-body metadata for the endpoint,
+including when an unauthenticated or invalid request contains a sentinel value;
+the sentinel is absent from JSONL. The canonical enablement, cohort sampling,
+raw/aggregate retention ceilings, aggregation rules, failure-code meanings, and
+failure-isolation behavior are documented in
+[`testing-and-operations.md`](../structure/testing-and-operations.md#browser-startup-telemetry).
+
+The focused frontend contract/readiness/bootstrap/publisher run passed 196
+tests, and the focused server ingestion/request-trace run passed 15 tests. Both
+type-check lanes passed. The production browser-smoke build and targeted Phase
+7 startup rollout journey passed all small/large and observer flag-off/on
+cohorts. Every cohort emitted all seven ordered milestones, exactly one
+completed attempt, no fatal attempt failure, taxonomy-valid localized
+diagnostics, and one consistent rollout-mode label. Generated telemetry evidence
+stays in the ignored `fast-bootstrap-results/phase7-integration.json` artifact.
 
 ### 7C. Documentation and developer workflow
 

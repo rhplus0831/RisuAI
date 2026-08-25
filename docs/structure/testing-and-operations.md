@@ -1,6 +1,6 @@
 # Testing And Operations
 
-Last audited: 2026-08-22.
+Last audited: 2026-08-25.
 
 Use `pnpm` for package scripts. Node.js is declared as `>=24.0.0`. The package
 is root-only; there is no `server/fastify/package.json`. `package.json` does not
@@ -135,6 +135,78 @@ assistant row, or whether low-level LLM calls were blocked.
 Lua sidecars require protocol metrics but not the full-prompt flag; they use the
 same compressed-size cap. These files can retain redacted user prompt/chat
 content and should not be shared casually.
+
+## Browser Startup Telemetry
+
+Browser startup telemetry is an opt-in `browser_startup` protocol metric. Set
+`RISU_PROTOCOL_METRICS=1` (or another documented truthy value) on a Fastify
+instance to advertise `{ version: 1, sampleRate: 1 }` in its authenticated
+bootstrap response. The browser starts a best-effort publisher before its first
+startup attempt, but sends nothing unless that response opts in. A missing,
+malformed, or unsupported configuration disables collection and clears the
+pending queue. Version 1 is deliberately unsampled: `sampleRate: 1` means every
+startup served by an opted-in instance is measured. Use deployment/server
+cohorts for a bounded rollout; version 1 does not perform per-browser random
+sampling.
+
+The authenticated `POST /api/v1/telemetry/startup` route accepts at most 16 KiB
+and 32 events per batch without requiring active-writer ownership. Before
+opt-in, the browser retains at most 64 metadata events in memory. It removes a
+batch before requesting auth or sending, uses `keepalive`, does not await the
+request from the readiness path, and never retries a failed batch. There is no
+startup-telemetry table or sidecar: Fastify emits validated events only through
+the existing structured logger and in-process metric subscribers. The
+application therefore has no durable raw-event retention of its own. A rollout
+log sink must cap raw `browser_startup` retention at 14 days; derived aggregates
+may be retained for at most 90 days. Record the sink owner and deletion policy
+before using those aggregates for a rollout decision.
+
+The v1 event contract contains only:
+
+- `phase-ready`: stable milestone, monotonic duration from `entry`, bounded
+  attempt count, and observer-shell rollout mode;
+- `attempt-completed`: bounded attempt duration, attempt count, and rollout
+  mode;
+- `attempt-failed`: those attempt fields plus a stable failure code and
+  milestone; and
+- `diagnostic-failure`: a stable code and milestone for a localized capability
+  failure that did not necessarily fail the startup attempt.
+
+The server adds only schema version and the random request UID used to correlate
+the fixed telemetry endpoint with request timing. Exact-key validation rejects
+unknown or content-bearing fields. Character, chat, message, prompt,
+plugin-storage, credential, account, and route-content values are not part of
+the contract. Request tracing records the fixed route and timing but always
+marks its request body `telemetry-metadata`; it never stores the body inline or
+in a gzip sidecar. Auth headers retain the request tracer's normal redaction.
+
+Aggregate `phase-ready.entryDurationMs` and
+`attempt-completed.attemptDurationMs` as distributions grouped by schema
+version, milestone, and `observerShellEnabled`. Track retry pressure from
+`attemptCount`, fatal startup outcomes from `attempt-failed`, and localized
+capability health from `diagnostic-failure`. Do not group by request UID or join
+it to user/domain data. Compare small/large-database and observer flag-off/on
+cohorts before rollout; a duration regression, rising retry count, or new fatal
+failure rate blocks promotion even if background readiness eventually arrives.
+
+### Startup failure-code taxonomy
+
+| Code | Meaning |
+| --- | --- |
+| `writer-bootstrap-failed` | The writer bootstrap attempt could not establish its required observer/writer boundary. |
+| `push-initialization-failed` | Optional push-notification runtime initialization failed before background readiness. |
+| `plugin-initialization-failed` | Plugin runtime initialization did not reach coherent plugin readiness. |
+| `generation-recovery-failed` | Startup could not reconcile or reattach the active generation projection. |
+| `selected-character-hydration-failed` | The selected character detail needed for chat readiness could not be hydrated. |
+| `selected-chat-hydration-failed` | The selected chat/message projection needed for chat readiness could not be hydrated. |
+| `selected-prompt-template-hydration-failed` | The selected prompt-template detail needed for generation could not be hydrated. |
+| `runtime-initialization-failed` | Another optional background runtime failed before background readiness. |
+
+Telemetry is diagnostic-only on both sides. Browser listener exceptions,
+authentication failures, network errors, and rejected fetch promises are
+caught or detached. Server logger/subscriber exceptions are isolated from the
+204 response. None of these paths can grant, revoke, delay, or otherwise change
+`canRenderShell`, `canApplyRoutes`, `canMutate`, or `canGenerate`.
 
 ## Built SPA Serving
 
@@ -364,7 +436,7 @@ Server:
 | `RISU_REALM_URL`                                   | `https://realm.risuai.net` | Realm character import target.                                                                                                                            |
 | `RISU_AGENT_DEV_AUTH_BYPASS`                       | disabled                   | Direct-server dev escape hatch; full-stack runners override it as described below.                                                                        |
 | `LOG_LEVEL`                                        | `info`                     | Use `silent` to disable Fastify logger.                                                                                                                   |
-| `RISU_PROTOCOL_METRICS`                            | unset                      | Enables structured protocol metrics when `1`, `true`, `yes`, or `on`.                                                                                     |
+| `RISU_PROTOCOL_METRICS`                            | unset                      | Enables structured protocol metrics and advertises v1 browser startup collection when `1`, `true`, `yes`, or `on`.                                        |
 
 Local/dev:
 
