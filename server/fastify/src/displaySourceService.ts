@@ -16,7 +16,7 @@ import {
 } from '../../../src/ts/process/displaySourceProtocol.js'
 import { getSchemaState } from './db.js'
 import { getDatabaseLineage, getDatabaseWriterMetadata } from './databaseLineage.js'
-import { loadPersistedForAssembly } from './repository.js'
+import { loadPersistedForDisplaySource } from './repository.js'
 import { ValidationError } from './repository.js'
 import { createLuaExecBudget, runLuaEditTrigger } from './prompt/luaRuntime.js'
 import { createTriggerVarEngine } from './prompt/triggerVars.js'
@@ -84,9 +84,8 @@ function displayScope(database: Database, characterId: string, chatId: string): 
   return { database, character, chat, chatId, selectedCharID, chatPage }
 }
 
-function dynamicAssetFallbackRequired(scope: DisplayScope): boolean {
+function dynamicAssetFallbackRequired(scope: DisplayScope, modules: ReturnType<typeof getActiveModules>): boolean {
   if (!scope.database.dynamicAssets || !scope.database.dynamicAssetsEditDisplay) return false
-  const modules = getActiveModules(scope.database, scope.character, scope.chat)
   return (scope.character.additionalAssets?.length ?? 0) > 0 || getModuleAssets(modules).length > 0
 }
 
@@ -99,14 +98,11 @@ function targetIsFresh(scope: DisplayScope, target: DisplaySourceTarget): boolea
   return true
 }
 
-function dependencyValue(
+function sharedDependencyValue(
   scope: DisplayScope,
-  target: DisplaySourceTarget,
-  sourceHash: string,
+  modules: ReturnType<typeof getActiveModules>,
 ): Record<string, unknown> {
-  const modules = getActiveModules(scope.database, scope.character, scope.chat)
   return {
-    cbsConditions: { firstmsg: target.firstMessage, chatRole: target.role },
     character: {
       additionalAssets: scope.character.additionalAssets,
       chaId: scope.character.chaId,
@@ -157,7 +153,18 @@ function dependencyValue(
       regex: module.regex,
       trigger: module.trigger,
     })),
-    source: target.source,
+    transformVersion: DISPLAY_SOURCE_TRANSFORM_VERSION,
+  }
+}
+
+function targetDependencyValue(
+  sharedDependencyFingerprint: string,
+  target: DisplaySourceTarget,
+  sourceHash: string,
+): Record<string, unknown> {
+  return {
+    cbsConditions: { firstmsg: target.firstMessage, chatRole: target.role },
+    sharedDependencyFingerprint,
     sourceHash,
     target: {
       characterId: target.characterId,
@@ -169,7 +176,6 @@ function dependencyValue(
       role: target.role,
       streaming: target.streaming,
     },
-    transformVersion: DISPLAY_SOURCE_TRANSFORM_VERSION,
   }
 }
 
@@ -187,6 +193,7 @@ export class DisplaySourceService {
   private readonly db: DatabaseSync
   private readonly dataDir: string
   private exclusiveTail: Promise<void> = Promise.resolve()
+  private queuedBatchCount = 0
 
   constructor(options: DisplaySourceServiceOptions) {
     this.db = options.db
@@ -199,20 +206,30 @@ export class DisplaySourceService {
   }
 
   transformBatch(chatId: string, request: DisplaySourceRequest, signal?: AbortSignal): Promise<DisplaySourceResponse> {
-    const run = this.exclusiveTail.then(() => this.transformBatchExclusive(chatId, request, signal))
+    const enqueuedAt = protocolNowMs()
+    const queueDepth = this.queuedBatchCount
+    this.queuedBatchCount += 1
+    const run = this.exclusiveTail.then(() =>
+      this.transformBatchExclusive(chatId, request, protocolDurationMs(enqueuedAt), queueDepth, signal),
+    )
     this.exclusiveTail = run.then(
       () => undefined,
       () => undefined,
     )
-    return run
+    return run.finally(() => {
+      this.queuedBatchCount -= 1
+    })
   }
 
   private async transformBatchExclusive(
     chatId: string,
     request: DisplaySourceRequest,
+    queueWaitMs: number,
+    queueDepth: number,
     signal?: AbortSignal,
   ): Promise<DisplaySourceResponse> {
     const startedAt = protocolNowMs()
+    if (signal?.aborted) throw signal.reason ?? new Error('Display source request aborted')
     const initialRevision = getSchemaState(this.db).revision
     if (request.baseRevision !== initialRevision) {
       throw new ValidationError(`Display source base revision is stale; current revision is ${initialRevision}`)
@@ -228,13 +245,25 @@ export class DisplaySourceService {
     const contextFingerprint = sha256(namespaceJson)
     this.cache.activate(contextFingerprint)
 
+    const scopeLoadStartedAt = protocolNowMs()
     const database = this.loadScopeDatabase(chatId)
+    const scopeLoadMs = protocolDurationMs(scopeLoadStartedAt)
     const primaryTarget = request.targets[0]
     const scope = primaryTarget ? displayScope(database, primaryTarget.characterId, chatId) : null
     if (!scope) throw new ValidationError('Display source chat or character was not found')
     const entries: DisplaySourceResponseEntry[] = []
     const luaExecBudget = createLuaExecBudget()
     const triggerBudget = createTriggerExecutionBudget()
+    const modules = getActiveModules(scope.database, scope.character, scope.chat)
+    const dynamicAssetFallback = dynamicAssetFallbackRequired(scope, modules)
+    const sharedDependencyStartedAt = protocolNowMs()
+    const sharedDependencyFingerprint = sha256(stableDisplayDependencyJson(sharedDependencyValue(scope, modules)))
+    const sharedDependencyMs = protocolDurationMs(sharedDependencyStartedAt)
+    let targetFingerprintMs = 0
+    let batchCacheHitCount = 0
+    let batchCacheMissCount = 0
+    let batchInflightJoinCount = 0
+    let streamingBypassCount = 0
 
     for (const target of request.targets) {
       if (signal?.aborted) throw signal.reason ?? new Error('Display source request aborted')
@@ -247,14 +276,16 @@ export class DisplaySourceService {
         entries.push(errorEntry(target, 'error', 'source_hash_mismatch'))
         continue
       }
-      if (dynamicAssetFallbackRequired(scope)) {
+      if (dynamicAssetFallback) {
         entries.push(errorEntry(target, 'client_fallback', 'dynamic_asset_similarity_required'))
         continue
       }
 
+      const targetFingerprintStartedAt = protocolNowMs()
       const dependencyFingerprint = sha256(
-        stableDisplayDependencyJson(dependencyValue(scope, target, actualSourceHash)),
+        stableDisplayDependencyJson(targetDependencyValue(sharedDependencyFingerprint, target, actualSourceHash)),
       )
+      targetFingerprintMs += protocolDurationMs(targetFingerprintStartedAt)
       try {
         const execute = async () => {
           const outcome = await this.transformTarget(
@@ -263,6 +294,7 @@ export class DisplaySourceService {
             request.context,
             luaExecBudget,
             triggerBudget,
+            modules,
             signal,
           )
           emitProtocolMetric('display_source_transform', {
@@ -282,6 +314,10 @@ export class DisplaySourceService {
         const result = target.streaming
           ? { ...(await execute()).value, cacheStatus: 'miss' as const }
           : await this.cache.resolve(contextFingerprint, dependencyFingerprint, execute)
+        if (target.streaming) streamingBypassCount += 1
+        else if (result.cacheStatus === 'hit') batchCacheHitCount += 1
+        else if (result.cacheStatus === 'inflight_join') batchInflightJoinCount += 1
+        else batchCacheMissCount += 1
         entries.push({
           requestKey: target.requestKey,
           status: 'ok',
@@ -320,6 +356,16 @@ export class DisplaySourceService {
       okCount: entries.filter((entry) => entry.status === 'ok').length,
       fallbackCount: entries.filter((entry) => entry.status === 'client_fallback').length,
       durationMs: protocolDurationMs(startedAt),
+      queueWaitMs,
+      queueDepth,
+      scopeLoadMs,
+      sharedDependencyMs,
+      targetFingerprintMs,
+      transcriptMessageCount: scope.chat.message?.length ?? 0,
+      batchCacheHitCount,
+      batchCacheMissCount,
+      batchInflightJoinCount,
+      streamingBypassCount,
       revision,
       cache: this.cache.stats(),
     })
@@ -327,7 +373,7 @@ export class DisplaySourceService {
   }
 
   private loadScopeDatabase(chatId: string): Database {
-    const persisted = loadPersistedForAssembly(this.db, this.dataDir, chatId)
+    const persisted = loadPersistedForDisplaySource(this.db, this.dataDir, chatId)
     if (!persisted.database || typeof persisted.database !== 'object') {
       throw new ValidationError('Server database is not initialized')
     }
@@ -340,6 +386,7 @@ export class DisplaySourceService {
     clientContext: DisplaySourceRequest['context'],
     luaExecBudget: ReturnType<typeof createLuaExecBudget>,
     triggerBudget: ReturnType<typeof createTriggerExecutionBudget>,
+    modules: ReturnType<typeof getActiveModules>,
     signal?: AbortSignal,
   ): Promise<TransformOutcome> {
     const beforeScriptstate = cloneScriptstate(scope.chat.scriptstate)
@@ -353,7 +400,6 @@ export class DisplaySourceService {
       }
     }
     let data = target.source
-    const modules = getActiveModules(scope.database, scope.character, scope.chat)
     const cbsConditions: CbsConditions = {
       firstmsg: target.firstMessage,
       ...(target.role === null ? {} : { chatRole: target.role }),

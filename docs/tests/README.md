@@ -115,7 +115,12 @@ parser, scripting, Lua, trigger, bounded-regex, bootstrap, route-protection, and
 generation suites remain companion parity coverage. The server route cases pin
 the per-target ephemeral scriptstate contract: same-target reads see temporary
 writes, sibling targets start from the authoritative baseline, and SQLite plus
-the response revision remain unchanged.
+the response revision remain unchanged. The route test also places the SQL
+load-cost harness around cold and warm display batches, allowing only the three
+required transform collections while rejecting whole-character, whole-chat,
+asset, and unrelated-collection payload scans. Its metric assertions distinguish
+the cold misses from warm cache hits and pin the queue/load/fingerprint timing
+dimensions.
 
 1. **Outbox, dispatch, replay, bootstrap, and invalidation:** `pendingMutationOutbox`, `durableMutationDispatch`, `durableMutationTerminalRejection`, `pendingMutationReplay`, browser `commands`, `bootstrap`, `startupReadiness`, `resourceState`, `resourceInvalidation`, and the Phase 0/7 browser matrices. These are the core protection against lost, duplicated, or stale user edits.
 2. **Generation goldens and durable lifecycle:** `sendChat.fixtures*`, server `assemble`, `generation.chat`, `durableGeneration`, provider transport/terminal assertions, and the reroll Playwright journey. They protect model-visible context and durable transcripts.

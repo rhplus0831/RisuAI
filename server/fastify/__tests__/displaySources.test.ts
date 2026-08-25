@@ -8,6 +8,8 @@ import { buildApp } from '../src/app.js'
 import { getSchemaState, openDatabase } from '../src/db.js'
 import { applyImport } from '../src/repository.js'
 import { normalizeRisuSaveSnapshotDatabase } from '../src/risuSave/importSnapshot.js'
+import { subscribeProtocolMetrics } from '../src/protocolMetrics.js'
+import { assertScopedLoadOnHotPath } from './helpers/loadCostHarness.js'
 
 const subtle = webcrypto.subtle
 
@@ -152,43 +154,63 @@ describe('POST /api/v1/chats/:chatId/display-sources', () => {
     expect(bootstrap.statusCode).toBe(200)
     const runtime = bootstrap.json() as { writerEpoch: number; databaseLineage: string }
     const source = 'hello'
-    const response = await harness.app.inject({
-      method: 'POST',
-      url: '/api/v1/chats/chat-1/display-sources',
-      // The route is a read-only POST; a stale writer header must not gate display projection.
-      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-old' },
-      payload: {
-        protocolVersion: 1,
-        baseRevision: seeded.revision,
-        context: { pageSessionId: 'page-a', screenWidth: 800, screenHeight: 600, browserLanguage: 'en-US' },
-        targets: [
-          {
-            requestKey: 'request-a',
-            characterId: 'char-1',
-            messageId: 'message-1',
-            index: 0,
-            role: 'char',
-            firstMessage: false,
-            layer: 'original',
-            source,
-            sourceHash: sourceHash(source),
-            projectionEpoch: 1,
-          },
-          {
-            requestKey: 'request-b',
-            characterId: 'char-1',
-            messageId: 'message-2',
-            index: 1,
-            role: 'char',
-            firstMessage: false,
-            layer: 'original',
-            source: 'world',
-            sourceHash: sourceHash('world'),
-            projectionEpoch: 2,
-          },
-        ],
-      },
-    })
+    const request = {
+      protocolVersion: 1,
+      baseRevision: seeded.revision,
+      context: { pageSessionId: 'page-a', screenWidth: 800, screenHeight: 600, browserLanguage: 'en-US' },
+      targets: [
+        {
+          requestKey: 'request-a',
+          characterId: 'char-1',
+          messageId: 'message-1',
+          index: 0,
+          role: 'char',
+          firstMessage: false,
+          layer: 'original',
+          source,
+          sourceHash: sourceHash(source),
+          projectionEpoch: 1,
+        },
+        {
+          requestKey: 'request-b',
+          characterId: 'char-1',
+          messageId: 'message-2',
+          index: 1,
+          role: 'char',
+          firstMessage: false,
+          layer: 'original',
+          source: 'world',
+          sourceHash: sourceHash('world'),
+          projectionEpoch: 2,
+        },
+      ],
+    }
+    const observedMetrics: Array<Readonly<Record<string, unknown>>> = []
+    const previousMetrics = process.env.RISU_PROTOCOL_METRICS
+    process.env.RISU_PROTOCOL_METRICS = '1'
+    const unsubscribeMetrics = subscribeProtocolMetrics((metric) => observedMetrics.push(metric))
+    let response
+    let cachedResponse
+    try {
+      const sendRequest = () =>
+        harness.app.inject({
+          method: 'POST',
+          url: '/api/v1/chats/chat-1/display-sources',
+          // The route is a read-only POST; a stale writer header must not gate display projection.
+          headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-old' },
+          payload: request,
+        })
+      response = await assertScopedLoadOnHotPath(sendRequest, {
+        allowTables: ['modules', 'prompt_presets', 'personas'],
+      })
+      cachedResponse = await assertScopedLoadOnHotPath(sendRequest, {
+        allowTables: ['modules', 'prompt_presets', 'personas'],
+      })
+    } finally {
+      unsubscribeMetrics()
+      if (previousMetrics === undefined) delete process.env.RISU_PROTOCOL_METRICS
+      else process.env.RISU_PROTOCOL_METRICS = previousMetrics
+    }
 
     expect(response.statusCode).toBe(200)
     expect(response.json()).toMatchObject({
@@ -212,6 +234,21 @@ describe('POST /api/v1/chats/:chatId/display-sources', () => {
         },
       ],
     })
+    expect(cachedResponse.statusCode).toBe(200)
+    const batchMetrics = observedMetrics.filter((metric) => metric.metric === 'display_source_batch')
+    expect(batchMetrics).toHaveLength(2)
+    expect(batchMetrics[0]).toMatchObject({
+      queueDepth: 0,
+      transcriptMessageCount: 2,
+      batchCacheHitCount: 0,
+      batchCacheMissCount: 2,
+      batchInflightJoinCount: 0,
+      streamingBypassCount: 0,
+      scopeLoadMs: expect.any(Number),
+      sharedDependencyMs: expect.any(Number),
+      targetFingerprintMs: expect.any(Number),
+    })
+    expect(batchMetrics[1]).toMatchObject({ batchCacheHitCount: 2, batchCacheMissCount: 0 })
 
     const persistedDb = openDatabase(harness.dataDir)
     try {

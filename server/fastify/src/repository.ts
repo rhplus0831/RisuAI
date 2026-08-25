@@ -1960,6 +1960,59 @@ export function loadPersistedForAssembly(db: DatabaseSync, dataDir: string, chat
 }
 
 /**
+ * Display-projection-scoped database read. Unlike prompt assembly, display
+ * transforms only need the selected character/chat, its transcript, and the
+ * three collections used to resolve active modules and preset regex. Avoid
+ * parsing every character, chat, collection, and asset row each time a chat
+ * screen mounts.
+ *
+ * Pre-extraction or malformed states fall back to the broad assembly loader so
+ * legacy embedded collections and transcript arrays retain their historical
+ * behavior.
+ */
+export function loadPersistedForDisplaySource(db: DatabaseSync, dataDir: string, chatId: string): Persisted {
+  const { fields, settings } = loadDatabaseFieldsFromSqlite(db, ['modules', 'promptPresets', 'personas'])
+  const broadFallback = () => loadPersistedForAssembly(db, dataDir, chatId)
+  if (settings === null) return broadFallback()
+
+  const chatRow = db
+    .prepare('SELECT id, character_id, position, data_json FROM chats WHERE id = ?')
+    .get(chatId) as unknown as ChatRow | undefined
+  if (!chatRow) return broadFallback()
+
+  const charRow = db
+    .prepare('SELECT id, position, data_json FROM characters WHERE id = ?')
+    .get(chatRow.character_id) as unknown as CharacterRow | undefined
+  if (!charRow) return broadFallback()
+
+  const character = JSON.parse(charRow.data_json) as unknown
+  const chat = parseStoredChatRow(chatRow.data_json)
+  if (!isRecord(character) || !isRecord(chat)) return broadFallback()
+
+  const messageRows = getChatMessagesGroupedByIds(db, [chatId]).get(chatId)
+  if (messageRows && messageRows.length > 0) {
+    chat.message = messageRows
+  } else if (!Array.isArray(chat.message)) {
+    chat.message = []
+  }
+  const hypaRows = getChatHypaV3GroupedByIds(db, [chatId])
+  if (hypaRows.has(chatId)) chat.hypaV3Data = hypaRows.get(chatId)
+
+  character.chatPage = 0
+  character.chats = [chat]
+  return {
+    _version: PERSISTED_VERSION,
+    database: {
+      ...settings,
+      ...fields,
+      currentChar: 0,
+      characters: [character],
+    },
+    assets: [],
+  }
+}
+
+/**
  * Prompt assembly and post-generation module runtime need executable module
  * children (`trigger`, `regex`, `lorebook`, `assets`, ...), so keep generation
  * pinned to the authoritative server collection table whenever it exists.

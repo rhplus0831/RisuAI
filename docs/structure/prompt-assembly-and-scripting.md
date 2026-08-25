@@ -176,6 +176,16 @@ same ephemeral principle. Browser `editdisplay` plugins, dynamic fuzzy-asset
 matching, an old server, stale identity/context, and transport failures select
 the complete browser transform instead of reordering stages.
 
+The display route hydrates only the selected character, selected chat and
+transcript, plus the module, prompt-preset, and persona collections required by
+the transform. It does not scan unrelated character/chat payloads or asset
+metadata. A batch canonicalizes and hashes the shared transcript and scripting
+dependencies once, then combines that digest with each target's small identity
+and source digest. Opt-in `display_source_batch` metrics expose queue wait,
+scoped-load, shared-dependency, per-target fingerprint, transcript-size, and
+per-batch cache outcome fields so regressions can be separated from actual
+script execution time.
+
 The cache has one active namespace keyed by database lineage, writer epoch,
 ephemeral page session, language, both viewport dimensions, and protocol
 version. Entries use SHA-256 over canonical display dependencies rather than a
