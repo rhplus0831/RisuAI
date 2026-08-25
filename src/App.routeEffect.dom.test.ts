@@ -493,6 +493,28 @@ describe('App route/refreeze mounted DOM behavior', () => {
     expect(appRouteDomMocks.state.applyRouteCalls).toBe(1)
   })
 
+  it('does not reapply the current route when unrelated startup coordinator metadata changes', async () => {
+    const characterTab = target.querySelector<HTMLButtonElement>('[data-risu-sidebar-tab="character"]')
+    expect(characterTab).not.toBeNull()
+    characterTab?.click()
+    await tick()
+    await vi.waitFor(() => {
+      expect(target.querySelector('[data-testid="char-config"]')).not.toBeNull()
+    })
+
+    expect(appRouteDomMocks.state.applyRouteCalls).toBe(1)
+    expect(get(botMakerMode)).toBe(true)
+
+    const attemptId = beginStartupAttempt()
+    recordStartupCapabilityFailure(attemptId, 'plugin-initialization-failed', 'plugins-ready')
+    await tick()
+    await Promise.resolve()
+
+    expect(appRouteDomMocks.state.applyRouteCalls).toBe(1)
+    expect(get(botMakerMode)).toBe(true)
+    expect(target.querySelector('[data-risu-sidebar-panel="character"]')).not.toBeNull()
+  })
+
   it('keeps the shell mounted and shows a localized plugin retry status', async () => {
     const attemptId = beginStartupAttempt()
     recordStartupCapabilityFailure(attemptId, 'plugin-initialization-failed', 'plugins-ready')

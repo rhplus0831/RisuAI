@@ -81,6 +81,7 @@
   let aprilFoolsPage = $state(0)
   let keepingSessionAlive = $state(false)
   let retryingPluginRuntime = $state(false)
+  let canApplyRoutes = $derived($startupCoordinatorStore.capabilities.canApplyRoutes)
   let pluginStartupFailed = $derived($startupCoordinatorStore.failures.pluginsReady !== undefined)
   let pluginRuntimeFailed = $derived($pluginRuntimeStateStore.phase === 'error')
   let preWriterObserverMode = $derived(
@@ -137,7 +138,7 @@
   let routeChatIsOpen = $derived($currentRoute.kind === 'character' && typeof $currentRoute.chatId === 'string')
 
   $effect(() => {
-    if (!$startupCoordinatorStore.capabilities.canApplyRoutes) return
+    if (!canApplyRoutes) return
     const observerIntent = peekObserverRouteIntent()
     const route = observerIntent?.route ?? $currentRoute
     if (consumeStateDrivenRouteUpdate()) return
@@ -149,7 +150,7 @@
   })
 
   $effect(() => {
-    if (!$startupCoordinatorStore.capabilities.canApplyRoutes) return
+    if (!canApplyRoutes) return
 
     // Read every state value that can drive the URL before checking the route
     // application guard. Route application writes these stores while the guard
