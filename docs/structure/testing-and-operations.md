@@ -17,6 +17,11 @@ pin a `packageManager`; the lockfile is pnpm lockfile v9.
 | `pnpm api:dev:flag`                | Start Fastify through `util/api-flag-dev.ts`; restarts only when `.risu-api-restart` is touched/created.                                                                      |
 | `pnpm api:start`                   | Start Fastify once with `tsx server/fastify/src/index.ts`.                                                                                                                    |
 | `pnpm build`                       | Vite build with sourcemaps.                                                                                                                                                   |
+| `pnpm report:bundle-boundaries`    | Validate the generated entry/static closure against protected optional/database/export boundaries and write JSON/text reports.                                              |
+| `pnpm report:initial-preload`      | Measure JavaScript referenced by built `index.html`, enforce the ratified total/largest-file budgets, and write JSON/text reports.                                          |
+| `pnpm build:initial-preload`       | Production build with the boundary plugin, followed by both boundary and initial-preload reports.                                                                          |
+| `pnpm measure:fast-bootstrap`      | Run the initial-preload build/report, browser-smoke build, and small/large cold/warm Phase 0 startup matrix.                                                                |
+| `pnpm verify:fast-bootstrap:phase7` | Run the complete measurement command and the Phase 7 direct-link, replay, event-gap, writer-takeover, observer, and optional-runtime browser matrix.                      |
 | `pnpm preview`                     | Vite preview server for a built client bundle.                                                                                                                                |
 | `pnpm check`                       | Run `svelte-check --tsconfig ./tsconfig.json`.                                                                                                                                |
 | `pnpm check:server`                | Emit client-library declarations, then typecheck strict Fastify and Playwright browser-smoke projects without emitting server code.                                           |
@@ -207,6 +212,78 @@ authentication failures, network errors, and rejected fetch promises are
 caught or detached. Server logger/subscriber exceptions are isolated from the
 204 response. None of these paths can grant, revoke, delay, or otherwise change
 `canRenderShell`, `canApplyRoutes`, `canMutate`, or `canGenerate`.
+
+## Fast Bootstrap Measurement And Rollout Gate
+
+Use Node.js 24 or newer, install Chromium once with
+`pnpm exec playwright install --with-deps chromium`, and run:
+
+```sh
+pnpm verify:fast-bootstrap:phase7
+```
+
+This is the one-command local initiative gate. It runs
+`measure:fast-bootstrap` first: a production initial-preload/boundary build, a
+browser-smoke build, and the Phase 0 small/large cold/warm startup matrix. It
+then runs the Phase 7 integration matrix. Each browser journey gets a disposable
+authenticated Fastify instance, temporary SQLite/data directory, request trace,
+and imported fixture; writer identity, outbox state, cache state, and revisions
+do not leak between journeys.
+
+The small fixture in `server/fastify/browser-smoke/fastBootstrapHarness.ts` is a
+minimal deterministic character/chat database. The large fixture in
+`src/ts/__tests__/largeCorpusFixture.ts` is shared with client/server load-cost
+tests and deliberately expands characters, chats, messages, collections,
+lorebooks, and summary fields. Phase 0 keeps cold browser/resource cache and warm
+browser/resource cache as separate populations. Phase 7 runs both fixtures with
+the observer override disabled and enabled, derives direct-link cases from the
+production route manifest, and uses isolated fixtures for replay, event-gap,
+takeover, and failure-injection journeys.
+
+Generated files are local evidence and are ignored by Git:
+
+| Files under `fast-bootstrap-results/` | Contents |
+| ------------------------------------- | -------- |
+| `bundle-boundaries.json` / `.txt` | Entry and immediate-startup closures, HTML-preload agreement, protected-boundary violations, and largest chunks. |
+| `initial-preload.json` / `.txt` | Initial JavaScript files, raw/gzip totals, largest file, and both budget comparisons. |
+| `startup-matrix.json` / `.txt` | Small/large cold/warm milestones, payload/cache totals, early mutation/generation counts, request UIDs, and safe trace summaries. |
+| `phase7-integration.json` / `.txt` | Observer flag-off/on timings, direct links, replay/event-gap results, takeover results, and optional-runtime failure/retry results. |
+
+`util/initial-preload-budgets.json` is authoritative. The ratified hard gates are
+921,600 bytes (900 KiB) total initial JavaScript gzip and 512,000 bytes (500
+KiB) for the largest initial file. The historical 1,650,000/675,000-byte
+regression ceilings remain visible as baseline context; the report exits nonzero
+when either comparison fails. The boundary report independently fails when the
+HTML preload list differs from the computed entry closure or when a protected
+database, export, or optional-surface module re-enters that closure. Startup
+matrices additionally require zero user mutation before `writer-ready` and zero
+generation before `chat-ready`.
+
+Interpret failures from the first failing layer:
+
+1. For `build:initial-preload`, inspect `bundle-boundaries.txt` first for a
+   closure mismatch or named module violation, then `initial-preload.txt` for the
+   total/largest-file budget and per-file contribution. Do not loosen a budget
+   without before/after artifacts and a named dependency.
+2. For the Phase 0 matrix, compare cold only with cold and warm only with warm.
+   Check milestone ordering/durations, resource payload/cache totals, and the two
+   early-request counters. The JSON request UIDs and safe trace summaries identify
+   the resource or bootstrap call responsible for a payload/timing change.
+3. For Phase 7, read the matching section of `phase7-integration.txt`: startup
+   rollout, direct links, recovery, writer, or optional runtime. The JSON retains
+   exact revisions, command attempts, receipt acknowledgements, requested paths,
+   capabilities, localized failure state, and Retry outcome. Playwright retains
+   a trace on failure under `test-results/` when the browser/UI transition itself
+   needs inspection.
+4. In an agent or human dev session, take the response's `X-Request-UID` and run
+   `rg "<uid>" data-agent/trace/*.jsonl` or
+   `rg "<uid>" data/trace/*.jsonl`. Startup telemetry failures use the stable
+   taxonomy above; route/content values are intentionally absent.
+
+CI runs `pnpm build:initial-preload` in its dedicated initial-preload lane and
+uploads both report families. The normal smoke lane uploads the startup matrix
+and Playwright results. Do not commit `fast-bootstrap-results/`, `test-results/`,
+`dist/`, trace data, or temporary fixture databases.
 
 ## Built SPA Serving
 

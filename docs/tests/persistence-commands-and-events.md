@@ -1,6 +1,6 @@
 # Persistence, Revisioned Commands, and Events
 
-Last audited: 2026-08-02.
+Last audited: 2026-08-25.
 
 This area covers SQLite initialization/schema/defaults, missing-database safety, revisioned domain commands, transactional mutation receipts, persisted/live event delivery, surgical character/chat/message writes, and the load/write-range gates that keep large databases responsive.
 
@@ -78,6 +78,16 @@ These tests protect a product behavior—large saves remain responsive—but the
 `server/fastify/browser-smoke/rerollSwipePersistence.spec.ts > rerolled candidates survive a reload and stay swipe-recoverable` is the strongest visible-state counterpart to the message-store and message-command tests. It runs a real server regenerate, persists both old and new candidates as alternate rows, reloads the built application, reconstructs the buffer from authoritative hydration, and visibly swipes back. Its full assessment is in [Prompting, Generation, and Streaming](prompting-generation-and-streaming.md).
 
 The broad Fastify browser smoke also proves one settings command produces an event, triggers hash-aware resource refresh, and paints the new value. Phase 0 Journey 2 proves a chat generation toggle remains changed after command plus refresh. These close the server-to-visible-state loop; their primary assessments are in [API Security, Runtime, and Network Boundaries](api-security-and-runtime.md) and [Browser State Sync and Recovery](browser-state-sync-and-recovery.md).
+
+`phase7IntegrationMatrix.spec.ts` adds isolated cross-layer receipt/event evidence:
+offline-before-send replay and response-lost-after-commit replay reuse one
+mutation ID, advance the server exactly once, empty the encrypted outbox, and
+acknowledge the durable receipt. Its event-gap journey removes one persisted
+event, receives `event_replay_unavailable`, rereads every authoritative root
+resource family, and restores mutation capability. The multi-tab journey proves
+the old writer is demoted and only the promoted writer can mutate. These are the
+strongest browser counterparts to the transaction/receipt/event suites, though
+they do not replace their exhaustive route and physical-row matrices.
 
 ## Coverage gaps and recommendations
 

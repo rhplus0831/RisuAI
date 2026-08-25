@@ -1,6 +1,6 @@
 # Client Runtime Guide
 
-Last audited: 2026-08-18.
+Last audited: 2026-08-25.
 
 This file covers browser TypeScript coordinators that influence visible Svelte
 UI. For component ownership and UI triage, start with the
@@ -60,55 +60,63 @@ generation operations consume the narrow capabilities directly.
 
 `loadData()` in `src/ts/bootstrap.ts` performs the visible startup work:
 
-1. Adopt the sole pending-mutation writer identity, if one exists, then fetch
-   `/api/v1/bootstrap`. If a different writer still has an identified event
-   connection open, ask the new client whether to disconnect it before retrying
-   with explicit takeover confirmation. The successful response supplies
-   initialization, revision, database-lineage/writer metadata, generation
-   operation/job projections, writer-scoped finalization/effect recovery, and
-   message/greeting translation entries.
-2. If bootstrap reports `initialized: false`, issue the initialization command.
+1. Start the best-effort startup telemetry publisher. If the temporary observer
+   rollout is enabled, perform a read-only bootstrap without caching its
+   revision as command authority, install the resource write guard, and load
+   `GET /api/v1/resources/shell`. A coherent initialized shell may publish
+   `observer-ready` and render the dedicated read-only observer UI while writer
+   acquisition continues. A failed or uninitialized observer read falls back to
+   the conservative writer-first boundary.
+2. Adopt the sole pending-mutation writer identity, if one exists, then fetch
+   writer-intent `/api/v1/bootstrap`. If a different writer still has an
+   identified event connection open, ask whether to disconnect it before
+   retrying with explicit takeover confirmation. The successful response
+   supplies initialization, revision, database-lineage/writer metadata,
+   generation/display-source protocol projections, operation/job projections,
+   writer-scoped finalization/effect recovery, translation entries, and the
+   optional startup-telemetry configuration.
+3. If bootstrap reports `initialized: false`, issue the initialization command.
    The server's transactional classifier accepts only genuinely empty state and
    rejects conflict state. The winning client reuses the returned revision;
    only a client that lost the initialization race refetches read-only bootstrap
    metadata.
-3. Initialize the shared lineage/writer-scoped draft-recovery scope, then
+4. Initialize the shared lineage/writer-scoped draft-recovery scope, then
    prepare the encrypted pending-mutation outbox for the authenticated writer
    epoch and database lineage, flush saved receipt acknowledgements, and replay
    its dependency-ordered commands. Secure contexts use a non-extractable
    WebCrypto key; plain-HTTP contexts use a separately stored raw AES key and
    the fallback cipher. Startup stops if retryable or unreadable rows remain.
-4. Enable the compatibility resource write guard, then fetch
-   `/api/v1/settings`, `/api/v1/collections`, the version 1 character
-   summary projection at `/api/v1/characters`, and
-   `/api/v1/inlay-assets` in parallel. The first three use hash-aware POSTs when
-   IndexedDB/Web Crypto are available and otherwise fall back to full GETs.
-   Character summaries use a protocol-versioned cache namespace and exact
-   shared validation before becoming marker-bearing list shells. Retry all four
-   when revisions do not match, then apply the consistent set.
-5. Seed selected-character state only when the persisted character is visible
-   as the selected character, reset body hydration, record
-   already-resident lorebook coverage, and hydrate the selected prompt-template
-   owner before caching the common resource revision. Start bounded selected
-   character-detail hydration after that revision is installed. While a summary
-   shell remains selected, the chat screen shows localized loading/retry state
-   and does not mount detail-only controls.
-6. Install the authoritative revision cursors and command reconciliation, apply
-   the root shell's visual settings, and publish `observer-ready`.
+5. Enable the resource write guard and load only
+   `GET /api/v1/resources/shell`. The exact version-1 response contains one
+   revision, allowlisted initial visual/account/sidebar settings, and the
+   versioned character-summary projection at that same revision. It excludes
+   collections, provider credentials, selected detail, prompt bodies, chats,
+   and inlays. When an observer projection was already visible, this post-replay
+   read must replace it at an equal or newer revision.
+6. Seed selected-character identity from the summary projection, reset body and
+   lorebook hydration, install the known-server and applied-event revision
+   cursors, configure command reconciliation, apply the shell's visual settings,
+   and publish `observer-ready` if the earlier optional path did not already do
+   so. Marker-bearing summaries remain distinct from full character rows.
 7. Seed generation operations/jobs, writer-scoped generation-finalization and
    pending-effect state, and separate message/greeting translation recovery;
-   then start operation reconciliation, effect recovery, refreshers, and live
-   runner reattach.
-8. Start chat-message hydration and bridge patch lifecycle flushing, then
-   subscribe to server events from the coherently applied resource revision.
-   A successful subscription publishes `writer-ready`, which makes the shell,
-   ordinary commands, and persistence-capable route effects available.
+   install bridge flushing and the hydration runtimes, then subscribe to server
+   events from the coherently applied shell revision. Only an accepted
+   subscription publishes `writer-ready`, which makes ordinary commands and
+   persistence-capable route effects available. The shell was already visible
+   only when the observer rollout permitted it.
+8. Route application resolves `RESOURCE_SURFACE_MANIFEST` and loads the current
+   route's settings groups, collections, standalone settings, selected detail,
+   chat, and prompt owner through `routeResourceLoader.ts`. A newer navigation
+   aborts the older generation, compatible concurrent requirements share one
+   request, and failure remains local to a route Retry surface.
 9. Initialize the push coordinator and reconcile both enabled and disabled
    notification states.
 10. Load plugins and start plugin runtime synchronization.
 11. Reconcile recovered generation effects, then hydrate the selected character
-    detail and active chat. Publish `chat-ready`; `canGenerate` becomes true only
-    when these dependencies are coherent. Selection changes rerun fenced
+    detail, active chat, and selected prompt owner declared by the chat-generation
+    runtime surface. Publish `chat-ready`; `canGenerate` becomes true only when
+    these dependencies and plugins are coherent. Selection changes rerun fenced
     hydration, and a specific character/chat failure remains localized.
 12. Update error handling and show one-time nightly or insecure-origin warnings.
     Set the background-compatibility `loadedStore`, reselect the persisted
@@ -123,6 +131,16 @@ callers use explicit `background-ready` state; do not add new consumers.
 Visible startup bugs often sit at the boundary between coordinator
 capabilities, `selectedCharID`, resource application, route application, lazy
 body reads, and CSS variable updates.
+
+The observer flag changes only when `canRenderShell` may open. It never relaxes
+`canApplyRoutes`, `canMutate`, or `canGenerate`. During takeover denial or a
+writer/bootstrap failure, an authenticated observer remains usable with a
+targeted Retry action. A retry shares one promotion attempt, resumes unfinished
+writer steps, applies the post-replay shell, installs events, and only then
+restores writer capability. A foreign writer event revokes writer capabilities
+immediately; with the flag enabled the UI returns to observer state instead of
+blanking the authenticated shell. Authentication loss clears the observer
+projection and intent, while lineage replacement fences and replaces it.
 
 ## Server Resources And Durable Mutations
 
@@ -149,6 +167,7 @@ The main client boundaries are:
 | Path                                                                                                                                   | Responsibility                                                              |
 | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | `src/ts/server/resourceReads.ts`, `resourceCache.ts`                                                                                   | Root/targeted reads and the disposable authenticated-hash cache.            |
+| `src/ts/server/shellHydration.ts`, `resourceManifest.ts`, `routeResourceLoader.ts`                                                     | Atomic root shell application and manifest-driven route/runtime resources.  |
 | `src/ts/server/hydrationReads.ts`, `chatMessageHydration.svelte.ts`, `characterShellHydration.svelte.ts`, `promptTemplateHydration.ts` | Lazy owner-body and shell hydration.                                        |
 | `src/ts/server/commands.ts`, `events.ts`, `resourceInvalidation.ts`, `resourceRefresh.ts`                                              | Serialized commands, SSE reconciliation, targeted reads, and full recovery. |
 | `src/ts/server/pendingMutationOutbox.ts`, `durableMutationDispatch.ts`, `pendingMutationReplay.ts`                                     | Encrypted crash-recovery intents and pre-hydration replay.                  |

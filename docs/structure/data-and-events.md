@@ -1,6 +1,6 @@
 # Data And Events
 
-Last audited: 2026-08-17.
+Last audited: 2026-08-25.
 
 Fastify owns authoritative application state. The browser reads authenticated
 REST resources and sends revision-checked commands or explicit server-owned
@@ -297,14 +297,24 @@ longer connected, bootstrap latches the latest writer durably and advances a
 monotonic writer epoch. Routes whose manifest decision is `active-writer`
 reject stale sessions with `423 active_writer_stale` even after a server
 restart. Ownership changes are also published through a live-only writer event
-bus. A stale browser shows a refresh-or-stay dialog: refresh
-reclaims ownership with the same session id, while stay closes server
-communication and freezes the page offline/read-only so unfinished text remains
-selectable and copyable. Refresh is the only exit from that frozen state, and a
-stale guarded request returns `423 active_writer_stale` when the live event was missed.
-Pending-mutation rollback recovery and database-lineage changes still force an
-alert plus reload. Read-only bootstrap, resource-read, and event routes do not
-need writer ownership.
+bus. With the temporary observer rollout disabled, a stale browser shows a
+refresh-or-stay dialog: refresh reclaims ownership with the same session id,
+while stay closes server communication and freezes the page offline/read-only so
+unfinished text remains selectable and copyable. Refresh is the only exit from
+that frozen state, and a stale guarded request returns
+`423 active_writer_stale` when the live event was missed.
+
+With the observer rollout enabled, an authenticated foreign-writer event instead
+revokes route, mutation, and generation capability immediately while retaining
+the coherent shell as a read-only observer. Takeover denial, writer bootstrap
+failure, and writer loss have targeted promotion Retry behavior. Promotion still
+runs owner adoption, takeover, outbox preparation, receipt acknowledgement, and
+pending replay before it reloads the authoritative shell and opens a new event
+subscription; capabilities are restored only after that sequence completes.
+Authentication loss clears the observer projection. Pending-mutation rollback
+recovery and database-lineage changes retain their stricter replacement/reload
+fences. Read-only bootstrap, resource-read, and event routes do not need writer
+ownership.
 
 `server/fastify/src/routeManifest.ts` is the source of truth for auth,
 active-writer, streaming, public exceptions, and read-only POST decisions.
@@ -363,6 +373,15 @@ response's compact local-effect acknowledgement. When targeted reconciliation
 fails, the browser leaves the applied cursor unchanged and reconnects from it so
 command-event replay retries the event instead of waiting for a later mutation.
 Memory events update Hypa V3 job/progress UI directly.
+
+The optional pre-writer observer read does not seed command authority. It may
+install the coherent shell revision as the applied-resource cursor so later
+replacement can be fenced, but the writer path always performs its post-replay
+shell read and then installs both the known-server command cursor and applied
+event cursor. The initial event subscription starts from that post-replay
+revision; only its acceptance publishes writer readiness. This prevents an
+event between observer display and promotion from being skipped and prevents an
+observer-era revision from becoming a mutation base.
 
 Chat generation SSE frame types are `stage`, `job_accepted`, `prompt`, `info`,
 `message_patch`, `token`, `side_effect`, `agent_preset_progress`,

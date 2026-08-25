@@ -1,6 +1,6 @@
 # Server Resources And Bridges
 
-Last audited: 2026-08-18.
+Last audited: 2026-08-25.
 
 This guide owns the Fastify-to-browser resource boundary: root and targeted REST
 reads, hash-verified cache substitution, lazy body hydration, invalidation and
@@ -9,21 +9,33 @@ recovery, durable command dispatch, and compatibility bridges. Start from the
 
 ## Bootstrap And Initial Resources
 
-`src/ts/bootstrap.ts` coordinates startup:
+`src/ts/bootstrap.ts` coordinates startup, while
+`src/ts/startupReadiness.ts` publishes monotonic milestones and the narrow
+capabilities consumed by the shell and protocol adapters:
 
+- The temporary pre-writer observer rollout is controlled by
+  `VITE_FAST_BOOTSTRAP_OBSERVER=TRUE` and remains disabled in a normal production
+  build unless that build-time flag is present. When enabled, startup first uses
+  read-only bootstrap without caching its revision as command authority, enables
+  the resource write guard, and reads `GET /api/v1/resources/shell`. A coherent,
+  initialized response publishes `observer-ready` and may render the dedicated
+  read-only observer UI; it does not enable route persistence, commands, or
+  generation. An unavailable or uninitialized observer read falls back to the
+  conservative writer-first path.
 - Before writer-intent bootstrap, startup reads any single unambiguous pending
   mutation owner and can adopt that writer session so recoverable local work is
-  not orphaned by a new browser session.
-- `fetchServerBootstrap()` sends writer intent to `GET /api/v1/bootstrap`.
-  When another writer still has an identified event stream open, bootstrap
-  returns `409 active_writer_connected`; the browser prompts before retrying
-  with explicit permission to disconnect that client. A successful bootstrap
-  is deliberately runtime-only metadata: initialization state, revision/schema
-  version, database lineage, durable writer epoch, the pre-takeover writer
-  verdict, asset base URL, generation-operation protocol and projections,
-  running generation jobs, writer-scoped finalization/effect recovery, and
-  running plus bounded recent terminal message/greeting translations. It does
-  not carry durable application data.
+  not orphaned by a new browser session. `fetchServerBootstrap()` then sends
+  writer intent to `GET /api/v1/bootstrap`. When another writer still has an
+  identified event stream open, bootstrap returns
+  `409 active_writer_connected`; the browser prompts before retrying with
+  explicit permission to disconnect that client.
+- A successful writer bootstrap is deliberately runtime-only metadata:
+  initialization state, revision/schema version, database lineage, durable
+  writer epoch, the pre-takeover writer verdict, asset base URL, generation and
+  display-source protocol projections, running generation jobs, writer-scoped
+  finalization/effect recovery, startup telemetry configuration, and running plus
+  bounded recent terminal message/greeting translations. It does not carry
+  durable application data.
 - When bootstrap reports `initialized: false`, the browser attempts
   `POST /api/v1/commands/state/initialize`. The server re-runs the classifier in
   the command transaction and accepts only genuinely empty state; conflicting
@@ -31,38 +43,46 @@ recovery, durable command dispatch, and compatibility bridges. Start from the
   metadata and accepted revision it already has, while a client that lost an
   initialization race retries bootstrap read-only.
 - After bootstrap/initialization, startup establishes the shared draft-recovery
-  scope, then prepares the mutation outbox against
-  the writer session and database lineage, flushes its durable server-receipt
-  acknowledgements, and replays pending intents. Same-session rows survive a
-  writer-epoch reclaim. Transient and genuine stale-writer failures retain their
-  encrypted intents. Same-lineage foreign-writer rows remain dormant, while
-  old-lineage rows are discarded during preparation. Only retained or unreadable
-  rows owned by the current writer and lineage block root-resource hydration;
-  terminal disposal and notices are contract-specific.
-- `loadInitialServerResources()` concurrently reads settings, collections, and
-  version 1 character summaries through their hash-aware POST resources (with
-  compatible full GET fallback), plus `/api/v1/inlay-assets`. All four responses
-  must report one common revision. Concurrent writes that split the revisions
-  cause the complete read set to retry, up to
-  `FULL_RESOURCE_REFRESH_MAX_ATTEMPTS`.
-- The consistent response set is applied through one trusted resource scope.
-  The settings, collections, and characters state objects keep their own
-  revision/status/error metadata. Strictly validated character summaries become
-  marker-bearing compatibility shells with empty chat identity stubs; character
-  detail, chat messages, per-chat Hypa V3 data, lore, and reroll alternates
-  remain lazy.
-- The collection response carries prompt-preset and legacy bot-preset shells.
-  Startup hydrates the selected modern prompt-template owner separately before
-  enabling normal command/event reconciliation; legacy preset bodies remain
-  on-demand.
-- Startup seeds the known-server and applied-resource revision cursors, enables
-  the resource write guard, records operation/job projections, starts
-  selected-character detail hydration, generation reattach and pending-effect
-  recovery, starts message/greeting translation recovery and active-chat
-  hydration, installs the bridge lifecycle flush, and subscribes to
-  `/api/v1/events`. Selected detail requests are deduplicated, abortable,
-  timeout-bounded, and revision/target fenced; their localized retry state does
-  not invalidate the coherent summary list.
+  scope, prepares the mutation outbox against the writer session and database
+  lineage, flushes durable server-receipt acknowledgements, and replays pending
+  intents. Same-session rows survive a writer-epoch reclaim. Transient and
+  genuine stale-writer failures retain encrypted intents. Same-lineage
+  foreign-writer rows remain dormant, while old-lineage rows are discarded
+  during preparation. Only retained or unreadable rows owned by the current
+  writer and lineage block root-resource hydration; terminal disposal and
+  notices are contract-specific.
+- `loadInitialServerResources()` now reads only
+  `GET /api/v1/resources/shell`. Version 1 contains one outer revision, an exact
+  allowlist of initial theme/language/account/sidebar settings, and the version 1
+  character-summary envelope at that same revision. It excludes collections,
+  credentials, selected character/chat detail, prompt bodies, and the inlay
+  catalog. Strictly validated summaries become marker-bearing compatibility
+  shells with message-free chat identity stubs; detail, messages, per-chat Hypa
+  V3 data, lore, and reroll alternates remain lazy.
+- The writer path always reads and applies a post-replay shell, even if an
+  observer shell is already visible. That equal-or-newer projection replaces
+  observer-era summary/detail state, installs the known-server and applied-event
+  cursors, and starts command reconciliation. Startup then records runtime/job
+  projections, starts bridge and hydration lifecycles, and subscribes to
+  `/api/v1/events` from the applied shell revision. Only an accepted event
+  subscription publishes `writer-ready`.
+- The resulting capability order is deliberate: `canRenderShell` opens at
+  `observer-ready` only for the flagged observer path, while `canApplyRoutes`
+  and `canMutate` require non-revoked `writer-ready`. `canGenerate` additionally
+  requires plugins, generation recovery, selected character/chat detail, and the
+  selected prompt-template owner to be coherent at `chat-ready`. Background
+  runtimes never become a global UI gate.
+- `RESOURCE_SURFACE_MANIFEST` assigns settings groups, collections, standalone
+  settings, and detail projections to shared, route, runtime, and overlay
+  surfaces with `render`, `interact`, `mutate`, `generate`, or `editor-prefill`
+  purposes. Routes inherit only the shared shell plus their declared surface;
+  optional runtimes use the same manifest without becoming render barriers.
+- `prepareRouteResources()` loads pre-route requirements before URL state may
+  persist, while `finishRouteResources()` hydrates targets knowable only after
+  selection. Requirement reads are deduplicated, minimum-revision fenced, and
+  aborted when superseded by newer navigation. A route-local failure leaves the
+  shell ready and exposes Retry. Only the root shell has a cross-field atomic
+  barrier; granular route resources apply independently behind the write guard.
 - Generation recovery treats the lineage-scoped operation projection as durable
   authority. Active jobs are live attachment hints and local activities are
   observer state. Runtime read-only bootstrap probes are epoch-fenced and
@@ -71,17 +91,20 @@ recovery, durable command dispatch, and compatibility bridges. Start from the
   accepted probe advances the known-server command cursor before transcript and
   effect reconciliation, while the applied-resource cursor remains event-owned.
   Terminal or expired jobs are not cleared until their affected transcript has
-  been authoritatively hydrated, and the snapshot's finalization/effect projections
-  are reconciled in the same recovery pass.
-- Command success reconciliation and foreign command SSE events both flow through the
-  same serialized resource path. Contiguous response-confirmed optimistic
-  effects can advance their resource fences without a read; authoritative reads
-  still apply in command-event order for every other event.
+  been authoritatively hydrated, and the snapshot's finalization/effect
+  projections are reconciled in the same recovery pass.
+- Command success reconciliation and foreign command SSE events both flow
+  through the same serialized resource path. Contiguous response-confirmed
+  optimistic effects can advance their resource fences without a read;
+  authoritative reads still apply in command-event order for every other event.
 
 | Path                                                       | Role                                                                                                                                 |
 | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `src/ts/server/bootstrap.ts`                               | Validates the small runtime bootstrap and exposes writer-intent/read-only variants.                                                  |
 | `src/ts/server/resourceReads.ts`                           | Browser wrappers and response validation for settings, collections, characters, and the inlay catalog.                               |
+| `src/ts/server/shellHydration.ts`                          | Atomically preflights and applies the exact shell settings plus versioned character summaries at one revision.                       |
+| `src/ts/server/resourceManifest.ts`                        | Audited ownership manifest for shared, route, deferred-runtime, and first-use resource surfaces.                                     |
+| `src/ts/server/routeResourceLoader.ts`                     | Route/deferred-surface loading, deduplication, supersession, retry state, and idle character-detail prefetch.                         |
 | `src/ts/server/resourceCache.ts`                           | Disposable, non-authoritative SHA-256 manifests and verified IndexedDB values used only after authenticated hash confirmation.       |
 | `src/ts/server/pendingMutationOutbox.ts`                   | AES-GCM-encrypted intent payloads plus plaintext scope/order indexes and durable receipt-acknowledgement rows.                       |
 | `src/ts/server/durableMutationDispatch.ts`                 | Persists an intent before dispatch, classifies replay outcomes, and completes accepted intents before acknowledging server receipts. |
@@ -318,15 +341,50 @@ The inlay catalog intentionally bypasses the hash cache. Its read joins
 DELETE commands are documented in
 [Assets And Saves](assets-and-saves.md#inlay-catalog).
 
+### Shell And Resource Surface Contracts
+
+`GET /api/v1/resources/shell` is the only initial application-data read. Its
+version-1 response is exact-key validated and contains:
+
+- one outer revision;
+- the allowlisted values in `SERVER_SHELL_SETTINGS_KEYS`, with canonical defaults
+  supplied when an older database omits a value; and
+- one version-1 character-summary envelope whose nested revision must equal the
+  outer revision.
+
+`applyServerShellResource()` preflights both slices before applying either one,
+records the shell as a partial settings projection, and advances the applied
+resource cursor only after the complete shell is installed. The shell is not a
+claim that unopened settings groups, collections, character detail, chats,
+prompts, or inlays have loaded.
+
+`RESOURCE_SURFACE_MANIFEST` is the browser-side ownership contract for everything
+outside that root shell. Settings groups, collections, standalone legacy values,
+and detail projections name their consuming surface and purpose. The resolver
+composes shared application/settings/Playground surfaces with the current route;
+chat generation, plugins, translations, background effects, and first-use
+overlays remain independently schedulable surfaces. Tests require every declared
+consumer path and route family to resolve and prevent route-only collections or
+details from entering `shared:app-shell`.
+
+`routeResourceLoader.ts` converts the resolved requirements to the narrow reads
+below. It shares compatible concurrent requests, applies a request-start revision
+floor, aborts the prior route generation, and rejects late selection-specific
+results. Post-route chat and prompt targets finish only after route selection is
+known. Route failure state belongs to the route surface and is retryable without
+clearing the coherent shell.
+
 ### Endpoint Index
 
 | Data                                               | Endpoint                                                                                         | Browser owner                                       |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------- |
+| Minimal coherent application shell                 | `GET /api/v1/resources/shell`                                                                    | `shellHydration.ts`, root startup                    |
+| One standalone legacy settings value               | `GET /api/v1/resources/settings/:setting`                                                        | `routeResourceLoader.ts`, standalone setting state  |
 | Persisted settings fields                          | Cache `POST /api/v1/settings`; full `GET` fallback                                               | `resourceReads.ts`, `settingsResourceState`         |
 | One settings group                                 | Cache `POST /api/v1/settings/:group`; full `GET` fallback                                        | Event-driven targeted invalidation                  |
 | Every split collection                             | Cache `POST /api/v1/collections`; full `GET` fallback                                            | `resourceReads.ts`, `collectionsResourceState`      |
 | One split collection                               | Cache `POST /api/v1/collections/:name`; full `GET` fallback                                      | Event-driven targeted invalidation                  |
-| Legacy message-free character aggregate/order/current | Cache `POST /api/v1/characters/aggregate`; full `GET` fallback                                | Phase 2 diagnostic and rollback seam                 |
+| Legacy message-free character aggregate/order/current | Cache `POST /api/v1/characters/aggregate`; full `GET` fallback                                | Temporary Phase 2 diagnostic and rollback seam       |
 | Version 1 character summaries/order/current        | Cache `POST /api/v1/characters`; full `GET` fallback                                             | `resourceReads.ts`, `charactersResourceState`        |
 | Inlay metadata catalog                             | `GET /api/v1/inlay-assets`                                                                       | `inlayCatalog.ts`                                   |
 | Character order only                               | `GET /api/v1/characters/order`                                                                   | Character-order invalidation                        |
@@ -506,6 +564,22 @@ Active writer is server-side. A writer-intent bootstrap owns
 disconnect handshake, and stale guarded mutations receive
 `423 active_writer_stale`. The client resource write guard is separate and
 catches accidental unscoped local mutation.
+
+With the observer rollout disabled, writer loss retains the conservative
+refresh-or-freeze behavior. With the rollout enabled, a foreign writer event
+revokes route, mutation, and generation capability synchronously but leaves the
+last authenticated shell visible in the dedicated observer UI. Takeover denial
+and writer/bootstrap failure settle into a retryable observer lifecycle instead
+of repeating accepted work. The retry shares one promotion promise, reruns only
+unfinished writer steps, reloads the post-replay shell, installs the event
+subscription, and then restores writer capabilities. A failed retry stops any
+partially restarted writer runtimes before returning to stable observer state.
+
+Authentication loss clears observer route intent, optional hydration, disposable
+cache state, authenticated projections, selection, and command/event revisions.
+Database replacement or lineage change clears observer-era intent, hydration,
+and cache identities while retaining the authenticated shell only until its
+authoritative replacement is ready.
 
 Read-only bootstrap, resource reads, event streams, durable-generation
 reattach, and immutable asset reads do not require writer ownership. Legacy

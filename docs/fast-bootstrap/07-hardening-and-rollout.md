@@ -112,17 +112,41 @@ budget at 312.98 KiB gzip with a 277.83 KiB largest initial file.
 
 ### 7C. Documentation and developer workflow
 
-- [ ] Update `STRUCTURE.md` only for stable orientation changes.
-- [ ] Update `docs/structure/server-resources-and-bridges.md` with shipped
+- [x] Update `STRUCTURE.md` only for stable orientation changes.
+- [x] Update `docs/structure/server-resources-and-bridges.md` with shipped
   capability semantics, summary/detail contracts, shell manifests, and observer
   promotion ordering.
-- [ ] Update `docs/structure/data-and-events.md` for any changed event cursor,
+- [x] Update `docs/structure/data-and-events.md` for any changed event cursor,
   writer, or replay behavior.
-- [ ] Update the relevant `src/docs/` UI/runtime guides and `docs/tests/` maps.
-- [ ] Document the one-command startup trace, preload report, fixtures, budgets,
+- [x] Update the relevant `src/docs/` UI/runtime guides and `docs/tests/` maps.
+- [x] Document the one-command startup trace, preload report, fixtures, budgets,
   and how to interpret failures.
-- [ ] Keep these runbooks as the active ledger during rollout; archive them under
+- [x] Keep these runbooks as the active ledger during rollout; archive them under
   `.archived-docs/` after the shipped architecture guides are authoritative.
+
+#### 7C implementation record (2026-08-25)
+
+The canonical architecture guides now describe the shipped shell-only startup,
+route manifest and loader, narrow readiness capabilities, observer promotion,
+writer loss, replay, and the distinction between applied and command cursors.
+The client runtime and Svelte UI guides identify the concrete owners and render
+states, while the test maps connect those boundaries to their unit, DOM,
+server, and browser coverage.
+
+The operations guide now owns the complete developer workflow: the one-command
+Phase 7 gate, its Node and Chromium prerequisites, isolated small/large and
+cold/warm fixtures, generated JSON/text artifacts, the 900/500 KiB hard gates,
+retained regression ceilings, UID trace correlation, CI artifact handling, and
+failure interpretation. These phase runbooks remain the active rollout and
+seam-removal ledger; archival waits until 7D and the initiative exit gate are
+complete.
+
+Verification passed with `pnpm test:affected`, `pnpm format:check`, and
+`pnpm verify:fast-bootstrap:phase7`. The affected-test selector found no tests
+for the documentation-only paths. The full gate rebuilt both production
+variants, passed the Phase 0 startup matrix and all seven Phase 7 browser
+journeys, and recorded a 312.98 KiB initial gzip preload with a 277.83 KiB
+largest initial file. No generated artifacts were committed.
 
 ### 7D. Rollout and seam removal
 

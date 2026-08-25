@@ -1,6 +1,6 @@
 # Svelte UI Guide
 
-Last audited: 2026-08-18.
+Last audited: 2026-08-25.
 
 This guide owns the Svelte application shell, routing, shared frontend
 platform behavior, localization, styling, responsive behavior, and Playground.
@@ -44,6 +44,8 @@ CSS, and plugin execution.
 | `src/App.svelte` | Main render switch, responsive sidebar dialog, app-level file drop, route effects, and global overlay host. |
 | `src/styles.css` | Tailwind v4 import, theme defaults, full-height shell, global chat text CSS, and compatibility base rules. |
 | `src/ts/bootstrap.ts` | Loads Fastify resources and starts hydration, events, bridges, and UI-derived CSS state. |
+| `src/ts/startupReadiness.ts` | Publishes startup milestones, narrow UI/action capabilities, and localized retry diagnostics. |
+| `src/lib/ObserverShell.svelte` | Dedicated authenticated read-only shell shown before or after writer availability while the observer rollout is enabled. |
 | `src/ts/platform.ts` | Fastify-only platform flag; `isFastifyServer` is always true. |
 
 `src/main.ts` listens for `vite:preloadError` before mounting the app. A failed
@@ -89,10 +91,14 @@ for its disposable browser session.
 1. April 1 joke screen.
 2. Loading screen while
    `$startupCoordinatorStore.capabilities.canRenderShell` is false.
-3. `CustomGUISettingMenu` while `$CustomGUISettingMenuStore` is true.
-4. `Settings` while `$settingsOpen` is true.
-5. `GridCatalog` for the grid route.
-6. The normal `Sidebar` plus `ChatScreen` shell.
+3. `ObserverShell` while the observer rollout is enabled, the shell is coherent,
+   and writer-safe route application is not yet available.
+4. Route-resource loading or route-local Retry while the current manifest surface
+   is settling or failed.
+5. `CustomGUISettingMenu` while `$CustomGUISettingMenuStore` is true.
+6. `Settings` while `$settingsOpen` is true.
+7. `GridCatalog` for the grid route.
+8. The normal `Sidebar` plus `ChatScreen` shell.
 
 On responsive layouts the sidebar becomes an app-hosted, focus-trapped dialog
 over the chat. Global overlays mount after the main branch: alerts, Realm,
@@ -101,11 +107,16 @@ icon, popup list and editor, EasyPanel, loadouts, Iris, and custom sidebar
 configuration. Feature-owned overlays can mount below their surface instead;
 for example, `Sidebar.svelte` owns character-folder expansion and editing.
 
-Two interaction states sit outside the render switch. Writer takeover blocks
-interaction while the refresh/offline choice is open; choosing offline freezes
-editable controls and mounts a reload banner from
-`src/ts/server/activeWriterSession.ts`. `SavePopupIcon.svelte` separately shows
-aggregate persistence activity when `showSavingIcon` permits it.
+Writer takeover behavior depends on the temporary observer rollout. Flag-off
+clients retain the refresh-or-stay choice; choosing stay freezes editable
+controls and mounts a reload banner from `activeWriterSession.ts`. Flag-on
+clients revoke route/mutation/generation capability immediately and keep the
+last authenticated shell in `ObserverShell`, where denial, unavailable writer,
+writer loss, offline mode, auth loss, retry, and promotion have localized live
+status. Observer navigation records only the latest memory-only route intent and
+cannot enqueue a command or outbox row. `SavePopupIcon.svelte` separately shows
+aggregate persistence activity when `showSavingIcon` permits it and does not
+mount in pre-writer observer mode.
 
 Blocking dialogs share `src/ts/gui/modalFocusTrap.ts`, which stacks nested
 modals, makes background branches inert, traps focus, locks body scrolling, and
@@ -139,6 +150,17 @@ Routes are not file-system based.
 
 Unknown settings and Playground slugs fall back to their default menu; they are
 not general not-found routes.
+
+`src/ts/server/resourceManifest.ts` maps every route family to the settings
+groups, collections, standalone values, and detail projections it owns. The
+shared application shell is inherited; settings and Playground add their shared
+navigation shells, while chat generation and optional overlays remain separate
+runtime/first-use surfaces. `applyRouteToStores()` calls
+`prepareRouteResources()` before mutating route-backed stores and
+`finishRouteResources()` after selection exposes any remaining chat/prompt
+target. Newer navigation aborts older route work. The App render switch owns the
+route-local loading/error/Retry UI, so a failed optional route does not discard
+the coherent shell.
 
 `src/App.svelte` has two load-bearing effects. Both wait for
 `$startupCoordinatorStore.capabilities.canApplyRoutes`. The URL-to-store effect

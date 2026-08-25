@@ -1,6 +1,6 @@
 # Test Suite Guide
 
-Last audited: 2026-08-22.
+Last audited: 2026-08-25.
 
 This documentation groups the current suite by protected product behavior. Treat `package.json` and the runner configuration files as the source of truth for commands and discovery; this guide intentionally avoids snapshot case counts and pass totals, which become stale whenever tests are added or parameterized matrices change.
 
@@ -10,7 +10,7 @@ The suite is strongest at the application's highest-risk state and protocol boun
 
 Assertions are commonly exact and stateful: request bodies and headers, SSE frame order, SQLite rows and revisions, IndexedDB outbox contents, rollback scope, visible DOM state, and resource cleanup are all checked.
 
-The main weakness is integration depth rather than raw case count. Most frontend tests run in happy-dom with mocked network/storage/browser APIs; most provider tests mock upstream services; and the small serial Playwright suite covers only selected built-browser/Fastify/SQLite journeys. There is no normal composer-to-stream-to-durable-reload browser journey, no real crash/reload or two-tab outbox journey, and no destructive backup-restore/outbox-quarantine journey. CI also enforces only a deliberately small UI coverage sentinel, not the much broader frontend or backend coverage maps.
+The main weakness is integration depth rather than raw case count. Most frontend tests run in happy-dom with mocked network/storage/browser APIs; most provider tests mock upstream services; and the serial Playwright suite covers selected built-browser/Fastify/SQLite journeys. The Phase 7 fast-bootstrap matrix now provides isolated response-loss replay, offline replay, event-gap recovery, multi-tab writer takeover, observer promotion, direct-link, and optional-runtime failure journeys. There is still no normal composer-to-stream-to-durable-reload browser journey, page-crash/reload outbox journey combined with writer transfer, or destructive backup-restore/outbox-quarantine journey. CI also enforces only a deliberately small UI coverage sentinel, not the much broader frontend or backend coverage maps.
 
 ## Index
 
@@ -54,6 +54,8 @@ The main weakness is integration depth rather than raw case count. Most frontend
 | `pnpm test:server`       | Node/Fastify/SQLite tests discovered by `server/fastify/vitest.config.ts`                                     |
 | `pnpm test:compat-harness` | Opt-in golden comparison with the pinned pre-Fastify worktree; requires the external baseline and is not in `test:all` |
 | `pnpm test:smoke`        | Serial Chromium tests under `server/fastify/browser-smoke`                                                    |
+| `pnpm measure:fast-bootstrap` | Production preload/boundary reports plus the small/large cold/warm startup matrix                         |
+| `pnpm verify:fast-bootstrap:phase7` | Complete fast-bootstrap measurement plus direct-link, replay, event-gap, writer, observer, and optional-runtime journeys |
 | `pnpm test:all`          | The quality-workflow aggregate: formatting, both type checks, frontend, gates, UI map, server, and smoke      |
 | `pnpm coverage:frontend` | Broad frontend report, including gates; not part of `test:all`                                                |
 | `pnpm coverage:backend`  | Broad Fastify report; not part of `test:all`                                                                  |
@@ -72,6 +74,17 @@ coverage are report-only; only the focused UI map has thresholds.
 includes `__tests__/**/*.test.ts`. The package aliases keep `pnpm test` on
 `test:frontend`, `pnpm api:test` on `test:server`, and `pnpm test:smoke` on
 `smoke:fastify-browser`.
+
+`phase0StartupMatrix.spec.ts` keeps small/large and cold/warm startup populations
+separate and writes `fast-bootstrap-results/startup-matrix.{json,txt}`.
+`phase7IntegrationMatrix.spec.ts` runs flag-off/on startup, every production
+route-manifest direct-link family, offline and response-loss replay, a real
+`event_replay_unavailable` recovery, multi-tab denial/takeover/promotion, and
+slow/failing optional-runtime Retry. It writes
+`fast-bootstrap-results/phase7-integration.{json,txt}`. The disposable harness
+owns a temporary authenticated Fastify/SQLite instance per journey. See
+[Testing And Operations](../structure/testing-and-operations.md#fast-bootstrap-measurement-and-rollout-gate)
+for fixtures, budgets, artifact interpretation, and request-trace correlation.
 
 ## Major coverage strengths
 
@@ -101,7 +114,7 @@ Intermediate display protocol/cache/route coverage lives in
 parser, scripting, Lua, trigger, bounded-regex, bootstrap, route-protection, and
 generation suites remain companion parity coverage.
 
-1. **Outbox, dispatch, replay, bootstrap, and invalidation:** `pendingMutationOutbox`, `durableMutationDispatch`, `durableMutationTerminalRejection`, `pendingMutationReplay`, browser `commands`, `bootstrap`, `resourceState`, and `resourceInvalidation`. These are the core protection against lost, duplicated, or stale user edits.
+1. **Outbox, dispatch, replay, bootstrap, and invalidation:** `pendingMutationOutbox`, `durableMutationDispatch`, `durableMutationTerminalRejection`, `pendingMutationReplay`, browser `commands`, `bootstrap`, `startupReadiness`, `resourceState`, `resourceInvalidation`, and the Phase 0/7 browser matrices. These are the core protection against lost, duplicated, or stale user edits.
 2. **Generation goldens and durable lifecycle:** `sendChat.fixtures*`, server `assemble`, `generation.chat`, `durableGeneration`, provider transport/terminal assertions, and the reroll Playwright journey. They protect model-visible context and durable transcripts.
 3. **Persistence transactions, identity repair, and recovery:** command/revision/idempotency/concurrency suites, migrations, lorebook and record identity normalization, backups, save/bundle codecs, asset GC, and Realm atomic staging. These defend user data at rest and through destructive operations.
 4. **Provider conformance, credentials, and egress:** provider request/stream/catalog contracts, dispatch-option parity, stale inline-secret migration, model-profile secret tests, provider operation allowlists, OAuth refresh, SSRF, redaction, and request/body/decompression limits. Regressions here have security impact beyond functional breakage.

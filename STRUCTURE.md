@@ -1,6 +1,6 @@
 # Project Structure
 
-Last audited: 2026-08-21.
+Last audited: 2026-08-25.
 
 Use this file to orient yourself in the Fastify-only RisuAI codebase. The
 supported toolchain is Node.js 24 or newer with pnpm. Choose the guide for your
@@ -57,6 +57,7 @@ records past decisions and is not authoritative.
 | `src/main.ts` | Installs routing, push listeners, viewport coordination, root-scroll protection, and shared completion-audio context unlocking; mounts the app, starts bootstrap/hotkeys, and removes the preloader. |
 | `src/App.svelte` | Svelte application shell, top-level render routing, overlays, and selected-character visibility guard. |
 | `src/ts/bootstrap.ts` | Auth/writer bootstrap, recovery preparation, resource hydration/invalidation, plugin/runtime setup, and active-work reattachment. |
+| `src/ts/startupReadiness.ts` | Monotonic startup milestones, narrow render/route/mutation/plugin/generation capabilities, retry diagnostics, and privacy-safe measurement events. |
 | `public/service-worker.js` | Web Push display, notification-click navigation, and client messaging. |
 | `server/fastify/src/index.ts` | Loads configuration, builds the API, listens, and handles shutdown. |
 | `server/fastify/src/app.ts` | Fastify composition root: plugins, SQLite, auth, writer policy, routes, jobs, workers, timers, and optional SPA. |
