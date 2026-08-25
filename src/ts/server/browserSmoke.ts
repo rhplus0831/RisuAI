@@ -16,7 +16,7 @@ import { currentRoute, navigate } from '../router'
 import type { AppRoute } from '../routerRoute'
 import { QuickSettings } from '../stores.svelte'
 import { generationOperationCancellations, generationOperationProjections } from './generationOperations'
-import { listPendingMutations } from './pendingMutationOutbox'
+import { listPendingMutationReceiptAcknowledgements, listPendingMutations } from './pendingMutationOutbox'
 import { clearResourceCache } from './resourceCache'
 import { currentRouteResourceLoadState, type RouteResourceLoadState } from './routeResourceLoader'
 import {
@@ -36,6 +36,11 @@ export interface FastifyBrowserSmokeLifecycleSnapshot {
   generationJobLifecycles: Record<string, unknown>
   generationOperationCancellations: unknown[]
   generationOperations: unknown[]
+  receiptAcknowledgements: Array<{
+    mutationId: string
+    requestCount: number
+    databaseLineage: string
+  }>
   outbox: Array<{
     key: string
     mutationId: string
@@ -106,6 +111,9 @@ export function installFastifyBrowserSmokeHook() {
       generationJobLifecycles: structuredClone(get(generationJobLifecycles)),
       generationOperationCancellations: structuredClone(get(generationOperationCancellations)),
       generationOperations: structuredClone(get(generationOperationProjections)),
+      receiptAcknowledgements: (await listPendingMutationReceiptAcknowledgements()).map(
+        ({ mutationId, requestCount, databaseLineage }) => ({ mutationId, requestCount, databaseLineage }),
+      ),
       outbox: (await listPendingMutations()).map(({ handle, intent }) => ({
         key: handle.key,
         mutationId: handle.mutationId,

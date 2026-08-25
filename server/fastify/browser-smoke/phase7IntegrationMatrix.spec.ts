@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test'
 import fs from 'node:fs'
 import path from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { buildLargeCorpusFixture } from '../../../src/ts/__tests__/largeCorpusFixture.js'
 import {
   PLAYGROUND_RESOURCE_SURFACE_BY_INDEX,
@@ -41,6 +42,8 @@ interface Phase7IntegrationArtifact {
   schemaVersion: 1
   startupRollout: RolloutStartupCase[]
   directLinks: DirectLinkCase[]
+  recoveryJourneys: RecoveryJourney[]
+  writerJourneys: WriterJourney[]
 }
 
 interface DirectLinkCase {
@@ -52,8 +55,31 @@ interface DirectLinkCase {
   requestedPaths: string[]
 }
 
+interface RecoveryJourney {
+  scenario: 'event-gap' | 'offline-before-send' | 'response-lost-after-commit'
+  initialRevision: number
+  finalRevision: number
+  retainedMutationId?: string
+  commandAttempts: number
+  receiptAcknowledgements: number
+  resourceRefreshes: number
+}
+
+interface WriterJourney {
+  scenario: 'denial-then-takeover'
+  observerCommandsBeforePromotion: number
+  oldWriterCommandsAfterTakeover: number
+  newWriterMutationAccepted: boolean
+}
+
 const outputDir = path.resolve('fast-bootstrap-results')
-const artifact: Phase7IntegrationArtifact = { schemaVersion: 1, startupRollout: [], directLinks: [] }
+const artifact: Phase7IntegrationArtifact = {
+  schemaVersion: 1,
+  startupRollout: [],
+  directLinks: [],
+  recoveryJourneys: [],
+  writerJourneys: [],
+}
 
 test.setTimeout(240_000)
 
@@ -159,6 +185,288 @@ test('Phase 7 direct-link matrix hydrates every route family from an empty brows
     await cdp.detach()
   } finally {
     await context.close().catch(() => undefined)
+    await closeFastBootstrapHarness(harness)
+  }
+})
+
+test('Phase 7 durable recovery replays offline work and committed work whose response was lost', async ({
+  browser,
+}) => {
+  for (const scenario of ['offline-before-send', 'response-lost-after-commit'] as const) {
+    const harness = await startFastBootstrapHarness(smallFastBootstrapFixture(), {
+      temporaryDirectoryPrefix: `risu-phase7-${scenario}-`,
+    })
+    const context = await browser.newContext()
+    try {
+      await setObserverShellMode(context, 'disabled')
+      const page = await context.newPage()
+      const commandMutationIds: string[] = []
+      const receiptAcknowledgements: string[] = []
+      page.on('request', (request) => {
+        const url = new URL(request.url())
+        const headers = request.headers()
+        if (url.pathname === '/api/v1/commands/settings/runtime') {
+          commandMutationIds.push(headers['risu-mutation-id'] ?? '')
+        }
+        if (url.pathname === '/api/v1/commands/mutation-receipts/ack') {
+          receiptAcknowledgements.push(request.postData() ?? '')
+        }
+      })
+
+      await page.goto(harness.baseUrl, { waitUntil: 'domcontentloaded' })
+      await waitForSmokeHook(page)
+      await page.evaluate(() =>
+        window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForStartupMilestone('background-ready', 30_000),
+      )
+      const initialRevision = await page.evaluate(
+        () => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getAppliedServerResourceRevision()!,
+      )
+
+      if (scenario === 'offline-before-send') {
+        await context.setOffline(true)
+      } else {
+        let responseDropped = false
+        await page.route('**/api/v1/commands/settings/runtime', async (route) => {
+          if (responseDropped) {
+            await route.continue()
+            return
+          }
+          responseDropped = true
+          await route.fetch()
+          await route.abort('connectionclosed')
+        })
+      }
+
+      const failedResult = await page.evaluate(() =>
+        window.__RISU_FASTIFY_BROWSER_SMOKE__!.patchRuntimeSettings({ streamGeminiThoughts: true }),
+      )
+      expect(failedResult).toMatchObject({ status: 'error' })
+      const retained = await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getLifecycleSnapshot())
+      expect(retained.outbox).toHaveLength(1)
+      const retainedMutationId = retained.outbox[0]!.mutationId
+      expect(retainedMutationId).toMatch(/\S/u)
+      expect(retained.receiptAcknowledgements).toEqual([])
+
+      await context.setOffline(false)
+      await page.unroute('**/api/v1/commands/settings/runtime')
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await waitForSmokeHook(page)
+      await page.evaluate(() =>
+        window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForStartupMilestone('background-ready', 30_000),
+      )
+      await expect
+        .poll(() => page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getLifecycleSnapshot()))
+        .toMatchObject({ outbox: [], receiptAcknowledgements: [] })
+      expect(
+        await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot().streamGeminiThoughts),
+      ).toBe(true)
+      const finalRevision = await page.evaluate(
+        () => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getAppliedServerResourceRevision()!,
+      )
+      expect(finalRevision).toBe(initialRevision + 1)
+      expect(commandMutationIds.filter((mutationId) => mutationId === retainedMutationId)).toHaveLength(2)
+      await expect.poll(() => receiptAcknowledgements.length).toBe(1)
+      expect(JSON.parse(receiptAcknowledgements[0]!)).toMatchObject({
+        mutationId: retainedMutationId,
+        requestCount: 1,
+      })
+
+      artifact.recoveryJourneys.push({
+        scenario,
+        initialRevision,
+        finalRevision,
+        retainedMutationId,
+        commandAttempts: commandMutationIds.length,
+        receiptAcknowledgements: receiptAcknowledgements.length,
+        resourceRefreshes: 0,
+      })
+    } finally {
+      await context.setOffline(false).catch(() => undefined)
+      await context.close().catch(() => undefined)
+      await closeFastBootstrapHarness(harness)
+    }
+  }
+})
+
+test('Phase 7 event-gap recovery performs an authoritative refresh before reconnecting', async ({ browser }) => {
+  const harness = await startFastBootstrapHarness(smallFastBootstrapFixture(), {
+    temporaryDirectoryPrefix: 'risu-phase7-event-gap-',
+  })
+  const context = await browser.newContext()
+  try {
+    await setObserverShellMode(context, 'disabled')
+    const page = await context.newPage()
+    const fullRefreshPaths = new Set([
+      '/api/v1/settings',
+      '/api/v1/collections',
+      '/api/v1/characters',
+      '/api/v1/inlay-assets',
+    ])
+    let fullRefreshRequests = 0
+    page.on('request', (request) => {
+      if (fullRefreshPaths.has(new URL(request.url()).pathname)) fullRefreshRequests += 1
+    })
+
+    await page.goto(harness.baseUrl, { waitUntil: 'domcontentloaded' })
+    await waitForSmokeHook(page)
+    await page.evaluate(() =>
+      window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForStartupMilestone('background-ready', 30_000),
+    )
+    const initialRevision = await page.evaluate(
+      () => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getAppliedServerResourceRevision()!,
+    )
+    const activeWriterHeaders = await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.activeWriterHeaders())
+    const fullRefreshRequestsBeforeGap = fullRefreshRequests
+    const reconnectHeld = deferred<void>()
+    const releaseReconnect = deferred<void>()
+    let heldReconnect = false
+    await page.route('**/api/v1/events*', async (route) => {
+      if (heldReconnect) {
+        await route.continue()
+        return
+      }
+      heldReconnect = true
+      reconnectHeld.resolve()
+      await releaseReconnect.promise
+      await route.continue()
+    })
+
+    harness.app.server.closeAllConnections()
+    await reconnectHeld.promise
+    const changed = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/runtime',
+      headers: { ...activeWriterHeaders, 'content-type': 'application/json' },
+      payload: { baseRevision: initialRevision, patch: { streamGeminiThoughts: true } },
+    })
+    expect(changed.statusCode).toBe(200)
+    expect(changed.json()).toMatchObject({ revision: initialRevision + 1 })
+    expect(
+      await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot().streamGeminiThoughts),
+    ).toBe(false)
+
+    const database = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      const deleted = database.prepare('DELETE FROM command_events WHERE revision = ?').run(initialRevision + 1)
+      expect(deleted.changes).toBe(1)
+    } finally {
+      database.close()
+    }
+
+    const replayUnavailable = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === '/api/v1/events' && response.status() === 409,
+      { timeout: 30_000 },
+    )
+    releaseReconnect.resolve()
+    expect(await (await replayUnavailable).json()).toMatchObject({
+      error: 'event_replay_unavailable',
+      requestedRevision: initialRevision,
+      currentRevision: initialRevision + 1,
+    })
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          revision: window.__RISU_FASTIFY_BROWSER_SMOKE__!.getAppliedServerResourceRevision(),
+          value: window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot().streamGeminiThoughts,
+        })),
+      )
+      .toEqual({ revision: initialRevision + 1, value: true })
+    await expect.poll(() => fullRefreshRequests).toBeGreaterThanOrEqual(fullRefreshRequestsBeforeGap + 4)
+    await expect
+      .poll(() =>
+        page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getStartupCoordinatorSnapshot().capabilities),
+      )
+      .toMatchObject({ canApplyRoutes: true, canMutate: true })
+
+    artifact.recoveryJourneys.push({
+      scenario: 'event-gap',
+      initialRevision,
+      finalRevision: initialRevision + 1,
+      commandAttempts: 1,
+      receiptAcknowledgements: 0,
+      resourceRefreshes: fullRefreshRequests - fullRefreshRequestsBeforeGap,
+    })
+  } finally {
+    await context.close().catch(() => undefined)
+    await closeFastBootstrapHarness(harness)
+  }
+})
+
+test('Phase 7 multi-tab journey denies observer mutation, then safely promotes a takeover writer', async ({
+  browser,
+}) => {
+  const harness = await startFastBootstrapHarness(smallFastBootstrapFixture(), {
+    temporaryDirectoryPrefix: 'risu-phase7-writer-takeover-',
+  })
+  const writerContext = await browser.newContext()
+  const observerContext = await browser.newContext()
+  try {
+    await Promise.all([
+      setObserverShellMode(writerContext, 'enabled'),
+      setObserverShellMode(observerContext, 'enabled'),
+    ])
+    const writerPage = await writerContext.newPage()
+    const observerPage = await observerContext.newPage()
+    const writerCommands: string[] = []
+    const observerCommands: string[] = []
+    recordCommandPaths(writerPage, writerCommands)
+    recordCommandPaths(observerPage, observerCommands)
+
+    await writerPage.goto(harness.baseUrl, { waitUntil: 'domcontentloaded' })
+    await waitForSmokeHook(writerPage)
+    await writerPage.evaluate(() =>
+      window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForStartupMilestone('background-ready', 30_000),
+    )
+
+    await observerPage.goto(harness.baseUrl, { waitUntil: 'domcontentloaded' })
+    await waitForSmokeHook(observerPage)
+    await expect(observerPage.locator('[data-observer-shell]')).toBeVisible()
+    await observerPage.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await expect(observerPage.locator('[data-observer-lifecycle-status]')).toContainText(
+      'Another session still has write access',
+    )
+    expect(observerCommands).toEqual([])
+    expect(
+      await observerPage.evaluate(
+        () => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getStartupCoordinatorSnapshot().capabilities.canMutate,
+      ),
+    ).toBe(false)
+
+    await observerPage.getByRole('button', { name: 'Retry write access', exact: true }).click()
+    await expect(observerPage.getByRole('button', { name: 'Disconnect existing client', exact: true })).toBeVisible()
+    await observerPage.getByRole('button', { name: 'Disconnect existing client', exact: true }).click()
+    await observerPage.evaluate(() =>
+      window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForStartupMilestone('background-ready', 30_000),
+    )
+    await expect(observerPage.locator('[data-observer-shell]')).toHaveCount(0)
+    expect(observerCommands).toEqual([])
+
+    await expect(writerPage.locator('[data-observer-shell]')).toBeVisible()
+    await expect
+      .poll(() =>
+        writerPage.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getStartupCoordinatorSnapshot().capabilities),
+      )
+      .toMatchObject({ canApplyRoutes: false, canGenerate: false, canMutate: false })
+    await writerPage.getByRole('button', { name: 'Stay on this page (offline)', exact: true }).click()
+    await expect(writerPage.locator('[data-observer-lifecycle-status]')).toContainText(
+      'This tab is staying in read-only mode',
+    )
+
+    const mutation = await observerPage.evaluate(() =>
+      window.__RISU_FASTIFY_BROWSER_SMOKE__!.patchRuntimeSettings({ streamGeminiThoughts: true }),
+    )
+    expect(mutation).toMatchObject({ status: 'ok' })
+    expect(observerCommands).toEqual(['/api/v1/commands/settings/runtime'])
+    expect(writerCommands).toEqual([])
+
+    artifact.writerJourneys.push({
+      scenario: 'denial-then-takeover',
+      observerCommandsBeforePromotion: 0,
+      oldWriterCommandsAfterTakeover: writerCommands.length,
+      newWriterMutationAccepted: mutation.status === 'ok',
+    })
+  } finally {
+    await Promise.all([writerContext.close().catch(() => undefined), observerContext.close().catch(() => undefined)])
     await closeFastBootstrapHarness(harness)
   }
 })
@@ -328,6 +636,34 @@ function formatIntegrationArtifact(artifact: Phase7IntegrationArtifact): string 
       ].join('\t'),
     )
   }
+  lines.push(
+    '',
+    'Recovery',
+    'scenario\tinitial_revision\tfinal_revision\tcommand_attempts\treceipt_acks\tresource_refreshes',
+  )
+  for (const entry of artifact.recoveryJourneys) {
+    lines.push(
+      [
+        entry.scenario,
+        entry.initialRevision,
+        entry.finalRevision,
+        entry.commandAttempts,
+        entry.receiptAcknowledgements,
+        entry.resourceRefreshes,
+      ].join('\t'),
+    )
+  }
+  lines.push('', 'Writer journeys', 'scenario\tobserver_commands_before_promotion\told_writer_commands\taccepted')
+  for (const entry of artifact.writerJourneys) {
+    lines.push(
+      [
+        entry.scenario,
+        entry.observerCommandsBeforePromotion,
+        entry.oldWriterCommandsAfterTakeover,
+        entry.newWriterMutationAccepted,
+      ].join('\t'),
+    )
+  }
   return `${lines.join('\n')}\n`
 }
 
@@ -398,4 +734,13 @@ function requirementResourcePaths(requirement: ResourceRequirement, route: AppRo
           return ['/api/v1/inlay-assets']
       }
   }
+}
+
+function recordCommandPaths(page: Page, paths: string[]): void {
+  page.on('request', (request) => {
+    const pathname = new URL(request.url()).pathname
+    if (pathname.startsWith('/api/v1/commands/') && pathname !== '/api/v1/commands/mutation-receipts/ack') {
+      paths.push(pathname)
+    }
+  })
 }
