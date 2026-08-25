@@ -17,7 +17,7 @@ This is a separate rollout, not part of the conservative Phase 3 release.
   `canMutate` or `canApplyRoutes`.
 - [ ] Observer-to-writer event and revision transitions have focused test
   coverage.
-- [ ] Read-only controls have a consistent accessible treatment and localized
+- [x] Read-only controls have a consistent accessible treatment and localized
   status/retry text.
 - [x] The observer feature flag exists and defaults off.
 
@@ -84,15 +84,43 @@ Verification:
 
 ### 6B. Read-only interaction and local intent
 
-- [ ] Allow navigation that changes only local presentation.
-- [ ] When navigation or selection would normally persist, store a replaceable
+- [x] Allow navigation that changes only local presentation.
+- [x] When navigation or selection would normally persist, store a replaceable
   local intent instead of dispatching or enqueueing a command.
-- [ ] Disable or adapt mutation controls with accessible names, keyboard
+- [x] Disable or adapt mutation controls with accessible names, keyboard
   behavior, and an announced read-only status.
-- [ ] Keep character shells clearly distinct from details. Fetching optional
+- [x] Keep character shells clearly distinct from details. Fetching optional
   observer detail must not create writer-side effects.
-- [ ] Add a direct negative assertion that observer navigation produces no
+- [x] Add a direct negative assertion that observer navigation produces no
   command request and no pending mutation record.
+
+#### 6B implementation record (2026-08-25)
+
+The pre-writer boundary now renders a dedicated observer view instead of the
+ordinary sidebar, chat, settings, or playground controls. It announces its
+read-only status, uses native keyboard-accessible buttons for character and
+chat navigation, and keeps only the latest observer route in a replaceable
+memory-only intent. URL navigation does not apply route-backed stores until
+writer capability exists.
+
+Character summaries are labelled separately from hydrated details. An explicit
+read-only detail action reuses the fenced character resource read; failure
+leaves the summary useful and offers a localized retry. App-level import/drop
+handling, mutation-capable overlays, and persistence indicators are gated out
+of the observer boundary. DOM coverage directly verifies that character/chat
+navigation leaves selection state unchanged, sends no command request, and
+creates no durable pending mutation record.
+
+Verification:
+
+- focused observer intent, observer DOM, App capability-boundary, readiness,
+  and bootstrap coverage — 198 tests passed;
+- `pnpm test:affected` — 359 frontend files / 5,281 tests passed; no Fastify
+  test was selected for the client-only change;
+- `pnpm check`, `pnpm check:server`, and `pnpm format:check` — passed;
+- `pnpm build:initial-preload` — 11 files, 319,501 gzip bytes total, and a
+  284,108-byte largest chunk; all boundary, regression, and milestone gates
+  passed.
 
 ### 6C. Writer recovery and safe promotion
 

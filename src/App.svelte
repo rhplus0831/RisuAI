@@ -31,6 +31,7 @@
   import { pluginRuntimeStateStore } from './ts/plugins/plugins.svelte'
   import Sidebar from './lib/SideBars/Sidebar.svelte'
   import ChatScreen from './lib/ChatScreens/ChatScreen.svelte'
+  import ObserverShell from './lib/ObserverShell.svelte'
   import { showRealmInfoStore } from './ts/realmInfoStore'
   import { getResourceDatabase as getDatabase } from './ts/server/resourceState.svelte'
   import { language } from './lang'
@@ -81,6 +82,11 @@
   let retryingPluginRuntime = $state(false)
   let pluginStartupFailed = $derived($startupCoordinatorStore.failures.pluginsReady !== undefined)
   let pluginRuntimeFailed = $derived($pluginRuntimeStateStore.phase === 'error')
+  let preWriterObserverMode = $derived(
+    $startupCoordinatorStore.observerShellEnabled &&
+      $startupCoordinatorStore.capabilities.canRenderShell &&
+      !$startupCoordinatorStore.capabilities.canApplyRoutes,
+  )
 
   async function retryPlugins(): Promise<void> {
     if (retryingPluginRuntime) return
@@ -182,11 +188,20 @@
   class="flex bg-bg w-full h-full max-w-100vw text-textcolor"
   ondragover={(e) => {
     if (isAppInternalDrag(e)) return
+    if (!$startupCoordinatorStore.capabilities.canMutate) {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'none'
+      return
+    }
     e.preventDefault()
     e.dataTransfer.dropEffect = getMainDropEffect(e)
   }}
   ondragstart={markAppInternalDrag}
   ondrop={async (e) => {
+    if (!$startupCoordinatorStore.capabilities.canMutate) {
+      e.preventDefault()
+      return
+    }
     if (isAppInternalDrag(e)) {
       e.preventDefault()
       return
@@ -261,7 +276,7 @@
       </button>
     </div>
   {/if}
-  {#if aprilFools}
+  {#if aprilFools && $startupCoordinatorStore.capabilities.canApplyRoutes}
     <div class="bg-[#212121] w-full h-screen min-h-screen text-black flex relative">
       <div class="w-full max-w-3xl mx-auto py-8 px-4 flex justify-center items-center">
         <div class="flex flex-col w-full items-center text-[#bbbbbb]">
@@ -352,6 +367,8 @@
 
       <span class="text-sm mt-2 text-textcolor2">{LoadingStatusState.text}</span>
     </div>
+  {:else if preWriterObserverMode}
+    <ObserverShell />
   {:else if $routeResourceLoadState.status === 'loading'}
     <div
       class="w-full h-full flex justify-center items-center text-textcolor bg-bg flex-col"
@@ -403,89 +420,95 @@
   {#if $alertStore.type !== 'none'}
     <LazyComponent loader={loadAlert} modal testId="alert" />
   {/if}
-  {#if $showRealmInfoStore}
-    <LazyComponent loader={loadRealmPopup} modal onDismiss={() => showRealmInfoStore.set(null)} testId="realm-popup" />
-  {/if}
-  {#if $openPresetList}
-    <LazyComponent
-      loader={loadBotPreset}
-      componentProps={{
-        mode: presetListModalStore.mode,
-        kind: presetListModalStore.kind,
-        target: presetListModalStore.target,
-        close: closePresetListModal,
-      }}
-      modal
-      onDismiss={closePresetListModal}
-      testId="preset-list" />
-  {/if}
-  {#if $openPersonaList}
-    <LazyComponent
-      loader={loadPersonaList}
-      componentProps={{
-        mode: personaListModalStore.mode,
-        target: personaListModalStore.target,
-        close: closePersonaListModal,
-      }}
-      modal
-      onDismiss={closePersonaListModal}
-      testId="persona-list" />
-  {/if}
-  {#if $openChatGenerationTogglePresetList}
-    <LazyComponent
-      loader={loadChatGenerationTogglePresetDialog}
-      componentProps={{
-        target: chatGenerationTogglePresetListModalStore.target,
-        close: closeChatGenerationTogglePresetListModal,
-      }}
-      modal
-      onDismiss={closeChatGenerationTogglePresetListModal}
-      testId="chat-generation-toggle-presets" />
-  {/if}
-  {#if $bookmarkListOpen}
-    <LazyComponent
-      loader={loadBookmarkList}
-      modal
-      onDismiss={() => bookmarkListOpen.set(false)}
-      testId="bookmark-list" />
-  {/if}
-  {#if $hypaV3ModalOpen}
-    <LazyComponent loader={loadHypaV3Modal} modal onDismiss={() => hypaV3ModalOpen.set(false)} testId="hypa-v3" />
-  {/if}
-  <SavePopupIconComp />
-  {#if $activeMemoryJobsStore.length > 0}
-    <LazyComponent loader={loadHypaV3Progress} testId="hypa-v3-progress" />
-  {/if}
-  {#if popupStore.children}
-    <LazyComponent loader={loadPopupList} testId="popup-list" />
-  {/if}
-  {#if easyPanelStore.open}
-    <LazyComponent loader={loadEasyPanel} modal onDismiss={() => (easyPanelStore.open = false)} testId="easy-panel" />
-  {/if}
-  {#if popUpEditorStore.open}
-    {#key popUpEditorStore.sessionId}
+  {#if $startupCoordinatorStore.capabilities.canApplyRoutes}
+    {#if $showRealmInfoStore}
       <LazyComponent
-        loader={loadPopupEditor}
+        loader={loadRealmPopup}
         modal
-        onDismiss={() => closePopupEditorSession(popUpEditorStore.sessionId)}
-        testId="popup-editor" />
-    {/key}
-  {/if}
-  {#if loadoutModalStore.open}
-    <LazyComponent
-      loader={loadLoadoutModal}
-      modal
-      onDismiss={() => (loadoutModalStore.open = false)}
-      testId="loadout-modal" />
-  {/if}
-  {#if irisStore.open}
-    <LazyComponent loader={loadIrisModal} modal onDismiss={() => (irisStore.open = false)} testId="iris-modal" />
-  {/if}
-  {#if customSideBarConfigDialogStore.open}
-    <LazyComponent
-      loader={loadCustomSidebarConfig}
-      modal
-      onDismiss={() => (customSideBarConfigDialogStore.open = false)}
-      testId="custom-sidebar-config" />
+        onDismiss={() => showRealmInfoStore.set(null)}
+        testId="realm-popup" />
+    {/if}
+    {#if $openPresetList}
+      <LazyComponent
+        loader={loadBotPreset}
+        componentProps={{
+          mode: presetListModalStore.mode,
+          kind: presetListModalStore.kind,
+          target: presetListModalStore.target,
+          close: closePresetListModal,
+        }}
+        modal
+        onDismiss={closePresetListModal}
+        testId="preset-list" />
+    {/if}
+    {#if $openPersonaList}
+      <LazyComponent
+        loader={loadPersonaList}
+        componentProps={{
+          mode: personaListModalStore.mode,
+          target: personaListModalStore.target,
+          close: closePersonaListModal,
+        }}
+        modal
+        onDismiss={closePersonaListModal}
+        testId="persona-list" />
+    {/if}
+    {#if $openChatGenerationTogglePresetList}
+      <LazyComponent
+        loader={loadChatGenerationTogglePresetDialog}
+        componentProps={{
+          target: chatGenerationTogglePresetListModalStore.target,
+          close: closeChatGenerationTogglePresetListModal,
+        }}
+        modal
+        onDismiss={closeChatGenerationTogglePresetListModal}
+        testId="chat-generation-toggle-presets" />
+    {/if}
+    {#if $bookmarkListOpen}
+      <LazyComponent
+        loader={loadBookmarkList}
+        modal
+        onDismiss={() => bookmarkListOpen.set(false)}
+        testId="bookmark-list" />
+    {/if}
+    {#if $hypaV3ModalOpen}
+      <LazyComponent loader={loadHypaV3Modal} modal onDismiss={() => hypaV3ModalOpen.set(false)} testId="hypa-v3" />
+    {/if}
+    <SavePopupIconComp />
+    {#if $activeMemoryJobsStore.length > 0}
+      <LazyComponent loader={loadHypaV3Progress} testId="hypa-v3-progress" />
+    {/if}
+    {#if popupStore.children}
+      <LazyComponent loader={loadPopupList} testId="popup-list" />
+    {/if}
+    {#if easyPanelStore.open}
+      <LazyComponent loader={loadEasyPanel} modal onDismiss={() => (easyPanelStore.open = false)} testId="easy-panel" />
+    {/if}
+    {#if popUpEditorStore.open}
+      {#key popUpEditorStore.sessionId}
+        <LazyComponent
+          loader={loadPopupEditor}
+          modal
+          onDismiss={() => closePopupEditorSession(popUpEditorStore.sessionId)}
+          testId="popup-editor" />
+      {/key}
+    {/if}
+    {#if loadoutModalStore.open}
+      <LazyComponent
+        loader={loadLoadoutModal}
+        modal
+        onDismiss={() => (loadoutModalStore.open = false)}
+        testId="loadout-modal" />
+    {/if}
+    {#if irisStore.open}
+      <LazyComponent loader={loadIrisModal} modal onDismiss={() => (irisStore.open = false)} testId="iris-modal" />
+    {/if}
+    {#if customSideBarConfigDialogStore.open}
+      <LazyComponent
+        loader={loadCustomSidebarConfig}
+        modal
+        onDismiss={() => (customSideBarConfigDialogStore.open = false)}
+        testId="custom-sidebar-config" />
+    {/if}
   {/if}
 </main>

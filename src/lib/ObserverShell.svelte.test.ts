@@ -1,0 +1,219 @@
+import { IDBFactory } from 'fake-indexeddb'
+import { mount, tick, unmount } from 'svelte'
+import { get } from 'svelte/store'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type { AppRoute } from '../ts/routerRoute'
+import type { Database, character } from '../ts/storage/database.svelte'
+
+const observerShellMocks = vi.hoisted(() => ({
+  hydrateCharacterShell: vi.fn(async () => true),
+  hydrationState: { rows: {} as Record<string, { status: string; error: string | null }> },
+  navigate: vi.fn(),
+  routerExports: undefined as
+    | {
+        characterRoutePath: (characterId: string, chatId?: string) => string
+        currentRoute: import('svelte/store').Writable<AppRoute>
+        navigate: (path: string) => void
+      }
+    | undefined,
+}))
+
+async function createRouterMock() {
+  if (!observerShellMocks.routerExports) {
+    const [{ writable }, { characterRoutePath, parseRoute }] = await Promise.all([
+      import('svelte/store'),
+      import('../ts/routerRoute'),
+    ])
+    const currentRoute = writable<AppRoute>({ kind: 'home', path: '/' })
+    observerShellMocks.routerExports = {
+      characterRoutePath,
+      currentRoute,
+      navigate: (path: string) => {
+        observerShellMocks.navigate(path)
+        currentRoute.set(parseRoute(path))
+      },
+    }
+  }
+  return observerShellMocks.routerExports
+}
+
+vi.mock('../ts/router', createRouterMock)
+vi.mock('../ts/server/characterShellHydration.svelte', () => ({
+  characterShellHydrationState: observerShellMocks.hydrationState,
+  hydrateCharacterShell: observerShellMocks.hydrateCharacterShell,
+}))
+
+import {
+  clearPendingMutationOutbox,
+  countPendingMutationRecords,
+  preparePendingMutationOutbox,
+  resetPendingMutationOutboxForTests,
+} from '../ts/server/pendingMutationOutbox'
+import { replaceResourceDatabase } from '../ts/server/resourceState.svelte'
+import { peekObserverRouteIntent, resetObserverRouteIntentForTests } from '../ts/observerRouteIntent'
+import { selectedCharID } from '../ts/stores.svelte'
+
+const { default: ObserverShell } = await import('./ObserverShell.svelte')
+
+type MountedComponent = Parameters<typeof unmount>[0]
+
+let component: MountedComponent | undefined
+let target: HTMLElement
+
+function makeShell(characterId: string, name: string) {
+  return {
+    __serverCharacterShell: true,
+    activeChatId: 'chat-a',
+    chaId: characterId,
+    chatCount: 2,
+    chatIds: ['chat-a', 'chat-b'],
+    creation_date: null,
+    creatorNotes: 'A compact server summary.',
+    displayName: name,
+    image: '',
+    lastInteraction: null,
+    modification_date: null,
+    name,
+    pinnedChats: [{ id: 'chat-a', name: 'Pinned chat' }],
+    trashTime: null,
+    type: 'character' as const,
+  }
+}
+
+function makeDetailedCharacter(): character {
+  return {
+    ...makeShell('char-a', 'Character A'),
+    __serverCharacterShell: undefined,
+    alternateGreetings: [],
+    bias: [],
+    characterVersion: '',
+    chatFolders: [],
+    chatPage: 0,
+    chats: [{ id: 'chat-a', localLore: [], message: [], modules: [], name: 'Detailed chat', note: '' }],
+    creator: '',
+    customscript: [],
+    desc: '',
+    emotionImages: [],
+    exampleMessage: '',
+    firstMessage: '',
+    firstMsgIndex: 0,
+    globalLore: [],
+    notes: '',
+    personality: '',
+    postHistoryInstructions: '',
+    scenario: '',
+    sdData: [],
+    systemPrompt: '',
+    tags: [],
+    triggerscript: [],
+    utilityBot: false,
+    viewScreen: 'none',
+  } as unknown as character
+}
+
+function seedShellDatabase(): void {
+  replaceResourceDatabase({
+    characterOrder: ['char-a'],
+    characters: [makeShell('char-a', 'Character A')],
+    currentChar: -1,
+  } as unknown as Database)
+}
+
+async function mountObserverShell(): Promise<void> {
+  component = mount(ObserverShell, { target })
+  await tick()
+}
+
+describe('pre-writer ObserverShell', () => {
+  beforeEach(async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    vi.stubGlobal('fetch', vi.fn())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-a',
+      writerEpoch: 1,
+      databaseLineage: 'database-a',
+      requestedWriterWasActive: true,
+    })
+    resetObserverRouteIntentForTests()
+    observerShellMocks.hydrationState.rows = {}
+    observerShellMocks.hydrateCharacterShell.mockReset().mockResolvedValue(true)
+    observerShellMocks.navigate.mockClear()
+    observerShellMocks.routerExports?.currentRoute.set({ kind: 'home', path: '/' })
+    selectedCharID.set(-1)
+    seedShellDatabase()
+    target = document.createElement('div')
+    document.body.appendChild(target)
+    await mountObserverShell()
+  })
+
+  afterEach(async () => {
+    if (component) {
+      unmount(component)
+      component = undefined
+    }
+    await clearPendingMutationOutbox()
+    resetPendingMutationOutboxForTests()
+    resetObserverRouteIntentForTests()
+    replaceResourceDatabase({} as Database)
+    target.remove()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('announces read-only mode and uses keyboard-native navigation controls', () => {
+    const status = target.querySelector('[data-observer-read-only-status]')
+    const characterButton = target.querySelector<HTMLButtonElement>('button[aria-label="Open Character A"]')
+
+    expect(status?.getAttribute('role')).toBe('status')
+    expect(status?.getAttribute('aria-live')).toBe('polite')
+    expect(status?.textContent).toContain('Read only')
+    expect(characterButton?.type).toBe('button')
+  })
+
+  it('keeps the latest character/chat choice local with no command request or pending record', async () => {
+    target.querySelector<HTMLButtonElement>('button[aria-label="Open Character A"]')?.click()
+    await tick()
+    target.querySelector<HTMLButtonElement>('button[aria-label="Open chat Pinned chat"]')?.click()
+    await tick()
+
+    expect(observerShellMocks.navigate).toHaveBeenNthCalledWith(1, '/character/char-a')
+    expect(observerShellMocks.navigate).toHaveBeenNthCalledWith(2, '/character/char-a/chat-a')
+    expect(peekObserverRouteIntent()?.route).toEqual({
+      kind: 'character',
+      path: '/character/char-a/chat-a',
+      chaId: 'char-a',
+      chatId: 'chat-a',
+    })
+    expect(get(selectedCharID)).toBe(-1)
+    expect(await countPendingMutationRecords()).toBe(0)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('keeps summary and optional detail states distinct without writer-side effects', async () => {
+    target.querySelector<HTMLButtonElement>('button[aria-label="Open Character A"]')?.click()
+    await tick()
+    expect(target.querySelector('[data-observer-character-summary]')).not.toBeNull()
+    expect(target.textContent).toContain('Summary preview')
+
+    observerShellMocks.hydrateCharacterShell.mockImplementationOnce(async () => {
+      replaceResourceDatabase({
+        characterOrder: ['char-a'],
+        characters: [makeDetailedCharacter()],
+        currentChar: -1,
+      } as unknown as Database)
+      return true
+    })
+    target.querySelector<HTMLButtonElement>('button[aria-label="Load read-only details for Character A"]')?.click()
+    await tick()
+    await tick()
+
+    expect(observerShellMocks.hydrateCharacterShell).toHaveBeenCalledWith('char-a', { supersede: true })
+    expect(target.querySelector('[data-observer-character-summary]')).toBeNull()
+    expect(target.textContent).toContain('Read-only details')
+    expect(target.querySelector('button[aria-label="Open chat Detailed chat"]')).not.toBeNull()
+    expect(await countPendingMutationRecords()).toBe(0)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+})

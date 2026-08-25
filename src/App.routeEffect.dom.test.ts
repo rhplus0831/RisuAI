@@ -6,6 +6,7 @@ import type { Database, character } from './ts/storage/database.svelte'
 import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes'
 import {
   beginStartupAttempt,
+  configureStartupObserverShell,
   recordStartupCapabilityFailure,
   recordStartupMilestone,
   resetStartupReadinessForTests,
@@ -202,6 +203,9 @@ vi.mock('src/ts/process/modules', () => ({
 
 vi.mock('./lib/ChatScreens/ChatScreen.svelte', async () => ({
   default: (await import('./App.routeEffect.dom.AppMarker.svelte')).default,
+}))
+vi.mock('./lib/ObserverShell.svelte', async () => ({
+  default: (await import('./App.routeEffect.dom.ObserverShellMarker.svelte')).default,
 }))
 vi.mock('./lib/Others/AlertComp.svelte', async () => ({
   default: (await import('./App.routeEffect.dom.AppMarker.svelte')).default,
@@ -508,6 +512,36 @@ describe('App route/refreeze mounted DOM behavior', () => {
     expect(target.querySelector('[role="status"]')).toBeNull()
     expect(target.querySelector('[data-testid="side-chat-list"]')).not.toBeNull()
     expect(appRouteDomMocks.state.applyRouteCalls).toBe(0)
+  })
+
+  it('renders the dedicated observer view without applying persistence-capable routes', async () => {
+    if (component) {
+      unmount(component)
+      component = undefined
+    }
+    appRouteDomMocks.state.applyRouteCalls = 0
+    resetStartupReadinessForTests()
+    configureStartupObserverShell(true)
+    for (const milestone of ['entry', 'shell-mounted', 'observer-ready'] as const) {
+      recordStartupMilestone(milestone)
+    }
+    openPresetList.set(true)
+
+    await mountApp()
+
+    expect(target.querySelector('[data-testid="observer-shell-marker"]')).not.toBeNull()
+    expect(target.querySelector('[data-testid="side-chat-list"]')).toBeNull()
+    expect(target.querySelector('[data-testid="preset-list"]')).toBeNull()
+    expect(appRouteDomMocks.state.applyRouteCalls).toBe(0)
+
+    const dropEvent = new Event('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(dropEvent, 'dataTransfer', {
+      value: { files: [{ name: 'blocked.charx' }], types: ['Files'] },
+    })
+    target.querySelector('main')?.dispatchEvent(dropEvent)
+
+    expect(dropEvent.defaultPrevented).toBe(true)
+    expect(appRouteDomMocks.importCharacterProcess).not.toHaveBeenCalled()
   })
 
   it('retains state-to-route subscriptions while a route application owns the stores', async () => {
