@@ -158,10 +158,94 @@ largest initial file. No generated artifacts were committed.
   client depends on it.
 - [x] Remove the `loadedStore` compatibility alias after all consumers use narrow
   capabilities.
-- [ ] Remove temporary measurement or compatibility code that has no ongoing
+- [x] Remove temporary measurement or compatibility code that has no ongoing
   regression value.
 - [ ] Remove the observer flag only after the rollout window passes and the
   rollback decision is explicit.
+
+#### 7D rollout decision record (prepared 2026-08-25)
+
+**Current decision: HOLD.** Keep the production default flag off. The repository
+contains quality workflows but no deployment or cohort-routing configuration,
+and `VITE_FAST_BOOTSTRAP_OBSERVER` is compiled into the client build. A bounded
+stage therefore requires an externally managed flag-on build/deployment cohort;
+this repository cannot safely turn on a percentage of existing clients at
+runtime.
+
+The rollout is blocked on fields that cannot be inferred or assigned locally:
+
+| Required decision input | Current state | Promotion requirement |
+| --- | --- | --- |
+| Rollout owner and rollback executor | Unassigned | Name both people/teams and record their acknowledgement. |
+| Canary and control deployment IDs | Missing | Use the same commit and configuration except for the observer build flag. |
+| Metrics sink owner and deletion policy | Missing | Enable `RISU_PROTOCOL_METRICS` for both cohorts; cap raw retention at 14 days and aggregates at 90 days. |
+| Real large-database control evidence | Missing | Exercise a non-committed real save at least as large as the Phase 0 large fixture and retain only content-free corpus/timing aggregates. |
+| Real multi-tab acceptance evidence | Missing | Complete the safety checklist below on the control and canary deployments. |
+| Rollout and rollback dates | Missing | Record the canary start, review, expansion, full-rollout, and flag-removal dates before enabling the canary. |
+
+Use this bounded sequence. The sample/window defaults are part of the decision;
+changing them requires the rollout owner and rationale in this record.
+
+1. Keep all normal production builds flag-off. Establish a flag-off control for
+   at least 24 continuous hours and 100 `attempt-completed` events, whichever is
+   later. Run one real large-database/two-tab acceptance pass during that window.
+2. Deploy the same commit with `VITE_FAST_BOOTSTRAP_OBSERVER=TRUE` to one named
+   canary cohort capped at 5% of instances or traffic. Keep an otherwise
+   identical flag-off control and a ready-to-deploy flag-off build.
+3. After at least 24 hours and 100 completed canary startups, expand to at most
+   25% only if every safety and telemetry threshold below passes. Repeat the
+   acceptance pass after expansion.
+4. Move to full rollout only after another passing 24-hour/100-startup window.
+   Keep the flag and control build available for seven full days after that
+   decision. Remove the flag only after the named owner records a final keep or
+   rollback decision and a dated removal change.
+
+The real-environment safety checklist has zero tolerance: observer navigation
+must issue no mutation or generation; takeover denial must retain a useful
+read-only shell; promotion must apply the post-replay projection before writes;
+the old writer must be unable to mutate; one accepted mutation must advance one
+revision even after response loss; offline outbox replay and receipt
+acknowledgement must settle once; event-gap recovery must refresh authoritatively;
+and auth loss or database replacement must not retain an authenticated stale
+projection. Any violation rolls the canary back immediately.
+
+Aggregate telemetry only by schema version, milestone, observer mode, and the
+deployment-owned cohort label. Do not introduce a browser/user identifier or
+join to domain data. Promotion also requires all of these thresholds:
+
+- no new `attempt-failed` code and no increase greater than 0.5 percentage
+  points in fatal-attempt rate versus the concurrent flag-off control;
+- no increase greater than 1 percentage point in completed attempts with
+  `attemptCount > 1` or in any localized diagnostic-failure code;
+- no more than a 10% regression in p95 `writer-ready` or `background-ready`
+  duration versus control; and
+- flag-on p50 `observer-ready` at least 20% earlier than flag-on p50
+  `writer-ready`, proving the rollout exposes a materially earlier shell.
+
+A safety violation triggers immediate rollback. A telemetry threshold blocks
+promotion or triggers rollback after two consecutive hourly windows once the
+minimum sample is present. Missing or malformed telemetry blocks the decision;
+it is never interpreted as success. Rollback means deploying the same commit
+with the observer flag unset, then rerunning the flag-off multi-tab acceptance
+pass. It does not alter summaries, route hydration, capability guards, replay,
+or resource protocols.
+
+The legacy `/api/v1/characters/aggregate` route is a separate external-client
+decision. Repository inventory finds no production first-party browser call;
+the exact path remains only in the Fastify route/manifest and test or diagnostic
+code. Removal still requires path-only access counts covering the entire
+supported-client window, with zero supported-client requests for at least 30
+consecutive days. If that condition passes, remove both GET/POST routes,
+manifest entries, compatibility tests, and replace the payload comparison's
+legacy HTTP dependency with a direct repository benchmark. If it does not pass,
+record the supported client, owner, and dated migration/removal condition here.
+
+The measurement commands, budgets, fixture builders, telemetry protocol, and
+Phase 0/7 browser matrices all retain ongoing regression or rollout value and
+must stay. The smoke-only observer override stays until the build flag is
+removed. The completed `loadedStore` cleanup was the only currently identified
+compatibility code with no remaining consumer; no additional temporary code was
+deleted under this checklist item.
 
 #### 7D seam-removal record: `loadedStore` (2026-08-25)
 
