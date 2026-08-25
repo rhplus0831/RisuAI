@@ -423,6 +423,43 @@ test('a delayed modal chunk preserves focus through loading, CSS, and close', as
   await expect(opener).toBeFocused()
 })
 
+test('preset and persona lazy dialogs stay within the viewport after first-open loading', async ({ page }) => {
+  await openLoadedHome(page)
+  await navigateTo(page, '/character/char-smoke/chat-smoke-two')
+  await expect(page.getByTestId('default-chat-composer')).toBeVisible()
+
+  const delayedPreset = await deferredRoute(page, assetPath('src/lib/Setting/botpreset.svelte'))
+  await page.locator('[data-risu-generation-picker-control][data-risu-picker-kind="model"] button').first().click()
+  await delayedPreset.requested
+
+  const presetSurface = lazySurface(page, 'preset-list')
+  await expect(presetSurface).toHaveAttribute('data-risu-lazy-state', 'pending')
+  await expect(presetSurface.getByRole('dialog')).toBeInViewport()
+
+  delayedPreset.release()
+  await delayedPreset.finished
+  await page.unroute(`**${assetPath('src/lib/Setting/botpreset.svelte')}`)
+  await expect(presetSurface).toHaveAttribute('data-risu-lazy-state', 'ready')
+
+  const presetDialog = presetSurface.locator(
+    '[data-risu-generation-picker][data-risu-picker-kind="model"][data-risu-picker-mode="active-chat-generation-settings"]',
+  )
+  await expect(presetDialog).toBeInViewport()
+  await presetDialog.getByRole('button', { name: languageEnglish.close }).click()
+  await expect(presetSurface).toHaveCount(0)
+
+  await page.locator('[data-risu-generation-picker-control][data-risu-picker-kind="persona"] button').first().click()
+  const personaSurface = lazySurface(page, 'persona-list')
+  await expect(personaSurface).toHaveAttribute('data-risu-lazy-state', 'ready')
+
+  const personaDialog = personaSurface.locator(
+    '[data-risu-generation-picker][data-risu-picker-kind="persona"][data-risu-picker-mode="active-chat-generation-settings"]',
+  )
+  await expect(personaDialog).toBeInViewport()
+  await personaDialog.getByRole('button', { name: languageEnglish.close }).click()
+  await expect(personaSurface).toHaveCount(0)
+})
+
 test('an offline first open shows local Retry and succeeds when connectivity returns', async ({ page, context }) => {
   const failedPaths: string[] = []
   page.on('requestfailed', (request) => failedPaths.push(new URL(request.url()).pathname))

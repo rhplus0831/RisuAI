@@ -484,7 +484,7 @@
     if (!selectionPendingKey) close()
   }}
   data-modal-root
-  class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
+  class="fixed inset-0 z-40 bg-black/50 flex justify-center items-center">
   <div
     use:modalFocusTrap
     class="bg-darkbg p-4 break-any rounded-md flex flex-col max-h-full overflow-y-auto preset-modal"
