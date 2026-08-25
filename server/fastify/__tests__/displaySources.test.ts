@@ -5,7 +5,7 @@ import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
-import { openDatabase } from '../src/db.js'
+import { getSchemaState, openDatabase } from '../src/db.js'
 import { applyImport } from '../src/repository.js'
 import { normalizeRisuSaveSnapshotDatabase } from '../src/risuSave/importSnapshot.js'
 
@@ -91,7 +91,7 @@ afterEach(async () => {
 })
 
 describe('POST /api/v1/chats/:chatId/display-sources', () => {
-  it('runs the intermediate transform, commits Lua scriptstate once, and never persists displaySource', async () => {
+  it('keeps Lua scriptstate ephemeral within each target and never persists display-time state', async () => {
     const assertion = await setupAuthedClient(harness.app)
     const db = openDatabase(harness.dataDir)
     const seeded = await applyImport(
@@ -105,7 +105,6 @@ describe('POST /api/v1/chats/:chatId/display-sources', () => {
             name: 'Tess',
             chaId: 'char-1',
             chatPage: 0,
-            customscript: [{ comment: '', in: 'hello', out: 'hi', type: 'editdisplay' }],
             triggerscript: [
               {
                 comment: 'display lua',
@@ -116,8 +115,10 @@ describe('POST /api/v1/chats/:chatId/display-sources', () => {
                     type: 'triggerlua',
                     code: `
                       listenEdit('editDisplay', function(id, data, meta)
-                        setChatVar(id, 'choice', 'updated')
-                        return data .. ' [lua]'
+                        local before = getChatVar(id, 'choice')
+                        setChatVar(id, 'choice', data)
+                        local after = getChatVar(id, 'choice')
+                        return data .. ' [before=' .. before .. ', after=' .. after .. ']'
                       end)
                     `,
                   },
@@ -130,7 +131,11 @@ describe('POST /api/v1/chats/:chatId/display-sources', () => {
                 name: 'Chat',
                 note: '',
                 localLore: [],
-                message: [{ role: 'char', data: 'hello', chatId: 'message-1' }],
+                scriptstate: { $choice: 'seed' },
+                message: [
+                  { role: 'char', data: 'hello', chatId: 'message-1' },
+                  { role: 'char', data: 'world', chatId: 'message-2' },
+                ],
               },
             ],
           },
@@ -150,7 +155,8 @@ describe('POST /api/v1/chats/:chatId/display-sources', () => {
     const response = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/chats/chat-1/display-sources',
-      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+      // The route is a read-only POST; a stale writer header must not gate display projection.
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-old' },
       payload: {
         protocolVersion: 1,
         baseRevision: seeded.revision,
@@ -168,6 +174,18 @@ describe('POST /api/v1/chats/:chatId/display-sources', () => {
             sourceHash: sourceHash(source),
             projectionEpoch: 1,
           },
+          {
+            requestKey: 'request-b',
+            characterId: 'char-1',
+            messageId: 'message-2',
+            index: 1,
+            role: 'char',
+            firstMessage: false,
+            layer: 'original',
+            source: 'world',
+            sourceHash: sourceHash('world'),
+            projectionEpoch: 2,
+          },
         ],
       },
     })
@@ -175,14 +193,21 @@ describe('POST /api/v1/chats/:chatId/display-sources', () => {
     expect(response.statusCode).toBe(200)
     expect(response.json()).toMatchObject({
       protocolVersion: 1,
-      revision: seeded.revision + 1,
+      revision: seeded.revision,
       contextFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/u),
       entries: [
         {
           requestKey: 'request-a',
           status: 'ok',
           sourceHash: sourceHash(source),
-          displaySource: 'hi [lua]',
+          displaySource: 'hello [before=seed, after=hello]',
+          dependencyFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        },
+        {
+          requestKey: 'request-b',
+          status: 'ok',
+          sourceHash: sourceHash('world'),
+          displaySource: 'world [before=seed, after=world]',
           dependencyFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/u),
         },
       ],
@@ -194,8 +219,9 @@ describe('POST /api/v1/chats/:chatId/display-sources', () => {
         data_json: string
       }
       const persistedChat = JSON.parse(row.data_json) as Record<string, unknown>
-      expect(persistedChat.scriptstate).toEqual({ $choice: 'updated' })
-      expect(JSON.stringify(persistedChat)).not.toContain('hi [lua]')
+      expect(persistedChat.scriptstate).toEqual({ $choice: 'seed' })
+      expect(JSON.stringify(persistedChat)).not.toContain('before=seed')
+      expect(getSchemaState(persistedDb).revision).toBe(seeded.revision)
     } finally {
       persistedDb.close()
     }
@@ -204,21 +230,13 @@ describe('POST /api/v1/chats/:chatId/display-sources', () => {
     expect(runtime.databaseLineage).toEqual(expect.any(String))
   })
 
-  it('requires the active writer and validates strict source hashes', async () => {
+  it('validates strict source hashes', async () => {
     const assertion = await setupAuthedClient(harness.app)
     await harness.app.inject({
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-new' },
     })
-
-    const stale = await harness.app.inject({
-      method: 'POST',
-      url: '/api/v1/chats/chat-1/display-sources',
-      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-old' },
-      payload: {},
-    })
-    expect(stale.statusCode).toBe(423)
 
     const malformed = await harness.app.inject({
       method: 'POST',

@@ -248,7 +248,6 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   const displaySourceService = new DisplaySourceService({
     db,
     dataDir: config.dataDir,
-    eventSink: commandEventSink,
   })
   const streamJobRegistry = new JobRegistry()
   // Separately GC-ticked registry for detached chat generations and their

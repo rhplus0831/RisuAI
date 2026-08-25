@@ -112,7 +112,10 @@ Intermediate display protocol/cache/route coverage lives in
 `server/fastify/__tests__/displaySourceCache.test.ts`, and
 `server/fastify/__tests__/displaySources.test.ts`. The existing ChatBody memo,
 parser, scripting, Lua, trigger, bounded-regex, bootstrap, route-protection, and
-generation suites remain companion parity coverage.
+generation suites remain companion parity coverage. The server route cases pin
+the per-target ephemeral scriptstate contract: same-target reads see temporary
+writes, sibling targets start from the authoritative baseline, and SQLite plus
+the response revision remain unchanged.
 
 1. **Outbox, dispatch, replay, bootstrap, and invalidation:** `pendingMutationOutbox`, `durableMutationDispatch`, `durableMutationTerminalRejection`, `pendingMutationReplay`, browser `commands`, `bootstrap`, `startupReadiness`, `resourceState`, `resourceInvalidation`, and the Phase 0/7 browser matrices. These are the core protection against lost, duplicated, or stale user edits.
 2. **Generation goldens and durable lifecycle:** `sendChat.fixtures*`, server `assemble`, `generation.chat`, `durableGeneration`, provider transport/terminal assertions, and the reroll Playwright journey. They protect model-visible context and durable transcripts.

@@ -18,7 +18,7 @@ export interface DisplaySourceCacheStats {
   inflightJoins: number
   evictions: number
   namespaceRetirements: number
-  uncachedDurableWrites: number
+  uncacheableBypasses: number
   oversizeBypasses: number
   staleCompletions: number
   entries: number
@@ -57,7 +57,7 @@ export class DisplaySourceCache {
     inflightJoins: 0,
     evictions: 0,
     namespaceRetirements: 0,
-    uncachedDurableWrites: 0,
+    uncacheableBypasses: 0,
     oversizeBypasses: 0,
     staleCompletions: 0,
   }
@@ -110,7 +110,7 @@ export class DisplaySourceCache {
     try {
       const result = await pending
       if (!result.cacheable) {
-        this.counters.uncachedDurableWrites += 1
+        this.counters.uncacheableBypasses += 1
         return { ...result.value, cacheStatus: 'miss' }
       }
 

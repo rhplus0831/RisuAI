@@ -16,10 +16,7 @@ import {
 } from '../../../src/ts/process/displaySourceProtocol.js'
 import { getSchemaState } from './db.js'
 import { getDatabaseLineage, getDatabaseWriterMetadata } from './databaseLineage.js'
-import { loadPersistedForAssembly, writeSingleChatRowExact } from './repository.js'
-import { applyTargetedCommandMutation } from './commands/mutations.js'
-import { COMMAND_EVENT_CATALOG, type CommandEventSink } from './commands/events.js'
-import { normalizeAllCharacterChats, requireChatLocation } from './commands/chats.js'
+import { loadPersistedForAssembly } from './repository.js'
 import { ValidationError } from './repository.js'
 import { createLuaExecBudget, runLuaEditTrigger } from './prompt/luaRuntime.js'
 import { createTriggerVarEngine } from './prompt/triggerVars.js'
@@ -31,12 +28,9 @@ import { isBoundedRegexError } from './prompt/boundedRegex.js'
 import { emitProtocolMetric, protocolDurationMs, protocolNowMs } from './protocolMetrics.js'
 import { DisplaySourceCache } from './displaySourceCache.js'
 
-type JsonRecord = Record<string, unknown>
-
 interface DisplaySourceServiceOptions {
   db: DatabaseSync
   dataDir: string
-  eventSink: CommandEventSink
   cache?: DisplaySourceCache
 }
 
@@ -51,7 +45,7 @@ interface DisplayScope {
 
 interface TransformOutcome {
   displaySource: string
-  durableStateChanged: boolean
+  ephemeralStateChanged: boolean
   stageDurations: Record<string, number>
 }
 
@@ -192,13 +186,11 @@ export class DisplaySourceService {
 
   private readonly db: DatabaseSync
   private readonly dataDir: string
-  private readonly eventSink: CommandEventSink
   private exclusiveTail: Promise<void> = Promise.resolve()
 
   constructor(options: DisplaySourceServiceOptions) {
     this.db = options.db
     this.dataDir = options.dataDir
-    this.eventSink = options.eventSink
     this.cache = options.cache ?? new DisplaySourceCache()
   }
 
@@ -240,7 +232,6 @@ export class DisplaySourceService {
     const primaryTarget = request.targets[0]
     const scope = primaryTarget ? displayScope(database, primaryTarget.characterId, chatId) : null
     if (!scope) throw new ValidationError('Display source chat or character was not found')
-    const initialScriptstate = cloneScriptstate(scope.chat.scriptstate)
     const entries: DisplaySourceResponseEntry[] = []
     const luaExecBudget = createLuaExecBudget()
     const triggerBudget = createTriggerExecutionBudget()
@@ -280,12 +271,12 @@ export class DisplaySourceService {
             chatId: scope.chat.id,
             durationMs: Object.values(outcome.stageDurations).reduce((sum, duration) => sum + duration, 0),
             outputBytes: Buffer.byteLength(outcome.displaySource, 'utf8'),
-            durableStateChanged: outcome.durableStateChanged,
+            ephemeralStateChanged: outcome.ephemeralStateChanged,
             ...outcome.stageDurations,
           })
           return {
             value: { displaySource: outcome.displaySource, dependencyFingerprint },
-            cacheable: !outcome.durableStateChanged,
+            cacheable: true,
           }
         }
         const result = target.streaming
@@ -304,10 +295,8 @@ export class DisplaySourceService {
       }
     }
 
-    let revision = initialRevision
-    if (!isDeepStrictEqual(initialScriptstate, scope.chat.scriptstate)) {
-      revision = this.commitScriptstate(scope.chatId, initialScriptstate, scope.chat.scriptstate, initialRevision)
-    } else if (getSchemaState(this.db).revision !== initialRevision) {
+    const revision = initialRevision
+    if (getSchemaState(this.db).revision !== initialRevision) {
       return this.staleResponse(request, contextFingerprint, 'revision_changed_during_transform')
     }
 
@@ -456,45 +445,20 @@ export class DisplaySourceService {
           { injectTarget: fakeInjectTarget },
         ),
       )
+      const ephemeralStateChanged = !isDeepStrictEqual(beforeScriptstate, scope.chat.scriptstate)
       return {
         displaySource: data,
-        durableStateChanged: !isDeepStrictEqual(beforeScriptstate, scope.chat.scriptstate),
+        ephemeralStateChanged,
         stageDurations,
       }
-    } catch (error) {
+    } finally {
+      // `editDisplay` is a render-time projection, so it may be retried, cached,
+      // skipped, or evaluated out of transcript order. Lua chat-variable writes
+      // stay visible to the remaining stages of this target, but every target
+      // starts from the same authoritative snapshot: always discard its delta
+      // before another target runs, and never persist display-time scriptstate.
       installScriptstate(scope.chat, beforeScriptstate)
-      throw error
     }
-  }
-
-  private commitScriptstate(
-    chatId: string,
-    before: Chat['scriptstate'],
-    after: Chat['scriptstate'],
-    baseRevision: number,
-  ): number {
-    const result = applyTargetedCommandMutation<{ chatId: string }>({
-      db: this.db,
-      dataDir: this.dataDir,
-      baseRevision,
-      eventSink: this.eventSink,
-      mutationPath: 'targeted-display-source-scriptstate',
-      chatScopedRead: { chatId, exactChatRow: true },
-      mutate(database, db) {
-        const characters = normalizeAllCharacterChats(database)
-        const { character, chat } = requireChatLocation(characters, chatId)
-        if (!isDeepStrictEqual(chat.scriptstate, before)) {
-          throw new ValidationError(`Display source scriptstate is stale for chat ${chatId}`)
-        }
-        installScriptstate(chat as Chat, after)
-        writeSingleChatRowExact(db, chatId, chat as JsonRecord)
-        return {
-          event: { ...COMMAND_EVENT_CATALOG.chatScriptstateUpdated, id: chatId, parentId: character.chaId },
-          extra: { chatId },
-        }
-      },
-    })
-    return result.revision
   }
 
   private staleResponse(

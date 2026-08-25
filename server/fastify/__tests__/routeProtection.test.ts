@@ -185,9 +185,10 @@ describe('route protection (table-wide auth enforcement)', () => {
     expect(unprotected).toEqual([])
   })
 
-  it('classifies hash-aware hydration POSTs as authenticated read-only routes', () => {
+  it('classifies data-reading POSTs as authenticated read-only routes', () => {
     for (const path of [
       '/api/v1/characters/:id/lorebook',
+      '/api/v1/chats/:chatId/display-sources',
       '/api/v1/legacy-presets/:id',
       '/api/v1/prompt-presets/:id/template',
     ]) {

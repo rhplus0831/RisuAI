@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
 import { readChatId } from '../commands/chats.js'
-import { EntityNotFoundError, RevisionMismatchError, ValidationError } from '../repository.js'
+import { EntityNotFoundError, ValidationError } from '../repository.js'
 import {
   DISPLAY_SOURCE_LIMITS,
   DISPLAY_SOURCE_PROTOCOL_VERSION,
@@ -139,12 +139,8 @@ export function registerDisplaySourceRoutes(
       return await service.transformBatch(chatId, request)
     } catch (error) {
       if (error instanceof EntityNotFoundError) return reply.code(404).send({ error: error.message })
-      if (error instanceof RevisionMismatchError) {
-        return reply.code(409).send({ error: 'revision_conflict', currentRevision: error.currentRevision })
-      }
       if (error instanceof ValidationError) {
-        const isRevisionConflict =
-          error.message.includes('base revision is stale') || error.message.includes('scriptstate is stale')
+        const isRevisionConflict = error.message.includes('base revision is stale')
         return reply.code(isRevisionConflict ? 409 : 400).send({
           error: isRevisionConflict ? 'revision_conflict' : error.message,
           ...(isRevisionConflict ? { currentRevision: service.currentRevision() } : {}),

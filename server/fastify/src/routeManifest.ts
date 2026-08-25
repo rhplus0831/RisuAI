@@ -456,11 +456,12 @@ export const PROTOCOL_ROUTE_MANIFEST = [
       reason: 'Intermediate display text can contain private transcript and script output.',
     },
     activeWriter: {
-      decision: 'active-writer',
-      reason: 'A cache miss may execute Lua editDisplay hooks that update chat scriptstate.',
+      decision: 'read-only-post',
+      reason: 'Display transforms use isolated per-target scriptstate and never persist their deltas.',
     },
     streaming: 'none',
-    notes: 'Returns disposable intermediate displaySource text; raw messages remain authoritative.',
+    notes:
+      'Returns disposable intermediate displaySource text; raw messages and chat scriptstate remain authoritative.',
   },
   {
     id: 'character-lorebook-read',

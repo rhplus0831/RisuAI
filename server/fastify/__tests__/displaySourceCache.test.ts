@@ -63,6 +63,6 @@ describe('DisplaySourceCache', () => {
     await cache.resolve('namespace', 'durable', load('state', false))
     await cache.resolve('namespace', 'oversize', load('1234567'))
 
-    expect(cache.stats()).toMatchObject({ entries: 1, evictions: 1, uncachedDurableWrites: 1, oversizeBypasses: 1 })
+    expect(cache.stats()).toMatchObject({ entries: 1, evictions: 1, uncacheableBypasses: 1, oversizeBypasses: 1 })
   })
 })

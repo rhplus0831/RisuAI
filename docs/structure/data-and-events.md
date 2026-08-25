@@ -118,10 +118,12 @@ authoritative invalidation plan. Contiguous multi-revision batches may combine
 targeted reads; an actual revision gap triggers one complete resource refresh.
 The mutation promises settle only after that shared reconciliation. Explicitly
 unqueued message and greeting translation operations reconcile immediately.
-External operations whose responses carry no command event but may persist
-revision-tracked state, including the display-source bridge, occupy the same
-revision lane until their response revision has been ingested, without
-fabricating a command success event.
+Revision-fenced external operations whose responses carry no command event,
+including the read-only display-source bridge, may occupy the same revision lane
+until their response revision has been ingested, without fabricating a command
+success event. Display-source Lua state is per-target and never advances the
+revision; the lane currently supplies base-revision ordering rather than a write
+commit.
 
 Server command transaction paths include targeted/scoped SQLite writers, message-free broad writes,
 character-selection writes, and hydrated message mutations. They still share the

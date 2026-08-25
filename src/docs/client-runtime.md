@@ -515,9 +515,12 @@ same-chat mounted rows, reports an ephemeral page id plus language and viewport,
 and fences each result by request key, source hash, context fingerprint, target
 identity, and projection epoch. `ChatBodyParseMemo` remains above this bridge,
 so a browser memo hit performs no request and the existing last-good body stays
-visible while a replacement is pending. Because a Lua display hook may persist
-chat scriptstate, each complete display batch shares the global command revision
-lane and ingests every chunk response revision before later mutations dispatch.
+visible while a replacement is pending. Server-side Lua display state is
+isolated per target: writes may influence the remainder of that target's
+intermediate transform, but are discarded before another target runs and never
+become chat authority. The current bridge still shares the global command
+revision lane to fence each batch against its requested base revision and
+ingests every chunk response revision before later mutations dispatch.
 
 The full client `processScriptFull` path remains the correctness fallback for
 browser edit hooks, unsupported fuzzy dynamic assets, missing protocol support,

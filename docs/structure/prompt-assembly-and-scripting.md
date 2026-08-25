@@ -166,19 +166,23 @@ then resumes with the optional second asset pass, inlays, thought/tool markup,
 Markdown, style handling, sanitization, and DOM behavior. Neither the wire
 `displaySource` nor the process-local cache is persisted as message content.
 
-The route is active-writer guarded because Lua display hooks retain their
-existing ability to change chat scriptstate. One batch uses a working chat in
-target order and commits its final scriptstate delta once; a state-changing run
-is never inserted into the reusable cache. V2 display variables remain
-temporary. Browser `editdisplay` plugins, dynamic fuzzy-asset matching, an old
-server, stale identity/context, and transport failures select the complete
-browser transform instead of reordering stages.
+The route is a read-only POST. Every target starts from an isolated copy of the
+authoritative chat scriptstate. Lua chat-variable writes remain visible within
+that target's own Lua/trigger/regex pipeline, then the server discards the delta
+before processing another target. Display-time writes therefore never reach
+SQLite, affect a sibling target, or make rendering order, retries, viewport
+mounting, and cache reuse mutate chat state. V2 display variables follow the
+same ephemeral principle. Browser `editdisplay` plugins, dynamic fuzzy-asset
+matching, an old server, stale identity/context, and transport failures select
+the complete browser transform instead of reordering stages.
 
 The cache has one active namespace keyed by database lineage, writer epoch,
 ephemeral page session, language, both viewport dimensions, and protocol
 version. Entries use SHA-256 over canonical display dependencies rather than a
 global revision. Stable rows use a byte-aware LRU; growing generation prefixes
-are coalesced and explicitly bypass it.
+are coalesced and explicitly bypass it. The transform version is part of each
+dependency key, so the per-target ephemeral-state contract cannot reuse entries
+from the former durable-display-state behavior.
 
 ## Lorebook Activation And Injection
 

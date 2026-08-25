@@ -1,7 +1,7 @@
 import { normalizeReportedClientContext, type ReportedClientContext } from './request/clientContext'
 
 export const DISPLAY_SOURCE_PROTOCOL_VERSION = 1 as const
-export const DISPLAY_SOURCE_TRANSFORM_VERSION = 'editdisplay-v1' as const
+export const DISPLAY_SOURCE_TRANSFORM_VERSION = 'editdisplay-v2-ephemeral-state' as const
 
 export const DISPLAY_SOURCE_LIMITS = {
   maxTargets: 64,
