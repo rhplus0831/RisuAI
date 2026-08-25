@@ -97,6 +97,7 @@ import {
 } from './server/greetingTranslations.svelte'
 import { applyServerMemoryJobEvent, applyServerMemoryJobSnapshot } from './server/memoryJobProjection.svelte'
 import { loadInitialServerResources, refreshInvalidatedServerResources } from './server/resourceInvalidation'
+import { ensureResourceSurfaces, stopRouteResourceLoader } from './server/routeResourceLoader'
 import {
   forceServerDatabaseReplacementRefresh,
   forceServerResourceRefresh,
@@ -342,6 +343,7 @@ async function settleStartupPluginRuntime(startupAttemptId: number): Promise<boo
   LoadingStatusState.text = 'Loading Plugins...'
   try {
     await runStartupStep('plugin-runtime', async () => {
+      await ensureResourceSurfaces(['runtime:plugins'])
       await loadPlugins()
       startPluginRuntimeSync()
       recordStartupMilestone('plugins-ready')
@@ -402,8 +404,10 @@ export function retryPluginStartup(): Promise<boolean> {
 }
 
 async function settleStartupBackgroundReadiness(): Promise<void> {
+  const resourceReadiness = ensureResourceSurfaces(['runtime:background-effects'])
   const results = await Promise.allSettled([
     runStartupStep('push-runtime', async () => {
+      await resourceReadiness
       const pushRuntime = await import('./server/pushNotificationSetting')
       stopPushRuntime ??= pushRuntime.stopPushNotificationCoordinator
       const { initializePushNotificationCoordinator, reconcileChatCompletionPushNotificationSetting } = pushRuntime
@@ -411,6 +415,7 @@ async function settleStartupBackgroundReadiness(): Promise<void> {
       await reconcileChatCompletionPushNotificationSetting(getDatabase().notification === true)
     }),
     runStartupStep('background-runtime', async () => {
+      await resourceReadiness
       LoadingStatusState.text = 'Checking For Format Update...'
 
       LoadingStatusState.text = 'Updating States...'
@@ -462,6 +467,7 @@ export function stopDeferredStartupRuntimes(): void {
   stopPushRuntime?.()
   stopPushRuntime = null
   stopPluginRuntimeSync()
+  stopRouteResourceLoader()
 }
 
 async function reconcileProjectedPushNotificationSetting(enabled: boolean): Promise<void> {
@@ -476,6 +482,7 @@ async function reconcileProjectedPushNotificationSetting(enabled: boolean): Prom
 
 async function ensureStartupChatReadiness(): Promise<void> {
   startupChatReattachReady = false
+  await ensureResourceSurfaces(['runtime:chat-generation'])
   if (!(await hydrateSelectedCharacterShell())) {
     throw new StartupChatDependencyError(
       'selected-character-hydration-failed',
@@ -488,6 +495,7 @@ async function ensureStartupChatReadiness(): Promise<void> {
   const promptPresetId = currentStartupPromptTemplateOwnerId()
   if (
     !(await ensurePromptTemplateHydrated({
+      ...(promptPresetId !== currentGlobalPromptTemplateOwnerId() ? { applyProjection: false } : {}),
       promptPresetId,
       minimumRevision: peekAppliedServerResourceRevision() ?? undefined,
     }))
@@ -570,6 +578,11 @@ function currentStartupPromptTemplateOwnerId(): string | null {
     return chatPromptPresetId.trim()
   }
 
+  return currentGlobalPromptTemplateOwnerId()
+}
+
+function currentGlobalPromptTemplateOwnerId(): string | null {
+  const database = getDatabase()
   const selectedPromptPresetIndex = database.promptPresetsId
   if (!Number.isInteger(selectedPromptPresetIndex) || selectedPromptPresetIndex < 0) return null
   const selectedPromptPreset = database.promptPresets?.[selectedPromptPresetIndex]

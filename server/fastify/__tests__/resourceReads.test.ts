@@ -63,6 +63,8 @@ beforeEach(async () => {
       database: {
         currentChar: 0,
         characterOrder: ['char-a', 'char-b'],
+        selectedPersona: 0,
+        personaPrompt: 'Persona prompt',
         mainPrompt: 'Main prompt',
         jailbreak: 'Jailbreak prompt',
         globalNote: 'Global note',
@@ -246,6 +248,40 @@ describe('authenticated resource read routes', () => {
     expect(response.payload).not.toContain('Large legacy body')
     expect(response.payload).not.toContain('Character lore')
     expect(response.payload).not.toContain('Large message')
+  })
+
+  it('returns one exact standalone setting projection', async () => {
+    const present = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/resources/settings/selectedPersona',
+      headers: authHeaders(),
+    })
+    expect(present.statusCode).toBe(200)
+    expect(present.json()).toEqual({
+      revision,
+      setting: 'selectedPersona',
+      state: { present: true, value: 0 },
+    })
+
+    const defaulted = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/resources/settings/userNote',
+      headers: authHeaders(),
+    })
+    expect(defaulted.statusCode).toBe(200)
+    expect(defaulted.json()).toEqual({
+      revision,
+      setting: 'userNote',
+      state: { present: true, value: '' },
+    })
+
+    const unknown = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/resources/settings/openAIKey',
+      headers: authHeaders(),
+    })
+    expect(unknown.statusCode).toBe(404)
+    expect(unknown.json()).toMatchObject({ error: 'standalone_setting_not_found' })
   })
 
   it('returns settings without collection fields and masks provider secrets', async () => {

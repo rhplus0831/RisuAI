@@ -3,8 +3,10 @@ import type { character } from '../storage/database.svelte'
 import type { CommandEvent } from './commands'
 
 const api = vi.hoisted(() => ({
+  shell: vi.fn(),
   settings: vi.fn(),
   settingsGroup: vi.fn(),
+  standaloneSetting: vi.fn(),
   collections: vi.fn(),
   collection: vi.fn(),
   characters: vi.fn(),
@@ -41,6 +43,7 @@ const promptHydration = vi.hoisted(() => ({
   invalidate: vi.fn(),
   mark: vi.fn(),
   reset: vi.fn(),
+  isHydrated: vi.fn(() => true),
 }))
 
 const languageSideEffects = vi.hoisted(() => ({
@@ -56,8 +59,10 @@ vi.mock('../../lang', () => ({
 }))
 
 vi.mock('./resourceReads', () => ({
+  fetchServerShell: api.shell,
   fetchServerSettings: api.settings,
   fetchServerSettingsGroup: api.settingsGroup,
+  fetchServerStandaloneSetting: api.standaloneSetting,
   fetchServerCollections: api.collections,
   fetchServerCollection: api.collection,
   fetchServerCharacters: api.characters,
@@ -91,6 +96,7 @@ vi.mock('./promptTemplateHydration', () => ({
   currentPromptTemplateOwnerId: () => promptHydration.currentOwner,
   ensurePromptTemplateHydrated: promptHydration.ensure,
   invalidatePromptTemplateHydration: promptHydration.invalidate,
+  isPromptTemplateHydrated: promptHydration.isHydrated,
   markPromptTemplateProjectionApplied: promptHydration.mark,
   resetPromptTemplateHydration: promptHydration.reset,
 }))
@@ -122,6 +128,7 @@ import {
 import { SERVER_SETTINGS_KEYS_BY_GROUP } from './settingsGroups'
 import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from './staleStateGuards'
 import { withTrustedResourceWrite } from './resourceWriteGuard.svelte'
+import { SERVER_SHELL_PROTOCOL_VERSION, type ServerShellSettings } from './shellProtocol'
 import {
   applyServerInlayCatalogResource,
   getServerInlayCatalogResource,
@@ -212,6 +219,70 @@ function fullReadMocks(revision: number): void {
   })
 }
 
+function shellSettings(language = 'en'): ServerShellSettings {
+  return {
+    language,
+    username: 'User',
+    colorScheme: {
+      bgcolor: '#111111',
+      darkbg: '#000000',
+      borderc: '#222222',
+      selected: '#333333',
+      draculared: '#ff0000',
+      textcolor: '#ffffff',
+      textcolor2: '#cccccc',
+      darkBorderc: '#444444',
+      darkbutton: '#555555',
+      type: 'dark',
+    },
+    colorSchemeName: 'custom',
+    textTheme: 'standard',
+    customTextTheme: {
+      FontColorStandard: '#ffffff',
+      FontColorBold: '#ffffff',
+      FontColorItalic: '#cccccc',
+      FontColorItalicBold: '#cccccc',
+      FontColorQuote1: '#00ffff',
+      FontColorQuote2: '#ffaa00',
+    },
+    font: 'default',
+    customFont: '',
+    customCSS: '',
+    animationSpeed: 0.4,
+    reducedMotion: false,
+    heightMode: 'percent',
+    sideBarSize: 0,
+    roundIcons: false,
+    menuSideBar: false,
+    showFolderName: true,
+    showSavingIcon: true,
+    hamburgerButtonBottom: false,
+    botSettingAtStart: false,
+    enableDevTools: false,
+    doNotWarnExternalServers: false,
+    keepSessionAlive: 'off',
+  }
+}
+
+function shellRead(revision: number) {
+  return {
+    status: 'ok' as const,
+    protocolVersion: SERVER_SHELL_PROTOCOL_VERSION,
+    revision,
+    settings: shellSettings('ko'),
+    characters: {
+      version: 1 as const,
+      revision,
+      characters: [
+        characterSummaryShell('char-a', 'Ada refreshed', 'chat-a'),
+        characterSummaryShell('char-b', 'Bea refreshed', 'chat-b'),
+      ],
+      characterOrder: ['char-b', 'char-a'],
+      currentChar: 1,
+    },
+  }
+}
+
 function event(revision: number, resource: string, ids: { id?: string; parentId?: string } = {}): CommandEvent {
   return { type: `${resource}.updated`, revision, resource, ...ids }
 }
@@ -243,10 +314,12 @@ beforeEach(() => {
     promptHydration.invalidate,
     promptHydration.mark,
     promptHydration.reset,
+    promptHydration.isHydrated,
   ]) {
     mock.mockClear()
   }
   promptHydration.currentOwner = null
+  promptHydration.isHydrated.mockReturnValue(true)
   sideEffects.mergePluginCollection.mockImplementation((value: any[]) => value)
   sideEffects.mergePluginProvider.mockImplementation((value: unknown) => (typeof value === 'string' ? value : ''))
   sideEffects.mergePluginStorage.mockImplementation((value: Record<string, unknown>) => value)
@@ -257,17 +330,16 @@ beforeEach(() => {
 })
 
 describe('API-backed resource invalidation', () => {
-  it('loads one consistent initial resource set, invalidating chat bodies and preserving pending plugin storage', async () => {
+  it('loads only the coherent shell at ordinary startup', async () => {
     seedResources(4)
-    fullReadMocks(5)
-    sideEffects.mergePluginStorage.mockImplementation((value) => ({ ...value, pending: 'local' }))
+    api.shell.mockResolvedValue(shellRead(5))
 
-    await expect(loadInitialServerResources({ hooks })).resolves.toEqual({ status: 'ok', revision: 5, scope: 'full' })
+    await expect(loadInitialServerResources({ hooks })).resolves.toEqual({ status: 'ok', revision: 5, scope: 'shell' })
 
     const database = getResourceDatabase()
     expect(database).toMatchObject({
       language: 'ko',
-      pluginCustomStorage: { authoritative: true, pending: 'local' },
+      pluginCustomStorage: { resident: true },
       currentChar: 1,
     })
     expect(database.characters.find((candidate) => candidate.chaId === 'char-a')).toMatchObject({
@@ -279,14 +351,67 @@ describe('API-backed resource invalidation', () => {
         },
       ],
     })
-    expect(sideEffects.mergePluginStorage).toHaveBeenCalledWith({ authoritative: true })
-    expect(sideEffects.reapplyPendingPresets).toHaveBeenCalledTimes(1)
-    expect(promptHydration.reset).toHaveBeenCalledTimes(1)
+    expect(api.settings).not.toHaveBeenCalled()
+    expect(api.collections).not.toHaveBeenCalled()
+    expect(api.characters).not.toHaveBeenCalled()
+    expect(api.inlay).not.toHaveBeenCalled()
+    expect(sideEffects.mergeAgentPresetCharacters).toHaveBeenCalledOnce()
     expect(languageSideEffects.change).toHaveBeenLastCalledWith('ko')
+  })
+
+  it('refreshes only resident slices for contiguous events but keeps gap recovery complete', async () => {
+    api.shell.mockResolvedValue(shellRead(1))
+    await expect(loadInitialServerResources({ hooks })).resolves.toMatchObject({ status: 'ok', scope: 'shell' })
+    api.settingsGroup.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      group: 'display',
+      settings: { colorSchemeName: 'remote' },
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(event(2, 'settings', { id: 'display' }), {
+        appliedRevision: 1,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+    expect(api.settingsGroup).toHaveBeenCalledWith('display', undefined)
+
+    api.settingsGroup.mockClear()
+    await expect(
+      refreshInvalidatedServerResources(event(3, 'settings', { id: 'runtime' }), {
+        appliedRevision: 2,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 3, scope: 'targeted' })
+    expect(api.settingsGroup).not.toHaveBeenCalled()
+
+    await expect(
+      refreshInvalidatedServerResources(event(4, 'pluginCollection'), { appliedRevision: 3, hooks }),
+    ).resolves.toEqual({ status: 'ok', revision: 4, scope: 'targeted' })
+    expect(api.collection).not.toHaveBeenCalled()
+
+    await expect(
+      refreshInvalidatedServerResources(event(5, 'inlayCatalog'), { appliedRevision: 4, hooks }),
+    ).resolves.toEqual({ status: 'ok', revision: 5, scope: 'targeted' })
+    expect(api.inlay).not.toHaveBeenCalled()
+
+    fullReadMocks(7)
+    await expect(
+      refreshInvalidatedServerResources(event(7, 'settings', { id: 'runtime' }), {
+        appliedRevision: 5,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 7, scope: 'full' })
+    expect(api.settings).toHaveBeenCalledOnce()
+    expect(api.collections).toHaveBeenCalledOnce()
+    expect(api.characters).toHaveBeenCalledOnce()
+    expect(api.inlay).toHaveBeenCalledOnce()
   })
 
   it('refreshes the server-owned inlay catalog for another client event', async () => {
     const assetId = 'a'.repeat(64)
+    applyServerInlayCatalogResource({ revision: 1, assets: [] })
     api.inlay.mockResolvedValue({
       status: 'ok',
       revision: 2,

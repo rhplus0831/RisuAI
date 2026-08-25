@@ -158,6 +158,21 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'standalone-setting-resource-read',
+    methods: GET_ONLY,
+    path: '/api/v1/resources/settings/:setting',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Focused legacy settings projections contain private user configuration.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only focused settings projection.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'inlay-catalog-read',
     methods: GET_ONLY,
     path: '/api/v1/inlay-assets',

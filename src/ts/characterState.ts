@@ -5,8 +5,8 @@ import { selectedCharID } from './stores/coreStores.svelte'
 import { getDatabase, type Database } from './storage/database.svelte'
 import { defaultEmotion } from './util'
 
-export async function getCustomBackground(db: string) {
-  if (db.length < 2) {
+export async function getCustomBackground(db: unknown) {
+  if (typeof db !== 'string' || db.length < 2) {
     return ''
   }
   const filesrc = await getCharImage(db, 'plain')

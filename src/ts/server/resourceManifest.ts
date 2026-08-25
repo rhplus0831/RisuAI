@@ -1,6 +1,7 @@
 import type { AppRoute } from '../routerRoute'
 import type { ServerCollectionName } from './resourceState.svelte'
-import type { SettingsGroup } from './settingsGroups'
+import { MODEL_PROFILE_SETTINGS_KEYS, type SettingsGroup } from './settingsGroups'
+import { SERVER_STANDALONE_SETTING_NAMES, type ServerStandaloneSettingName } from './standaloneSettingsProtocol'
 
 export const RESOURCE_PURPOSES = ['render', 'interact', 'mutate', 'generate', 'editor-prefill'] as const
 export type ResourcePurpose = (typeof RESOURCE_PURPOSES)[number]
@@ -10,17 +11,8 @@ export type ResourcePurpose = (typeof RESOURCE_PURPOSES)[number]
  * group. Phase 5 loaders must not assume that a settings-group read returns
  * these values; a shell or focused projection has to own each one explicitly.
  */
-export const STANDALONE_SETTING_NAMES = [
-  'selectedPersona',
-  'botPresetsId',
-  'modelPresetsId',
-  'promptPresetsId',
-  'loreBookPage',
-  'personaPrompt',
-  'userIcon',
-  'userNote',
-] as const
-export type StandaloneSettingName = (typeof STANDALONE_SETTING_NAMES)[number]
+export const STANDALONE_SETTING_NAMES = SERVER_STANDALONE_SETTING_NAMES
+export type StandaloneSettingName = ServerStandaloneSettingName
 
 export const RESOURCE_PROJECTION_NAMES = [
   'character-summaries',
@@ -591,9 +583,14 @@ export const RESOURCE_SURFACE_MANIFEST = {
       collection('plugins', ['generate']),
       collection('pluginCustomStorage', ['generate']),
       collection('modules', ['generate']),
+      collection('modelPresets', ['generate']),
       collection('promptPresets', ['generate']),
+      collection('botPresets', ['generate']),
       collection('promptTemplate', ['generate']),
       collection('personas', ['generate']),
+      standalone('botPresetsId', ['generate']),
+      standalone('modelPresetsId', ['generate']),
+      standalone('promptPresetsId', ['generate']),
       standalone('selectedPersona', ['generate']),
       projection('selected-character', ['generate']),
       projection('selected-chat', ['generate']),
@@ -827,6 +824,20 @@ export function resolveResourceRequirements(surfaceIds: readonly ResourceSurface
         resolved.set(identity, { ...previous, purposes })
       }
     }
+  }
+
+  const providers = resolved.get('settings-group:providers')
+  const models = resolved.get('settings-group:models')
+  if (providers?.kind === 'settings-group' && models?.kind === 'settings-group') {
+    const keys = providers.keys
+      ? [...new Set([...providers.keys, ...(models.keys ?? MODEL_PROFILE_SETTINGS_KEYS)])]
+      : undefined
+    resolved.set('settings-group:providers', {
+      ...providers,
+      ...(keys ? { keys } : {}),
+      purposes: [...new Set([...providers.purposes, ...models.purposes])],
+    })
+    resolved.delete('settings-group:models')
   }
 
   return [...resolved.values()]

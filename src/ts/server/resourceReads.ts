@@ -32,12 +32,19 @@ import {
 } from './resourceState.svelte'
 import { isServerInlayCatalogPayload, type ServerInlayCatalogResourcePayload } from './inlayCatalog'
 import { SERVER_SHELL_PROTOCOL_VERSION, isServerShellPayload, type ServerShellSettings } from './shellProtocol'
+import {
+  isServerStandaloneSettingName,
+  isServerStandaloneSettingPayload,
+  type ServerStandaloneSettingName,
+  type ServerStandaloneSettingPayload,
+} from './standaloneSettingsProtocol'
 
 const SETTINGS_ENDPOINT = '/api/v1/settings'
 const COLLECTIONS_ENDPOINT = '/api/v1/collections'
 const CHARACTERS_ENDPOINT = '/api/v1/characters'
 const INLAY_CATALOG_ENDPOINT = '/api/v1/inlay-assets'
 const SHELL_ENDPOINT = '/api/v1/resources/shell'
+const STANDALONE_SETTINGS_ENDPOINT = '/api/v1/resources/settings'
 const CHARACTER_ORDER_ENDPOINT = `${CHARACTERS_ENDPOINT}/order`
 const SETTINGS_CACHE_KEY = 'settings:all'
 const CHARACTERS_CACHE_KEY = `characters:summary:v${SERVER_CHARACTER_SUMMARY_VERSION}`
@@ -84,6 +91,29 @@ export async function fetchServerShell(
       characterOrder: result.body.characters.characterOrder as ServerCharactersResourcePayload['characterOrder'],
       currentChar: result.body.characters.currentChar,
     },
+  }
+}
+
+export async function fetchServerStandaloneSetting(
+  setting: ServerStandaloneSettingName,
+  signal?: AbortSignal | null,
+): Promise<ServerResourceReadResult<ServerStandaloneSettingPayload>> {
+  if (!isServerStandaloneSettingName(setting)) return { status: 'error', error: 'Unknown standalone setting' }
+  const result = await requestServerResourceJson(
+    `${STANDALONE_SETTINGS_ENDPOINT}/${encodeURIComponent(setting)}`,
+    signal,
+  )
+  if (result.status !== 'ok') return resourceReadFailure(result)
+  if (!isServerStandaloneSettingPayload(result.body) || result.body.setting !== setting) {
+    return { status: 'error', error: 'Invalid standalone setting response' }
+  }
+  return {
+    status: 'ok',
+    revision: result.body.revision,
+    setting,
+    state: result.body.state.present
+      ? { present: true, value: structuredClone(result.body.state.value) }
+      : { present: false },
   }
 }
 

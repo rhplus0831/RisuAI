@@ -179,6 +179,22 @@ describe('route resource manifest', () => {
     expect(new Set(shellSettingKeys)).toEqual(new Set(SERVER_SHELL_SETTINGS_KEYS))
   })
 
+  it('declares generation selection pointers outside the minimal shell', () => {
+    const requirements: readonly ResourceRequirement[] =
+      RESOURCE_SURFACE_MANIFEST['runtime:chat-generation'].requirements
+    const collections = requirements.flatMap((requirement) =>
+      requirement.kind === 'collection' ? [requirement.collection] : [],
+    )
+    const standaloneSettings = requirements.flatMap((requirement) =>
+      requirement.kind === 'standalone-setting' ? [requirement.setting] : [],
+    )
+
+    expect(collections).toEqual(expect.arrayContaining(['botPresets', 'modelPresets', 'promptPresets']))
+    expect(standaloneSettings).toEqual(
+      expect.arrayContaining(['botPresetsId', 'modelPresetsId', 'promptPresetsId', 'selectedPersona']),
+    )
+  })
+
   it('deduplicates inherited requirements and combines purposes and exact keys', () => {
     const requirements = resolveResourceRequirements(['shared:settings-shell', 'settings:global-regex'])
     const identities = requirements.map(resourceRequirementIdentity)
@@ -202,5 +218,18 @@ describe('route resource manifest', () => {
     )
     expect(display).toMatchObject({ kind: 'settings-group', group: 'display' })
     expect(display).not.toHaveProperty('keys')
+  })
+
+  it('uses the provider superset read when a surface also declares model profiles', () => {
+    const requirements = resolveResourceRequirements(['runtime:plugins', 'runtime:chat-generation'])
+    const providers = requirements.find(
+      (requirement) => requirement.kind === 'settings-group' && requirement.group === 'providers',
+    )
+
+    expect(providers).toMatchObject({ purposes: ['interact', 'generate'] })
+    expect(providers).not.toHaveProperty('keys')
+    expect(
+      requirements.some((requirement) => requirement.kind === 'settings-group' && requirement.group === 'models'),
+    ).toBe(false)
   })
 })

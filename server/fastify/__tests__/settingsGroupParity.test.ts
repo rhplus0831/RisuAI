@@ -6,6 +6,19 @@ import { READABLE_SETTINGS_GROUPS, SETTINGS_GROUP_KEYS, SETTINGS_GROUPS } from '
 import { SERVER_RAW_TRANSLATOR_TYPES } from '../src/translation/serverAutoTranslationEligibility.js'
 
 describe('settings group parity', () => {
+  it('lets the client accept every key returned by a readable settings group', () => {
+    for (const group of READABLE_SETTINGS_GROUPS) {
+      const endpointKeys = [
+        ...SETTINGS_GROUP_KEYS[group].filter((key) => key !== 'hypaV3Presets'),
+        ...(group === 'language' ? ['translatorPresetId'] : []),
+      ]
+
+      for (const key of endpointKeys) {
+        expect(SERVER_SETTINGS_KEYS_BY_GROUP[group], `${group} response key ${key}`).toContain(key)
+      }
+    }
+  })
+
   it('assigns every generically writable setting to exactly one canonical group', () => {
     const owners = new Map<string, string[]>()
     for (const group of SETTINGS_GROUPS) {

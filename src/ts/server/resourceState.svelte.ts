@@ -12,6 +12,7 @@ import { isCanonicalLoadoutCollection } from './loadoutCanonical'
 import {
   isModelProfileSettingsGroup,
   SERVER_SETTINGS_GROUP_BY_KEY,
+  SETTINGS_GROUPS,
   type SettingsGroup,
   type SettingsGroupProjectionEpochs,
 } from './settingsGroups'
@@ -21,6 +22,11 @@ import { applyPendingSettingsProjectionOverlays } from './settingsPendingProject
 import { reapplyRetainedCharacterProjections } from './chatRetainedProjection'
 import { SERVER_CHARACTER_SHELL_MARKER, SERVER_CHARACTER_SUMMARY_VERSION } from './characterSummaryProtocol'
 import { SERVER_SHELL_SETTINGS_KEYS, isServerShellSettings, type ServerShellSettings } from './shellProtocol'
+import {
+  SERVER_STANDALONE_SETTING_NAMES,
+  type ServerStandaloneSettingName,
+  type ServerStandaloneSettingPayload,
+} from './standaloneSettingsProtocol'
 
 let nextCharacterRowProjectionEpoch = 0
 let characterRowProjectionBaseline = 0
@@ -89,6 +95,10 @@ export function markChatBodyResourceRevision(chatId: string, revision: number): 
   chatBodyResourceRevisions.set(chatId, Math.max(chatBodyResourceRevisions.get(chatId) ?? -1, revision))
 }
 
+export function isChatBodyResourceLoaded(chatId: string): boolean {
+  return nonEmptyString(chatId) && chatBodyResourceRevisions.has(chatId)
+}
+
 function advanceChatBodyProjectionEpoch(chatId: string): void {
   chatBodyProjectionEpochs.set(chatId, ++nextChatBodyProjectionEpoch)
 }
@@ -123,6 +133,10 @@ export function markCharacterLorebookBodyResourceRevision(characterId: string, r
     characterId,
     Math.max(characterLorebookBodyResourceRevisions.get(characterId) ?? -1, revision),
   )
+}
+
+export function isCharacterLorebookBodyResourceLoaded(characterId: string): boolean {
+  return nonEmptyString(characterId) && characterLorebookBodyResourceRevisions.has(characterId)
 }
 
 function advanceCharacterLorebookBodyProjectionEpoch(characterId: string): void {
@@ -606,6 +620,11 @@ export interface SettingsResourceState {
   enabledModulesRevision: number | null
   loreBookPageRevision: number | null
   groupRevisions: Partial<Record<SettingsGroup, number>>
+  groupStatuses: Partial<Record<SettingsGroup, ServerResourceStatus>>
+  groupErrors: Partial<Record<SettingsGroup, string>>
+  standaloneRevisions: Partial<Record<ServerStandaloneSettingName, number>>
+  standaloneStatuses: Partial<Record<ServerStandaloneSettingName, ServerResourceStatus>>
+  standaloneErrors: Partial<Record<ServerStandaloneSettingName, string>>
   status: ServerResourceStatus
   error: string | null
 }
@@ -648,6 +667,11 @@ export const settingsResourceState = $state<SettingsResourceState>({
   enabledModulesRevision: null,
   loreBookPageRevision: null,
   groupRevisions: {},
+  groupStatuses: {},
+  groupErrors: {},
+  standaloneRevisions: {},
+  standaloneStatuses: {},
+  standaloneErrors: {},
   status: 'idle',
   error: null,
 })
@@ -711,10 +735,23 @@ export function failSettingsResourceLoad(error: string): void {
   settingsResourceState.error = error
 }
 
+export function beginSettingsGroupResourceLoad(group: SettingsGroup): void {
+  settingsResourceState.groupStatuses[group] = 'loading'
+  delete settingsResourceState.groupErrors[group]
+}
+
+export function failSettingsGroupResourceLoad(group: SettingsGroup, error: string): void {
+  settingsResourceState.groupStatuses[group] = 'error'
+  settingsResourceState.groupErrors[group] = error
+}
+
 export function applySettingsResource(payload: ServerSettingsResourcePayload): boolean {
   if (isOlderRevision(payload.revision, settingsResourceState.fullRevision)) return false
   if (isOlderRevision(payload.revision, settingsResourceState.shellRevision)) return false
   if (Object.values(settingsResourceState.groupRevisions).some((revision) => revision > payload.revision)) return false
+  if (Object.values(settingsResourceState.standaloneRevisions).some((revision) => revision > payload.revision)) {
+    return false
+  }
   const preserveEnabledModules = (settingsResourceState.enabledModulesRevision ?? -1) > payload.revision
   const liveEnabledModules = preserveEnabledModules
     ? cloneJsonValue((settingsResourceState.value as Record<string, unknown>).enabledModules)
@@ -749,6 +786,22 @@ export function applySettingsResource(payload: ServerSettingsResourcePayload): b
     : null
   settingsResourceState.loreBookPageRevision = preserveLoreBookPage ? settingsResourceState.loreBookPageRevision : null
   settingsResourceState.groupRevisions = {}
+  settingsResourceState.groupStatuses = Object.fromEntries(SETTINGS_GROUPS.map((group) => [group, 'ready'])) as Partial<
+    Record<SettingsGroup, ServerResourceStatus>
+  >
+  settingsResourceState.groupErrors = {}
+  settingsResourceState.standaloneRevisions = Object.fromEntries(
+    SERVER_STANDALONE_SETTING_NAMES.map((setting) => [
+      setting,
+      setting === 'loreBookPage' && preserveLoreBookPage
+        ? settingsResourceState.loreBookPageRevision
+        : payload.revision,
+    ]),
+  ) as Partial<Record<ServerStandaloneSettingName, number>>
+  settingsResourceState.standaloneStatuses = Object.fromEntries(
+    SERVER_STANDALONE_SETTING_NAMES.map((setting) => [setting, 'ready']),
+  ) as Partial<Record<ServerStandaloneSettingName, ServerResourceStatus>>
+  settingsResourceState.standaloneErrors = {}
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
   applyRuntimeLanguage(settingsResourceState.value.language)
@@ -802,6 +855,43 @@ export function applyShellSettingsResource(payload: ServerShellSettingsResourceP
   return true
 }
 
+export function beginStandaloneSettingResourceLoad(setting: ServerStandaloneSettingName): void {
+  settingsResourceState.standaloneStatuses[setting] = 'loading'
+  delete settingsResourceState.standaloneErrors[setting]
+}
+
+export function failStandaloneSettingResourceLoad(setting: ServerStandaloneSettingName, error: string): void {
+  settingsResourceState.standaloneStatuses[setting] = 'error'
+  settingsResourceState.standaloneErrors[setting] = error
+}
+
+/** Apply one legacy top-level value without claiming a complete settings group. */
+export function applyStandaloneSettingResource(payload: ServerStandaloneSettingPayload): boolean {
+  const currentRevision = Math.max(
+    settingsResourceState.revision ?? -1,
+    settingsResourceState.fullRevision ?? -1,
+    settingsResourceState.standaloneRevisions[payload.setting] ?? -1,
+    payload.setting === 'loreBookPage' ? (settingsResourceState.loreBookPageRevision ?? -1) : -1,
+  )
+  if (payload.revision < currentRevision) return false
+
+  const target = settingsResourceState.value as Record<string, unknown>
+  if (payload.state.present) target[payload.setting] = cloneJsonValue(payload.state.value)
+  else delete target[payload.setting]
+  applyPendingSettingsProjectionOverlays(target, new Set([payload.setting]))
+  settingsResourceState.standaloneRevisions[payload.setting] = payload.revision
+  settingsResourceState.standaloneStatuses[payload.setting] = 'ready'
+  delete settingsResourceState.standaloneErrors[payload.setting]
+  settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
+  if (payload.setting === 'loreBookPage') {
+    settingsResourceState.loreBookPageRevision = payload.revision
+    advanceLorebookPageProjectionEpoch()
+  }
+  advanceSettingsProjectionEpoch()
+  markResourceDatabaseChanged()
+  return true
+}
+
 export function applySettingsGroupResource(
   payload: ServerSettingsGroupResourcePayload,
   groupKeys: readonly string[],
@@ -830,7 +920,10 @@ export function applySettingsGroupResource(
   }
   applyPendingSettingsProjectionOverlays(target, new Set(groupKeys))
   settingsResourceState.groupRevisions[payload.group] = payload.revision
+  settingsResourceState.groupStatuses[payload.group] = 'ready'
+  delete settingsResourceState.groupErrors[payload.group]
   if (payload.group === 'providers') settingsResourceState.groupRevisions.models = payload.revision
+  if (payload.group === 'providers') settingsResourceState.groupStatuses.models = 'ready'
   if (payload.group === 'modules') settingsResourceState.enabledModulesRevision = payload.revision
   settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
   settingsResourceState.status = 'ready'
@@ -2437,6 +2530,11 @@ export function resetServerResourceState(): void {
   settingsResourceState.enabledModulesRevision = null
   settingsResourceState.loreBookPageRevision = null
   settingsResourceState.groupRevisions = {}
+  settingsResourceState.groupStatuses = {}
+  settingsResourceState.groupErrors = {}
+  settingsResourceState.standaloneRevisions = {}
+  settingsResourceState.standaloneStatuses = {}
+  settingsResourceState.standaloneErrors = {}
   settingsResourceState.status = 'idle'
   settingsResourceState.error = null
 
@@ -2489,6 +2587,7 @@ export function resetServerResourceRevisionFencesForDatabaseReplacement(): void 
   settingsResourceState.enabledModulesRevision = null
   settingsResourceState.loreBookPageRevision = null
   settingsResourceState.groupRevisions = {}
+  settingsResourceState.standaloneRevisions = {}
 
   collectionsResourceState.revision = null
   collectionsResourceState.fullRevision = null
@@ -2534,6 +2633,17 @@ export function replaceResourceDatabase(database: Database, revision?: number): 
   settingsResourceState.enabledModulesRevision = null
   settingsResourceState.loreBookPageRevision = null
   settingsResourceState.groupRevisions = {}
+  settingsResourceState.groupStatuses = Object.fromEntries(SETTINGS_GROUPS.map((group) => [group, 'ready'])) as Partial<
+    Record<SettingsGroup, ServerResourceStatus>
+  >
+  settingsResourceState.groupErrors = {}
+  settingsResourceState.standaloneRevisions = Object.fromEntries(
+    SERVER_STANDALONE_SETTING_NAMES.map((setting) => [setting, nextRevision]),
+  ) as Partial<Record<ServerStandaloneSettingName, number>>
+  settingsResourceState.standaloneStatuses = Object.fromEntries(
+    SERVER_STANDALONE_SETTING_NAMES.map((setting) => [setting, 'ready']),
+  ) as Partial<Record<ServerStandaloneSettingName, ServerResourceStatus>>
+  settingsResourceState.standaloneErrors = {}
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
 

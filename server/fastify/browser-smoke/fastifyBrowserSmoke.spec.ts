@@ -209,11 +209,13 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
   await expect
     .poll(() => apiRequests.filter((entry) => entry === 'GET /api/v1/events').length)
     .toBeGreaterThanOrEqual(1)
-  for (const resource of ['settings', 'collections', 'characters']) {
-    await expect
-      .poll(() => apiRequests.filter((entry) => entry === `POST /api/v1/${resource}`).length)
-      .toBeGreaterThanOrEqual(1)
-  }
+  expect(apiRequests).toContain('GET /api/v1/resources/shell')
+  expect(apiRequests).not.toContain('POST /api/v1/settings')
+  expect(apiRequests).not.toContain('POST /api/v1/collections')
+  expect(apiRequests).not.toContain('POST /api/v1/characters')
+  expect(apiRequests).not.toContain('GET /api/v1/inlay-assets')
+  expect(apiRequests.some((entry) => entry.startsWith('POST /api/v1/settings/'))).toBe(true)
+  expect(apiRequests.some((entry) => entry.startsWith('POST /api/v1/collections/'))).toBe(true)
 
   const initialProjection = await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot())
   expect(initialProjection?.streamGeminiThoughts).toBe(false)
@@ -316,14 +318,13 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
   expect(apiRequests).toContain('GET /api/v1/memory/summaries/chat-smoke')
   for (const resource of ['settings', 'collections', 'characters']) {
     const path = `/api/v1/${resource}`
-    await expect.poll(() => resourceCacheRequests.filter((entry) => entry.path === path).length).toBeGreaterThan(1)
+    await expect.poll(() => resourceCacheRequests.filter((entry) => entry.path === path).length).toBeGreaterThan(0)
     const latest = resourceCacheRequests.filter((entry) => entry.path === path).at(-1)
-    expect(
-      Object.values(latest?.hashes ?? {}).some(
-        (hashes) =>
-          Array.isArray(hashes) && hashes.some((hash) => typeof hash === 'string' && /^[a-f0-9]{64}$/.test(hash)),
-      ),
-    ).toBe(true)
+    const hasCachedHash = Object.values(latest?.hashes ?? {}).some(
+      (hashes) =>
+        Array.isArray(hashes) && hashes.some((hash) => typeof hash === 'string' && /^[a-f0-9]{64}$/.test(hash)),
+    )
+    expect(hasCachedHash).toBe(resource === 'collections')
   }
   expect(apiRequests.filter((entry) => /^((GET)|(POST)) \/api\/v1\/storage\//.test(entry))).toEqual([])
   await expect

@@ -85,7 +85,7 @@ status, and reject an older same-chat prompt-owner result.
 
 - [x] Move push initialization and notification reconciliation after the shell.
   Push failure must not clear shell, writer, or chat readiness.
-- [ ] Load the inlay catalog on first inlay use or noncompeting idle prefetch.
+- [x] Load the inlay catalog on first inlay use or noncompeting idle prefetch.
 - [x] Start dynamic model discovery after persisted model choices are visible;
   late results must not reset a still-valid selection.
 - [x] Move update checks, nightly/insecure warnings, and nonessential observers
@@ -123,10 +123,11 @@ also shows `pushNotificationSetting` and `customBackgroundSetting` remain in the
 immediate closure through other consumers, so this checkpoint claims scheduling
 and bootstrap-import isolation, not a network-byte reduction.
 
-The only unfinished 4B item is the inlay catalog. It is still part of the
-aggregate `loadInitialServerResources()` response and should move with Phase 5B
-route-driven resource hydration rather than introduce a second competing
-initial fetch here.
+Phase 5 completed the remaining inlay boundary. Shell startup no longer reads
+the inlay catalog; the `/inlay` route requests it through the route manifest on
+first use, with route-local status and retry. It may also participate in the
+same noncompeting resource-prefetch mechanism without becoming a shell or
+mutation readiness dependency.
 
 ### 4C. Plugin readiness
 
@@ -186,7 +187,7 @@ closure.
   recovery state; do not set it merely because background scheduling began.
 - [x] Supersede late work when route, character, chat, or prompt owner changes.
 
-#### 4D implementation record (in progress, 2026-08-25)
+#### 4D implementation record (completed 2026-08-25)
 
 An unresolved selected-chat body now renders three accessible, message-shaped
 placeholder rows inside the transcript column. The composer and surrounding
@@ -238,3 +239,6 @@ and 1267.47 KiB for the immediate `appStartup` closure.
 - Plugin-dependent behavior waits for `pluginsReady` without overwriting accepted
   state.
 - Deferred work has tested cleanup, failure isolation, and retry behavior.
+
+All exit-gate conditions are met. The final inlay first-use boundary and its
+browser/network verification are recorded with Phase 5.

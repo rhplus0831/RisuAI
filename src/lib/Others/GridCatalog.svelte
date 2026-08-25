@@ -71,6 +71,7 @@
   } from 'src/ts/characterCommands'
   import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { characterRoutePath, navigate } from 'src/ts/router'
+  import { prefetchCharacterRouteResource } from 'src/ts/server/routeResourceLoader'
   import { alertError, alertNormal } from 'src/ts/alert'
   interface Props {
     endGrid?: any
@@ -296,6 +297,9 @@
               data-risu-row-index={char.index}
               data-risu-list-kind="grid"
               data-risu-selected={char.index === $selectedCharID ? 'true' : 'false'}
+              onpointerenter={() => char.chaId && prefetchCharacterRouteResource(char.chaId)}
+              onfocusin={() => char.chaId && prefetchCharacterRouteResource(char.chaId)}
+              role="group"
               aria-current={char.index === $selectedCharID ? 'true' : undefined}>
               {#if char.image}
                 <span data-risu-grid-action="open">
@@ -337,6 +341,9 @@
             data-risu-row-index={char.index}
             data-risu-list-kind="list"
             data-risu-selected={char.index === $selectedCharID ? 'true' : 'false'}
+            onpointerenter={() => char.chaId && prefetchCharacterRouteResource(char.chaId)}
+            onfocusin={() => char.chaId && prefetchCharacterRouteResource(char.chaId)}
+            role="group"
             aria-current={char.index === $selectedCharID ? 'true' : undefined}>
             <span data-risu-grid-action="open">
               <BarIcon

@@ -12,6 +12,7 @@ import {
   settingsOpen,
 } from './stores.svelte'
 import { hasActiveModuleEditorLeaveGuard, requestActiveModuleEditorLeave } from './moduleEditorLeaveGuard'
+import { finishRouteResources, prepareRouteResources } from './server/routeResourceLoader'
 import {
   characterRoutePath,
   normalizePath,
@@ -275,6 +276,7 @@ export async function applyRouteToStores(route: AppRoute): Promise<void> {
   const isFreshRouteApplication = () => applicationEpoch === routeApplicationEpoch
   applyingRoute = true
   try {
+    if (!(await prepareRouteResources(route)) || !isFreshRouteApplication()) return
     closeRouteBlockingViews()
     switch (route.kind) {
       case 'home': {
@@ -332,6 +334,8 @@ export async function applyRouteToStores(route: AppRoute): Promise<void> {
         break
       }
     }
+    if (!isFreshRouteApplication()) return
+    await finishRouteResources(route)
   } finally {
     queueMicrotask(() => {
       if (!isFreshRouteApplication()) return
@@ -342,6 +346,10 @@ export async function applyRouteToStores(route: AppRoute): Promise<void> {
       routeApplicationPending = false
     })
   }
+}
+
+export function retryCurrentRouteApplication(): Promise<void> {
+  return applyRouteToStores(get(currentRoute))
 }
 
 async function deliverPendingChatMessageJump(route: AppRoute, isFresh: () => boolean): Promise<void> {

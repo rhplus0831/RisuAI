@@ -15,8 +15,8 @@ tests, evidence, and applicable exit criteria are complete.
 | [1: Entry and bundle boundaries](01-entry-and-bundle-boundaries.md) | Complete | None. |
 | [2: Thin character summaries](02-thin-character-summaries.md) | Complete | None. The compatibility aggregate route remains a rollback seam until the planned seam-removal work. |
 | [3: Startup capabilities](03-startup-capabilities.md) | Complete | None. `loadedStore` remains only as the documented background-readiness compatibility alias scheduled for removal in Phase 7. |
-| [4: Deferred runtimes](04-deferred-runtimes.md) | In progress | Finish the Phase 5B-owned inlay item. |
-| [5: Route-driven hydration](05-route-driven-hydration.md) | In progress | Complete 5C-5D. |
+| [4: Deferred runtimes](04-deferred-runtimes.md) | Complete | None. |
+| [5: Route-driven hydration](05-route-driven-hydration.md) | Complete | None. |
 | [6: Observer shell](06-observer-shell.md) | Outstanding | All review slices. |
 | [7: Hardening and rollout](07-hardening-and-rollout.md) | Outstanding | All review slices and the final initiative evidence package. |
 
@@ -61,7 +61,7 @@ tests, evidence, and applicable exit criteria are complete.
 ### Phase 4: Deferred runtimes
 
 - [x] 4A. Classify and schedule work.
-- [ ] 4B. Shell-independent optional work.
+- [x] 4B. Shell-independent optional work.
 - [x] 4C. Plugin readiness.
 - [x] 4D. Chat-specific readiness.
 
@@ -69,8 +69,8 @@ tests, evidence, and applicable exit criteria are complete.
 
 - [x] 5A. Consumer inventory and manifest contract.
 - [x] 5B. Minimal coherent shell resource.
-- [ ] 5C. Route-scoped loader.
-- [ ] 5D. Invalidation, prefetch, and failure isolation.
+- [x] 5C. Route-scoped loader.
+- [x] 5D. Invalidation, prefetch, and failure isolation.
 
 ### Phase 6: Observer shell
 

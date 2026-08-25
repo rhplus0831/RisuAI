@@ -146,26 +146,77 @@ Verification:
 
 ### 5C. Route-scoped loader
 
-- [ ] Load declared settings groups and collections when the current route needs
+- [x] Load declared settings groups and collections when the current route needs
   them, using the existing granular reads.
-- [ ] Load selected character and selected chat detail independently of unopened
+- [x] Load selected character and selected chat detail independently of unopened
   settings and preset collections.
-- [ ] Add per-resource request deduplication, abort/supersession, request-start
+- [x] Add per-resource request deduplication, abort/supersession, request-start
   revision validation, status, retry, and cleanup.
-- [ ] Keep shared revision barriers only for groups whose UI would be invalid if
+- [x] Keep shared revision barriers only for groups whose UI would be invalid if
   applied separately.
-- [ ] Make direct deep links self-sufficient; they must not depend on resources
+- [x] Make direct deep links self-sufficient; they must not depend on resources
   left behind by a previous route.
+
+#### 5C implementation record (2026-08-25)
+
+Authenticated startup now reads and atomically applies only
+`GET /api/v1/resources/shell`. The router then resolves the typed resource
+manifest before applying a route and independently hydrates the route's settings
+groups, collections, standalone settings, selected character, selected chat,
+and effective prompt owner. Post-route chat and prompt work retains the existing
+readiness coordinator, while deferred runtime consumers can join an identical
+route-owned request instead of issuing a second read.
+
+The new standalone protocol and authenticated
+`GET /api/v1/resources/settings/:setting` route close the audited top-level
+settings gaps with an exact allowlist and `{ present, value }` projection. The
+client resource state now tracks status, error, and revision per settings group,
+collection, and standalone setting. The route loader keys in-flight work by the
+canonical resource target, deduplicates callers with compatible request-start
+revision floors, aborts superseded route work, rejects late selection results,
+and exposes route-local retry and cleanup. Provider and model requirements are
+canonicalized to the provider projection because that endpoint is the declared
+superset, avoiding overlapping reads.
+
+Only the shell retains a cross-field atomic barrier. Granular resources apply
+independently behind the resource write guard. Chat-owned prompt hydration can
+populate a non-global owner without replacing the legacy global compatibility
+projection. Direct URLs are preserved until their requirements settle, and a
+failed route shows a local error and Retry action without discarding the ready
+shell.
 
 ### 5D. Invalidation, prefetch, and failure isolation
 
-- [ ] Map command events to the smallest loaded resource or manifest family.
-- [ ] Preserve authoritative full recovery on a true event gap without forcing
+- [x] Map command events to the smallest loaded resource or manifest family.
+- [x] Preserve authoritative full recovery on a true event gap without forcing
   every normal route read back into a global fan-out.
-- [ ] Drop late responses from an older route or selection.
-- [ ] Prefetch only the most likely next resource, and only when it does not
+- [x] Drop late responses from an older route or selection.
+- [x] Prefetch only the most likely next resource, and only when it does not
   compete with selected chat hydration or a readiness-critical request.
-- [ ] Keep an optional resource failure local to its surface and retry action.
+- [x] Keep an optional resource failure local to its surface and retry action.
+
+#### 5D implementation record (2026-08-25)
+
+Ordinary command events now invalidate only matching settings groups,
+standalone values, collections, summaries, selected detail, chat/lore bodies,
+or inlay data that the client has loaded. Shell-owned changes refresh the shell
+summary projection. A true event gap, import/restore, or other destructive
+lineage transition still performs the authoritative full refresh; normal event
+traffic no longer recreates the startup fan-out.
+
+Route generations and selection-aware request keys fence late responses. The
+catalog surfaces use nonblocking pointer hover to prefetch the most likely
+character detail, and first inlay navigation loads the catalog through the same
+manifest path. Plugin, background-effects, and chat-generation bootstrap owners
+also declare and ensure their deferred manifest surfaces, so their dependencies
+remain explicit without becoming shell render barriers. Joined deferred work
+retries if its route-owned request was aborted.
+
+The Fastify browser smoke asserts that aggregate settings, collections,
+characters, and inlay reads are absent from initial shell startup, while the
+required granular reads appear as routes and generation capabilities need them.
+It also covers route-local offline retry, stale resource recovery, direct
+startup paths, active-chat prompt ownership, and cold/warm cache behavior.
 
 ## Verification
 
@@ -187,3 +238,14 @@ Verification:
 - Direct deep links fetch all and only their declared requirements.
 - Unrelated route resources do not share a global render barrier.
 - Optional resource failure does not invalidate already-ready capabilities.
+
+All exit-gate conditions are met.
+
+## Completion verification (2026-08-25)
+
+- `pnpm test:affected --include-smoke` — 337 frontend files / 5,173 tests and
+  59 Fastify files / 1,558 tests passed; one Fastify test skipped; the smoke
+  build and all 25 browser tests passed.
+- `pnpm check` — zero errors and zero warnings.
+- `pnpm check:server` — passed.
+- `pnpm format:check` — passed.

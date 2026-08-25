@@ -49,8 +49,10 @@
     isApplyingRouteToStores,
     navigate,
     openGridRoute,
+    retryCurrentRouteApplication,
     syncRouteFromState,
   } from './ts/router'
+  import { routeResourceLoadState } from './ts/server/routeResourceLoader'
   import { modalFocusTrap } from './ts/gui/modalFocusTrap'
   import { alertError } from './ts/alert'
   import { hasDragType, RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes'
@@ -144,6 +146,7 @@
     // is active; retaining their subscriptions lets the next user-owned write
     // re-run this effect after the route settles.
     const currentRouteKind = $currentRoute.kind
+    const routeResourceStatus = $routeResourceLoadState.status
     const settingsAreOpen = $settingsOpen
     const settingsMenuIndex = $SettingsMenuIndex
     const selectedCharacterIndex = $selectedCharID
@@ -153,7 +156,12 @@
     const character = database.characters?.[selectedCharacterIndex]
     const persona = database.personas?.[database.selectedPersona]
 
-    if (isApplyingRouteToStores() || hasPendingRouteApplication()) return
+    if (
+      isApplyingRouteToStores() ||
+      hasPendingRouteApplication() ||
+      (currentRouteKind !== 'home' && routeResourceStatus !== 'ready')
+    )
+      return
     syncRouteFromState({
       currentRouteKind,
       settingsOpen: settingsAreOpen,
@@ -343,6 +351,25 @@
       </div>
 
       <span class="text-sm mt-2 text-textcolor2">{LoadingStatusState.text}</span>
+    </div>
+  {:else if $routeResourceLoadState.status === 'loading'}
+    <div
+      class="w-full h-full flex justify-center items-center text-textcolor bg-bg flex-col"
+      data-testid="route-resource-loading"
+      role="status"
+      aria-live="polite"
+      aria-busy="true">
+      <span>Loading route…</span>
+    </div>
+  {:else if $routeResourceLoadState.status === 'error'}
+    <div
+      class="w-full h-full flex justify-center items-center text-textcolor bg-bg flex-col gap-3 px-6 text-center"
+      data-testid="route-resource-error"
+      role="alert">
+      <span>{$routeResourceLoadState.error ?? 'This route could not be loaded.'}</span>
+      <button class="rounded border border-textcolor2 px-4 py-2" onclick={() => void retryCurrentRouteApplication()}>
+        Retry
+      </button>
     </div>
   {:else if $CustomGUISettingMenuStore}
     <LazyComponent loader={loadCustomGUISettingMenu} fill testId="custom-gui-settings" />

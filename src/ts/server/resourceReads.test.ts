@@ -24,6 +24,7 @@ import {
   fetchServerSettings,
   fetchServerSettingsGroup,
   fetchServerShell,
+  fetchServerStandaloneSetting,
 } from './resourceReads'
 
 interface CapturedFetch {
@@ -182,6 +183,37 @@ describe('server resource read clients', () => {
       authHeader: 'resource-auth-token',
       signal: controller.signal,
     })
+  })
+
+  it('reads one focused standalone setting and validates its identity', async () => {
+    const responses = [
+      { revision: 8, setting: 'selectedPersona', state: { present: true, value: 2 } },
+      { revision: 9, setting: 'loreBookPage', state: { present: false } },
+      { revision: 10, setting: 'userIcon', state: { present: true, value: 'wrong field' } },
+    ]
+    const calls = stubResourceFetch(() => responses.shift())
+
+    await expect(fetchServerStandaloneSetting('selectedPersona')).resolves.toEqual({
+      status: 'ok',
+      revision: 8,
+      setting: 'selectedPersona',
+      state: { present: true, value: 2 },
+    })
+    await expect(fetchServerStandaloneSetting('loreBookPage')).resolves.toEqual({
+      status: 'ok',
+      revision: 9,
+      setting: 'loreBookPage',
+      state: { present: false },
+    })
+    await expect(fetchServerStandaloneSetting('selectedPersona')).resolves.toEqual({
+      status: 'error',
+      error: 'Invalid standalone setting response',
+    })
+    expect(calls.map((call) => call.url)).toEqual([
+      '/api/v1/resources/settings/selectedPersona',
+      '/api/v1/resources/settings/loreBookPage',
+      '/api/v1/resources/settings/selectedPersona',
+    ])
   })
 
   it('reads and validates the revisioned inlay catalog', async () => {

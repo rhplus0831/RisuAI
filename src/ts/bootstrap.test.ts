@@ -14,6 +14,11 @@ const resourceApi = vi.hoisted(() => ({
   hooks: { kind: 'resource-hooks' },
 }))
 
+const routeResourceApi = vi.hoisted(() => ({
+  ensure: vi.fn(async () => undefined),
+  stop: vi.fn(),
+}))
+
 const commandApi = vi.hoisted(() => ({
   initialize: vi.fn(),
   reconciler: null as null | ((event: any, events: any[], localEffects: ReadonlyMap<number, any>) => Promise<void>),
@@ -160,6 +165,11 @@ vi.mock('./storage/fastifyStorage', async (importActual) => {
 vi.mock('./server/resourceInvalidation', () => ({
   loadInitialServerResources: resourceApi.loadInitial,
   refreshInvalidatedServerResources: resourceApi.refreshInvalidated,
+}))
+
+vi.mock('./server/routeResourceLoader', () => ({
+  ensureResourceSurfaces: routeResourceApi.ensure,
+  stopRouteResourceLoader: routeResourceApi.stop,
 }))
 
 vi.mock('./server/resourceRefresh', () => ({
@@ -489,6 +499,7 @@ beforeEach(() => {
   bootstrapApi.fetch.mockResolvedValue(runtimeBootstrap())
   bootstrapApi.fetchReadOnly.mockResolvedValue(runtimeBootstrap({ revision: 5 }))
   resourceApi.loadInitial.mockResolvedValue({ status: 'ok', revision: 5, scope: 'full' })
+  routeResourceApi.ensure.mockReset().mockResolvedValue(undefined)
   resourceApi.refreshInvalidated.mockImplementation(async (events: TestCommandEvent | TestCommandEvent[]) => {
     const batch = Array.isArray(events) ? events : [events]
     return { status: 'ok', revision: batch.at(-1)?.revision ?? 5, scope: 'targeted' }
@@ -880,7 +891,11 @@ describe('API-backed client bootstrap', () => {
 
     expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(false)
     await vi.waitFor(() =>
-      expect(promptTemplateApi.ensure).toHaveBeenCalledWith({ promptPresetId: 'prompt-older', minimumRevision: 5 }),
+      expect(promptTemplateApi.ensure).toHaveBeenCalledWith({
+        applyProjection: false,
+        promptPresetId: 'prompt-older',
+        minimumRevision: 5,
+      }),
     )
 
     withTrustedResourceWrite(() => {
@@ -888,7 +903,11 @@ describe('API-backed client bootstrap', () => {
     })
     hydrationApi.readinessRefreshHook?.()
     await vi.waitFor(() => expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true))
-    expect(promptTemplateApi.ensure).toHaveBeenCalledWith({ promptPresetId: 'prompt-newer', minimumRevision: 5 })
+    expect(promptTemplateApi.ensure).toHaveBeenCalledWith({
+      applyProjection: false,
+      promptPresetId: 'prompt-newer',
+      minimumRevision: 5,
+    })
 
     releaseOlderPrompt(false)
     await Promise.resolve()

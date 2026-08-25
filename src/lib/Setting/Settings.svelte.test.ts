@@ -10,6 +10,11 @@ const supporterSpies = vi.hoisted(() => ({
   loadSupporters: vi.fn(),
 }))
 
+vi.mock('src/ts/server/routeResourceLoader', () => ({
+  finishRouteResources: vi.fn(async () => true),
+  prepareRouteResources: vi.fn(async () => true),
+}))
+
 vi.mock('src/ts/alert', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/alert')>()
   return {

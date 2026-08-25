@@ -29,6 +29,7 @@
   import { characterRoutePath, navigate } from 'src/ts/router'
   import { language } from 'src/lang'
   import { onMount } from 'svelte'
+  import { prefetchCharacterRouteResource } from 'src/ts/server/routeResourceLoader'
 
   interface Props {
     endGrid?: () => void
@@ -81,6 +82,8 @@
       data-risu-list-kind={hideTrash ? 'active' : 'all'}
       data-risu-selected={char.index === $selectedCharID ? 'true' : 'false'}
       data-risu-mobile-character-action="open"
+      onpointerenter={() => char.chaId && prefetchCharacterRouteResource(char.chaId)}
+      onfocus={() => char.chaId && prefetchCharacterRouteResource(char.chaId)}
       aria-current={char.index === $selectedCharID ? 'true' : undefined}
       onclick={() => {
         openCharacterRoute(char.index)

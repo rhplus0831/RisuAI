@@ -7,6 +7,10 @@ import {
   SERVER_SHELL_SETTINGS_KEYS,
   type ServerShellSettings,
 } from '../../../../src/ts/server/shellProtocol.js'
+import {
+  isServerStandaloneSettingName,
+  type ServerStandaloneSettingName,
+} from '../../../../src/ts/server/standaloneSettingsProtocol.js'
 import type { AuthState } from '../auth.js'
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
@@ -138,6 +142,37 @@ export function registerResourceReadRoutes(
       },
     })
   })
+
+  app.get<{ Params: { setting: string } }>(
+    '/api/v1/resources/settings/:setting',
+    { exposeHeadRoute: false },
+    async (req, reply) => {
+      if (!(await requireAuth(authState, req, reply))) return
+      if (!isServerStandaloneSettingName(req.params.setting)) {
+        reply.code(404).send({
+          error: 'standalone_setting_not_found',
+          reason: `Unknown standalone setting: ${req.params.setting}`,
+        })
+        return
+      }
+      const setting = req.params.setting as ServerStandaloneSettingName
+      const { revision } = getSchemaState(db)
+      const persisted = loadPersistedDatabaseFields(db, dataDir, [setting])
+      const present = Object.prototype.hasOwnProperty.call(persisted, setting)
+      return metricResourceResponse(
+        req,
+        reply,
+        'settings',
+        revision,
+        {
+          revision,
+          setting,
+          state: present ? { present: true, value: persisted[setting] } : { present: false },
+        },
+        { setting },
+      )
+    },
+  )
 
   app.get('/api/v1/inlay-assets', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return

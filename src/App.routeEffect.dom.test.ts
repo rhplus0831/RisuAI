@@ -70,6 +70,7 @@ async function createRouteMock() {
       navigate: vi.fn(),
       openGridRoute: appRouteDomMocks.openGridRoute,
       parseRoute: vi.fn(() => characterRoute),
+      retryCurrentRouteApplication: vi.fn(),
       setCharacterSidebarViewMode: (view: 'chat' | 'character') => appRouteDomMocks.state.setSidebarViewMode(view),
       syncRouteFromState: vi.fn(),
     }
@@ -80,6 +81,11 @@ async function createRouteMock() {
 
 vi.mock('./ts/router', createRouteMock)
 vi.mock('src/ts/router', createRouteMock)
+
+vi.mock('./ts/server/routeResourceLoader', async () => {
+  const { writable } = await import('svelte/store')
+  return { routeResourceLoadState: writable({ error: null, routeKey: routePath, status: 'ready' }) }
+})
 
 vi.mock('./lang', () => ({
   language: {

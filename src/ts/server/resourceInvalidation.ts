@@ -1,5 +1,10 @@
 import type { CommandEvent } from './commands'
-import { SERVER_SETTINGS_KEYS_BY_GROUP, isSettingsGroup, type SettingsGroup } from './settingsGroups'
+import {
+  SERVER_SETTINGS_GROUP_BY_KEY,
+  SERVER_SETTINGS_KEYS_BY_GROUP,
+  isSettingsGroup,
+  type SettingsGroup,
+} from './settingsGroups'
 import {
   fetchServerBulkCharacterLorebooks,
   fetchServerCharacterLorebook,
@@ -11,6 +16,7 @@ import {
   currentPromptTemplateOwnerId,
   ensurePromptTemplateHydrated,
   invalidatePromptTemplateHydration,
+  isPromptTemplateHydrated,
   markPromptTemplateProjectionApplied,
   resetPromptTemplateHydration,
 } from './promptTemplateHydration'
@@ -22,8 +28,10 @@ import {
   fetchServerCollection,
   fetchServerCollections,
   fetchServerInlayCatalog,
+  fetchServerShell,
   fetchServerSettings,
   fetchServerSettingsGroup,
+  fetchServerStandaloneSetting,
 } from './resourceReads'
 import {
   applyCharacterOrderResource,
@@ -35,6 +43,7 @@ import {
   applyLegacyPresetRowResource,
   applySettingsResource,
   applySettingsGroupResource,
+  applyStandaloneSettingResource,
   SERVER_COLLECTION_NAMES,
   captureCharacterListProjectionEpoch,
   captureCharacterLorebookBodyProjectionEpoch,
@@ -50,6 +59,8 @@ import {
   hasChatBodyProjectionEpochChanged,
   hasNewerCharacterLorebookBodyResourceRevision,
   hasNewerChatBodyResourceRevision,
+  isCharacterLorebookBodyResourceLoaded,
+  isChatBodyResourceLoaded,
   markCharacterLorebookBodyResourceRevision,
   markCharacterLorebookProjectionApplied,
   markChatBodyResourceRevision,
@@ -62,11 +73,15 @@ import {
 import { withServerResourceApply } from './resourceWriteGuard.svelte'
 import { createDestructiveRefreshToken } from './staleStateGuards'
 import { applyServerInlayCatalogResource, getServerInlayCatalogResource } from './inlayCatalog'
+import { applyServerShellResource } from './shellHydration'
+import { SERVER_SHELL_SETTINGS_KEYS } from './shellProtocol'
+import type { ServerStandaloneSettingName } from './standaloneSettingsProtocol'
+import { SERVER_CHARACTER_SHELL_MARKER } from './characterSummaryProtocol'
 
 export const FULL_RESOURCE_REFRESH_MAX_ATTEMPTS = 3
 
 export type ServerResourceRefreshResult =
-  | { status: 'ok'; revision: number; scope: 'full' | 'targeted' | 'none' }
+  | { status: 'ok'; revision: number; scope: 'shell' | 'full' | 'targeted' | 'none' }
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
 
@@ -114,12 +129,17 @@ export interface ServerResourceInvalidationOptions extends ServerResourceRefresh
 export interface ServerResourceTargetRefreshInput {
   characterIds?: readonly string[]
   collections?: readonly ServerCollectionName[]
+  inlayCatalog?: boolean
+  settingsGroups?: readonly SettingsGroup[]
+  standaloneSettings?: readonly ServerStandaloneSettingName[]
+  minimumRevision?: number
 }
 
 interface RefreshPlan {
   inlayCatalog: boolean
   settings: boolean
   settingsGroups: Set<SettingsGroup>
+  standaloneSettings: Set<ServerStandaloneSettingName>
   collections: Set<ServerCollectionName>
   allCharacters: boolean
   characterIds: Set<string>
@@ -138,6 +158,7 @@ interface RefreshPlan {
 
 type SettingsReadResult = Awaited<ReturnType<typeof fetchServerSettings>>
 type SettingsGroupReadResult = Awaited<ReturnType<typeof fetchServerSettingsGroup>>
+type StandaloneSettingReadResult = Awaited<ReturnType<typeof fetchServerStandaloneSetting>>
 type CollectionReadResult = Awaited<ReturnType<typeof fetchServerCollection>>
 type CharactersReadResult = Awaited<ReturnType<typeof fetchServerCharacters>>
 type CharacterReadResult = Awaited<ReturnType<typeof fetchServerCharacter>>
@@ -168,6 +189,12 @@ type CompletedTargetedRead =
   | { kind: 'inlayCatalog'; result: InlayCatalogReadResult }
   | { kind: 'settings'; fence: ResourceReadFence; result: SettingsReadResult }
   | { kind: 'settingsGroup'; group: SettingsGroup; fence: ResourceReadFence; result: SettingsGroupReadResult }
+  | {
+      kind: 'standaloneSetting'
+      setting: ServerStandaloneSettingName
+      fence: ResourceReadFence
+      result: StandaloneSettingReadResult
+    }
   | { kind: 'collection'; name: ServerCollectionName; fence: ResourceReadFence; result: CollectionReadResult }
   | {
       kind: 'legacyPresetRow'
@@ -195,11 +222,30 @@ type CompletedTargetedRead =
       result: BulkLorebookReadResult
     }
 
-/** Load and apply the complete API-backed database resource set at startup. */
+/** Load only the coherent shell. Routes and deferred runtimes own every other slice. */
 export async function loadInitialServerResources(
   options: ServerResourceRefreshOptions = {},
 ): Promise<ServerResourceRefreshResult> {
-  return refreshAllServerResources(options)
+  const shell = await fetchServerShell(options.signal)
+  if (shell.status !== 'ok') return failedRead(shell)
+  const mergedCharacters = options.hooks?.mergePendingAgentPresetCharacters
+    ? options.hooks.mergePendingAgentPresetCharacters(shell.characters.characters)
+    : shell.characters.characters
+  const payload = {
+    ...shell,
+    characters: {
+      ...shell.characters,
+      characters: mergedCharacters,
+    },
+  }
+  try {
+    if (!applyServerShellResource(payload)) {
+      return { status: 'error', error: 'Server shell response was superseded before apply' }
+    }
+    return { status: 'ok', revision: shell.revision, scope: 'shell' }
+  } catch (error) {
+    return { status: 'error', error: error instanceof Error ? error.message : String(error) }
+  }
 }
 
 /**
@@ -316,6 +362,7 @@ export async function refreshInvalidatedServerResources(
     addEventToRefreshPlan(plan, event)
     if (plan.full) return refreshAllServerResources(options)
   }
+  retainLoadedRefreshTargets(plan)
 
   const missingHook = missingRequiredHook(plan, options.hooks)
   if (missingHook) {
@@ -341,8 +388,17 @@ export async function refreshServerResourceTargets(
     plan.characterIds.add(characterId)
   }
   for (const name of new Set(input.collections ?? [])) plan.collections.add(name)
+  for (const group of new Set(input.settingsGroups ?? [])) plan.settingsGroups.add(group)
+  for (const setting of new Set(input.standaloneSettings ?? [])) plan.standaloneSettings.add(setting)
+  plan.inlayCatalog = input.inlayCatalog === true
 
-  if (plan.characterIds.size === 0 && plan.collections.size === 0) {
+  if (
+    plan.characterIds.size === 0 &&
+    plan.collections.size === 0 &&
+    plan.settingsGroups.size === 0 &&
+    plan.standaloneSettings.size === 0 &&
+    !plan.inlayCatalog
+  ) {
     return { status: 'ok', revision: 0, scope: 'none' }
   }
 
@@ -351,7 +407,7 @@ export async function refreshServerResourceTargets(
     return { status: 'error', error: `Server resource invalidation requires the ${missingHook} hook` }
   }
 
-  return executeTargetedRefreshPlan(plan, options)
+  return executeTargetedRefreshPlan(plan, options, input.minimumRevision)
 }
 
 async function executeTargetedRefreshPlan(
@@ -432,6 +488,7 @@ function createRefreshPlan(): RefreshPlan {
     inlayCatalog: false,
     settings: false,
     settingsGroups: new Set(),
+    standaloneSettings: new Set(),
     collections: new Set(),
     allCharacters: false,
     characterIds: new Set(),
@@ -447,6 +504,93 @@ function createRefreshPlan(): RefreshPlan {
     refreshSelectedPromptTemplate: false,
     full: false,
   }
+}
+
+const SHELL_SETTINGS_GROUPS = new Set<SettingsGroup>(
+  SERVER_SHELL_SETTINGS_KEYS.map((key) => SERVER_SETTINGS_GROUP_BY_KEY[key]).filter(
+    (group): group is SettingsGroup => group !== undefined,
+  ),
+)
+
+/**
+ * A contiguous event advances the global cursor even when its resource is not
+ * resident. Re-read only loaded projections; a later route read gets the
+ * current revision directly. Gap/restore recovery bypasses this filter and
+ * remains a complete authoritative refresh.
+ */
+function retainLoadedRefreshTargets(plan: RefreshPlan): void {
+  if (plan.settings && settingsResourceState.fullRevision === null) {
+    plan.settings = false
+    for (const group of Object.keys(settingsResourceState.groupStatuses)) {
+      if (isSettingsGroup(group) && settingsResourceState.groupStatuses[group] === 'ready') {
+        plan.settingsGroups.add(group)
+      }
+    }
+    for (const group of SHELL_SETTINGS_GROUPS) plan.settingsGroups.add(group)
+    for (const [setting, status] of Object.entries(settingsResourceState.standaloneStatuses)) {
+      if (status === 'ready') plan.standaloneSettings.add(setting as ServerStandaloneSettingName)
+    }
+  }
+
+  for (const group of [...plan.settingsGroups]) {
+    if (settingsResourceState.groupStatuses[group] !== 'ready' && !SHELL_SETTINGS_GROUPS.has(group)) {
+      plan.settingsGroups.delete(group)
+    }
+  }
+  for (const setting of [...plan.standaloneSettings]) {
+    if (settingsResourceState.standaloneStatuses[setting] !== 'ready') plan.standaloneSettings.delete(setting)
+  }
+  for (const name of [...plan.collections]) {
+    if (collectionsResourceState.statuses[name] !== 'ready') plan.collections.delete(name)
+  }
+
+  if (plan.inlayCatalog && getServerInlayCatalogResource() === null) plan.inlayCatalog = false
+
+  for (const characterId of [...plan.characterIds]) {
+    const resident = charactersResourceState.characters.find((candidate) => candidate?.chaId === characterId)
+    if (!resident) {
+      plan.characterIds.delete(characterId)
+      continue
+    }
+    if ((resident as unknown as Record<string, unknown>)[SERVER_CHARACTER_SHELL_MARKER] === true) {
+      plan.characterIds.delete(characterId)
+      plan.allCharacters = true
+    }
+  }
+  for (const chatId of [...plan.chatIds]) {
+    if (!isChatBodyResourceLoaded(chatId) && !residentChatBodyHasContent(chatId)) plan.chatIds.delete(chatId)
+  }
+  for (const chatId of [...plan.generationChatMessageIds.keys()]) {
+    if (!isChatBodyResourceLoaded(chatId) && !residentChatBodyHasContent(chatId)) {
+      plan.generationChatMessageIds.delete(chatId)
+    }
+  }
+  for (const characterId of [...plan.lorebookCharacterIds]) {
+    if (!isCharacterLorebookBodyResourceLoaded(characterId) && !residentCharacterLorebookIsLoaded(characterId)) {
+      plan.lorebookCharacterIds.delete(characterId)
+    }
+  }
+  for (const ownerId of [...plan.promptTemplateOwnerIds]) {
+    if (!isPromptTemplateHydrated(ownerId)) plan.promptTemplateOwnerIds.delete(ownerId)
+  }
+  if (plan.refreshSelectedPromptTemplate && !isPromptTemplateHydrated(currentPromptTemplateOwnerId())) {
+    plan.refreshSelectedPromptTemplate = false
+  }
+}
+
+function residentChatBodyHasContent(chatId: string): boolean {
+  return charactersResourceState.characters.some((character) =>
+    character.chats?.some((chat) => chat.id === chatId && Array.isArray(chat.message) && chat.message.length > 0),
+  )
+}
+
+function residentCharacterLorebookIsLoaded(characterId: string): boolean {
+  const character = charactersResourceState.characters.find((candidate) => candidate?.chaId === characterId)
+  return (
+    !!character &&
+    (character as unknown as Record<string, unknown>)[SERVER_CHARACTER_SHELL_MARKER] !== true &&
+    Array.isArray(character.globalLore)
+  )
 }
 
 function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
@@ -925,6 +1069,13 @@ function captureSettingsGroupReadFence(group: SettingsGroup): ResourceReadFence 
   )
 }
 
+function captureStandaloneSettingReadFence(setting: ServerStandaloneSettingName): ResourceReadFence {
+  return captureResourceReadFence(
+    () => settingsResourceState.standaloneRevisions[setting] ?? null,
+    () => snapshotFields(settingsResourceState.value as Record<string, unknown>, [setting]),
+  )
+}
+
 function captureCollectionReadFence(name: ServerCollectionName): ResourceReadFence {
   return captureResourceReadFence(
     () => captureCollectionProjectionEpoch(name),
@@ -1028,6 +1179,17 @@ async function runTargetedReads(
       fetchServerSettingsGroup(group, signal).then((result) => ({
         kind: 'settingsGroup' as const,
         group,
+        fence,
+        result,
+      })),
+    )
+  }
+  for (const setting of plan.standaloneSettings) {
+    const fence = captureStandaloneSettingReadFence(setting)
+    reads.push(
+      fetchServerStandaloneSetting(setting, signal).then((result) => ({
+        kind: 'standaloneSetting' as const,
+        setting,
         fence,
         result,
       })),
@@ -1285,6 +1447,14 @@ function applyTargetedRead(
         settingsGroupAlreadyAtLeast(entry.group, payload.revision)
       )
     }
+    case 'standaloneSetting':
+      if (entry.result.status === 'ok' && entry.result.setting !== entry.setting) return false
+      return (
+        entry.result.status !== 'ok' ||
+        supersessions.generic.has(entry) ||
+        applyStandaloneSettingResource(entry.result) ||
+        (settingsResourceState.standaloneRevisions[entry.setting] ?? -1) >= entry.result.revision
+      )
     case 'collection': {
       if (entry.result.status !== 'ok') return true
       if (supersessions.generic.has(entry)) return true
@@ -1598,6 +1768,8 @@ function targetedReadLabel(entry: CompletedTargetedRead): string {
       return 'settings'
     case 'settingsGroup':
       return `${entry.group} settings`
+    case 'standaloneSetting':
+      return `${entry.setting} setting`
     case 'collection':
       return `${entry.name} collection`
     case 'legacyPresetRow':

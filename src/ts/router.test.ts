@@ -7,6 +7,13 @@ const routerMocks = vi.hoisted(() => ({
   changeUserPersonaWithOutcome: vi.fn(),
   findCharacterIndexbyId: vi.fn<(characterId: string) => number>(() => -1),
   openPlaygroundChat: vi.fn(),
+  finishRouteResources: vi.fn(async () => true),
+  prepareRouteResources: vi.fn(async () => true),
+}))
+
+vi.mock('./server/routeResourceLoader', () => ({
+  finishRouteResources: routerMocks.finishRouteResources,
+  prepareRouteResources: routerMocks.prepareRouteResources,
 }))
 
 vi.mock('./characters', () => ({
@@ -79,6 +86,8 @@ beforeEach(() => {
   routerMocks.findCharacterIndexbyId.mockReset()
   routerMocks.findCharacterIndexbyId.mockReturnValue(-1)
   routerMocks.openPlaygroundChat.mockReset()
+  routerMocks.finishRouteResources.mockReset().mockResolvedValue(true)
+  routerMocks.prepareRouteResources.mockReset().mockResolvedValue(true)
 })
 
 afterEach(async () => {
