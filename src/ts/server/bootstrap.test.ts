@@ -62,6 +62,7 @@ describe('server runtime bootstrap helper', () => {
       databaseLineage: 'database-a',
       writerEpoch: 3,
       generationOperationProtocol: { version: 1 },
+      startupTelemetry: { version: 1, sampleRate: 1 },
       generationOperationProjectionEpoch: 21,
       generationOperations: [
         {
@@ -144,6 +145,7 @@ describe('server runtime bootstrap helper', () => {
         databaseLineage: 'database-a',
         writerEpoch: 3,
         generationOperationProtocol: { version: 1 },
+        startupTelemetry: { version: 1, sampleRate: 1 },
         generationOperationProjectionEpoch: 21,
         generationOperations: [
           {

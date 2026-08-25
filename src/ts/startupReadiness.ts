@@ -1,5 +1,8 @@
 import {
+  STARTUP_TELEMETRY_MAX_ATTEMPTS,
+  STARTUP_TELEMETRY_MAX_DURATION_MS,
   STARTUP_TELEMETRY_MILESTONES,
+  type StartupTelemetryEvent,
   type StartupTelemetryFailureCode,
   type StartupTelemetryMilestone,
 } from './server/startupTelemetryProtocol'
@@ -89,6 +92,7 @@ const observedMilestoneTimes = new Map<StartupMilestone, number>()
 const transitionTimes = new Map<StartupMilestone, number>()
 const attempts: StartupAttemptState[] = []
 const readinessListeners = new Set<() => void>()
+const telemetryListeners = new Set<(event: Readonly<StartupTelemetryEvent>) => unknown>()
 const capabilityFailures = new Map<StartupRetryTarget, StartupCapabilityFailureSnapshot>()
 const completedStartupSteps = new Map<StartupStep, unknown>()
 const inFlightStartupSteps = new Map<StartupStep, Promise<unknown>>()
@@ -139,6 +143,27 @@ function emitPerformanceEntries(milestone: StartupMilestone, atMs: number): void
 
 function notifyReadinessListeners(): void {
   for (const listener of readinessListeners) listener()
+}
+
+function emitStartupTelemetryEvent(event: StartupTelemetryEvent): void {
+  for (const listener of telemetryListeners) {
+    try {
+      const result = listener(event)
+      if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+        void Promise.resolve(result).catch(() => undefined)
+      }
+    } catch {
+      // Measurement consumers must never change readiness state.
+    }
+  }
+}
+
+function boundedTelemetryDuration(durationMs: number): number {
+  return Math.min(STARTUP_TELEMETRY_MAX_DURATION_MS, Math.max(0, durationMs))
+}
+
+function telemetryAttemptCount(): number {
+  return Math.min(STARTUP_TELEMETRY_MAX_ATTEMPTS, attempts.length)
 }
 
 function hasTransitioned(milestone: StartupMilestone): boolean {
@@ -286,6 +311,13 @@ function flushObservedMilestones(): boolean {
     const transitionAtMs = Math.max(previousAtMs, observedAtMs)
     transitionTimes.set(milestone, transitionAtMs)
     emitPerformanceEntries(milestone, transitionAtMs)
+    emitStartupTelemetryEvent({
+      kind: 'phase-ready',
+      milestone,
+      entryDurationMs: boundedTelemetryDuration(transitionAtMs - (transitionTimes.get('entry') ?? transitionAtMs)),
+      attemptCount: telemetryAttemptCount(),
+      observerShellEnabled,
+    })
     transitioned = true
   }
   if (transitioned) {
@@ -322,6 +354,12 @@ export function completeStartupAttempt(attemptId: number, completedAtMs = nowMs(
   const attempt = attempts.find((candidate) => candidate.attemptId === attemptId)
   if (!attempt || attempt.completedAtMs !== undefined || attempt.failedAtMs !== undefined) return
   attempt.completedAtMs = Math.max(attempt.startedAtMs, finiteTime(completedAtMs))
+  emitStartupTelemetryEvent({
+    kind: 'attempt-completed',
+    attemptDurationMs: boundedTelemetryDuration(attempt.completedAtMs - attempt.startedAtMs),
+    attemptCount: telemetryAttemptCount(),
+    observerShellEnabled,
+  })
   notifyReadinessListeners()
 }
 
@@ -343,6 +381,14 @@ export function failStartupAttempt(
     failedAtMs: attempt.failedAtMs,
   }
   recordCapabilityFailureSnapshot(failure)
+  emitStartupTelemetryEvent({
+    kind: 'attempt-failed',
+    attemptDurationMs: boundedTelemetryDuration(attempt.failedAtMs - attempt.startedAtMs),
+    attemptCount: telemetryAttemptCount(),
+    observerShellEnabled,
+    failureCode,
+    failureMilestone,
+  })
   notifyReadinessListeners()
 }
 
@@ -359,13 +405,29 @@ export function recordStartupCapabilityFailure(
   failureMilestone: StartupMilestone,
   failedAtMs = nowMs(),
 ): void {
-  recordCapabilityFailureSnapshot({
+  const failure = {
     attemptId,
     failureCode,
     failureMilestone,
     failedAtMs: finiteTime(failedAtMs),
+  }
+  recordCapabilityFailureSnapshot(failure)
+  emitStartupTelemetryEvent({
+    kind: 'diagnostic-failure',
+    attemptCount: telemetryAttemptCount(),
+    observerShellEnabled,
+    failureCode,
+    failureMilestone,
   })
   notifyReadinessListeners()
+}
+
+/** Subscribe a best-effort metadata sink. Listener failures are isolated from readiness. */
+export function subscribeStartupTelemetryEvents(
+  listener: (event: Readonly<StartupTelemetryEvent>) => unknown,
+): () => void {
+  telemetryListeners.add(listener)
+  return () => telemetryListeners.delete(listener)
 }
 
 /**

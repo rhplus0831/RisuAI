@@ -202,6 +202,7 @@ import {
   type StartupMilestone,
   type StartupRetryTarget,
 } from './startupReadiness'
+import { startStartupTelemetryPublisher } from './server/startupTelemetry'
 
 setPendingMutationDiscardNotifier((key, error) => {
   alertError(`${language.pendingMutationDiscarded}\n\n${language.pendingMutationDiscardedDetail(key, error)}`)
@@ -294,6 +295,7 @@ let observerWriterPromotionRetryInFlight: Promise<boolean> | null = null
  * are retained.
  */
 export function loadData(): Promise<void> {
+  startStartupTelemetryPublisher()
   if (get(loadedStore)) return Promise.resolve()
   if (loadDataInFlight) return loadDataInFlight
 
@@ -329,7 +331,9 @@ async function runLoadDataAttempt(): Promise<StartupRetryTarget | null> {
       startSelectedCharacterShellHydration()
       startChatMessageHydration()
     })
-    const backgroundReadiness = runStartupStep('background-readiness', settleStartupBackgroundReadiness)
+    const backgroundReadiness = runStartupStep('background-readiness', () =>
+      settleStartupBackgroundReadiness(startupAttemptId),
+    )
     const pluginRuntimeReady = await settleStartupPluginRuntime(startupAttemptId)
     if (pluginRuntimeReady) await settleStartupGenerationRecovery(startupAttemptId)
     try {
@@ -532,7 +536,7 @@ export function retryPluginStartup(): Promise<boolean> {
   })
 }
 
-async function settleStartupBackgroundReadiness(): Promise<void> {
+async function settleStartupBackgroundReadiness(startupAttemptId: number): Promise<void> {
   const resourceReadiness = ensureResourceSurfaces(['runtime:background-effects'])
   const results = await Promise.allSettled([
     runStartupStep('push-runtime', async () => {
@@ -578,8 +582,10 @@ async function settleStartupBackgroundReadiness(): Promise<void> {
   ])
 
   const labels = ['push runtime', 'optional background runtime'] as const
+  const failureCodes: StartupAttemptFailureCode[] = ['push-initialization-failed', 'runtime-initialization-failed']
   results.forEach((result, index) => {
     if (result.status === 'rejected') {
+      recordStartupCapabilityFailure(startupAttemptId, failureCodes[index]!, 'background-ready')
       console.warn(`Failed to initialize ${labels[index]}:`, result.reason)
     }
   })

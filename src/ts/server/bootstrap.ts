@@ -2,6 +2,8 @@ import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import type { Message } from '../storage/database.svelte'
 import { activeWriterSessionHeader } from './activeWriterSession'
 import { setCachedServerCommandRevision } from './commands'
+import { configureStartupTelemetry } from './startupTelemetry'
+import { isStartupTelemetryConfiguration, type StartupTelemetryConfiguration } from './startupTelemetryProtocol'
 
 const BOOTSTRAP_ENDPOINT = '/api/v1/bootstrap'
 const WRITER_OBSERVER_SESSION_HEADER = 'risu-writer-observer-session'
@@ -225,6 +227,7 @@ export interface ServerBootstrapRuntime {
    */
   activeMessageTranslations?: ActiveMessageTranslation[]
   activeGreetingTranslations?: ActiveGreetingTranslation[]
+  startupTelemetry?: StartupTelemetryConfiguration
 }
 
 export type ServerBootstrapResult =
@@ -358,6 +361,7 @@ async function fetchServerBootstrapWithMode(input: {
     writerEpoch: Number.isSafeInteger(record.writerEpoch) ? (record.writerEpoch as number) : undefined,
     generationOperationProtocol: parseGenerationOperationProtocol(record.generationOperationProtocol),
     displaySourceProtocol: parseGenerationOperationProtocol(record.displaySourceProtocol),
+    ...(isStartupTelemetryConfiguration(record.startupTelemetry) ? { startupTelemetry: record.startupTelemetry } : {}),
     generationOperationProjectionEpoch: isNonNegativeSafeInteger(record.generationOperationProjectionEpoch)
       ? (record.generationOperationProjectionEpoch as number)
       : undefined,
@@ -372,6 +376,7 @@ async function fetchServerBootstrapWithMode(input: {
     activeMessageTranslations: parseActiveMessageTranslations(record.activeMessageTranslations),
     activeGreetingTranslations: parseActiveGreetingTranslations(record.activeGreetingTranslations),
   }
+  configureStartupTelemetry(bootstrap.startupTelemetry)
   return {
     status: 'ok',
     bootstrap,
