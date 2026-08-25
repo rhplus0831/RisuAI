@@ -12,6 +12,7 @@ import {
   SERVER_CHARACTER_SUMMARY_VERSION,
   type ServerCharacterSummary,
 } from './characterSummaryProtocol'
+import { SERVER_SHELL_PROTOCOL_VERSION, type ServerShellSettings } from './shellProtocol'
 import {
   fetchServerCharacter,
   fetchServerCharacterOrder,
@@ -22,6 +23,7 @@ import {
   fetchServerInlayCatalog,
   fetchServerSettings,
   fetchServerSettingsGroup,
+  fetchServerShell,
 } from './resourceReads'
 
 interface CapturedFetch {
@@ -95,11 +97,93 @@ function characterSummaryEnvelope(revision: number, characters: ServerCharacterS
   }
 }
 
+function shellSettings(): ServerShellSettings {
+  return {
+    language: 'en',
+    username: 'User',
+    colorScheme: {
+      bgcolor: '#111111',
+      darkbg: '#000000',
+      borderc: '#222222',
+      selected: '#333333',
+      draculared: '#ff0000',
+      textcolor: '#ffffff',
+      textcolor2: '#cccccc',
+      darkBorderc: '#444444',
+      darkbutton: '#555555',
+      type: 'dark',
+    },
+    colorSchemeName: 'custom',
+    textTheme: 'standard',
+    customTextTheme: {
+      FontColorStandard: '#ffffff',
+      FontColorBold: '#ffffff',
+      FontColorItalic: '#cccccc',
+      FontColorItalicBold: '#cccccc',
+      FontColorQuote1: '#00ffff',
+      FontColorQuote2: '#ffaa00',
+    },
+    font: 'default',
+    customFont: '',
+    customCSS: '',
+    animationSpeed: 0.4,
+    reducedMotion: false,
+    heightMode: 'percent',
+    sideBarSize: 0,
+    roundIcons: false,
+    menuSideBar: false,
+    showFolderName: true,
+    showSavingIcon: true,
+    hamburgerButtonBottom: false,
+    botSettingAtStart: false,
+    enableDevTools: false,
+    doNotWarnExternalServers: false,
+    keepSessionAlive: 'off',
+  }
+}
+
+function shellEnvelope(revision: number) {
+  return {
+    protocolVersion: SERVER_SHELL_PROTOCOL_VERSION,
+    revision,
+    settings: shellSettings(),
+    characters: characterSummaryEnvelope(revision),
+  }
+}
+
 afterEach(() => {
   vi.unstubAllGlobals()
 })
 
 describe('server resource read clients', () => {
+  it('reads and validates one coherent shell response', async () => {
+    const controller = new AbortController()
+    const responses = [shellEnvelope(7), { ...shellEnvelope(8), revision: 9 }]
+    const calls = stubResourceFetch(() => responses.shift())
+
+    await expect(fetchServerShell(controller.signal)).resolves.toMatchObject({
+      status: 'ok',
+      protocolVersion: SERVER_SHELL_PROTOCOL_VERSION,
+      revision: 7,
+      settings: { language: 'en', sideBarSize: 0 },
+      characters: {
+        version: SERVER_CHARACTER_SUMMARY_VERSION,
+        revision: 7,
+        characters: [{ chaId: 'char-a', chats: [{ id: 'chat-a' }, { id: 'chat-b' }] }],
+      },
+    })
+    await expect(fetchServerShell()).resolves.toEqual({
+      status: 'error',
+      error: 'Invalid shell response',
+    })
+    expect(calls[0]).toEqual({
+      url: '/api/v1/resources/shell',
+      method: 'GET',
+      authHeader: 'resource-auth-token',
+      signal: controller.signal,
+    })
+  })
+
   it('reads and validates the revisioned inlay catalog', async () => {
     const assetId = 'a'.repeat(64)
     const responses = [

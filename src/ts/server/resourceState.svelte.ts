@@ -20,6 +20,7 @@ import { applySettingsRuntimeProjectionEffects } from './settingsRuntimeProjecti
 import { applyPendingSettingsProjectionOverlays } from './settingsPendingProjection'
 import { reapplyRetainedCharacterProjections } from './chatRetainedProjection'
 import { SERVER_CHARACTER_SHELL_MARKER, SERVER_CHARACTER_SUMMARY_VERSION } from './characterSummaryProtocol'
+import { SERVER_SHELL_SETTINGS_KEYS, isServerShellSettings, type ServerShellSettings } from './shellProtocol'
 
 let nextCharacterRowProjectionEpoch = 0
 let characterRowProjectionBaseline = 0
@@ -600,6 +601,7 @@ export interface SettingsResourceState {
   value: ServerSettingsValues
   revision: number | null
   fullRevision: number | null
+  shellRevision: number | null
   pointerValueRevisions: Record<'characterOrder' | 'currentChar', number | null>
   enabledModulesRevision: number | null
   loreBookPageRevision: number | null
@@ -638,6 +640,7 @@ export const settingsResourceState = $state<SettingsResourceState>({
   value: {},
   revision: null,
   fullRevision: null,
+  shellRevision: null,
   pointerValueRevisions: {
     characterOrder: null,
     currentChar: null,
@@ -710,6 +713,7 @@ export function failSettingsResourceLoad(error: string): void {
 
 export function applySettingsResource(payload: ServerSettingsResourcePayload): boolean {
   if (isOlderRevision(payload.revision, settingsResourceState.fullRevision)) return false
+  if (isOlderRevision(payload.revision, settingsResourceState.shellRevision)) return false
   if (Object.values(settingsResourceState.groupRevisions).some((revision) => revision > payload.revision)) return false
   const preserveEnabledModules = (settingsResourceState.enabledModulesRevision ?? -1) > payload.revision
   const liveEnabledModules = preserveEnabledModules
@@ -737,6 +741,7 @@ export function applySettingsResource(payload: ServerSettingsResourcePayload): b
       ? maxRevision(settingsResourceState.revision, payload.revision)
       : payload.revision
   settingsResourceState.fullRevision = payload.revision
+  settingsResourceState.shellRevision = payload.revision
   settingsResourceState.pointerValueRevisions.characterOrder = payload.revision
   settingsResourceState.pointerValueRevisions.currentChar = payload.revision
   settingsResourceState.enabledModulesRevision = preserveEnabledModules
@@ -755,6 +760,48 @@ export function applySettingsResource(payload: ServerSettingsResourcePayload): b
   return true
 }
 
+export interface ServerShellSettingsResourcePayload {
+  revision: number
+  settings: ServerShellSettings
+}
+
+export function canApplyShellSettingsResource(payload: ServerShellSettingsResourcePayload): boolean {
+  if (!Number.isSafeInteger(payload.revision) || payload.revision < 0 || !isServerShellSettings(payload.settings)) {
+    return false
+  }
+  const knownRevision = Math.max(
+    settingsResourceState.fullRevision ?? -1,
+    settingsResourceState.shellRevision ?? -1,
+    ...Object.values(settingsResourceState.groupRevisions).map((revision) => revision ?? -1),
+  )
+  return payload.revision >= knownRevision
+}
+
+/** Merge only the exact shell allowlist without claiming a complete settings group. */
+export function applyShellSettingsResource(payload: ServerShellSettingsResourcePayload): boolean {
+  if (!canApplyShellSettingsResource(payload)) return false
+
+  const target = settingsResourceState.value as Record<string, unknown>
+  for (const key of SERVER_SHELL_SETTINGS_KEYS) target[key] = cloneJsonValue(payload.settings[key])
+  applyPendingSettingsProjectionOverlays(target, new Set(SERVER_SHELL_SETTINGS_KEYS))
+  settingsResourceState.shellRevision = payload.revision
+  settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
+  settingsResourceState.status = 'ready'
+  settingsResourceState.error = null
+  applyRuntimeLanguage(target.language)
+  applySettingsRuntimeProjectionEffects(SERVER_SHELL_SETTINGS_KEYS)
+  for (const settingsGroup of new Set(
+    SERVER_SHELL_SETTINGS_KEYS.map((key) => SERVER_SETTINGS_GROUP_BY_KEY[key]).filter(
+      (candidate): candidate is SettingsGroup => candidate !== undefined,
+    ),
+  )) {
+    advanceSettingsGroupProjectionEpoch(settingsGroup)
+  }
+  advanceSettingsProjectionEpoch()
+  markResourceDatabaseChanged()
+  return true
+}
+
 export function applySettingsGroupResource(
   payload: ServerSettingsGroupResourcePayload,
   groupKeys: readonly string[],
@@ -764,6 +811,7 @@ export function applySettingsGroupResource(
     : -1
   const currentRevision = Math.max(
     settingsResourceState.fullRevision ?? -1,
+    settingsResourceState.shellRevision ?? -1,
     settingsResourceState.groupRevisions[payload.group] ?? -1,
     sharedModelProfileRevision,
     payload.group === 'modules' ? (settingsResourceState.enabledModulesRevision ?? -1) : -1,
@@ -2048,11 +2096,7 @@ export function applyCharactersResource(
   payload: ServerCharactersResourcePayload,
   options: { preserveResidentChatBodies?: boolean } = {},
 ): boolean {
-  if (payload.version !== SERVER_CHARACTER_SUMMARY_VERSION) return false
-  if (isOlderRevision(payload.revision, charactersResourceState.listRevision)) return false
-  if (isOlderRevision(payload.revision, charactersResourceState.orderRevision)) return false
-  if (isOlderRevision(payload.revision, charactersResourceState.selectionRevision)) return false
-  if (Object.values(charactersResourceState.rowRevisions).some((revision) => revision > payload.revision)) return false
+  if (!canApplyCharactersResource(payload)) return false
 
   const preserveResidentChatBodies = options.preserveResidentChatBodies ?? true
   if (!preserveResidentChatBodies) resetCharacterBodyResourceRevisions()
@@ -2116,6 +2160,14 @@ export function applyCharactersResource(
   reapplyRetainedCharacterProjections()
   markResourceDatabaseChanged()
   return true
+}
+
+export function canApplyCharactersResource(payload: ServerCharactersResourcePayload): boolean {
+  if (payload.version !== SERVER_CHARACTER_SUMMARY_VERSION) return false
+  if (isOlderRevision(payload.revision, charactersResourceState.listRevision)) return false
+  if (isOlderRevision(payload.revision, charactersResourceState.orderRevision)) return false
+  if (isOlderRevision(payload.revision, charactersResourceState.selectionRevision)) return false
+  return !Object.values(charactersResourceState.rowRevisions).some((revision) => revision > payload.revision)
 }
 
 /**
@@ -2377,6 +2429,7 @@ export function resetServerResourceState(): void {
   settingsResourceState.value = {}
   settingsResourceState.revision = null
   settingsResourceState.fullRevision = null
+  settingsResourceState.shellRevision = null
   settingsResourceState.pointerValueRevisions = {
     characterOrder: null,
     currentChar: null,
@@ -2428,6 +2481,7 @@ export function resetServerResourceState(): void {
 export function resetServerResourceRevisionFencesForDatabaseReplacement(): void {
   settingsResourceState.revision = null
   settingsResourceState.fullRevision = null
+  settingsResourceState.shellRevision = null
   settingsResourceState.pointerValueRevisions = {
     characterOrder: null,
     currentChar: null,
@@ -2472,6 +2526,7 @@ export function replaceResourceDatabase(database: Database, revision?: number): 
   settingsResourceState.value = settings as ServerSettingsValues
   settingsResourceState.revision = nextRevision
   settingsResourceState.fullRevision = nextRevision
+  settingsResourceState.shellRevision = nextRevision
   settingsResourceState.pointerValueRevisions = {
     characterOrder: nextRevision,
     currentChar: nextRevision,

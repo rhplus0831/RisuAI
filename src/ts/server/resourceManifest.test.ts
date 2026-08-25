@@ -16,6 +16,7 @@ import {
 } from './resourceManifest'
 import { SERVER_COLLECTION_NAMES } from './resourceState.svelte'
 import { SERVER_SETTINGS_GROUP_BY_KEY, SERVER_SETTINGS_KEYS_BY_GROUP, SETTINGS_GROUPS } from './settingsGroups'
+import { SERVER_SHELL_SETTINGS_KEYS } from './shellProtocol'
 
 const canonicalSettingsRoutes = [
   ['/settings/backup', 0],
@@ -171,6 +172,11 @@ describe('route resource manifest', () => {
     expect(shellProjections).not.toContain('selected-character')
     expect(shellProjections).not.toContain('selected-chat')
     expect(shellProjections).not.toContain('inlay-catalog')
+
+    const shellSettingKeys = shellRequirements.flatMap((requirement) =>
+      requirement.kind === 'settings-group' ? (requirement.keys ?? []) : [],
+    )
+    expect(new Set(shellSettingKeys)).toEqual(new Set(SERVER_SHELL_SETTINGS_KEYS))
   })
 
   it('deduplicates inherited requirements and combines purposes and exact keys', () => {

@@ -95,14 +95,54 @@ Verification:
 
 ### 5B. Minimal coherent shell resource
 
-- [ ] Define the smallest authenticated shell read needed for theme/language,
+- [x] Define the smallest authenticated shell read needed for theme/language,
   account/session chrome, sidebar, Phase 2 character summaries, and current
   selection.
-- [ ] Preserve the atomic revision barrier only among fields that must appear as
+- [x] Preserve the atomic revision barrier only among fields that must appear as
   one coherent shell. Unrelated route resources must not delay shell rendering.
-- [ ] Apply the shell behind the resource write guard and advance the applied
+- [x] Apply the shell behind the resource write guard and advance the applied
   revision only according to the established resource/event rules.
-- [ ] Add exact response-shape and payload-size coverage.
+- [x] Add exact response-shape and payload-size coverage.
+
+#### 5B implementation record
+
+`GET /api/v1/resources/shell` is an authenticated, read-only protocol route. Its
+version-1 response contains one outer revision, an exact shell-settings
+allowlist, and the complete existing Phase 2 character-summary envelope at the
+same revision. The nested envelope deliberately retains its own version and
+strict validator, and its revision must equal the outer shell revision.
+
+The shell settings are limited to localization/account display name, initial
+color/text theme and custom CSS, reduced-motion/height/sidebar sizing, direct
+sidebar chrome, save-status visibility, initial bot-settings mode, developer
+tools visibility, external-server warning behavior, and session keepalive. Chat
+textarea sizes are not included; the GUI-size effect now tolerates a partial
+shell projection and leaves those deferred values untouched. Legacy snapshots
+that omit falsy shell switches receive canonical server defaults so every
+successful response has the exact protocol shape.
+
+The response excludes collections, provider credentials, selected character or
+chat detail, prompt bodies, and the inlay catalog. The server reuses
+`loadCharacterSummariesForRead()` rather than loading or stripping full rows.
+`fetchServerShell()` validates the complete response before converting summary
+rows to browser shell rows. `applyServerShellResource()` preflights both slices,
+applies them together under `withServerResourceApply()`, records a dedicated
+partial-settings shell revision without claiming a full settings read, and only
+then advances the monotonic applied-resource cursor. It is intentionally not
+wired into startup yet; 5C owns the loader/cutover and direct-deep-link work.
+
+Verification:
+
+- focused frontend shell protocol/read/apply/manifest/GUI-size coverage — 68
+  tests passed;
+- focused Fastify resource, payload-metric, and route-protection coverage — 35
+  tests passed;
+- affected frontend lane — 5,156 tests passed;
+- affected Fastify lane rerun — 2,214 tests passed and one test skipped. The
+  first combined run hit the existing same-millisecond ordering flake in
+  `memoryWorker.test.ts`; its isolated rerun and the complete affected server
+  rerun passed;
+- `pnpm check` and `pnpm check:server` — passed.
 
 ### 5C. Route-scoped loader
 

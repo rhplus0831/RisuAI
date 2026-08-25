@@ -31,11 +31,13 @@ import {
   type ServerSettingsValues,
 } from './resourceState.svelte'
 import { isServerInlayCatalogPayload, type ServerInlayCatalogResourcePayload } from './inlayCatalog'
+import { SERVER_SHELL_PROTOCOL_VERSION, isServerShellPayload, type ServerShellSettings } from './shellProtocol'
 
 const SETTINGS_ENDPOINT = '/api/v1/settings'
 const COLLECTIONS_ENDPOINT = '/api/v1/collections'
 const CHARACTERS_ENDPOINT = '/api/v1/characters'
 const INLAY_CATALOG_ENDPOINT = '/api/v1/inlay-assets'
+const SHELL_ENDPOINT = '/api/v1/resources/shell'
 const CHARACTER_ORDER_ENDPOINT = `${CHARACTERS_ENDPOINT}/order`
 const SETTINGS_CACHE_KEY = 'settings:all'
 const CHARACTERS_CACHE_KEY = `characters:summary:v${SERVER_CHARACTER_SUMMARY_VERSION}`
@@ -50,8 +52,39 @@ export type ServerResourceReadResult<T extends { revision: number }> =
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
 
+export interface ServerShellResourcePayload {
+  protocolVersion: typeof SERVER_SHELL_PROTOCOL_VERSION
+  revision: number
+  settings: ServerShellSettings
+  characters: ServerCharactersResourcePayload
+}
+
 export function canUseServerResourceReads(): boolean {
   return true
+}
+
+export async function fetchServerShell(
+  signal?: AbortSignal | null,
+): Promise<ServerResourceReadResult<ServerShellResourcePayload>> {
+  const result = await requestServerResourceJson(SHELL_ENDPOINT, signal)
+  if (result.status !== 'ok') return resourceReadFailure(result)
+  if (!isServerShellPayload(result.body)) {
+    return { status: 'error', error: 'Invalid shell response' }
+  }
+
+  return {
+    status: 'ok',
+    protocolVersion: result.body.protocolVersion,
+    revision: result.body.revision,
+    settings: result.body.settings,
+    characters: {
+      version: result.body.characters.version,
+      revision: result.body.characters.revision,
+      characters: result.body.characters.characters.map(characterSummaryToShell),
+      characterOrder: result.body.characters.characterOrder as ServerCharactersResourcePayload['characterOrder'],
+      currentChar: result.body.characters.currentChar,
+    },
+  }
 }
 
 export async function fetchServerInlayCatalog(

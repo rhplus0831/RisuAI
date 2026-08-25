@@ -2,12 +2,18 @@ import { createHash } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { SERVER_CHARACTER_SUMMARY_VERSION } from '../../../../src/ts/server/characterSummaryProtocol.js'
+import {
+  SERVER_SHELL_PROTOCOL_VERSION,
+  SERVER_SHELL_SETTINGS_KEYS,
+  type ServerShellSettings,
+} from '../../../../src/ts/server/shellProtocol.js'
 import type { AuthState } from '../auth.js'
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
 import { maskProviderSecretsInPlace } from '../providerSecrets.js'
 import { emitProtocolMetric, jsonPayloadBytes, protocolElapsedMs } from '../protocolMetrics.js'
 import { readRequestTraceUid } from '../requestTrace.js'
+import { createInitialDatabase } from '../databaseDefaults.js'
 import { READABLE_SETTINGS_GROUPS, SETTINGS_GROUP_KEYS, type ReadableSettingsGroup } from './commands.js'
 import {
   COLLECTION_FIELDS,
@@ -54,6 +60,7 @@ const LEGACY_BOT_PRESET_SHELL_FIELDS = [
   'customPromptTemplateToggle',
   'moduleIntergration',
 ] as const
+const DEFAULT_SHELL_DATABASE = createInitialDatabase()
 
 interface ChatMessageRangeQuery {
   start?: string
@@ -102,6 +109,33 @@ export function registerResourceReadRoutes(
     return metricResourceResponse(req, reply, 'settings', revision, {
       revision,
       settings: maskProviderSecretsInPlace(settings ?? {}),
+    })
+  })
+
+  app.get('/api/v1/resources/shell', { exposeHeadRoute: false }, async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    const { revision } = getSchemaState(db)
+    const persistedSettings = loadPersistedDatabaseFields(db, dataDir, SERVER_SHELL_SETTINGS_KEYS)
+    const settings = Object.fromEntries(
+      SERVER_SHELL_SETTINGS_KEYS.map((key) => [
+        key,
+        Object.prototype.hasOwnProperty.call(persistedSettings, key)
+          ? persistedSettings[key]
+          : DEFAULT_SHELL_DATABASE[key],
+      ]),
+    ) as ServerShellSettings
+    const characterSettings = loadPersistedDatabaseFields(db, dataDir, ['characterOrder', 'currentChar'])
+    return metricResourceResponse(req, reply, 'shell', revision, {
+      protocolVersion: SERVER_SHELL_PROTOCOL_VERSION,
+      revision,
+      settings,
+      characters: {
+        version: SERVER_CHARACTER_SUMMARY_VERSION,
+        revision,
+        characters: loadCharacterSummariesForRead(db),
+        characterOrder: Array.isArray(characterSettings.characterOrder) ? characterSettings.characterOrder : [],
+        currentChar: Number.isInteger(characterSettings.currentChar) ? characterSettings.currentChar : -1,
+      },
     })
   })
 

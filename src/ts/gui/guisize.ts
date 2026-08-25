@@ -11,10 +11,14 @@ export function updateGuisize() {
   if (!root) {
     return
   }
-  textAreaSize.set(db.textAreaSize)
-  sideBarSize.set(db.sideBarSize)
-  textAreaTextSize.set(db.textAreaTextSize)
-  root.style.setProperty('--sidebar-size', 24 + 4 * db.sideBarSize + 'rem')
+  if (typeof db.textAreaSize === 'number' && Number.isFinite(db.textAreaSize)) textAreaSize.set(db.textAreaSize)
+  if (typeof db.textAreaTextSize === 'number' && Number.isFinite(db.textAreaTextSize)) {
+    textAreaTextSize.set(db.textAreaTextSize)
+  }
+  if (typeof db.sideBarSize === 'number' && Number.isFinite(db.sideBarSize)) {
+    sideBarSize.set(db.sideBarSize)
+    root.style.setProperty('--sidebar-size', 24 + 4 * db.sideBarSize + 'rem')
+  }
 }
 
 export function guiSizeText(num: number) {

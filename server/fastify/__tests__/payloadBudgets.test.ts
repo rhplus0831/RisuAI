@@ -8,6 +8,7 @@ import { jsonPayloadBytes } from '../src/protocolMetrics.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import { buildLargeCorpusFixture } from '../../../src/ts/__tests__/largeCorpusFixture.js'
 import { isServerCharactersSummaryPayload } from '../../../src/ts/server/characterSummaryProtocol.js'
+import { isServerShellPayload } from '../../../src/ts/server/shellProtocol.js'
 
 interface Harness {
   app: FastifyInstance
@@ -158,6 +159,15 @@ describe('bootstrap and resource payload budgets', () => {
     })
     expect(charactersBody.characters[0]).not.toHaveProperty('chats')
 
+    const shell = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/resources/shell',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(shell.statusCode).toBe(200)
+    const shellBody = shell.json()
+    expect(isServerShellPayload(shellBody)).toBe(true)
+
     const cachedCharacters = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/characters',
@@ -177,10 +187,12 @@ describe('bootstrap and resource payload budgets', () => {
     expect(hydrationBody.message).toHaveLength(80)
 
     const bootstrapMetric = latestMetric('bootstrap_projection')
+    const shellMetric = latestMetric('resource_response', 'shell')
     const charactersMetric = latestMetric('resource_response', 'characters')
     const hydrationMetric = latestMetric('resource_response', 'chatMessages')
 
     expect(bootstrapMetric.payloadBytes).toBe(jsonPayloadBytes(bootstrapBody))
+    expect(shellMetric.payloadBytes).toBe(jsonPayloadBytes(shellBody))
     expect(charactersMetric.payloadBytes).toBe(jsonPayloadBytes(cachedCharactersBody))
     expect(hydrationMetric.payloadBytes).toBe(jsonPayloadBytes(hydrationBody))
     expect(bootstrapMetric.durationMs).toBeGreaterThanOrEqual(0)
@@ -191,6 +203,7 @@ describe('bootstrap and resource payload budgets', () => {
     expect(hydrationMetric.requestUid).toBe(hydration.headers['x-request-uid'])
     expect(charactersMetric).toMatchObject({ cacheHits: 0, cacheMisses: 1 })
     expect(bootstrapMetric.payloadBytes).toBeLessThan(hydrationMetric.payloadBytes!)
+    expect(shellMetric.payloadBytes).toBeLessThan(hydrationMetric.payloadBytes!)
     expect(charactersMetric.payloadBytes).toBeLessThan(hydrationMetric.payloadBytes!)
     expect(JSON.stringify(capturedMetrics)).not.toContain('char-a')
     expect(JSON.stringify(capturedMetrics)).not.toContain('chat-a')

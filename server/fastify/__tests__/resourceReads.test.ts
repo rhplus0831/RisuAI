@@ -17,6 +17,12 @@ import {
   SERVER_CHARACTER_SUMMARY_VERSION,
   isServerCharactersSummaryPayload,
 } from '../../../src/ts/server/characterSummaryProtocol.js'
+import {
+  SERVER_SHELL_PAYLOAD_KEYS,
+  SERVER_SHELL_PROTOCOL_VERSION,
+  SERVER_SHELL_SETTINGS_KEYS,
+  isServerShellPayload,
+} from '../../../src/ts/server/shellProtocol.js'
 
 interface Harness {
   app: FastifyInstance
@@ -203,6 +209,45 @@ function cachePayload(hashes: Record<string, string[]>): Record<string, unknown>
 }
 
 describe('authenticated resource read routes', () => {
+  it('returns the exact versioned coherent shell projection', async () => {
+    const response = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/resources/shell',
+      headers: authHeaders(),
+    })
+
+    expect(response.statusCode).toBe(200)
+    const shell = response.json()
+    expect(Object.keys(shell)).toEqual(SERVER_SHELL_PAYLOAD_KEYS)
+    expect(shell.protocolVersion).toBe(SERVER_SHELL_PROTOCOL_VERSION)
+    expect(shell.revision).toBe(revision)
+    expect(Object.keys(shell.settings)).toEqual(SERVER_SHELL_SETTINGS_KEYS)
+    expect(shell.characters).toMatchObject({
+      version: SERVER_CHARACTER_SUMMARY_VERSION,
+      revision,
+      currentChar: 0,
+      characterOrder: ['char-a', 'char-b'],
+    })
+    expect(isServerShellPayload(shell)).toBe(true)
+    expect(Object.keys(shell.characters.characters[0])).toEqual(SERVER_CHARACTER_SUMMARY_KEYS)
+
+    for (const forbidden of [
+      'openAIKey',
+      'providerCredentials',
+      'modules',
+      'plugins',
+      'promptPresets',
+      'botPresets',
+      'personas',
+    ]) {
+      expect(shell.settings).not.toHaveProperty(forbidden)
+    }
+    expect(response.payload).not.toContain('root-secret')
+    expect(response.payload).not.toContain('Large legacy body')
+    expect(response.payload).not.toContain('Character lore')
+    expect(response.payload).not.toContain('Large message')
+  })
+
   it('returns settings without collection fields and masks provider secrets', async () => {
     const response = await harness.app.inject({
       method: 'GET',

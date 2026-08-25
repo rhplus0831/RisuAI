@@ -144,6 +144,20 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'shell-resource-read',
+    methods: GET_ONLY,
+    path: '/api/v1/resources/shell',
+    auth: {
+      decision: 'required',
+      reason: 'The coherent shell contains private settings and character navigation metadata.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only versioned shell projection.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'inlay-catalog-read',
     methods: GET_ONLY,
     path: '/api/v1/inlay-assets',

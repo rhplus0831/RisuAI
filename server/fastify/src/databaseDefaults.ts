@@ -288,6 +288,8 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'bias', [])
   setDefault(database, 'showUnrecommended', false)
   setDefault(database, 'doNotWarnExternalServers', false)
+  setDefault(database, 'enableDevTools', false)
+  setDefault(database, 'roundIcons', false)
   setDefault(database, 'pluginCompatibilityMode', false)
   setDefault(database, 'strictScriptCheck', false)
   setDefault(database, 'complexRegexCompatibilityMode', 'worker')
@@ -348,6 +350,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'hypaV3ProgressOpenChatOnly', false)
   setDefault(database, 'colorScheme', DEFAULT_COLOR_SCHEME)
   setDefault(database, 'colorSchemeName', 'default')
+  setDefault(database, 'botSettingAtStart', false)
   setDefault(
     database,
     'customColorScheme',
@@ -463,6 +466,8 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'enableCustomFlags', false)
   setDefault(database, 'assetMaxDifference', 4)
   setDefault(database, 'showSavingIcon', true)
+  setDefault(database, 'menuSideBar', false)
+  setDefault(database, 'showFolderName', false)
   setDefault(database, 'banCharacterset', [])
   setDefault(database, 'showPromptComparison', false)
   setDefault(database, 'OaiCompAPIKeys', {})
