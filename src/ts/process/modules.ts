@@ -5,6 +5,8 @@ import {
   getCurrentChat,
   getDatabase,
   setDatabase,
+  type Chat,
+  type character,
   type customscript,
   type loreBook,
   type triggerscript,
@@ -642,6 +644,11 @@ let lastModules = ''
 let lastModuleData: RisuModule[] = []
 let lastModuleSource: RisuModule[] | undefined
 
+export interface ActiveModuleContext {
+  character: character | undefined
+  chat: Chat | undefined
+}
+
 function activeModuleCacheRowsStillPresent(moduleSource: RisuModule[]): boolean {
   if (lastModuleData.length === 0) return true
 
@@ -649,9 +656,9 @@ function activeModuleCacheRowsStillPresent(moduleSource: RisuModule[]): boolean 
   return lastModuleData.every((module) => sourceRows.has(module))
 }
 
-export function getModules() {
-  const currentChat = getCurrentChat()
-  const character = getCurrentCharacter()
+export function getModules(context?: ActiveModuleContext) {
+  const currentChat = context ? context.chat : getCurrentChat()
+  const character = context ? context.character : getCurrentCharacter()
   const db = getDatabase()
   const moduleSource = getDatabaseModules(db)
   const activationIdentifiers = resolveActiveModuleIdentifiers(db, character, currentChat)
@@ -688,8 +695,8 @@ export function getModuleLorebooks() {
   return lorebooks
 }
 
-export function getModuleAssets() {
-  const modules = getModules()
+export function getModuleAssets(context?: ActiveModuleContext) {
+  const modules = getModules(context)
   let assets: [string, string, string][] = []
   for (const module of modules) {
     if (!module) {

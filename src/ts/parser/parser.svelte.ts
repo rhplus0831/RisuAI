@@ -10,7 +10,7 @@ import {
   type triggerscript,
 } from '../storage/database.svelte'
 import versionInfo from '../../../version.json'
-import { CurrentTriggerIdStore, selIdState } from '../stores.svelte'
+import { CurrentTriggerIdStore } from '../stores.svelte'
 import { aiWatermarkingLawApplies, getFileSrc } from '../globalApi.svelte'
 import './chatVar.svelte' // side effect: registers the browser chatVar backend
 import { getChatVar, setChatVar, getGlobalChatVar } from './chatVarBackend'
@@ -27,7 +27,6 @@ import { findCharacterbyId } from '../characterState'
 import { getPersonaPrompt, getUserIcon, getUserName } from '../utilState'
 import { getInlayAssetBlob, type InlayAsset } from '../process/files/inlays'
 import { getModuleAssets, getModuleLorebooks, getModules } from '../process/modules'
-import { charactersResourceState } from '../server/resourceState.svelte'
 import hljs from 'highlight.js/lib/core'
 import 'highlight.js/styles/atom-one-dark.min.css'
 import { language } from 'src/lang'
@@ -451,7 +450,7 @@ async function renderHighlightableMarkdown(data: string) {
 
 export const assetRegex = /{{(raw|path|img|image|video|audio|bgm|bg|emotion|asset|video-img|source)::(.+?)}}/gms
 
-function getAssetSrc(assetArr: string[][], assetPaths: AssetPaths) {
+function getAssetSrc(assetArr: readonly (readonly string[])[], assetPaths: AssetPaths) {
   for (const asset of assetArr) {
     const key = asset[0].toLocaleLowerCase()
     assetPaths[key] ??= {
@@ -464,7 +463,7 @@ function getAssetSrc(assetArr: string[][], assetPaths: AssetPaths) {
   }
 }
 
-function getEmoSrc(emoArr: string[][], emoPaths: AssetPaths) {
+function getEmoSrc(emoArr: readonly (readonly string[])[], emoPaths: AssetPaths) {
   for (const emo of emoArr) {
     emoPaths[emo[0].toLocaleLowerCase()] = {
       srcPaths: [emo[1]],
@@ -491,36 +490,74 @@ type AssetPaths = {
   }
 }
 
-let assetsCache: AssetPaths | null = null
-let emoAssetsCache: AssetPaths | null = null
+interface AssetResolutionContext {
+  assetPaths: AssetPaths
+  emotionPaths: AssetPaths
+}
 
-export function resetAssetsCache(charAssets: string[][], emoAssets: string[][], moduleAssets: string[][]) {
+interface AssetResolutionCacheEntry extends AssetResolutionContext {
+  signature: string
+}
+
+const ASSET_RESOLUTION_CACHE_LIMIT = 32
+const assetResolutionCache = new Map<string, AssetResolutionCacheEntry>()
+
+function buildAssetResolutionContext(
+  charAssets: readonly (readonly string[])[],
+  emotionAssets: readonly (readonly string[])[],
+  moduleAssets: readonly (readonly string[])[],
+): AssetResolutionContext {
   const assetPaths: AssetPaths = {}
-  const charEmoPaths: AssetPaths = {}
+  const emotionPaths: AssetPaths = {}
 
   getAssetSrc(charAssets, assetPaths)
   getAssetSrc(moduleAssets, assetPaths)
-  getEmoSrc(emoAssets, charEmoPaths)
+  getEmoSrc(emotionAssets, emotionPaths)
 
-  assetsCache = assetPaths
-  emoAssetsCache = charEmoPaths
+  return { assetPaths, emotionPaths }
 }
 
-$effect.root(() => {
-  $effect(() => {
-    const charId = selIdState?.selId ?? -1
-    const char = charactersResourceState.characters?.[charId]
-    if (!char || char.type !== 'character') {
-      return
-    }
+function moduleAssetsForCharacter(char: simpleCharacterArgument | character): [string, string, string][] {
+  const contextCharacter =
+    char.type === 'simple' ? getDatabase().characters?.find((candidate) => candidate?.chaId === char.chaId) : char
+  const contextChat = contextCharacter?.chats?.[contextCharacter.chatPage]
+  return getModuleAssets({ character: contextCharacter, chat: contextChat })
+}
 
-    const charAssets = char.additionalAssets ?? []
-    const emoAssets = char.emotionImages ?? []
-    const moduleAssets = getModuleAssets()
+function assetResolutionSignature(
+  char: simpleCharacterArgument | character,
+  moduleAssets: readonly [string, string, string][],
+): string {
+  return JSON.stringify([char.additionalAssets ?? [], char.emotionImages ?? [], moduleAssets])
+}
 
-    resetAssetsCache(charAssets, emoAssets, moduleAssets)
-  })
-})
+function getAssetResolutionContext(char: simpleCharacterArgument | character): AssetResolutionContext {
+  const moduleAssets = moduleAssetsForCharacter(char)
+  const signature = assetResolutionSignature(char, moduleAssets)
+  const ownerKey = `${char.type === 'simple' ? 'simple' : 'character'}:${char.chaId}`
+  const cached = assetResolutionCache.get(ownerKey)
+  if (cached?.signature === signature) {
+    assetResolutionCache.delete(ownerKey)
+    assetResolutionCache.set(ownerKey, cached)
+    return cached
+  }
+
+  const context = buildAssetResolutionContext(char.additionalAssets ?? [], char.emotionImages ?? [], moduleAssets)
+  const entry = { ...context, signature }
+  assetResolutionCache.delete(ownerKey)
+  assetResolutionCache.set(ownerKey, entry)
+  while (assetResolutionCache.size > ASSET_RESOLUTION_CACHE_LIMIT) {
+    const oldestKey = assetResolutionCache.keys().next().value
+    if (oldestKey === undefined) break
+    assetResolutionCache.delete(oldestKey)
+  }
+  return entry
+}
+
+export function clearAdditionalAssetCachesForTests(): void {
+  assetResolutionCache.clear()
+  fileSrcCache.clear()
+}
 
 const imageCBS = ['img', 'image', 'emotion', 'asset', 'bg', 'raw', 'path']
 const videoExtensions = ['mp4', 'webm', 'avi', 'm4p', 'm4v']
@@ -530,16 +567,12 @@ async function parseAdditionalAssets(
   char: simpleCharacterArgument | character,
   mode: 'normal' | 'back',
   arg: { ch: number },
+  context: AssetResolutionContext,
 ) {
   const assetWidth = getDatabase().assetWidth
   const assetWidthString = (assetWidth && assetWidth !== -1) || assetWidth === 0 ? `max-width:${assetWidth}rem;` : ''
 
-  if (char.type === 'character' && (!assetsCache || !emoAssetsCache)) {
-    resetAssetsCache(char.additionalAssets ?? [], char.emotionImages, getModuleAssets())
-  }
-
-  const assetPaths = assetsCache ?? {}
-  const emoPaths = emoAssetsCache ?? {}
+  const { assetPaths, emotionPaths } = context
 
   let needsSourceAccess = false
   let cx: number | null = null
@@ -554,7 +587,7 @@ async function parseAdditionalAssets(
     }
 
     if (type === 'emotion') {
-      const srcPath = emoPaths?.[name]?.srcPaths?.[0]
+      const srcPath = emotionPaths?.[name]?.srcPaths?.[0]
       const path = srcPath ? await getFileSrcCached(srcPath) : null
       if (!path) {
         return ''
@@ -582,7 +615,7 @@ async function parseAdditionalAssets(
       }
 
       if (assetPaths) {
-        match = getClosestMatch(char, name, assetPaths)
+        match = getClosestMatch(char, name)
       }
 
       if (!match) {
@@ -645,10 +678,9 @@ async function parseAdditionalAssets(
   return data
 }
 
-function getClosestMatch(char: simpleCharacterArgument | character, name: string, assetPaths: AssetPaths) {
+function getClosestMatch(char: simpleCharacterArgument | character, name: string) {
   if (!char.additionalAssets) return null
 
-  let closest = ''
   let closestDist = 999999
   let targetPath = ''
   let targetExt = ''
@@ -658,7 +690,6 @@ function getClosestMatch(char: simpleCharacterArgument | character, name: string
     const key = asset[0].toLocaleLowerCase()
     const dist = getDistance(trimmedName, trimmer(key))
     if (dist < closestDist) {
-      closest = key
       closestDist = dist
       targetPath = asset[1]
       targetExt = asset[2]
@@ -669,12 +700,10 @@ function getClosestMatch(char: simpleCharacterArgument | character, name: string
     return null
   }
 
-  assetPaths[closest] = {
+  return {
     srcPaths: [targetPath],
     ext: targetExt,
   }
-
-  return assetPaths[closest]
 }
 
 //Levenshtein distance, new with 1d array
@@ -932,11 +961,18 @@ export async function ParseMarkdown(
   let firstParsed = ''
   const additionalAssetMode = mode === 'back' ? 'back' : 'normal'
   let char = typeof charArg === 'string' ? findCharacterbyId(charArg) : charArg
+  const assetResolutionContext = char ? getAssetResolutionContext(char) : null
 
-  if (char) {
-    data = await parseAdditionalAssets(data, char, additionalAssetMode, {
-      ch: chatID,
-    })
+  if (char && assetResolutionContext) {
+    data = await parseAdditionalAssets(
+      data,
+      char,
+      additionalAssetMode,
+      {
+        ch: chatID,
+      },
+      assetResolutionContext,
+    )
     firstParsed = data
   }
 
@@ -971,10 +1007,16 @@ export async function ParseMarkdown(
         : (await processScriptFull(char, data, 'editdisplay', chatID, cbsConditions)).data
   }
 
-  if (firstParsed !== data && char) {
-    data = await parseAdditionalAssets(data, char, additionalAssetMode, {
-      ch: chatID,
-    })
+  if (firstParsed !== data && char && assetResolutionContext) {
+    data = await parseAdditionalAssets(
+      data,
+      char,
+      additionalAssetMode,
+      {
+        ch: chatID,
+      },
+      assetResolutionContext,
+    )
   }
 
   data = await parseInlayAssets(data ?? '')

@@ -188,6 +188,7 @@ vi.mock('../server/resourceWriteGuard.svelte', () => ({
 
 import {
   applyModule,
+  getModuleAssets,
   getModuleRegexScripts,
   getModuleTriggerOwner,
   getModuleTriggers,
@@ -198,7 +199,7 @@ import {
   refreshModules,
 } from './modules'
 import { moduleBackgroundEmbedding, reloadGuiAfterDefinitionChange } from '../stores.svelte'
-import type { character, customscript, loreBook, triggerscript } from '../storage/database.svelte'
+import type { Chat, character, customscript, loreBook, triggerscript } from '../storage/database.svelte'
 import { language } from 'src/lang'
 
 type TestModuleApplyStep = {
@@ -1258,6 +1259,39 @@ describe('module imports', () => {
     })
 
     expect(getModuleRegexScripts().map((script) => script.comment)).toEqual(['persona regex'])
+  })
+
+  it('resolves module assets from an explicit character and chat context', () => {
+    getCurrentCharacter.mockReturnValue({ modules: ['selected-character-module'] })
+    getCurrentChatMock.mockReturnValue({ modules: ['selected-chat-module'] })
+    getDatabase.mockReturnValue({
+      enabledModules: [],
+      modules: [
+        {
+          id: 'selected-character-module',
+          assets: [['selected-character', 'selected-character-asset', 'png']],
+        },
+        {
+          id: 'selected-chat-module',
+          assets: [['selected-chat', 'selected-chat-asset', 'png']],
+        },
+        {
+          id: 'explicit-character-module',
+          assets: [['explicit-character', 'explicit-character-asset', 'png']],
+        },
+        {
+          id: 'explicit-chat-module',
+          assets: [['explicit-chat', 'explicit-chat-asset', 'png']],
+        },
+      ],
+    })
+    const explicitCharacter = { modules: ['explicit-character-module'] } as unknown as character
+    const explicitChat = { modules: ['explicit-chat-module'] } as unknown as Chat
+
+    expect(getModuleAssets({ character: explicitCharacter, chat: explicitChat })).toEqual([
+      ['explicit-character', 'explicit-character-asset', 'png'],
+      ['explicit-chat', 'explicit-chat-asset', 'png'],
+    ])
   })
 
   it('adds module integration from the effective default Agent Preset', () => {
