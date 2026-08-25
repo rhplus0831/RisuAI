@@ -12,6 +12,7 @@ import {
   beginStartupAttempt,
   canMutate,
   completeStartupAttempt,
+  configureStartupObserverShell,
   failStartupAttempt,
   getStartupReadinessSnapshot,
   recordStartupCapabilityFailure,
@@ -117,6 +118,18 @@ describe('startup telemetry publisher', () => {
     expect(requests).toEqual([])
     expect(transport.auth).not.toHaveBeenCalled()
     expect(__startupTelemetryTestHooks.queuedEventCount()).toBe(0)
+  })
+
+  it('labels milestones buffered before opt-in with the settled observer rollout mode', async () => {
+    startStartupTelemetryPublisher()
+    recordStartupMilestone('entry', 0)
+    recordStartupMilestone('shell-mounted', 1)
+    configureStartupObserverShell(true)
+    configureStartupTelemetry({ version: 1, sampleRate: 1 })
+    await __startupTelemetryTestHooks.flush()
+
+    expect(emittedEvents()).toHaveLength(2)
+    expect(emittedEvents().every((event) => event.observerShellEnabled)).toBe(true)
   })
 
   it('isolates synchronous listeners and rejected transports from readiness capabilities', async () => {

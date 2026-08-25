@@ -46,6 +46,8 @@ export function configureStartupTelemetry(configuration: unknown): void {
   if (collectionState === 'disabled') seenMilestones.clear()
   collectionState = 'enabled'
   if (!stopTelemetrySubscription) return
+  const observerShellEnabled = getStartupCoordinatorSnapshot().observerShellEnabled
+  queuedEvents = queuedEvents.map((event) => ({ ...event, observerShellEnabled }))
   queueCurrentMilestones()
   scheduleStartupTelemetryFlush()
 }

@@ -309,6 +309,34 @@ describe('request trace', () => {
     }
   })
 
+  it('never retains startup telemetry request bodies, including rejected content-bearing fields', async () => {
+    harness = await startHarness('agent')
+    const sentinel = 'private-character-and-chat-content-must-not-be-retained'
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/telemetry/startup',
+      headers: {
+        'content-type': 'application/json',
+      },
+      payload: JSON.stringify({
+        version: 1,
+        events: [],
+        rejectedContent: sentinel,
+      }),
+    })
+
+    expect(res.statusCode).toBe(401)
+    const [entry] = await waitForTraceEntries(harness, 'agent', 1)
+    expect(entry.Route).toBe('/api/v1/telemetry/startup')
+    expect(requireTraceBody(entry, 'Request-Body')).toMatchObject({
+      storage: 'omitted',
+      contentType: 'application/json',
+      reason: 'telemetry-metadata',
+    })
+    expect(readFileSync(tracePath(harness, 'agent'), 'utf8')).not.toContain(sentinel)
+  })
+
   it('stores large text bodies as gzip sidecars', async () => {
     harness = await startHarness('agent', { bodySidecarMaxGzipBytes: 512 })
 

@@ -16,6 +16,7 @@ const INLINE_BODY_MAX_BYTES = 4 * 1024
 const GZIP_BODY_PREVIEW_MAX_BYTES = 4 * 1024
 const TRACE_BODY_MAX_GZIP_BYTES = 10 * 1024 * 1024
 const TRACE_ENTRY_LIMIT = 5_000
+const STARTUP_TELEMETRY_ROUTE = '/api/v1/telemetry/startup'
 const gzipAsync = promisify(gzip)
 const requestTraceUids = new WeakMap<FastifyRequest, string>()
 
@@ -329,6 +330,14 @@ function serializeHeaders(headers: HeaderRecord): string {
 function captureRequestBodySource(request: FastifyRequest): PendingTraceBody | undefined {
   const contentType = normalizeContentType(readHeaderString(request.headers['content-type']))
   const contentLength = readContentLength(request.headers['content-length'])
+
+  if (request.routeOptions.url === STARTUP_TELEMETRY_ROUTE) {
+    return {
+      contentType,
+      contentLength,
+      omittedReason: 'telemetry-metadata',
+    }
+  }
 
   if (isMultipartContentType(contentType)) {
     return {

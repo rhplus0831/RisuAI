@@ -13,6 +13,11 @@ import {
 import { parseRoute, routeKey, routePathFromState, type AppRoute } from '../../../src/ts/routerRoute.js'
 import type { StartupCoordinatorSnapshot, StartupReadinessSnapshot } from '../../../src/ts/startupReadiness.js'
 import {
+  STARTUP_TELEMETRY_FAILURE_CODES,
+  STARTUP_TELEMETRY_MILESTONES,
+} from '../../../src/ts/server/startupTelemetryProtocol.js'
+import { subscribeProtocolMetrics } from '../src/protocolMetrics.js'
+import {
   closeFastBootstrapHarness,
   setObserverShellMode,
   smallFastBootstrapFixture,
@@ -36,6 +41,20 @@ interface RolloutStartupCase {
     mutationsBeforeWriterReady: number
     generationsBeforeChatReady: number
   }
+  telemetry: BrowserStartupTelemetry[]
+}
+
+interface BrowserStartupTelemetry {
+  schemaVersion: number
+  kind: string
+  attemptCount: number
+  observerShellEnabled: boolean
+  milestone?: string
+  entryDurationMs?: number
+  attemptDurationMs?: number
+  failureCode?: string
+  failureMilestone?: string
+  requestUid?: string
 }
 
 interface Phase7IntegrationArtifact {
@@ -84,6 +103,7 @@ interface OptionalRuntimeJourney {
 }
 
 const outputDir = path.resolve('fast-bootstrap-results')
+const previousProtocolMetrics = process.env.RISU_PROTOCOL_METRICS
 const artifact: Phase7IntegrationArtifact = {
   schemaVersion: 1,
   startupRollout: [],
@@ -108,15 +128,21 @@ test.afterAll(async ({}, testInfo) => {
 test('Phase 7 startup rollout matrix proves flag-off and flag-on boundaries on small and large fixtures', async ({
   browser,
 }) => {
-  const startupRollout: RolloutStartupCase[] = []
-  for (const fixture of ['small', 'large'] as const) {
-    const database = fixture === 'small' ? smallFastBootstrapFixture() : buildLargeCorpusFixture().database
-    for (const observerMode of ['disabled', 'enabled'] as const) {
-      startupRollout.push(await runRolloutStartupCase(browser, fixture, database, observerMode))
+  process.env.RISU_PROTOCOL_METRICS = '1'
+  try {
+    const startupRollout: RolloutStartupCase[] = []
+    for (const fixture of ['small', 'large'] as const) {
+      const database = fixture === 'small' ? smallFastBootstrapFixture() : buildLargeCorpusFixture().database
+      for (const observerMode of ['disabled', 'enabled'] as const) {
+        startupRollout.push(await runRolloutStartupCase(browser, fixture, database, observerMode))
+      }
     }
-  }
 
-  artifact.startupRollout = startupRollout
+    artifact.startupRollout = startupRollout
+  } finally {
+    if (previousProtocolMetrics === undefined) delete process.env.RISU_PROTOCOL_METRICS
+    else process.env.RISU_PROTOCOL_METRICS = previousProtocolMetrics
+  }
 })
 
 test('Phase 7 direct-link matrix hydrates every route family from an empty browser and resource cache', async ({
@@ -639,6 +665,11 @@ async function runRolloutStartupCase(
   const harness = await startFastBootstrapHarness(database, {
     temporaryDirectoryPrefix: `risu-phase7-${fixture}-${observerMode}-`,
   })
+  const telemetry: BrowserStartupTelemetry[] = []
+  const unsubscribeMetrics = subscribeProtocolMetrics((metric) => {
+    const safe = safeBrowserStartupTelemetry(metric)
+    if (safe) telemetry.push(safe)
+  })
   let context: BrowserContext | undefined
   try {
     context = await browser.newContext()
@@ -673,6 +704,13 @@ async function runRolloutStartupCase(
     await page.evaluate(() =>
       window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForStartupMilestone('background-ready', 30_000),
     )
+    await expect
+      .poll(
+        () =>
+          telemetry.some((entry) => entry.kind === 'phase-ready' && entry.milestone === 'background-ready') &&
+          telemetry.some((entry) => entry.kind === 'attempt-completed'),
+      )
+      .toBe(true)
 
     const final = await page.evaluate(() => ({
       startup: window.__RISU_FASTIFY_BROWSER_SMOKE__!.getStartupSnapshot(),
@@ -703,6 +741,23 @@ async function runRolloutStartupCase(
       ).length,
     }
     expect(earlyRequests).toEqual({ mutationsBeforeWriterReady: 0, generationsBeforeChatReady: 0 })
+    expect(telemetry.filter((entry) => entry.kind === 'phase-ready').map((entry) => entry.milestone)).toEqual(
+      STARTUP_TELEMETRY_MILESTONES,
+    )
+    expect(telemetry.filter((entry) => entry.kind === 'attempt-completed')).toHaveLength(1)
+    expect(telemetry.filter((entry) => entry.kind === 'attempt-failed')).toEqual([])
+    expect(
+      telemetry
+        .filter((entry) => entry.kind === 'diagnostic-failure')
+        .every(
+          (entry) =>
+            entry.failureCode !== undefined &&
+            STARTUP_TELEMETRY_FAILURE_CODES.includes(
+              entry.failureCode as (typeof STARTUP_TELEMETRY_FAILURE_CODES)[number],
+            ),
+        ),
+    ).toBe(true)
+    expect(telemetry.every((entry) => entry.observerShellEnabled === (observerMode === 'enabled'))).toBe(true)
 
     return {
       fixture,
@@ -711,10 +766,36 @@ async function runRolloutStartupCase(
       startup: final.startup,
       coordinator: final.coordinator,
       earlyRequests,
+      telemetry,
     }
   } finally {
+    unsubscribeMetrics()
     await context?.close().catch(() => undefined)
     await closeFastBootstrapHarness(harness)
+  }
+}
+
+function safeBrowserStartupTelemetry(metric: Readonly<Record<string, unknown>>): BrowserStartupTelemetry | null {
+  if (
+    metric.metric !== 'browser_startup' ||
+    typeof metric.schemaVersion !== 'number' ||
+    typeof metric.kind !== 'string' ||
+    typeof metric.attemptCount !== 'number' ||
+    typeof metric.observerShellEnabled !== 'boolean'
+  ) {
+    return null
+  }
+  return {
+    schemaVersion: metric.schemaVersion,
+    kind: metric.kind,
+    attemptCount: metric.attemptCount,
+    observerShellEnabled: metric.observerShellEnabled,
+    ...(typeof metric.milestone === 'string' ? { milestone: metric.milestone } : {}),
+    ...(typeof metric.entryDurationMs === 'number' ? { entryDurationMs: metric.entryDurationMs } : {}),
+    ...(typeof metric.attemptDurationMs === 'number' ? { attemptDurationMs: metric.attemptDurationMs } : {}),
+    ...(typeof metric.failureCode === 'string' ? { failureCode: metric.failureCode } : {}),
+    ...(typeof metric.failureMilestone === 'string' ? { failureMilestone: metric.failureMilestone } : {}),
+    ...(typeof metric.requestUid === 'string' ? { requestUid: metric.requestUid } : {}),
   }
 }
 
