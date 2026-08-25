@@ -24,6 +24,7 @@
     memoizedChatBodyParse,
   } from './ChatBodyParseMemo'
   import type { DisplaySourceLayer } from 'src/ts/process/displaySourceProtocol'
+  import type { DisplaySourcePriority } from 'src/ts/server/displaySources'
 
   interface Props {
     character?: simpleCharacterArgument | string | null
@@ -34,6 +35,7 @@
     messageId?: string
     displayLayer?: DisplaySourceLayer
     streaming?: boolean
+    displayPriority?: DisplaySourcePriority
     role: string | null
     translated: boolean
     translating: boolean
@@ -54,6 +56,7 @@
     messageId,
     displayLayer = 'original',
     streaming = false,
+    displayPriority = 'normal',
     role,
     translated = $bindable(false),
     translating = $bindable(false),
@@ -189,6 +192,7 @@
               messageId,
               name,
               streaming,
+              displayPriority,
             })
       const detectionKey = getChatBodyCachedOnlyLlmDetectionKey({
         data,
@@ -215,6 +219,7 @@
                 messageId,
                 name,
                 streaming,
+                displayPriority,
                 fallbackMode: mode,
                 cachedOnlyParseKey,
                 detectionKey,
@@ -266,6 +271,7 @@
                 messageId,
                 name,
                 streaming,
+                displayPriority,
               }),
             data,
           )
@@ -292,6 +298,7 @@
                 messageId,
                 name,
                 streaming,
+                displayPriority,
               }),
             data,
           )
@@ -336,6 +343,7 @@
                 messageId,
                 name,
                 streaming,
+                displayPriority,
               }),
             data,
           )
@@ -374,6 +382,7 @@
               messageId,
               name,
               streaming,
+              displayPriority,
             }),
           data,
         )

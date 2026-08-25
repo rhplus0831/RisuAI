@@ -15,7 +15,7 @@ import { aiWatermarkingLawApplies, getFileSrc } from '../globalApi.svelte'
 import './chatVar.svelte' // side effect: registers the browser chatVar backend
 import { getChatVar, setChatVar, getGlobalChatVar } from './chatVarBackend'
 import { processScriptFull } from '../process/scripts'
-import { requestServerDisplaySource } from '../server/displaySources'
+import { requestServerDisplaySource, type DisplaySourcePriority } from '../server/displaySources'
 import type { DisplaySourceLayer } from '../process/displaySourceProtocol'
 import { get } from 'svelte/store'
 import css, { type CssAtRuleAST } from '@adobe/css-tools'
@@ -921,7 +921,13 @@ export async function ParseMarkdown(
   mode: 'normal' | 'back' | 'pretranslate' | 'notrim' = 'normal',
   chatID = -1,
   cbsConditions: CbsConditions = {},
-  displayTarget: { layer?: DisplaySourceLayer; messageId?: string; name?: string; streaming?: boolean } = {},
+  displayTarget: {
+    layer?: DisplaySourceLayer
+    messageId?: string
+    name?: string
+    streaming?: boolean
+    priority?: DisplaySourcePriority
+  } = {},
 ) {
   let firstParsed = ''
   const additionalAssetMode = mode === 'back' ? 'back' : 'normal'
@@ -951,6 +957,7 @@ export async function ParseMarkdown(
             layer: displayTarget.layer ?? (chatID < 0 ? 'greeting' : mode === 'back' ? 'preview' : 'original'),
             source: data,
             streaming: displayTarget.streaming,
+            priority: displayTarget.priority,
             ...(displayTarget.name
               ? { name: displayTarget.name }
               : 'name' in char && typeof char.name === 'string'

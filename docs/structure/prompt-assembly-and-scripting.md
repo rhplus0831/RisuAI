@@ -186,6 +186,14 @@ scoped-load, shared-dependency, per-target fingerprint, transcript-size, and
 per-batch cache outcome fields so regressions can be separated from actual
 script execution time.
 
+The client submits the newest two mounted messages as a critical batch and
+defers the rest of the transcript window until those results settle. The server
+still transforms targets serially: Lua and V2 trigger budgets are shared within
+each batch, and the request-local runtime scope is temporarily mutable even
+though scriptstate is restored per target. Client disconnects abort queued or
+active display stages rather than leaving a superseded chat on the service's
+exclusive execution tail.
+
 The cache has one active namespace keyed by database lineage, writer epoch,
 ephemeral page session, language, both viewport dimensions, and protocol
 version. Entries use SHA-256 over canonical display dependencies rather than a

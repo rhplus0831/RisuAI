@@ -11,6 +11,7 @@ import {
 import { resetWriterAccessLostForTests } from './activeWriterSession'
 import { displaySourceNamespaceJson } from '../process/displaySourceProtocol'
 import {
+  activateDisplaySourceChat,
   configureDisplaySourceProtocol,
   requestServerDisplaySource,
   resetDisplaySourceClientForTests,
@@ -123,6 +124,126 @@ describe('browser display source batching bridge', () => {
     expect(requests[0].context).toMatchObject({ screenWidth: window.innerWidth, screenHeight: window.innerHeight })
     expect(first).toMatchObject({ status: 'ok', displaySource: 'FIRST' })
     expect(second).toMatchObject({ status: 'ok', displaySource: 'SECOND' })
+  })
+
+  it('releases critical newest-message results before deferred background rows', async () => {
+    activateDisplaySourceChat('chat-a')
+    const deferredCriticalResponse = createDeferred<Response>()
+    const requests: DisplayRequestBody[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init: RequestInit = {}) => {
+        const body = JSON.parse(String(init.body)) as DisplayRequestBody
+        requests.push(body)
+        if (requests.length === 1) return deferredCriticalResponse.promise
+        return successfulDisplayResponse(body, 9)
+      }) as unknown as typeof fetch,
+    )
+
+    const character = { chaId: 'char-a' }
+    const background = requestServerDisplaySource({
+      chatId: 'chat-a',
+      character,
+      messageId: 'message-old',
+      index: 0,
+      role: 'char',
+      firstMessage: false,
+      layer: 'original',
+      source: 'old',
+      priority: 'background',
+    })
+    const critical = [
+      requestServerDisplaySource({
+        chatId: 'chat-a',
+        character,
+        messageId: 'message-latest-a',
+        index: 8,
+        role: 'char',
+        firstMessage: false,
+        layer: 'original',
+        source: 'latest-a',
+        priority: 'critical',
+      }),
+      requestServerDisplaySource({
+        chatId: 'chat-a',
+        character,
+        messageId: 'message-latest-b',
+        index: 9,
+        role: 'char',
+        firstMessage: false,
+        layer: 'original',
+        source: 'latest-b',
+        priority: 'critical',
+      }),
+    ]
+
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0].targets.map((target) => target.source)).toEqual(['latest-a', 'latest-b'])
+    deferredCriticalResponse.resolve(await successfulDisplayResponse(requests[0], 8))
+    await expect(Promise.all(critical)).resolves.toEqual([
+      expect.objectContaining({ status: 'ok', displaySource: 'LATEST-A' }),
+      expect.objectContaining({ status: 'ok', displaySource: 'LATEST-B' }),
+    ])
+
+    await vi.waitFor(() => expect(requests).toHaveLength(2))
+    expect(requests[1].baseRevision).toBe(8)
+    expect(requests[1].targets.map((target) => target.source)).toEqual(['old'])
+    await expect(background).resolves.toMatchObject({ status: 'ok', displaySource: 'OLD' })
+  })
+
+  it('aborts obsolete visible-chat work so navigation can use the revision lane', async () => {
+    activateDisplaySourceChat('chat-a')
+    const requests: DisplayRequestBody[] = []
+    let firstRequestAborted = false
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init: RequestInit = {}) => {
+        const body = JSON.parse(String(init.body)) as DisplayRequestBody
+        requests.push(body)
+        if (requests.length > 1) return successfulDisplayResponse(body, 8)
+        return new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener(
+            'abort',
+            () => {
+              firstRequestAborted = true
+              reject(init.signal?.reason)
+            },
+            { once: true },
+          )
+        })
+      }) as unknown as typeof fetch,
+    )
+
+    const obsolete = requestServerDisplaySource({
+      chatId: 'chat-a',
+      character: { chaId: 'char-a' },
+      messageId: 'message-a',
+      index: 0,
+      role: 'char',
+      firstMessage: false,
+      layer: 'original',
+      source: 'obsolete',
+      priority: 'critical',
+    })
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+
+    activateDisplaySourceChat('chat-b')
+    await expect(obsolete).resolves.toEqual({ status: 'fallback', reason: 'display_scope_changed' })
+    expect(firstRequestAborted).toBe(true)
+
+    const current = requestServerDisplaySource({
+      chatId: 'chat-b',
+      character: { chaId: 'char-b' },
+      messageId: 'message-b',
+      index: 0,
+      role: 'char',
+      firstMessage: false,
+      layer: 'original',
+      source: 'current',
+      priority: 'critical',
+    })
+    await vi.waitFor(() => expect(requests).toHaveLength(2))
+    await expect(current).resolves.toMatchObject({ status: 'ok', displaySource: 'CURRENT' })
   })
 
   it('holds the shared revision lane until a display response advances the cursor', async () => {

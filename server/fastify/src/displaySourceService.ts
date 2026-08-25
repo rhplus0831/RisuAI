@@ -53,6 +53,10 @@ function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex')
 }
 
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw signal.reason ?? new Error('Display source request aborted')
+}
+
 function cloneScriptstate(value: Chat['scriptstate']): Chat['scriptstate'] {
   return value === undefined ? undefined : structuredClone(value)
 }
@@ -229,7 +233,7 @@ export class DisplaySourceService {
     signal?: AbortSignal,
   ): Promise<DisplaySourceResponse> {
     const startedAt = protocolNowMs()
-    if (signal?.aborted) throw signal.reason ?? new Error('Display source request aborted')
+    throwIfAborted(signal)
     const initialRevision = getSchemaState(this.db).revision
     if (request.baseRevision !== initialRevision) {
       throw new ValidationError(`Display source base revision is stale; current revision is ${initialRevision}`)
@@ -266,7 +270,7 @@ export class DisplaySourceService {
     let streamingBypassCount = 0
 
     for (const target of request.targets) {
-      if (signal?.aborted) throw signal.reason ?? new Error('Display source request aborted')
+      throwIfAborted(signal)
       if (target.characterId !== scope.character.chaId || !targetIsFresh(scope, target)) {
         entries.push(errorEntry(target, 'stale', 'target_identity_changed'))
         continue
@@ -326,6 +330,7 @@ export class DisplaySourceService {
           displaySource: result.displaySource,
         })
       } catch (error) {
+        throwIfAborted(signal)
         const reason = isBoundedRegexError(error) ? 'bounded_regex_rejected' : 'transform_failed'
         entries.push(errorEntry(target, isBoundedRegexError(error) ? 'client_fallback' : 'error', reason))
       }
@@ -436,6 +441,7 @@ export class DisplaySourceService {
           ),
         )
       } catch {
+        throwIfAborted(signal)
         installScriptstate(scope.chat, beforeScriptstate)
         data = target.source
       }
@@ -465,6 +471,7 @@ export class DisplaySourceService {
         )
         data = triggerResult?.displayData ?? data
       } catch {
+        throwIfAborted(signal)
         // The browser catches the display-trigger stage and continues.
       }
 

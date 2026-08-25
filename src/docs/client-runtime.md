@@ -522,6 +522,16 @@ become chat authority. The current bridge still shares the global command
 revision lane to fence each batch against its requested base revision and
 ingests every chunk response revision before later mutations dispatch.
 
+Initial transcript mounting assigns the newest two messages critical priority
+and the remaining mounted window background priority. The bridge sends the
+critical group first and releases its parse/readiness promises before yielding
+and entering the background group into the revision lane; targets inside either
+group remain serialized because their execution budgets and runtime scope are
+mutable. Changing the visible chat resolves queued obsolete work and aborts its
+in-flight fetch. Fastify converts that disconnect into an `AbortSignal` for the
+display stages, so an old chat cannot keep the new chat queued behind a full
+transform batch.
+
 The full client `processScriptFull` path remains the correctness fallback for
 browser edit hooks, unsupported fuzzy dynamic assets, missing protocol support,
 stale writer/revision/context, and network failure. Growing generation prefixes

@@ -121,6 +121,9 @@ required transform collections while rejecting whole-character, whole-chat,
 asset, and unrelated-collection payload scans. Its metric assertions distinguish
 the cold misses from warm cache hits and pin the queue/load/fingerprint timing
 dimensions.
+The browser bridge cases also prove that critical newest-message targets settle
+before deferred background rows enter the revision lane, and that changing the
+visible chat aborts an obsolete fetch before the replacement batch starts.
 
 1. **Outbox, dispatch, replay, bootstrap, and invalidation:** `pendingMutationOutbox`, `durableMutationDispatch`, `durableMutationTerminalRejection`, `pendingMutationReplay`, browser `commands`, `bootstrap`, `startupReadiness`, `resourceState`, `resourceInvalidation`, and the Phase 0/7 browser matrices. These are the core protection against lost, duplicated, or stale user edits.
 2. **Generation goldens and durable lifecycle:** `sendChat.fixtures*`, server `assemble`, `generation.chat`, `durableGeneration`, provider transport/terminal assertions, and the reroll Playwright journey. They protect model-visible context and durable transcripts.

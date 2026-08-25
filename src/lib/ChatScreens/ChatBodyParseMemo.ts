@@ -23,6 +23,7 @@ import {
   stableDisplayDependencyJson as stableStringify,
 } from '../../ts/process/displaySourceProtocol'
 import type { DisplaySourceLayer } from '../../ts/process/displaySourceProtocol'
+import type { DisplaySourcePriority } from '../../ts/server/displaySources'
 
 type ChatBodyParseMode = 'normal' | 'back' | 'pretranslate' | 'notrim'
 
@@ -36,6 +37,7 @@ interface ChatBodyParseMemoInput {
   messageId?: string
   name?: string
   streaming?: boolean
+  displayPriority?: DisplaySourcePriority
   memoKey?: string
 }
 
@@ -49,6 +51,7 @@ interface ChatBodyCachedOnlyInput {
   messageId?: string
   name?: string
   streaming?: boolean
+  displayPriority?: DisplaySourcePriority
   cachedOnlyParseKey?: string
   detectionKey?: string
 }
@@ -504,6 +507,7 @@ export function getChatBodyCachedOnlyLlmDetectionKey(input: ChatBodyCachedOnlyIn
           messageId: input.messageId,
           name: input.name,
           streaming: input.streaming,
+          displayPriority: input.displayPriority,
         }))
 
   const parseKeyFragment = detectionMode === 'raw' ? '' : `,"parseKey":${stableFragment(parseKey ?? '')}`
@@ -529,6 +533,7 @@ export function memoizedChatBodyParse(input: ChatBodyParseMemoInput): Promise<st
       messageId: input.messageId,
       name: input.name,
       streaming: input.streaming,
+      priority: input.displayPriority,
     }).catch((error) => {
       parseMemo.delete(key)
       throw error
@@ -555,6 +560,11 @@ export async function getChatBodyCachedOnlyLlmDecision(input: ChatBodyCachedOnly
           mode: getChatBodyCachedOnlyLlmDetectionMode(input) as ChatBodyParseMode,
           chatID: input.chatID,
           cbsConditions: input.cbsConditions,
+          displayLayer: input.displayLayer,
+          messageId: input.messageId,
+          name: input.name,
+          streaming: input.streaming,
+          displayPriority: input.displayPriority,
           memoKey: input.cachedOnlyParseKey,
         })
     return (await getLLMCache(cacheKey)) !== null

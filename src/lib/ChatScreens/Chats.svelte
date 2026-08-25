@@ -43,6 +43,7 @@
     generationDisplayProjections,
     type GenerationDisplayProjection,
   } from 'src/ts/process/generationDisplayProjection.svelte'
+  import { activateDisplaySourceChat, releaseDisplaySourceChat } from 'src/ts/server/displaySources'
 
   const getCurrentChatRoomId = () => {
     const charId = get(selectedCharID)
@@ -599,6 +600,7 @@
 
   onDestroy(() => {
     chatsComponentDestroyed = true
+    releaseDisplaySourceChat(getCurrentChatRoomId())
     initialDisplayReadiness.destroy()
     latestMessageGeometryMeasureVersion += 1
     latestMessageResizeObserver?.disconnect()
@@ -607,6 +609,7 @@
   })
 
   $effect.pre(() => {
+    activateDisplaySourceChat(getCurrentChatRoomId())
     chatRows
     wasAtBottomBeforeUpdate = checkIfAtBottom()
   })
@@ -799,6 +802,7 @@
         onInitialDisplayParseSettled={row.awaitInitialDisplayParse
           ? (registration) => initialDisplayReadiness.settle(row.scopeId, registration)
           : undefined}
+        displayPriority={row.awaitInitialDisplayParse ? 'critical' : 'background'}
         generationPersistenceState={row.generationPersistenceState}
         {generationStage}
         disabled={row.message.disabled ?? false} />

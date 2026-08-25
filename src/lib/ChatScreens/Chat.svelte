@@ -155,6 +155,7 @@
   import { rekeyClonedChat } from 'src/ts/chatFork'
   import { bilingualInterleave } from 'src/ts/translator/bilingualInterleave'
   import type { GenerationPersistenceIndicatorState } from 'src/ts/process/generationPersistenceState'
+  import type { DisplaySourcePriority } from 'src/ts/server/displaySources'
 
   let translating = $state(false)
   let editMode = $state(false)
@@ -201,6 +202,7 @@
     onAutoTranslationEligibilityConsumed?: () => void
     onInitialDisplayParseStart?: (registration: symbol) => void
     onInitialDisplayParseSettled?: (registration: symbol) => void
+    displayPriority?: DisplaySourcePriority
   }
 
   interface CapturedChatButtonTriggerTarget {
@@ -270,6 +272,7 @@
     onAutoTranslationEligibilityConsumed = () => {},
     onInitialDisplayParseStart = () => {},
     onInitialDisplayParseSettled = () => {},
+    displayPriority = 'normal',
   }: Props = $props()
   let autoPopupMessageEditorOpen = $state(false)
   let autoPopupTranslationEditorOpen = $state(false)
@@ -2295,6 +2298,7 @@
             messageId={messageRowId || undefined}
             displayLayer={displaySourceLayer}
             streaming={isChatGenerating && idx === totalLength - 1 && role === 'char'}
+            {displayPriority}
             {bodyRoot}
             modelShortName={messageGenerationInfo ? getModelInfo(messageGenerationInfo?.model).shortName : ''}
             role={role ?? null}
@@ -2314,6 +2318,7 @@
             messageId={messageRowId || undefined}
             displayLayer={displaySourceLayer}
             streaming={isChatGenerating && idx === totalLength - 1 && role === 'char'}
+            {displayPriority}
             {bodyRoot}
             modelShortName={messageGenerationInfo ? getModelInfo(messageGenerationInfo?.model).shortName : ''}
             role={role ?? null}

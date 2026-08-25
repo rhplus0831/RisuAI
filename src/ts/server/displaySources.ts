@@ -32,16 +32,26 @@ export interface ServerDisplaySourceInput {
   source: string
   streaming?: boolean
   name?: string
+  priority?: DisplaySourcePriority
 }
+
+export type DisplaySourcePriority = 'critical' | 'normal' | 'background'
 
 export type ServerDisplaySourceResult =
   | { status: 'ok'; displaySource: string; dependencyFingerprint: string }
   | { status: 'fallback'; reason: string }
 
 interface PendingDisplaySource {
+  chatId: string
+  priority: DisplaySourcePriority
   target: DisplaySourceTarget
   expectedContextFingerprint: string
   resolve: (result: ServerDisplaySourceResult) => void
+}
+
+interface ActiveDisplaySourceFetch {
+  chatId: string
+  cancellable: boolean
 }
 
 let protocolVersion = 0
@@ -50,6 +60,8 @@ let activeWriterEpoch: number | null = null
 let projectionEpoch = 0
 const pendingByBatch = new Map<string, PendingDisplaySource[]>()
 const scheduledBatches = new Set<string>()
+const activeFetches = new Map<AbortController, ActiveDisplaySourceFetch>()
+let activeDisplaySourceChatId: string | null = null
 const pageSessionId = createPageSessionId()
 
 function createPageSessionId(): string {
@@ -92,8 +104,38 @@ export function resetDisplaySourceClientForTests(): void {
   for (const pending of pendingByBatch.values()) {
     for (const item of pending) item.resolve({ status: 'fallback', reason: 'client_reset' })
   }
+  for (const controller of activeFetches.keys()) controller.abort('client_reset')
   pendingByBatch.clear()
   scheduledBatches.clear()
+  activeFetches.clear()
+  activeDisplaySourceChatId = null
+}
+
+/**
+ * Claim the visible chat's display work. Pending or in-flight initial-render
+ * work for the previous chat is obsolete and must not hold the shared revision
+ * lane while the newly visible chat waits.
+ */
+export function activateDisplaySourceChat(chatId: string | null): void {
+  if (activeDisplaySourceChatId === chatId) return
+  activeDisplaySourceChatId = chatId
+
+  for (const [batchKey, pending] of pendingByBatch) {
+    const retained: PendingDisplaySource[] = []
+    for (const item of pending) {
+      if (item.priority === 'normal' || item.chatId === chatId) retained.push(item)
+      else item.resolve({ status: 'fallback', reason: 'display_scope_changed' })
+    }
+    if (retained.length > 0) pendingByBatch.set(batchKey, retained)
+    else pendingByBatch.delete(batchKey)
+  }
+  for (const [controller, active] of activeFetches) {
+    if (active.cancellable && active.chatId !== chatId) controller.abort('display_scope_changed')
+  }
+}
+
+export function releaseDisplaySourceChat(chatId: string | null): void {
+  if (activeDisplaySourceChatId === chatId) activateDisplaySourceChat(null)
 }
 
 export async function requestServerDisplaySource(input: ServerDisplaySourceInput): Promise<ServerDisplaySourceResult> {
@@ -104,6 +146,13 @@ export async function requestServerDisplaySource(input: ServerDisplaySourceInput
   if (!input.chatId || !input.character?.chaId) return { status: 'fallback', reason: 'target_unavailable' }
   if (new TextEncoder().encode(input.source).byteLength > DISPLAY_SOURCE_LIMITS.maxSourceBytes) {
     return { status: 'fallback', reason: 'source_oversize' }
+  }
+  const priority = input.priority ?? 'normal'
+  if (priority !== 'normal') {
+    if (activeDisplaySourceChatId === null) activeDisplaySourceChatId = input.chatId
+    else if (activeDisplaySourceChatId !== input.chatId) {
+      return { status: 'fallback', reason: 'display_scope_changed' }
+    }
   }
 
   const context: DisplayRequestContext = { pageSessionId, ...readBrowserClientContext() }
@@ -159,7 +208,7 @@ export async function requestServerDisplaySource(input: ServerDisplaySourceInput
         })
       }
     }
-    pending.push({ target, expectedContextFingerprint, resolve })
+    pending.push({ chatId: input.chatId, priority, target, expectedContextFingerprint, resolve })
     pendingByBatch.set(batchKey, pending)
     if (scheduledBatches.has(batchKey)) return
     scheduledBatches.add(batchKey)
@@ -167,8 +216,40 @@ export async function requestServerDisplaySource(input: ServerDisplaySourceInput
       scheduledBatches.delete(batchKey)
       const batch = pendingByBatch.get(batchKey) ?? []
       pendingByBatch.delete(batchKey)
-      void flushDisplaySourceBatch(input.chatId, context, configuredLineage, batch)
+      void flushDisplaySourcePriorityGroups(input.chatId, context, configuredLineage, batch)
     }, 0)
+  })
+}
+
+async function flushDisplaySourcePriorityGroups(
+  chatId: string,
+  context: DisplayRequestContext,
+  configuredLineage: string,
+  pending: PendingDisplaySource[],
+): Promise<void> {
+  const critical = pending.filter((item) => item.priority === 'critical')
+  const normal = pending.filter((item) => item.priority === 'normal')
+  const background = pending.filter((item) => item.priority === 'background')
+
+  await flushDisplaySourceBatch(chatId, context, configuredLineage, critical)
+  await flushDisplaySourceBatch(chatId, context, configuredLineage, normal)
+  if (background.length === 0) return
+  await yieldToBackgroundDisplayWork()
+  await flushDisplaySourceBatch(chatId, context, configuredLineage, background)
+}
+
+function yieldToBackgroundDisplayWork(): Promise<void> {
+  return new Promise((resolve) => {
+    const requestIdleCallback = (
+      globalThis as typeof globalThis & {
+        requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number
+      }
+    ).requestIdleCallback
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(resolve, { timeout: 250 })
+      return
+    }
+    setTimeout(resolve, 0)
   })
 }
 
@@ -216,6 +297,10 @@ async function flushDisplaySourceChunk(
   const fallbackAll = (reason: string) => {
     for (const item of pending) item.resolve({ status: 'fallback', reason })
   }
+  if (pending.some((item) => item.priority !== 'normal') && activeDisplaySourceChatId !== chatId) {
+    fallbackAll('display_scope_changed')
+    return
+  }
   if (!canUseDisplaySourceProtocol() || databaseLineage !== configuredLineage) {
     fallbackAll('display_namespace_changed')
     return
@@ -236,9 +321,15 @@ async function flushDisplaySourceChunk(
   }
 
   let response: Response
+  const controller = new AbortController()
+  activeFetches.set(controller, {
+    chatId,
+    cancellable: pending.some((item) => item.priority !== 'normal'),
+  })
   try {
     response = await fetch(`/api/v1/chats/${encodeURIComponent(chatId)}/display-sources`, {
       method: 'POST',
+      signal: controller.signal,
       headers: {
         'content-type': 'application/json',
         'risu-auth': auth,
@@ -253,8 +344,14 @@ async function flushDisplaySourceChunk(
       }),
     })
   } catch {
-    fallbackAll('network_error')
+    fallbackAll(
+      controller.signal.aborted && typeof controller.signal.reason === 'string'
+        ? controller.signal.reason
+        : 'network_error',
+    )
     return
+  } finally {
+    activeFetches.delete(controller)
   }
 
   let body: unknown

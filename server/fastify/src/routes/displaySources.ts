@@ -133,11 +133,21 @@ export function registerDisplaySourceRoutes(
 ): void {
   app.post('/api/v1/chats/:chatId/display-sources', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
+    const controller = new AbortController()
+    const abortRequest = () => {
+      if (!controller.signal.aborted) controller.abort(new Error('Display source client disconnected'))
+    }
+    const abortClosedResponse = () => {
+      if (!reply.raw.writableEnded) abortRequest()
+    }
+    req.raw.once('aborted', abortRequest)
+    reply.raw.once('close', abortClosedResponse)
     try {
       const chatId = readChatId((req.params as { chatId?: unknown }).chatId)
       const request = readDisplaySourceRequest(req.body)
-      return await service.transformBatch(chatId, request)
+      return await service.transformBatch(chatId, request, controller.signal)
     } catch (error) {
+      if (controller.signal.aborted) return reply
       if (error instanceof EntityNotFoundError) return reply.code(404).send({ error: error.message })
       if (error instanceof ValidationError) {
         const isRevisionConflict = error.message.includes('base revision is stale')
@@ -148,6 +158,9 @@ export function registerDisplaySourceRoutes(
       }
       req.log.error({ err: error }, 'display source transform failed')
       return reply.code(500).send({ error: 'display_source_transform_failed' })
+    } finally {
+      req.raw.off('aborted', abortRequest)
+      reply.raw.off('close', abortClosedResponse)
     }
   })
 }
