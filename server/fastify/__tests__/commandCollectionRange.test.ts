@@ -250,7 +250,7 @@ afterEach(async () => {
   rmSync(harness.dataDir, { recursive: true, force: true })
 })
 
-describe('Phase 4 plugins collection range', () => {
+describe('plugins collection range', () => {
   it('POST plugins rewrites only the plugins table', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
@@ -380,7 +380,7 @@ describe('Phase 4 plugins collection range', () => {
   })
 })
 
-describe('Phase 4 presets collection range', () => {
+describe('presets collection range', () => {
   it('POST presets rewrites only the bot_presets table', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
@@ -804,7 +804,7 @@ describe('Phase 4 presets collection range', () => {
   })
 })
 
-describe('Phase 4 prompt-items collection range', () => {
+describe('prompt-items collection range', () => {
   // Seed prompt items (with stable ids so per-id routes resolve them).
   async function importWithPromptItems(): Promise<number> {
     const seed = seedDatabase()
@@ -1102,7 +1102,7 @@ describe('Phase 4 prompt-items collection range', () => {
   })
 })
 
-describe('Phase 4 personas collection range', () => {
+describe('personas collection range', () => {
   it('POST personas (no mirror) rewrites only the personas table', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
@@ -1262,7 +1262,7 @@ describe('Phase 4 personas collection range', () => {
   })
 })
 
-describe('Phase 4 translator-presets collection range', () => {
+describe('translator-presets collection range', () => {
   // Every translator route re-syncs the legacy scalars, so all four write the
   // table + settings unconditionally.
   const EXPECTED = ['settings', 'translator_presets']
@@ -1351,7 +1351,7 @@ describe('Phase 4 translator-presets collection range', () => {
   })
 })
 
-describe('Phase 4 loadouts collection range', () => {
+describe('loadouts collection range', () => {
   it('POST loadouts rewrites only the loadouts table', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
@@ -1449,7 +1449,7 @@ describe('Phase 4 loadouts collection range', () => {
   })
 })
 
-describe('Phase 4 lorebooks collection range', () => {
+describe('lorebooks collection range', () => {
   it('POST lorebooks rewrites only the lore_books table', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
@@ -1561,7 +1561,7 @@ describe('Phase 4 lorebooks collection range', () => {
   })
 })
 
-describe('Phase 4 modules collection range', () => {
+describe('modules collection range', () => {
   const SCRIPT = {
     id: 'script-a',
     comment: 'Regex',

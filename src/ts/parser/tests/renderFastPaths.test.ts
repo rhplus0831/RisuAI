@@ -80,8 +80,8 @@ describe('trimMarkdown decoded-style sanitization', () => {
   })
 })
 
-describe('parseThoughtsAndTools render fast paths (L39)', () => {
-  it('L39: marker-free thoughts/tools parsing returns unchanged without slicing', () => {
+describe('parseThoughtsAndTools render fast paths', () => {
+  it('marker-free thoughts/tools parsing returns unchanged without slicing', () => {
     const input = 'plain markdown with a stray </Thoughts> close marker only'
     const sliceSpy = vi.spyOn(String.prototype, 'slice')
 
@@ -131,8 +131,8 @@ describe('parseThoughtsAndTools render fast paths (L39)', () => {
   })
 })
 
-describe('risuChatParser function render path logging (L38)', () => {
-  it('L38: function definition and call parsing writes nothing to console.log', () => {
+describe('risuChatParser function render path logging', () => {
+  it('function definition and call parsing writes nothing to console.log', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
     const output = risuChatParser('before {{#function greet}}Hello {{arg::1}}{{/}}{{call::greet::Ada}} after')

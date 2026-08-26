@@ -1225,7 +1225,7 @@ describe('repository .risu bundle import route', () => {
     expect(imported.statusCode).toBe(400)
   })
 
-  it('caps the expanded size of the embedded database.risu even when the bundle import is unlimited (M9)', async () => {
+  it('caps the expanded size of the embedded database.risu even when the bundle import is unlimited', async () => {
     // importMaxBytes is Infinity in this harness, so the inner `.risu` falls
     // back to the expanded-import cap (bodyLimit = 4 MiB). A tiny gzip that
     // expands past that must be rejected during inflate, not materialized.

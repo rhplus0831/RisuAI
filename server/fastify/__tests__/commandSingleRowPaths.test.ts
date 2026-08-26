@@ -259,7 +259,7 @@ afterEach(async () => {
   rmSync(harness.dataDir, { recursive: true, force: true })
 })
 
-describe('Phase 3 single character-row paths', () => {
+describe('single character-row paths', () => {
   it('PATCH characters/:id writes only the character row', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
@@ -403,7 +403,7 @@ describe('Phase 3 single character-row paths', () => {
   })
 })
 
-describe('Phase 3 single chat-row paths', () => {
+describe('single chat-row paths', () => {
   it('PATCH chats/:id/scriptstate writes only the chat row', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
@@ -739,7 +739,7 @@ describe('Phase 3 single chat-row paths', () => {
   })
 })
 
-describe('Phase 3 character + chat-row cascade paths', () => {
+describe('character + chat-row cascade paths', () => {
   it('DELETE chat-folders/:id writes the character row + the re-homed chat rows', async () => {
     const revision = await importDatabase(seedDatabase())
     expect(readChat('chat-a-1').folderId, 'folderId preserved on import').toBe('folder-1')
@@ -783,7 +783,7 @@ describe('Phase 3 character + chat-row cascade paths', () => {
   })
 })
 
-describe('Phase 3 fork (character row + chat rows + surgical messages)', () => {
+describe('fork (character row + chat rows + surgical messages)', () => {
   it('forks a chat: inserts the new chat + its messages, preserves the source messages', async () => {
     const revision = await importDatabase(seedDatabase())
     // Give the source chat an existing message so we can prove it survives.
@@ -928,7 +928,7 @@ describe('Phase 3 fork (character row + chat rows + surgical messages)', () => {
   })
 })
 
-describe('Phase 3 message replacement placeholder guard', () => {
+describe('message replacement placeholder guard', () => {
   it('rejects an unloaded placeholder atomically instead of replacing the transcript', async () => {
     const revision = await importDatabase(seedDatabase())
     const appended = await runCommand({

@@ -299,7 +299,7 @@ describe('server Lua runtime — request() egress guard (SSRF)', () => {
     }
   })
 
-  it('L23: blocks embedded-private IPv6 transition forms (mapped-hex / compatible / 6to4 / NAT64)', () => {
+  it('blocks embedded-private IPv6 transition forms (mapped-hex / compatible / 6to4 / NAT64)', () => {
     for (const blocked of [
       '::ffff:7f00:1', // IPv4-mapped loopback, hex form (dotted form was already unwrapped)
       '::ffff:a9fe:a9fe', // IPv4-mapped metadata IP, hex form
@@ -385,7 +385,7 @@ describe('server Lua runtime — request() egress guard (SSRF)', () => {
     expect(statuses[30]).toBe(429)
   })
 
-  it('L25: a blocked URL does not consume the egress budget', async () => {
+  it('a blocked URL does not consume the egress budget', async () => {
     const rate: RequestRateState = { count: 0, resetAt: 0 }
     const deps: EgressDeps = {
       lookup: async () => [{ address: '93.184.216.34', family: 4 }],
@@ -405,7 +405,7 @@ describe('server Lua runtime — request() egress guard (SSRF)', () => {
     expect(rate.count).toBe(1)
   })
 
-  it('L20: an abort mid-fetch rejects through serverLuaRequest instead of returning a synthetic 400', async () => {
+  it('an abort mid-fetch rejects through serverLuaRequest instead of returning a synthetic 400', async () => {
     const controller = new AbortController()
     const rate: RequestRateState = { count: 0, resetAt: 0 }
     let seenSignal: AbortSignal | undefined
@@ -1017,8 +1017,8 @@ describe('server Lua runtime — execution limit', () => {
   })
 })
 
-describe('server Lua runtime — request-signal abort (L20)', () => {
-  it('L20: an already-aborted request signal returns immediately without dispatching', async () => {
+describe('server Lua runtime — request-signal abort', () => {
+  it('an already-aborted request signal returns immediately without dispatching', async () => {
     const { ctx, engine } = makeRuntime()
     const controller = new AbortController()
     controller.abort()
@@ -1037,7 +1037,7 @@ describe('server Lua runtime — request-signal abort (L20)', () => {
     expect(engine.getVar('mood')).toBe('null')
   })
 
-  it('L20: aborting mid-dispatch cancels in-flight hook work well before the exec limit', async () => {
+  it('aborting mid-dispatch cancels in-flight hook work well before the exec limit', async () => {
     const { ctx, engine } = makeRuntime()
     const controller = new AbortController()
     ctx.signal = controller.signal
@@ -1063,7 +1063,7 @@ describe('server Lua runtime — request-signal abort (L20)', () => {
     expect(engine.varChanged).toBe(false)
   })
 
-  it('L20: aborting while a Lua request() egress fetch is in flight cancels the run promptly', async () => {
+  it('aborting while a Lua request() egress fetch is in flight cancels the run promptly', async () => {
     const controller = new AbortController()
     let fetchStarted = false
     const egress: EgressDeps = {
@@ -1137,8 +1137,8 @@ describe('server Lua runtime — interactive APIs fail explicitly', () => {
   })
 })
 
-describe('server Lua runtime — aggregate exec budget (L19)', () => {
-  it('L19: an exhausted aggregate budget short-circuits before booting an engine', async () => {
+describe('server Lua runtime — aggregate exec budget', () => {
+  it('an exhausted aggregate budget short-circuits before booting an engine', async () => {
     const { ctx } = makeRuntime()
     ctx.execBudget = { totalMs: 100, usedMs: 100 }
     const before = readLuaEngineAcquireStats()
@@ -1152,7 +1152,7 @@ describe('server Lua runtime — aggregate exec budget (L19)', () => {
     expect(after.pooledAcquires + after.freshAcquires).toBe(before.pooledAcquires + before.freshAcquires)
   })
 
-  it('L19: runaway hooks across a trigger loop are bounded by the aggregate budget, not per-run limits', async () => {
+  it('runaway hooks across a trigger loop are bounded by the aggregate budget, not per-run limits', async () => {
     const chat = makeChat()
     const runawayEffect = {
       comment: 'runaway',
@@ -1193,8 +1193,8 @@ describe('server Lua runtime — aggregate exec budget (L19)', () => {
   })
 })
 
-describe('server Lua runtime — pre-warmed engines (L21)', () => {
-  it('L21: a default-limit run serves from the warm pool without a hot-path boot, output identical', async () => {
+describe('server Lua runtime — pre-warmed engines', () => {
+  it('a default-limit run serves from the warm pool without a hot-path boot, output identical', async () => {
     // Prime: this run may boot inline, but its completion refills the pool.
     const code = `
       listenEdit('editRequest', function(id, data, meta)
@@ -1231,7 +1231,7 @@ describe('server Lua runtime — pre-warmed engines (L21)', () => {
     expect((pooled.res as OpenAIChat[])[1].content).toBe('omega [EDIT]')
   })
 
-  it('L21: pooled engines never leak Lua globals between runs (per-call isolation preserved)', async () => {
+  it('pooled engines never leak Lua globals between runs (per-call isolation preserved)', async () => {
     const readMarker = `
       listenEdit('editRequest', function(id, data, meta)
         data[1].content = tostring(MARKER)
@@ -1253,7 +1253,7 @@ describe('server Lua runtime — pre-warmed engines (L21)', () => {
     expect((read.res as OpenAIChat[])[0].content).toBe('nil')
   })
 
-  it('L21: a fresh boot never overlaps an active run with a pending Lua continuation', async () => {
+  it('a fresh boot never overlaps an active run with a pending Lua continuation', async () => {
     // Engine boots mutate the shared wasm module; booting while another engine
     // sits in an in-flight `:await()` continuation crashes wasmoon. Run A
     // suspends inside request():await(); run B uses a custom exec limit, so it
@@ -1337,7 +1337,7 @@ describe('server Lua runtime — pre-warmed engines (L21)', () => {
     expect(after.freshAcquires).toBe(duringA.freshAcquires + 1)
   })
 
-  it('L21: a pooled engine never overlaps an active run with a pending Lua continuation', async () => {
+  it('a pooled engine never overlaps an active run with a pending Lua continuation', async () => {
     // Regression for two output Lua hooks that both wait on low-level host fns
     // such as axLLM(): even when a second prewarmed engine is available, it must
     // not run beside the suspended continuation.

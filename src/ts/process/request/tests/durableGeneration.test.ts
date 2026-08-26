@@ -139,7 +139,7 @@ describe('resolveDurableGeneration', () => {
     // Discriminating positive: a non-interactive Lua char is in-subset (the server
     // VM runs the editRequest hook); the interactive-dialog case is non-durable
     // (negative test below). The split is inherited from the assembly gate.
-    it('routes a non-interactive Lua trigger char to durable (inherited slice 3b)', () => {
+    it('routes a non-interactive Lua trigger character to durable generation', () => {
       const input = makeInput({
         currentChar: makeChar({
           triggerscript: [
@@ -160,7 +160,7 @@ describe('resolveDurableGeneration', () => {
     // continue / regenerate are durable-eligible: the server finalizes them
     // mode-correctly (extend-in-place / replace-target). Both are in the
     // server-assembled subset, so they route durable like a send.
-    it('routes a continue to durable (Phase 6b)', () => {
+    it('routes a continue to durable', () => {
       const input = makeInput({
         continue: true,
         currentChat: makeChat([{ role: 'char', data: 'previous reply' }]),
@@ -168,7 +168,7 @@ describe('resolveDurableGeneration', () => {
       expect(resolveDurableGeneration(input)).toEqual({ type: 'durable' })
     })
 
-    it('routes a regenerate to durable (Phase 6b)', () => {
+    it('routes a regenerate to durable', () => {
       const input = makeInput({
         regenerateMessageId: 'msg-char-1',
         currentChat: makeChat([{ role: 'char', data: 'previous reply' }]),

@@ -2272,7 +2272,7 @@ describe('character order command helpers', () => {
 })
 
 describe('character command projection helpers', () => {
-  it('L34: setCharacterSupaMemory applies one-field optimistic command patch', async () => {
+  it('setCharacterSupaMemory applies one-field optimistic command patch', async () => {
     const calls = stubCommandFetch()
     setResourceWriteGuardEnabled(true)
 
@@ -2306,7 +2306,7 @@ describe('character command projection helpers', () => {
   })
 })
 
-describe('Phase 4 select supa memory flag patch (L34)', () => {
+describe('select supa memory flag patch', () => {
   it('retains a transient supaMemory toggle for replay without duplicate sends', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
@@ -2362,7 +2362,7 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
     }
   })
 
-  it('L34: supaMemory snapshots are scalar and restore only the target flag', () => {
+  it('supaMemory snapshots are scalar and restore only the target flag', () => {
     testDatabaseState.db = seedCloneCostDb() as any
     selectedCharID.set(1)
 
@@ -2393,7 +2393,7 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
     expect(get(selectedCharID)).toBe(2)
   })
 
-  it('L34: setCharacterSupaMemory captures no full character row or characters array clone', async () => {
+  it('setCharacterSupaMemory captures no full character row or characters array clone', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
       'fetch',
@@ -2445,7 +2445,7 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
     })
   })
 
-  it('L34: failed supaMemory command restores only supaMemory and preserves selection', async () => {
+  it('failed supaMemory command restores only supaMemory and preserves selection', async () => {
     const calls: CapturedFetch[] = []
     const patchResponse = deferredResponse()
     vi.stubGlobal(
@@ -2494,7 +2494,7 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
     expect(get(selectedCharID)).toBe(1)
   })
 
-  it('L34: selectedCharID auto-enable uses one-field patch without full row clone', async () => {
+  it('selectedCharID auto-enable uses one-field patch without full row clone', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
       'fetch',
@@ -2563,7 +2563,7 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
     }
   })
 
-  it('L34: selectedCharID auto-enable preserves all no-op gates', async () => {
+  it('selectedCharID auto-enable preserves all no-op gates', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
       'fetch',
@@ -2657,7 +2657,7 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
   })
 })
 
-describe('Phase 0 character-row snapshot kit', () => {
+describe('character-row snapshot kit', () => {
   it('captures one character row plus selection scalars, never the whole array', () => {
     testDatabaseState.db = seedCloneCostDb() as any
     selectedCharID.set(2)
@@ -2771,7 +2771,7 @@ describe('Phase 0 character-row snapshot kit', () => {
   })
 })
 
-describe('Phase 2 character-row scoped dispatch', () => {
+describe('character-row scoped dispatch', () => {
   it('dispatchCompatibleCharacterUpdateScoped rolls back only the target row on failure', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
@@ -2837,7 +2837,7 @@ describe('Phase 2 character-row scoped dispatch', () => {
   })
 })
 
-describe('Phase 3 kept-key character diff (M13)', () => {
+describe('kept-key character diff', () => {
   it('restores a rejected deletion without overwriting a newer field value', () => {
     const previous = { loreSettings: { scanDepth: 4 } }
     const deletedProjection: Record<string, unknown> = {}
@@ -2878,7 +2878,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
     expect(character).toHaveProperty('loreSettings')
   })
 
-  it('M13: changedCharacterFields diffs without cloning the chats payload', () => {
+  it('changedCharacterFields diffs without cloning the chats payload', () => {
     testDatabaseState.db = seedCloneCostDb() as any // char-0 carries a 40-message hydrated chat
     const previous = testDatabaseState.db.characters[0]
     const next = { ...previous, name: 'Renamed' }
@@ -2892,7 +2892,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
     expect(instrumented.result).toEqual({ name: 'Renamed' })
   })
 
-  it('M13: the per-key diff preserves ordinary semantics and emits supported deletion sentinels', () => {
+  it('the per-key diff preserves ordinary semantics and emits supported deletion sentinels', () => {
     const previous = {
       chaId: 'char-a',
       name: 'Old name',
@@ -2942,7 +2942,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
     expect('desc' in patch).toBe(false)
   })
 
-  it('M13: prepareCompatibleCharacterUpdate builds its factory without serializing the transcript', () => {
+  it('prepareCompatibleCharacterUpdate builds its factory without serializing the transcript', () => {
     testDatabaseState.db = seedCloneCostDb() as any
     const previous = testDatabaseState.db.characters[0]
     const next = { ...previous, name: 'Renamed' }
@@ -2957,7 +2957,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
     expect(instrumented.result.factories).toHaveLength(1)
   })
 
-  it('P2: prepareCompatibleCharacterUpdate builds local projection from the sanitized command patch', () => {
+  it('prepareCompatibleCharacterUpdate builds local projection from the sanitized command patch', () => {
     testDatabaseState.db = {
       characters: [
         {
@@ -3006,7 +3006,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
     })
   })
 
-  it('P2: prepareCompatibleCharacterUpdate is a no-op when only excluded or deleted fields change', () => {
+  it('prepareCompatibleCharacterUpdate is a no-op when only excluded or deleted fields change', () => {
     const previous = {
       chaId: 'char-a',
       name: 'Old name',
@@ -3030,7 +3030,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
     expect(prepared.factories).toHaveLength(0)
   })
 
-  it('P5: prepareCompatibleCharacterUpdateScoped rolls back attempted fields without restoring selection', () => {
+  it('prepareCompatibleCharacterUpdateScoped rolls back attempted fields without restoring selection', () => {
     testDatabaseState.db = {
       characters: [
         {
@@ -3234,7 +3234,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
     }
   })
 
-  it('P2: compatible character updates do not target a replacement chaId when the previous row has no id', async () => {
+  it('compatible character updates do not target a replacement chaId when the previous row has no id', async () => {
     const calls = stubCommandFetch()
     const previousCharacter = {
       name: 'Missing id',
@@ -3261,7 +3261,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
   })
 })
 
-describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
+describe('removeChar trashTime field rollback', () => {
   it('retains a transient soft-delete projection and replays its exact timestamp once', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
@@ -3434,7 +3434,7 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
     })
   })
 
-  it('L33: trashTime snapshots are scalar and restore only the target field plus order placement', () => {
+  it('trashTime snapshots are scalar and restore only the target field plus order placement', () => {
     testDatabaseState.db = seedCloneCostDb() as any
     selectedCharID.set(1)
 
@@ -3471,7 +3471,7 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
     expect(testDatabaseState.db.characterOrder).toEqual(['char-0', 'char-1', 'char-2'])
   })
 
-  it('L33: removeChar normal trash captures no whole-characters clone and reuses one timestamp', async () => {
+  it('removeChar normal trash captures no whole-characters clone and reuses one timestamp', async () => {
     testDatabaseState.db = seedCloneCostDb({
       hydratedMessageCount: 80,
       messageBodySize: 500,
@@ -3526,7 +3526,7 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
     })
   })
 
-  it('L33: failed removeChar trash update restores only trashTime', async () => {
+  it('failed removeChar trash update restores only trashTime', async () => {
     const calls: CapturedFetch[] = []
     const patchResponse = deferredResponse()
     vi.stubGlobal(
@@ -3581,7 +3581,7 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
     expect(get(selectedCharID)).toBe(0)
   })
 
-  it('L33: trash rollback restores by stable id after index shifts', async () => {
+  it('trash rollback restores by stable id after index shifts', async () => {
     const calls: CapturedFetch[] = []
     const patchResponse = deferredResponse()
     vi.stubGlobal(

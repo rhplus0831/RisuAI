@@ -433,7 +433,7 @@ function setupScriptDefinitions(): void {
   }
 }
 
-describe('Phase 2 script definition dirty projection merge', () => {
+describe('script definition dirty projection merge', () => {
   it('preserves dirty script row fields while refreshing clean fields and sibling rows', () => {
     const previousScripts = [
       { ...script('script-1', 'initial'), comment: 'initial comment', in: 'initial in' },
@@ -642,7 +642,7 @@ afterEach(async () => {
   testDatabaseSetter.database = {}
 })
 
-describe('P1 script definition watcher purity', () => {
+describe('script definition watcher purity', () => {
   it('preserves the first stable script id and repairs missing or duplicate ids', () => {
     const rows: customscript[] = [
       script('shared-id', 'first'),
@@ -2009,7 +2009,7 @@ describe('watchServerBackedScriptDefinitions baselines', () => {
     stop()
   })
 
-  it('M8: flushes pending script-definition edits with keepalive and clears debounce', async () => {
+  it('flushes pending script-definition edits with keepalive and clears debounce', async () => {
     setupScriptDefinitions()
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY * 10 })
     flushSync()
@@ -2053,7 +2053,7 @@ describe('watchServerBackedScriptDefinitions baselines', () => {
     stop()
   })
 
-  it('M8: watcher teardown preserves the pending script-definition debounce', async () => {
+  it('watcher teardown preserves the pending script-definition debounce', async () => {
     setupScriptDefinitions()
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY * 10 })
     flushSync()
@@ -2111,7 +2111,7 @@ function setupHydratedScriptDefinitions(): void {
   }
 }
 
-describe('watchServerBackedScriptDefinitions clone cost (Phase 4)', () => {
+describe('watchServerBackedScriptDefinitions clone cost', () => {
   it('captures the baseline without serializing the hydrated message history', () => {
     setupHydratedScriptDefinitions()
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
@@ -2175,7 +2175,7 @@ describe('watchServerBackedScriptDefinitions clone cost (Phase 4)', () => {
   })
 })
 
-describe('watchServerBackedScriptDefinitions scoped rollback (Phase 4)', () => {
+describe('watchServerBackedScriptDefinitions scoped rollback', () => {
   function setupTwoCharacters(): void {
     testDatabaseSetter.database = {
       characters: [
@@ -2429,7 +2429,7 @@ describe('watchServerBackedScriptDefinitions scoped rollback (Phase 4)', () => {
   })
 })
 
-describe('watchServerBackedScriptDefinitions debounced rollback baseline (Phase 4)', () => {
+describe('watchServerBackedScriptDefinitions debounced rollback baseline', () => {
   it('rolls a coalesced character-script edit back to the pre-first-edit baseline', async () => {
     setupScriptDefinitions()
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
@@ -2565,7 +2565,7 @@ function setupMultiCharacterScriptDb(): void {
   }
 }
 
-describe('watchServerBackedScriptDefinitions — scoped change detection (L31)', () => {
+describe('watchServerBackedScriptDefinitions — scoped change detection', () => {
   it('character scope collects only the selected character, not siblings/modules', () => {
     setupMultiCharacterScriptDb()
     selectedCharID.set(0)
@@ -2606,7 +2606,7 @@ describe('watchServerBackedScriptDefinitions — scoped change detection (L31)',
     ])
   })
 
-  it('L31: a character-scoped fire never stringifies the sibling scripts (clone cost stays scoped)', async () => {
+  it('a character-scoped fire never stringifies the sibling scripts (clone cost stays scoped)', async () => {
     setupMultiCharacterScriptDb()
     selectedCharID.set(0)
     const stop = watchServerBackedScriptDefinitions({

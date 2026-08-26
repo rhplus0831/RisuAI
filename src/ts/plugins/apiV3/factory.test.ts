@@ -38,7 +38,7 @@ describe('SandboxHost lifecycle', () => {
     expect(iframe.sandbox.contains('allow-downloads')).toBe(false)
   })
 
-  it('M7: terminate invokes the stored run cleanup once and removes the window message listener', () => {
+  it('terminate invokes the stored run cleanup once and removes the window message listener', () => {
     const addSpy = vi.spyOn(window, 'addEventListener')
     const removeSpy = vi.spyOn(window, 'removeEventListener')
     const iframe = document.createElement('iframe')
@@ -58,7 +58,7 @@ describe('SandboxHost lifecycle', () => {
     expect(document.body.contains(iframe)).toBe(false)
   })
 
-  it('M7: run failure removes the window message listener and iframe', () => {
+  it('run failure removes the window message listener and iframe', () => {
     const removeSpy = vi.spyOn(window, 'removeEventListener')
     const iframe = document.createElement('iframe')
     document.body.appendChild(iframe)
@@ -76,7 +76,7 @@ describe('SandboxHost lifecycle', () => {
     expect(document.body.contains(iframe)).toBe(false)
   })
 
-  it('L44: guest RPC calls do not log request response payloads or transferables by default', async () => {
+  it('guest RPC calls do not log request response payloads or transferables by default', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     const iframe = document.createElement('iframe')
     document.body.appendChild(iframe)

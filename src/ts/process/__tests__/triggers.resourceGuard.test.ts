@@ -614,7 +614,7 @@ describe('trigger durable writes under the resource guard', () => {
   })
 })
 
-describe('Phase 2 trigger lorebook scoped rollback', () => {
+describe('trigger lorebook scoped rollback', () => {
   it('restores only the one character globalLore when the lorebook command fails', async () => {
     // two characters with distinct globalLore; a whole-array rollback would clone
     // and re-write both, the scoped rollback touches only the edited character.

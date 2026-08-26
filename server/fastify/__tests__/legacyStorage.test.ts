@@ -96,7 +96,7 @@ afterEach(async () => {
   await stopHarness(harness)
 })
 
-describe('Phase 3D-Broad /api/v1/storage', () => {
+describe('/api/v1/storage', () => {
   it('rejects without auth once a password is set', async () => {
     await harness.app.inject({
       method: 'POST',
@@ -136,7 +136,7 @@ describe('Phase 3D-Broad /api/v1/storage', () => {
     expect(Buffer.from(readRes.rawPayload)).toEqual(payload)
   })
 
-  it('L26: preserves the old legacy storage file and removes temp bytes after a mid-write failure', async () => {
+  it('preserves the old legacy storage file and removes temp bytes after a mid-write failure', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const oldPayload = Buffer.from('old-final-bytes')
     const writeOld = await harness.app.inject({
@@ -169,7 +169,7 @@ describe('Phase 3D-Broad /api/v1/storage', () => {
     expect(legacyStorageTempFiles(harness.dataDir)).toEqual([])
   })
 
-  it('L26: preserves the old legacy storage file and removes temp bytes after a rename failure', async () => {
+  it('preserves the old legacy storage file and removes temp bytes after a rename failure', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const oldPayload = Buffer.from('old-final-before-rename')
     const writeOld = await harness.app.inject({

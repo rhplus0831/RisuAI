@@ -239,7 +239,7 @@ describe('applyAdditionalParameters DSL', () => {
     expect(body.x).toBeUndefined()
   })
 
-  it('L24: setObjectValue cannot pollute Object.prototype via dotted prototype keys', () => {
+  it('setObjectValue cannot pollute Object.prototype via dotted prototype keys', () => {
     const { body, headers } = setup()
     applyAdditionalParameters(body, headers, [
       // Walks to Object.prototype then writes onto it without the guard.

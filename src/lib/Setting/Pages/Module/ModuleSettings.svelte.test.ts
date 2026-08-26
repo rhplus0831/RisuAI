@@ -484,13 +484,13 @@ describe('ModuleSettings derived module rows', () => {
     expect(labels).toContain(`${language.import}: ${language.loreBook}`)
   })
 
-  it('L43: ModuleSettings empty search shows every module in lowercase sorted order', () => {
+  it('ModuleSettings empty search shows every module in lowercase sorted order', () => {
     mountSettings()
 
     expect(moduleRowNames()).toEqual(['Alpha Module', 'beta Module', 'MCP Tools', 'zulu module'])
   })
 
-  it('L43: ModuleSettings filtered rows keep action targets by module id', async () => {
+  it('ModuleSettings filtered rows keep action targets by module id', async () => {
     alertSpies.alertConfirm.mockResolvedValueOnce(true)
     mountSettings()
     await updateSearch('BETA')
@@ -576,7 +576,7 @@ describe('ModuleSettings derived module rows', () => {
     expect(deleteButton.disabled).toBe(false)
   })
 
-  it('L43: ModuleSettings edit after filtering saves the original module id', async () => {
+  it('ModuleSettings edit after filtering saves the original module id', async () => {
     mountSettings()
     await updateSearch('beta')
 
@@ -738,7 +738,7 @@ describe('ModuleSettings derived module rows', () => {
     expect(moduleCommandSpies.createGlobalModule.mock.calls[0][0].trigger).toHaveLength(1)
   })
 
-  it('L43: ModuleSettings search recomputes sorted rows once per search edit and reuses them across view switches', async () => {
+  it('ModuleSettings search recomputes sorted rows once per search edit and reuses them across view switches', async () => {
     const readCounter = { count: 0 }
     seedModules(readCounter)
     mountSettings()

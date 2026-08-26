@@ -29,7 +29,7 @@ test.afterAll(async () => {
   rmSync(harness.dataDir, { recursive: true, force: true })
 })
 
-test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)', async ({ page }) => {
+test('rerolled candidates survive a reload and stay swipe-recoverable', async ({ page }) => {
   const diagnostics: string[] = []
   const generationRequestPaths: string[] = []
   page.on('console', (m) => diagnostics.push(`console.${m.type()}: ${m.text()}`))

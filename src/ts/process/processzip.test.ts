@@ -289,7 +289,7 @@ describe('CharXImporter stream caps', () => {
     expect(importer.excludedFiles).toEqual(['module.risum'])
   })
 
-  it('M21: skips a known oversized CharX asset before allocating a buffer', async () => {
+  it('skips a known oversized CharX asset before allocating a buffer', async () => {
     const cardJson = '{"spec":"chara_card_v3","data":{"name":"Known"}}'
     const zipData = concatBytes([
       storedLocalFile('assets/huge.bin', new Uint8Array(), MAX_ASSET_SIZE_BYTES + 1, 0),
@@ -309,7 +309,7 @@ describe('CharXImporter stream caps', () => {
     expect(globalApiState.saveAssets).not.toHaveBeenCalled()
   })
 
-  it('M21: abandons an unknown-size CharX asset mid-stream and discards partial bytes', async () => {
+  it('abandons an unknown-size CharX asset mid-stream and discards partial bytes', async () => {
     const oversizedChunkCount = 52
     const chunks = streamingZipChunks([
       {
@@ -333,7 +333,7 @@ describe('CharXImporter stream caps', () => {
     expect(globalApiState.appendable.bufferReads).toEqual([])
   }, 15_000)
 
-  it('M21: ignores completion callbacks after terminating an oversized CharX asset', async () => {
+  it('ignores completion callbacks after terminating an oversized CharX asset', async () => {
     const afterAsset = new Uint8Array([9, 8, 7, 6])
     const chunks = streamingZipChunks([
       {
@@ -362,7 +362,7 @@ describe('CharXImporter stream caps', () => {
     expect(globalApiState.appendable.bufferReads.map((read) => read.id)).not.toContain(oversizedBufferId)
   }, 15_000)
 
-  it('M21: preserves representative valid CharX import output', async () => {
+  it('preserves representative valid CharX import output', async () => {
     const cardJson = JSON.stringify({
       spec: 'chara_card_v3',
       data: {
@@ -452,7 +452,7 @@ describe('CharXImporter stream caps', () => {
 })
 
 describe('CharXWriter media cleanup', () => {
-  it('L51: writeJpeg revokes the temporary object URL after decode and append', async () => {
+  it('writeJpeg revokes the temporary object URL after decode and append', async () => {
     const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:charx-jpeg')
     const revokeUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
     const originalCreateElement = document.createElement.bind(document)

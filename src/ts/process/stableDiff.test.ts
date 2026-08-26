@@ -425,7 +425,7 @@ describe('stableDiff image-generation hygiene', () => {
     )
   })
 
-  it('L50: image generation providers do not console-log payloads or poll bodies', async () => {
+  it('image generation providers do not console-log payloads or poll bodies', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     const char = makeCharacter()
     try {
@@ -483,7 +483,7 @@ describe('stableDiff image-generation hygiene', () => {
     }
   })
 
-  it('K4: reference image loading rejects onerror and timeout instead of hanging', async () => {
+  it('reference image loading rejects onerror and timeout instead of hanging', async () => {
     class ErrorImage {
       onerror: ((event: Event) => void) | null = null
       onload: (() => void) | null = null

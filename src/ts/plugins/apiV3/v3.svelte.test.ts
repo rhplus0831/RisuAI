@@ -1307,7 +1307,7 @@ describe('V3 plugin settings rollback', () => {
     await expect(api.changeTextTheme('highcontrast')).rejects.toThrow('theme rejected')
   })
 
-  it('I-12: keeps a newer theme value when a failed plugin settings rollback is stale', () => {
+  it('keeps a newer theme value when a failed plugin settings rollback is stale', () => {
     mockServerCommands.canUse = true
     ;(mockDbState.db as any).textTheme = 'standard'
     const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
@@ -1334,7 +1334,7 @@ describe('V3 plugin settings rollback', () => {
     expect(updateTextThemeAndCSS).not.toHaveBeenCalled()
   })
 
-  it('I-12: restores the previous theme value when live state still equals the attempted patch', () => {
+  it('restores the previous theme value when live state still equals the attempted patch', () => {
     mockServerCommands.canUse = true
     ;(mockDbState.db as any).textTheme = 'standard'
     const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
@@ -1625,7 +1625,7 @@ describe('V3 plugin lifecycle cleanup', () => {
     expect(document.querySelectorAll('iframe')).toHaveLength(0)
   })
 
-  it('M7/v4-L37: loadV3Plugins unloads every existing V3 instance from a snapshot', async () => {
+  it('loadV3Plugins unloads every existing V3 instance from a snapshot', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {})
     const removeSpy = vi.spyOn(window, 'removeEventListener')
 
@@ -1645,7 +1645,7 @@ describe('V3 plugin lifecycle cleanup', () => {
     expect(messageCalls(removeSpy)).toHaveLength(2)
   })
 
-  it('M7/L43: throwing unload callbacks do not skip SandboxHost or provider cleanup', async () => {
+  it('throwing unload callbacks do not skip SandboxHost or provider cleanup', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {})
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const removeSpy = vi.spyOn(window, 'removeEventListener')
@@ -1670,7 +1670,7 @@ describe('V3 plugin lifecycle cleanup', () => {
     expect(messageCalls(removeSpy)).toHaveLength(1)
   })
 
-  it('L43: custom provider stores dedupe by provider name and unload by plugin ownership', async () => {
+  it('custom provider stores dedupe by provider name and unload by plugin ownership', async () => {
     const firstHandler = vi.fn(async () => ({ success: true, content: 'first' }))
     const secondHandler = vi.fn(async () => ({ success: true, content: 'second' }))
 
@@ -1696,7 +1696,7 @@ describe('V3 plugin lifecycle cleanup', () => {
     expect(pluginV2.providerOptions.has('shared')).toBe(false)
   })
 
-  it('L43: unloading a V3 provider does not remove a same-name provider reloaded by V2', async () => {
+  it('unloading a V3 provider does not remove a same-name provider reloaded by V2', async () => {
     const v2ReloadedHandler = vi.fn(async () => ({ success: true, content: 'v2' }))
 
     __v3PluginLifecycleTestHooks.registerProvider('plugin-a', 'shared')
@@ -1710,7 +1710,7 @@ describe('V3 plugin lifecycle cleanup', () => {
     expect(customV3ProviderMetaStore).toHaveLength(0)
   })
 
-  it('I-11: ignores stale provider registration after a newer V3 load', async () => {
+  it('ignores stale provider registration after a newer V3 load', async () => {
     const oldPlugin = seedV3Plugin('plugin-old')
     const newPlugin = seedV3Plugin('plugin-new')
 
@@ -1741,7 +1741,7 @@ describe('V3 plugin lifecycle cleanup', () => {
     expect(customV3ProviderMetaStore.map((model) => model.id)).toEqual(['pluginmodel:::provider-new'])
   })
 
-  it('I-11: ignores stale custom UI registration after a newer V3 load', async () => {
+  it('ignores stale custom UI registration after a newer V3 load', async () => {
     const oldPlugin = seedV3Plugin('plugin-old')
     const newPlugin = seedV3Plugin('plugin-new')
 
@@ -1773,7 +1773,7 @@ describe('V3 plugin lifecycle cleanup', () => {
     ])
   })
 
-  it('I-11: delayed old menu cleanup does not remove a newer same-id button', async () => {
+  it('delayed old menu cleanup does not remove a newer same-id button', async () => {
     const oldPlugin = seedV3Plugin('plugin-shared')
     const oldRuntime = __v3PluginLifecycleTestHooks.createTrackedApi(oldPlugin)
     const oldApi = oldRuntime.api as any
@@ -1936,7 +1936,7 @@ describe('V3 plugin lifecycle cleanup', () => {
     expect(unregisterMCPModule).toHaveBeenCalledWith(identifier, newRegistration)
   })
 
-  it('v4-L37: unload cleanup removes SafeElement document listeners exactly once', async () => {
+  it('unload cleanup removes SafeElement document listeners exactly once', async () => {
     const lifecycle = __v3PluginLifecycleTestHooks.createLifecycle()
     const safeDocument = __v3PluginLifecycleTestHooks.createSafeDocument(lifecycle)
     const listener = vi.fn()
@@ -1996,7 +1996,7 @@ describe('V3 plugin lifecycle cleanup', () => {
     existingImage.remove()
   })
 
-  it('v4-L37: unload cleanup disconnects SafeMutationObservers exactly once', () => {
+  it('unload cleanup disconnects SafeMutationObservers exactly once', () => {
     const disconnectSpy = vi.spyOn(MutationObserver.prototype, 'disconnect')
     const lifecycle = __v3PluginLifecycleTestHooks.createLifecycle()
     const safeDocument = __v3PluginLifecycleTestHooks.createSafeDocument(lifecycle)

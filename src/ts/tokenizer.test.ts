@@ -108,7 +108,7 @@ describe('Google Cloud tokenizer cache', () => {
     vi.unstubAllGlobals()
   })
 
-  it('L42: GoogleCloud token counts hit the bounded cache for repeated text', async () => {
+  it('GoogleCloud token counts hit the bounded cache for repeated text', async () => {
     const { tokenize } = await loadTokenizer()
 
     await expect(tokenize('repeatable prompt')).resolves.toBe(tokenCountFor('repeatable prompt', 'gemini-default'))
@@ -121,7 +121,7 @@ describe('Google Cloud tokenizer cache', () => {
     })
   })
 
-  it('L42: GoogleCloud cache keys keep model and text boundaries collision-safe', async () => {
+  it('GoogleCloud cache keys keep model and text boundaries collision-safe', async () => {
     const { tokenize } = await loadTokenizer()
 
     moduleState.db.aiModel = 'google-a'
@@ -133,7 +133,7 @@ describe('Google Cloud tokenizer cache', () => {
     expect(moduleState.requestProviderOperationMock).toHaveBeenCalledTimes(2)
   })
 
-  it('L42: GoogleCloud token cache evicts oldest entries and refills with the same count', async () => {
+  it('GoogleCloud token cache evicts oldest entries and refills with the same count', async () => {
     const { GOOGLE_CLOUD_TOKENIZED_CACHE_LIMIT, tokenize } = await loadTokenizer()
 
     for (let i = 0; i < GOOGLE_CLOUD_TOKENIZED_CACHE_LIMIT; i += 1) {

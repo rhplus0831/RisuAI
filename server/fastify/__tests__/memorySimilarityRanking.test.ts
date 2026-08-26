@@ -112,7 +112,7 @@ describe('memory similarity ranking', () => {
     })
   })
 
-  it('K1: skips embedding vector reads when query vectors are empty or invalid', () => {
+  it('skips embedding vector reads when query vectors are empty or invalid', () => {
     const chunks = [chunk({ id: 'chunk-a', rangeStartSeq: 0 })]
     const summaries = [summary({ id: 'summary-a', chunkId: 'chunk-a' })]
     const tracked = trackedEmbedding({
@@ -144,7 +144,7 @@ describe('memory similarity ranking', () => {
     })
   })
 
-  it('K1: reads embedding vectors and preserves ranking diagnostics for valid query vectors', () => {
+  it('reads embedding vectors and preserves ranking diagnostics for valid query vectors', () => {
     const chunks = [
       chunk({ id: 'chunk-a', rangeStartSeq: 0 }),
       chunk({ id: 'chunk-b', rangeStartSeq: 2 }),

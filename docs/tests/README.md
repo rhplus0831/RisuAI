@@ -86,9 +86,9 @@ includes `__tests__/**/*.test.ts`. The package aliases keep `pnpm test` on
 `test:frontend`, `pnpm api:test` on `test:server`, and `pnpm test:smoke` on
 `smoke:fastify-browser`.
 
-`phase0StartupMatrix.spec.ts` keeps small/large and cold/warm startup populations
+`startupCachePopulationMatrix.spec.ts` keeps small/large and cold/warm startup populations
 separate and writes `fast-bootstrap-results/startup-matrix.{json,txt}`.
-`phase7IntegrationMatrix.spec.ts` runs flag-off/on startup, every production
+`startupRecoveryIntegrationMatrix.spec.ts` runs flag-off/on startup, every production
 route-manifest direct-link family, offline and response-loss replay, a real
 `event_replay_unavailable` recovery, multi-tab denial/takeover/promotion, and
 slow/failing optional-runtime Retry. It writes

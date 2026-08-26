@@ -227,7 +227,7 @@ describe('Suggestion controls', () => {
 })
 
 describe('runSuggestionTranslation', () => {
-  it('L58: keeps only the newest overlapping translated suggestion run', async () => {
+  it('keeps only the newest overlapping translated suggestion run', async () => {
     const slowFirstMessage = deferred<string>()
     const commits: string[][] = []
     let currentRunId = 1
@@ -272,7 +272,7 @@ describe('runSuggestionTranslation', () => {
     expect(commits).toEqual([['translated:fast']])
   })
 
-  it('L58: snapshots source messages and refuses a mutated-source commit', async () => {
+  it('snapshots source messages and refuses a mutated-source commit', async () => {
     const sourceMessages = ['one', 'two']
     const translatedInputs: string[] = []
     const commits: string[][] = []
@@ -329,7 +329,7 @@ describe('runSuggestionTranslation', () => {
     expect(commit).not.toHaveBeenCalled()
   })
 
-  it('L58: clears translated suggestions when translation is disabled', async () => {
+  it('clears translated suggestions when translation is disabled', async () => {
     const clear = vi.fn()
     const translateMessage = vi.fn(async (message: string) => `translated:${message}`)
 

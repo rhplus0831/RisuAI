@@ -185,7 +185,7 @@ describe('memory embedding model resolver', () => {
     })
   })
 
-  it('L21: formats per-input size violations with the offending bound', () => {
+  it('formats per-input size violations with the offending bound', () => {
     const result = resolveMemoryEmbeddingModel(
       db({
         hypaModel: 'custom',

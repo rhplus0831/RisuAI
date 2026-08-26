@@ -149,8 +149,8 @@ function readSettingsRecord(): Record<string, unknown> {
   }
 }
 
-describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture', () => {
-  it('M3/L5/L6: a scriptstate PATCH performs zero whole-corpus payload reads', async () => {
+describe('command-mutation read narrowing on the large-corpus fixture', () => {
+  it('a scriptstate PATCH performs zero whole-corpus payload reads', async () => {
     const fixture = buildLargeCorpusFixture()
     const revision = await importDatabase(fixture.database)
 
@@ -280,7 +280,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     await runModulePatch('triggers')
   })
 
-  it('H2: chat-create performs zero whole-corpus message/hypa reads while writing only the new transcript', async () => {
+  it('chat-create performs zero whole-corpus message/hypa reads while writing only the new transcript', async () => {
     const fixture = buildLargeCorpusFixture()
     const revision = await importDatabase(fixture.database)
     const targetCharacterId = fixture.hot.characterId
@@ -353,7 +353,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     expect(hotAfter.map((message) => message.chatId)).toEqual(existingHotMessages.map((message) => message.chatId))
   })
 
-  it('M5: character PATCH repairs and writes the target row without whole-corpus reads', async () => {
+  it('character PATCH repairs and writes the target row without whole-corpus reads', async () => {
     const fixture = buildLargeCorpusFixture()
     const revision = await importDatabase(fixture.database)
 
@@ -394,7 +394,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     }
   })
 
-  it('M5: chat PATCH without modules uses chatScopedRead and preserves selected chat state', async () => {
+  it('chat PATCH without modules uses chatScopedRead and preserves selected chat state', async () => {
     const fixture = buildLargeCorpusFixture()
     const revision = await importDatabase(fixture.database)
 
@@ -443,7 +443,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     }
   })
 
-  it('M5: chat PATCH takes the explicit broad fallback only for patch.modules', async () => {
+  it('chat PATCH takes the explicit broad fallback only for patch.modules', async () => {
     const fixture = buildLargeCorpusFixture()
     const revision = await importDatabase(fixture.database)
 
@@ -511,7 +511,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     }
   })
 
-  it('L13: single-key plugin-storage PUT/DELETE skip database loads while bulk merge still reads current storage', async () => {
+  it('single-key plugin-storage PUT/DELETE skip database loads while bulk merge still reads current storage', async () => {
     const fixture = buildLargeCorpusFixture()
     let revision = await importDatabase(fixture.database)
 
@@ -560,7 +560,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     }
   })
 
-  it('M3: settings commands read only the settings row on extracted SQLite state', async () => {
+  it('settings commands read only the settings row on extracted SQLite state', async () => {
     const fixture = buildLargeCorpusFixture()
     let revision = await importDatabase({
       ...fixture.database,
@@ -618,7 +618,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     expectSettingsCommandReadOnlySettings(promptRun.readCountByTable)
   })
 
-  it('M3: settings scoped read falls back broad for legacy embedded settings rows', async () => {
+  it('settings scoped read falls back broad for legacy embedded settings rows', async () => {
     const fixture = buildLargeCorpusFixture()
     const revision = await importDatabase(fixture.database)
 
@@ -756,7 +756,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     })
   })
 
-  it('L11: collection commands read only settings plus requested collection tables', async () => {
+  it('collection commands read only settings plus requested collection tables', async () => {
     const fixture = buildLargeCorpusFixture()
     let revision = await importDatabase(fixture.database)
 
@@ -861,7 +861,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     )
   })
 
-  it('L11: collection scoped reads fall back broad for unrelated embedded settings rows', async () => {
+  it('collection scoped reads fall back broad for unrelated embedded settings rows', async () => {
     const fixture = buildLargeCorpusFixture()
     const revision = await importDatabase(fixture.database)
 
@@ -893,7 +893,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     expect(loadCountByTable.characters ?? 0).toBeGreaterThanOrEqual(1)
   })
 
-  it('M3/L5/L6: the full message lifecycle stays scoped (append, patch, delete, truncate, replace, generation-result)', async () => {
+  it('the full message lifecycle stays scoped (append, patch, delete, truncate, replace, generation-result)', async () => {
     const fixture = buildLargeCorpusFixture()
     let revision = await importDatabase(fixture.database)
     const chatId = fixture.hot.chatId

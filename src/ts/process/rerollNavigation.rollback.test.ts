@@ -123,7 +123,7 @@ afterEach(() => {
   selectedCharID.set(-1)
 })
 
-describe('reroll/swipe chat-scoped rollback (Phase 2)', () => {
+describe('reroll/swipe chat-scoped rollback', () => {
   it('a swipe clones only the active chat, never the sibling transcript', () => {
     // No active chat id → `applyTailSlice` skips the network dispatch, isolating the
     // synchronous rollback-baseline capture (the `currentChatScopedSnapshot`).

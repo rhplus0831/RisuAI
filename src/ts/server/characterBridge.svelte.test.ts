@@ -283,7 +283,7 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     stop()
   })
 
-  it('L22: editing nested draft fields does not rerun the server seed path', async () => {
+  it('editing nested draft fields does not rerun the server seed path', async () => {
     let newGenDataReads = 0
     let projectedNewGenData = {
       prompt: 'Initial prompt',
@@ -322,7 +322,7 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     stop()
   })
 
-  it('L22: character switch reseeds the draft', async () => {
+  it('character switch reseeds the draft', async () => {
     setupCharacters([characterRow('char-1', 'Initial'), characterRow('char-2', 'Second')])
     const { draft, stop } = await createDraft(['name', 'newGenData'])
 
@@ -339,7 +339,7 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     stop()
   })
 
-  it('L22: server resource apply with changed fields reseeds the draft', async () => {
+  it('server resource apply with changed fields reseeds the draft', async () => {
     setupCharacter()
     const { draft, stop } = await createDraft(['name', 'desc', 'newGenData'])
 
@@ -552,7 +552,7 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     stop()
   })
 
-  it('L22: local edits update projection and dispatch sanitized character patches', async () => {
+  it('local edits update projection and dispatch sanitized character patches', async () => {
     setupCharacter()
     const stopWatcher = watchServerBackedCharacterProfile({ delayMs: DELAY })
     flushSync()
@@ -921,7 +921,7 @@ describe('watchServerBackedCharacterProfile baselines', () => {
     stop()
   })
 
-  it('M12: foreign character-row resource apply refreshes baseline without echoing, then local profile edits dispatch', async () => {
+  it('foreign character-row resource apply refreshes baseline without echoing, then local profile edits dispatch', async () => {
     setupCharacter()
     const stop = watchServerBackedCharacterProfile({ delayMs: DELAY })
     flushSync()
@@ -981,7 +981,7 @@ describe('watchServerBackedCharacterProfile baselines', () => {
     stop()
   })
 
-  it('M8: flushes pending character profile edits with keepalive and clears the debounce', async () => {
+  it('flushes pending character profile edits with keepalive and clears the debounce', async () => {
     setupCharacter()
     const stop = watchServerBackedCharacterProfile({ delayMs: DELAY * 10 })
     flushSync()
@@ -999,7 +999,7 @@ describe('watchServerBackedCharacterProfile baselines', () => {
     stop()
   })
 
-  it('M8: watcher teardown flushes pending character profile edits and clears the debounce', async () => {
+  it('watcher teardown flushes pending character profile edits and clears the debounce', async () => {
     setupCharacter()
     const stop = watchServerBackedCharacterProfile({ delayMs: DELAY * 10 })
     flushSync()

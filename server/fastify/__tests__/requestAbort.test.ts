@@ -25,13 +25,13 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-describe('attachAbort (M8 non-durable deadline)', () => {
-  it('M8: the default deadline mirrors the durable 600s reference (generous, not aggressive)', () => {
+describe('attachAbort (non-durable deadline)', () => {
+  it('the default deadline mirrors the durable 600s reference (generous, not aggressive)', () => {
     expect(NON_DURABLE_REQUEST_DEADLINE_MS).toBe(600_000)
     expect(NON_DURABLE_REQUEST_DEADLINE_MS).toBe(PROXY_STREAM_DEFAULT_TIMEOUT_MS)
   })
 
-  it('M8: a slow-but-valid request is NOT aborted while inside the generous bound', () => {
+  it('a slow-but-valid request is NOT aborted while inside the generous bound', () => {
     vi.useFakeTimers()
     const req = fakeReq()
     const reply = fakeReply()
@@ -41,7 +41,7 @@ describe('attachAbort (M8 non-durable deadline)', () => {
     cleanup()
   })
 
-  it('M8: the signal aborts once the deadline elapses, with no client disconnect', () => {
+  it('the signal aborts once the deadline elapses, with no client disconnect', () => {
     vi.useFakeTimers()
     const req = fakeReq()
     const reply = fakeReply()
@@ -52,7 +52,7 @@ describe('attachAbort (M8 non-durable deadline)', () => {
     cleanup()
   })
 
-  it('L1: refresh keeps an active non-durable generation alive past its original deadline', () => {
+  it('refresh keeps an active non-durable generation alive past its original deadline', () => {
     vi.useFakeTimers()
     const req = fakeReq()
     const reply = fakeReply()
@@ -69,7 +69,7 @@ describe('attachAbort (M8 non-durable deadline)', () => {
     cleanup()
   })
 
-  it('L1: configured non-durable deadlines are capped at the shared max timeout', () => {
+  it('configured non-durable deadlines are capped at the shared max timeout', () => {
     vi.useFakeTimers()
     const req = fakeReq()
     const reply = fakeReply()

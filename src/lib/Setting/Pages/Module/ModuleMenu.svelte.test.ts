@@ -113,7 +113,7 @@ afterEach(() => {
 })
 
 describe('ModuleMenu stale import guards', () => {
-  it('I-10: delayed lorebook import preserves concurrent module lorebook edits', () => {
+  it('delayed lorebook import preserves concurrent module lorebook edits', () => {
     const moduleId = draftModule.id
     const importedRows = parseImportedLorebookRows([
       jsonFile({
@@ -159,7 +159,7 @@ describe('ModuleMenu stale import guards', () => {
   it.each([
     ['cancel', null],
     ['empty result', []],
-  ])('I-10: lorebook %s preserves concurrent module lorebook edits', (_label, importedRows) => {
+  ])('lorebook %s preserves concurrent module lorebook edits', (_label, importedRows) => {
     const moduleId = draftModule.id
 
     liveModule.lorebook = [loreEntry('lore-initial', 'concurrent retained')]
@@ -170,7 +170,7 @@ describe('ModuleMenu stale import guards', () => {
     expect(draftModule.lorebook).toEqual(liveModule.lorebook)
   })
 
-  it('I-10: delayed regex import preserves concurrent module regex edits and latest triggers', () => {
+  it('delayed regex import preserves concurrent module regex edits and latest triggers', () => {
     const moduleId = draftModule.id
     const importedRows = [regexEntry('regex-imported', 'imported regex')]
 

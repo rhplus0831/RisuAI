@@ -334,7 +334,7 @@ describe('runHorde', () => {
     expect(calls).toContain('DELETE https://stablehorde.net/api/v2/generate/text/status/job-t')
   })
 
-  it('L4: bounds a hung cleanup DELETE with its own abort signal', async () => {
+  it('bounds a hung cleanup DELETE with its own abort signal', async () => {
     const deleteSignals: AbortSignal[] = []
     let deleteAborted: Promise<void> = Promise.resolve()
     const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms: number) => {

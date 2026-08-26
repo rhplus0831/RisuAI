@@ -493,8 +493,8 @@ describe('client scripting lightweight chat and changed-setter APIs', () => {
   })
 })
 
-describe('client scripting media cleanup (L51)', () => {
-  it('L51: getPersonaImageMain revokes its object URL when inlay writing fails', async () => {
+describe('client scripting media cleanup', () => {
+  it('getPersonaImageMain revokes its object URL when inlay writing fails', async () => {
     const chat = makeChat()
     const char = makeCharacter(chat)
     mediaMock.writeInlayImage.mockRejectedValueOnce(new Error('inlay failed'))
@@ -522,7 +522,7 @@ describe('client scripting media cleanup (L51)', () => {
   })
 })
 
-describe('client scripting Lua budgets and cache (L39-L41)', () => {
+describe('client scripting Lua budgets and cache', () => {
   it('uses the current script owner profile overrides with a cached Lua engine', async () => {
     const chat = makeChat()
     const char = makeCharacter(chat)
@@ -628,7 +628,7 @@ describe('client scripting Lua budgets and cache (L39-L41)', () => {
     expect(getScriptingEngineCacheSnapshotForTests().accessSetSizes.editDisplay).toBe(0)
   })
 
-  it('L39: client Lua while true loads through the timeout-bound thread', async () => {
+  it('client Lua while true loads through the timeout-bound thread', async () => {
     const chat = makeChat()
     const char = makeCharacter(chat)
 
@@ -648,7 +648,7 @@ describe('client scripting Lua budgets and cache (L39-L41)', () => {
     expect(luaMock.runTimeouts).toContain(25)
   })
 
-  it('L40: same-mode Lua code hash cache reuses alternating bodies and evicts by LRU', async () => {
+  it('same-mode Lua code hash cache reuses alternating bodies and evicts by LRU', async () => {
     const chat = makeChat()
     const char = makeCharacter(chat)
 
@@ -761,7 +761,7 @@ describe('client scripting Lua budgets and cache (L39-L41)', () => {
     )
   })
 
-  it('L41: editDisplay access key is removed after Lua success and rejection', async () => {
+  it('editDisplay access key is removed after Lua success and rejection', async () => {
     const chat = makeChat()
     const char = makeCharacter(chat)
     const setVar = vi.fn()

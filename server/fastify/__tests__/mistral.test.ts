@@ -564,7 +564,7 @@ describe('runMistralStream', () => {
     ])
   })
 
-  it('L22: bounds the accumulation buffer when upstream never sends an event delimiter', async () => {
+  it('bounds the accumulation buffer when upstream never sends an event delimiter', async () => {
     // > MAX_STREAM_BUFFER_CHARS of delimiter-less bytes, streamed in 1 MB
     // chunks. Without the cap the adapter would buffer the whole stream.
     const chunk = 'x'.repeat(1024 * 1024)

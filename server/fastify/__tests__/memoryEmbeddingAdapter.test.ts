@@ -142,7 +142,7 @@ describe('memory embedding provider adapter', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('L21: rejects oversized inputs before constructing an embedding request body', async () => {
+  it('rejects oversized inputs before constructing an embedding request body', async () => {
     const fetch = vi.fn()
     vi.stubGlobal('fetch', fetch)
 
@@ -313,7 +313,7 @@ describe('memory embedding provider adapter', () => {
     })
   })
 
-  it('L22: rejects grouped contextual inputs when the request has no context limit', async () => {
+  it('rejects grouped contextual inputs when the request has no context limit', async () => {
     const fetch = vi.fn()
     vi.stubGlobal('fetch', fetch)
 

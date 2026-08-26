@@ -72,14 +72,14 @@ const validCBSArgPropLong = validCBSArgProp.filter((s) => s.length > 1)
 
 const quickParse = (op: string, ...args: (string | number)[]) => risuChatParser(cbs(op, ...args.map(String)))
 
-test('L11: normalizes matcher aliases with case and separators while preserving args', () => {
+test('normalizes matcher aliases with case and separators while preserving args', () => {
   expect(risuChatParser('{{NOT_EQUAL::a::b}}')).toBe('1')
   expect(risuChatParser('{{not-equal::same::same}}')).toBe('0')
   expect(risuChatParser('{{greater equal::2::2}}')).toBe('1')
   expect(risuChatParser('{{Array_Element::["a","b"]::1}}')).toBe('b')
 })
 
-test('L11: preserves raw matcher tag text passed to callbacks', () => {
+test('preserves raw matcher tag text passed to callbacks', () => {
   const seen: { raw?: string; args?: string[] } = {}
   registerRisuChatParserMatcher({
     name: 'phase_l11_raw',

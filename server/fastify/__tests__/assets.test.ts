@@ -182,7 +182,7 @@ afterEach(async () => {
   await stopHarness(harness)
 })
 
-describe('Phase 2C assets', () => {
+describe('assets', () => {
   it('rejects upload without auth once a password is set', async () => {
     await harness.app.inject({
       method: 'POST',

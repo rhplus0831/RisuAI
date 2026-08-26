@@ -76,7 +76,7 @@ function ctx(overrides: Partial<ExpandContext> = {}): ExpandContext {
   return { database: makeDatabase(), ...overrides }
 }
 
-describe('Phase 7-2c expandVariables — basic substitution', () => {
+describe('expandVariables — basic substitution', () => {
   it('substitutes {{user}} with the database username', () => {
     expect(expandVariables('Hi {{user}}', ctx()).text).toBe('Hi Alex')
   })
@@ -120,7 +120,7 @@ describe('Phase 7-2c expandVariables — basic substitution', () => {
   })
 })
 
-describe('HC-4 expandVariables — active module CBS visibility', () => {
+describe('expandVariables — active module CBS visibility', () => {
   it('exposes the baseline global/chat/character/integration module set to module and lore callbacks', () => {
     const database = makeDatabase({
       enabledModules: ['global-module'],
@@ -194,7 +194,7 @@ describe('HC-4 expandVariables — active module CBS visibility', () => {
   })
 })
 
-describe('Phase 7-2c expandVariables — unknowns and trigger_id', () => {
+describe('expandVariables — unknowns and trigger_id', () => {
   it('preserves unknown directives verbatim', () => {
     expect(expandVariables('{{totally_bogus_macro}} kept', ctx()).text).toBe('{{totally_bogus_macro}} kept')
   })
@@ -204,7 +204,7 @@ describe('Phase 7-2c expandVariables — unknowns and trigger_id', () => {
   })
 })
 
-describe('Phase 7-2c expandVariables — conditionals', () => {
+describe('expandVariables — conditionals', () => {
   it('{{#when 1}}...{{:else}}...{{/when}} takes the truthy branch', () => {
     expect(expandVariables('{{#when 1}}yes{{:else}}no{{/when}}', ctx()).text).toBe('yes')
   })
@@ -219,7 +219,7 @@ describe('Phase 7-2c expandVariables — conditionals', () => {
   })
 })
 
-describe('Phase 7-2c expandVariables — loops and expressions', () => {
+describe('expandVariables — loops and expressions', () => {
   it('iterates {{#each ... as i}} with {{slot::i}} substitution', () => {
     const out = expandVariables('{{#each [1,2,3] as i}}{{slot::i}}{{/each}}', ctx()).text
     expect(out).toBe('123')
@@ -230,7 +230,7 @@ describe('Phase 7-2c expandVariables — loops and expressions', () => {
   })
 })
 
-describe('Phase 7-2c expandVariables — chat variable write-back', () => {
+describe('expandVariables — chat variable write-back', () => {
   it('reads {{getvar::X}} as "null" when unset', () => {
     expect(expandVariables('v={{getvar::missing}}', ctx()).text).toBe('v=null')
   })
@@ -332,7 +332,7 @@ describe('Phase 7-2c expandVariables — chat variable write-back', () => {
   })
 })
 
-describe('Phase 7-2c expandVariables — scope isolation across calls', () => {
+describe('expandVariables — scope isolation across calls', () => {
   it('does not leak chat-var writes to a subsequent call with a different db', () => {
     const dbA = makeDatabase()
     expandVariables('{{setvar::leak::A}}', { database: dbA, runVar: true })

@@ -239,7 +239,7 @@ beforeEach(() => {
   resetChatGenerationActivitiesForTests()
 })
 
-describe('reattach open-chat generation (Phase 4)', () => {
+describe('reattach open-chat generation', () => {
   it('holds a selected durable job until chat readiness opens the reattach barrier', async () => {
     openChat('chat-1')
     setActiveGenerationJobs([{ chatId: 'chat-1', jobId: 'job-held' }])

@@ -216,7 +216,7 @@ describe('provider secret masking', () => {
   })
 })
 
-describe('maskProviderSecretsInPlace (M4)', () => {
+describe('maskProviderSecretsInPlace', () => {
   const sample = () => ({
     openAIKey: 'sk-top',
     aiModel: 'gpt4o-chatgpt',

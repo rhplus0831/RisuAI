@@ -566,7 +566,7 @@ describe('watchServerBackedChatMetadata baselines', () => {
     stop()
   })
 
-  it('L26: chat row rollback suppresses watcher echo and resets the restored baseline', async () => {
+  it('chat row rollback suppresses watcher echo and resets the restored baseline', async () => {
     setupChat('Initial')
     const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
     flushSync()
@@ -701,7 +701,7 @@ describe('watchServerBackedChatMetadata baselines', () => {
     stop()
   })
 
-  it('M8: flushes pending chat and folder metadata with keepalive and clears debounces', async () => {
+  it('flushes pending chat and folder metadata with keepalive and clears debounces', async () => {
     setupChat()
     const stop = watchServerBackedChatMetadata({ delayMs: DELAY * 10 })
     flushSync()
@@ -720,7 +720,7 @@ describe('watchServerBackedChatMetadata baselines', () => {
     stop()
   })
 
-  it('M8: watcher teardown flushes pending chat and folder metadata and clears debounces', async () => {
+  it('watcher teardown flushes pending chat and folder metadata and clears debounces', async () => {
     setupChat()
     const stop = watchServerBackedChatMetadata({ delayMs: DELAY * 10 })
     flushSync()
@@ -766,7 +766,7 @@ function setupHydratedChat(): void {
   selectedCharID.set(0)
 }
 
-describe('watchServerBackedChatMetadata clone cost (Phase 2)', () => {
+describe('watchServerBackedChatMetadata clone cost', () => {
   it('builds scalar metadata without serializing the chat message history', () => {
     setupHydratedChat()
     const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
@@ -818,8 +818,8 @@ describe('watchServerBackedChatMetadata clone cost (Phase 2)', () => {
   })
 })
 
-describe('watchServerBackedChatMetadata no-change short-circuit (Phase 6)', () => {
-  it('L29: message-only guarded writes reuse scalar maps and queue no patches', async () => {
+describe('watchServerBackedChatMetadata no-change short-circuit', () => {
+  it('message-only guarded writes reuse scalar maps and queue no patches', async () => {
     setupHydratedChat()
     const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
     flushSync()
@@ -839,7 +839,7 @@ describe('watchServerBackedChatMetadata no-change short-circuit (Phase 6)', () =
     stop()
   })
 
-  it('L29: real chat and folder scalar edits still dispatch after a no-change fire', async () => {
+  it('real chat and folder scalar edits still dispatch after a no-change fire', async () => {
     setupChat()
     const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
     flushSync()

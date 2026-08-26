@@ -241,7 +241,7 @@ describe('translateHTML streaming guards', () => {
     vi.restoreAllMocks()
   })
 
-  it('M16: skips Google auto-translate work while the same chat is streaming', async () => {
+  it('skips Google auto-translate work while the same chat is streaming', async () => {
     beginGenerationForChat(0)
     const html = '<p>streaming frame</p>'
     const fetchMock = vi.fn()
@@ -259,7 +259,7 @@ describe('translateHTML streaming guards', () => {
     expect(consoleLog).not.toHaveBeenCalled()
   })
 
-  it('M16: default HTML translation no longer logs source HTML or chunks', async () => {
+  it('default HTML translation no longer logs source HTML or chunks', async () => {
     const fetchMock = stubGoogleFetch()
     const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {})
 
@@ -271,7 +271,7 @@ describe('translateHTML streaming guards', () => {
     expect(consoleLog).not.toHaveBeenCalled()
   })
 
-  it('M16: preserves cached LLM translations during streaming', async () => {
+  it('preserves cached LLM translations during streaming', async () => {
     testState.db.translatorType = 'llm'
     beginGenerationForChat(0)
     await setLLMCache('<p>Hello</p>', '<p>Cached result</p>')
@@ -287,7 +287,7 @@ describe('translateHTML streaming guards', () => {
     expect(consoleLog).not.toHaveBeenCalled()
   })
 
-  it('MTC-10: runs an uncached LLM translation in idle Chat B while Chat A generates', async () => {
+  it('runs an uncached LLM translation in idle Chat B while Chat A generates', async () => {
     testState.db.translatorType = 'llm'
     testState.db.characters[0].chats.push({ id: 'chat-b', message: [] })
     beginGenerationForChat(0)
@@ -300,7 +300,7 @@ describe('translateHTML streaming guards', () => {
     expect(testState.requestChatData).toHaveBeenCalledOnce()
   })
 
-  it('MTC-10: blocks an uncached LLM translation while its own chat generates', async () => {
+  it('blocks an uncached LLM translation while its own chat generates', async () => {
     testState.db.translatorType = 'llm'
     beginGenerationForChat(0)
     testState.requestChatData.mockResolvedValue({ type: 'success', result: '<p>Should not run</p>' })
@@ -310,7 +310,7 @@ describe('translateHTML streaming guards', () => {
     expect(testState.requestChatData).not.toHaveBeenCalled()
   })
 
-  it('v4-L24: memoizes translated HTML output until the explicit signature changes', async () => {
+  it('memoizes translated HTML output until the explicit signature changes', async () => {
     const fetchMock = stubGoogleFetch()
     const OriginalDOMParser = DOMParser
     const parseSpy = vi.fn()
@@ -339,7 +339,7 @@ describe('translateHTML streaming guards', () => {
     expect(__translatorTestHooks.getTranslateHTMLMemoEntries()).toHaveLength(2)
   })
 
-  it('v4-L24: keys translated HTML memo by the active chat selected prompt regex', async () => {
+  it('keys translated HTML memo by the active chat selected prompt regex', async () => {
     const fetchMock = stubGoogleFetch()
     testState.db.presetRegex = [
       {
@@ -381,7 +381,7 @@ describe('translateHTML streaming guards', () => {
     expect(__translatorTestHooks.getTranslateHTMLMemoEntries()).toHaveLength(2)
   })
 
-  it('v4-L29: combineTranslation processes a multi-line paragraph as one display unit', async () => {
+  it('combineTranslation processes a multi-line paragraph as one display unit', async () => {
     testState.db.combineTranslation = true
     const fetchMock = stubGoogleFetch()
     testState.processScriptFull.mockImplementation(async (_char: unknown, text: string) => ({
@@ -398,7 +398,7 @@ describe('translateHTML streaming guards', () => {
     expect(testState.processScriptFull.mock.calls[0][1]).toBe('translated:ko:Line one\nLine two\nLine three')
   })
 
-  it('v4-L25: reuses edit-translation regexes and reports invalid patterns once per script version', async () => {
+  it('reuses edit-translation regexes and reports invalid patterns once per script version', async () => {
     const fetchMock = stubGoogleFetch()
     testState.db.characters[0].customscript = [
       {
@@ -458,7 +458,7 @@ describe('translateHTML streaming guards', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('v4-L27: caps deeplX delimiter-mismatch one-by-one fallback fanout', async () => {
+  it('caps deeplX delimiter-mismatch one-by-one fallback fanout', async () => {
     testState.db.translatorType = 'deeplX'
     testState.db.deeplXOptions.token = '__RISU_SECRET_MASKED__'
     testState.requestProviderOperation.mockImplementation(

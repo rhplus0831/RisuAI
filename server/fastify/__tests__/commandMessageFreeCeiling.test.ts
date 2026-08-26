@@ -262,8 +262,8 @@ afterEach(async () => {
   rmSync(harness.dataDir, { recursive: true, force: true })
 })
 
-describe('Phase 6 message-dependent delete floors', () => {
-  it("DELETE characters/:id narrows to targeted-character-row (Phase 8 follow-up) and cleans up its chats' message rows", async () => {
+describe('message-dependent delete floors', () => {
+  it("DELETE characters/:id narrows to targeted-character-row and cleans up its chats' message rows", async () => {
     const revision = await importDatabase(seedDatabase())
     // The deleted character owns a chat with a persisted message row.
     expect(messageRowCount('chat-a-1')).toBe(1)
@@ -284,7 +284,7 @@ describe('Phase 6 message-dependent delete floors', () => {
     expect(messageRowCount('chat-a-1')).toBe(0)
   })
 
-  it("DELETE chats/:id narrows to targeted-character-row (Phase 8b) and still cleans the deleted chat's message rows", async () => {
+  it("DELETE chats/:id narrows to targeted-character-row and still cleans the deleted chat's message rows", async () => {
     const revision = await importDatabase(seedDatabase())
     expect(messageRowCount('chat-a-1')).toBe(1)
 
@@ -328,8 +328,8 @@ describe('Phase 6 message-dependent delete floors', () => {
   })
 })
 
-describe('Phase 6 message-validation create floor', () => {
-  it('POST characters/:id/chats uses targeted H2 chat-create and validates message ids corpus-wide', async () => {
+describe('message-validation create floor', () => {
+  it('POST characters/:id/chats uses targeted chat-create and validates message ids corpus-wide', async () => {
     const revision = await importDatabase(seedDatabase())
 
     // The new chat reuses a message id that lives in a DIFFERENT character's
@@ -374,7 +374,7 @@ describe('Phase 6 message-validation create floor', () => {
   })
 })
 
-describe('Phase 6 message-free create + normalization floors', () => {
+describe('message-free create + normalization floors', () => {
   it('POST characters appends one character at the message-free floor', async () => {
     const revision = await importDatabase(seedDatabase())
 
@@ -406,7 +406,7 @@ describe('Phase 6 message-free create + normalization floors', () => {
     expect(readSettings().currentChar).toBe(2)
   })
 
-  it('PUT characters/:id/scripts replaces customscript at the targeted-character-row range (Phase 8a)', async () => {
+  it('PUT characters/:id/scripts replaces customscript at the targeted-character-row range', async () => {
     const revision = await importDatabase(seedDatabase())
 
     const script = {
@@ -433,7 +433,7 @@ describe('Phase 6 message-free create + normalization floors', () => {
     expect(readCharacter('char-a').customscript).toEqual([script])
   })
 
-  it('PUT characters/:id/triggers replaces triggerscript at the targeted-character-row range (Phase 8a)', async () => {
+  it('PUT characters/:id/triggers replaces triggerscript at the targeted-character-row range', async () => {
     const revision = await importDatabase(seedDatabase())
 
     const trigger = { id: 'trigger-a', comment: 'Start', type: 'start', conditions: [], effect: [] }

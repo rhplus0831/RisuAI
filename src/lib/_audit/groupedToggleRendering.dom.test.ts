@@ -144,7 +144,7 @@ afterEach(() => {
   testDatabaseState.db = {}
 })
 
-describe('Phase 0 / Journey 4: grouped toggle rendering (DOM oracle, Tier 1)', () => {
+describe('grouped toggle rendering (DOM oracle)', () => {
   it('paints the preset toggle group as an accordion container in the DOM', async () => {
     component = mount(Toggles, {
       target,

@@ -339,7 +339,7 @@ describe('summarize memory job handler', () => {
     }
   })
 
-  it('L19: commits staged batch summaries independently after a sibling write fails', async () => {
+  it('commits staged batch summaries independently after a sibling write fails', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
@@ -409,7 +409,7 @@ describe('summarize memory job handler', () => {
     }
   })
 
-  it('L19: commits independent summarize jobs after a sibling provider failure', async () => {
+  it('commits independent summarize jobs after a sibling provider failure', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
@@ -572,7 +572,7 @@ describe('summarize memory job handler', () => {
     }
   })
 
-  it('L16: aborts a hung summarize fetch through runOpenAI within the deadline', async () => {
+  it('aborts a hung summarize fetch through runOpenAI within the deadline', async () => {
     vi.useFakeTimers()
     const db = openDatabase(makeDataDir())
     try {
@@ -775,7 +775,7 @@ describe('summarize memory job handler', () => {
     }
   })
 
-  it('L18: the default loader performs zero whole-corpus payload reads per batch', async () => {
+  it('the default loader performs zero whole-corpus payload reads per batch', async () => {
     const dataDir = makeDataDir()
     const db = openDatabase(dataDir)
     try {
@@ -900,7 +900,7 @@ describe('summarize memory job handler', () => {
     }
   })
 
-  it('L18: an unknown chat fails with the same chat-not-found error through the scoped loader', async () => {
+  it('an unknown chat fails with the same chat-not-found error through the scoped loader', async () => {
     const dataDir = makeDataDir()
     const db = openDatabase(dataDir)
     try {

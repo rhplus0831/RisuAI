@@ -164,7 +164,7 @@ afterEach(() => {
   setResourceWriteGuardEnabled(false)
 })
 
-describe('Phase 9-3f compatibility adapters', () => {
+describe('compatibility adapters', () => {
   it('routes whole-character compatibility setters through character scalar commands', async () => {
     const calls = stubCommandFetch()
     const previousCharacter = snapshot(testDatabaseState.db.characters[0])

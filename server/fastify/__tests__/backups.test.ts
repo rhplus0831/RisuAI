@@ -243,7 +243,7 @@ afterEach(async () => {
   await stopHarness(harness)
 })
 
-describe('Phase 2D backups', () => {
+describe('backups', () => {
   describe('SQLite backup table ownership policy', () => {
     it('classifies every production schema table as restored or deliberately device-local', () => {
       const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
@@ -2336,7 +2336,7 @@ describe('Phase 2D backups', () => {
     expect(existsSync(path.join(harness.dataDir, 'db.json'))).toBe(false)
   })
 
-  it('skips a corrupt manifest instead of failing the whole backups list (L27)', async () => {
+  it('skips a corrupt manifest instead of failing the whole backups list', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const a = await harness.app.inject({
       method: 'POST',
@@ -2366,7 +2366,7 @@ describe('Phase 2D backups', () => {
     expect(list.json().backups.map((m: { id: string }) => m.id)).toEqual([a.json().id])
   })
 
-  it('rejects an unreadable legacy db.json before restore staging, with no restore event (L28)', async () => {
+  it('rejects an unreadable legacy db.json before restore staging, with no restore event', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await importDb(harness.app, assertion, { tag: 'live-before-broken-legacy' })
     const before = await harness.app.inject({
@@ -2470,7 +2470,7 @@ describe('Phase 2D backups', () => {
     }
   })
 
-  it('A4EC4/B4: round-trips SQLite memory tables across backup and restore', async () => {
+  it('round-trips SQLite memory tables across backup and restore', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await importDb(harness.app, assertion, { tag: 'pre-mem' })
 
@@ -2529,7 +2529,7 @@ describe('Phase 2D backups', () => {
     }
   })
 
-  it('A4EC4/B5: round-trips data/save directory across backup and restore', async () => {
+  it('round-trips data/save directory across backup and restore', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await importDb(harness.app, assertion, { tag: 'pre-save' })
 

@@ -308,7 +308,7 @@ describe('applyChatMessageDiff surgical writes', () => {
     expect(rowids(db, 'chat-1')).toEqual([before[0]])
   })
 
-  it('L14: append-only tail persistence writes byte-identical rows without prefix diff work', () => {
+  it('append-only tail persistence writes byte-identical rows without prefix diff work', () => {
     const expectedDb = makeDb(makeDataDir())
     const db = makeDb(makeDataDir())
     const base = Array.from({ length: 64 }, (_, index) =>
@@ -339,7 +339,7 @@ describe('applyChatMessageDiff surgical writes', () => {
     expect(getAlternateMessages(db, 'chat-1')).toEqual([msg('alt', 'char', 'candidate')])
   })
 
-  it('L14: edit and truncate replacements still exercise the generic diff path', () => {
+  it('edit and truncate replacements still exercise the generic diff path', () => {
     const editDb = makeDb(makeDataDir())
     const truncateDb = makeDb(makeDataDir())
     const base = Array.from({ length: 32 }, (_, index) =>
@@ -368,7 +368,7 @@ describe('applyChatMessageDiff surgical writes', () => {
   })
 })
 
-describe('chat hypaV3Data store (Phase 4.4)', () => {
+describe('chat hypaV3Data store', () => {
   it('upserts, reads, groups and deletes a chat blob', () => {
     const db = makeDb(makeDataDir())
     setChatHypaV3(db, 'chat-1', { mainChunks: [{ text: 'a' }], lastImportantSummary: 2 })

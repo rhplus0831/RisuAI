@@ -97,7 +97,7 @@ function makeCtx(overrides: Partial<TriggerRunContext> = {}): TriggerRunContext 
 
 const ctx: TriggerRunContext = makeCtx()
 
-describe('Phase 7-9a getModuleTriggers', () => {
+describe('getModuleTriggers', () => {
   it('returns [] when no module declares triggers', () => {
     expect(getModuleTriggers([makeModule()])).toEqual([])
   })
@@ -146,7 +146,7 @@ describe('Phase 7-9a getModuleTriggers', () => {
   })
 })
 
-describe('Phase 7-9a collectTriggers', () => {
+describe('collectTriggers', () => {
   it('clones character triggers with inherited lowLevelAccess and leaves the source untouched', () => {
     const own = makeTrigger({ comment: 'own', type: 'output' })
     const char = makeChar({ triggerscript: [own], lowLevelAccess: true })
@@ -187,7 +187,7 @@ describe('Phase 7-9a collectTriggers', () => {
   })
 })
 
-describe('Phase 7-9a matchesTrigger', () => {
+describe('matchesTrigger', () => {
   it('matches on equal mode/type', () => {
     expect(matchesTrigger(makeTrigger({ type: 'output' }), 'output')).toBe(true)
   })
@@ -216,8 +216,8 @@ describe('Phase 7-9a matchesTrigger', () => {
   })
 })
 
-describe('Phase 7-9a runTrigger shell', () => {
-  it('L7: no-trigger run returns null before structured cloning inputs', async () => {
+describe('runTrigger shell', () => {
+  it('no-trigger run returns null before structured cloning inputs', async () => {
     const cloneSpy = vi.spyOn(globalThis, 'structuredClone')
     try {
       const char = makeChar({ triggerscript: [] })
@@ -319,7 +319,7 @@ describe('Phase 7-9a runTrigger shell', () => {
   })
 })
 
-describe('Phase 7 L8 trigger clone narrowing', () => {
+describe('trigger clone narrowing', () => {
   const nonMutatingEffect = eff({
     type: 'v2GetMessageCount',
     outputVar: 'messageCount',
@@ -327,7 +327,7 @@ describe('Phase 7 L8 trigger clone narrowing', () => {
   })
 
   it.each(['input', 'start', 'output'] as const)(
-    'L8: %s triggers with no message-mutating effects do not clone the transcript',
+    '%s triggers with no message-mutating effects do not clone the transcript',
     async (mode: TriggerMode) => {
       const char = makeChar({
         triggerscript: [
@@ -355,7 +355,7 @@ describe('Phase 7 L8 trigger clone narrowing', () => {
     },
   )
 
-  it('L8: mutating output triggers get a private transcript clone', async () => {
+  it('mutating output triggers get a private transcript clone', async () => {
     const char = makeChar({
       triggerscript: [
         triggerWithEffects([
@@ -377,7 +377,7 @@ describe('Phase 7 L8 trigger clone narrowing', () => {
     expect(getTriggerCloneInstrumentation().fullTranscriptClones.output).toBe(1)
   })
 
-  it('L8: triggerlua uses a private transcript because host functions can mutate chat', async () => {
+  it('triggerlua uses a private transcript because host functions can mutate chat', async () => {
     const char = makeChar({
       triggerscript: [triggerWithEffects([eff({ type: 'triggerlua', code: 'mutate()' })])],
     })
@@ -432,7 +432,7 @@ describe('Phase 7 L8 trigger clone narrowing', () => {
     })
   })
 
-  it('L8: displayMode keeps the legacy caller-chat no-clone path', async () => {
+  it('displayMode keeps the legacy caller-chat no-clone path', async () => {
     const char = makeChar({
       triggerscript: [
         makeTrigger({
@@ -491,7 +491,7 @@ function makeEngine(
   return Object.assign(engine, { workingChat, db })
 }
 
-describe('Phase 7-9b trigger var engine', () => {
+describe('trigger var engine', () => {
   it('falls back to default variables, then null', () => {
     const engine = makeEngine({ defaultVariables: [['greet', 'hi']] })
     expect(engine.getVar('greet')).toBe('hi')
@@ -565,7 +565,7 @@ describe('Phase 7-9b trigger var engine', () => {
   })
 })
 
-describe('Phase 7-9b evaluateConditions', () => {
+describe('evaluateConditions', () => {
   it('passes a matching var condition and fails a mismatch', () => {
     const engine = makeEngine({ scriptstate: { $hp: '10' } })
     const chat = makeChat()
@@ -683,7 +683,7 @@ async function countRegexCompiles<T>(fn: () => Promise<T>): Promise<{ result: T;
   }
 }
 
-describe('Phase 7-9c deterministic V1 effects', () => {
+describe('deterministic V1 effects', () => {
   it('agrees with prompt CBS on a character-over-template default-backed variable', async () => {
     const chat = makeChat()
     const char = makeChar({
@@ -802,7 +802,7 @@ describe('Phase 7-9c deterministic V1 effects', () => {
   })
 })
 
-describe('Phase 7-9d-i V2 control flow', () => {
+describe('control flow', () => {
   it('runs the if body when the condition passes and skips it when it fails', async () => {
     const effects = [
       eff({
@@ -1067,7 +1067,7 @@ describe('Phase 7-9d-i V2 control flow', () => {
   })
 })
 
-describe('A-16 sendAIprompt trigger parity', () => {
+describe('sendAIprompt trigger parity', () => {
   it.each([
     ['sendAIprompt', eff({ type: 'sendAIprompt' })],
     ['v2SendAIprompt', eff({ type: 'v2SendAIprompt', indent: 0 })],
@@ -1117,8 +1117,8 @@ describe('A-16 sendAIprompt trigger parity', () => {
   })
 })
 
-describe('H1 trigger budget and abort', () => {
-  it('H1: stops a never-breaking v2Loop at the shared loop-back ceiling', async () => {
+describe('trigger budget and abort', () => {
+  it('stops a never-breaking v2Loop at the shared loop-back ceiling', async () => {
     const debug = vi.spyOn(console, 'debug').mockImplementation(() => {})
     try {
       const budget = createTriggerExecutionBudget({
@@ -1155,7 +1155,7 @@ describe('H1 trigger budget and abort', () => {
     }
   })
 
-  it('H1: stops a huge v2LoopNTimes at the shared loop-back ceiling', async () => {
+  it('stops a huge v2LoopNTimes at the shared loop-back ceiling', async () => {
     const debug = vi.spyOn(console, 'debug').mockImplementation(() => {})
     try {
       const budget = createTriggerExecutionBudget({
@@ -1192,7 +1192,7 @@ describe('H1 trigger budget and abort', () => {
     }
   })
 
-  it('H1: low-level self-recursive v2RunTrigger cannot bypass the hard depth cap', async () => {
+  it('low-level self-recursive v2RunTrigger cannot bypass the hard depth cap', async () => {
     const budget = createTriggerExecutionBudget({
       wallClockMs: 60_000,
       maxEffectSteps: 1_000,
@@ -1216,7 +1216,7 @@ describe('H1 trigger budget and abort', () => {
     expect(budget.effectSteps).toBeLessThanOrEqual(4)
   })
 
-  it('H1: aborts a running trigger pass through AbortSignal', async () => {
+  it('aborts a running trigger pass through AbortSignal', async () => {
     const debug = vi.spyOn(console, 'debug').mockImplementation(() => {})
     try {
       const controller = new AbortController()
@@ -1256,8 +1256,8 @@ describe('H1 trigger budget and abort', () => {
   })
 })
 
-describe('Phase 3 L6 trigger transcript and regex cache', () => {
-  it('L6: reuses transcript windows across exists conditions and quick-search effects', () => {
+describe('trigger transcript and regex cache', () => {
+  it('reuses transcript windows across exists conditions and quick-search effects', () => {
     const cache = createTriggerRunCache()
     const engine = makeEngine()
     const char = makeChar()
@@ -1310,7 +1310,7 @@ describe('Phase 3 L6 trigger transcript and regex cache', () => {
     expect(sliceSpy).toHaveBeenCalledTimes(1)
   })
 
-  it('L6: invalidates transcript cache after trigger message mutations', async () => {
+  it('invalidates transcript cache after trigger message mutations', async () => {
     const char = makeChar({
       triggerscript: [
         triggerWithEffects([
@@ -1360,7 +1360,7 @@ describe('Phase 3 L6 trigger transcript and regex cache', () => {
     expect(result?.chat.scriptstate?.['$afterNew']).toBe('1')
   })
 
-  it('L6: reuses compiled regexes across trigger conditions and V2 effects', async () => {
+  it('reuses compiled regexes across trigger conditions and V2 effects', async () => {
     const char = makeChar({
       triggerscript: [
         makeTrigger({
@@ -1454,7 +1454,7 @@ describe('Phase 3 L6 trigger transcript and regex cache', () => {
     expect(compiles.get('[,;]/g')).toBe(1)
   })
 
-  it('L6: keeps malformed V2 regex fallback behavior with the cache enabled', async () => {
+  it('keeps malformed V2 regex fallback behavior with the cache enabled', async () => {
     const char = makeChar({
       triggerscript: [
         triggerWithEffects([
@@ -1501,7 +1501,7 @@ describe('Phase 3 L6 trigger transcript and regex cache', () => {
     expect(result?.chat.scriptstate?.['$split']).toBe('["a[b"]')
   })
 
-  it('L9: preserves valid trigger regex behavior under bounds', async () => {
+  it('preserves valid trigger regex behavior under bounds', async () => {
     const char = makeChar({
       triggerscript: [
         makeTrigger({
@@ -1570,7 +1570,7 @@ describe('Phase 3 L6 trigger transcript and regex cache', () => {
     })
   })
 
-  it('L9: rejects unsafe trigger regexes before synchronous execution', async () => {
+  it('rejects unsafe trigger regexes before synchronous execution', async () => {
     const unsafeTrigger = (effect: triggerscript['effect'][number]) =>
       makeChar({ triggerscript: [triggerWithEffects([effect])] })
 
@@ -1659,7 +1659,7 @@ describe('Phase 3 L6 trigger transcript and regex cache', () => {
     ).rejects.toThrow(/replacement length/)
   })
 
-  it('L9: rejects unsafe trigger condition regex before execution', async () => {
+  it('rejects unsafe trigger condition regex before execution', async () => {
     const char = makeChar({
       triggerscript: [
         makeTrigger({
@@ -1679,7 +1679,7 @@ describe('Phase 3 L6 trigger transcript and regex cache', () => {
   })
 })
 
-describe('Phase 7-9d-ii V2 safe data helpers', () => {
+describe('safe data helpers', () => {
   it('concatenates strings into an output var', async () => {
     const char = makeChar({
       triggerscript: [
@@ -1956,7 +1956,7 @@ describe('Phase 7-9d-ii V2 safe data helpers', () => {
   })
 })
 
-describe('Phase 7-9e request/display state adapters', () => {
+describe('request/display state adapters', () => {
   it('round-trips display text through set then get', async () => {
     const char = makeChar({
       triggerscript: [

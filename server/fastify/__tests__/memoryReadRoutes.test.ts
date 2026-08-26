@@ -259,7 +259,7 @@ afterEach(async () => {
   await stopHarness(harness)
 })
 
-describe('Phase 8-7a memory read routes', () => {
+describe('memory read routes', () => {
   it('rejects memory read routes without auth when a password is set', async () => {
     for (const url of ['/api/v1/memory/chunks/chat-1', '/api/v1/memory/summaries/chat-1']) {
       const res = await harness.app.inject({ method: 'GET', url })

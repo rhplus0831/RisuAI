@@ -201,7 +201,7 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-describe('importPreset warm-path logging (L37)', () => {
+describe('importPreset warm-path logging', () => {
   it('rejects malformed JSON without changing presets or escaping the event handler', async () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
 
@@ -239,7 +239,7 @@ describe('importPreset warm-path logging (L37)', () => {
     }
   })
 
-  it('L37: a .risupreset binary import logs nothing to console.log', async () => {
+  it('a .risupreset binary import logs nothing to console.log', async () => {
     const calls = stubCommandFetch()
     const file = await buildRisupresetFile({ name: 'Risup Roundtrip', temperature: 42 })
     const logSpy = vi.spyOn(console, 'log')
@@ -259,7 +259,7 @@ describe('importPreset warm-path logging (L37)', () => {
     }
   })
 
-  it('L37: an ST/json preset import logs nothing to console.log, unknown and missing prompts included', async () => {
+  it('an ST/json preset import logs nothing to console.log, unknown and missing prompts included', async () => {
     const calls = stubCommandFetch()
     // Exercises all three former JSON-side log sites: the parsed `pre` dump,
     // the default-case `console.log(p)` for an unknown identifier, and the

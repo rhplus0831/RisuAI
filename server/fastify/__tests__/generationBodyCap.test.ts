@@ -22,7 +22,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('readBoundedBodyText / readBoundedBodyJson (M8 body cap)', () => {
+describe('readBoundedBodyText / readBoundedBodyJson (body cap)', () => {
   it('returns the full body when under the cap', async () => {
     const text = await readBoundedBodyText(new Response('hello upstream'), 1024)
     expect(text).toBe('hello upstream')
@@ -50,7 +50,7 @@ describe('readBoundedBodyText / readBoundedBodyJson (M8 body cap)', () => {
     expect(MAX_BUFFERED_BODY_BYTES).toBe(32 * 1024 * 1024)
   })
 
-  it('M8: a non-streaming adapter fails closed on an over-cap upstream body', async () => {
+  it('a non-streaming adapter fails closed on an over-cap upstream body', async () => {
     // Stream > MAX_BUFFERED_BODY_BYTES in 1 MB chunks; the adapter must fail
     // with a bounded read, not buffer the whole thing.
     const oneMb = new Uint8Array(1024 * 1024).fill(120)

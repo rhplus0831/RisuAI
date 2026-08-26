@@ -112,7 +112,7 @@ describe('ChatBody translation parse bounds', () => {
     testDatabaseState.db = {}
   })
 
-  it('L59: surfaces translateHTML failure once without retrying the full pipeline', async () => {
+  it('surfaces translateHTML failure once without retrying the full pipeline', async () => {
     chatBodyMocks.ParseMarkdown.mockResolvedValue('marked:source message')
     chatBodyMocks.translateHTML.mockRejectedValue(new Error('translator unavailable'))
 
@@ -138,7 +138,7 @@ describe('ChatBody translation parse bounds', () => {
     expect(target.textContent).toContain('source message')
   })
 
-  it('L59: retries parser failures against already translated HTML only', async () => {
+  it('retries parser failures against already translated HTML only', async () => {
     setChatBodyDatabase({
       translateBeforeHTMLFormatting: true,
       translatorType: 'llm',

@@ -89,7 +89,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('Phase 0 global-lorebook snapshot kit', () => {
+describe('global-lorebook snapshot kit', () => {
   it('captures only loreBook + page, never the characters or modules collections', () => {
     selectedCharID.set(1)
 
@@ -137,7 +137,7 @@ describe('Phase 0 global-lorebook snapshot kit', () => {
   })
 })
 
-describe('Phase 0 exported scoped-lorebook pair', () => {
+describe('exported scoped-lorebook pair', () => {
   it('restores one character globalLore by scope key, leaving siblings untouched', () => {
     getDatabase().characters[1].globalLore = [{ key: 'sibling', content: 'sibling' }] as any
     const previous = JSON.stringify([{ key: 'orig', content: 'original' }])
@@ -154,7 +154,7 @@ describe('Phase 0 exported scoped-lorebook pair', () => {
   })
 })
 
-describe('Phase 2 global-lorebook scoped dispatch', () => {
+describe('global-lorebook scoped dispatch', () => {
   it('dispatchSelectGlobalLorebook restores only the lorebook pointer on failure', async () => {
     getDatabase().loreBook = [
       { id: 'g1', name: 'Global', data: [] },
@@ -198,7 +198,7 @@ describe('Phase 2 global-lorebook scoped dispatch', () => {
   })
 })
 
-describe('Phase 3 discrete-editor scoped snapshot (L32)', () => {
+describe('discrete-editor scoped snapshot', () => {
   function seedDiscreteDb(): void {
     setDatabaseLite(seedCloneCostDb() as any)
     getDatabase().loreBook = [
@@ -215,7 +215,7 @@ describe('Phase 3 discrete-editor scoped snapshot (L32)', () => {
     markCharacterLorebookHydrated('char-1')
   }
 
-  it('L32: a character-scoped editor snapshot never clones the characters or modules graph', () => {
+  it('a character-scoped editor snapshot never clones the characters or modules graph', () => {
     seedDiscreteDb()
     const charactersSize = JSON.stringify(getDatabase().characters).length
 
@@ -233,7 +233,7 @@ describe('Phase 3 discrete-editor scoped snapshot (L32)', () => {
     expect(broad.maxClonedSize).toBeGreaterThanOrEqual(charactersSize)
   })
 
-  it('L32: the scoped id-assign touches only the edited collection, not the whole DB', () => {
+  it('the scoped id-assign touches only the edited collection, not the whole DB', () => {
     seedDiscreteDb()
 
     currentLorebookCollectionScopedSnapshot({ kind: 'character', characterId: 'char-0' })
@@ -249,7 +249,7 @@ describe('Phase 3 discrete-editor scoped snapshot (L32)', () => {
     expect((getDatabase().loreBook as any[])[0].id).toBeUndefined()
   })
 
-  it('L32: the scoped ensure never touches a non-hydrated character (no-data-loss guard)', () => {
+  it('the scoped ensure never touches a non-hydrated character (no-data-loss guard)', () => {
     seedDiscreteDb()
     resetLorebookHydration() // char-0 is no longer marked hydrated
 
@@ -259,7 +259,7 @@ describe('Phase 3 discrete-editor scoped snapshot (L32)', () => {
     expect((getDatabase().characters[0].globalLore as any[])[0].id).toBeUndefined()
   })
 
-  it('L32: a failed discrete edit restores only the edited collection', () => {
+  it('a failed discrete edit restores only the edited collection', () => {
     seedDiscreteDb()
     const previous = currentLorebookCollectionScopedSnapshot({
       kind: 'character',
@@ -276,7 +276,7 @@ describe('Phase 3 discrete-editor scoped snapshot (L32)', () => {
     expect((getDatabase().characters[1].globalLore as any[]).map((e) => e.key)).toEqual(['concurrent'])
   })
 
-  it('L32: a chat-scoped editor snapshot restores only that chat localLore', () => {
+  it('a chat-scoped editor snapshot restores only that chat localLore', () => {
     seedDiscreteDb()
     const previous = currentLorebookCollectionScopedSnapshot({ kind: 'chat', chatId: 'chat-0' })
 
@@ -289,7 +289,7 @@ describe('Phase 3 discrete-editor scoped snapshot (L32)', () => {
     expect((getDatabase().characters[1].chats[0].localLore as any[]).map((e) => e.key)).toEqual(['sibchanged'])
   })
 
-  it('L32: ensureGlobalLorebookListIds assigns ids on the global list only', () => {
+  it('ensureGlobalLorebookListIds assigns ids on the global list only', () => {
     seedDiscreteDb()
 
     ensureGlobalLorebookListIds()
@@ -329,7 +329,7 @@ describe('Phase 3 discrete-editor scoped snapshot (L32)', () => {
     expect((getDatabase().loreBook as any[])[0].data[0].id).toEqual(expect.any(String))
   })
 
-  it('L32: a global-scoped editor snapshot restores only the edited book entries', () => {
+  it('a global-scoped editor snapshot restores only the edited book entries', () => {
     seedDiscreteDb()
     ensureGlobalLorebookListIds()
     const bookId = (getDatabase().loreBook as any[])[0].id as string

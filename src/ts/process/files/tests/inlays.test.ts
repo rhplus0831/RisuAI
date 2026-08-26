@@ -571,7 +571,7 @@ describe('postInlayAsset', () => {
     )
   })
 
-  test('L51: revokes the temporary image object URL after upload', async () => {
+  test('revokes the temporary image object URL after upload', async () => {
     vi.stubGlobal('Image', FakeLoadedImage)
     const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:inlay-upload')
     const revokeUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
@@ -594,7 +594,7 @@ describe('postInlayAsset', () => {
 })
 
 describe('writeInlayImage', () => {
-  test('L49: already-complete inlay images decode and upload without waiting for onload', async () => {
+  test('already-complete inlay images decode and upload without waiting for onload', async () => {
     const decode = vi.fn(async () => {})
     const imgObj = makeImage(120, 80, { complete: true, decode })
     let assignedOnload = false
@@ -620,7 +620,7 @@ describe('writeInlayImage', () => {
     })
   })
 
-  test('L49: broken inlay images reject instead of hanging', async () => {
+  test('broken inlay images reject instead of hanging', async () => {
     const imgObj = makeImage(0, 0, {
       complete: false,
       decode: null,
@@ -636,7 +636,7 @@ describe('writeInlayImage', () => {
     expect(serverAssetStore.size).toBe(0)
   })
 
-  test('L49: decode rejection without dimensions rejects instead of uploading', async () => {
+  test('decode rejection without dimensions rejects instead of uploading', async () => {
     const decode = vi.fn(async () => {
       throw new Error('decode failed')
     })
@@ -746,7 +746,7 @@ describe('writeInlayImage', () => {
     )
   })
 
-  test('v4-L36: rejects oversized source images before canvas work', async () => {
+  test('rejects oversized source images before canvas work', async () => {
     const edge = Math.ceil(Math.sqrt(MAX_INLAY_SOURCE_PIXELS)) + 1
     const imgObj = makeImage(edge, edge)
 
@@ -757,7 +757,7 @@ describe('writeInlayImage', () => {
 })
 
 describe('reencodeImage', () => {
-  test('L51/v4-L36: revokes the object URL when decode fails', async () => {
+  test('revokes the object URL when decode fails', async () => {
     vi.mocked(getImageType).mockReturnValue('JPEG')
     vi.stubGlobal('Image', FakeBrokenImage)
     const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:reencode')

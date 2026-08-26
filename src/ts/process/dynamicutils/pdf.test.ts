@@ -22,7 +22,7 @@ beforeEach(() => {
 })
 
 describe('convertPdfToImages cleanup', () => {
-  it('L54: awaits pdf.destroy() in finally after conversion', async () => {
+  it('awaits pdf.destroy() in finally after conversion', async () => {
     const originalCreateElement = document.createElement.bind(document)
     const createElement = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
       if (tag === 'canvas') {

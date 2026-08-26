@@ -30,8 +30,8 @@ function makeModules(): TestModule[] {
   ]
 }
 
-describe('L33 modules $effect dependency read', () => {
-  it('L33: reading the update signals performs zero clone-primitive calls', () => {
+describe('modules $effect dependency read', () => {
+  it('reading the update signals performs zero clone-primitive calls', () => {
     const modules = makeModules()
     const instrumented = withCloneInstrumentation(() => readModuleUpdateSignals(modules))
     // `$state.snapshot` cloned the whole array here before; the signal read
@@ -39,7 +39,7 @@ describe('L33 modules $effect dependency read', () => {
     expect(instrumented.totalCloneCount).toBe(0)
   })
 
-  it('L33: the effect re-runs on consumed fields but NOT on unrelated deep edits', () => {
+  it('the effect re-runs on consumed fields but NOT on unrelated deep edits', () => {
     const state = $state({ modules: makeModules() })
     let runs = 0
     const stop = $effect.root(() => {
@@ -85,7 +85,7 @@ describe('L33 modules $effect dependency read', () => {
     stop()
   })
 
-  it('L33: tolerates an absent modules array', () => {
+  it('tolerates an absent modules array', () => {
     expect(() => readModuleUpdateSignals(undefined)).not.toThrow()
   })
 })

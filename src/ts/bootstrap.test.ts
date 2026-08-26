@@ -1373,7 +1373,7 @@ describe('API-backed client bootstrap', () => {
     expect(eventApi.subscriptions[0]?.sinceRevision).toBe(5)
   })
 
-  it('preserves the Phase 3 owner, takeover, outbox, receipt, replay, projection, and event order', async () => {
+  it('preserves the owner, takeover, outbox, receipt, replay, projection, and event order', async () => {
     pendingMutationApi.readOwner.mockResolvedValueOnce({
       writerSessionId: 'recovered-writer',
       writerEpoch: 1,
@@ -5507,7 +5507,7 @@ describe('resource event reconnect backoff', () => {
     await vi.waitFor(() => expect(eventApi.subscribe).toHaveBeenCalledTimes(2))
   })
 
-  it('L45: schedules increasing reconnect delays during a simulated outage', async () => {
+  it('schedules increasing reconnect delays during a simulated outage', async () => {
     vi.useFakeTimers()
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
     eventApi.subscribe.mockImplementation(async (input) => {
@@ -5531,7 +5531,7 @@ describe('resource event reconnect backoff', () => {
     expect(eventApi.subscribe).toHaveBeenCalledTimes(3)
   })
 
-  it('L45: keeps one pending reconnect timer for repeated stream failures', async () => {
+  it('keeps one pending reconnect timer for repeated stream failures', async () => {
     vi.useFakeTimers()
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
 
@@ -5543,7 +5543,7 @@ describe('resource event reconnect backoff', () => {
     expect(eventApi.subscribe).toHaveBeenCalledTimes(2)
   })
 
-  it('L45: resets reconnect backoff to the base delay after a successful subscribe', async () => {
+  it('resets reconnect backoff to the base delay after a successful subscribe', async () => {
     vi.useFakeTimers()
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
 
@@ -5559,7 +5559,7 @@ describe('resource event reconnect backoff', () => {
     expect(eventApi.subscribe).toHaveBeenCalledTimes(3)
   })
 
-  it('L45: stop clears pending reconnect and resets the next outage to base delay', async () => {
+  it('stop clears pending reconnect and resets the next outage to base delay', async () => {
     vi.useFakeTimers()
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
 
@@ -5588,7 +5588,7 @@ describe('resource event reconnect backoff', () => {
 })
 
 describe('global bootstrap error handlers', () => {
-  it('L37/I21: global handlers ignore null error events and undefined rejections without useless alerts', () => {
+  it('global handlers ignore null error events and undefined rejections without useless alerts', () => {
     const { errorHandler, rejectHandler } = createGlobalErrorHandlers()
 
     errorHandler(new ErrorEvent('error'))
@@ -5597,7 +5597,7 @@ describe('global bootstrap error handlers', () => {
     expect(alertError).not.toHaveBeenCalled()
   })
 
-  it('L37: resource-target global errors skip generic application alerts', () => {
+  it('resource-target global errors skip generic application alerts', () => {
     const { errorHandler } = createGlobalErrorHandlers()
     const event = new ErrorEvent('error', { error: new Error('asset failed') })
     Object.defineProperty(event, 'target', { value: document.createElement('img') })
@@ -5607,7 +5607,7 @@ describe('global bootstrap error handlers', () => {
     expect(alertError).not.toHaveBeenCalled()
   })
 
-  it('L37: useful global Error objects and message strings still alert', () => {
+  it('useful global Error objects and message strings still alert', () => {
     const { errorHandler, rejectHandler } = createGlobalErrorHandlers()
     const error = new Error('useful error')
 

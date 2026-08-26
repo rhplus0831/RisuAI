@@ -228,7 +228,7 @@ afterEach(() => {
 })
 
 describe('PartialEditController shared hover handler', () => {
-  it('L41: visible partial edit controllers share one document mousemove listener and remove it after unmount', async () => {
+  it('visible partial edit controllers share one document mousemove listener and remove it after unmount', async () => {
     const addSpy = vi.spyOn(document, 'addEventListener')
     const removeSpy = vi.spyOn(document, 'removeEventListener')
     const first = createHoverFixture({
@@ -273,7 +273,7 @@ describe('PartialEditController shared hover handler', () => {
     expect(rafHarness.pendingCount()).toBe(0)
   })
 
-  it('L41: shared hover keeps button zone reachability and hides on leave or scroll', async () => {
+  it('shared hover keeps button zone reachability and hides on leave or scroll', async () => {
     const fixture = createHoverFixture({
       text: 'hoverable block text',
       left: 20,
@@ -307,7 +307,7 @@ describe('PartialEditController shared hover handler', () => {
     expect(wrapper.style.display).toBe('none')
   })
 
-  it('L41: shared hover suppresses the block button during text selection', async () => {
+  it('shared hover suppresses the block button during text selection', async () => {
     const fixture = createHoverFixture({
       text: 'selected block text',
       left: 30,

@@ -353,7 +353,7 @@ describe('slash-command durable writes under the resource guard', () => {
     }).toThrow(/resource database compatibility view is read-only/)
   })
 
-  it('L32: /send appends a user message without setDatabase or whole-db clone churn', async () => {
+  it('/send appends a user message without setDatabase or whole-db clone churn', async () => {
     seedLargeSiblingDatabase()
     const wholeCharactersSize = JSON.stringify(testDatabaseState.db.characters).length
     const calls = stubCommandFetch()
@@ -377,7 +377,7 @@ describe('slash-command durable writes under the resource guard', () => {
     expect(cmd.body.message).toMatchObject({ role: 'user', data: 'hello world', chatId: expect.any(String) })
   })
 
-  it('L32: /send preserves pipe return behavior while appending the piped text', async () => {
+  it('/send preserves pipe return behavior while appending the piped text', async () => {
     const calls = stubCommandFetch()
     setResourceWriteGuardEnabled(true)
 
@@ -391,7 +391,7 @@ describe('slash-command durable writes under the resource guard', () => {
     expect(setDatabaseSpy.count).toBe(0)
   })
 
-  it('L32: /sendas appends a character message without setDatabase', async () => {
+  it('/sendas appends a character message without setDatabase', async () => {
     const { command, messages } = await runMessageCommand(
       '/sendas character line',
       [{ role: 'user', data: 'seed', chatId: 'm-seed' }],
@@ -408,7 +408,7 @@ describe('slash-command durable writes under the resource guard', () => {
     expect(setDatabaseSpy.count).toBe(0)
   })
 
-  it('L32: /comment appends the legacy comment block to the last message', async () => {
+  it('/comment appends the legacy comment block to the last message', async () => {
     const { command, messages } = await runMessageCommand(
       '/comment side note',
       [{ role: 'char', data: 'base', chatId: 'm-base' }],
@@ -426,7 +426,7 @@ describe('slash-command durable writes under the resource guard', () => {
     expect(setDatabaseSpy.count).toBe(0)
   })
 
-  it('L32: /cut range deletes the inclusive message range', async () => {
+  it('/cut range deletes the inclusive message range', async () => {
     const { command, messages } = await runMessageCommand(
       '/cut 1-3',
       [
@@ -445,7 +445,7 @@ describe('slash-command durable writes under the resource guard', () => {
     expect(setDatabaseSpy.count).toBe(0)
   })
 
-  it('L32: /cut index deletes only the selected message', async () => {
+  it('/cut index deletes only the selected message', async () => {
     const { command, messages } = await runMessageCommand(
       '/cut 1',
       [
@@ -461,7 +461,7 @@ describe('slash-command durable writes under the resource guard', () => {
     expect(setDatabaseSpy.count).toBe(0)
   })
 
-  it('L32: /cut treats a hyphenated message id as an id rather than a numeric range', async () => {
+  it('/cut treats a hyphenated message id as an id rather than a numeric range', async () => {
     const messageId = 'message-uuid-with-hyphens'
     const { command, messages } = await runMessageCommand(
       `/cut ${messageId}`,
@@ -477,7 +477,7 @@ describe('slash-command durable writes under the resource guard', () => {
     expect(command.body).toEqual({ baseRevision: 10 })
   })
 
-  it('L32: /cut id removes the matching chatId without setDatabase', async () => {
+  it('/cut id removes the matching chatId without setDatabase', async () => {
     const { command, messages } = await runMessageCommand(
       '/cut m2',
       [
@@ -493,7 +493,7 @@ describe('slash-command durable writes under the resource guard', () => {
     expect(setDatabaseSpy.count).toBe(0)
   })
 
-  it('L32: /del removes the last N messages without setDatabase', async () => {
+  it('/del removes the last N messages without setDatabase', async () => {
     const { command, messages } = await runMessageCommand(
       '/del 2',
       [
@@ -510,7 +510,7 @@ describe('slash-command durable writes under the resource guard', () => {
     expect(setDatabaseSpy.count).toBe(0)
   })
 
-  it('L32: /multisend appends each segment in order and sends after each one', async () => {
+  it('/multisend appends each segment in order and sends after each one', async () => {
     seedDatabase([{ role: 'char', data: 'base', chatId: 'm-base' }])
     const calls = stubCommandFetch()
     setResourceWriteGuardEnabled(true)
@@ -586,7 +586,7 @@ describe('slash-command durable writes under the resource guard', () => {
     expect(coordinateAcceptedChatSendMock).toHaveBeenCalledTimes(1)
   })
 
-  it('L32: /multisend stops after the active chat changes during the first send', async () => {
+  it('/multisend stops after the active chat changes during the first send', async () => {
     seedDatabase([{ role: 'char', data: 'base', chatId: 'm-base' }], { includeSiblings: true })
     const calls = stubCommandFetch()
     setResourceWriteGuardEnabled(true)
@@ -625,7 +625,7 @@ describe('slash-command durable writes under the resource guard', () => {
     expect(setDatabaseSpy.count).toBe(0)
   })
 
-  it('L32: /multisend clear resets before each segment and still sends each segment', async () => {
+  it('/multisend clear resets before each segment and still sends each segment', async () => {
     seedDatabase([{ role: 'char', data: 'base', chatId: 'm-base' }])
     const calls = stubCommandFetch()
     setResourceWriteGuardEnabled(true)
@@ -708,7 +708,7 @@ describe('slash-command durable writes under the resource guard', () => {
     expect(coordinateAcceptedChatSendMock).toHaveBeenCalledTimes(1)
   })
 
-  it('L32: forced message-command failure restores only the active chat', async () => {
+  it('forced message-command failure restores only the active chat', async () => {
     const calls: CapturedFetch[] = []
     let resolveMessageResponse: ((response: Response) => void) | undefined
     vi.stubGlobal(
@@ -785,7 +785,7 @@ describe('slash-command durable writes under the resource guard', () => {
     expect(cmd.body.patch['$hp']).toBe('100')
   })
 
-  it('M12: /setvar persists scriptstate without re-running the setDatabase normalizer', async () => {
+  it('/setvar persists scriptstate without re-running the setDatabase normalizer', async () => {
     const calls = stubCommandFetch()
     setResourceWriteGuardEnabled(true)
 
@@ -803,7 +803,7 @@ describe('slash-command durable writes under the resource guard', () => {
     expect(setDatabaseSpy.count).toBe(0)
   })
 
-  it('M12: /addvar persists the incremented value without the setDatabase normalizer', async () => {
+  it('/addvar persists the incremented value without the setDatabase normalizer', async () => {
     seedDatabase()
     testDatabaseState.db.characters[0].chats[0].scriptstate = { $damage: '5' }
     const calls = stubCommandFetch()
@@ -839,7 +839,7 @@ describe('slash-command durable writes under the resource guard', () => {
     expect(setDatabaseSpy.count).toBe(0)
   })
 
-  it('L37: command processing logs nothing to console.log on the warm path', async () => {
+  it('command processing logs nothing to console.log on the warm path', async () => {
     const calls = stubCommandFetch()
     setResourceWriteGuardEnabled(true)
     const logSpy = vi.spyOn(console, 'log')

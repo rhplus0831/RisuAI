@@ -77,7 +77,7 @@ function ctxFor(db: Database): ExpandContext {
   return { database: db }
 }
 
-describe('Phase 7-4 buildPlainPromptSections main', () => {
+describe('buildPlainPromptSections main', () => {
   it('falls back to db.mainPrompt when currentChar.systemPrompt is empty', () => {
     const db = makeDatabase({ mainPrompt: 'Be brief.' })
     const sections = buildPlainPromptSections(ctxFor(db), db.characters[0])
@@ -120,7 +120,7 @@ describe('Phase 7-4 buildPlainPromptSections main', () => {
   })
 })
 
-describe('Phase 7-4 buildPlainPromptSections jailbreak', () => {
+describe('buildPlainPromptSections jailbreak', () => {
   it('returns [] when jailbreakToggle is false even if jailbreak text is set', () => {
     const db = makeDatabase({ jailbreak: 'Break it.', jailbreakToggle: false })
     const sections = buildPlainPromptSections(ctxFor(db), db.characters[0])
@@ -134,7 +134,7 @@ describe('Phase 7-4 buildPlainPromptSections jailbreak', () => {
   })
 })
 
-describe('Phase 7-4 buildPlainPromptSections globalNote', () => {
+describe('buildPlainPromptSections globalNote', () => {
   it('uses db.globalNote when currentChar.replaceGlobalNote is empty', () => {
     const db = makeDatabase({ globalNote: 'Remember: be kind.' })
     const sections = buildPlainPromptSections(ctxFor(db), db.characters[0])
@@ -151,7 +151,7 @@ describe('Phase 7-4 buildPlainPromptSections globalNote', () => {
   })
 })
 
-describe('Phase 7-4 formatPrompt role splitting', () => {
+describe('formatPrompt role splitting', () => {
   it('defaults to a single system message when the text has no @@ markers', () => {
     const db = makeDatabase({ mainPrompt: 'plain text' })
     const sections = buildPlainPromptSections(ctxFor(db), db.characters[0])

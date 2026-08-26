@@ -1211,8 +1211,8 @@ describe('prompt summary hashes', () => {
   })
 })
 
-describe('Phase 7 L1 async asset reads', () => {
-  it('L1: repeated asset prompt refs share one async stored-asset read during assembly', async () => {
+describe('async asset reads', () => {
+  it('repeated asset prompt refs share one async stored-asset read during assembly', async () => {
     const assetId = 'c'.repeat(64)
     const reads: string[] = []
     const resolveStoredAsset = createRequestScopedStoredAssetResolver(
@@ -1273,8 +1273,8 @@ describe('Phase 7 L1 async asset reads', () => {
   })
 })
 
-describe('Phase 7 L6 per-assembly asset table', () => {
-  it('L6: shares one char+module asset table across lookup and history without changing winners', async () => {
+describe('per-assembly asset table', () => {
+  it('shares one char+module asset table across lookup and history without changing winners', async () => {
     resetPromptAssetTableInstrumentation()
     const resolved: string[] = []
     const resolveStoredAsset = async (reference: string) => {
@@ -1344,8 +1344,8 @@ describe('Phase 7 L6 per-assembly asset table', () => {
   })
 })
 
-describe('Phase 7 L3/K3 dispatch and restoration clone narrowing', () => {
-  it('L3: returns default OpenAI-flag rows by reference without mutation or prompt clones', () => {
+describe('dispatch and restoration clone narrowing', () => {
+  it('returns default OpenAI-flag rows by reference without mutation or prompt clones', () => {
     resetChatDispatchReformatInstrumentation()
     const rows = freezeDeep([
       {
@@ -1444,7 +1444,7 @@ describe('Phase 7 L3/K3 dispatch and restoration clone narrowing', () => {
         { role: 'assistant', content: 'prefill' },
       ],
     },
-  ])('L3: preserves byte-identical output and isolation for $name', ({ db, flags, rows, expected }) => {
+  ])('preserves byte-identical output and isolation for $name', ({ db, flags, rows, expected }) => {
     resetChatDispatchReformatInstrumentation()
     const sourceRows = rows as OpenAIChat[]
     const originalRows = structuredClone(sourceRows)
@@ -1458,7 +1458,7 @@ describe('Phase 7 L3/K3 dispatch and restoration clone narrowing', () => {
     expect(getChatDispatchReformatInstrumentation().fullPromptClones).toBe(1)
   })
 
-  it('K3: returns immutable initial restoration messages by reference and clones scriptstate', () => {
+  it('returns immutable initial restoration messages by reference and clones scriptstate', () => {
     const initialMessages = freezeDeep([
       { role: 'user', data: 'before', chatId: 'msg-1' },
     ] satisfies Message[]) as Message[]
@@ -1516,7 +1516,7 @@ function memoryEnabledDatabase(overrides: Partial<Database> = {}): Database {
   } as Partial<Database>)
 }
 
-describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
+describe('resolveScope (via beginAssembly)', () => {
   it('throws EntityNotFoundError when the database is missing', () => {
     expect(() => beginAssembly(baseInput(), depsFor(null))).toThrow(EntityNotFoundError)
   })
@@ -2157,7 +2157,7 @@ function chunkPlanningHistory(): OpenAIChat[] {
   ]
 }
 
-describe('Phase 7-11a createEmptyUnformatedSlots', () => {
+describe('createEmptyUnformatedSlots', () => {
   it('returns all ten slot keys as empty arrays', () => {
     const slots = createEmptyUnformatedSlots()
     expect(Object.keys(slots).sort()).toEqual(
@@ -2180,7 +2180,7 @@ describe('Phase 7-11a createEmptyUnformatedSlots', () => {
   })
 })
 
-describe('Phase 7-11a beginAssembly context + template normalization', () => {
+describe('beginAssembly context + template normalization', () => {
   it('builds the ExpandContext and empty slots', () => {
     const db = makeDatabase()
     const state = beginAssembly(baseInput(), depsFor(db))
@@ -2265,14 +2265,14 @@ describe('Phase 7-11a beginAssembly context + template normalization', () => {
   })
 })
 
-describe('Phase 7-11a assemblePrompt', () => {
+describe('assemblePrompt', () => {
   it('surfaces bad-ID errors early', async () => {
     const db = makeDatabase()
     await expect(assemblePrompt(baseInput({ characterId: 'nope' }), depsFor(db))).rejects.toThrow(EntityNotFoundError)
   })
 })
 
-describe('Phase 7-11b fillStaticSlots', () => {
+describe('fillStaticSlots', () => {
   // A database whose static/plain leaves all produce content.
   const staticDb = (overrides: Partial<Database> = {}, charOverrides: Partial<character> = {}): Database =>
     makeDatabase({
@@ -2352,7 +2352,7 @@ describe('Phase 7-11b fillStaticSlots', () => {
   })
 })
 
-describe('Phase 7-11c fillLorebookSlots', () => {
+describe('fillLorebookSlots', () => {
   // An always-on (constant) lorebook entry — lands in the `lorebook` slot.
   const constLore = (content: string) =>
     ({
@@ -2411,7 +2411,7 @@ describe('Phase 7-11c fillLorebookSlots', () => {
   })
 })
 
-describe('Phase 7-11d fillHistoryAndBias', () => {
+describe('fillHistoryAndBias', () => {
   // A `start` trigger whose first effect aborts the send.
   const stopTrigger = [{ comment: '', type: 'start', conditions: [], effect: [{ type: 'stop' }] }] as never
 
@@ -2495,7 +2495,7 @@ describe('Phase 7-11d fillHistoryAndBias', () => {
   })
 })
 
-describe('Phase 7-11e fillMemoryAndPostHistory', () => {
+describe('fillMemoryAndPostHistory', () => {
   const msg = (role: string, data: string, chatId: string) => ({ role, data, chatId }) as never
 
   const historyChar = (overrides: Partial<character> = {}): character =>
@@ -2585,7 +2585,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
     }
   })
 
-  it('L20: selects retained memory from the shared post-cleanup summary snapshot', async () => {
+  it('selects retained memory from the shared post-cleanup summary snapshot', async () => {
     const memoryDb = openDatabase(makeDataDir())
     try {
       createMemoryChunk(memoryDb, {
@@ -2947,7 +2947,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
     }
   })
 
-  it('L15: memoizes unchanged summarized-prefix token counts across assembly planning passes', () => {
+  it('memoizes unchanged summarized-prefix token counts across assembly planning passes', () => {
     const memoryDb = openDatabase(makeDataDir())
     try {
       createMemoryChunk(memoryDb, {
@@ -3020,7 +3020,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
     }
   })
 
-  it('M2: budgets tokens:0 prompt summaries with memory and category ratios', async () => {
+  it('budgets tokens:0 prompt summaries with memory and category ratios', async () => {
     const memoryDb = openDatabase(makeDataDir())
     try {
       const texts = ['one', 'two', 'three', 'four'].map((label) => `${label} memory `.repeat(8))
@@ -3107,7 +3107,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
     }
   })
 
-  it('M2: caps tokens:0 Hypa memory before final budgeting so old summaries do not overflow', async () => {
+  it('caps tokens:0 Hypa memory before final budgeting so old summaries do not overflow', async () => {
     const memoryDb = openDatabase(makeDataDir())
     try {
       const labels = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight']
@@ -3547,7 +3547,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
   })
 })
 
-describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
+describe('renderAndBudget + assemblePrompt', () => {
   const msg = (role: string, data: string, chatId: string) => ({ role, data, chatId }) as never
 
   const fullDb = (overrides: Partial<Database> = {}): Database =>
@@ -3865,7 +3865,7 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
   })
 })
 
-describe('Phase 7-12d-i assemble mutation contract', () => {
+describe('assemble mutation contract', () => {
   const msg = (role: string, data: string, chatId: string) => ({ role, data, chatId }) as never
 
   const mutationDb = (overrides: Partial<Database> = {}): Database =>
@@ -4010,7 +4010,7 @@ describe('Phase 7-12d-i assemble mutation contract', () => {
   })
 })
 
-describe('Phase 3 M1 assembly message capture dirty flags', () => {
+describe('assembly message capture dirty flags', () => {
   const msg = (role: string, data: string, chatId: string) => ({ role, data, chatId }) as never
 
   const m1Db = (
@@ -4183,7 +4183,7 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
     expectNoFullTranscriptStringify()
   })
 
-  it('L8: input, start, and output chat-var triggers avoid full trigger transcript clones', async () => {
+  it('input, start, and output chat-var triggers avoid full trigger transcript clones', async () => {
     resetTriggerCloneInstrumentation()
     const db = m1Db([msg('user', 'before triggers', 'msg-1')], {
       char: {
@@ -4437,7 +4437,7 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
     ])
   })
 
-  it('L9/v4-L7: valid customscript script.in output remains unchanged under bounds', async () => {
+  it('valid customscript script.in output remains unchanged under bounds', async () => {
     const result = await assemblePrompt(
       baseInput({ userMessage: 'hi' }),
       depsFor(
@@ -4455,7 +4455,7 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
     ])
   })
 
-  it('L9/v4-L7: customscript script.in rejects unsafe imported regex during assembly', async () => {
+  it('customscript script.in rejects unsafe imported regex during assembly', async () => {
     await expect(
       assemblePrompt(
         baseInput({ userMessage: 'a'.repeat(32) + '!' }),
@@ -4571,7 +4571,7 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
   })
 })
 
-describe('Phase 2 L2 run-var fixed-point skip', () => {
+describe('run-var fixed-point skip', () => {
   const msg = (role: string, data: string, chatId: string) => ({ role, data, chatId }) as never
 
   it('only skips bodies risuChatParser provably returns unchanged (ground truth)', async () => {
@@ -4670,7 +4670,7 @@ describe('Phase 2 L2 run-var fixed-point skip', () => {
   })
 })
 
-describe('Phase 3 M2/L8/L9 history expansion cost', () => {
+describe('history expansion cost', () => {
   const msg = (role: Message['role'], data: string, chatId: string): Message => ({ role, data, chatId }) as Message
 
   const active = (overrides: Partial<LoreEntryActive> = {}): LoreEntryActive => ({
@@ -4805,7 +4805,7 @@ describe('Phase 3 M2/L8/L9 history expansion cost', () => {
   })
 })
 
-describe('Phase 3 M3 stable card cache', () => {
+describe('stable card cache', () => {
   it('persists stable-card setvar once through assembly mutations', async () => {
     const db = makeDatabase({
       aiModel: 'gpt4',
@@ -4957,7 +4957,7 @@ describe('Fastify lorebook template injection', () => {
   })
 })
 
-describe('Phase 3 L4 lorebook sticky chat-var persistence', () => {
+describe('lorebook sticky chat-var persistence', () => {
   const stickyLore = (content: string): loreBook =>
     ({
       id: 'lore-dont',
@@ -5015,7 +5015,7 @@ describe('Phase 3 L4 lorebook sticky chat-var persistence', () => {
   })
 })
 
-describe('Phase 3 M4 CBS callback memo', () => {
+describe('CBS callback memo', () => {
   const msg = (role: Message['role'], data: string, chatId: string): Message => ({ role, data, chatId }) as Message
 
   const lore = (overrides: Partial<loreBook> = {}): loreBook =>
@@ -5179,7 +5179,7 @@ describe('Phase 3 M4 CBS callback memo', () => {
     expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses.lorebook).toBe(2)
   })
 
-  it('L10: sticky-lorebook chat-var writes invalidate cached history output', () => {
+  it('sticky-lorebook chat-var writes invalidate cached history output', () => {
     resetAssemblyCbsCallbackMemoInstrumentation()
     const db = makeDatabase({
       username: 'Alex',
@@ -5220,7 +5220,7 @@ describe('Phase 3 M4 CBS callback memo', () => {
     expect(db.characters[0].chats[0].scriptstate).toBeUndefined()
   })
 
-  it('L10: run-var chat-var-only writes invalidate cached history output', () => {
+  it('run-var chat-var-only writes invalidate cached history output', () => {
     resetAssemblyCbsCallbackMemoInstrumentation()
     const db = makeDatabase({
       username: 'Alex',
@@ -5262,7 +5262,7 @@ describe('Phase 3 M4 CBS callback memo', () => {
     expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses.userhistory).toBe(2)
   })
 
-  it('L10: Lua editRequest chat-var writes invalidate cached history output', async () => {
+  it('Lua editRequest chat-var writes invalidate cached history output', async () => {
     resetAssemblyCbsCallbackMemoInstrumentation()
     const db = makeDatabase({
       username: 'Alex',
@@ -5314,7 +5314,7 @@ describe('Phase 3 M4 CBS callback memo', () => {
     expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses.userhistory).toBe(2)
   })
 
-  it('L10: unchanged history references still hit the memo', () => {
+  it('unchanged history references still hit the memo', () => {
     resetAssemblyCbsCallbackMemoInstrumentation()
     const db = makeDatabase({
       username: 'Alex',

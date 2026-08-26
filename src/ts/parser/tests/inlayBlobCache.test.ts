@@ -113,7 +113,7 @@ afterEach(() => {
 })
 
 describe('inlay blob URL cache', () => {
-  test('K3: cached inlay rendering skips asset byte fetches', async () => {
+  test('cached inlay rendering skips asset byte fetches', async () => {
     mocks.getInlayAssetBlob.mockResolvedValue(asset('image-1', 'image'))
 
     const first = await parseInlay('{{inlay::image-1}}')
@@ -124,7 +124,7 @@ describe('inlay blob URL cache', () => {
     expect(createObjectURL).toHaveBeenCalledTimes(1)
   })
 
-  test('L50: blob URL cache evicts least-recently-used entries and revokes object URLs', async () => {
+  test('blob URL cache evicts least-recently-used entries and revokes object URLs', async () => {
     mocks.getInlayAssetBlob.mockImplementation(async (id: string) => asset(id, 'image'))
 
     for (let i = 0; i < INLAY_BLOB_URL_CACHE_LIMIT; i += 1) {
@@ -159,7 +159,7 @@ describe('inlay blob URL cache', () => {
     expect(mocks.getInlayAssetBlob).not.toHaveBeenCalled()
   })
 
-  test('K3/L50: cached and uncached inlays render identical output', async () => {
+  test('cached and uncached inlays render identical output', async () => {
     const cases: Array<{ id: string; marker: string; type: RenderableType }> = [
       { id: 'image-asset', marker: '{{inlay::image-asset}}', type: 'image' },
       { id: 'audio-asset', marker: '{{inlay::audio-asset}}', type: 'audio' },

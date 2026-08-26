@@ -103,7 +103,7 @@ afterEach(() => {
   selectedCharID.set(-1)
 })
 
-describe('runTrigger clone cost (Phase 3)', () => {
+describe('runTrigger clone cost', () => {
   it('a zero-trigger character pays no char/chat clone (early return)', () => {
     const { siblingSize } = seedDb()
     expect(siblingSize).toBeGreaterThan(50_000)

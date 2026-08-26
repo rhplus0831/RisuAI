@@ -99,7 +99,7 @@ function ctxFor(db: Database): ExpandContext {
 
 const PREBUILT_ASSET_COMMAND_LENGTH = 113 // cl100k_base tokens for the inlined constant.
 
-describe('Phase 7-8b preflightTemplateTokens — null template fallback', () => {
+describe('preflightTemplateTokens — null template fallback', () => {
   it('returns zeros for an empty template and empty slots', () => {
     const db = makeDatabase()
     const result = preflightTemplateTokens({
@@ -131,7 +131,7 @@ describe('Phase 7-8b preflightTemplateTokens — null template fallback', () => 
   })
 })
 
-describe('Phase 7-8b preflightTemplateTokens — flag cards', () => {
+describe('preflightTemplateTokens — flag cards', () => {
   it('memory card flips memoryCardUsed without adding tokens', () => {
     const db = makeDatabase()
     const card = { type: 'memory' } as PromptItemTyped
@@ -163,7 +163,7 @@ describe('Phase 7-8b preflightTemplateTokens — flag cards', () => {
   })
 })
 
-describe('Phase 7-8b preflightTemplateTokens — slot wrap cards', () => {
+describe('preflightTemplateTokens — slot wrap cards', () => {
   it('persona innerFormat wraps each row via {{slot}} before tokenizing', () => {
     const db = makeDatabase()
     const card: PromptItemTyped = {
@@ -238,7 +238,7 @@ describe('Phase 7-8b preflightTemplateTokens — slot wrap cards', () => {
   })
 })
 
-describe('Phase 7-8b preflightTemplateTokens — plain / jailbreak / cot', () => {
+describe('preflightTemplateTokens — plain / jailbreak / cot', () => {
   it('skips jailbreak card when db.jailbreakToggle is false', () => {
     const db = makeDatabase({ jailbreakToggle: false } as Partial<Database>)
     const card: PromptItemPlain = {
@@ -370,7 +370,7 @@ describe('Phase 7-8b preflightTemplateTokens — plain / jailbreak / cot', () =>
   })
 })
 
-describe('Phase 7-8b preflightTemplateTokens — chatML', () => {
+describe('preflightTemplateTokens — chatML', () => {
   it('parses <|im_start|>system|sep|hello<|im_end|> rows', () => {
     const db = makeDatabase()
     const card: PromptItemChatML = {
@@ -402,7 +402,7 @@ describe('Phase 7-8b preflightTemplateTokens — chatML', () => {
   })
 })
 
-describe('Phase 7-8b preflightTemplateTokens — chat range card', () => {
+describe('preflightTemplateTokens — chat range card', () => {
   const slots = (): PromptUnformatedSlots =>
     makeSlots({
       chats: [
@@ -544,7 +544,7 @@ describe('Phase 7-8b preflightTemplateTokens — chat range card', () => {
   })
 })
 
-describe('Phase 7-8b preflightTemplateTokens — postEverything', () => {
+describe('preflightTemplateTokens — postEverything', () => {
   it('adds the postEndInnerFormat synthetic row when usingPromptTemplate', () => {
     const db = makeDatabase({
       promptSettings: {
@@ -600,7 +600,7 @@ describe('Phase 7-8b preflightTemplateTokens — postEverything', () => {
   })
 })
 
-describe('Phase 7-8b preflightTemplateTokens — tokenizer routing', () => {
+describe('preflightTemplateTokens — tokenizer routing', () => {
   it('uses overhead 3 + name accounting for non-gpt models', async () => {
     const db = makeDatabase({ aiModel: 'claude-3-5-sonnet' })
     await ensureTokenizerLoadedForDb(db)

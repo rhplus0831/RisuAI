@@ -281,7 +281,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('Phase 3 persona icon upload freshness', () => {
+describe('persona icon upload freshness', () => {
   it('offers WebP files when selecting a persona icon', async () => {
     const calls = stubCommandFetch(['webp-icon'])
     selectedFileState.queue.push(personaFile('persona.webp'))

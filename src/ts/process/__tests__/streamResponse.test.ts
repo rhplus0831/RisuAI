@@ -676,7 +676,7 @@ describe('consumeStreamResponse', () => {
 })
 
 // Streaming display writes are frame-coalesced instead of parsed per token.
-describe('H3 streaming render coalescing', () => {
+describe('streaming render coalescing', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date(1000))

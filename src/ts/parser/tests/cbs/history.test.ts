@@ -64,7 +64,7 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('history CBS functions shallow-spread (Phase 7)', () => {
+describe('history CBS functions shallow-spread', () => {
   test('{{userhistory}} returns only user messages and never mutates the live rows', () => {
     const liveRows = mocks.db.characters[0].chats[0].message
     const rowRefs = liveRows.map((m) => m)

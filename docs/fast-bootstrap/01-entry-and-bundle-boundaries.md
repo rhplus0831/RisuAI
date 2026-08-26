@@ -110,7 +110,7 @@ recovery surface.
 
 The manifest is emitted only by `build:smoke`; ordinary production output and
 its preload membership are unchanged apart from the small entry error-boundary
-fix. `phase1LazyFirstOpen.spec.ts` runs seven bounded Chromium cases rather than
+fix. `lazyFirstOpen.spec.ts` runs seven bounded Chromium cases rather than
 one browser case per component, while its manifest inventory makes a newly
 registered lazy entry fail until it is classified and covered.
 

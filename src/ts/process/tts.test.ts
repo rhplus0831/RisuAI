@@ -405,7 +405,7 @@ describe('TTS provider catalog request caching', () => {
 })
 
 describe('sayTTS AudioContext lifecycle', () => {
-  it('M18: repeated network TTS playbacks reuse one AudioContext and release ended sources', async () => {
+  it('repeated network TTS playbacks reuse one AudioContext and release ended sources', async () => {
     testState.requestTtsSynthesis
       .mockResolvedValueOnce(ttsAudio(new Uint8Array([1, 2, 3]), 'audio/mpeg'))
       .mockResolvedValueOnce(ttsAudio(new Uint8Array([4, 5, 6]), 'audio/mpeg'))
@@ -442,7 +442,7 @@ describe('sayTTS AudioContext lifecycle', () => {
     expect(context.sources[1].start).toHaveBeenCalledTimes(1)
   })
 
-  it('M18: gptsovits gain path reuses one AudioContext and releases its gain graph', async () => {
+  it('gptsovits gain path reuses one AudioContext and releases its gain graph', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     testState.globalFetch
       .mockResolvedValueOnce({
@@ -479,7 +479,7 @@ describe('sayTTS AudioContext lifecycle', () => {
     expect(context.gains[0].disconnect).toHaveBeenCalledTimes(1)
   })
 
-  it('L50/I16: GPT-SoVITS and FishSpeech do not console-log request or response bodies', async () => {
+  it('GPT-SoVITS and FishSpeech do not console-log request or response bodies', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     testState.db.fishSpeechKey = 'fish-key'
     testState.globalFetch.mockResolvedValueOnce({
@@ -504,7 +504,7 @@ describe('sayTTS AudioContext lifecycle', () => {
     expect(StubAudioContext.instances).toHaveLength(1)
   })
 
-  it('M18: stopTTS stops the active source and clears stale playback refs', async () => {
+  it('stopTTS stops the active source and clears stale playback refs', async () => {
     testState.requestTtsSynthesis.mockResolvedValue(ttsAudio(new Uint8Array([1, 2, 3])))
     const { sayTTS, stopTTS } = await importTTS()
 

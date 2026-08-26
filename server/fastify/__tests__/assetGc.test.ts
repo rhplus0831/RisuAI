@@ -224,7 +224,7 @@ describe('runAssetGc', () => {
     expect(getAllAssetMetadata(db)).toEqual([asset(REFERENCED)])
   })
 
-  it('never hydrates the message corpus during a sweep (M10)', async () => {
+  it('never hydrates the message corpus during a sweep', async () => {
     const database = {
       characters: [{ chaId: 'char-a', image: REFERENCED, chats: [{ id: 'chat-a' }] }],
     }
@@ -251,7 +251,7 @@ describe('runAssetGc', () => {
     expect(result.deletedAssetIds).toEqual([ORPHAN_OLD])
   })
 
-  it('reports identical referenced/missing/orphaned sets to the hydrated walker (M10)', () => {
+  it('reports identical referenced/missing/orphaned sets to the hydrated walker', () => {
     const MISSING = '9'.repeat(64)
     const database = {
       userIcon: REFERENCED,

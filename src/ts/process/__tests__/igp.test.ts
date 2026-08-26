@@ -184,7 +184,7 @@ describe('evaluateIgp', () => {
     expect(arg.formated[0].role).toBe('system')
   })
 
-  it('L34: appends the explicit response result instead of raw object coercion', async () => {
+  it('appends the explicit response result instead of raw object coercion', async () => {
     const calls = stubCommandFetch()
     seed(makeChar())
     requestChatDataSpy.mockResolvedValueOnce({ type: 'success', result: 'IGP-RESULT' })
@@ -194,7 +194,7 @@ describe('evaluateIgp', () => {
     expect(command.body.patch.data).toBe('helloIGP-RESULT')
   })
 
-  it('L34/I11: stringifies non-string IGP result payloads without [object Object]', async () => {
+  it('stringifies non-string IGP result payloads without [object Object]', async () => {
     stubCommandFetch()
     seed(makeChar())
     requestChatDataSpy.mockResolvedValueOnce({ type: 'success', result: { label: 'joy' } })
@@ -224,7 +224,7 @@ describe('evaluateIgp', () => {
     expect(messages[2].data).toBe('thirdIGP-RESULT')
   })
 
-  it('L34: appends and persists under the enabled resource guard', async () => {
+  it('appends and persists under the enabled resource guard', async () => {
     const calls = stubCommandFetch()
     seed(makeChar())
     setResourceWriteGuardEnabled(true)

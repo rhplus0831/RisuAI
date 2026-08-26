@@ -767,8 +767,8 @@ describe('setupSendChatContext - selectedChar / selectedChat', () => {
   })
 })
 
-describe('setupSendChatContext - M5 field-scoped send rollback', () => {
-  it('M14: the send-context rollback captures one character row, never the whole corpus / M5: steady-state send rollback captures no character row or message payload', async () => {
+describe('setupSendChatContext - field-scoped send rollback', () => {
+  it('send-context rollback captures one character row while steady-state rollback captures no character or message payload', async () => {
     const seeded = seedCloneCostDb() // char-0 large (40 messages), siblings small
     seedDb({ characters: seeded.characters as unknown as Database['characters'] })
     selectedCharID.set(1)
@@ -786,7 +786,7 @@ describe('setupSendChatContext - M5 field-scoped send rollback', () => {
     await expect(instrumented.result.persistence).resolves.toMatchObject({ status: 'ok', acceptedCount: 1 })
   })
 
-  it('M5: failed lastInteraction rollback restores only that field', async () => {
+  it('failed lastInteraction rollback restores only that field', async () => {
     const seeded = seedCloneCostDb({ characterCount: 4 })
     seedDb({ characters: seeded.characters as unknown as Database['characters'] })
     selectedCharID.set(2)
@@ -833,7 +833,7 @@ describe('setupSendChatContext - M5 field-scoped send rollback', () => {
     expect(testDatabaseState.db.characters[3].name).toBe('Concurrent sibling edit')
   })
 
-  it('M5: a failed tail restores only backfilled IDs after the character timestamp was accepted', async () => {
+  it('a failed tail restores only backfilled IDs after the character timestamp was accepted', async () => {
     const replaceResponse = deferredResponse()
     const calls: CapturedFetch[] = []
     vi.stubGlobal(

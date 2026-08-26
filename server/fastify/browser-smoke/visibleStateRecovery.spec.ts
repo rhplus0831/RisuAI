@@ -55,7 +55,7 @@ test.afterEach(async ({ page }, testInfo) => {
   await testInfo.attach('browser diagnostics', { body: diagnostics, contentType: 'text/plain' })
 })
 
-test('Journey 1: switching chats repaints the active-chat generation picker', async ({ page }) => {
+test('switching chats repaints the active-chat generation picker', async ({ page }) => {
   const diagnostics = attachDiagnostics(page)
   await boot(page)
   await openCharacter(page)
@@ -90,7 +90,7 @@ test('Journey 1: switching chats repaints the active-chat generation picker', as
   expect(storedPresetId, diagnostics()).toBe('preset-b')
 })
 
-test('Journey 2 (settle): a sidebar toggle flip survives the command + resource refresh', async ({ page }) => {
+test('a sidebar toggle flip survives the command + resource refresh', async ({ page }) => {
   const diagnostics = attachDiagnostics(page)
   await boot(page)
   await openCharacter(page)
@@ -130,9 +130,7 @@ test('Journey 2 (settle): a sidebar toggle flip survives the command + resource 
   expect(stored, diagnostics()).toBe('0')
 })
 
-test('Journey 3 (GATE): the same-character sidebar view survives old-lineage recovery after import', async ({
-  page,
-}) => {
+test('the same-character sidebar view survives old-lineage recovery after import', async ({ page }) => {
   const diagnostics = attachDiagnostics(page)
   await boot(page)
   await openCharacter(page)

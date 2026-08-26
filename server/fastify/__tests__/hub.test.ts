@@ -211,8 +211,8 @@ afterEach(async () => {
   await echo.close()
 })
 
-describe('Phase 3C hub passthrough', () => {
-  it('L27: defaults hub forwards to the shared upstream deadline', () => {
+describe('hub passthrough', () => {
+  it('defaults hub forwards to the shared upstream deadline', () => {
     expect(normalizeHubForwardTimeoutMs(undefined)).toBe(HUB_FORWARD_DEFAULT_TIMEOUT_MS)
     expect(normalizeHubForwardTimeoutMs('75')).toBe(75)
     expect(normalizeHubForwardTimeoutMs('not-a-number')).toBe(HUB_FORWARD_DEFAULT_TIMEOUT_MS)
@@ -577,7 +577,7 @@ describe('Phase 3C hub passthrough', () => {
     expect(fwd['x-keep-me']).toBe('yes')
   })
 
-  it('L27: returns 504 when the hub upstream deadline elapses before response', async () => {
+  it('returns 504 when the hub upstream deadline elapses before response', async () => {
     echo.setResponder((_req, res) => {
       const timer = setTimeout(() => {
         res.writeHead(200, { 'content-type': 'text/plain' })
@@ -597,7 +597,7 @@ describe('Phase 3C hub passthrough', () => {
     expect(echo.requests).toHaveLength(1)
   })
 
-  it('L27: keeps the hub body limit as a hard cap for authenticated uploads', async () => {
+  it('keeps the hub body limit as a hard cap for authenticated uploads', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const res = await harness.app.inject({
       method: 'POST',
@@ -770,7 +770,7 @@ describe('Phase 3C hub passthrough', () => {
     expect(echo.requests).toHaveLength(1)
   })
 
-  it('L27: rejects body-bearing redirects instead of replaying the buffered upload', async () => {
+  it('rejects body-bearing redirects instead of replaying the buffered upload', async () => {
     const payload = Buffer.from(JSON.stringify({ name: 'redirected-body' }))
     echo.setResponder((req, res) => {
       if (req.url === '/first') {
@@ -800,7 +800,7 @@ describe('Phase 3C hub passthrough', () => {
     expect(Buffer.compare(echo.requests[0].body, payload)).toBe(0)
   })
 
-  it('L27: aborts the upstream stream when the client disconnects', async () => {
+  it('aborts the upstream stream when the client disconnects', async () => {
     let closeUpstream!: () => void
     const upstreamClosed = new Promise<void>((resolve) => {
       closeUpstream = resolve

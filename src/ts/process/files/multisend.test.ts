@@ -295,7 +295,7 @@ afterEach(() => {
 })
 
 describe('postChatFile file-send handling', () => {
-  it('M22: translates every entry in a .po file longer than 100 lines', async () => {
+  it('translates every entry in a .po file longer than 100 lines', async () => {
     const entryCount = 125
 
     const results = await postChatFile({
@@ -462,7 +462,7 @@ describe('postChatFile file-send handling', () => {
     expect(testState.downloadFileSpy).not.toHaveBeenCalled()
   })
 
-  it('L52: postChatFile logs nothing for .po, PDF, XML, and text files', async () => {
+  it('postChatFile logs nothing for .po, PDF, XML, and text files', async () => {
     await postChatFile({
       name: 'dialogue.po',
       data: textBytes(makePoFile(2)),
@@ -483,7 +483,7 @@ describe('postChatFile file-send handling', () => {
     expect(consoleLogSpy).not.toHaveBeenCalled()
   })
 
-  it('L53: passes raw PDF bytes to pdfjs and preserves the text result shape', async () => {
+  it('passes raw PDF bytes to pdfjs and preserves the text result shape', async () => {
     const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x00, 0xff])
 
     const results = await postChatFile({
@@ -506,7 +506,7 @@ describe('postChatFile file-send handling', () => {
     ])
   })
 
-  it('L49: awaits async text ingestion so .txt content reaches the File block', async () => {
+  it('awaits async text ingestion so .txt content reaches the File block', async () => {
     let resolveAddTextStarted: () => void = () => {}
     let releaseAddText: () => void = () => {}
     const addTextStarted = new Promise<void>((resolve) => {
@@ -548,7 +548,7 @@ describe('postChatFile file-send handling', () => {
     expect(result.name).toBe('notes.txt')
   })
 
-  it('L36: .po transcript writes persist through scoped commands under the guard', async () => {
+  it('.po transcript writes persist through scoped commands under the guard', async () => {
     const calls = stubCommandFetch()
     setResourceWriteGuardEnabled(true)
 
@@ -565,7 +565,7 @@ describe('postChatFile file-send handling', () => {
     expect(testState.downloadFileSpy.mock.calls[0][1]).toContain('"translated:line 1"')
   })
 
-  it('L36: .po translation stops without a result when send switches the active chat', async () => {
+  it('.po translation stops without a result when send switches the active chat', async () => {
     testState.databaseState.db.characters[0].chats.push({
       id: 'chat-2',
       message: [],
@@ -598,7 +598,7 @@ describe('postChatFile file-send handling', () => {
     expect(testState.downloadFileSpy).not.toHaveBeenCalled()
   })
 
-  it('L36: picker cancellation and picker errors resolve without uncaught rejection', async () => {
+  it('picker cancellation and picker errors resolve without uncaught rejection', async () => {
     testState.selectMultipleFileSpy.mockResolvedValueOnce([])
 
     await expect(postChatFile('translate attachments')).resolves.toEqual([])
@@ -611,7 +611,7 @@ describe('postChatFile file-send handling', () => {
     expect(testState.downloadFileSpy).not.toHaveBeenCalled()
   })
 
-  it('L36: .po processing errors resolve without uncaught rejection', async () => {
+  it('.po processing errors resolve without uncaught rejection', async () => {
     testState.coordinateAcceptedChatSendSpy.mockRejectedValueOnce(new Error('send failed'))
 
     await expect(

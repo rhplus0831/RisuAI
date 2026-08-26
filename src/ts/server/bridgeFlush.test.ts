@@ -80,7 +80,7 @@ afterEach(() => {
 })
 
 describe('flushAllPendingBridgePatches', () => {
-  it('M8: aggregates every bridge flush hook', () => {
+  it('aggregates every bridge flush hook', () => {
     flushAllPendingBridgePatches({ keepalive: true })
 
     for (const bucket of allCallBuckets()) {
@@ -88,7 +88,7 @@ describe('flushAllPendingBridgePatches', () => {
     }
   })
 
-  it('M8: pagehide and hidden visibility flush with keepalive until teardown', () => {
+  it('pagehide and hidden visibility flush with keepalive until teardown', () => {
     const stop = startBridgePatchLifecycleFlush()
 
     window.dispatchEvent(new Event('pagehide'))

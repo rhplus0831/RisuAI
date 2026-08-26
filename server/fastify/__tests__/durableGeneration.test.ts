@@ -847,7 +847,7 @@ function seedGenerationFinalizationRetryRow(
   )
 }
 
-describe('Durable generation (Milestone 1)', () => {
+describe('Durable generation', () => {
   it('accepts a targeted regenerate while the assistant remains authoritative through admission', async () => {
     await seedChatWithMessages([
       { role: 'user', data: 'greet me', chatId: 'msg-user-1' },
@@ -1709,7 +1709,7 @@ describe('Durable generation (Milestone 1)', () => {
   )
 
   // The generation survives the client drop and persists with no client present.
-  it('keeps generating after the client drops mid-stream and persists the result (EC-D1)', async () => {
+  it('keeps generating after the client drops mid-stream and persists the result', async () => {
     const gated = makeGatedProvider({ before: 'Hel', after: 'lo' })
     providerImpl = gated.dispatchProvider
 
@@ -2173,7 +2173,7 @@ describe('Durable generation (Milestone 1)', () => {
     controller.abort()
   })
 
-  it('C6: a durable retry replay drops a newly stale chat-var write and persists the assistant row', async () => {
+  it('a durable retry replay drops a newly stale chat-var write and persists the assistant row', async () => {
     await harness.app.close()
     rmSync(harness.dataDir, { recursive: true, force: true })
     harness = await startHarness({ finalizationRetry: false })
@@ -2250,7 +2250,7 @@ describe('Durable generation (Milestone 1)', () => {
     )
   })
 
-  it('L2: replay selection never silently deletes retained terminal finalization history', () => {
+  it('replay selection never silently deletes retained terminal finalization history', () => {
     const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-generation-retention-'))
     const db = openDatabase(dataDir)
     try {
@@ -2289,7 +2289,7 @@ describe('Durable generation (Milestone 1)', () => {
     }
   })
 
-  it('L2: app retry sweeps retain terminal history after processing due work', async () => {
+  it('app retry sweeps retain terminal history after processing due work', async () => {
     const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
     try {
       seedGenerationFinalizationRetryRow(db, 'terminal-app-old', 'terminal', '2020-01-01T00:00:00.000Z')
@@ -2312,7 +2312,7 @@ describe('Durable generation (Milestone 1)', () => {
 
   // Drop the initial connection after it received prompt/info, reattach to the
   // still-running job, then let it produce the remaining tokens and terminal done.
-  it('reattaches to an in-flight generation with prompt/info replayed (EC-D3)', async () => {
+  it('reattaches to an in-flight generation with prompt/info replayed', async () => {
     const gated = makeGatedProvider({ before: 'Hel', after: 'lo' })
     providerImpl = gated.dispatchProvider
 
@@ -2836,7 +2836,7 @@ describe('Durable generation (Milestone 1)', () => {
 
   // The durable path runs the post-gen pass, persists the scriptstate delta and
   // assistant message, and folds the bumped revision onto done.postGeneration.
-  it('runs the A2 post-gen pass on the durable path and persists the derived result (EC-D1/A2)', async () => {
+  it('runs the post-generation pass on the durable path and persists the derived result', async () => {
     providerImpl = () => {
       async function* g(): AsyncGenerator<CompletionStreamFrame> {
         yield { kind: 'token', content: 'reply text' }
@@ -2886,7 +2886,7 @@ describe('Durable generation (Milestone 1)', () => {
     { scope: 'local_lore', key: undefined },
     { scope: 'chat_variable', key: '$mood' },
   ] as const)(
-    'C6: durable finalization reconciles a concurrent $scope mutation without losing the generated message',
+    'durable finalization reconciles a concurrent $scope mutation without losing the generated message',
     async (testCase) => {
       const gated = makeGatedProvider({ before: 'durable conflict-safe', after: ' reply' })
       providerImpl = gated.dispatchProvider
@@ -3129,7 +3129,7 @@ describe('Durable generation (Milestone 1)', () => {
   // append/extend disposition, regenerate replaces the target, and send appends.
   // Each survives a mid-stream disconnect, and streaming-cancel persistence is mode-aware too.
 
-  it('survives a disconnect on an append-style durable continue without replacing the prior assistant (Phase 6b)', async () => {
+  it('survives a disconnect on an append-style durable continue without replacing the prior assistant', async () => {
     await seedChatWithMessages([
       { role: 'user', data: 'tell me a story', chatId: 'msg-user-1' },
       { role: 'char', data: 'Once upon a time', chatId: 'msg-char-1', saying: 'char-1' },
@@ -3159,7 +3159,7 @@ describe('Durable generation (Milestone 1)', () => {
     expect(messages[2].chatId).not.toBe('msg-char-1')
   })
 
-  it('survives a disconnect on a durable regenerate and replaces the target (Phase 6b)', async () => {
+  it('survives a disconnect on a durable regenerate and replaces the target', async () => {
     await seedChatWithMessages([
       { role: 'user', data: 'greet me', chatId: 'msg-user-1' },
       { role: 'char', data: 'old reply', chatId: 'msg-char-1', saying: 'char-1' },
@@ -3245,7 +3245,7 @@ describe('Durable generation (Milestone 1)', () => {
     ).toBe(true)
   })
 
-  it('cancels an append-style durable continue without replacing the prior assistant (Phase 6b)', async () => {
+  it('cancels an append-style durable continue without replacing the prior assistant', async () => {
     await seedChatWithMessages([
       { role: 'user', data: 'story', chatId: 'msg-user-1' },
       { role: 'char', data: 'Once upon a time', chatId: 'msg-char-1', saying: 'char-1' },
@@ -3293,7 +3293,7 @@ describe('Durable generation (Milestone 1)', () => {
     replayController.abort()
   })
 
-  it('cancels a durable regenerate and replaces the target with the streamed-so-far text (Phase 6b)', async () => {
+  it('cancels a durable regenerate and replaces the target with the streamed-so-far text', async () => {
     await seedChatWithMessages([
       { role: 'user', data: 'greet me', chatId: 'msg-user-1' },
       { role: 'char', data: 'old reply', chatId: 'msg-char-1', saying: 'char-1' },
@@ -3325,7 +3325,7 @@ describe('Durable generation (Milestone 1)', () => {
     controller.abort()
   })
 
-  it('surfaces the generating mode + regenerate target on activeGenerationJobs (Phase 6b reattach)', async () => {
+  it('surfaces the generating mode + regenerate target on activeGenerationJobs', async () => {
     await seedChatWithMessages([
       { role: 'user', data: 'greet me', chatId: 'msg-user-1' },
       { role: 'char', data: 'old reply', chatId: 'msg-char-1', saying: 'char-1' },
@@ -3504,7 +3504,7 @@ describe('Durable generation (Milestone 1)', () => {
 
   // Shutdown records system abandonment before aborting the detached runner.
   // It must not reinterpret a server shutdown as a user-cancelled partial.
-  it('abandons detached runners before closing the database on shutdown (L13)', async () => {
+  it('abandons detached runners before closing the database on shutdown', async () => {
     const gated = makeGatedProvider({ before: 'partial shutdown text' }) // never released
     providerImpl = gated.dispatchProvider
     const local = await startHarness()
@@ -3630,7 +3630,7 @@ describe('Durable generation (Milestone 1)', () => {
   // A long silent window (slow assembly / provider connect) must not look idle
   // to intermediary proxies: the viewer gets SSE comment heartbeats, which are
   // invisible to the frame parser and never enter the replay buffer (audit L14).
-  it('heartbeats the durable SSE viewer during silent windows (L14)', async () => {
+  it('heartbeats the durable SSE viewer during silent windows', async () => {
     const gated = makeGatedProvider({ before: 'Hel', after: 'lo' })
     providerImpl = gated.dispatchProvider
     const local = await startHarness({ viewerHeartbeatMs: 25 })

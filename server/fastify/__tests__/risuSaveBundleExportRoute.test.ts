@@ -189,7 +189,7 @@ function authedInject(opts: Record<string, unknown>) {
   })
 }
 
-describe('Phase 9-8d repository .risu bundle export route', () => {
+describe('repository .risu bundle export route', () => {
   it('exports a zip with the .risu file, manifest, and only walked present assets', async () => {
     persistBundleDatabase(harness.dataDir)
 
@@ -366,7 +366,7 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
     })
   })
 
-  it('L25: reports an asset that disappears after bundle planning without aborting export', async () => {
+  it('reports an asset that disappears after bundle planning without aborting export', async () => {
     persistBundleDatabase(harness.dataDir)
     const includedPath = path.join(assetsDir(harness.dataDir), `${INCLUDED_ASSET}.png`)
     const renamedPath = `${includedPath}.renamed`
@@ -514,7 +514,7 @@ describe('bundle export materialization measurement', () => {
   })
 })
 
-describe('bundle export abort cleanup (M11)', () => {
+describe('bundle export abort cleanup', () => {
   async function waitFor(predicate: () => boolean, what: string): Promise<void> {
     const deadline = Date.now() + 2_000
     while (Date.now() < deadline) {

@@ -105,7 +105,7 @@ describe('runImggenStableDiff', () => {
     expect(stableDiffSpy).toHaveBeenCalledWith(char, '')
   })
 
-  it('v4-L31: passes the stage abort signal into stableDiff', async () => {
+  it('passes the stage abort signal into stableDiff', async () => {
     const char = makeChar()
     const abortSignal = new AbortController().signal
     seed(char)
@@ -115,7 +115,7 @@ describe('runImggenStableDiff', () => {
     expect(stableDiffSpy).toHaveBeenCalledWith(char, '', { signal: abortSignal })
   })
 
-  it('v4-L31: skips stableDiff when the stage abort signal is already aborted', async () => {
+  it('skips stableDiff when the stage abort signal is already aborted', async () => {
     const char = makeChar()
     const controller = new AbortController()
     controller.abort()

@@ -90,7 +90,7 @@ beforeEach(() => {
 })
 
 describe('prompt-preview hotkey generation ownership', () => {
-  it('MTC-10: previews idle Chat B while Chat A generates and passes the captured target', async () => {
+  it('previews idle Chat B while Chat A generates and passes the captured target', async () => {
     beginChatGenerationActivity({ target: targetA, kind: 'message' })
 
     const event = await pressPreviewHotkey()
@@ -106,7 +106,7 @@ describe('prompt-preview hotkey generation ownership', () => {
     expect(previewMocks.alertMd).toHaveBeenCalledOnce()
   })
 
-  it('MTC-10: blocks preview when the active generation belongs to Chat B', async () => {
+  it('blocks preview when the active generation belongs to Chat B', async () => {
     beginChatGenerationActivity({ target: targetB, kind: 'message' })
 
     const event = await pressPreviewHotkey()

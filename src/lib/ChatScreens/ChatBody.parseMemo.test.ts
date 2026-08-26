@@ -257,7 +257,7 @@ afterEach(async () => {
 })
 
 describe('ChatBody content-keyed parse memo', () => {
-  it('L30: repeated parse-key builds reuse corpus signatures until invalidators change', async () => {
+  it('repeated parse-key builds reuse corpus signatures until invalidators change', async () => {
     seedDb()
     const script = (id: string, out: string) => ({
       id,
@@ -639,7 +639,7 @@ describe('ChatBody content-keyed parse memo', () => {
     expect(keyC.length).toBeLessThan(8_000)
   })
 
-  it('L30: cached-only LLM detection reuses a prebuilt parse key without rebuilding it', async () => {
+  it('cached-only LLM detection reuses a prebuilt parse key without rebuilding it', async () => {
     const char = seedDb({
       autoTranslate: true,
       autoTranslateCachedOnly: true,
@@ -704,7 +704,7 @@ describe('ChatBody content-keyed parse memo', () => {
     expect(memoModule.getChatBodyParseMemoDebugStats().parseKeyBuilds).toBe(1)
   })
 
-  it('L40: unchanged ChatBody remount performs zero additional ParseMarkdown calls', async () => {
+  it('unchanged ChatBody remount performs zero additional ParseMarkdown calls', async () => {
     const char = seedDb()
     const target = document.createElement('div')
     document.body.appendChild(target)
@@ -730,7 +730,7 @@ describe('ChatBody content-keyed parse memo', () => {
     unmount(component)
   })
 
-  it('L40: changed ChatBody content misses the parse memo and renders the new body', async () => {
+  it('changed ChatBody content misses the parse memo and renders the new body', async () => {
     const char = seedDb()
     const target = document.createElement('div')
     document.body.appendChild(target)
@@ -825,7 +825,7 @@ describe('ChatBody content-keyed parse memo', () => {
     unmount(component)
   })
 
-  it('M17/L40: cached-only LLM detection shares in-flight parse work and hits the resolved memo', async () => {
+  it('cached-only LLM detection shares in-flight parse work and hits the resolved memo', async () => {
     const char = seedDb({
       autoTranslate: true,
       autoTranslateCachedOnly: true,
@@ -874,7 +874,7 @@ describe('ChatBody content-keyed parse memo', () => {
     expect(getLLMCacheSpy).toHaveBeenCalledTimes(2)
   })
 
-  it('M17: LLM cache import and clear invalidate cached-only decisions', async () => {
+  it('LLM cache import and clear invalidate cached-only decisions', async () => {
     const char = seedDb({
       autoTranslate: true,
       autoTranslateCachedOnly: true,
@@ -930,7 +930,7 @@ describe('ChatBody content-keyed parse memo', () => {
     expect(clearSpy).toHaveBeenCalledTimes(1)
   })
 
-  it('M17: explicit retranslate still calls translateHTML with regenerate enabled', async () => {
+  it('explicit retranslate still calls translateHTML with regenerate enabled', async () => {
     const char = seedDb({
       autoTranslate: true,
       autoTranslateCachedOnly: true,

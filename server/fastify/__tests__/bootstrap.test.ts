@@ -275,7 +275,7 @@ describe('bootstrap runtime metadata', () => {
     expect(observer.json().generationFinalizations).toBeUndefined()
   })
 
-  it('L19: gzip-compresses large bootstrap JSON without changing the body', async () => {
+  it('gzip-compresses large bootstrap JSON without changing the body', async () => {
     const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-bootstrap-compression-'))
     const app = Fastify({ logger: false })
     const db = openDatabase(dataDir)

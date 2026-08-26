@@ -60,7 +60,7 @@ function makeChat(overrides: Partial<Chat> = {}): Chat {
   } as unknown as Chat
 }
 
-describe('Phase 7-6d getActiveModules', () => {
+describe('getActiveModules', () => {
   it('returns [] when nothing is enabled', () => {
     const db = makeDb({
       modules: [makeModule({ id: 'a' })],
@@ -142,7 +142,7 @@ describe('Phase 7-6d getActiveModules', () => {
   })
 })
 
-describe('Phase 7-6d getModuleRegexScripts', () => {
+describe('getModuleRegexScripts', () => {
   it('returns [] when no module has regex', () => {
     const m = makeModule({ id: 'm' })
     expect(getModuleRegexScripts([m])).toEqual([])

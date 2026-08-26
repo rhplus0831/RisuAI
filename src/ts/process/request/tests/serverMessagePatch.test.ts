@@ -115,7 +115,7 @@ describe('applyServerMessagePatch', () => {
     })
   })
 
-  it('M7: replace_all applies a byte-identical transcript with zero structuredClone calls', () => {
+  it('replace_all applies a byte-identical transcript with zero structuredClone calls', () => {
     const replacementMessages = [
       {
         role: 'user',

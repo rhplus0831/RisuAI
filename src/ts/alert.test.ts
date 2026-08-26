@@ -498,7 +498,7 @@ describe('select results', () => {
 })
 
 describe('alertError', () => {
-  it('L37/I21: accepts non-string payloads with String coercion after Error handling', () => {
+  it('accepts non-string payloads with String coercion after Error handling', () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     try {
       expect(() => alertError(undefined)).not.toThrow()

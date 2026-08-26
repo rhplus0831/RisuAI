@@ -373,7 +373,7 @@ describe('runStage4 - imggen routing', () => {
     expect(fakes.finalize.calls).toHaveLength(1)
   })
 
-  it('v4-L31: skips imggen post-generation work when already aborted', async () => {
+  it('skips imggen post-generation work when already aborted', async () => {
     seedDb()
     const ac = new AbortController()
     ac.abort()

@@ -66,7 +66,7 @@ afterEach(() => {
 })
 
 describe('internal MCP tool schemas', () => {
-  it('L55: FileSystem and Google Search return mutation-safe copies of static tool schemas', async () => {
+  it('FileSystem and Google Search return mutation-safe copies of static tool schemas', async () => {
     const fsClient = new FileSystemClient()
     const firstFsTools = await fsClient.getToolList()
     const secondFsTools = await fsClient.getToolList()
@@ -107,7 +107,7 @@ describe('internal MCP tool schemas', () => {
 })
 
 describe('FileSystem MCP directory handle reuse', () => {
-  it('L56: reuses a valid directory handle across FileSystem client recreation', async () => {
+  it('reuses a valid directory handle across FileSystem client recreation', async () => {
     const handle = createDirectoryHandle('workspace')
     const picker = vi.fn(async () => handle)
     vi.stubGlobal('showDirectoryPicker', picker)
@@ -119,7 +119,7 @@ describe('FileSystem MCP directory handle reuse', () => {
     expect(handle.queryPermission).toHaveBeenCalledTimes(2)
   })
 
-  it('L56: prompts again only after the stored directory handle becomes invalid', async () => {
+  it('prompts again only after the stored directory handle becomes invalid', async () => {
     const firstHandle = createDirectoryHandle('old-workspace')
     const secondHandle = createDirectoryHandle('new-workspace')
     const picker = vi.fn().mockResolvedValueOnce(firstHandle).mockResolvedValueOnce(secondHandle)

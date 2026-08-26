@@ -56,7 +56,7 @@ describe('startObserveDom', () => {
     expect(countListenerAdds(restartedListener, 'contextmenu')).toBe(1)
   })
 
-  it('M14: repeated observer starts bind one contextmenu listener per code block', () => {
+  it('repeated observer starts bind one contextmenu listener per code block', () => {
     const codeBlock = document.createElement('pre')
     codeBlock.setAttribute('x-hl-lang', 'js')
     codeBlock.textContent = 'console.log("once")'
@@ -71,7 +71,7 @@ describe('startObserveDom', () => {
     expect(countListenerAdds(addListener, 'contextmenu')).toBe(1)
   })
 
-  it('M14: processes nested code blocks inserted through mutations without a polling tick', async () => {
+  it('processes nested code blocks inserted through mutations without a polling tick', async () => {
     startObserveDom()
 
     const wrapper = document.createElement('section')
@@ -91,7 +91,7 @@ describe('startObserveDom', () => {
     expect(countListenerAdds(addListener, 'contextmenu')).toBe(1)
   })
 
-  it('M14: processes nodes that gain matching attributes after insertion once', async () => {
+  it('processes nodes that gain matching attributes after insertion once', async () => {
     startObserveDom()
 
     const codeBlock = document.createElement('pre')
@@ -175,7 +175,7 @@ describe('startObserveDom', () => {
     expect(document.getElementById('code-contextmenu')).toBeNull()
   })
 
-  it('M14: processes each BGM control node once even after repeated scans', () => {
+  it('processes each BGM control node once even after repeated scans', () => {
     let endedListener: (() => void) | null = null
     const play = vi.fn()
     const pause = vi.fn()
@@ -304,7 +304,7 @@ describe('startObserveDom', () => {
     expect(_getBgmElementForTesting()).toBeNull()
   })
 
-  it('L33: chat switch cleanup pauses current BGM and lets the next control attach', async () => {
+  it('chat switch cleanup pauses current BGM and lets the next control attach', async () => {
     const play = vi.fn()
     const pause = vi.fn()
     const remove = vi.fn()

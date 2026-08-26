@@ -109,7 +109,7 @@ afterEach(() => {
 })
 
 describe('fetchNative diagnostics', () => {
-  it('L47: does not console.log the request body and keeps structured fetch logs', async () => {
+  it('does not console.log the request body and keeps structured fetch logs', async () => {
     const body = 'private request body'
     const response = await fetchNative('https://provider.example.test/v1/messages', {
       method: 'POST',

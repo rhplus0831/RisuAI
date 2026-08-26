@@ -2366,7 +2366,7 @@ describe('requestServerChatGeneration durable cancel-on-abort', () => {
   })
 })
 
-describe('requestServerChatGeneration reattach mode (Phase 7)', () => {
+describe('requestServerChatGeneration reattach mode', () => {
   const enc = new TextEncoder()
   function completedReattachResponse(jobId: string): Response {
     const stream = new ReadableStream<Uint8Array>({

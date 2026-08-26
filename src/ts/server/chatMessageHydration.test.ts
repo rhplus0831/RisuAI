@@ -1331,7 +1331,7 @@ describe('isChatMessageHydrationPending', () => {
   })
 })
 
-describe('character globalLore hydration (Phase 5)', () => {
+describe('character globalLore hydration', () => {
   it('exposes a failed hydration and returns to loading while retrying', async () => {
     ;(testDatabaseState.db as { enableLorebookStubs?: boolean }).enableLorebookStubs = true
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})

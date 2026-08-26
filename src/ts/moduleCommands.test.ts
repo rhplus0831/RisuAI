@@ -1922,8 +1922,8 @@ describe('module command projection helpers', () => {
   })
 })
 
-describe('Phase 3 chat-scoped module toggle (L34)', () => {
-  it('L34: toggling a chat module captures a chat-scoped baseline, never the whole characters array', async () => {
+describe('chat-scoped module toggle', () => {
+  it('toggling a chat module captures a chat-scoped baseline, never the whole characters array', async () => {
     setDatabaseLite(seedCloneCostDb() as any) // char-0 large (40 messages), siblings small
     getDatabase().enabledModules = []
     getDatabase().modules = [{ id: 'mod-a', name: 'Module A' }] as any
@@ -1945,7 +1945,7 @@ describe('Phase 3 chat-scoped module toggle (L34)', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
 
-  it('L34: a failed toggle restores only the active chat row, preserving sibling edits', async () => {
+  it('a failed toggle restores only the active chat row, preserving sibling edits', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
       'fetch',
@@ -1993,8 +1993,8 @@ describe('Phase 3 chat-scoped module toggle (L34)', () => {
   })
 })
 
-describe('Phase 4 module snapshot narrowing (M10)', () => {
-  it('M10: global module snapshots clone only modules and enabledModules', () => {
+describe('module snapshot narrowing', () => {
+  it('global module snapshots clone only modules and enabledModules', () => {
     setDatabaseLite(
       seedCloneCostDb({
         characterCount: 3,
@@ -2016,7 +2016,7 @@ describe('Phase 4 module snapshot narrowing (M10)', () => {
     expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
   })
 
-  it('M10: character-module snapshots clone and restore only the target modules field', () => {
+  it('character-module snapshots clone and restore only the target modules field', () => {
     setDatabaseLite(
       seedCloneCostDb({
         characterCount: 2,
@@ -2052,7 +2052,7 @@ describe('Phase 4 module snapshot narrowing (M10)', () => {
     expect(getDatabase().characters[0].modules).toEqual(['sibling-concurrent'])
   })
 
-  it('M10: forced-failure global rollback preserves concurrent character edits', async () => {
+  it('forced-failure global rollback preserves concurrent character edits', async () => {
     const calls = stubFailingCommandFetch()
     getDatabase().characters = [
       {
@@ -2083,7 +2083,7 @@ describe('Phase 4 module snapshot narrowing (M10)', () => {
     expect(getDatabase().characters[0].modules).toEqual(['char-module'])
   })
 
-  it('M10: forced-failure character-module rollback preserves sibling and same-row edits', async () => {
+  it('forced-failure character-module rollback preserves sibling and same-row edits', async () => {
     const calls = stubFailingCommandFetch()
     getDatabase().characters = [
       {
@@ -2119,7 +2119,7 @@ describe('Phase 4 module snapshot narrowing (M10)', () => {
     expect(getDatabase().characters[1].modules).toEqual(['mod-b'])
   })
 
-  it('M10: character-module rollback uses stable ids across index shifts', async () => {
+  it('character-module rollback uses stable ids across index shifts', async () => {
     const calls = stubFailingCommandFetch()
     getDatabase().characters = [
       {

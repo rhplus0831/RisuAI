@@ -619,7 +619,7 @@ describe('settingsBridge coalescing', () => {
     stop()
   })
 
-  it('L23: direct settings patches suppress watcher echoes for optimistic writes and rollback writes', async () => {
+  it('direct settings patches suppress watcher echoes for optimistic writes and rollback writes', async () => {
     setupSettings({ notification: false })
     const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY })
     flushSync()
@@ -1127,7 +1127,7 @@ describe('settingsBridge coalescing', () => {
     expect(testDatabaseState.db.hypaV3Presets).toEqual([hypaPreset('Alpha'), hypaPreset('Beta')])
   })
 
-  it('L23: queued settings rollback suppresses watcher echoes for debounced writes', async () => {
+  it('queued settings rollback suppresses watcher echoes for debounced writes', async () => {
     setupSettings({ notification: false })
     const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY })
     flushSync()
@@ -1675,7 +1675,7 @@ describe('settingsBridge coalescing', () => {
     stop()
   })
 
-  it('M8: flushes pending watched settings with keepalive and clears the debounce', async () => {
+  it('flushes pending watched settings with keepalive and clears the debounce', async () => {
     setupSettings({ notification: false })
     const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY * 10 })
     flushSync()
@@ -1708,7 +1708,7 @@ describe('settingsBridge coalescing', () => {
     stop()
   })
 
-  it('M8: watcher teardown flushes pending watched settings and clears the debounce', async () => {
+  it('watcher teardown flushes pending watched settings and clears the debounce', async () => {
     setupSettings({ notification: false })
     const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY * 10 })
     flushSync()

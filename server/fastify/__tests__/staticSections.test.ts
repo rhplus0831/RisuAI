@@ -84,7 +84,7 @@ function ctxFor(db: Database): ExpandContext {
   return { database: db }
 }
 
-describe('Phase 7-3 buildDescription', () => {
+describe('buildDescription', () => {
   it('emits only the desc when personality and scenario are empty', () => {
     const db = makeDatabase()
     const out = buildDescription(ctxFor(db), db.characters[0])
@@ -138,7 +138,7 @@ describe('Phase 7-3 buildDescription', () => {
   })
 })
 
-describe('Phase 7-3 buildAuthorNote', () => {
+describe('buildAuthorNote', () => {
   it('returns the expanded chat.note when set', () => {
     const db = makeDatabase()
     const chat = makeChat({ note: 'Note for {{user}}' })
@@ -220,7 +220,7 @@ describe('Phase 7-3 buildAuthorNote', () => {
   })
 })
 
-describe('Phase 7-3 buildPersona', () => {
+describe('buildPersona', () => {
   it('returns [] when db.personaPrompt is empty', () => {
     expect(buildPersona(ctxFor(makeDatabase({ personaPrompt: '' })))).toEqual([])
   })
@@ -231,7 +231,7 @@ describe('Phase 7-3 buildPersona', () => {
   })
 })
 
-describe('Phase 7-3 buildCotInstruction', () => {
+describe('buildCotInstruction', () => {
   it('returns [] when db.chainOfThought is false', () => {
     const db = makeDatabase({ chainOfThought: false })
     expect(buildCotInstruction(ctxFor(db), false)).toEqual([])
@@ -262,7 +262,7 @@ describe('Phase 7-3 buildCotInstruction', () => {
 // Byte-parity with the SPA's buildInlayViewInstruction. These mirror the browser
 // unit cases exactly: no variable expansion, only the manual
 // `{{slot}}` → emotionImages substitution.
-describe('Slice 3c buildInlayViewInstruction', () => {
+describe('buildInlayViewInstruction', () => {
   it('returns [] when inlayViewScreen is false', () => {
     const char = makeCharacter({
       inlayViewScreen: false,

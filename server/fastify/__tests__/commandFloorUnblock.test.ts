@@ -263,7 +263,7 @@ afterEach(async () => {
   rmSync(harness.dataDir, { recursive: true, force: true })
 })
 
-describe('Phase 8a script/trigger PUTs → targeted-character-row', () => {
+describe('script/trigger PUTs → targeted-character-row', () => {
   it('PUT characters/:id/scripts writes only the target character row', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
@@ -356,7 +356,7 @@ describe('Phase 8a script/trigger PUTs → targeted-character-row', () => {
   })
 })
 
-describe('Phase 8b DELETE chats/:id → targeted-character-row', () => {
+describe('DELETE chats/:id → targeted-character-row', () => {
   it('writes only the parent character rows + the deleted chat message/hypa rows', async () => {
     const revision = await importDatabase(seedDatabase())
 
@@ -414,7 +414,7 @@ describe('Phase 8b DELETE chats/:id → targeted-character-row', () => {
   })
 })
 
-describe('Phase 8 follow-up: DELETE characters/:id → targeted-character-row', () => {
+describe('DELETE characters/:id → targeted-character-row', () => {
   it('removes the character + all its chats/messages/hypa and compacts positions', async () => {
     const revision = await importDatabase(seedDatabase())
 

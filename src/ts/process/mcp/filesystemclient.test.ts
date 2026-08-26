@@ -107,7 +107,7 @@ afterEach(() => {
 })
 
 describe('FileSystem MCP read caps', () => {
-  it('v4-L35: encodes capped base64 reads in chunks instead of spreading the whole file', async () => {
+  it('encodes capped base64 reads in chunks instead of spreading the whole file', async () => {
     const payload = bytes(FILESYSTEM_BASE64_ENCODE_CHUNK_BYTES * 4 + 10)
     const readLimit = FILESYSTEM_BASE64_ENCODE_CHUNK_BYTES * 3 + 9
     const btoaChunks: number[] = []
@@ -136,7 +136,7 @@ describe('FileSystem MCP read caps', () => {
     expect(textContent(result)).toContain('Content truncated')
   })
 
-  it('L48: passes PDF page/output caps and honors the requested limit', async () => {
+  it('passes PDF page/output caps and honors the requested limit', async () => {
     const controller = new AbortController()
     pdfMocks.convertPdfToImages.mockResolvedValue([
       'data:image/jpeg;base64,' + 'a'.repeat(40),
@@ -167,7 +167,7 @@ describe('FileSystem MCP read caps', () => {
     expect(textContent(result)).toContain('PDF rendering capped')
   })
 
-  it('L48: rejects PDFs above the input byte cap before reading bytes', async () => {
+  it('rejects PDFs above the input byte cap before reading bytes', async () => {
     const arrayBuffer = vi.fn(async () => new ArrayBuffer(0))
     const largePdf = {
       name: 'huge.pdf',
@@ -186,7 +186,7 @@ describe('FileSystem MCP read caps', () => {
     expect(textContent(result)).toContain('PDF is too large to render')
   })
 
-  it('L48: honors AbortSignal before starting PDF byte reads', async () => {
+  it('honors AbortSignal before starting PDF byte reads', async () => {
     const controller = new AbortController()
     const arrayBuffer = vi.fn(async () => new ArrayBuffer(4))
     const pdfFile = {
@@ -220,7 +220,7 @@ describe('FileSystem MCP read caps', () => {
     expect(textContent(result)).toContain('cancelled pdf read')
   })
 
-  it('v4-L35: skips oversized files before content-search text reads', async () => {
+  it('skips oversized files before content-search text reads', async () => {
     const largeText = vi.fn(async () => 'needle')
     const smallText = vi.fn(async () => 'needle')
     const largeFile = {

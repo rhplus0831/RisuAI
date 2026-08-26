@@ -112,7 +112,7 @@ afterEach(async () => {
   await stopHarness(harness)
 })
 
-describe('Phase 8-2e memory job routes', () => {
+describe('memory job routes', () => {
   it('rejects all memory job routes without auth when a password is set', async () => {
     for (const op of [
       { method: 'POST' as const, url: '/api/v1/memory/jobs', payload: {} },
@@ -318,7 +318,7 @@ describe('Phase 8-2e memory job routes', () => {
     ])
   })
 
-  it('L17: lists retained memory jobs after startup retention prunes old terminal rows', async () => {
+  it('lists retained memory jobs after startup retention prunes old terminal rows', async () => {
     await stopHarness(harness)
     harness = await startHarness({
       memoryWorker: {

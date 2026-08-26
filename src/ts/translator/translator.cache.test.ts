@@ -224,7 +224,7 @@ describe('auto-translate cache', () => {
     vi.restoreAllMocks()
   })
 
-  it('M15: dedupes repeated and concurrent translation lookups', async () => {
+  it('dedupes repeated and concurrent translation lookups', async () => {
     const fetchMock = stubGoogleFetch()
 
     const [first, second] = await Promise.all([
@@ -240,7 +240,7 @@ describe('auto-translate cache', () => {
     expect(__translatorTestHooks.getTranslateCacheEntries()).toHaveLength(1)
   })
 
-  it('M15: reuses cached translations, refreshes hits, and deterministically evicts the oldest cold entry', async () => {
+  it('reuses cached translations, refreshes hits, and deterministically evicts the oldest cold entry', async () => {
     const fetchMock = stubGoogleFetch()
 
     for (let i = 0; i < TRANSLATE_CACHE_MAX_ENTRIES; i++) {
@@ -260,7 +260,7 @@ describe('auto-translate cache', () => {
     expect(entries.some(([key]) => key.includes('"text":"entry-2"'))).toBe(false)
   })
 
-  it('M15: keeps forward and reverse translation cache keys separate', async () => {
+  it('keeps forward and reverse translation cache keys separate', async () => {
     const fetchMock = stubGoogleFetch()
 
     const forward = await translate('shared text', false)
@@ -280,7 +280,7 @@ describe('auto-translate cache', () => {
     ])
   })
 
-  it('M15: clears the auto-translate cache when the active chat changes', async () => {
+  it('clears the auto-translate cache when the active chat changes', async () => {
     const fetchMock = stubGoogleFetch()
 
     const first = await translate('scoped text', false)
@@ -410,7 +410,7 @@ describe('auto-translate cache', () => {
     expect(__translatorTestHooks.getCurrentLLMTranslationCacheKey(labelText)).toBe(llmKey)
   })
 
-  it('v4-L26: separates LLM translation cache entries by translator signature', async () => {
+  it('separates LLM translation cache entries by translator signature', async () => {
     testState.db.translatorType = 'llm'
     testState.requestChatData.mockImplementation(async () => ({
       type: 'success',
@@ -576,7 +576,7 @@ describe('auto-translate cache', () => {
     expect(testState.requestChatData.mock.calls[1][0].formated[0].content).not.toContain('<risu-style>')
   })
 
-  it('phase5: keys LLM translation cache entries by the resolved translate profile', async () => {
+  it('keys LLM translation cache entries by the resolved translate profile', async () => {
     testState.db.translatorType = 'llm'
     let callCount = 0
     testState.requestChatData.mockImplementation(async () => {
@@ -614,7 +614,7 @@ describe('auto-translate cache', () => {
     expect(testState.requestChatData).toHaveBeenCalledTimes(3)
   })
 
-  it('phase5: omits obvious provider secrets from the translate profile cache signature', () => {
+  it('omits obvious provider secrets from the translate profile cache signature', () => {
     Object.assign(testState.db, {
       translatorType: 'llm',
       subModel: 'reverse_proxy',
@@ -639,7 +639,7 @@ describe('auto-translate cache', () => {
     expect(currentKey).not.toContain('secret-param-value')
   })
 
-  it('v4-L26: manual LLM cache edits update the active signature entry', async () => {
+  it('manual LLM cache edits update the active signature entry', async () => {
     testState.db.translatorType = 'llm'
     testState.requestChatData.mockResolvedValue({
       type: 'success',
@@ -657,7 +657,7 @@ describe('auto-translate cache', () => {
     await expect(getLLMCache('<p>manual edit body</p>')).resolves.toBe('<p>manual edited translation</p>')
   })
 
-  it('v4-L26: manual LLM cache edits do not shadow another translator signature', async () => {
+  it('manual LLM cache edits do not shadow another translator signature', async () => {
     testState.db.translatorType = 'llm'
     testState.requestChatData.mockImplementation(async () => ({
       type: 'success',
@@ -679,7 +679,7 @@ describe('auto-translate cache', () => {
     expect(testState.requestChatData).toHaveBeenCalledTimes(1)
   })
 
-  it('v4-L26: enforces deterministic LLM cache pruning', async () => {
+  it('enforces deterministic LLM cache pruning', async () => {
     testState.db.translatorType = 'llm'
     testState.requestChatData.mockImplementation(async ({ formated }: { formated: { content: string }[] }) => ({
       type: 'success',
@@ -699,7 +699,7 @@ describe('auto-translate cache', () => {
     await expect(getLLMCache('<p>llm-0</p>')).resolves.toBeNull()
   })
 
-  it('v4-L26: quota write failures keep translated output in a bounded volatile cache without alerting', async () => {
+  it('quota write failures keep translated output in a bounded volatile cache without alerting', async () => {
     testState.db.translatorType = 'llm'
     testState.requestChatData.mockResolvedValue({ type: 'success', result: '<p>paid result</p>' })
     testState.storage.setItem.mockRejectedValue(new DOMException('full', 'QuotaExceededError'))
@@ -724,7 +724,7 @@ describe('auto-translate cache', () => {
     await expect(getLLMCache('manual-key')).resolves.toBe('manual-value')
   })
 
-  it('v4-L30: current translator preset sync reads from a snapshot without mutating live legacy fields', () => {
+  it('current translator preset sync reads from a snapshot without mutating live legacy fields', () => {
     const presets = [
       createTranslatorPreset('Default', { prompt: 'default prompt', maxResponse: 128 }),
       createTranslatorPreset('Detailed', { prompt: 'detailed prompt', maxResponse: 256 }),
@@ -744,7 +744,7 @@ describe('auto-translate cache', () => {
     expect(testState.db.translatorPresets).toBe(presets)
   })
 
-  it('v4-L30: current translator preset normalization reads from a snapshot without writing preset defaults to live DB', () => {
+  it('current translator preset normalization reads from a snapshot without writing preset defaults to live DB', () => {
     Object.assign(testState.db, {
       translatorPrompt: 'legacy only prompt',
       translatorMaxResponse: 333,

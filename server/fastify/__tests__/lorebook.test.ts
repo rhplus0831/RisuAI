@@ -82,7 +82,7 @@ function makeModule(overrides: Partial<RisuModule> = {}): RisuModule {
   } as RisuModule
 }
 
-describe('Phase 7-7a activateLorebook — sources', () => {
+describe('activateLorebook — sources', () => {
   it('returns no actives when no lore is configured', () => {
     const report = activateLorebook({
       database: makeDb(),
@@ -197,7 +197,7 @@ describe('Phase 7-7a activateLorebook — sources', () => {
   })
 })
 
-describe('Phase 7-7a activateLorebook — decorators', () => {
+describe('activateLorebook — decorators', () => {
   it('@@role user flips role and strips the decorator', () => {
     const report = activateLorebook({
       database: makeDb(),
@@ -320,7 +320,7 @@ describe('Phase 7-7a activateLorebook — decorators', () => {
   })
 })
 
-describe('Phase 7-7a activateLorebook — inject_lore', () => {
+describe('activateLorebook — inject_lore', () => {
   it('appends an injector entry onto a sibling identified by comment', () => {
     const report = activateLorebook({
       database: makeDb(),
@@ -361,7 +361,7 @@ describe('Phase 7-7a activateLorebook — inject_lore', () => {
   })
 })
 
-describe('Phase 7-7a activateLorebook — inject_at', () => {
+describe('activateLorebook — inject_at', () => {
   it.each([
     {
       name: 'append',
@@ -403,7 +403,7 @@ describe('Phase 7-7a activateLorebook — inject_at', () => {
   })
 })
 
-describe('Phase 7-7b activateLorebook — keyword matching', () => {
+describe('activateLorebook — keyword matching', () => {
   it('activates a keyword entry when a recent message contains the key', () => {
     const report = activateLorebook({
       database: makeDb(),
@@ -486,7 +486,7 @@ describe('Phase 7-7b activateLorebook — keyword matching', () => {
     expect(report.actives).toHaveLength(1)
   })
 
-  it('L9/v4-L7: valid imported lorebook useRegex output remains unchanged under bounds', () => {
+  it('valid imported lorebook useRegex output remains unchanged under bounds', () => {
     const report = activateLorebook({
       database: makeDb(),
       currentChar: makeChar({
@@ -515,7 +515,7 @@ describe('Phase 7-7b activateLorebook — keyword matching', () => {
     ])
   })
 
-  it('L9/v4-L7: imported lorebook useRegex rejects unsafe keys before search', () => {
+  it('imported lorebook useRegex rejects unsafe keys before search', () => {
     expect(() =>
       activateLorebook({
         database: makeDb(),
@@ -929,7 +929,7 @@ describe('Phase 7-7b activateLorebook — keyword matching', () => {
   })
 })
 
-describe('Phase 7-7c activateLorebook — recursion', () => {
+describe('activateLorebook — recursion', () => {
   it('chains A -> B: B fires on the second pass via A activated body', () => {
     const report = activateLorebook({
       database: makeDb(),
@@ -1174,7 +1174,7 @@ function makeReport(actives: LoreEntryActive[]): LorebookActivationReport {
   return { actives, disabledUIPrompts: [], matchLog: [] }
 }
 
-describe('Phase 7-7e getDepthPrompts', () => {
+describe('getDepthPrompts', () => {
   it('keeps `pos=depth` entries with depth > 0', () => {
     const r = makeReport([
       makeActive({ pos: 'depth', depth: 1, source: 'a' }),
@@ -1210,7 +1210,7 @@ describe('Phase 7-7e getDepthPrompts', () => {
   })
 })
 
-describe('Phase 7-7e resolvePosition', () => {
+describe('resolvePosition', () => {
   it('substitutes {{position::name}} with the matching pt_<name> body', () => {
     const r = makeReport([makeActive({ pos: 'pt_slot', prompt: 'SLOT VALUE' })])
     expect(resolvePosition('before {{position::slot}} after', r)).toBe('before SLOT VALUE after')
@@ -1242,7 +1242,7 @@ describe('Phase 7-7e resolvePosition', () => {
   })
 })
 
-describe('Phase 7-7d activateLorebook — budget truncation', () => {
+describe('activateLorebook — budget truncation', () => {
   it('attaches per-entry tokens under the default cl100k_base encoding', () => {
     const report = activateLorebook({
       database: makeDb(),
@@ -1451,7 +1451,7 @@ describe('Phase 7-7d activateLorebook — budget truncation', () => {
   })
 })
 
-describe('Phase 7-11c buildLorebookContext', () => {
+describe('buildLorebookContext', () => {
   const ctxFor = (): ExpandContext => ({
     database: makeDb({ characters: [makeChar()], currentChar: 0 } as Partial<Database>),
   })
@@ -1603,8 +1603,8 @@ function countRegexCompiles<T>(fn: () => T): { result: T; compiles: Map<string, 
   }
 }
 
-describe('L3 lorebook keyword regex memoization', () => {
-  it('L3: compiles each regex key once across messages, recursive passes, and entries', () => {
+describe('lorebook keyword regex memoization', () => {
+  it('compiles each regex key once across messages, recursive passes, and entries', () => {
     const messages = Array.from({ length: 8 }, (_, i) =>
       makeMessage({ data: `filler message ${i} l3-needle-${i}`, chatId: `l3-m-${i}` }),
     )
@@ -1651,7 +1651,7 @@ describe('L3 lorebook keyword regex memoization', () => {
     expect(compiles.get('l3-never-matches-zzz')).toBe(1)
   })
 
-  it('L3: a malformed regex key still deactivates the query without throwing (cached miss)', () => {
+  it('a malformed regex key still deactivates the query without throwing (cached miss)', () => {
     const run = () =>
       activateLorebook({
         database: makeDb(),
@@ -1675,8 +1675,8 @@ describe('L3 lorebook keyword regex memoization', () => {
   })
 })
 
-describe('L5 lorebook search normalization', () => {
-  it('L5: normalizes base searchable messages once across recursive search passes', () => {
+describe('lorebook search normalization', () => {
+  it('normalizes base searchable messages once across recursive search passes', () => {
     resetLorebookSearchNormalizationInstrumentation()
     const messages = Array.from({ length: 6 }, (_, i) =>
       makeMessage({
@@ -1727,8 +1727,8 @@ describe('L5 lorebook search normalization', () => {
   })
 })
 
-describe('Phase 7 L7 lorebook search entry lists', () => {
-  it('L7: preserves recursive activation output without per-query combined arrays', () => {
+describe('lorebook search entry lists', () => {
+  it('preserves recursive activation output without per-query combined arrays', () => {
     resetLorebookSearchEntryListInstrumentation()
     const messages = Array.from({ length: 6 }, (_, i) =>
       makeMessage({

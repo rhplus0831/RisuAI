@@ -235,7 +235,7 @@ afterEach(() => {
 })
 
 describe('GridCatalog derived lists', () => {
-  it('L42: GridCatalog filters active and trash lists with shared count and stable order', async () => {
+  it('GridCatalog filters active and trash lists with shared count and stable order', async () => {
     mountCatalog()
     await clickCatalogTab('grid')
     await updateSearch('AL PHA')
@@ -289,7 +289,7 @@ describe('GridCatalog derived lists', () => {
     expect(descriptionForCharacterId('trash', 'trash-beta')).toBe('Description de la corbeille')
   })
 
-  it('L42: GridCatalog search recomputes formatted lists once per search edit and reuses them across tabs', async () => {
+  it('GridCatalog search recomputes formatted lists once per search edit and reuses them across tabs', async () => {
     seedCatalog()
     mountCatalog()
     await clickCatalogTab('grid')
@@ -306,7 +306,7 @@ describe('GridCatalog derived lists', () => {
     expect(characterDisplaySpies.getCharacterDisplayInfo).toHaveBeenCalledTimes(getDatabase().characters.length * 2)
   })
 
-  it('L42: GridCatalog trash actions keep restore and permanent-delete targets', async () => {
+  it('GridCatalog trash actions keep restore and permanent-delete targets', async () => {
     mountCatalog()
     await clickCatalogTab('trash')
 
@@ -459,7 +459,7 @@ describe('GridCatalog derived lists', () => {
     expect(trashLists.trash.map((char) => char.name)).toEqual(['First Trash Match'])
   })
 
-  it('M6: MobileCharacters helper preserves sort, trash filtering, legacy keys, search, and ago text', () => {
+  it('MobileCharacters helper preserves sort, trash filtering, legacy keys, search, and ago text', () => {
     const now = 1_000_000_000
     const agoFormatter = {
       format: vi.fn((value: number, unit: Intl.RelativeTimeFormatUnit) => `${value}:${unit}`),
@@ -577,7 +577,7 @@ describe('GridCatalog derived lists', () => {
     expect(agoText('unknown-time')).toBe(languageSpanish.unknownInteractionTime)
   })
 
-  it('M6: MobileCharacters sorted rows recompute on corpus changes but not search-only changes', async () => {
+  it('MobileCharacters sorted rows recompute on corpus changes but not search-only changes', async () => {
     setDatabaseLite({
       language: 'en',
       characters: [

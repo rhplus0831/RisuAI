@@ -481,7 +481,7 @@ describe('schema migrations', () => {
     }
   })
 
-  it('L15: opens Fastify databases with WAL synchronous NORMAL', () => {
+  it('opens Fastify databases with WAL synchronous NORMAL', () => {
     const db = openDatabase(makeDataDir())
     try {
       const journalMode = db.prepare('PRAGMA journal_mode').get() as { journal_mode: string }

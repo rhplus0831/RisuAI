@@ -562,7 +562,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
     }
   })
 
-  it('persists an assembly-time chat-var write server-side with zero scriptstate re-POSTs (C-A1)', async () => {
+  it('persists an assembly-time chat-var write server-side with zero scriptstate re-POSTs', async () => {
     const harness = await createRouteBackedHarness()
     try {
       const loaded = await loadFixture('simple-send')
@@ -628,7 +628,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
   // These route-backed tests prove the browser consumes the server's derivation
   // (the scriptstate patch + final text on the terminal `done` frame) and no longer
   // re-derives it (zero scriptstate re-POSTs; editoutput applied server-side).
-  it('derives an output-trigger scriptstate delta server-side with zero browser re-POSTs (A2)', async () => {
+  it('derives an output-trigger scriptstate delta server-side with zero browser re-POSTs', async () => {
     const harness = await createRouteBackedHarness()
     try {
       const loaded = await loadFixture('simple-send')
@@ -688,7 +688,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
     }
   })
 
-  it('applies the server-owned editoutput final text to the assistant message (A2)', async () => {
+  it('applies the server-owned editoutput final text to the assistant message', async () => {
     const harness = await createRouteBackedHarness()
     try {
       const loaded = await loadFixture('simple-send')
@@ -735,7 +735,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
     }
   })
 
-  it('appends IGP to the streamed server terminal derived text with row preconditions (OR-1)', async () => {
+  it('appends IGP to the streamed server terminal derived text with row preconditions', async () => {
     const harness = await createRouteBackedHarness()
     try {
       const loaded = await loadFixture('simple-send')
@@ -784,7 +784,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
     }
   })
 
-  it('assembles inlay multimodal bytes server-side with byte-parity to the local golden (slice 3a)', async () => {
+  it('assembles inlay multimodal bytes server-side with byte parity to the local golden', async () => {
     const harness = await createRouteBackedHarness()
     try {
       const loaded = await loadFixture('multimodal-image')
@@ -901,7 +901,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
   ] as const
 
   it.each(IMAGE_GEN_PARITY)(
-    'assembles the $name view instruction row server-side with byte-parity to the local golden (slice 3c)',
+    'assembles the $name view instruction row server-side with byte parity to the local golden',
     async ({ name, marker, expected }) => {
       const harness = await createRouteBackedHarness()
       try {
@@ -982,7 +982,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
   // (A *Lua* editinput char can't run here for
   // the same wasmoon-under-jsdom reason noted below; the Lua path is proven in
   // the server suite.)
-  it('runs a regex editinput transform server-side and reconciles the projection (slice 3b-4)', async () => {
+  it('runs a regex editinput transform server-side and reconciles the projection', async () => {
     const harness = await createRouteBackedHarness()
     try {
       const loaded = await loadFixture('simple-send')
@@ -1451,7 +1451,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     )
   })
 
-  it('evaluates IGP once after a reattached stream applies its terminal derived text (OR-1)', async () => {
+  it('evaluates IGP once after a reattached stream applies its terminal derived text', async () => {
     const loaded = await loadFixture('simple-send')
     cleanups.push(loaded.cleanup)
     testDatabaseState.db.characters[0].chats[0].id = 'chat-reattach'

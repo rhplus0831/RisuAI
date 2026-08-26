@@ -133,7 +133,7 @@ describe('resolveVertexBearer', () => {
     expect(body).toContain('&assertion=')
   })
 
-  it('L30: returns a cached token instead of re-signing on the next call', async () => {
+  it('returns a cached token instead of re-signing on the next call', async () => {
     const { privateKeyPem } = makeKeyPair()
     let fetchCount = 0
     vi.stubGlobal('fetch', async () => {
@@ -156,7 +156,7 @@ describe('resolveVertexBearer', () => {
     expect(fetchCount).toBe(1)
   })
 
-  it('L30: shares one in-flight token exchange for concurrent cold callers', async () => {
+  it('shares one in-flight token exchange for concurrent cold callers', async () => {
     const { privateKeyPem } = makeKeyPair()
     const exchange = deferredResponse()
     let fetchCount = 0
@@ -194,7 +194,7 @@ describe('resolveVertexBearer', () => {
     expect(fetchCount).toBe(1)
   })
 
-  it('L30: clears a failed in-flight exchange so the next caller can retry', async () => {
+  it('clears a failed in-flight exchange so the next caller can retry', async () => {
     const { privateKeyPem } = makeKeyPair()
     let fetchCount = 0
     vi.stubGlobal('fetch', async () => {
@@ -231,7 +231,7 @@ describe('resolveVertexBearer', () => {
     expect(fetchCount).toBe(2)
   })
 
-  it('L30: keeps distinct private keys from sharing an in-flight token exchange', async () => {
+  it('keeps distinct private keys from sharing an in-flight token exchange', async () => {
     const firstKey = makeKeyPair()
     const secondKey = makeKeyPair()
     let fetchCount = 0
@@ -250,7 +250,7 @@ describe('resolveVertexBearer', () => {
     expect(fetchCount).toBe(2)
   })
 
-  it('L30: refreshes a token whose expiry is within the safety margin', async () => {
+  it('refreshes a token whose expiry is within the safety margin', async () => {
     const { privateKeyPem } = makeKeyPair()
     let fetchCount = 0
     vi.stubGlobal('fetch', async () => {

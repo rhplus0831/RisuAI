@@ -33,7 +33,7 @@ function makeChat(overrides: Partial<Chat> = {}): Chat {
   return { id: 'chat-1', message: [], ...overrides } as unknown as Chat
 }
 
-describe('L1 getActiveModules per-assembly memo', () => {
+describe('getActiveModules per-assembly memo', () => {
   it('returns the same resolved array for repeat calls with identical inputs', () => {
     const db = makeDatabase()
     const char = makeCharacter({ modules: ['mod-b'] } as Partial<character>)

@@ -348,7 +348,7 @@ afterEach(() => {
   recorded.commandResults.length = 0
 })
 
-describe('Phase 2 lorebook entry dirty projection merge', () => {
+describe('lorebook entry dirty projection merge', () => {
   function loreEntry(overrides: Partial<Entry> = {}): Entry {
     return {
       id: 'entry-1',
@@ -667,7 +667,7 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
     stop()
   })
 
-  it('M11: foreign character-lorebook resource apply refreshes baseline without echoing, then local edits dispatch', async () => {
+  it('foreign character-lorebook resource apply refreshes baseline without echoing, then local edits dispatch', async () => {
     setupCharacter([{ key: 'a', content: 'A', id: 'entry-a' }] as Entry[])
     markCharacterLorebookHydrated('c1')
     const stop = watchServerBackedLorebooks({ delayMs: DELAY })
@@ -702,7 +702,7 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
     stop()
   })
 
-  it('L24: global lorebook rename rollback suppresses watcher echo and keeps later edits live', async () => {
+  it('global lorebook rename rollback suppresses watcher echo and keeps later edits live', async () => {
     setupGlobalLorebooks()
     const stop = watchServerBackedLorebooks({ scope: { kind: 'global' }, delayMs: DELAY })
     flushSync()
@@ -737,7 +737,7 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
     stop()
   })
 
-  it('L24: stale global rename rollback does not suppress watcher dispatch for a newer rename', async () => {
+  it('stale global rename rollback does not suppress watcher dispatch for a newer rename', async () => {
     setupGlobalLorebooks()
     const stop = watchServerBackedLorebooks({ scope: { kind: 'global' }, delayMs: DELAY })
     flushSync()
@@ -771,7 +771,7 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
     }
   })
 
-  it('L24: stale global delete rollback does not suppress watcher dispatch after row and selection diverge', async () => {
+  it('stale global delete rollback does not suppress watcher dispatch after row and selection diverge', async () => {
     setupGlobalLorebooks(
       [
         { id: 'g1', name: 'Initial', data: [] },
@@ -814,7 +814,7 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
     }
   })
 
-  it('L24: stale global delete rollback keeps watcher live when only selection restores', async () => {
+  it('stale global delete rollback keeps watcher live when only selection restores', async () => {
     setupGlobalLorebooks(
       [
         { id: 'g1', name: 'Initial', data: [] },
@@ -858,7 +858,7 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
     }
   })
 
-  it('L24: global lorebook direct rollback parity routes every dispatcher through suppressed helpers', () => {
+  it('global lorebook direct rollback parity routes every dispatcher through suppressed helpers', () => {
     const source = readFileSync(path.join(process.cwd(), 'src/ts/server/lorebookBridge.svelte.ts'), 'utf8')
 
     const createDispatcher = exportedFunctionSource(source, 'dispatchCreateGlobalLorebook')
@@ -892,7 +892,7 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
     expect(globalOrderRollback).toContain('sameStringArray(liveIds, rollback.attemptedIds)')
   })
 
-  it('L24: global lorebook direct rollback closures restore under an active watcher without echoes', async () => {
+  it('global lorebook direct rollback closures restore under an active watcher without echoes', async () => {
     const scenarios: Array<{
       label: string
       commandKind: string
@@ -1005,7 +1005,7 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
   })
 })
 
-describe('P1 lorebook snapshot purity', () => {
+describe('lorebook snapshot purity', () => {
   it('state snapshots clone malformed lorebook data as-is without assigning ids or stub arrays', () => {
     testDatabaseState.db = {
       loreBook: [{ name: 'Missing ids' }],
@@ -1758,8 +1758,8 @@ function cloneEntries(entries: Entry[]): Entry[] {
   return JSON.parse(JSON.stringify(entries)) as Entry[]
 }
 
-describe('K4 lorebook editor entry draft scope', () => {
-  it('K4: a single typing draft clones only the edited entry before debounce settle', () => {
+describe('lorebook editor entry draft scope', () => {
+  it('a single typing draft clones only the edited entry before debounce settle', () => {
     setupK4EditorDb()
     const collectionSize = JSON.stringify(getDatabase().characters[0].globalLore).length
 
@@ -1777,7 +1777,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect(recorded.commands).toHaveLength(0)
   })
 
-  it('K4: the debounced final server write sends only the final edited entry', async () => {
+  it('the debounced final server write sends only the final edited entry', async () => {
     setupK4EditorDb()
 
     applyLorebookEntryDraftEdit(
@@ -1982,7 +1982,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     stop()
   })
 
-  it('K4: coalesces sparse fields against the original entry and distinguishes deletion from null', async () => {
+  it('coalesces sparse fields against the original entry and distinguishes deletion from null', async () => {
     setupK4EditorDb()
     const entries = getDatabase().characters[0].globalLore as unknown as Array<Entry & Record<string, unknown>>
     entries[5].activationPercent = 40
@@ -2026,7 +2026,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     })
   })
 
-  it('K4: flushing a draft sends the final entry before the debounce delay', async () => {
+  it('flushing a draft sends the final entry before the debounce delay', async () => {
     setupK4EditorDb()
 
     applyLorebookEntryDraftEdit(
@@ -2154,7 +2154,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect((getDatabase().characters[0].globalLore as Entry[])[2].content).toBe(originalContent)
   })
 
-  it('M8: bridge flush sends pending lorebook replacements with keepalive and clears debounce', async () => {
+  it('bridge flush sends pending lorebook replacements with keepalive and clears debounce', async () => {
     setupK4EditorDb()
 
     applyLorebookEntryDraftEdit(
@@ -2193,7 +2193,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect(characterEntryCommands()).toHaveLength(1)
   })
 
-  it('M8: watcher teardown flushes pending lorebook replacements and clears debounce', async () => {
+  it('watcher teardown flushes pending lorebook replacements and clears debounce', async () => {
     setupK4EditorDb()
     const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY * 10 })
     flushSync()
@@ -2222,7 +2222,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect(characterEntryCommands()).toHaveLength(1)
   })
 
-  it('K4: immediate flush with an active watcher sends one replacement only', async () => {
+  it('immediate flush with an active watcher sends one replacement only', async () => {
     setupK4EditorDb()
     const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
     flushSync()
@@ -2255,7 +2255,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     }
   })
 
-  it('K4: module external entry drafts avoid collection clones and flush final module entry', async () => {
+  it('module external entry drafts avoid collection clones and flush final module entry', async () => {
     setupK4ModuleDb()
     const module = (getDatabase().modules as any[])[0] as { lorebook: Entry[] }
     const collectionSize = JSON.stringify(module.lorebook).length
@@ -2296,7 +2296,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect(moduleEntryCommands()).toHaveLength(1)
   })
 
-  it('K4: ModuleMenu wires external LoreBookList typing through module draft handlers', () => {
+  it('ModuleMenu wires external LoreBookList typing through module draft handlers', () => {
     const source = readFileSync(path.join(process.cwd(), 'src/lib/Setting/Pages/Module/ModuleMenu.svelte'), 'utf8')
     const lorebookList = source.slice(
       source.indexOf('<LoreBookList'),
@@ -2492,7 +2492,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect(recorded.commands).toHaveLength(0)
   })
 
-  it('K4: failed entry-draft rollback restores only the edited entry', () => {
+  it('failed entry-draft rollback restores only the edited entry', () => {
     setupK4EditorDb()
     const previous = currentLorebookEntryScopedSnapshot({ kind: 'character', characterId: 'c-k4' }, 2)
 
@@ -2507,7 +2507,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect((getDatabase().characters[1].globalLore as Entry[])[0].content).toBe('other character edit')
   })
 
-  it('L27: coalesced entry-draft rollback restores the first pre-edit collection', async () => {
+  it('coalesced entry-draft rollback restores the first pre-edit collection', async () => {
     setupK4EditorDb()
     const scope = { kind: 'character', characterId: 'c-k4' } as const
     const originalContents = (getDatabase().characters[0].globalLore as Entry[]).map((entry) => entry.content)
@@ -2546,7 +2546,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect((getDatabase().characters[0].globalLore as Entry[]).map((entry) => entry.content)).toEqual(originalContents)
   })
 
-  it('K4: collection operations still use collection-level replacement rollback', async () => {
+  it('collection operations still use collection-level replacement rollback', async () => {
     setupK4EditorDb()
     const previous = currentLorebookCollectionScopedSnapshot({
       kind: 'character',
@@ -2965,7 +2965,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect((cmds[0].entries as Entry[]).some((entry) => entry.id === 'late-entry')).toBe(false)
   })
 
-  it('K4: simple collection delete and pure reorder use compact entry commands', async () => {
+  it('simple collection delete and pure reorder use compact entry commands', async () => {
     setupK4EditorDb()
     const entries = getDatabase().characters[0].globalLore as Entry[]
 
@@ -3106,7 +3106,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     }
   })
 
-  it('Phase 5: stale failed creates remove only unchanged attempted entries across scoped collections', async () => {
+  it('stale failed creates remove only unchanged attempted entries across scoped collections', async () => {
     const cases: Array<{
       label: string
       path: string
@@ -3207,7 +3207,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     }
   })
 
-  it('Phase 5: stale failed updates restore only attempted rows and skip newer same-row edits', async () => {
+  it('stale failed updates restore only attempted rows and skip newer same-row edits', async () => {
     setupK4EditorDb()
     const scope = { kind: 'character', characterId: 'c-k4' } as const
     const originalEntry2Content = (getDatabase().characters[0].globalLore as Entry[])[2].content
@@ -3245,7 +3245,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect((getDatabase().characters[0].globalLore as Entry[])[5].content).toBe('newer sibling after second')
   })
 
-  it('Phase 5: stale failed deletes reinsert only still-missing entries and preserve newer entries', async () => {
+  it('stale failed deletes reinsert only still-missing entries and preserve newer entries', async () => {
     setupK4EditorDb()
     const entries = getDatabase().characters[0].globalLore as Entry[]
     const previous = currentLorebookCollectionScopedSnapshot({ kind: 'character', characterId: 'c-k4' })
@@ -3267,7 +3267,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect(entries.at(-1)?.id).toBe('post-delete-entry')
   })
 
-  it('Phase 5: stale failed reorders restore prior order only while live order matches the attempt', async () => {
+  it('stale failed reorders restore prior order only while live order matches the attempt', async () => {
     setupK4EditorDb()
     const entries = getDatabase().characters[0].globalLore as Entry[]
     const originalIds = entries.map((entry) => entry.id)
@@ -3308,7 +3308,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect(entries.map((entry) => entry.id)).toEqual(newerOrder)
   })
 
-  it('Phase 5: module lorebook helper rollback preserves newer sibling edits and appended entries', async () => {
+  it('module lorebook helper rollback preserves newer sibling edits and appended entries', async () => {
     setupK4ModuleDb()
     const liveModule = getDatabase().modules[0] as unknown as { id: string; lorebook: Entry[] }
     const draftModule = {
@@ -3337,7 +3337,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect(liveModule.lorebook.map((entry) => entry.id)).toContain('module-later-entry')
   })
 
-  it('Phase 5: full-replace fallback skips rollback after live collection diverges from the attempt', async () => {
+  it('full-replace fallback skips rollback after live collection diverges from the attempt', async () => {
     setupK4EditorDb()
     const scope = { kind: 'character', characterId: 'c-k4' } as const
     const previous = currentLorebookCollectionScopedSnapshot(scope)
@@ -3372,7 +3372,7 @@ describe('K4 lorebook editor entry draft scope', () => {
   })
 })
 
-describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () => {
+describe('watchServerBackedLorebooks — scoped change detection', () => {
   it('global scope collects only the global lorebook list', () => {
     setupMultiCollectionDb()
     markCharacterLorebookHydrated('c0')
@@ -3452,7 +3452,7 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     stop()
   })
 
-  it('L28: unchanged selected-character chat localLore references reuse cached snapshots', () => {
+  it('unchanged selected-character chat localLore references reuse cached snapshots', () => {
     setupSelectedCharacterLocalLoreCacheDb()
     const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
     flushSync()
@@ -3464,7 +3464,7 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     stop()
   })
 
-  it('L28: replacing one localLore array stringifies only that chat', () => {
+  it('replacing one localLore array stringifies only that chat', () => {
     setupSelectedCharacterLocalLoreCacheDb()
     const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
     flushSync()
@@ -3484,7 +3484,7 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     stop()
   })
 
-  it('L28: prunes disappeared chat ids from the localLore snapshot cache', () => {
+  it('prunes disappeared chat ids from the localLore snapshot cache', () => {
     setupSelectedCharacterLocalLoreCacheDb()
     const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
     flushSync()
@@ -3501,7 +3501,7 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     stop()
   })
 
-  it('L32: a character-scoped watcher first-run id ensure touches only the selected character collections', () => {
+  it('a character-scoped watcher first-run id ensure touches only the selected character collections', () => {
     setupMultiCollectionDb()
     stripIdsForScopedEnsureRegression()
     markCharacterLorebookHydrated('c0')
@@ -3530,7 +3530,7 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     stop()
   })
 
-  it('P1: a global-scoped watcher first run does not assign global lorebook or entry ids', () => {
+  it('a global-scoped watcher first run does not assign global lorebook or entry ids', () => {
     setupMultiCollectionDb()
     stripIdsForScopedEnsureRegression()
     markCharacterLorebookHydrated('c0')
@@ -3547,7 +3547,7 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     stop()
   })
 
-  it('P1: watcher skips malformed selected-character lore without dispatch or id mutation', async () => {
+  it('watcher skips malformed selected-character lore without dispatch or id mutation', async () => {
     setupMultiCollectionDb()
     stripIdsForScopedEnsureRegression()
     markCharacterLorebookHydrated('c0')
@@ -3566,7 +3566,7 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     stop()
   })
 
-  it('P1: watcher skips selected-character lore with duplicate entry ids', async () => {
+  it('watcher skips selected-character lore with duplicate entry ids', async () => {
     setupMultiCollectionDb()
     markCharacterLorebookHydrated('c0')
     selectedCharID.set(0)
@@ -3587,7 +3587,7 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     stop()
   })
 
-  it('P1: watcher revalidates ids at debounce flush before sending replacements', async () => {
+  it('watcher revalidates ids at debounce flush before sending replacements', async () => {
     setupMultiCollectionDb()
     markCharacterLorebookHydrated('c0')
     selectedCharID.set(0)
@@ -3608,7 +3608,7 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     stop()
   })
 
-  it('P1: the global lorebook modal mount does not normalize ids', () => {
+  it('the global lorebook modal mount does not normalize ids', () => {
     const source = readFileSync(path.join(process.cwd(), 'src/lib/Setting/lorepreset.svelte'), 'utf8')
     const mountEffect = source.slice(source.indexOf('$effect'), source.indexOf('</script>'))
 
@@ -3646,7 +3646,7 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     stop()
   })
 
-  it('L28: character-scoped watcher dispatches a non-open chat localLore replacement', async () => {
+  it('character-scoped watcher dispatches a non-open chat localLore replacement', async () => {
     setupSelectedCharacterLocalLoreCacheDb()
     const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
     flushSync()
@@ -3670,7 +3670,7 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     stop()
   })
 
-  it('L28: flushed direct chat entry edits advance the character-scope localLore cache baseline', async () => {
+  it('flushed direct chat entry edits advance the character-scope localLore cache baseline', async () => {
     setupSelectedCharacterLocalLoreCacheDb()
     const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
     flushSync()

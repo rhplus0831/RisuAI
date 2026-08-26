@@ -196,7 +196,7 @@ afterEach(() => {
 })
 
 describe('DevTool chat generation ownership', () => {
-  it('MTC-10: runs Chat B preview and autopilot while Chat A generates', async () => {
+  it('runs Chat B preview and autopilot while Chat A generates', async () => {
     beginChatGenerationActivity({ target: targetA, kind: 'message' })
 
     const previewPanel = await openSection('Preview Prompt')
@@ -228,7 +228,7 @@ describe('DevTool chat generation ownership', () => {
     expect(devToolMocks.sendChat).not.toHaveBeenCalled()
   })
 
-  it('MTC-10: blocks Chat B preview and autopilot while Chat B generates', async () => {
+  it('blocks Chat B preview and autopilot while Chat B generates', async () => {
     beginChatGenerationActivity({ target: targetB, kind: 'message' })
 
     const previewPanel = await openSection('Preview Prompt')

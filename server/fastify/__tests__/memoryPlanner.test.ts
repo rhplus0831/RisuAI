@@ -321,7 +321,7 @@ describe('standard Hypa V3 planner contract', () => {
     expect(plan.plannedWindows).toHaveLength(1)
   })
 
-  it('L15: memoizes already-summarized prefix token counts across repeated planner passes', () => {
+  it('memoizes already-summarized prefix token counts across repeated planner passes', () => {
     const memo = createHypaV3PrefixTokenMemo()
     const chats: OpenAIChat[] = [
       { role: 'user', content: 'alpha prefix '.repeat(12), memo: 'memo-a', name: 'Alex' },
@@ -358,7 +358,7 @@ describe('standard Hypa V3 planner contract', () => {
     expect(second.plannedWindows).toEqual(first.plannedWindows)
   })
 
-  it('L15: re-encodes edited summarized-prefix content and updates token deltas', () => {
+  it('re-encodes edited summarized-prefix content and updates token deltas', () => {
     const memo = createHypaV3PrefixTokenMemo()
     const chats: OpenAIChat[] = [
       { role: 'user', content: 'alpha prefix '.repeat(12), memo: 'memo-a' },
@@ -385,7 +385,7 @@ describe('standard Hypa V3 planner contract', () => {
     })
   })
 
-  it('L15: re-encodes when summarized-prefix tokenizer options change', () => {
+  it('re-encodes when summarized-prefix tokenizer options change', () => {
     const memo = createHypaV3PrefixTokenMemo()
     const chats: OpenAIChat[] = [
       {
@@ -430,7 +430,7 @@ describe('standard Hypa V3 planner contract', () => {
     )
   })
 
-  it('L15: re-encodes when summarized-prefix multimodal dimensions change', () => {
+  it('re-encodes when summarized-prefix multimodal dimensions change', () => {
     const memo = createHypaV3PrefixTokenMemo()
     const chats: OpenAIChat[] = [
       {

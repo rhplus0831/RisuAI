@@ -141,7 +141,7 @@ function readBackupDatabase(dataDir: string, id: string): Record<string, unknown
   }
 }
 
-describe('Phase 9-8a multipart .risu import route', () => {
+describe('multipart .risu import route', () => {
   it('keeps JSON fixture import behavior available', async () => {
     const imported = await authedInject({
       method: 'POST',
@@ -701,7 +701,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
     })
   })
 
-  it('L28: imports JSON bodies through the normalized throwaway object without repository structuredClone', async () => {
+  it('imports JSON bodies through the normalized throwaway object without repository structuredClone', async () => {
     const payload = {
       database: {
         characters: [

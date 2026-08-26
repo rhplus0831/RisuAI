@@ -612,7 +612,7 @@ async function readStreamingEvents(
   return events
 }
 
-describe('Phase 7-1 POST /api/v1/generate/chat', () => {
+describe('POST /api/v1/generate/chat', () => {
   it('returns 401 without auth once a password is set', async () => {
     await harness.app.inject({
       method: 'POST',
@@ -1113,7 +1113,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
   })
 
-  it('persists server-owned stage-2 memory timing while keeping browser-owned stage 4 at zero (OR-9)', async () => {
+  it('persists server-owned stage-2 memory timing while keeping browser-owned stage 4 at zero', async () => {
     const embedPromptMemoryQueryTexts: NonNullable<GenerationChatRouteOptions['embedPromptMemoryQueryTexts']> = vi.fn(
       async ({ input }) => {
         await new Promise((resolve) => setTimeout(resolve, 5))
@@ -1234,7 +1234,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
   })
 
-  it('M2/L4: omits duplicate prompt fields for compact-capable clients', async () => {
+  it('omits duplicate prompt fields for compact-capable clients', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, fixtureDatabase)
 
@@ -1299,7 +1299,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(Array.isArray(prompt.data.formated)).toBe(true)
   })
 
-  it('L19: leaves chat SSE uncompressed when gzip is requested', async () => {
+  it('leaves chat SSE uncompressed when gzip is requested', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, fixtureDatabase)
 
@@ -1340,7 +1340,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(typeof (info.data.timings as Record<string, number>).prompt).toBe('number')
   })
 
-  it('persists the baseline-formatted provider display label in generationInfo (OR-9)', async () => {
+  it('persists the baseline-formatted provider display label in generationInfo', async () => {
     await restartHarness({
       dispatchProvider: () =>
         (async function* (): AsyncGenerator<CompletionStreamFrame> {
@@ -1440,7 +1440,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
   })
 
-  it('omits retired character additional-description data from the generated prompt (PA-1)', async () => {
+  it('omits retired character additional-description data from the generated prompt', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, {
       ...fixtureDatabase,
@@ -1469,7 +1469,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(serializedRows).not.toContain('PA1-PRIVATE-APPENDIX-MUST-NOT-REACH-THE-PROMPT')
   })
 
-  it('keeps unsupported trigger families as no-ops and warns once per effect type (ST-1/ST-2)', async () => {
+  it('keeps unsupported trigger families as no-ops and warns once per effect type', async () => {
     await restartHarness({
       dispatchProvider: () =>
         (async function* (): AsyncGenerator<CompletionStreamFrame> {
@@ -1675,7 +1675,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(events.at(-1)?.type).toBe('done')
   })
 
-  it('persists the assembly-time chat-var delta in send mode and bumps the revision (C-A1)', async () => {
+  it('persists the assembly-time chat-var delta in send mode and bumps the revision', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
       characters: Array<(typeof fixtureDatabase.characters)[number] & { triggerscript?: unknown }>
@@ -1721,7 +1721,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $score: '9' })
   })
 
-  it('C4: rejects a stale assembly chat-var write and preserves the newer durable value', async () => {
+  it('rejects a stale assembly chat-var write and preserves the newer durable value', async () => {
     let releaseEmbedding!: () => void
     let markEmbeddingStarted!: () => void
     const embeddingStarted = new Promise<void>((resolve) => {
@@ -1794,7 +1794,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $score: '9' })
   })
 
-  it('persists lorebook @@keep_activate_after_match and uses it on the next send (L4)', async () => {
+  it('persists lorebook @@keep_activate_after_match and uses it on the next send', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
       characters: Array<
@@ -2336,7 +2336,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     return db
   }
 
-  it('runs a Lua editRequest hook that rewrites the assembled prompt rows (slice 3b)', async () => {
+  it('runs a Lua editRequest hook that rewrites the assembled prompt rows', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     // Suffix every rendered row. The regex-only baseline leaves 'MAIN' untouched
     // (see the plain-fixture send above); the Lua hook makes it 'MAIN [LUA]'.
@@ -2371,7 +2371,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(messages.every((m) => typeof m.content === 'string' && m.content.endsWith(' [LUA]'))).toBe(true)
   })
 
-  it('persists a Lua editRequest setChatVar write via the assembly chat-var delta (slice 3b)', async () => {
+  it('persists a Lua editRequest setChatVar write via the assembly chat-var delta', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     // The hook's var engine is bound to the same db chat scriptstate the route
     // persists, so a `setChatVar`/`setState` during the hook lands in the
@@ -2623,7 +2623,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
   // lives in the node-env server suite because wasmoon cannot initialize under the
   // browser suite's jsdom environment; see the note in
   // `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`.)
-  it('reproduces the local golden editRequest marker row byte-for-byte (slice 3b)', async () => {
+  it('reproduces the local golden editRequest marker row byte-for-byte', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(
       harness.app,
@@ -2663,7 +2663,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
   // Lua `editprocess` is a browser no-op, so a `triggerlua` char must assemble
   // history identically to the same char without it. The Lua here would rewrite
   // any body it processed, so the marker's absence proves the no-op is faithful.
-  it('runs Lua editprocess through the runtime as a no-op at parity (slice 3b)', async () => {
+  it('runs Lua editprocess through the runtime as a no-op at parity', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
 
     const editProcessLua = `
@@ -2979,7 +2979,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     return database
   }
 
-  it('C5: replaces a transcript when the assembly-start baseline is unchanged', async () => {
+  it('replaces a transcript when the assembly-start baseline is unchanged', async () => {
     await restartHarness({ dispatchProvider: () => null })
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, transcriptReplacementDatabase())
@@ -2995,7 +2995,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
   })
 
   it.each(['append', 'edit'] as const)(
-    'C5: rejects a stale full-transcript replacement after a concurrent %s and preserves it',
+    'rejects a stale full-transcript replacement after a concurrent %s and preserves it',
     async (concurrentMutation) => {
       let releaseEmbedding!: () => void
       let markEmbeddingStarted!: () => void
@@ -3073,7 +3073,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     },
   )
 
-  it('runs a Lua input trigger that rewrites the transcript + persists it (slice 3b-4)', async () => {
+  it('runs a Lua input trigger that rewrites the transcript and persists it', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     // `onInput` fires only during the submit-time input-trigger run (the start
     // trigger leaves `triggerlua` a no-op). It appends a char row to the
@@ -3156,7 +3156,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(character.json().character.chats[0].localLore).toEqual(patch?.localLoreMutation?.after)
   })
 
-  it('runs a Lua editinput hook that rewrites the submitted user message (slice 3b-4)', async () => {
+  it('runs a Lua editinput hook that rewrites the submitted user message', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     // `editInput` listeners transform the user text string. Render `lastChat` so
     // the rewritten user row also shows up in the assembled prompt.
@@ -3203,7 +3203,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     ])
   })
 
-  it('M1: no-var editinput transcript persistence emits a composite assembly event', async () => {
+  it('no-var editinput transcript persistence emits a composite assembly event', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(
       harness.app,
@@ -3236,7 +3236,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     }
   })
 
-  it('runs a regex editinput script that rewrites the submitted user message (slice 3b-4)', async () => {
+  it('runs a regex editinput script that rewrites the submitted user message', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     // The regex `editinput` path (no Lua) is already at parity; the route now runs
     // it over the submitted user text and persists the result.
@@ -3304,7 +3304,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(chat.message.map((m) => ({ role: m.role, data: m.data }))).toEqual([{ role: 'user', data: 'CHAT' }])
   })
 
-  it('L9/v4-L7: unsafe imported regex stops before provider dispatch and assistant persistence', async () => {
+  it('unsafe imported regex stops before provider dispatch and assistant persistence', async () => {
     let providerCalls = 0
     await restartHarness({
       dispatchProvider: () => {
@@ -3368,7 +3368,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     ])
   })
 
-  it('L9/v4-L7: valid imported lorebook and customscript regexes preserve generation output', async () => {
+  it('valid imported lorebook and customscript regexes preserve generation output', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
       aiModel: string
@@ -3421,7 +3421,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     ])
   })
 
-  it('leaves a plain send transcript to the browser (no route message write) (slice 3b-4)', async () => {
+  it('leaves a plain send transcript to the browser (no route message write)', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     // No input trigger / editinput → `submitTranscriptChanged` is false, so the
     // route writes no transcript (the browser persists the raw user row exactly
@@ -3443,7 +3443,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(chat.message).toEqual([])
   })
 
-  it('inlines server-owned inlay assets into the assembled prompt multimodals (slice 3a)', async () => {
+  it('inlines server-owned inlay assets into the assembled prompt multimodals', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const bytes = Buffer.from('server-inlay-bytes')
     const upload = await harness.app.inject({
@@ -3519,7 +3519,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     ])
   })
 
-  it('inlines a stored {{asset_prompt::}} asset into the prompt multimodals (slice 3a)', async () => {
+  it('inlines a stored {{asset_prompt::}} asset into the prompt multimodals', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const assetBytes = Buffer.from('fixture-asset-bytes')
     const upload = await harness.app.inject({
@@ -3564,7 +3564,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(userRow?.content).not.toContain('{{asset_prompt::hero}}')
   })
 
-  it('silently drops missing prompt-asset bytes and emits the established warning diagnostic (HC-8)', async () => {
+  it('silently drops missing prompt-asset bytes and emits the established warning diagnostic', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const missingAssetId = 'c'.repeat(64)
     await seedDatabase(
@@ -3620,7 +3620,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     return db
   }
 
-  it('emits the emotion view instruction with {{slot}} → emotionImages (slice 3c)', async () => {
+  it('emits the emotion view instruction with {{slot}} → emotionImages', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(
       harness.app,
@@ -3653,7 +3653,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(messages).toContainEqual({ role: 'system', content: 'Pick an emotion from: happy, sad' })
   })
 
-  it('emits the imggen view instruction verbatim (slice 3c)', async () => {
+  it('emits the imggen view instruction verbatim', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(
       harness.app,
@@ -3684,7 +3684,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
   })
 
   // With `inlayViewScreen` unset, no instruction row is appended.
-  it('omits the view instruction when inlayViewScreen is unset (slice 3c)', async () => {
+  it('omits the view instruction when inlayViewScreen is unset', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, fixtureDatabase)
 
@@ -4049,7 +4049,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $score: 'before' })
   })
 
-  it('keeps preview-mode lorebook sticky writes read-only (L4)', async () => {
+  it('keeps preview-mode lorebook sticky writes read-only', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
       characters: Array<
@@ -4100,7 +4100,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toBeUndefined()
   })
 
-  it('does not persist when a non-active writer sends /chat (423 before the C-A1 write)', async () => {
+  it('does not persist when a non-active writer sends /chat (423 before the C-write)', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
       characters: Array<(typeof fixtureDatabase.characters)[number] & { triggerscript?: unknown }>
@@ -4647,7 +4647,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     { scope: 'local_lore', key: undefined },
     { scope: 'chat_variable', key: '$mood' },
   ] as const)(
-    'C6: inline finalization reconciles a concurrent $scope mutation without losing the generated message',
+    'inline finalization reconciles a concurrent $scope mutation without losing the generated message',
     async (testCase) => {
       let applyConcurrentEdit: () => Promise<void> = async () => {
         throw new Error('concurrent edit was not configured')
@@ -5094,7 +5094,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     },
   )
 
-  it('persists an output-trigger scriptstate delta server-side and surfaces it on done (A2)', async () => {
+  it('persists an output-trigger scriptstate delta server-side and surfaces it on done', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(
       harness.app,
@@ -5358,7 +5358,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     }
   }, 8_000)
 
-  it('surfaces low-level output-trigger resend on done without a post-generation patch (A-16)', async () => {
+  it('surfaces low-level output-trigger resend on done without a post-generation patch', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(
       harness.app,
@@ -5392,7 +5392,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(done.postGeneration?.revision).toBe(2)
   })
 
-  it('H1: durable DELETE cancel persists an editoutput-processed partial without completion-only effects', async () => {
+  it('durable DELETE cancel persists an editoutput-processed partial without completion-only effects', async () => {
     let providerSawAbort = false
     await restartHarness({
       dispatchProvider: ({ signal }) => {
@@ -5518,7 +5518,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     }
   }, 8000)
 
-  it('K0: message-only generation finalization is available through a ranged message read', async () => {
+  it('message-only generation finalization is available through a ranged message read', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, dbWithServerDispatch({}))
 
@@ -5559,7 +5559,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
   })
 
-  it('K1: chat-variable generation finalization refreshes character metadata and messages', async () => {
+  it('chat-variable generation finalization refreshes character metadata and messages', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(
       harness.app,
@@ -5638,7 +5638,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(messages.json().message).toHaveLength(1)
   })
 
-  it('runs the pre-trigger run-var pass server-side over the completion text (A2)', async () => {
+  it('runs the pre-trigger run-var pass server-side over the completion text', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     // The echo completion carries a `{{setvar}}` the run-var pass evaluates + strips,
     // mirroring `applyOutputTrigger`'s pre-trigger run-var pass over the new turn.
@@ -5670,7 +5670,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $seen: '1' })
   })
 
-  it('runs a regex editoutput script server-side: the final text reflects the transform (A2)', async () => {
+  it('runs a regex editoutput script server-side: the final text reflects the transform', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(
       harness.app,
@@ -6579,7 +6579,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(persisted[2].data).not.toContain('*says nothing*')
   })
 
-  it('keeps buffered Continue editoutput to one invocation (accepted OR-6 divergence)', async () => {
+  it('keeps buffered Continue editoutput to one invocation (accepted divergence)', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, {
       ...(dbWithServerDispatch({
@@ -6781,7 +6781,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
 
   // The reroll buffer preserves both the replaced candidate and the new one as
   // alternates, accumulates further regenerates by uid, and clears on send.
-  it('preserves both the replaced and the new candidate as alternates, accumulates, and clears on send (Phase 6c)', async () => {
+  it('preserves both the replaced and the new candidate as alternates, accumulates, and clears on send', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedChatWithMessages(
       assertion,
@@ -6837,7 +6837,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(await persistedAlternates(assertion)).toHaveLength(0)
   })
 
-  it('runs a Lua editOutput hook server-side over the completion (A2 / slice 3b VM)', async () => {
+  it('runs a Lua editOutput hook server-side over the completion', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(
       harness.app,
@@ -7367,7 +7367,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
   })
 })
 
-describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
+describe('POST /api/v1/generate/preview-prompt', () => {
   const previewPayload = { chatId: 'chat-1', characterId: 'char-1' }
 
   it('returns 401 without auth once a password is set', async () => {
@@ -7507,7 +7507,7 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     )
   })
 
-  it('L6: returns only promptInfo.promptText from preview JSON for compact-capable clients', async () => {
+  it('returns only promptInfo.promptText from preview JSON for compact-capable clients', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, fixtureDatabase)
 
@@ -8563,7 +8563,7 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     )
   })
 
-  it('resets request-trigger rows between same-model retries (accepted OR-3 divergence)', async () => {
+  it('resets request-trigger rows between same-model retries (accepted divergence)', async () => {
     const firstRows: string[] = []
     let call = 0
     const dispatchProvider = vi.fn((context: ChatProviderDispatchContext) => {
@@ -8863,7 +8863,7 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     expect((await readPersistedMessages(assertion)).at(-1)?.data).toBe('retry succeeded')
   })
 
-  it('clamps request retries to the UI maximum of 20 (OR-5)', async () => {
+  it('clamps request retries to the UI maximum of 20', async () => {
     const dispatchProvider = vi.fn(() =>
       (async function* (): AsyncGenerator<CompletionStreamFrame> {
         yield { kind: 'error', error: 'retryable failure', status: 503 }

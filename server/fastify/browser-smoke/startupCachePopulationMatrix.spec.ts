@@ -75,7 +75,7 @@ test.afterAll(() => {
   else process.env.RISU_PROTOCOL_METRICS = previousProtocolMetrics
 })
 
-test('Phase 0 startup matrix keeps cold and warm small/large populations separate', async ({ browser }, testInfo) => {
+test('startup matrix keeps cold and warm small/large populations separate', async ({ browser }, testInfo) => {
   process.env.RISU_PROTOCOL_METRICS = '1'
   const cases = [
     ...(await runFixturePair(browser, 'small', smallFastBootstrapFixture())),

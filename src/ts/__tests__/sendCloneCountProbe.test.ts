@@ -80,7 +80,7 @@ afterEach(() => {
 })
 
 describe('send clone-count probe', () => {
-  it('records the M4 plain-send append fast-path clone-count shape and M5 field-scoped rollback clone-count shape', async () => {
+  it('records the plain-send append fast-path clone-count shape and field-scoped rollback clone-count shape', async () => {
     const result = await runSendCloneCountProbe()
 
     expect(result).toEqual({

@@ -96,8 +96,8 @@ function trapIterator(chat: Chat): void {
   })
 }
 
-describe('terminal assistant-message lookup (L39)', () => {
-  it('L39: resolves the message by chatId without copying the transcript', () => {
+describe('terminal assistant-message lookup', () => {
+  it('resolves the message by chatId without copying the transcript', () => {
     const chat = chatWith([
       { role: 'user', data: 'one', chatId: 'm-1' },
       { role: 'char', data: 'two', chatId: 'gen-1' },
@@ -108,7 +108,7 @@ describe('terminal assistant-message lookup (L39)', () => {
     expect(found?.data).toBe('two')
   })
 
-  it('L39: falls back to the newest generationInfo match, scanning in place', () => {
+  it('falls back to the newest generationInfo match, scanning in place', () => {
     const chat = chatWith([
       { role: 'char', data: 'old', generationInfo: { generationId: 'gen-2' } },
       { role: 'user', data: 'middle' },
@@ -122,7 +122,7 @@ describe('terminal assistant-message lookup (L39)', () => {
     expect(found?.data).toBe('newest')
   })
 
-  it('L39: returns undefined when nothing matches, still without copying', () => {
+  it('returns undefined when nothing matches, still without copying', () => {
     const chat = chatWith([
       { role: 'user', data: 'one', chatId: 'm-1' },
       { role: 'char', data: 'two', chatId: 'm-2' },
@@ -229,7 +229,7 @@ function seedReorderedTerminalChats(): { char: character; target: Chat; staleInd
   return { char: liveChar, target: liveChar.chats[1], staleIndexChat: liveChar.chats[0] }
 }
 
-describe('server-backed terminal stable chat target (R-02)', () => {
+describe('server-backed terminal stable chat target', () => {
   let originalDb: typeof testDatabaseState.db
 
   beforeEach(() => {

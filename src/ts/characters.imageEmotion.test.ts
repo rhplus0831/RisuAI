@@ -337,7 +337,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('Phase 7 image/emotion scoped rollback', () => {
+describe('image/emotion scoped rollback', () => {
   it('rmCharEmotion captures a single-row baseline, never the whole characters array', async () => {
     // char-0 carries the large 40-message hydrated transcript; the edit targets a
     // small sibling so a whole-array clone would dwarf the single-row clone.
@@ -403,7 +403,7 @@ describe('Phase 7 image/emotion scoped rollback', () => {
   })
 })
 
-describe('Phase 3 character avatar upload freshness', () => {
+describe('character avatar upload freshness', () => {
   it('drops a stale upload after a newer avatar edit without appending assets or png metadata', async () => {
     const calls = stubCommandFetch()
     const upload = deferred<string>()
@@ -590,7 +590,7 @@ describe('Phase 3 character avatar upload freshness', () => {
   })
 })
 
-describe('Phase 3 character emotion image upload freshness', () => {
+describe('character emotion image upload freshness', () => {
   it('drops a stale emotion upload after a newer list edit without dispatching', async () => {
     const calls = stubCommandFetch()
     const upload = deferred<string>()

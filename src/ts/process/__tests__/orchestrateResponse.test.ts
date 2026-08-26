@@ -265,7 +265,7 @@ describe('orchestrateResponse - non-streaming branch', () => {
   })
 })
 
-describe('orchestrateResponse - server-owned post-generation (A2)', () => {
+describe('orchestrateResponse - server-owned post-generation', () => {
   it('defers output trigger, inlay, TTS, and IGP to the server terminal path', async () => {
     // The server runs the run-var pass, `'output'` trigger, and `editoutput`;
     // the browser relays the stream for display only. Final text, inlay, and

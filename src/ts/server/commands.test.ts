@@ -9502,7 +9502,7 @@ describe('server command API adapter', () => {
   })
 })
 
-describe('L36 runner rejection rollback (stability/perf plan, Phase 3)', () => {
+describe('runner rejection rollback', () => {
   it('rolls back a failed command result when no destructive refresh occurred', async () => {
     setCachedServerCommandRevision(12)
     const rollback = vi.fn()
@@ -9546,7 +9546,7 @@ describe('L36 runner rejection rollback (stability/perf plan, Phase 3)', () => {
     expect(rollback).toHaveBeenCalledTimes(1)
   })
 
-  it('L36: a rejected command factory rolls back once and resolves to an error result', async () => {
+  it('a rejected command factory rolls back once and resolves to an error result', async () => {
     const commandFetch = makeCommandFetch((url) => {
       if (url === '/api/v1/bootstrap') return { revision: 7 }
       return jsonResponse({ error: 'unexpected' }, 500)
@@ -9573,7 +9573,7 @@ describe('L36 runner rejection rollback (stability/perf plan, Phase 3)', () => {
     consoleError.mockRestore()
   })
 
-  it('L36: a synchronous factory throw is also surfaced and rolled back', async () => {
+  it('a synchronous factory throw is also surfaced and rolled back', async () => {
     const commandFetch = makeCommandFetch((url) => {
       if (url === '/api/v1/bootstrap') return { revision: 7 }
       return jsonResponse({ error: 'unexpected' }, 500)

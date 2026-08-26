@@ -486,7 +486,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('H1 guard: hydration of a chat WITHOUT a chat_hypa_v3 row stays scoped', async () => {
+  it('guard: hydration of a chat WITHOUT a chat_hypa_v3 row stays scoped', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
     expect(fixture.noHypa.chatId).not.toBe(fixture.hot.chatId)
@@ -510,7 +510,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('H1 guard keeps the zero-row fallback: a not-yet-extracted chat hydrates from its embedded copy', async () => {
+  it('guard keeps the zero-row fallback: a not-yet-extracted chat hydrates from its embedded copy', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
 
@@ -557,7 +557,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     )
   })
 
-  it('U1: bulk chat hydration performs zero whole-corpus payload reads, missing ids included', async () => {
+  it('bulk chat hydration performs zero whole-corpus payload reads, missing ids included', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
 
@@ -591,7 +591,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(body.chats[1].hypaV3Data).toBeUndefined()
   })
 
-  it('H2: chat-create performs zero hydrated message loads and no full-database clone-sized stringify', async () => {
+  it('chat-create performs zero hydrated message loads and no full-database clone-sized stringify', async () => {
     const fixture = buildLargeCorpusFixture()
     const revision = await importDatabase(fixture.database)
     const fullHydratedDatabaseSize = JSON.stringify(fixture.database).length
@@ -645,7 +645,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect((hydrated.json().message as Array<{ chatId: string }>).map((m) => m.chatId)).toEqual(['h2-load-msg-1'])
   })
 
-  it('L14: append-only message diff cost stays constant with long prefixes', () => {
+  it('append-only message diff cost stays constant with long prefixes', () => {
     const db = openDatabase(harness.dataDir)
     try {
       const base = Array.from({ length: 256 }, (_, index) => ({
@@ -680,7 +680,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('L14: single character-lorebook hydration performs zero whole-corpus payload reads', async () => {
+  it('single character-lorebook hydration performs zero whole-corpus payload reads', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase({ ...fixture.database, enableLorebookStubs: true })
 
@@ -717,7 +717,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     })
   })
 
-  it('L14: single character-lorebook hydration keeps the broad pre-extraction fallback', async () => {
+  it('single character-lorebook hydration keeps the broad pre-extraction fallback', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase({ ...fixture.database, enableLorebookStubs: true })
 
@@ -750,7 +750,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(corpusLoadCount).toBeGreaterThan(0)
   })
 
-  it('U1: bulk character-lorebook hydration performs zero whole-corpus payload reads', async () => {
+  it('bulk character-lorebook hydration performs zero whole-corpus payload reads', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase({ ...fixture.database, enableLorebookStubs: true })
 
@@ -777,7 +777,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('U1: bulk hydration serves a legacy embedded-message chat row without the broad walk', async () => {
+  it('bulk hydration serves a legacy embedded-message chat row without the broad walk', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
 
@@ -822,7 +822,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(body.chats[0].message).toEqual(embedded)
   })
 
-  it('U1: bulk hydration keeps the broad fallback on a pre-extraction embedded-characters database', async () => {
+  it('bulk hydration keeps the broad fallback on a pre-extraction embedded-characters database', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
 
@@ -868,7 +868,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(corpusLoadCount).toBeGreaterThan(0)
   })
 
-  it('M1: prompt assembly performs zero whole-corpus message/hypa payload reads', async () => {
+  it('prompt assembly performs zero whole-corpus message/hypa payload reads', async () => {
     const fixture = buildLargeCorpusFixture()
     // The fixture is hydration-oriented; add the assembly settings the prompt
     // path needs (and drop the template so the `chats` history slot renders).
@@ -898,7 +898,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(loadCountByTable.chat_hypa_v3 ?? 0).toBe(0)
   })
 
-  it('M1: no-var editinput transcript replacement adds zero whole-corpus loads', async () => {
+  it('no-var editinput transcript replacement adds zero whole-corpus loads', async () => {
     const fixture = buildLargeCorpusFixture()
 
     await importDatabase(promptReadyLargeCorpusDatabase(fixture))
@@ -944,7 +944,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(editinputRun.loadCountByTable).toEqual(plainRun.loadCountByTable)
   })
 
-  it('L1: image-bearing chat send performs zero assembly-time readFileSync asset reads', async () => {
+  it('image-bearing chat send performs zero assembly-time readFileSync asset reads', async () => {
     const fixture = buildLargeCorpusFixture({ hotChatMessageCount: 1 })
     const database = promptReadyLargeCorpusDatabase(fixture)
     const assetBytes = Buffer.from('l1-image-bytes')
@@ -997,7 +997,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('L6: image-bearing chat send builds one shared asset table per assembly', async () => {
+  it('image-bearing chat send builds one shared asset table per assembly', async () => {
     const fixture = buildLargeCorpusFixture({ hotChatMessageCount: 2 })
     const database = promptReadyLargeCorpusDatabase(fixture)
     const charAssetBytes = Buffer.from('l6-char-image-bytes')
@@ -1069,7 +1069,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(getPromptAssetTableInstrumentation()).toEqual({ builds: 1 })
   })
 
-  it('L20: prompt memory cleanup and selection share one summary payload read', async () => {
+  it('prompt memory cleanup and selection share one summary payload read', async () => {
     const fixture = buildLargeCorpusFixture({ hotChatMessageCount: 12 })
     await importDatabase({
       ...promptReadyLargeCorpusDatabase(fixture),
@@ -1138,7 +1138,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(observed.reads).toHaveLength(1)
   })
 
-  it('M1: the scoped assembly loader matches the broad loader on the target chat and stubs siblings', async () => {
+  it('the scoped assembly loader matches the broad loader on the target chat and stubs siblings', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
 
@@ -1183,7 +1183,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('M1: the scoped assembly loader keeps the embedded-copy fallback for a not-yet-extracted target chat', async () => {
+  it('the scoped assembly loader keeps the embedded-copy fallback for a not-yet-extracted target chat', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
 
@@ -1244,7 +1244,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('M4: the targeted character read performs zero whole-corpus payload reads', async () => {
+  it('the targeted character read performs zero whole-corpus payload reads', async () => {
     const fixture = buildLargeCorpusFixture()
     // The owned-row mask must still apply on the narrow path: give the target
     // character the one character-scoped secret (`oaiTTSConfig.apiKey`).
@@ -1274,7 +1274,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(body.character.oaiTTSConfig.apiKey).toBe(MASKED_PROVIDER_SECRET)
   })
 
-  it('Phase 2: character summaries project bounded scalars without hydrating raw character or chat payloads', async () => {
+  it('character summaries project bounded scalars without hydrating raw character or chat payloads', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
 
@@ -1294,7 +1294,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('M6: collection reads skip character and chat table payload reads', async () => {
+  it('collection reads skip character and chat table payload reads', async () => {
     const fixture = buildLargeCorpusFixture()
     const database = {
       ...fixture.database,
@@ -1347,7 +1347,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('L3: server-intent completion performs zero loadPersisted-shaped corpus reads', async () => {
+  it('server-intent completion performs zero loadPersisted-shaped corpus reads', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase({
       ...fixture.database,
@@ -1384,7 +1384,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(loadCountByTable.chats ?? 0).toBe(0)
   })
 
-  it('Phase 7 L3/K3: default chat dispatch performs zero prompt and restoration clones', async () => {
+  it('default chat dispatch performs zero prompt and restoration clones', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase({
       ...promptReadyLargeCorpusDatabase(fixture),
@@ -1415,7 +1415,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.restoration).toBe(0)
   })
 
-  it('Phase 7 L8: no-message input/start/output triggers perform zero full transcript clones', async () => {
+  it('no-message input/start/output triggers perform zero full transcript clones', async () => {
     const fixture = buildLargeCorpusFixture()
     const database = promptReadyLargeCorpusDatabase(fixture)
     const characters = database.characters as Array<Record<string, unknown>>
@@ -1472,7 +1472,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(cloneMetrics.fullTranscriptClones.output).toBe(0)
   })
 
-  it('L13: Realm character append performs zero loadPersisted-shaped corpus reads', async () => {
+  it('Realm character append performs zero loadPersisted-shaped corpus reads', async () => {
     const baseRevision = await importDatabase({
       characters: [],
       characterOrder: [],
@@ -1543,7 +1543,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('K1: message-only generation finalization performs zero loadPersisted-shaped corpus reads', async () => {
+  it('message-only generation finalization performs zero loadPersisted-shaped corpus reads', async () => {
     const fixture = buildLargeCorpusFixture()
     const paused = createPausedProvider('K1 scoped finalization reply')
     await restartHarness(paused.generationChat)
@@ -1591,7 +1591,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     })
   })
 
-  it('K1: chat-variable generation finalization avoids whole-corpus reads', async () => {
+  it('chat-variable generation finalization avoids whole-corpus reads', async () => {
     const fixture = buildLargeCorpusFixture()
     const database = structuredClone(fixture.database)
     const characters = database.characters as Array<Record<string, unknown>>
@@ -1651,7 +1651,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     })
   })
 
-  it('K2: asset GC avoids loadPersisted-shaped corpus reads', async () => {
+  it('asset GC avoids loadPersisted-shaped corpus reads', async () => {
     const settingRef = '1'.repeat(64)
     const collectionRef = '2'.repeat(64)
     const characterRef = '3'.repeat(64)
@@ -1719,7 +1719,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('M4: settings reads mask provider secrets without mutating persisted state', async () => {
+  it('settings reads mask provider secrets without mutating persisted state', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase({ ...fixture.database, openAIKey: 'sk-settings-secret' })
 
@@ -1741,7 +1741,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('L5: runtime bootstrap skips asset and domain payload reads', async () => {
+  it('runtime bootstrap skips asset and domain payload reads', async () => {
     const fixture = buildLargeCorpusFixture()
     const revision = await importDatabase(fixture.database)
 
@@ -1770,7 +1770,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(loadCountByTable.chats ?? 0).toBe(0)
   })
 
-  it('L10: a fresh (no-replay) SSE connect performs zero command-event history reads', async () => {
+  it('a fresh (no-replay) SSE connect performs zero command-event history reads', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
     const baseUrl = await listen()
@@ -1800,7 +1800,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('L10: a replay connect still reads the history; so does a fresh connect with metrics on', async () => {
+  it('a replay connect still reads the history; so does a fresh connect with metrics on', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
     const revision = (
@@ -1845,7 +1845,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(metricsRun.loadCountByTable.command_events).toBeGreaterThanOrEqual(1)
   })
 
-  it('M5: metric fields are not built when metrics are off (and are identical when on)', async () => {
+  it('metric fields are not built when metrics are off (and are identical when on)', async () => {
     // Unit guarantee on the real emitter: the thunk only runs after the
     // enabled guard.
     const thunk = vi.fn(() => ({ payloadBytes: 123 }))
@@ -1877,7 +1877,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     unsubscribeThrowing()
   })
 
-  it('M5: resource and bootstrap responses add metric serialization only when enabled', async () => {
+  it('resource and bootstrap responses add metric serialization only when enabled', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
 

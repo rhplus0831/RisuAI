@@ -228,7 +228,7 @@ describe('reportSendChatError', () => {
     expect(alertErrorSpy).toHaveBeenCalledWith('boom')
   })
 
-  it('L35: writes and persists the inlay bubble under the enabled resource guard', async () => {
+  it('writes and persists the inlay bubble under the enabled resource guard', async () => {
     const calls = stubCommandFetch()
     const char = makeChar()
     char.chats[0].message = [{ role: 'user', data: 'hi', time: 0, chatId: 'm-user' }]
@@ -277,7 +277,7 @@ describe('reportSendChatError', () => {
     expect(testDatabaseState.db.characters[0].chats[0].message.at(-1).data).toBe('```risuerror\nboom\n```')
   })
 
-  it('L35: keeps modal fallback for invalid targets while the guard is enabled', () => {
+  it('keeps modal fallback for invalid targets while the guard is enabled', () => {
     seed({ inlayErrorResponse: true, char: null })
     setResourceWriteGuardEnabled(true)
 

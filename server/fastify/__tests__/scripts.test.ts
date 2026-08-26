@@ -77,7 +77,7 @@ function regex(inPat: string, out: string, type: string, flag?: string, ableFlag
   return { comment: '', in: inPat, out, type, flag, ableFlag }
 }
 
-describe('Phase 7-6a processScript', () => {
+describe('processScript', () => {
   it('returns input unchanged when no scripts are registered', () => {
     const db = makeDatabase()
     const out = processScript(ctxFor(db), db.characters[0], 'hello', 'editprocess')
@@ -260,7 +260,7 @@ function makeChatForScripts(messages: { role: 'user' | 'char'; data: string }[] 
   } as unknown as Chat
 }
 
-describe('Phase 7-6b @@emo (no-op on the server)', () => {
+describe('@@emo (no-op on the server)', () => {
   it('matches but does not modify data', () => {
     const db = makeDatabase({
       presetRegex: [regex('foo', '@@emo happy', 'editprocess')],
@@ -270,7 +270,7 @@ describe('Phase 7-6b @@emo (no-op on the server)', () => {
   })
 })
 
-describe('Phase 7-6b @@move_top / @@move_bottom', () => {
+describe('@@move_top / @@move_bottom', () => {
   it('@@move_top extracts a single match (no `g`) and prepends with newline', () => {
     const db = makeDatabase({
       presetRegex: [regex('TAG', '@@move_top $&', 'editprocess')],
@@ -329,7 +329,7 @@ describe('Phase 7-6b @@move_top / @@move_bottom', () => {
   })
 })
 
-describe('Phase 7-6b @@inject', () => {
+describe('@@inject', () => {
   it('overwrites message[chatID].data with current data and strips the match', () => {
     const chat = makeChatForScripts([
       { role: 'user', data: 'original-0' },
@@ -363,7 +363,7 @@ describe('Phase 7-6b @@inject', () => {
   })
 })
 
-describe('Phase 7-6b @@repeat_back', () => {
+describe('@@repeat_back', () => {
   it('fires only when the regex does NOT match data; appends previous same-role match', () => {
     const chat = makeChatForScripts([
       { role: 'user', data: 'prev contains KEY here' },
@@ -436,7 +436,7 @@ describe('Phase 7-6b @@repeat_back', () => {
   })
 })
 
-describe('Phase 7-6b unknown @@ prefix falls through to plain replace', () => {
+describe('unknown @@ prefix falls through to plain replace', () => {
   it('treats an unrecognized @@ outScript like a normal regex replacement', () => {
     const db = makeDatabase({
       presetRegex: [regex('foo', '@@bogus replacement', 'editprocess')],
@@ -446,7 +446,7 @@ describe('Phase 7-6b unknown @@ prefix falls through to plain replace', () => {
   })
 })
 
-describe('Phase 7-6c ableFlag <order, actions> DSL parsing', () => {
+describe('ableFlag <order, actions> DSL parsing', () => {
   it('parses `<order N>` and stable-sorts by order desc', () => {
     const db = makeDatabase({
       presetRegex: [
@@ -531,7 +531,7 @@ describe('Phase 7-6c ableFlag <order, actions> DSL parsing', () => {
   })
 })
 
-describe('Phase 7-6c `cbs` action pre-expands script.in', () => {
+describe('`cbs` action pre-expands script.in', () => {
   it('expands {{user}} in the regex source before compiling', () => {
     const db = makeDatabase({
       username: 'Alex',
@@ -552,7 +552,7 @@ describe('Phase 7-6c `cbs` action pre-expands script.in', () => {
   })
 })
 
-describe('Phase 7-6c outScript prep', () => {
+describe('outScript prep', () => {
   it('leaves {{data}} as a literal in the replacement (SPA scripts.ts:181 `.replace(dreg, "$&")` is a no-op)', () => {
     // The SPA writes `outScript.replace(/{{data}}/g, '$&')`; in JS
     // replacement strings `$&` resolves to the inner regex's full
@@ -582,7 +582,7 @@ describe('Phase 7-6c outScript prep', () => {
   })
 })
 
-describe('Phase 7-6c action-only dispatch matches @@ prefixes', () => {
+describe('action-only dispatch matches @@ prefixes', () => {
   it('`<move_top>` action is equivalent to @@move_top prefix', () => {
     const db = makeDatabase({
       presetRegex: [regex('TAG', '$&', 'editprocess', '<move_top>', true)],
@@ -609,7 +609,7 @@ describe('Phase 7-6c action-only dispatch matches @@ prefixes', () => {
   })
 })
 
-describe('Phase 7-6d module regex scripts join the chain', () => {
+describe('module regex scripts join the chain', () => {
   it('runs module regex scripts after preset + character', () => {
     const db = makeDatabase({
       presetRegex: [regex('a', 'A', 'editprocess')],
@@ -695,8 +695,8 @@ function countRegexCompiles<T>(fn: () => T): { result: T; compiles: Map<string, 
   }
 }
 
-describe('M2 per-assembly prepared-script memo', () => {
-  it('M2: a simulated history window compiles each script regex once, not once per message', () => {
+describe('per-assembly prepared-script memo', () => {
+  it('a simulated history window compiles each script regex once, not once per message', () => {
     const mkDb = () =>
       makeDatabase({
         presetRegex: [regex('m2-pat-alpha\\d+', 'A', 'editprocess'), regex('m2-pat-beta\\d+', 'B', 'editprocess')],
@@ -741,7 +741,7 @@ describe('M2 per-assembly prepared-script memo', () => {
     expect(compiles.get('m2-pat-beta\\d+')).toBe(1)
   })
 
-  it('M2: cbs-action scripts still compile per message (their source pre-expands per call)', () => {
+  it('cbs-action scripts still compile per message (their source pre-expands per call)', () => {
     const db = makeDatabase({
       presetRegex: [regex('m2-cbs-src', 'X', 'editprocess', '<cbs>', true)],
     })
@@ -759,7 +759,7 @@ describe('M2 per-assembly prepared-script memo', () => {
     expect(compiles.get('m2-cbs-src')).toBe(5)
   })
 
-  it('M2: replacing the script list invalidates the memo (no stale prepared scripts)', () => {
+  it('replacing the script list invalidates the memo (no stale prepared scripts)', () => {
     const db = makeDatabase({
       presetRegex: [regex('m2-stale-a', 'ONE', 'editprocess')],
     })
@@ -772,7 +772,7 @@ describe('M2 per-assembly prepared-script memo', () => {
     expect(processScript(ctx, char, 'm2-stale-a', 'editprocess')).toBe('TWO')
   })
 
-  it('M2: replacing global scripts invalidates the prepared-script memo', () => {
+  it('replacing global scripts invalidates the prepared-script memo', () => {
     const db = makeDatabase({
       globalscript: [regex('m2-global', 'ONE', 'editprocess')],
     })
@@ -784,7 +784,7 @@ describe('M2 per-assembly prepared-script memo', () => {
     expect(processScript(ctx, char, 'm2-global', 'editprocess')).toBe('TWO')
   })
 
-  it('M2: an invalid precompiled regex stays a per-script no-op and the chain continues', () => {
+  it('an invalid precompiled regex stays a per-script no-op and the chain continues', () => {
     const db = makeDatabase({
       presetRegex: [regex('(m2-unbalanced', 'never', 'editprocess'), regex('m2-ok', 'fine', 'editprocess')],
     })

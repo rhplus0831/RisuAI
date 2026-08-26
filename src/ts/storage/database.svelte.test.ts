@@ -1139,7 +1139,7 @@ describe('mergeServerResourceCharacterRow', () => {
     expect(getDatabase().promptTemplate).toEqual([{ id: 'prompt-live', type: 'plain', text: 'keep me' }])
   })
 
-  it('L35: preserves hydrated hypaV3Data on message-empty chat stubs', () => {
+  it('preserves hydrated hypaV3Data on message-empty chat stubs', () => {
     const hypaV3Data = {
       memories: [{ id: 'memory-1', text: 'remember this' }],
     }
@@ -1235,7 +1235,7 @@ describe('mergeServerResourceCharacterRow', () => {
   })
 })
 
-describe('preset command rollback (L21)', () => {
+describe('preset command rollback', () => {
   it.each([
     {
       kind: 'model' as const,
@@ -2079,7 +2079,7 @@ describe('preset command rollback (L21)', () => {
     expect(getDatabase().botPresets[0]).toEqual({ id: 'preset-stub', name: 'Stub', image: 'img' })
   })
 
-  it('L21: failed save restores the saved preset collection and selected index', async () => {
+  it('failed save restores the saved preset collection and selected index', async () => {
     seedPresetDatabase({ temperature: 91 })
     const calls = stubFailedPresetCommand(() => {
       getDatabase().botPresets[0].name = 'Alpha edited after dispatch'
@@ -4204,7 +4204,7 @@ describe('preset command rollback (L21)', () => {
     expect(getDatabase().temperature).toBe(88)
   })
 
-  it('L21: failed copy restores the original collection after save-current and generated copy id', async () => {
+  it('failed copy restores the original collection after save-current and generated copy id', async () => {
     seedPresetDatabase({ temperature: 88 })
     let generatedCopyId: string | undefined
     const calls = stubFailedPresetCommand(() => {
@@ -4231,7 +4231,7 @@ describe('preset command rollback (L21)', () => {
     })
   })
 
-  it('L21: shared preset boundary keeps copy as one rollback-safe command', async () => {
+  it('shared preset boundary keeps copy as one rollback-safe command', async () => {
     seedPresetDatabase({ temperature: 77 })
     const beforeSourceTemperature = getDatabase().botPresets[0].temperature
     const beforeSelected = getDatabase().botPresetsId
@@ -4259,7 +4259,7 @@ describe('preset command rollback (L21)', () => {
     expect(presetCommands[0].body.newPresetId).toBeTruthy()
   })
 
-  it('L21: failed create removes the optimistic preset and generated id', async () => {
+  it('failed create removes the optimistic preset and generated id', async () => {
     seedPresetDatabase()
     let optimisticPresetId: string | undefined
     const calls = stubFailedPresetCommand(() => {
@@ -4286,7 +4286,7 @@ describe('preset command rollback (L21)', () => {
     })
   })
 
-  it('L21: failed update restores the patched preset row', async () => {
+  it('failed update restores the patched preset row', async () => {
     seedPresetDatabase()
     const calls = stubFailedPresetCommand(() => {
       getDatabase().botPresets[1].name = 'Newer Beta edit after dispatch'
@@ -4308,7 +4308,7 @@ describe('preset command rollback (L21)', () => {
     })
   })
 
-  it('L21: failed delete restores collection, selection, and setPreset scalars', async () => {
+  it('failed delete restores collection, selection, and setPreset scalars', async () => {
     seedPresetDatabase()
     const calls = stubFailedPresetCommand(() => {
       getDatabase().botPresets.push(makePreset('preset-c', 'Gamma appended after dispatch'))
@@ -4344,7 +4344,7 @@ describe('preset command rollback (L21)', () => {
     await waitForPresetCommand(calls, '/presets/preset-a')
   })
 
-  it('L21: failed reorder restores collection order and selected index', async () => {
+  it('failed reorder restores collection order and selected index', async () => {
     seedPresetDatabase({
       botPresets: [makePreset('preset-a', 'Alpha'), makePreset('preset-b', 'Beta'), makePreset('preset-c', 'Gamma')],
       botPresetsId: 1,
@@ -4391,7 +4391,7 @@ describe('preset command rollback (L21)', () => {
     })
   })
 
-  it('L21: failed select restores setPreset scalars without overwriting unrelated fields', async () => {
+  it('failed select restores setPreset scalars without overwriting unrelated fields', async () => {
     seedPresetDatabase()
     const beforePresets = clonePlain(getDatabase().botPresets)
     const beforePrompt = getDatabase().mainPrompt

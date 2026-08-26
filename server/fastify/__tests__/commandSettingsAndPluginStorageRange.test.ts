@@ -230,7 +230,7 @@ afterEach(async () => {
   rmSync(harness.dataDir, { recursive: true, force: true })
 })
 
-describe('Phase 2 settings-scalar mutation range', () => {
+describe('settings-scalar mutation range', () => {
   it('settings/:group writes only the settings row', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
@@ -386,7 +386,7 @@ describe('Phase 2 settings-scalar mutation range', () => {
   })
 })
 
-describe('Phase 2 plugin-storage mutation range', () => {
+describe('plugin-storage mutation range', () => {
   it('PUT plugin-storage/:key upserts one key and leaves siblings put', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()

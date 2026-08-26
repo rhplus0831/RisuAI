@@ -68,7 +68,7 @@ async function stopHarness(h: Harness): Promise<void> {
   if (h.staticRoot) rmSync(h.staticRoot, { recursive: true, force: true })
 }
 
-describe('Phase 2E static serving', () => {
+describe('static serving', () => {
   describe('with staticRoot present', () => {
     let harness: Harness
 
@@ -80,7 +80,7 @@ describe('Phase 2E static serving', () => {
       await stopHarness(harness)
     })
 
-    it('L20: keeps GET / outside immutable chunk caching', async () => {
+    it('keeps GET / outside immutable chunk caching', async () => {
       const res = await harness.app.inject({ method: 'GET', url: '/' })
       expect(res.statusCode).toBe(200)
       expect(res.body).toContain('<title>spa</title>')
@@ -111,7 +111,7 @@ describe('Phase 2E static serving', () => {
       expect(spa.body).not.toContain('globalThis.__FASTIFY__')
     })
 
-    it('L20: immutable-caches SPA assets under /assets', async () => {
+    it('immutable-caches SPA assets under /assets', async () => {
       const res = await harness.app.inject({ method: 'GET', url: '/assets/app.js' })
       expect(res.statusCode).toBe(200)
       expect(cacheControl(res)).toBe(STATIC_ASSET_CACHE_CONTROL)
@@ -127,7 +127,7 @@ describe('Phase 2E static serving', () => {
       expect(cacheControl(res)).not.toContain('max-age=0')
     })
 
-    it('L19: gzip-compresses large static assets without changing the bytes', async () => {
+    it('gzip-compresses large static assets without changing the bytes', async () => {
       const uncompressed = await harness.app.inject({ method: 'GET', url: '/assets/app.js' })
       expect(uncompressed.statusCode).toBe(200)
       expect(uncompressed.headers['content-encoding']).toBeUndefined()
@@ -145,7 +145,7 @@ describe('Phase 2E static serving', () => {
       expect(compressedBytes.length).toBeLessThan(Buffer.byteLength(STATIC_APP_JS) * 0.7)
     })
 
-    it('L19: leaves small API responses below the compression threshold uncompressed', async () => {
+    it('leaves small API responses below the compression threshold uncompressed', async () => {
       const res = await harness.app.inject({
         method: 'GET',
         url: '/api/v1/health',
@@ -157,7 +157,7 @@ describe('Phase 2E static serving', () => {
       expect(Buffer.byteLength(res.body)).toBeLessThan(1024)
     })
 
-    it('L20: keeps SPA fallback outside immutable chunk caching', async () => {
+    it('keeps SPA fallback outside immutable chunk caching', async () => {
       const res = await harness.app.inject({ method: 'GET', url: '/character/123' })
       expect(res.statusCode).toBe(200)
       expect(res.headers['content-type']).toContain('text/html')
@@ -178,14 +178,14 @@ describe('Phase 2E static serving', () => {
       expectNotImmutableCached(res)
     })
 
-    it('L20: preserves API 404 outside SPA fallback', async () => {
+    it('preserves API 404 outside SPA fallback', async () => {
       const res = await harness.app.inject({ method: 'GET', url: '/api/v1/does-not-exist' })
       expect(res.statusCode).toBe(404)
       expect(res.body).not.toContain('<title>spa</title>')
       expectNotImmutableCached(res)
     })
 
-    it('L20: preserves non-GET SPA fallback rejection', async () => {
+    it('preserves non-GET SPA fallback rejection', async () => {
       const res = await harness.app.inject({ method: 'POST', url: '/character/123' })
       expect(res.statusCode).toBe(404)
       expect(res.body).not.toContain('<title>spa</title>')

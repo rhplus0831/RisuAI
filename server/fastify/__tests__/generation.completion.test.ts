@@ -196,7 +196,7 @@ function waitForFrame(ms: number, signal: AbortSignal): Promise<boolean> {
   })
 }
 
-describe('Phase 6-1 POST /api/v1/generate/completion', () => {
+describe('POST /api/v1/generate/completion', () => {
   it('returns 401 without auth once a password is set', async () => {
     await harness.app.inject({
       method: 'POST',
@@ -1280,7 +1280,7 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
   })
 })
 
-describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
+describe('POST /api/v1/generate/completion (openai)', () => {
   const openaiPayload = {
     provider: 'openai',
     model: 'gpt-4o',
@@ -1396,7 +1396,7 @@ describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
     )
   })
 
-  it('L2: active streaming completion survives past the original deadline', async () => {
+  it('active streaming completion survives past the original deadline', async () => {
     vi.useFakeTimers()
     const req = fakeAbortReq()
     const { reply, raw } = fakeReply()
@@ -1431,7 +1431,7 @@ describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
     cleanup()
   })
 
-  it('L2: idle streaming completion aborts at the bounded deadline', async () => {
+  it('idle streaming completion aborts at the bounded deadline', async () => {
     vi.useFakeTimers()
     const req = fakeAbortReq()
     const { reply, raw } = fakeReply()
@@ -1454,7 +1454,7 @@ describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
     cleanup()
   })
 
-  it('L2: empty streaming completion tokens do not refresh the deadline', async () => {
+  it('empty streaming completion tokens do not refresh the deadline', async () => {
     vi.useFakeTimers()
     const req = fakeAbortReq()
     const { reply, raw } = fakeReply()
@@ -1620,7 +1620,7 @@ describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
   })
 })
 
-describe('Phase 6-4c POST /api/v1/generate/completion (nanogpt + openrouter)', () => {
+describe('POST /api/v1/generate/completion (nanogpt + openrouter)', () => {
   const okOpenAIResponse = (text: string) =>
     new Response(JSON.stringify({ choices: [{ message: { content: text }, finish_reason: 'stop' }] }), {
       status: 200,
@@ -1746,7 +1746,7 @@ describe('Phase 6-4c POST /api/v1/generate/completion (nanogpt + openrouter)', (
   })
 })
 
-describe('Phase 6-5 POST /api/v1/generate/completion (anthropic)', () => {
+describe('POST /api/v1/generate/completion (anthropic)', () => {
   const anthropicPayload = {
     provider: 'anthropic',
     model: 'claude-3-5-sonnet-20241022',
@@ -1919,7 +1919,7 @@ describe('Phase 6-5 POST /api/v1/generate/completion (anthropic)', () => {
   })
 })
 
-describe('Phase 6-6 POST /api/v1/generate/completion (mistral)', () => {
+describe('POST /api/v1/generate/completion (mistral)', () => {
   const mistralPayload = {
     provider: 'mistral',
     model: 'mistral-large-latest',
@@ -2022,7 +2022,7 @@ describe('Phase 6-6 POST /api/v1/generate/completion (mistral)', () => {
   })
 })
 
-describe('Phase 6-23 POST /api/v1/generate/completion (mistral additionalParams + reverse_proxy)', () => {
+describe('POST /api/v1/generate/completion (mistral additionalParams + reverse_proxy)', () => {
   it('applies additionalParams overlay to the mistral body + headers', async () => {
     let captured: { url: string; init: RequestInit } | null = null
     globalThis.fetch = (async (url: string, init: RequestInit) => {
@@ -2095,7 +2095,7 @@ describe('Phase 6-23 POST /api/v1/generate/completion (mistral additionalParams 
   })
 })
 
-describe('Phase 6-8 POST /api/v1/generate/completion (openai with custom baseUrl)', () => {
+describe('POST /api/v1/generate/completion (openai with custom baseUrl)', () => {
   // DeepSeek / DeepInfra route through provider='openai' with a derived
   // baseUrl (from modelInfo.endpoint) and a key from db.OaiCompAPIKeys[...].
   // The wire shape is identical to vanilla openai; only the URL differs.
@@ -2140,7 +2140,7 @@ describe('Phase 6-8 POST /api/v1/generate/completion (openai with custom baseUrl
   })
 })
 
-describe('Phase 6-17 POST /api/v1/generate/completion (xcustom OAI-compat additionalParams)', () => {
+describe('POST /api/v1/generate/completion (xcustom OAI-compat additionalParams)', () => {
   it('applies the additionalParams overlay to the outgoing body + headers', async () => {
     let captured: { url: string; init: RequestInit } | null = null
     globalThis.fetch = (async (url: string, init: RequestInit) => {
@@ -2264,7 +2264,7 @@ describe('Phase 6-17 POST /api/v1/generate/completion (xcustom OAI-compat additi
   })
 })
 
-describe('Phase 6-7 POST /api/v1/generate/completion (cohere)', () => {
+describe('POST /api/v1/generate/completion (cohere)', () => {
   const coherePayload = {
     provider: 'cohere',
     model: 'command-r-plus-04-2024',
@@ -2336,7 +2336,7 @@ describe('Phase 6-7 POST /api/v1/generate/completion (cohere)', () => {
   })
 })
 
-describe('Phase 6-24 POST /api/v1/generate/completion (cohere additionalParams + reverse_proxy)', () => {
+describe('POST /api/v1/generate/completion (cohere additionalParams + reverse_proxy)', () => {
   it('applies additionalParams overlay to the cohere body + headers', async () => {
     let captured: { url: string; init: RequestInit } | null = null
     globalThis.fetch = (async (url: string, init: RequestInit) => {
@@ -2405,7 +2405,7 @@ describe('Phase 6-24 POST /api/v1/generate/completion (cohere additionalParams +
   })
 })
 
-describe('Phase 6-12 POST /api/v1/generate/completion (openai-responses)', () => {
+describe('POST /api/v1/generate/completion (openai-responses)', () => {
   it('forwards to /v1/responses with input items', async () => {
     let captured: { url: string; init: RequestInit } | null = null
     globalThis.fetch = (async (url: string, init: RequestInit) => {
@@ -2441,7 +2441,7 @@ describe('Phase 6-12 POST /api/v1/generate/completion (openai-responses)', () =>
   })
 })
 
-describe('Phase 6-25 POST /api/v1/generate/completion (openai-responses additionalParams + reverse_proxy)', () => {
+describe('POST /api/v1/generate/completion (openai-responses additionalParams + reverse_proxy)', () => {
   it('applies additionalParams overlay to the openai-responses body + headers', async () => {
     let captured: { url: string; init: RequestInit } | null = null
     globalThis.fetch = (async (url: string, init: RequestInit) => {
@@ -2512,7 +2512,7 @@ describe('Phase 6-25 POST /api/v1/generate/completion (openai-responses addition
   })
 })
 
-describe('Phase 6-26 POST /api/v1/generate/completion (openai-legacy-instruct additionalParams + reverse_proxy)', () => {
+describe('POST /api/v1/generate/completion (openai-legacy-instruct additionalParams + reverse_proxy)', () => {
   it('applies additionalParams overlay to the legacy-instruct body + headers', async () => {
     let captured: { url: string; init: RequestInit } | null = null
     globalThis.fetch = (async (url: string, init: RequestInit) => {
@@ -2583,7 +2583,7 @@ describe('Phase 6-26 POST /api/v1/generate/completion (openai-legacy-instruct ad
   })
 })
 
-describe('Phase 6-10 POST /api/v1/generate/completion (openai-legacy-instruct)', () => {
+describe('POST /api/v1/generate/completion (openai-legacy-instruct)', () => {
   const legacyPayload = {
     provider: 'openai-legacy-instruct',
     model: 'gpt-3.5-turbo-instruct',
@@ -2645,7 +2645,7 @@ describe('Phase 6-10 POST /api/v1/generate/completion (openai-legacy-instruct)',
   })
 })
 
-describe('Phase 6-22 POST /api/v1/generate/completion (horde)', () => {
+describe('POST /api/v1/generate/completion (horde)', () => {
   it('400s when options.horde.prompt is missing', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const res = await harness.app.inject({
@@ -2731,7 +2731,7 @@ describe('Phase 6-22 POST /api/v1/generate/completion (horde)', () => {
   })
 })
 
-describe('Phase 6-21 POST /api/v1/generate/completion (bedrock)', () => {
+describe('POST /api/v1/generate/completion (bedrock)', () => {
   it('400s when options.bedrock.credentials is missing', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const res = await harness.app.inject({
@@ -2845,7 +2845,7 @@ describe('Phase 6-21 POST /api/v1/generate/completion (bedrock)', () => {
   })
 })
 
-describe('Phase 6-20 POST /api/v1/generate/completion (gemini vertex)', () => {
+describe('POST /api/v1/generate/completion (gemini vertex)', () => {
   it('400s when options.gemini.vertex is partially populated', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const res = await harness.app.inject({
@@ -2929,7 +2929,7 @@ describe('Phase 6-20 POST /api/v1/generate/completion (gemini vertex)', () => {
   })
 })
 
-describe('Phase 6-9 POST /api/v1/generate/completion (gemini)', () => {
+describe('POST /api/v1/generate/completion (gemini)', () => {
   const geminiPayload = {
     provider: 'gemini',
     model: 'gemini-2.5-flash',
@@ -3027,7 +3027,7 @@ describe('Phase 6-9 POST /api/v1/generate/completion (gemini)', () => {
   })
 })
 
-describe('Phase 6-16 POST /api/v1/generate/completion (ollama)', () => {
+describe('POST /api/v1/generate/completion (ollama)', () => {
   const ollamaPayload = {
     provider: 'ollama',
     model: 'llama3',

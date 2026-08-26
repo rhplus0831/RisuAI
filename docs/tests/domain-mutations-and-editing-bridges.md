@@ -135,8 +135,8 @@ coverage boundaries explicit without repeating one paragraph per assertion.
   keyed-list rollback. `chatCommands.test.ts` is many lines; `storage/database.svelte.test.ts` is 4,928;
   lorebook/prompt/script bridge suites are each multi-thousand-line. The scenarios are mostly valuable,
   but shared harnesses would make failures easier to diagnose.
-- “Phase”, “Lxx”, “Mxx”, “K4”, and “P1” titles expose migration history and internal clone goals more
-  clearly than product behavior. Keep the codes as suffixes, not the primary description.
+- Historical work-item identifiers such as “Phase”, “Lxx”, “Mxx”, “K4”, and “P1” do not belong in test
+  titles. Name tests for the behavior, scope, or performance contract they protect.
 - Clone-count and exact snapshot-boundary assertions protect real large-corpus regressions but are
   intentionally coupled to implementation. Preserve a dedicated performance gate and also assert user
   outcomes.

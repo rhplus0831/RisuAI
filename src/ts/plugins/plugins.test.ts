@@ -2382,7 +2382,7 @@ describe('plugin database command bridge', () => {
     expect(Object.keys(safeDb)).not.toContain('botPresets')
   })
 
-  it('M8: pluginStorage.getItem clones only the selected key without a whole-DB snapshot', () => {
+  it('pluginStorage.getItem clones only the selected key without a whole-DB snapshot', () => {
     const apis = getV2PluginAPIs()
     const largeBody = 'x'.repeat(80_000)
     getDatabase().characters = [
@@ -2426,7 +2426,7 @@ describe('plugin database command bridge', () => {
     })
   })
 
-  it('M8: pluginStorage.getItem preserves missing scalar and falsey results', () => {
+  it('pluginStorage.getItem preserves missing scalar and falsey results', () => {
     const apis = getV2PluginAPIs()
     getDatabase().pluginCustomStorage = {
       empty: '',
@@ -2455,7 +2455,7 @@ describe('plugin database command bridge', () => {
     expect(Object.prototype.hasOwnProperty.call(getDatabase(), 'pluginCustomStorage')).toBe(false)
   })
 
-  it('M8: pluginStorage.getItem detaches array values from live plugin storage', () => {
+  it('pluginStorage.getItem detaches array values from live plugin storage', () => {
     const apis = getV2PluginAPIs()
     getDatabase().pluginCustomStorage = {
       arrayValue: [{ label: 'live' }],

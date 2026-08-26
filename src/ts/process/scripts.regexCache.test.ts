@@ -9,7 +9,7 @@ import {
   resetScriptCache,
 } from './scripts'
 
-describe('compiled regex memoization (Phase 7)', () => {
+describe('compiled regex memoization', () => {
   beforeEach(() => {
     resetScriptCache()
   })
@@ -52,7 +52,7 @@ describe('compiled regex memoization (Phase 7)', () => {
     expect(getCompiledRegex('z', 'g')).not.toBe(before)
   })
 
-  it('L32: bestMatchCache is capped and evicts the least recently used match', () => {
+  it('bestMatchCache is capped and evicts the least recently used match', () => {
     for (let i = 0; i < 1000; i += 1) {
       cacheBestMatchForTesting(`asset-${i}`, `match-${i}`)
     }
@@ -67,7 +67,7 @@ describe('compiled regex memoization (Phase 7)', () => {
     expect(getBestMatchForTesting('asset-1000')).toBe('match-1000')
   })
 
-  it('L32: resetScriptCache clears bestMatchCache with the script caches', () => {
+  it('resetScriptCache clears bestMatchCache with the script caches', () => {
     cacheBestMatchForTesting('asset-reset', 'match-reset')
     expect(getBestMatchCacheSizeForTesting()).toBe(1)
 

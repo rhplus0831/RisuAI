@@ -760,7 +760,7 @@ describe('generation finalization row indicator', () => {
 })
 
 describe('customHTML template memo', () => {
-  it('L31: repeated customHTML rows share one parsed template per template version', async () => {
+  it('repeated customHTML rows share one parsed template per template version', async () => {
     seedDatabase(4)
     mountCustomHtmlRows(4)
     await settle()
@@ -779,7 +779,7 @@ describe('customHTML template memo', () => {
     expect(parserCalls).toHaveLength(0)
   })
 
-  it('L31: guiHTML changes and cbs-condition changes invalidate the customHTML template memo', async () => {
+  it('guiHTML changes and cbs-condition changes invalidate the customHTML template memo', async () => {
     seedDatabase(2)
     mountCustomHtmlRows(2)
     await settle()
@@ -835,7 +835,7 @@ describe('customHTML template memo', () => {
     expect(target.textContent).toContain('parsed-message:visible message 0')
   })
 
-  it('L31: parse failures return an empty placeholder without poisoning the memo', () => {
+  it('parse failures return an empty placeholder without poisoning the memo', () => {
     const body = renderCustomHtmlTemplate(customHtmlMocks.templates.throwing, {
       firstmsg: false,
       chatRole: 'char',

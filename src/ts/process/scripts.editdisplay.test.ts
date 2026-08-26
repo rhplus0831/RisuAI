@@ -145,8 +145,8 @@ afterEach(() => {
   selectedCharID.set(-1)
 })
 
-describe('editdisplay render path logging (L38)', () => {
-  it('L38: a display-trigger render pass writes nothing to console.log', async () => {
+describe('editdisplay render path logging', () => {
+  it('a display-trigger render pass writes nothing to console.log', async () => {
     const char = seedDb()
     const logSpy = vi.spyOn(console, 'log')
 
@@ -161,7 +161,7 @@ describe('editdisplay render path logging (L38)', () => {
     }
   })
 
-  it('I20: @@inject display action runs under the resource guard without durable persistence', async () => {
+  it('@@inject display action runs under the resource guard without durable persistence', async () => {
     const char = seedDb()
     char.customscript = [
       {

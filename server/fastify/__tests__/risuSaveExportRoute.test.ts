@@ -142,7 +142,7 @@ function authedInject(opts: Record<string, unknown>) {
   })
 }
 
-describe('Phase 9-8b repository .risu export route', () => {
+describe('repository .risu export route', () => {
   it('exports repository snapshots as downloadable RISUSAVE block bytes by default', async () => {
     persistExportableDatabase(harness.dataDir)
 

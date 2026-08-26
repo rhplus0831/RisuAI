@@ -1471,7 +1471,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     expect(getServerChatCalls()).toHaveLength(0)
   })
 
-  it('routes a non-interactive Lua trigger to /chat (slice 3b: the VM runs editRequest server-side)', async () => {
+  it('routes a non-interactive Lua trigger to /chat for server-side editRequest', async () => {
     await seedEcho()
     // Armed: a non-interactive Lua char is now in-subset (server-mandatory), so the
     // local assembler must never be entered.

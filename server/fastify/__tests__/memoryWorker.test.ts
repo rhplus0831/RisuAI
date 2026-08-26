@@ -269,7 +269,7 @@ describe('memory worker lifecycle and dispatch', () => {
     }
   })
 
-  it("L17: round-robins claims across chats so one chat's backlog cannot starve another", async () => {
+  it("round-robins claims across chats so one chat's backlog cannot starve another", async () => {
     const db = openDatabase(makeDataDir())
     try {
       enqueueMemoryJob(db, { id: 'job-a-1', chatId: 'chat-a', kind: 'chunk', payload: {} })
@@ -300,7 +300,7 @@ describe('memory worker lifecycle and dispatch', () => {
     }
   })
 
-  it("L17: one chat's batch is bounded to a single tick and the other chat is served next", async () => {
+  it("one chat's batch is bounded to a single tick and the other chat is served next", async () => {
     const db = openDatabase(makeDataDir())
     try {
       enqueueMemoryJob(db, { id: 'job-a-1', chatId: 'chat-a', kind: 'chunk', payload: {} })
@@ -336,7 +336,7 @@ describe('memory worker lifecycle and dispatch', () => {
     }
   })
 
-  it('L18: drains a multi-batch backlog through immediate productive ticks', async () => {
+  it('drains a multi-batch backlog through immediate productive ticks', async () => {
     vi.useFakeTimers()
     const db = openDatabase(makeDataDir())
     try {
@@ -405,7 +405,7 @@ describe('memory worker lifecycle and dispatch', () => {
     }
   })
 
-  it('L18: keeps idle polling on the configured delay', async () => {
+  it('keeps idle polling on the configured delay', async () => {
     vi.useFakeTimers()
     const db = openDatabase(makeDataDir())
     try {
@@ -443,7 +443,7 @@ describe('memory worker lifecycle and dispatch', () => {
     }
   })
 
-  it('L18: stop prevents pending fast-path ticks after productive work settles', async () => {
+  it('stop prevents pending fast-path ticks after productive work settles', async () => {
     vi.useFakeTimers()
     const db = openDatabase(makeDataDir())
     try {
@@ -784,7 +784,7 @@ describe('memory worker lifecycle and dispatch', () => {
     }
   })
 
-  it('L17: sweeps old terminal memory jobs when worker maintenance starts', async () => {
+  it('sweeps old terminal memory jobs when worker maintenance starts', async () => {
     const db = openDatabase(makeDataDir())
     try {
       for (const [id, status] of [

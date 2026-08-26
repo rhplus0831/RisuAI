@@ -455,7 +455,7 @@ describe('reroll buffer lifecycle (generation + confirm boundary)', () => {
   })
 })
 
-describe('reroll clone cost (Phase 3 cheap wins)', () => {
+describe('reroll clone cost', () => {
   // A long transcript whose tail is a single freshly generated row. The clone-cost
   // harness proves the post-send / regenerate paths never deep-clone the whole
   // transcript just to keep its trailing rows.

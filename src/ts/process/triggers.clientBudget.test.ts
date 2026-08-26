@@ -51,8 +51,8 @@ afterEach(() => {
   selectedCharID.set(-1)
 })
 
-describe('client trigger execution budget (L38)', () => {
-  it('L38: manual v2Loop stops at the shared client trigger budget', async () => {
+describe('client trigger execution budget', () => {
+  it('manual v2Loop stops at the shared client trigger budget', async () => {
     const char = characterWithTriggers([
       {
         comment: 'spin',
@@ -90,7 +90,7 @@ describe('client trigger execution budget (L38)', () => {
     expect(Number(result?.chat.scriptstate?.$loopCount)).toBeGreaterThan(0)
   })
 
-  it('L38: manual trigger abort signal interrupts v2Wait before later effects', async () => {
+  it('manual trigger abort signal interrupts v2Wait before later effects', async () => {
     const char = characterWithTriggers([
       {
         comment: 'wait',
@@ -132,7 +132,7 @@ describe('client trigger execution budget (L38)', () => {
     expect(result?.chat.scriptstate?.$afterWait).toBeUndefined()
   })
 
-  it('L38: manual v2Wait wakes at the wall-clock budget without an abort signal', async () => {
+  it('manual v2Wait wakes at the wall-clock budget without an abort signal', async () => {
     const char = characterWithTriggers([
       {
         comment: 'wait-budget',
@@ -169,7 +169,7 @@ describe('client trigger execution budget (L38)', () => {
     expect(result?.chat.scriptstate?.$afterBudgetWait).toBeUndefined()
   })
 
-  it('L38: completed manual trigger keeps trigger id for post-run display refresh', async () => {
+  it('completed manual trigger keeps trigger id for post-run display refresh', async () => {
     const char = characterWithTriggers([
       {
         comment: 'show-id',

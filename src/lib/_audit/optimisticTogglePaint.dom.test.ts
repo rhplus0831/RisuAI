@@ -1,7 +1,7 @@
 // Paint-half coverage: click a sidebar/jailbreak toggle and assert the visual
 // toggle flips optimistically.
 // The settle half (flip survives command + refreeze) is the Tier-2 journey in
-// server/fastify/browser-smoke/phase0VisibleState.spec.ts.
+// server/fastify/browser-smoke/visibleStateRecovery.spec.ts.
 //
 // Family: optimistic paint/rollback (taxonomy §5). Tier 1.
 //
@@ -206,7 +206,7 @@ afterEach(async () => {
   replaceResourceDatabase({} as never)
 })
 
-describe('Phase 0 / Journey 2: optimistic toggle paint (DOM oracle, Tier 1)', () => {
+describe('optimistic toggle paint (DOM oracle)', () => {
   it('flips the rendered jailbreak checkbox immediately, before the save resolves', async () => {
     const transport = stubDeferredCommandFetch()
     component = mount(Toggles, {

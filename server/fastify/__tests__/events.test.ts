@@ -239,7 +239,7 @@ afterEach(async () => {
   }
 })
 
-describe('Phase 9-5a command events stream', () => {
+describe('command events stream', () => {
   it('bounds retained command event history while preserving live fanout', () => {
     const sink = new InMemoryCommandEventSink(2)
     const seen: CommandEvent[] = []
@@ -315,7 +315,7 @@ describe('Phase 9-5a command events stream', () => {
     }
   })
 
-  it('L8: prunes by revision keep-window with a bounded range delete, not an OFFSET walk', () => {
+  it('prunes by revision keep-window with a bounded range delete, not an OFFSET walk', () => {
     const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-event-prune-'))
     const db = openDatabase(dataDir)
     try {
@@ -656,7 +656,7 @@ describe('Phase 9-5a command events stream', () => {
     }
   })
 
-  it('replays the writer-session origin so reconnect keeps own-echo suppression (L29)', async () => {
+  it('replays the writer-session origin so reconnect keeps own-echo suppression', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       streamGeminiThoughts: false,
@@ -1102,7 +1102,7 @@ describe('Phase 9-5a command events stream', () => {
     reader?.releaseLock()
   })
 
-  it('never arms the heartbeat or memory subscription after a mid-handler teardown (L11)', async () => {
+  it('never arms the heartbeat or memory subscription after a mid-handler teardown', async () => {
     // A slow-consumer overflow during the replay flush runs `cleanup` before
     // the live-delivery legs are armed; the `cleanedUp` latch then keeps
     // cleanup from ever running again, so arming anyway would leak both

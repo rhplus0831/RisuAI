@@ -5,8 +5,8 @@ import { createRequestScopedStoredAssetResolver } from '../src/routes/generation
 import type { PromptChatEvent } from '../src/prompt/sseEvents.js'
 import { expectNoSuccessDoneAfterAbort } from './helpers/terminalFrameAssertions.js'
 
-describe('H1 provider transport abort contract', () => {
-  it('H1: treats sliding-deadline silent transport return as aborted', async () => {
+describe('provider transport abort contract', () => {
+  it('treats sliding-deadline silent transport return as aborted', async () => {
     const controller = new AbortController()
     const events: PromptChatEvent[] = []
     const sideEffects = vi.fn((): PromptChatEvent[] => [
@@ -32,7 +32,7 @@ describe('H1 provider transport abort contract', () => {
     expect(postGeneration).not.toHaveBeenCalled()
   })
 
-  it('H1: re-checks abort before an in-loop provider done frame', async () => {
+  it('re-checks abort before an in-loop provider done frame', async () => {
     const controller = new AbortController()
     const events: PromptChatEvent[] = []
     const sideEffects = vi.fn((): PromptChatEvent[] => [])
@@ -57,7 +57,7 @@ describe('H1 provider transport abort contract', () => {
     expect(postGeneration).not.toHaveBeenCalled()
   })
 
-  it('H1: treats non-streaming resultFrames-style silent return as aborted', async () => {
+  it('treats non-streaming resultFrames-style silent return as aborted', async () => {
     const controller = new AbortController()
     const events: PromptChatEvent[] = []
     const sideEffects = vi.fn((): PromptChatEvent[] => [])

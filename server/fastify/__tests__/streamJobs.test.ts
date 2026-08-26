@@ -236,7 +236,7 @@ describe('JobRegistry buffering and lifecycle', () => {
     )
   })
 
-  it('L1: identifies non-terminal chat SSE activity for sliding generation deadlines', () => {
+  it('identifies non-terminal chat SSE activity for sliding generation deadlines', () => {
     expect(isStreamDeadlineActivityFrame('event: token\ndata: {"content":"hello"}\n\n')).toBe(true)
     expect(isStreamDeadlineActivityFrame('event: token\ndata: {"content":""}\n\n')).toBe(false)
     expect(isStreamDeadlineActivityFrame('event: done\ndata: {}\n\n')).toBe(false)
@@ -557,7 +557,7 @@ describe('JobRegistry buffering and lifecycle', () => {
     expect(reg.has(job.id)).toBe(false)
   })
 
-  it('L1: sliding durable generation jobs survive past the original deadline while active', () => {
+  it('sliding durable generation jobs survive past the original deadline while active', () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_000_000)
     const reg = new JobRegistry()
@@ -581,7 +581,7 @@ describe('JobRegistry buffering and lifecycle', () => {
     expect(job.abortController.signal.aborted).toBe(true)
   })
 
-  it('L1: silent sliding durable generation jobs still die within the bounded deadline', () => {
+  it('silent sliding durable generation jobs still die within the bounded deadline', () => {
     vi.useFakeTimers()
     vi.setSystemTime(2_000_000)
     const reg = new JobRegistry()
@@ -612,7 +612,7 @@ describe('JobRegistry buffering and lifecycle', () => {
     expect(job.abortController.signal.aborted).toBe(true)
   })
 
-  it('L5: active proxy stream jobs extend deadlineAt on JSON activity', () => {
+  it('active proxy stream jobs extend deadlineAt on JSON activity', () => {
     vi.useFakeTimers()
     vi.setSystemTime(4_000_000)
     const reg = new JobRegistry()
@@ -647,7 +647,7 @@ describe('JobRegistry buffering and lifecycle', () => {
     expect(job.abortController.signal.aborted).toBe(true)
   })
 
-  it('L5: silent proxy stream jobs abort at the bounded deadline', () => {
+  it('silent proxy stream jobs abort at the bounded deadline', () => {
     vi.useFakeTimers()
     vi.setSystemTime(5_000_000)
     const reg = new JobRegistry()
@@ -790,7 +790,7 @@ describe('runStreamJob', () => {
     expect(events.at(-1)).toMatchObject({ type: 'error', status: 504 })
   })
 
-  it('stops consuming the upstream once the no-viewer buffer overflows (L15)', async () => {
+  it('stops consuming the upstream once the no-viewer buffer overflows', async () => {
     // Stream far more than the pending-buffer byte cap with NO viewer attached.
     // Once the drop-oldest window overflows, no late viewer can ever see a
     // coherent stream, so the job must abort the upstream instead of draining

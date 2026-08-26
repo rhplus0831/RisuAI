@@ -8,7 +8,7 @@ function makeDb(aiModel = 'gpt4'): Database {
   return { aiModel } as unknown as Database
 }
 
-describe('Phase 7-8c finalizeRequestBudget — under budget', () => {
+describe('finalizeRequestBudget — under budget', () => {
   it('passes through and returns maxResponse as outputTokens', () => {
     const formated: OpenAIChat[] = [
       { role: 'system', content: 'hello' },
@@ -44,7 +44,7 @@ describe('Phase 7-8c finalizeRequestBudget — under budget', () => {
   })
 })
 
-describe('Phase 7-8c finalizeRequestBudget — outputTokens clamp', () => {
+describe('finalizeRequestBudget — outputTokens clamp', () => {
   it('clamps outputTokens to the remaining headroom', () => {
     const formated: OpenAIChat[] = [{ role: 'user', content: 'a'.repeat(80) }]
     const result = finalizeRequestBudget({
@@ -61,7 +61,7 @@ describe('Phase 7-8c finalizeRequestBudget — outputTokens clamp', () => {
   })
 })
 
-describe('Phase 7-8c finalizeRequestBudget — trimming', () => {
+describe('finalizeRequestBudget — trimming', () => {
   it('zeroes removable entries front-to-back then filters empties', () => {
     const formated: OpenAIChat[] = [
       { role: 'system', content: 'system-prompt' },
@@ -157,7 +157,7 @@ describe('Phase 7-8c finalizeRequestBudget — trimming', () => {
   })
 })
 
-describe('Phase 7-8c finalizeRequestBudget — tokenizer routing', () => {
+describe('finalizeRequestBudget — tokenizer routing', () => {
   it('uses overhead 3 + name accounting for non-gpt models', async () => {
     const formated: OpenAIChat[] = [{ role: 'system', content: 'hello', name: 'hello' }]
     const db = makeDb('claude-3-5-sonnet')

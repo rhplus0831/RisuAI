@@ -4449,7 +4449,7 @@ describe('chat command projection helpers', () => {
   })
 })
 
-describe('Phase 0 chat-scoped snapshot kit', () => {
+describe('chat-scoped snapshot kit', () => {
   it('captures only the active chat, never the whole characters array', () => {
     setDatabaseLite(seedCloneCostDb() as any)
     selectedCharID.set(0)
@@ -4515,7 +4515,7 @@ describe('Phase 0 chat-scoped snapshot kit', () => {
   })
 })
 
-describe('Phase 0 chat-scriptstate snapshot kit', () => {
+describe('chat-scriptstate snapshot kit', () => {
   it('captures only the scriptstate map and an optional note, never a chat or the collection', () => {
     setDatabaseLite(seedCloneCostDb() as any)
     selectedCharID.set(0)
@@ -4572,7 +4572,7 @@ describe('Phase 0 chat-scriptstate snapshot kit', () => {
 })
 
 // Chat selection rollback restores only `chatPage`, not the full character collection.
-describe('H2 chat-selection snapshot', () => {
+describe('chat-selection snapshot', () => {
   it('captures only selection scalars and performs zero clone work', () => {
     setDatabaseLite(seedCloneCostDb() as any)
     selectedCharID.set(0)
@@ -4777,7 +4777,7 @@ describe('H2 chat-selection snapshot', () => {
   })
 })
 
-describe('Phase 5 chat metadata dispatch rollback', () => {
+describe('chat metadata dispatch rollback', () => {
   it('restores the original folder name when overlapping broad folder updates both fail', async () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chat-folders/folder-a' && init.method === 'PATCH',
@@ -5109,7 +5109,7 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
   })
 })
 
-describe('Phase 2 chat-metadata-row rollback', () => {
+describe('chat-metadata-row rollback', () => {
   function scalarMetadata(chatIndex: number): ChatSnapshot {
     const chat = getDatabase().characters[0].chats[chatIndex] as unknown as Record<string, unknown>
     const metadata: Record<string, unknown> = {}
@@ -5247,7 +5247,7 @@ describe('Phase 2 chat-metadata-row rollback', () => {
   })
 })
 
-describe('Phase 4 chat metadata allowed-key diff (M9)', () => {
+describe('chat metadata allowed-key diff', () => {
   it('keeps generationSettings out of generic chat metadata patching', () => {
     const previous = orderedChatMetadata({
       name: 'Same chat',
@@ -5276,7 +5276,7 @@ describe('Phase 4 chat metadata allowed-key diff (M9)', () => {
     expect(changedChatMetadata(previous, current)).toEqual({})
   })
 
-  it('M9: allowed metadata diffs match the previous clone-sanitize patch bytes', () => {
+  it('allowed metadata diffs match the previous clone-sanitize patch bytes', () => {
     const previous = orderedChatMetadata({
       name: 'Old chat',
       note: 'same note',
@@ -5320,7 +5320,7 @@ describe('Phase 4 chat metadata allowed-key diff (M9)', () => {
     expect(patch).not.toHaveProperty('hypaV3Data')
   })
 
-  it('M9: message-only changes produce an empty patch without serializing message arrays', () => {
+  it('message-only changes produce an empty patch without serializing message arrays', () => {
     const body = 'x'.repeat(1200)
     const previous = orderedChatMetadata({ name: 'Same chat', note: 'same note' })
     previous.message = Array.from({ length: 120 }, (_unused, index) => ({
@@ -5348,7 +5348,7 @@ describe('Phase 4 chat metadata allowed-key diff (M9)', () => {
     expect(instrumented.maxClonedSize).toBeLessThan(messageSize)
   })
 
-  it('M9: changed object metadata is detached from the current chat record', () => {
+  it('changed object metadata is detached from the current chat record', () => {
     const previous = orderedChatMetadata({
       name: 'Same chat',
       bookmarks: ['msg-old'],
@@ -5391,7 +5391,7 @@ describe('Phase 4 chat metadata allowed-key diff (M9)', () => {
   })
 })
 
-describe('Phase 2 chat-scoped message dispatch', () => {
+describe('chat-scoped message dispatch', () => {
   it('dispatchReplaceMessagesScoped rolls back only the active chat on failure', async () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a/messages' && init.method === 'PUT',
@@ -5840,7 +5840,7 @@ describe('Phase 2 chat-scoped message dispatch', () => {
     expect(getDatabase().characters[0].chats[0].message).toEqual(previousChat.message)
   })
 
-  it('P5: scoped compatible chat preparation preserves accepted metadata when message persistence fails', async () => {
+  it('scoped compatible chat preparation preserves accepted metadata when message persistence fails', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
       'fetch',
@@ -5890,7 +5890,7 @@ describe('Phase 2 chat-scoped message dispatch', () => {
   })
 })
 
-describe('Phase 4 chat-scoped message attempt rollback', () => {
+describe('chat-scoped message attempt rollback', () => {
   function seedActiveMessages(messages: Message[]): void {
     getDatabase().characters[0].chats[0].message = jsonClone(messages)
   }
@@ -6571,7 +6571,7 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
   })
 })
 
-describe('Phase 2 scriptstate-scoped var dispatch', () => {
+describe('scriptstate-scoped var dispatch', () => {
   it('dispatchPatchChatScriptstateScoped restores only the chat scriptstate on failure', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
@@ -6988,7 +6988,7 @@ describe('Phase 2 scriptstate-scoped var dispatch', () => {
   })
 })
 
-describe('Phase 3 runner rejection rollback (L36)', () => {
+describe('runner rejection rollback', () => {
   it('reconciles all successful optimistic sequence steps once through the async wrapper', async () => {
     setCachedServerCommandRevision(70)
     const bases: number[] = []
@@ -7057,7 +7057,7 @@ describe('Phase 3 runner rejection rollback (L36)', () => {
     expect(rollback).not.toHaveBeenCalled()
   })
 
-  it('L36: a rejecting factory in runOptimisticCommandSequence rolls back instead of silently diverging', async () => {
+  it('a rejecting factory in runOptimisticCommandSequence rolls back instead of silently diverging', async () => {
     stubCommandFetch()
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     const rollback = vi.fn()
@@ -7077,7 +7077,7 @@ describe('Phase 3 runner rejection rollback (L36)', () => {
     consoleError.mockRestore()
   })
 
-  it('L36: a mid-sequence rejection rolls back once and skips the remaining commands', async () => {
+  it('a mid-sequence rejection rolls back once and skips the remaining commands', async () => {
     stubCommandFetch()
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     const rollback = vi.fn()
@@ -7101,8 +7101,8 @@ describe('Phase 3 runner rejection rollback (L36)', () => {
   })
 })
 
-describe('Phase 3 setCurrentChat scoped snapshot (U4)', () => {
-  it('U4: replacing the active chat captures a chat-scoped baseline, never the whole characters array', async () => {
+describe('setCurrentChat scoped snapshot', () => {
+  it('replacing the active chat captures a chat-scoped baseline, never the whole characters array', async () => {
     setDatabaseLite(seedCloneCostDb() as any) // char-0 large (40 messages), siblings small
     selectedCharID.set(1)
     const charactersSize = JSON.stringify(getDatabase().characters).length
@@ -7124,7 +7124,7 @@ describe('Phase 3 setCurrentChat scoped snapshot (U4)', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
 
-  it('U4: a failed update rolls back only the active chat row, preserving sibling edits', async () => {
+  it('a failed update rolls back only the active chat row, preserving sibling edits', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
       'fetch',

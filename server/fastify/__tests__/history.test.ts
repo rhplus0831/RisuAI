@@ -95,7 +95,7 @@ function ctxFor(db: Database): ExpandContext {
   return { database: db }
 }
 
-describe('Phase 7-5a exampleMessage', () => {
+describe('exampleMessage', () => {
   it('returns [] when char.exampleMessage is empty', async () => {
     const db = makeDatabase()
     expect(exampleMessage(ctxFor(db), db.characters[0])).toEqual([])
@@ -171,7 +171,7 @@ describe('Phase 7-5a exampleMessage', () => {
   })
 })
 
-describe('Phase 7-5a buildHistoryWindow start-new-chat marker', () => {
+describe('buildHistoryWindow start-new-chat marker', () => {
   it('emits the marker when neither novelai nor trimStartNewChat applies', async () => {
     const db = makeDatabase()
     const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
@@ -202,7 +202,7 @@ describe('Phase 7-5a buildHistoryWindow start-new-chat marker', () => {
   })
 })
 
-describe('Phase 7-5a buildHistoryWindow first message', () => {
+describe('buildHistoryWindow first message', () => {
   it('uses currentChar.firstMessage when fmIndex === -1', async () => {
     const db = makeDatabase({
       characters: [
@@ -240,7 +240,7 @@ describe('Phase 7-5a buildHistoryWindow first message', () => {
   })
 })
 
-describe('Phase 7-5a buildHistoryWindow makeMs filter', () => {
+describe('buildHistoryWindow makeMs filter', () => {
   it('drops messages flagged disabled: true', async () => {
     const db = makeDatabase({
       characters: [
@@ -298,7 +298,7 @@ describe('Phase 7-5a buildHistoryWindow makeMs filter', () => {
   })
 })
 
-describe('Phase 7-5a buildHistoryWindow role mapping', () => {
+describe('buildHistoryWindow role mapping', () => {
   it("maps msg.role 'user' to 'user' and 'char' to 'assistant'", async () => {
     const db = makeDatabase({
       characters: [
@@ -369,7 +369,7 @@ function regex(
   return { comment: '', in: inPat, out, type, flag, ableFlag: false }
 }
 
-describe('Phase 7-5b buildHistoryWindow per-message processScript', () => {
+describe('buildHistoryWindow per-message processScript', () => {
   it('reparses the first CBS result with the current message index before regex scripts', async () => {
     const chat = makeChat({
       scriptstate: { $outer: 'user={{user}} index={{chat_index}}' },
@@ -435,7 +435,7 @@ describe('Phase 7-5b buildHistoryWindow per-message processScript', () => {
   })
 })
 
-describe('Phase 7-5b buildHistoryWindow memo / chatId backfill', () => {
+describe('buildHistoryWindow memo / chatId backfill', () => {
   it('passes msg.chatId through to memo when present', async () => {
     const db = makeDatabase({
       characters: [
@@ -472,7 +472,7 @@ describe('Phase 7-5b buildHistoryWindow memo / chatId backfill', () => {
   })
 })
 
-describe('Phase 7-5b buildHistoryWindow sendName wrapper', () => {
+describe('buildHistoryWindow sendName wrapper', () => {
   it('does not prefix the first message when sendName is false', async () => {
     const db = makeDatabase({
       characters: [makeCharacter({ firstMessage: 'hello', chats: [makeChat()] })],
@@ -658,7 +658,7 @@ describe('Phase 7-5b buildHistoryWindow sendName wrapper', () => {
   })
 })
 
-describe('Phase 7-5b buildHistoryWindow <Thoughts> extraction', () => {
+describe('buildHistoryWindow <Thoughts> extraction', () => {
   it('strips <Thoughts> from content', async () => {
     const db = makeDatabase({
       characters: [
@@ -776,7 +776,7 @@ function findUser(messages: import('vitest').Mock extends never ? never : any) {
   return messages.find((m: any) => m.role === 'user' && m.memo !== undefined)
 }
 
-describe('Phase 7-5c char-role inlay tag handling', () => {
+describe('char-role inlay tag handling', () => {
   it('strips {{inlay::x}} from char-role content without pushing a multimodal', async () => {
     const db = makeDatabase({
       characters: [
@@ -883,7 +883,7 @@ describe('Phase 7-5c char-role inlay tag handling', () => {
   })
 })
 
-describe('Phase 7-5c user-role inlay tag handling', () => {
+describe('user-role inlay tag handling', () => {
   it('looks up and strips all three inlay tag types', async () => {
     const db = makeDatabase({
       characters: [
@@ -944,7 +944,7 @@ describe('Phase 7-5c user-role inlay tag handling', () => {
   })
 })
 
-describe('Phase 7-5c {{asset_prompt::name}} handling', () => {
+describe('{{asset_prompt::name}} handling', () => {
   it('resolves a matching additionalAssets entry into a multimodal', async () => {
     const db = makeDatabase({
       characters: [
@@ -1116,7 +1116,7 @@ describe('Phase 7-5c {{asset_prompt::name}} handling', () => {
   })
 })
 
-describe('Phase 7-5c multimodals + thoughts coexist on the same chat', () => {
+describe('multimodals + thoughts coexist on the same chat', () => {
   it('keeps both fields on a single char-role message', async () => {
     const db = makeDatabase({
       characters: [
@@ -1169,7 +1169,7 @@ function depthCtx(): ExpandContext {
   return { database: makeDatabase() }
 }
 
-describe('Phase 7-7e applyDepthPrompts', () => {
+describe('applyDepthPrompts', () => {
   it('returns the array unchanged when no depth entries are active', async () => {
     const messages: OpenAIChat[] = [
       { role: 'user', content: 'hello' },
@@ -1299,7 +1299,7 @@ describe('Phase 7-7e applyDepthPrompts', () => {
   })
 })
 
-describe('Phase 7-5e buildHistoryWindow token accumulation', () => {
+describe('buildHistoryWindow token accumulation', () => {
   it('sums per-message tokens with gpt overhead 5 and noName', async () => {
     // gpt-4o-mini → o200k_base, overhead 5, useName 'noName'.
     // First message is suppressed by setting both firstMessage and
@@ -1488,7 +1488,7 @@ describe('Phase 7-5e buildHistoryWindow token accumulation', () => {
   })
 })
 
-describe('Phase 7-9f start trigger handoff', () => {
+describe('start trigger handoff', () => {
   // A `start` trigger with the given effects, cast past the strict
   // triggerscript/effect unions for the test (mirrors triggers.test.ts).
   const startTrigger = (effect: unknown[]): never => ({ comment: '', type: 'start', conditions: [], effect }) as never

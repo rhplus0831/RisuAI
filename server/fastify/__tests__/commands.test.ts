@@ -562,7 +562,7 @@ afterEach(async () => {
   await stopHarness(harness)
 })
 
-describe('Phase 9-1 command foundation', () => {
+describe('command foundation', () => {
   it('rejects unauthenticated runtime settings commands once a password is set', async () => {
     await harness.app.inject({
       method: 'POST',
@@ -1117,7 +1117,7 @@ describe('first-run database seed', () => {
   })
 })
 
-describe('Phase 9-2a scalar settings groups', () => {
+describe('scalar settings groups', () => {
   it('applies display settings through the grouped settings command', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -4119,7 +4119,7 @@ describe('Phase 9-2a scalar settings groups', () => {
   })
 })
 
-describe('Phase 9-2b bot preset commands', () => {
+describe('bot preset commands', () => {
   it('rejects missing durable ids on public root create commands', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -5757,7 +5757,7 @@ describe('Agent Preset command surface', () => {
   })
 })
 
-describe('Phase 9-2c prompt template and item commands', () => {
+describe('prompt template and item commands', () => {
   it('patches prompt settings and emits the prompt settings event', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -6212,7 +6212,7 @@ describe('Phase 9-2c prompt template and item commands', () => {
   })
 })
 
-describe('Phase 9-2d persona commands', () => {
+describe('persona commands', () => {
   it('rejects unknown, duplicate, and MCP Persona module links', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -6732,7 +6732,7 @@ describe('Phase 9-2d persona commands', () => {
   })
 })
 
-describe('Phase 9-2e translator preset commands', () => {
+describe('translator preset commands', () => {
   it('creates, updates, deletes, and selects translator presets by stable id', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -7103,7 +7103,7 @@ describe('Phase 9-2e translator preset commands', () => {
   })
 })
 
-describe('Phase 9-2f loadout commands', () => {
+describe('loadout commands', () => {
   it('creates, updates, favorites, touches, and deletes loadouts by stable id', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -7429,7 +7429,7 @@ describe('Phase 9-2f loadout commands', () => {
   })
 })
 
-describe('Phase 9-3a character commands', () => {
+describe('character commands', () => {
   it('adds writer origin only to live command events', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -8313,7 +8313,7 @@ describe('Phase 9-3a character commands', () => {
   })
 })
 
-describe('Phase 9-3b chat record and folder commands', () => {
+describe('chat record and folder commands', () => {
   it('creates, updates, forks, reorders, and deletes chats and chat folders by id', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -10569,7 +10569,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
   })
 })
 
-describe('Phase 4 slice 4.2 surgical message writes', () => {
+describe('surgical message writes', () => {
   function messageRowids(dataDir: string, chatId: string): { seq: number; rowid: number }[] {
     const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
     try {
@@ -10878,7 +10878,7 @@ describe('Phase 4 slice 4.2 surgical message writes', () => {
   })
 })
 
-describe('Phase 9-3c message history commands', () => {
+describe('message history commands', () => {
   it('appends, updates, deletes, truncates, and replaces messages by id', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -12142,7 +12142,7 @@ describe('Phase 9-3c message history commands', () => {
   })
 })
 
-describe('Phase 9-3d generation persistence command', () => {
+describe('generation persistence command', () => {
   it('persists generated assistant rows by appending or replacing the target message', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -12533,7 +12533,7 @@ describe('Phase 9-3d generation persistence command', () => {
   })
 })
 
-describe('Phase 9-3e chat scriptstate command', () => {
+describe('chat scriptstate command', () => {
   it('applies partial scriptstate patches and delete keys with a command event', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -12712,7 +12712,7 @@ describe('Phase 9-3e chat scriptstate command', () => {
   })
 })
 
-describe('Phase 9-4a lorebook commands', () => {
+describe('lorebook commands', () => {
   it('creates, updates, reorders, and deletes global lorebooks with command events', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -13417,7 +13417,7 @@ describe('Phase 9-4a lorebook commands', () => {
     expect(bootstrap.json().database.loreBook[0].data).toEqual([])
   })
 
-  it('rejects POST /lorebooks payloads that omit nested entry ids (A4EC3 / B2)', async () => {
+  it('rejects POST /lorebooks payloads that omit nested entry ids', async () => {
     // The create route uses the no-mint validator so missing entry ids are
     // rejected instead of being silently minted.
     const { assertion } = await setupAuthedClient(harness.app)
@@ -13502,7 +13502,7 @@ describe('Phase 9-4a lorebook commands', () => {
     expect(bootstrap.json().database.loreBook.map((b: { id: string }) => b.id)).toEqual(['book-a'])
   })
 
-  it('rejects PUT /characters /chats /modules lorebook payloads with missing or duplicate entry ids (A4EC3 / B2)', async () => {
+  it('rejects PUT /characters /chats /modules lorebook payloads with missing or duplicate entry ids', async () => {
     // The replace routes use the no-mint validator so missing or duplicate entry
     // ids are rejected.
     const { assertion } = await setupAuthedClient(harness.app)
@@ -13583,7 +13583,7 @@ describe('Phase 9-4a lorebook commands', () => {
     expect(persisted.modules[0].lorebook).toEqual([])
   })
 
-  it('L12: global lorebook commands skip unrelated child-lore validation and keep target payload checks strict', async () => {
+  it('global lorebook commands skip unrelated child-lore validation and keep target payload checks strict', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       loreBook: [
@@ -13694,7 +13694,7 @@ describe('Phase 9-4a lorebook commands', () => {
   })
 })
 
-describe('Phase 9-4b script and trigger definition commands', () => {
+describe('script and trigger definition commands', () => {
   it('replaces character and module script and trigger definition collections', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -14032,7 +14032,7 @@ describe('Phase 9-4b script and trigger definition commands', () => {
     }
   })
 
-  it('L12: script and trigger routes skip unrelated definition validation and keep target payload checks strict', async () => {
+  it('script and trigger routes skip unrelated definition validation and keep target payload checks strict', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       characters: [
@@ -14652,7 +14652,7 @@ describe('compact script and trigger definition mutations', () => {
   })
 })
 
-describe('Phase 9-4c module record and enablement commands', () => {
+describe('module record and enablement commands', () => {
   it('creates MCP modules while rejecting malformed MCP identifiers', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -15173,7 +15173,7 @@ describe('Phase 9-4c module record and enablement commands', () => {
   })
 })
 
-describe('Phase 9-4e plugin record and configuration commands', () => {
+describe('plugin record and configuration commands', () => {
   it.each([2, '2.1'] as const)('rejects V%s-series plugin records without bumping revision', async (version) => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, { plugins: [] })
@@ -15486,7 +15486,7 @@ describe('Phase 9-4e plugin record and configuration commands', () => {
   })
 })
 
-describe('Phase 9-4f plugin-storage commands', () => {
+describe('plugin-storage commands', () => {
   it('puts, deletes, and bulk updates plugin custom storage', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -15607,7 +15607,7 @@ describe('Phase 9-4f plugin-storage commands', () => {
   })
 })
 
-describe('Phase 9-4d asset reference commands', () => {
+describe('asset reference commands', () => {
   it('persists uploaded asset ids through owning character, module, persona, settings, and folder commands', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const firstAsset = await uploadAsset(harness.app, assertion, Buffer.from('first'))

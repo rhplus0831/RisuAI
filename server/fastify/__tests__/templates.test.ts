@@ -91,7 +91,7 @@ function makeSlots(overrides: Partial<UnformatedPromptSlots> = {}): UnformatedPr
 const row = (overrides: Partial<OpenAIChat>): OpenAIChat =>
   ({ role: 'system', content: 'x', ...overrides }) as OpenAIChat
 
-describe('Phase 7-10a normalizeTemplate', () => {
+describe('normalizeTemplate', () => {
   it('returns null / false when no template is set', () => {
     const db = makeDatabase({ promptTemplate: undefined })
     const result = normalizeTemplate(db, makeCharacter())
@@ -253,7 +253,7 @@ describe('Phase 7-10a normalizeTemplate', () => {
   })
 })
 
-describe('Phase 7-10a buildFormatOrder', () => {
+describe('buildFormatOrder', () => {
   it('clones formatingOrder and appends postEverything without mutating the source', () => {
     const db = makeDatabase()
     const before = [...(db.formatingOrder as FormatOrderKey[])]
@@ -263,7 +263,7 @@ describe('Phase 7-10a buildFormatOrder', () => {
   })
 })
 
-describe('Phase 7-10a coalesceRows', () => {
+describe('coalesceRows', () => {
   it('drops empty / whitespace rows but keeps a multimodal row with empty content', () => {
     const out: OpenAIChat[] = []
     coalesceRows(
@@ -311,7 +311,7 @@ describe('Phase 7-10a coalesceRows', () => {
   })
 })
 
-describe('Phase 7-10a renderByFormatOrder', () => {
+describe('renderByFormatOrder', () => {
   it('walks the format order and coalesces each slot in order', () => {
     const unformated = makeSlots({
       main: [row({ content: 'main', memo: 'main' })],
@@ -325,7 +325,7 @@ describe('Phase 7-10a renderByFormatOrder', () => {
   })
 })
 
-describe('Phase 7-10b content cards (renderByTemplate)', () => {
+describe('content cards (renderByTemplate)', () => {
   const tpl = (cards: PromptItem[]): PromptItem[] => cards
 
   it('wraps description / persona rows via innerFormat {{slot}}', () => {
@@ -547,7 +547,7 @@ describe('Phase 7-10b content cards (renderByTemplate)', () => {
   })
 })
 
-describe('Phase 7-10c chat cards', () => {
+describe('chat cards', () => {
   const chatSlots = (): UnformatedPromptSlots =>
     makeSlots({
       chats: [
@@ -666,7 +666,7 @@ describe('Phase 7-10c chat cards', () => {
     expect(unformated.chats[0].content).toBe('u0')
   })
 
-  it('keeps repeated mixed chat cards role-independent (accepted PA-4 divergence)', () => {
+  it('keeps repeated mixed chat cards role-independent (accepted divergence)', () => {
     const db = makeDatabase({
       promptSettings: {
         assistantPrefill: '',
@@ -704,7 +704,7 @@ describe('Phase 7-10c chat cards', () => {
   })
 })
 
-describe('Phase 7-10d memory cards', () => {
+describe('memory cards', () => {
   const mem = (): OpenAIChat[] => [row({ role: 'assistant', content: 'm0' }), row({ role: 'assistant', content: 'm1' })]
 
   it('clones the injected memories and passes them through unwrapped', () => {
@@ -786,7 +786,7 @@ describe('Phase 7-10d memory cards', () => {
   })
 })
 
-describe('Phase 7-10d cache markers', () => {
+describe('cache markers', () => {
   const slotsWithChat = (): UnformatedPromptSlots =>
     makeSlots({
       chats: [
@@ -860,7 +860,7 @@ describe('Phase 7-10d cache markers', () => {
   })
 })
 
-describe('Phase 7-10e prompt-info capture', () => {
+describe('prompt-info capture', () => {
   const captureDb = (): Database =>
     makeDatabase({
       promptInfoInsideChat: true,
@@ -967,7 +967,7 @@ describe('Phase 7-10e prompt-info capture', () => {
   })
 })
 
-describe('Phase 7-10e content trim', () => {
+describe('content trim', () => {
   it('trims rendered row contents on the template path', () => {
     const { formated } = renderByTemplate(
       ctxFor(makeDatabase()),
@@ -1004,7 +1004,7 @@ describe('Phase 7-10e content trim', () => {
   })
 })
 
-describe('Phase 3 M3 stable template card cache', () => {
+describe('stable template card cache', () => {
   const stableCards = (): PromptItem[] => [
     { type: 'plain', type2: 'main', text: 'plain {{user}}', role: 'system' },
     { type: 'jailbreak', type2: 'normal', text: 'jb {{user}}', role: 'system' },
@@ -1351,7 +1351,7 @@ describe('Phase 3 M3 stable template card cache', () => {
   })
 })
 
-describe('Phase 7-10f renderFinalPrompt', () => {
+describe('renderFinalPrompt', () => {
   const chatTemplate: PromptItem[] = [{ type: 'chat', rangeStart: 0, rangeEnd: 'end' }]
   const chatRows = (): UnformatedPromptSlots =>
     makeSlots({

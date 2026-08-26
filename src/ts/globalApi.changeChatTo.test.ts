@@ -69,7 +69,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('changeChatTo (H2 clone-cost gate)', () => {
+describe('changeChatTo (clone-cost gate)', () => {
   it('switches chatPage by index without cloning the characters array', () => {
     const charactersSize = JSON.stringify(testDatabaseState.db.characters).length
 

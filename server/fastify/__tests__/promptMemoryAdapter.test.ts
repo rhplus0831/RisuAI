@@ -325,7 +325,7 @@ describe('prompt memory adapter', () => {
     }
   })
 
-  it('L20: passes a shared summary snapshot through to the selection facade', () => {
+  it('passes a shared summary snapshot through to the selection facade', () => {
     const db = openDatabase(makeDataDir())
     const selected = makeSummary('summary-a')
     const summarySnapshot = { chatId: 'chat-1', summaries: [selected] }

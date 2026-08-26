@@ -998,7 +998,7 @@ describe('Realm character import route', () => {
     expectStarterChatWithoutGenerationSettings(character)
   })
 
-  it('L23: JSON Realm card asset import uses one batched asset revision and event', async () => {
+  it('JSON Realm card asset import uses one batched asset revision and event', async () => {
     echo.setResponder((req, res) => {
       if (respondRealmJsonCard(req, res)) return
       res.writeHead(404)
@@ -1034,7 +1034,7 @@ describe('Realm character import route', () => {
     ])
   })
 
-  it('L24: JSON Realm import removes newly persisted assets when character append fails', async () => {
+  it('JSON Realm import removes newly persisted assets when character append fails', async () => {
     let assetSuffix = ''
     echo.setResponder((req, res) => {
       if (respondRealmJsonCard(req, res, assetSuffix)) return
@@ -1092,7 +1092,7 @@ describe('Realm character import route', () => {
     }
   })
 
-  it('L17: aborts a hung dynamic Realm download at the import deadline', async () => {
+  it('aborts a hung dynamic Realm download at the import deadline', async () => {
     await stopHarness(harness)
     harness = await startHarness(echo.url, { deadlineMs: 30 })
 
@@ -1129,7 +1129,7 @@ describe('Realm character import route', () => {
     expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(0)
   })
 
-  it('L17: aborts upstream resource fetch when the SSE client disconnects', async () => {
+  it('aborts upstream resource fetch when the SSE client disconnects', async () => {
     await stopHarness(harness)
     harness = await startHarness(echo.url, { deadlineMs: 5000 })
 
@@ -1187,7 +1187,7 @@ describe('Realm character import route', () => {
     expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(0)
   })
 
-  it('L18: rejects known-length oversized Realm dynamic JSON before reading the body', async () => {
+  it('rejects known-length oversized Realm dynamic JSON before reading the body', async () => {
     await stopHarness(harness)
     harness = await startHarness(echo.url, { maxDynamicJsonBytes: 32 })
 
@@ -1232,7 +1232,7 @@ describe('Realm character import route', () => {
     expect(queryAssets(harness.dataDir)).toHaveLength(0)
   })
 
-  it('L18: aborts unknown-length oversized Realm dynamic JSON once the cap is crossed', async () => {
+  it('aborts unknown-length oversized Realm dynamic JSON once the cap is crossed', async () => {
     await stopHarness(harness)
     harness = await startHarness(echo.url, { maxDynamicJsonBytes: 32 })
 
@@ -1278,7 +1278,7 @@ describe('Realm character import route', () => {
     expect(queryAssets(harness.dataDir)).toHaveLength(0)
   })
 
-  it('L18: rejects JSON-card fetched resources above the per-asset cap before reading the body', async () => {
+  it('rejects JSON-card fetched resources above the per-asset cap before reading the body', async () => {
     await stopHarness(harness)
     harness = await startHarness(echo.url, {
       maxFetchedAssetBytes: 8,
@@ -1329,7 +1329,7 @@ describe('Realm character import route', () => {
     expect(queryAssets(harness.dataDir)).toHaveLength(0)
   })
 
-  it('L18: rejects cumulative JSON-card fetched assets and cleans staged files', async () => {
+  it('rejects cumulative JSON-card fetched assets and cleans staged files', async () => {
     await stopHarness(harness)
     harness = await startHarness(echo.url, {
       maxFetchedAssetBytes: 1024,
@@ -1361,7 +1361,7 @@ describe('Realm character import route', () => {
     expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(0)
   })
 
-  it('L18: keeps valid JSON Realm import output unchanged with disk-staged assets', async () => {
+  it('keeps valid JSON Realm import output unchanged with disk-staged assets', async () => {
     echo.setResponder((req, res) => {
       if (respondRealmJsonCard(req, res)) return
       res.writeHead(404)
@@ -1615,7 +1615,7 @@ describe('Realm character import route', () => {
     expect(character.additionalAssets).toEqual([['theme', expect.stringMatching(/^[a-f0-9]{64}$/), 'css']])
   })
 
-  it('L29: rejects known-length Realm charx downloads above the staging cap before reading the body', async () => {
+  it('rejects known-length Realm charx downloads above the staging cap before reading the body', async () => {
     let bodyWriteAttempted = false
     let bodyTimer: ReturnType<typeof setTimeout> | undefined
     echo.setResponder((req, res) => {
@@ -1661,7 +1661,7 @@ describe('Realm character import route', () => {
     expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(0)
   })
 
-  it('L29: aborts unknown-length Realm charx downloads as soon as the staging cap is crossed', async () => {
+  it('aborts unknown-length Realm charx downloads as soon as the staging cap is crossed', async () => {
     const chunks = Array.from({ length: 50 }, () => Buffer.alloc(400 * 1024, 0x61))
     let chunksAttempted = 0
     echo.setResponder((req, res) => {
@@ -1708,7 +1708,7 @@ describe('Realm character import route', () => {
     expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(0)
   })
 
-  it('L29: accepts a valid Realm charx download within the staging cap', async () => {
+  it('accepts a valid Realm charx download within the staging cap', async () => {
     echo.setResponder((req, res) => {
       if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
         const bytes = Buffer.from(realmCharx())

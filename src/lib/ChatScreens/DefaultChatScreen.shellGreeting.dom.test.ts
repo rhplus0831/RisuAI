@@ -382,7 +382,7 @@ afterEach(() => {
   replaceResourceDatabase({} as never)
 })
 
-describe('UIA-001 / BOOT-1: bootstrap shell greeting render (DOM oracle, Tier 1)', () => {
+describe('bootstrap shell greeting render (DOM oracle)', () => {
   it('paints the greeting bubble once the character is hydrated (correct-store control)', async () => {
     seedDatabase(makeHydratedCharacter())
     const error = tryMount()

@@ -10,7 +10,7 @@ import {
   verifyAssertion,
 } from '../src/auth.js'
 
-describe('auth.knownKeyHashes (A4EC5 / B6 bounded accumulator)', () => {
+describe('auth.knownKeyHashes (bounded accumulator)', () => {
   let tmpDir: string
 
   beforeEach(() => {
@@ -147,7 +147,7 @@ describe('fallback session authentication', () => {
   })
 })
 
-describe('resource bulk route auth (L16)', () => {
+describe('resource bulk route auth', () => {
   it('rejects unauthenticated requests and verifies authenticated requests exactly once', async () => {
     vi.resetModules()
     let verifyCount = 0
@@ -216,8 +216,8 @@ describe('resource bulk route auth (L16)', () => {
   })
 })
 
-describe('proxy and hub route auth (K2)', () => {
-  it('K2: proxy and hub route auth verifies exactly once when protected', async () => {
+describe('proxy and hub route auth', () => {
+  it('proxy and hub route auth verifies exactly once when protected', async () => {
     vi.resetModules()
     let verifyCount = 0
     vi.doMock('../src/auth.js', async () => {
@@ -315,7 +315,7 @@ describe('proxy and hub route auth (K2)', () => {
     }
   })
 
-  it('K2: unauthenticated proxy and hub requests stop before body parsing or forwarding', async () => {
+  it('unauthenticated proxy and hub requests stop before body parsing or forwarding', async () => {
     vi.resetModules()
     let verifyCount = 0
     vi.doMock('../src/auth.js', async () => {

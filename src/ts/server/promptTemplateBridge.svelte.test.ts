@@ -1300,7 +1300,7 @@ describe('flushPendingPromptTemplatePatches', () => {
     resetPromptTemplateSelectionDirtyState()
   })
 
-  it('M8: flushes pending prompt item updates with keepalive and clears debounce', async () => {
+  it('flushes pending prompt item updates with keepalive and clears debounce', async () => {
     seedTemplate()
     hydrationState.setOwner('prompt-a')
     let draftItems = draftCopy()
@@ -1370,7 +1370,7 @@ describe('flushPendingPromptTemplatePatches', () => {
     expect(durableState.acknowledgements).toEqual([])
   })
 
-  it('L25: coalesced prompt item rollback restores the first pre-edit item', async () => {
+  it('coalesced prompt item rollback restores the first pre-edit item', async () => {
     seedTemplate()
     let draftItems = draftCopy()
     const binding: PromptTemplateDraftBinding = {
@@ -1649,7 +1649,7 @@ describe('flushPendingPromptTemplatePatches', () => {
     expect(durableState.acknowledgements).toEqual([])
   })
 
-  it('M8: PromptSettings component teardown flushes pending prompt-template patches', async () => {
+  it('PromptSettings component teardown flushes pending prompt-template patches', async () => {
     seedTemplate()
     let draftItems = draftCopy()
     draftItems[0] = item('p-0', 'component teardown item')
@@ -2941,7 +2941,7 @@ describe('flushPendingPromptTemplatePatches', () => {
     }
   })
 
-  it('M8: flushes pending prompt settings patches with keepalive and clears debounce', async () => {
+  it('flushes pending prompt settings patches with keepalive and clears debounce', async () => {
     resourceDatabase.current = { jsonSchemaEnabled: true }
     const projectionEpoch = captureSettingsGroupProjectionEpoch('prompt')
 

@@ -55,7 +55,7 @@ describe('changeLanguage same-code cache', () => {
     expect(languageEnglish.loadingChat).toBe('Loading chat…')
   })
 
-  it('L37: repeated same-code changeLanguage calls reuse the applied language object without clone work', async () => {
+  it('repeated same-code changeLanguage calls reuse the applied language object without clone work', async () => {
     const { cloneSpy, langModule, languageKorean } = await loadLanguageModule()
 
     langModule.changeLanguage('ko')
@@ -72,7 +72,7 @@ describe('changeLanguage same-code cache', () => {
     expect(cloneSpy).toHaveBeenCalledTimes(1)
   })
 
-  it('L37: switching between languages rebuilds language objects and merged strings', async () => {
+  it('switching between languages rebuilds language objects and merged strings', async () => {
     const { cloneSpy, langModule, languageKorean, languageSpanish } = await loadLanguageModule()
 
     langModule.changeLanguage('ko')
@@ -89,7 +89,7 @@ describe('changeLanguage same-code cache', () => {
     expect(cloneSpy).toHaveBeenCalledTimes(2)
   })
 
-  it('L37: switching back to English changes identity once and then reuses the English object', async () => {
+  it('switching back to English changes identity once and then reuses the English object', async () => {
     const { cloneSpy, langModule, languageEnglish } = await loadLanguageModule()
 
     langModule.changeLanguage('ko')
@@ -109,7 +109,7 @@ describe('changeLanguage same-code cache', () => {
     expect(cloneSpy).toHaveBeenCalledTimes(1)
   })
 
-  it('L37: unknown language codes resolve to English and share the English cache key', async () => {
+  it('unknown language codes resolve to English and share the English cache key', async () => {
     const { cloneSpy, langModule, languageEnglish } = await loadLanguageModule()
 
     langModule.changeLanguage('unknown-language')
@@ -142,7 +142,7 @@ describe('changeLanguage same-code cache', () => {
     expect(cloneSpy).toHaveBeenCalledTimes(1)
   })
 
-  it('L37: Korean uses translated model profile shell strings', async () => {
+  it('Korean uses translated model profile shell strings', async () => {
     const { langModule, languageEnglish, languageKorean } = await loadLanguageModule()
 
     langModule.changeLanguage('ko')
@@ -167,7 +167,7 @@ describe('changeLanguage same-code cache', () => {
     )
   })
 
-  it('L37: Korean uses translated provider operation strings and formatters', async () => {
+  it('Korean uses translated provider operation strings and formatters', async () => {
     const { langModule, languageEnglish, languageKorean } = await loadLanguageModule()
 
     langModule.changeLanguage('ko')

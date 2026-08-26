@@ -441,7 +441,7 @@ describe('MCPClient OAuth handshake retry', () => {
 })
 
 describe('MCPClient deadlines and SSE listener cleanup', () => {
-  it('M20: aborts a hung MCP HTTP request at the configured deadline', async () => {
+  it('aborts a hung MCP HTTP request at the configured deadline', async () => {
     vi.useFakeTimers()
     let capturedOptions: any
     fetchNativeMock.mockImplementation((_url: string, options: any) => {
@@ -485,7 +485,7 @@ describe('MCPClient deadlines and SSE listener cleanup', () => {
     )
   })
 
-  it('L54: times out unmatched MCP SSE responses and removes the document listener', async () => {
+  it('times out unmatched MCP SSE responses and removes the document listener', async () => {
     vi.useFakeTimers()
     const { listeners, addSpy, removeSpy } = trackMcpSseListeners()
     fetchNativeMock.mockResolvedValue(new Response(null, { status: 202 }))
@@ -524,7 +524,7 @@ describe('MCPClient deadlines and SSE listener cleanup', () => {
     expect(removeSpy.mock.calls.filter(([type]) => type === 'mcp-sse')).toHaveLength(1)
   })
 
-  it('L54: removes the SSE listener after a matching MCP response', async () => {
+  it('removes the SSE listener after a matching MCP response', async () => {
     const { listeners } = trackMcpSseListeners()
     fetchNativeMock.mockResolvedValue(new Response(null, { status: 202 }))
 
@@ -562,7 +562,7 @@ describe('MCPClient deadlines and SSE listener cleanup', () => {
     expect(listeners.size).toBe(0)
   })
 
-  it('L54: removes the SSE listener when the initial POST aborts at the deadline', async () => {
+  it('removes the SSE listener when the initial POST aborts at the deadline', async () => {
     vi.useFakeTimers()
     const { listeners } = trackMcpSseListeners()
     let capturedOptions: any
@@ -598,7 +598,7 @@ describe('MCPClient deadlines and SSE listener cleanup', () => {
     expect(listeners.size).toBe(0)
   })
 
-  it('L54: text/event-stream response waits time out and remove their listener', async () => {
+  it('text/event-stream response waits time out and remove their listener', async () => {
     vi.useFakeTimers()
     const { listeners } = trackMcpSseListeners()
     const { stream, close } = hangingStream()
@@ -632,7 +632,7 @@ describe('MCPClient deadlines and SSE listener cleanup', () => {
     expect(listeners.size).toBe(0)
   })
 
-  it('L47: aborts and errors when an SSE response buffer exceeds the delimiter cap', async () => {
+  it('aborts and errors when an SSE response buffer exceeds the delimiter cap', async () => {
     const { listeners } = trackMcpSseListeners()
     const encoder = new TextEncoder()
     const cancelSpy = vi.fn()
@@ -682,7 +682,7 @@ describe('MCPClient deadlines and SSE listener cleanup', () => {
     expect(listeners.size).toBe(0)
   })
 
-  it('M20: times out the fallback SSE handshake endpoint wait and removes its listener', async () => {
+  it('times out the fallback SSE handshake endpoint wait and removes its listener', async () => {
     vi.useFakeTimers()
     vi.spyOn(console, 'warn').mockImplementation(() => {
       /* expected streamed-transport fallback */
@@ -890,7 +890,7 @@ describe('MCPClient custom transport request lifecycle', () => {
 })
 
 describe('MCPClient debug logging', () => {
-  it('L57: keeps MCP frame and tools-list payload logs silent by default', async () => {
+  it('keeps MCP frame and tools-list payload logs silent by default', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
       /* test spy */
     })
@@ -924,7 +924,7 @@ describe('MCPClient debug logging', () => {
     expect(logSpy).not.toHaveBeenCalledWith('MCP Tools List Response', expect.anything())
   })
 
-  it('L57: emits MCP frame and tools-list payload logs when debug is enabled', async () => {
+  it('emits MCP frame and tools-list payload logs when debug is enabled', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
       /* test spy */
     })
@@ -965,7 +965,7 @@ describe('MCPClient debug logging', () => {
 })
 
 describe('MCP SSE duplicate id window', () => {
-  it('L46: caps duplicate-id memory and evicts the oldest retained id', async () => {
+  it('caps duplicate-id memory and evicts the oldest retained id', async () => {
     expect(MCP_SSE_DEDUP_ID_LIMIT).toBeGreaterThanOrEqual(512)
     expect(MCP_SSE_DEDUP_ID_LIMIT).toBeLessThanOrEqual(2048)
 
@@ -1007,7 +1007,7 @@ describe('MCP SSE duplicate id window', () => {
     }
   })
 
-  it('L46: suppresses duplicate JSON-RPC response ids inside the retained window', async () => {
+  it('suppresses duplicate JSON-RPC response ids inside the retained window', async () => {
     const client = new MCPClient('https://mcp.example/sse')
     const collector = collectClientEvents(client)
 
@@ -1028,7 +1028,7 @@ describe('MCP SSE duplicate id window', () => {
     }
   })
 
-  it('L46: suppresses duplicate ping ids while preserving ping responses', async () => {
+  it('suppresses duplicate ping ids while preserving ping responses', async () => {
     const client = new MCPClient('https://mcp.example/sse')
     const requestSpy = vi.spyOn(client, 'request').mockResolvedValue({
       rpc: {

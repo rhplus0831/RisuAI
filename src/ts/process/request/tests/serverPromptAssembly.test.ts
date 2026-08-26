@@ -179,7 +179,7 @@ describe('resolveServerPromptAssembly', () => {
       seedDb({ enableCustomFlags: true, customFlags: [LLMFlags.hasImageInput] })
     }
 
-    it('routes an inlay-marker send to server on an image-input model (slice 3a)', () => {
+    it('routes an inlay-marker send to server on an image-input model', () => {
       seedVisionDb()
       const input = makeInput({
         currentChat: makeChat([{ role: 'user', data: 'see {{inlayed::img1}}' }]),
@@ -215,7 +215,7 @@ describe('resolveServerPromptAssembly', () => {
       expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
     })
 
-    it('routes an asset_prompt send to server on an image-input model (slice 3a)', () => {
+    it('routes an asset_prompt send to server on an image-input model', () => {
       seedVisionDb()
       const input = makeInput({
         currentChat: makeChat([{ role: 'user', data: 'show {{asset_prompt::icon}}' }]),
@@ -223,7 +223,7 @@ describe('resolveServerPromptAssembly', () => {
       expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
     })
 
-    it('routes a runtime-multimodals send to server on an image-input model (slice 3a)', () => {
+    it('routes a runtime-multimodals send to server on an image-input model', () => {
       seedVisionDb()
       const input = makeInput({
         currentChat: makeChat([{ role: 'user', data: 'hi', multimodals: [{ type: 'image', base64: 'x' }] }]),
@@ -233,7 +233,7 @@ describe('resolveServerPromptAssembly', () => {
 
     // The server Lua VM runs the editRequest hook, so a non-interactive
     // `triggerlua` char routes `server` instead of hard-failing.
-    it('routes a non-interactive Lua trigger char to server (slice 3b)', () => {
+    it('routes a non-interactive Lua trigger character to server', () => {
       const input = makeInput({
         currentChar: makeChar({
           triggerscript: [
@@ -255,7 +255,7 @@ describe('resolveServerPromptAssembly', () => {
     // API) routes `server`; the editprocess hook is wired through the runtime as
     // a browser no-op. The classifier cannot tell which edit mode a script hooks,
     // so this pins that the editprocess sub-class stays `server`.
-    it('routes an editprocess-only Lua trigger char to server (slice 3b)', () => {
+    it('routes an editprocess-only Lua trigger character to server', () => {
       const input = makeInput({
         currentChar: makeChar({
           triggerscript: [
@@ -276,7 +276,7 @@ describe('resolveServerPromptAssembly', () => {
     // A submit-time input-trigger / `editinput` Lua char (no interactive dialog
     // API) routes `server`; the server runs both the `onInput` trigger and the
     // `editInput` hook before assembly.
-    it('routes an input-trigger / editinput Lua char to server (slice 3b-4)', () => {
+    it('routes an input-trigger or editinput Lua character to server', () => {
       const input = makeInput({
         currentChar: makeChar({
           triggerscript: [
@@ -297,7 +297,7 @@ describe('resolveServerPromptAssembly', () => {
     // The image-gen / emotion view instruction is server-assembled, so a char with
     // `inlayViewScreen` set routes `server`. Post-gen image generation / inlay
     // rendering stays a browser effect; only the instruction text moved.
-    it('routes a char with an image-gen view instruction to server (slice 3c)', () => {
+    it('routes a character with an image-generation view instruction to server', () => {
       const input = makeInput({ currentChar: makeChar({ inlayViewScreen: true } as never) })
       expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
     })
@@ -390,21 +390,21 @@ describe('resolveServerPromptAssembly', () => {
     // Non-vision caption case: the seeded echo_model lacks image input, so
     // image/asset/inlay content still hard-fails because the browser's
     // runImageEmbedding caption fallback has no server equivalent.
-    it('rejects an inlay marker on a model without image input — caption case (slice 3a class 2)', () => {
+    it('rejects an inlay marker on a model without image input in the caption case', () => {
       const input = makeInput({
         currentChat: makeChat([{ role: 'user', data: 'see {{inlayed::img1}}' }]),
       })
       expect(expectUnsupported(resolveServerPromptAssembly(input))).toMatch(/image input/i)
     })
 
-    it('rejects an asset_prompt marker on a model without image input (slice 3a class 2)', () => {
+    it('rejects an asset_prompt marker on a model without image input', () => {
       const input = makeInput({
         currentChat: makeChat([{ role: 'user', data: 'show {{asset_prompt::icon}}' }]),
       })
       expectUnsupported(resolveServerPromptAssembly(input))
     })
 
-    it('rejects a runtime multimodals array on a model without image input (slice 3a class 2)', () => {
+    it('rejects a runtime multimodals array on a model without image input', () => {
       const input = makeInput({
         currentChat: makeChat([{ role: 'user', data: 'hi', multimodals: [{ type: 'image', base64: 'x' }] }]),
       })
@@ -417,7 +417,7 @@ describe('resolveServerPromptAssembly', () => {
     // Check restores the old conservative source scan. The pluginV2 arm is a
     // permanent hard fail (server-side plugin code execution is on the no-port
     // list and pluginV2 is superseded by Plugin V3).
-    it('routes a Lua trigger that references an interactive dialog API by default (slice 3b)', () => {
+    it('routes a Lua trigger that references an interactive dialog API by default', () => {
       const input = makeInput({
         currentChar: makeChar({
           triggerscript: [
@@ -435,7 +435,7 @@ describe('resolveServerPromptAssembly', () => {
       expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
     })
 
-    it('rejects a Lua trigger that references an interactive dialog API when Strict Script Check is enabled (slice 3b)', () => {
+    it('rejects an interactive-dialog Lua trigger when Strict Script Check is enabled', () => {
       seedDb({ strictScriptCheck: true } as never)
       const input = makeInput({
         currentChar: makeChar({
@@ -456,7 +456,7 @@ describe('resolveServerPromptAssembly', () => {
       expect(reason).toMatch(/interactive|alertInput/i)
     })
 
-    it('rejects a non-empty pluginV2 edit set with the plugin (permanent) reason (slice 3b)', () => {
+    it('rejects a non-empty pluginV2 edit set with the plugin (permanent) reason', () => {
       pluginV2.editprocess.add((() => {}) as never)
       const reason = expectUnsupported(resolveServerPromptAssembly(makeInput()))
       expect(reason).toMatch(/plugin/i)
@@ -464,7 +464,7 @@ describe('resolveServerPromptAssembly', () => {
       expect(reason).not.toMatch(/lua/i)
     })
 
-    it('a non-interactive Lua trigger no longer blocks a pluginV2 set — plugin reason surfaces (slice 3b)', () => {
+    it('a non-interactive Lua trigger leaves the pluginV2 incompatibility reason in effect', () => {
       pluginV2.editprocess.add((() => {}) as never)
       const input = makeInput({
         currentChar: makeChar({
@@ -486,7 +486,7 @@ describe('resolveServerPromptAssembly', () => {
       expect(reason).toMatch(/plugin/i)
     })
 
-    it('reports the pluginV2 arm when Strict Script Check is disabled and a char has both (slice 3b)', () => {
+    it('reports the pluginV2 reason when Strict Script Check is disabled and a character has both', () => {
       pluginV2.editprocess.add((() => {}) as never)
       const input = makeInput({
         currentChar: makeChar({
@@ -507,7 +507,7 @@ describe('resolveServerPromptAssembly', () => {
       expect(reason).not.toMatch(/interactive/i)
     })
 
-    it('reports the interactive-Lua arm before pluginV2 when Strict Script Check is enabled and a char has both (slice 3b)', () => {
+    it('reports interactive Lua before pluginV2 when Strict Script Check is enabled and a character has both', () => {
       seedDb({ strictScriptCheck: true } as never)
       pluginV2.editprocess.add((() => {}) as never)
       const input = makeInput({

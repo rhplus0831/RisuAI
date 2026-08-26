@@ -20,7 +20,7 @@ function makeChat(): Chat {
   } as unknown as Chat
 }
 
-describe('Phase 7-11e buildMemoryWindow (non-Hypa)', () => {
+describe('buildMemoryWindow (non-Hypa)', () => {
   it('fills chats, promotes the trailing row to lastChat, marks the rest removable', () => {
     const unformated = createEmptyUnformatedSlots()
     const chats = [row('one', 'm1'), row('two', 'm2'), row('three', 'm3')]

@@ -314,7 +314,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L21: fails an oversized single chunk before provider request construction', async () => {
+  it('fails an oversized single chunk before provider request construction', async () => {
     const db = openDatabase(makeDataDir())
     try {
       createMemoryChunk(db, {
@@ -350,7 +350,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L21: fails an oversized non-contextual batch item before provider dispatch', async () => {
+  it('fails an oversized non-contextual batch item before provider dispatch', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
@@ -495,7 +495,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L16: aborts a hung normal embedding provider call and continues the batch', async () => {
+  it('aborts a hung normal embedding provider call and continues the batch', async () => {
     vi.useFakeTimers()
     const db = openDatabase(makeDataDir())
     try {
@@ -545,7 +545,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L16: clears the embedding deadline after a provider call resolves under it', async () => {
+  it('clears the embedding deadline after a provider call resolves under it', async () => {
     vi.useFakeTimers()
     const db = openDatabase(makeDataDir())
     try {
@@ -587,7 +587,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L16: aborts a hung single contextual embedding provider call within the deadline', async () => {
+  it('aborts a hung single contextual embedding provider call within the deadline', async () => {
     vi.useFakeTimers()
     const db = openDatabase(makeDataDir())
     try {
@@ -665,7 +665,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L19: commits independent embed jobs after a sibling provider failure', async () => {
+  it('commits independent embed jobs after a sibling provider failure', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, { id: 'job-1', chunkId: 'chunk-1', text: 'chunk one' })
@@ -769,7 +769,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L21: fails an oversized contextual chunk before provider request construction', async () => {
+  it('fails an oversized contextual chunk before provider request construction', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
@@ -816,7 +816,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L22: sends a valid contextual batch under the model window in one request', async () => {
+  it('sends a valid contextual batch under the model window in one request', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
@@ -862,7 +862,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L22: emits a protocol metric when provider limits split a contextual batch', async () => {
+  it('emits a protocol metric when provider limits split a contextual batch', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
@@ -936,7 +936,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L19: retries an ordered Voyage contextual batch after provider failure', async () => {
+  it('retries an ordered Voyage contextual batch after provider failure', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
@@ -978,7 +978,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L19: rolls back a Voyage contextual group when one staged vector cannot persist', async () => {
+  it('rolls back a Voyage contextual group when one staged vector cannot persist', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
@@ -1024,7 +1024,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('M7: caps the drained embed batch at MEMORY_JOB_BATCH_MAX_JOBS per tick', async () => {
+  it('caps the drained embed batch at MEMORY_JOB_BATCH_MAX_JOBS per tick', async () => {
     const db = openDatabase(makeDataDir())
     try {
       const total = MEMORY_JOB_BATCH_MAX_JOBS + 1
@@ -1057,7 +1057,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('M7: slices a contextual batch into token-aware sub-batches with per-sub-batch group ids', async () => {
+  it('slices a contextual batch into token-aware sub-batches with per-sub-batch group ids', async () => {
     const db = openDatabase(makeDataDir())
     try {
       // 40 chars ≈ 10 tokens each; a 20-token budget fits exactly two chunks.
@@ -1119,7 +1119,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('M7: a failing contextual sub-batch is committed independently and does not fail unrelated chunks', async () => {
+  it('a failing contextual sub-batch is committed independently and does not fail unrelated chunks', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
@@ -1180,7 +1180,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L16: aborts a hung contextual embedding provider call within the deadline', async () => {
+  it('aborts a hung contextual embedding provider call within the deadline', async () => {
     vi.useFakeTimers()
     const db = openDatabase(makeDataDir())
     try {
@@ -1236,7 +1236,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L18: the default loader performs zero whole-corpus payload reads per batch', async () => {
+  it('the default loader performs zero whole-corpus payload reads per batch', async () => {
     const dataDir = makeDataDir()
     const db = openDatabase(dataDir)
     try {

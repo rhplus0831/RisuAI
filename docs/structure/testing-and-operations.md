@@ -442,15 +442,15 @@ watchers, router selection, array create/delete/reorder flows, `$derived`,
 `$effect`, keyed lists, memo signatures, or render dependency keys.
 
 The two mounted audit probes
-`src/lib/_audit/phase0Journey2TogglePaint.dom.test.ts` and
-`src/lib/_audit/phase0Journey4Grouping.dom.test.ts` make DOM assertions before
+`src/lib/_audit/optimisticTogglePaint.dom.test.ts` and
+`src/lib/_audit/groupedToggleRendering.dom.test.ts` make DOM assertions before
 using stores as classification aids. They run in `pnpm test:gates` and
 `pnpm test:all`, not the default `pnpm test:frontend` lane. Use the same
 DOM-first pattern in feature-owned component tests; reserve a new audit probe
 for a cross-cutting invariant that needs an explicit gate.
 
 Two named browser-smoke contracts protect reload/reconciliation behavior:
-`server/fastify/browser-smoke/phase0VisibleState.spec.ts` covers chat-switch
+`server/fastify/browser-smoke/visibleStateRecovery.spec.ts` covers chat-switch
 repainting of the active generation preset, sidebar-toggle survival through
 command/resource reconciliation, and route/sidebar continuity after an
 old-lineage recovery reload.

@@ -310,7 +310,7 @@ afterEach(() => {
 })
 
 describe('PNG character card import', () => {
-  it('L51: decodes and slices each PNG embedded asset value once during import', async () => {
+  it('decodes and slices each PNG embedded asset value once during import', async () => {
     const fixture = await createPngCardFixture()
     const counters = installPngReadCounters(fixture.assetChunkTexts, fixture.assetBase64Values)
 
@@ -334,7 +334,7 @@ describe('PNG character card import', () => {
     )
   })
 
-  it('L51: preserves multi-asset PNG import output and progress order', async () => {
+  it('preserves multi-asset PNG import output and progress order', async () => {
     const fixture = await createPngCardFixture()
 
     const imported = await importCharacterProcess({

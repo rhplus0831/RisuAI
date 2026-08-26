@@ -125,7 +125,7 @@ test.afterAll(async ({}, testInfo) => {
   await testInfo.attach('phase7-integration.txt', { body: humanOutput, contentType: 'text/plain' })
 })
 
-test('Phase 7 startup rollout matrix proves flag-off and flag-on boundaries on small and large fixtures', async ({
+test('startup rollout matrix proves flag-off and flag-on boundaries on small and large fixtures', async ({
   browser,
 }) => {
   process.env.RISU_PROTOCOL_METRICS = '1'
@@ -145,9 +145,7 @@ test('Phase 7 startup rollout matrix proves flag-off and flag-on boundaries on s
   }
 })
 
-test('Phase 7 direct-link matrix hydrates every route family from an empty browser and resource cache', async ({
-  browser,
-}) => {
+test('direct-link matrix hydrates every route family from an empty browser and resource cache', async ({ browser }) => {
   const harness = await startFastBootstrapHarness(smallFastBootstrapFixture(), {
     temporaryDirectoryPrefix: 'risu-phase7-direct-links-',
   })
@@ -227,9 +225,7 @@ test('Phase 7 direct-link matrix hydrates every route family from an empty brows
   }
 })
 
-test('Phase 7 durable recovery replays offline work and committed work whose response was lost', async ({
-  browser,
-}) => {
+test('durable recovery replays offline work and committed work whose response was lost', async ({ browser }) => {
   for (const scenario of ['offline-before-send', 'response-lost-after-commit'] as const) {
     const harness = await startFastBootstrapHarness(smallFastBootstrapFixture(), {
       temporaryDirectoryPrefix: `risu-phase7-${scenario}-`,
@@ -326,7 +322,7 @@ test('Phase 7 durable recovery replays offline work and committed work whose res
   }
 })
 
-test('Phase 7 event-gap recovery performs an authoritative refresh before reconnecting', async ({ browser }) => {
+test('event-gap recovery performs an authoritative refresh before reconnecting', async ({ browser }) => {
   const harness = await startFastBootstrapHarness(smallFastBootstrapFixture(), {
     temporaryDirectoryPrefix: 'risu-phase7-event-gap-',
   })
@@ -430,9 +426,7 @@ test('Phase 7 event-gap recovery performs an authoritative refresh before reconn
   }
 })
 
-test('Phase 7 multi-tab journey denies observer mutation, then safely promotes a takeover writer', async ({
-  browser,
-}) => {
+test('multi-tab journey denies observer mutation, then safely promotes a takeover writer', async ({ browser }) => {
   const harness = await startFastBootstrapHarness(smallFastBootstrapFixture(), {
     temporaryDirectoryPrefix: 'risu-phase7-writer-takeover-',
   })
@@ -509,7 +503,7 @@ test('Phase 7 multi-tab journey denies observer mutation, then safely promotes a
   }
 })
 
-test('Phase 7 background runtimes cannot delay or fail shell, mutation, and chat readiness', async ({ browser }) => {
+test('background runtimes cannot delay or fail shell, mutation, and chat readiness', async ({ browser }) => {
   for (const mode of ['slow', 'failed'] as const) {
     const harness = await startFastBootstrapHarness(smallFastBootstrapFixture(), {
       temporaryDirectoryPrefix: `risu-phase7-background-${mode}-`,
@@ -578,7 +572,7 @@ test('Phase 7 background runtimes cannot delay or fail shell, mutation, and chat
   }
 })
 
-test('Phase 7 inlay runtime stays route-local when slow or failed and recovers through Retry', async ({ browser }) => {
+test('inlay runtime stays route-local when slow or failed and recovers through Retry', async ({ browser }) => {
   for (const mode of ['slow', 'failed'] as const) {
     const harness = await startFastBootstrapHarness(smallFastBootstrapFixture(), {
       temporaryDirectoryPrefix: `risu-phase7-inlay-${mode}-`,

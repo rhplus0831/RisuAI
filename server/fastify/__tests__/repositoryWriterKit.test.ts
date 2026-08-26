@@ -343,7 +343,7 @@ describe('targeted writer kit', () => {
     expect(rowids('characters', 'id')).toEqual(charsBefore)
   })
 
-  it('L9: deleteCharacterRow alone cascades the chats rows via the FK (no explicit chats DELETE)', () => {
+  it('deleteCharacterRow alone cascades the chats rows via the FK (no explicit chats DELETE)', () => {
     // Precondition the cascade depends on: the pragma is actually enabled on
     // this connection (a connection-level setting, not a schema property).
     expect(db.prepare('PRAGMA foreign_keys').get()).toEqual({ foreign_keys: 1 })

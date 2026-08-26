@@ -730,7 +730,7 @@ describe('runOllamaStream', () => {
     ])
   })
 
-  it('L22: bounds the line buffer when upstream never sends a newline', async () => {
+  it('bounds the line buffer when upstream never sends a newline', async () => {
     const chunk = 'x'.repeat(1024 * 1024)
     vi.stubGlobal('fetch', async () =>
       ndjsonResponse(Array.from({ length: MAX_STREAM_BUFFER_CHARS / chunk.length + 2 }, () => chunk)),
