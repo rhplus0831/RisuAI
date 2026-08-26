@@ -2053,7 +2053,7 @@ describe('watchServerBackedScriptDefinitions baselines', () => {
     stop()
   })
 
-  it('M8: watcher teardown flushes pending script-definition edits and clears debounce', async () => {
+  it('M8: watcher teardown preserves the pending script-definition debounce', async () => {
     setupScriptDefinitions()
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY * 10 })
     flushSync()
@@ -2061,6 +2061,11 @@ describe('watchServerBackedScriptDefinitions baselines', () => {
     getDatabase().characters[0].customscript = [script('script-1', 'teardown local')]
     flushSync()
     stop()
+    await drainDefinitionCommandMicrotasks()
+
+    expect(recorded.commands).toEqual([])
+
+    await vi.advanceTimersByTimeAsync(DELAY * 10)
     await drainDefinitionCommandMicrotasks()
 
     expect(recorded.commands).toHaveLength(1)
@@ -2072,7 +2077,6 @@ describe('watchServerBackedScriptDefinitions baselines', () => {
       scripts: [script('script-1', 'teardown local')],
     })
 
-    await vi.advanceTimersByTimeAsync(DELAY * 10)
     expect(recorded.commands).toHaveLength(1)
   })
 })

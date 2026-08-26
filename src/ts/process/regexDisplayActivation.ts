@@ -1,6 +1,64 @@
 import type { customscript } from '../storage/database.svelte'
+import { writable } from 'svelte/store'
+import { normalizeRegexDisplayOwnerKey, reloadRegexDisplay } from './regexDisplayReload'
 
 export const REGEX_DISPLAY_ACTIVATION_DELAY_MS = 3_000
+
+export interface RegexDisplayActivationPendingState {
+  run: number
+  deadline: number
+}
+
+interface PendingRegexDisplayActivation extends RegexDisplayActivationPendingState {
+  timer: ReturnType<typeof setTimeout>
+}
+
+let nextActivationRun = 0
+const pendingActivations = new Map<string, PendingRegexDisplayActivation>()
+export const RegexDisplayActivationPending = writable<Readonly<Record<string, RegexDisplayActivationPendingState>>>({})
+
+export function scheduleRegexDisplayActivation(ownerKey: string | null | undefined): void {
+  const normalizedOwnerKey = normalizeRegexDisplayOwnerKey(ownerKey)
+  const previous = pendingActivations.get(normalizedOwnerKey)
+  if (previous) clearTimeout(previous.timer)
+
+  const run = ++nextActivationRun
+  const deadline = Date.now() + REGEX_DISPLAY_ACTIVATION_DELAY_MS
+  const timer = setTimeout(() => {
+    pendingActivations.delete(normalizedOwnerKey)
+    publishPendingActivations()
+    reloadRegexDisplay(normalizedOwnerKey)
+  }, REGEX_DISPLAY_ACTIVATION_DELAY_MS)
+  pendingActivations.set(normalizedOwnerKey, { run, deadline, timer })
+  publishPendingActivations()
+}
+
+export function cancelRegexDisplayActivation(ownerKey: string | null | undefined): void {
+  const normalizedOwnerKey = normalizeRegexDisplayOwnerKey(ownerKey)
+  const pending = pendingActivations.get(normalizedOwnerKey)
+  if (!pending) return
+  clearTimeout(pending.timer)
+  pendingActivations.delete(normalizedOwnerKey)
+  publishPendingActivations()
+}
+
+export function resetRegexDisplayActivationForTests(): void {
+  for (const pending of pendingActivations.values()) clearTimeout(pending.timer)
+  pendingActivations.clear()
+  nextActivationRun = 0
+  publishPendingActivations()
+}
+
+function publishPendingActivations(): void {
+  RegexDisplayActivationPending.set(
+    Object.fromEntries(
+      Array.from(pendingActivations, ([ownerKey, pending]) => [
+        ownerKey,
+        { run: pending.run, deadline: pending.deadline },
+      ]),
+    ),
+  )
+}
 
 function displayRelevantScript(script: customscript): boolean {
   return script.type === 'editdisplay' || script.type === 'edittrans'

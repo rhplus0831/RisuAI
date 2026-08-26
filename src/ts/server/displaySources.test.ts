@@ -10,6 +10,7 @@ import {
 } from './commands'
 import { resetWriterAccessLostForTests } from './activeWriterSession'
 import { displaySourceNamespaceJson } from '../process/displaySourceProtocol'
+import { reloadRegexDisplay, resetRegexDisplayReloadForTests } from '../process/regexDisplayReload'
 import {
   activateDisplaySourceChat,
   configureDisplaySourceProtocol,
@@ -76,6 +77,7 @@ describe('browser display source batching bridge', () => {
     resetDisplaySourceClientForTests()
     clearCachedServerCommandRevision()
     pluginV2.editdisplay.clear()
+    resetRegexDisplayReloadForTests()
     setCachedServerCommandRevision(7)
     configureDisplaySourceProtocol({ version: 1 }, 'lineage-a', 3)
   })
@@ -85,6 +87,7 @@ describe('browser display source batching bridge', () => {
     pluginV2.editdisplay.clear()
     resetDisplaySourceClientForTests()
     clearCachedServerCommandRevision()
+    resetRegexDisplayReloadForTests()
   })
 
   it('batches same-chat transforms and validates the exact namespace/source response', async () => {
@@ -124,6 +127,45 @@ describe('browser display source batching bridge', () => {
     expect(requests[0].context).toMatchObject({ screenWidth: window.innerWidth, screenHeight: window.innerHeight })
     expect(first).toMatchObject({ status: 'ok', displaySource: 'FIRST' })
     expect(second).toMatchObject({ status: 'ok', displaySource: 'SECOND' })
+  })
+
+  it('deduplicates identical in-flight and completed targets until their regex owner activates', async () => {
+    const requests: DisplayRequestBody[] = []
+    vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as DisplayRequestBody
+      requests.push(body)
+      return successfulDisplayResponse(body, 7)
+    })
+
+    const input = {
+      chatId: 'chat-a',
+      character: { chaId: 'char-a', name: 'Tess' },
+      messageId: 'message-a',
+      index: 0,
+      role: 'char',
+      firstMessage: false,
+      layer: 'original' as const,
+      source: 'same source',
+    }
+    const [first, duplicate] = await Promise.all([requestServerDisplaySource(input), requestServerDisplaySource(input)])
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0].targets).toHaveLength(1)
+    expect(first).toEqual(duplicate)
+
+    await expect(requestServerDisplaySource(input)).resolves.toEqual(first)
+    expect(requests).toHaveLength(1)
+
+    reloadRegexDisplay('char-b')
+    await expect(requestServerDisplaySource(input)).resolves.toEqual(first)
+    expect(requests).toHaveLength(1)
+
+    reloadRegexDisplay('char-a')
+    await expect(requestServerDisplaySource(input)).resolves.toMatchObject({
+      status: 'ok',
+      displaySource: 'SAME SOURCE',
+    })
+    expect(requests).toHaveLength(2)
   })
 
   it('releases critical newest-message results before deferred background rows', async () => {

@@ -18,6 +18,7 @@ import {
   type DisplaySourceResponse,
   type DisplaySourceTarget,
 } from '../process/displaySourceProtocol'
+import { currentRegexDisplayReloadToken } from '../process/regexDisplayReload'
 
 const SERVER_DATABASE_LINEAGE_HEADER = 'risu-database-lineage'
 
@@ -54,6 +55,12 @@ interface ActiveDisplaySourceFetch {
   cancellable: boolean
 }
 
+interface CompletedDisplaySource {
+  result: Extract<ServerDisplaySourceResult, { status: 'ok' }>
+}
+
+const MAX_COMPLETED_DISPLAY_SOURCES = 512
+
 let protocolVersion = 0
 let databaseLineage: string | null = null
 let activeWriterEpoch: number | null = null
@@ -61,7 +68,10 @@ let projectionEpoch = 0
 const pendingByBatch = new Map<string, PendingDisplaySource[]>()
 const scheduledBatches = new Set<string>()
 const activeFetches = new Map<AbortController, ActiveDisplaySourceFetch>()
+const inFlightDisplaySources = new Map<string, Promise<ServerDisplaySourceResult>>()
+const completedDisplaySources = new Map<string, CompletedDisplaySource>()
 let activeDisplaySourceChatId: string | null = null
+let displaySourceClientGeneration = 0
 const pageSessionId = createPageSessionId()
 
 function createPageSessionId(): string {
@@ -82,9 +92,21 @@ export function configureDisplaySourceProtocol(
   lineage?: string,
   writerEpoch?: number,
 ): void {
-  protocolVersion = protocol?.version === DISPLAY_SOURCE_PROTOCOL_VERSION ? DISPLAY_SOURCE_PROTOCOL_VERSION : 0
-  databaseLineage = typeof lineage === 'string' && lineage.length > 0 ? lineage : null
-  activeWriterEpoch = Number.isSafeInteger(writerEpoch) && (writerEpoch as number) >= 0 ? (writerEpoch as number) : null
+  const nextProtocolVersion =
+    protocol?.version === DISPLAY_SOURCE_PROTOCOL_VERSION ? DISPLAY_SOURCE_PROTOCOL_VERSION : 0
+  const nextDatabaseLineage = typeof lineage === 'string' && lineage.length > 0 ? lineage : null
+  const nextActiveWriterEpoch =
+    Number.isSafeInteger(writerEpoch) && (writerEpoch as number) >= 0 ? (writerEpoch as number) : null
+  if (
+    protocolVersion !== nextProtocolVersion ||
+    databaseLineage !== nextDatabaseLineage ||
+    activeWriterEpoch !== nextActiveWriterEpoch
+  ) {
+    clearDisplaySourceDedupeCache()
+  }
+  protocolVersion = nextProtocolVersion
+  databaseLineage = nextDatabaseLineage
+  activeWriterEpoch = nextActiveWriterEpoch
 }
 
 export function canUseDisplaySourceProtocol(): boolean {
@@ -108,6 +130,7 @@ export function resetDisplaySourceClientForTests(): void {
   pendingByBatch.clear()
   scheduledBatches.clear()
   activeFetches.clear()
+  clearDisplaySourceDedupeCache()
   activeDisplaySourceChatId = null
 }
 
@@ -157,6 +180,30 @@ export async function requestServerDisplaySource(input: ServerDisplaySourceInput
 
   const context: DisplayRequestContext = { pageSessionId, ...readBrowserClientContext() }
   const sourceHash = await sha256Hex(input.source)
+  const dedupeKey = input.streaming
+    ? null
+    : displaySourceDedupeKey({
+        input,
+        context,
+        sourceHash,
+        priority,
+        baseRevision: peekCachedServerCommandRevision(),
+        regexDisplayReloadToken: currentRegexDisplayReloadToken({
+          characterId: input.character.chaId,
+          chatId: input.chatId,
+        }),
+      })
+  if (dedupeKey) {
+    const completed = completedDisplaySources.get(dedupeKey)
+    if (completed) {
+      completedDisplaySources.delete(dedupeKey)
+      completedDisplaySources.set(dedupeKey, completed)
+      return completed.result
+    }
+    const inFlight = inFlightDisplaySources.get(dedupeKey)
+    if (inFlight) return inFlight
+  }
+
   const epoch = ++projectionEpoch
   const target: DisplaySourceTarget = {
     requestKey: createRequestKey(epoch, sourceHash),
@@ -174,30 +221,62 @@ export async function requestServerDisplaySource(input: ServerDisplaySourceInput
   }
   const configuredLineage = databaseLineage!
   const configuredWriterEpoch = activeWriterEpoch!
-  const expectedContextFingerprint = await sha256Hex(
-    displaySourceNamespaceJson({
-      databaseLineage: configuredLineage,
-      activeWriterEpoch: configuredWriterEpoch,
-      context,
-    }),
-  )
-  const batchKey = stableDisplayDependencyJson({
+  const request = enqueueDisplaySourceRequest({
     chatId: input.chatId,
+    priority,
+    target,
     context,
     configuredLineage,
     configuredWriterEpoch,
   })
 
+  if (!dedupeKey) return request
+  const generation = displaySourceClientGeneration
+  inFlightDisplaySources.set(dedupeKey, request)
+  void request
+    .then((result) => {
+      if (result.status === 'ok' && generation === displaySourceClientGeneration) {
+        rememberCompletedDisplaySource(dedupeKey, result)
+      }
+    })
+    .finally(() => {
+      if (inFlightDisplaySources.get(dedupeKey) === request) inFlightDisplaySources.delete(dedupeKey)
+    })
+  return request
+}
+
+async function enqueueDisplaySourceRequest(input: {
+  chatId: string
+  priority: DisplaySourcePriority
+  target: DisplaySourceTarget
+  context: DisplayRequestContext
+  configuredLineage: string
+  configuredWriterEpoch: number
+}): Promise<ServerDisplaySourceResult> {
+  const expectedContextFingerprint = await sha256Hex(
+    displaySourceNamespaceJson({
+      databaseLineage: input.configuredLineage,
+      activeWriterEpoch: input.configuredWriterEpoch,
+      context: input.context,
+    }),
+  )
+  const batchKey = stableDisplayDependencyJson({
+    chatId: input.chatId,
+    context: input.context,
+    configuredLineage: input.configuredLineage,
+    configuredWriterEpoch: input.configuredWriterEpoch,
+  })
+
   return new Promise<ServerDisplaySourceResult>((resolve) => {
     const pending = pendingByBatch.get(batchKey) ?? []
-    if (target.streaming) {
+    if (input.target.streaming) {
       const supersededIndex = pending.findIndex(
         (item) =>
           item.target.streaming === true &&
-          item.target.characterId === target.characterId &&
-          item.target.messageId === target.messageId &&
-          item.target.index === target.index &&
-          item.target.layer === target.layer,
+          item.target.characterId === input.target.characterId &&
+          item.target.messageId === input.target.messageId &&
+          item.target.index === input.target.index &&
+          item.target.layer === input.target.layer,
       )
       if (supersededIndex >= 0) {
         const [superseded] = pending.splice(supersededIndex, 1)
@@ -208,7 +287,13 @@ export async function requestServerDisplaySource(input: ServerDisplaySourceInput
         })
       }
     }
-    pending.push({ chatId: input.chatId, priority, target, expectedContextFingerprint, resolve })
+    pending.push({
+      chatId: input.chatId,
+      priority: input.priority,
+      target: input.target,
+      expectedContextFingerprint,
+      resolve,
+    })
     pendingByBatch.set(batchKey, pending)
     if (scheduledBatches.has(batchKey)) return
     scheduledBatches.add(batchKey)
@@ -216,9 +301,61 @@ export async function requestServerDisplaySource(input: ServerDisplaySourceInput
       scheduledBatches.delete(batchKey)
       const batch = pendingByBatch.get(batchKey) ?? []
       pendingByBatch.delete(batchKey)
-      void flushDisplaySourcePriorityGroups(input.chatId, context, configuredLineage, batch)
+      void flushDisplaySourcePriorityGroups(input.chatId, input.context, input.configuredLineage, batch)
     }, 0)
   })
+}
+
+function displaySourceDedupeKey(input: {
+  input: ServerDisplaySourceInput
+  context: DisplayRequestContext
+  sourceHash: string
+  priority: DisplaySourcePriority
+  baseRevision: number | null
+  regexDisplayReloadToken: string
+}): string | null {
+  if (input.baseRevision === null) return null
+  return stableDisplayDependencyJson({
+    namespace: {
+      protocolVersion,
+      databaseLineage,
+      activeWriterEpoch,
+      baseRevision: input.baseRevision,
+      context: input.context,
+    },
+    target: {
+      chatId: input.input.chatId,
+      characterId: input.input.character.chaId,
+      messageId: input.input.messageId ?? null,
+      index: input.input.index,
+      role: input.input.role,
+      firstMessage: input.input.firstMessage,
+      layer: input.input.layer,
+      name: input.input.name ?? null,
+      priority: input.priority,
+      sourceHash: input.sourceHash,
+      regexDisplayReloadToken: input.regexDisplayReloadToken,
+    },
+  })
+}
+
+function rememberCompletedDisplaySource(
+  key: string,
+  result: Extract<ServerDisplaySourceResult, { status: 'ok' }>,
+): void {
+  completedDisplaySources.delete(key)
+  completedDisplaySources.set(key, { result })
+  while (completedDisplaySources.size > MAX_COMPLETED_DISPLAY_SOURCES) {
+    const oldestKey = completedDisplaySources.keys().next().value
+    if (typeof oldestKey !== 'string') break
+    completedDisplaySources.delete(oldestKey)
+  }
+}
+
+function clearDisplaySourceDedupeCache(): void {
+  displaySourceClientGeneration += 1
+  inFlightDisplaySources.clear()
+  completedDisplaySources.clear()
 }
 
 async function flushDisplaySourcePriorityGroups(

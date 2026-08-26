@@ -563,6 +563,11 @@ non-durable fallback uses the ordinary rollback path. Multi-command watcher
 fan-outs still enter the shared command queue and reconcile their accepted event
 batch once.
 
+Script-definition replacement timers are module-owned and outlive the Svelte
+watcher that detected the edit, so ordinary editor teardown does not shorten the
+debounce. Lifecycle `pagehide`/hidden-visibility handling remains the explicit
+keepalive flush boundary.
+
 ## Active Writer And Diagnostics
 
 Active writer is server-side. A writer-intent bootstrap owns

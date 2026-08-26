@@ -38,7 +38,11 @@
   } from '../../ts/stores.svelte'
   import { createSimpleCharacter } from '../../ts/simpleCharacter'
   import { pluginRuntimeStateStore } from '../../ts/plugins/plugins.svelte'
-  import { RegexDisplayReloadPointer } from '../../ts/process/regexDisplayReload'
+  import {
+    RegexDisplayReloadPointer,
+    RegexDisplayReloadScope,
+    regexDisplayReloadTokenForContext,
+  } from '../../ts/process/regexDisplayReload'
   import { onDestroy, tick, untrack } from 'svelte'
   import Chat from './Chat.svelte'
   import {
@@ -294,12 +298,18 @@
   })
 
   let currentCharacter = $derived(getDatabase().characters[$selectedCharID])
+  let regexDisplayReloadToken = $derived(
+    regexDisplayReloadTokenForContext($RegexDisplayReloadPointer, $RegexDisplayReloadScope, {
+      characterId: currentCharacter?.chaId,
+      chatId: currentCharacter?.chats?.[currentCharacter.chatPage]?.id,
+    }),
+  )
   let currentAcceptedSendRecoveries = $derived.by(() => {
     void $selectedCharID
     return findAcceptedSendRecoveries($acceptedSendRecoveries, captureActiveChatTarget())
   })
   let currentDisplayCharacter = $derived.by(() => {
-    void $RegexDisplayReloadPointer
+    void regexDisplayReloadToken
     if (!currentCharacter) return null
     return createSimpleCharacter(
       currentCharacter,

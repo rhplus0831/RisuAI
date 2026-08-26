@@ -5,7 +5,11 @@
   import { getCharImage } from 'src/ts/characterImage'
   import { selectedCharID, ReloadChatPointer } from 'src/ts/stores.svelte'
   import { createSimpleCharacter } from 'src/ts/simpleCharacter'
-  import { RegexDisplayReloadPointer } from 'src/ts/process/regexDisplayReload'
+  import {
+    RegexDisplayReloadPointer,
+    RegexDisplayReloadScope,
+    regexDisplayReloadTokenForContext,
+  } from 'src/ts/process/regexDisplayReload'
   import { chatFoldedStateMessageIndex } from 'src/ts/globalApi.svelte'
   import { get } from 'svelte/store'
   import { getTranscriptWindowRange } from './DefaultChatScreen.loadPages'
@@ -133,8 +137,15 @@
   let generationLoadingText = $derived(language[getChatGenerationLoadingLanguageKey(normalizedGenerationStage)])
   let generationLoadingProgress = $derived(getChatGenerationLoadingProgress(normalizedGenerationStage))
 
+  let regexDisplayReloadToken = $derived(
+    regexDisplayReloadTokenForContext($RegexDisplayReloadPointer, $RegexDisplayReloadScope, {
+      characterId: currentCharacter?.chaId,
+      chatId: currentCharacter?.chats?.[currentCharacter.chatPage]?.id,
+    }),
+  )
+
   const chatRows = $derived.by(() => {
-    void $RegexDisplayReloadPointer
+    void regexDisplayReloadToken
     void activeRegenerateProjection
     const charImage = getCharImage(currentCharacter.image, 'css')
     const userImage = getCharImage(userIcon, 'css')

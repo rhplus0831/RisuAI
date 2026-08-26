@@ -194,6 +194,16 @@ though scriptstate is restored per target. Client disconnects abort queued or
 active display stages rather than leaving a superseded chat on the service's
 exclusive execution tail.
 
+Regex editor display activation is centrally debounced by owner. Character,
+module, prompt-preset/root, and global edits keep independent timers, and a
+component unmount does not shorten the three-second delay. Consumers derive a
+reload token from only the regex owners active for their character/chat, so an
+unrelated owner does not reparse mounted rows. The browser also deduplicates
+identical non-streaming targets by namespace, server revision, browser context,
+target/source identity, priority, and the scoped activation token; completed
+results use a bounded LRU and namespace changes clear both in-flight and
+completed deduplication state.
+
 The cache retains up to four recently active namespaces keyed exactly by
 database lineage, writer epoch, ephemeral page session, language, both viewport
 dimensions, and protocol version. Returning to one of those exact contexts can

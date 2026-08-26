@@ -610,7 +610,6 @@ export function watchServerBackedScriptDefinitions(
   })
 
   return () => {
-    flushPendingServerBackedScriptDefinitionPatches()
     unsubscribeSelected?.()
     stop()
   }

@@ -6,7 +6,11 @@
   import { getUserDisplayName, getUserIcon } from 'src/ts/utilState'
   import { bookmarkListOpen, selectedCharID } from 'src/ts/stores.svelte'
   import { createSimpleCharacter } from 'src/ts/simpleCharacter'
-  import { RegexDisplayReloadPointer } from 'src/ts/process/regexDisplayReload'
+  import {
+    RegexDisplayReloadPointer,
+    RegexDisplayReloadScope,
+    regexDisplayReloadTokenForContext,
+  } from 'src/ts/process/regexDisplayReload'
   import { language } from 'src/lang'
   import { alertError, alertInput, alertNormal } from 'src/ts/alert'
   import {
@@ -33,8 +37,14 @@
 
   const close = () => ($bookmarkListOpen = false)
   let chara = $derived(getDatabase().characters[$selectedCharID])
+  let regexDisplayReloadToken = $derived(
+    regexDisplayReloadTokenForContext($RegexDisplayReloadPointer, $RegexDisplayReloadScope, {
+      characterId: chara?.chaId,
+      chatId: chara?.chats?.[chara.chatPage]?.id,
+    }),
+  )
   const simpleChar = $derived.by(() => {
-    void $RegexDisplayReloadPointer
+    void regexDisplayReloadToken
     if (!chara) return null
     return createSimpleCharacter(
       chara,

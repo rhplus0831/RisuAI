@@ -16,6 +16,7 @@ vi.mock('src/ts/process/scripts', () => ({
 }))
 
 vi.mock('src/ts/process/regexDisplayReload', () => ({
+  normalizeRegexDisplayOwnerKey: (ownerKey?: string) => ownerKey?.trim() || '*',
   reloadRegexDisplay: regexListMocks.reloadRegexDisplay,
 }))
 
@@ -37,7 +38,10 @@ vi.mock('sortablejs', () => ({
 
 import type { customscript } from 'src/ts/storage/database.svelte'
 import { language } from 'src/lang'
-import { REGEX_DISPLAY_ACTIVATION_DELAY_MS } from 'src/ts/process/regexDisplayActivation'
+import {
+  REGEX_DISPLAY_ACTIVATION_DELAY_MS,
+  resetRegexDisplayActivationForTests,
+} from 'src/ts/process/regexDisplayActivation'
 import RegexListHarness from './RegexList.testHarness.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0] & {
@@ -65,6 +69,7 @@ async function settle(): Promise<void> {
 }
 
 beforeEach(() => {
+  resetRegexDisplayActivationForTests()
   target = document.createElement('div')
   document.body.appendChild(target)
   regexListMocks.importRegexRows.mockReset()
@@ -76,6 +81,7 @@ afterEach(() => {
     unmount(component)
     component = undefined
   }
+  resetRegexDisplayActivationForTests()
   vi.useRealTimers()
   target.remove()
 })
@@ -203,6 +209,30 @@ describe('RegexList display activation', () => {
 
     expect(target.querySelector('[data-risu-regex-display-pending]')).toBeNull()
     expect(regexListMocks.reloadRegexDisplay).not.toHaveBeenCalled()
+    vi.useRealTimers()
+  })
+
+  it('keeps the owner-scoped delay when the editor unmounts', async () => {
+    vi.useFakeTimers()
+    component = mount(RegexListHarness, {
+      target,
+      props: {
+        initialOwnerKey: 'character:char-a',
+        initialValue: [{ id: 'display-script', comment: 'Display', in: 'before', out: 'after', type: 'editdisplay' }],
+      },
+    }) as MountedComponent
+    await settle()
+
+    component.patchScript(0, { out: 'updated after unmount' })
+    await settle()
+    await unmount(component)
+    component = undefined
+
+    expect(regexListMocks.reloadRegexDisplay).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(REGEX_DISPLAY_ACTIVATION_DELAY_MS)
+
+    expect(regexListMocks.reloadRegexDisplay).toHaveBeenCalledOnce()
+    expect(regexListMocks.reloadRegexDisplay).toHaveBeenCalledWith('character:char-a')
     vi.useRealTimers()
   })
 })

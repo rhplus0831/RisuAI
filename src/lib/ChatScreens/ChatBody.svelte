@@ -15,7 +15,11 @@
   import { getModuleAssets } from 'src/ts/process/modules'
   import { getCurrentCharacter, getCurrentChat, getDatabase } from 'src/ts/storage/database.svelte'
   import { getFileSrc } from 'src/ts/globalApi.svelte'
-  import { RegexDisplayReloadPointer } from 'src/ts/process/regexDisplayReload'
+  import {
+    RegexDisplayReloadPointer,
+    RegexDisplayReloadScope,
+    regexDisplayReloadTokenForContext,
+  } from 'src/ts/process/regexDisplayReload'
   import {
     getChatBodyCachedOnlyLlmDecision,
     getChatBodyCachedOnlyLlmDetectionMode,
@@ -75,6 +79,11 @@
   const initialDisplayParseRegistration = Symbol('initial-display-parse')
   let initialDisplayParseStarted = false
   let initialDisplayParseSettled = false
+  let regexDisplayReloadToken = $derived(
+    regexDisplayReloadTokenForContext($RegexDisplayReloadPointer, $RegexDisplayReloadScope, {
+      characterId: typeof character === 'string' ? character : character?.chaId,
+    }),
+  )
 
   function beginInitialDisplayParse() {
     if (initialDisplayParseStarted) return
@@ -475,7 +484,7 @@
   }
 
   let markParsingResult = $derived.by(() => {
-    void $RegexDisplayReloadPointer
+    void regexDisplayReloadToken
     const parseData = msgDisplay
     const parseCharacter = character
     const parseIndex = idx

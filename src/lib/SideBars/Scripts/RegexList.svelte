@@ -8,10 +8,13 @@
   import { exportRegex, importRegexRows } from 'src/ts/process/scripts'
   import {
     REGEX_DISPLAY_ACTIVATION_DELAY_MS,
+    RegexDisplayActivationPending,
+    cancelRegexDisplayActivation,
     regexDisplayDefinitionSignature,
     regexEditorActivitySignature,
+    scheduleRegexDisplayActivation,
   } from 'src/ts/process/regexDisplayActivation'
-  import { reloadRegexDisplay } from 'src/ts/process/regexDisplayReload'
+  import { normalizeRegexDisplayOwnerKey } from 'src/ts/process/regexDisplayReload'
   import { language } from 'src/lang'
   interface Props {
     value?: customscript[]
@@ -25,36 +28,13 @@
   let sorted = $state(0)
   let opened = 0
   let destroyed = false
-  let displayActivationTimer: ReturnType<typeof setTimeout> | null = null
-  let displayActivationPending = $state(false)
-  let displayActivationRun = $state(0)
   let displaySignatureInitialized = false
   let displaySignatureOwner = ''
   let previousDisplaySignature = ''
   let previousActivitySignature = ''
 
-  const cancelDisplayActivation = () => {
-    if (displayActivationTimer) clearTimeout(displayActivationTimer)
-    displayActivationTimer = null
-    displayActivationPending = false
-  }
-
-  const activateDisplayChanges = () => {
-    if (!displayActivationPending) return
-    cancelDisplayActivation()
-    reloadRegexDisplay()
-  }
-
-  const scheduleDisplayActivation = () => {
-    if (displayActivationTimer) clearTimeout(displayActivationTimer)
-    displayActivationPending = true
-    displayActivationRun += 1
-    displayActivationTimer = setTimeout(() => {
-      displayActivationTimer = null
-      displayActivationPending = false
-      reloadRegexDisplay()
-    }, REGEX_DISPLAY_ACTIVATION_DELAY_MS)
-  }
+  let normalizedOwnerKey = $derived(normalizeRegexDisplayOwnerKey(ownerKey))
+  let displayActivation = $derived($RegexDisplayActivationPending[normalizedOwnerKey])
   const createStb = () => {
     if (destroyed || !ele || opened > 0) return
     stb = Sortable.create(ele, {
@@ -119,12 +99,14 @@
   onMount(createStb)
 
   $effect(() => {
-    const nextOwner = ownerKey
+    const nextOwner = normalizeRegexDisplayOwnerKey(ownerKey)
     const nextDisplaySignature = regexDisplayDefinitionSignature(value)
     const nextActivitySignature = regexEditorActivitySignature(value)
 
     if (!displaySignatureInitialized || nextOwner !== displaySignatureOwner) {
-      cancelDisplayActivation()
+      if (displaySignatureInitialized && nextOwner !== displaySignatureOwner) {
+        cancelRegexDisplayActivation(displaySignatureOwner)
+      }
       displaySignatureInitialized = true
       displaySignatureOwner = nextOwner
       previousDisplaySignature = nextDisplaySignature
@@ -137,14 +119,13 @@
     previousDisplaySignature = nextDisplaySignature
     previousActivitySignature = nextActivitySignature
 
-    if (displayChanged || (displayActivationPending && editorActivityChanged)) {
-      scheduleDisplayActivation()
+    if (displayChanged || (displayActivation && editorActivityChanged)) {
+      scheduleRegexDisplayActivation(nextOwner)
     }
   })
 
   onDestroy(() => {
     destroyed = true
-    activateDisplayChanges()
     if (stb) {
       try {
         stb.destroy()
@@ -166,7 +147,7 @@
     {/each}
   </div>
 {/key}
-{#if displayActivationPending}
+{#if displayActivation}
   <div
     class="mt-2 flex flex-col gap-1 text-xs text-textcolor2"
     data-risu-regex-display-pending
@@ -177,7 +158,7 @@
       class="h-1 w-full overflow-hidden rounded-full bg-darkborderc"
       role="progressbar"
       aria-label={language.regexDisplayUpdatePending}>
-      {#key displayActivationRun}
+      {#key displayActivation.run}
         <div
           class="regex-display-progress h-full origin-left rounded-full bg-selected"
           style={`animation-duration: ${REGEX_DISPLAY_ACTIVATION_DELAY_MS}ms`}>

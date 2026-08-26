@@ -8,7 +8,11 @@
     selIdState,
     VariableReloadGUIPointer,
   } from 'src/ts/stores.svelte'
-  import { RegexDisplayReloadPointer } from 'src/ts/process/regexDisplayReload'
+  import {
+    RegexDisplayReloadPointer,
+    RegexDisplayReloadScope,
+    regexDisplayReloadTokenForContext,
+  } from 'src/ts/process/regexDisplayReload'
 
   interface BackgroundParseInput {
     selectedId: number
@@ -55,7 +59,15 @@
   })
 
   let moduleEmbedding = $derived($moduleBackgroundEmbedding ?? '')
-  let backgroundReloadKey = $derived(`${$ReloadGUIPointer}|${$VariableReloadGUIPointer}|${$RegexDisplayReloadPointer}`)
+  let regexDisplayReloadToken = $derived(
+    regexDisplayReloadTokenForContext($RegexDisplayReloadPointer, $RegexDisplayReloadScope, {
+      characterId: getDatabase().characters?.[selIdState.selId]?.chaId,
+      chatId:
+        getDatabase().characters?.[selIdState.selId]?.chats?.[getDatabase().characters?.[selIdState.selId]?.chatPage]
+          ?.id,
+    }),
+  )
+  let backgroundReloadKey = $derived(`${$ReloadGUIPointer}|${$VariableReloadGUIPointer}|${regexDisplayReloadToken}`)
   let backgroundParseInput: BackgroundParseInput = $derived({
     selectedId: selIdState.selId,
     characterKey: backgroundCharacterKey,
