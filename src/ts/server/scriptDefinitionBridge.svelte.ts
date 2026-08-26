@@ -138,6 +138,25 @@ interface DispatchedScriptDefinitionAttempt {
   settled: boolean
 }
 
+interface PendingCharacterScriptDefinitionDraft {
+  characterId: string
+  scripts: customscript[]
+  triggers: triggerscript[]
+  timer: ReturnType<typeof setTimeout>
+}
+
+interface TrackedScriptDefinitionDispatch {
+  immediate: Promise<ServerCommandResult<Record<string, unknown>>>
+  final: Promise<boolean>
+  settleFinal: (accepted: boolean) => void
+}
+
+export type PendingCharacterScriptDefinitionSaveOutcome = 'idle' | 'saved' | 'queued' | 'failed'
+
+export interface WaitForPendingCharacterScriptDefinitionSaveOptions {
+  finalSettlement?: boolean
+}
+
 export interface CharacterScriptDefinitionStructuralWriteAttempt {
   readonly key: string
 }
@@ -148,6 +167,9 @@ interface AbsorbedStructuralSnapshot {
 }
 
 const pendingReplacements = new Map<string, PendingCollectionReplacement>()
+const pendingCharacterScriptDefinitionDrafts = new Map<string, PendingCharacterScriptDefinitionDraft>()
+const trackedScriptDefinitionDispatches = new Map<string, Set<TrackedScriptDefinitionDispatch>>()
+const scriptDefinitionFinalOutcomeByKey = new Map<string, boolean>()
 const mutationSafetyByKey = new Map<string, ScriptDefinitionMutationSafetyState>()
 const structuralWriteAttempts = new WeakMap<
   CharacterScriptDefinitionStructuralWriteAttempt,
@@ -155,6 +177,8 @@ const structuralWriteAttempts = new WeakMap<
 >()
 const absorbedStructuralSnapshots = new Map<string, AbsorbedStructuralSnapshot>()
 let suppressRollbackDispatch = false
+
+export const CHARACTER_SCRIPT_DEFINITION_SAVE_DELAY_MS = 300
 
 // Mirror of the selected character id as $state so a `character`-scoped watcher
 // re-runs (and re-subscribes to the newly selected character's scripts) when the
@@ -197,6 +221,92 @@ export function restoreScriptDefinitionState(snapshot: ScriptDefinitionStateSnap
     getDatabase().characters = cloneJsonValue(snapshot.characters)
     getDatabase().modules = cloneJsonValue(snapshot.modules) as Database['modules']
   })
+}
+
+/**
+ * Coalesce character-sidebar editor activity before any cloning, diffing, or
+ * durable outbox work begins. The draft arrays remain owned by the mounted
+ * editor and are only read when the trailing timer (or an explicit flush)
+ * fires.
+ */
+export function scheduleCharacterScriptDefinitionDraft(
+  characterId: string | null | undefined,
+  scripts: customscript[],
+  triggers: triggerscript[],
+  delayMs = CHARACTER_SCRIPT_DEFINITION_SAVE_DELAY_MS,
+): boolean {
+  if (!characterId) return false
+  if (!getDatabase().characters?.some((candidate) => candidate.chaId === characterId)) return false
+
+  scriptDefinitionFinalOutcomeByKey.delete(`characterScripts:${characterId}`)
+  scriptDefinitionFinalOutcomeByKey.delete(`characterTriggers:${characterId}`)
+  const previous = pendingCharacterScriptDefinitionDrafts.get(characterId)
+  if (previous) clearTimeout(previous.timer)
+  const pending: PendingCharacterScriptDefinitionDraft = {
+    characterId,
+    scripts,
+    triggers,
+    timer: setTimeout(() => flushPendingCharacterScriptDefinitionDraft(characterId), delayMs),
+  }
+  pendingCharacterScriptDefinitionDrafts.set(characterId, pending)
+  return true
+}
+
+export function flushPendingCharacterScriptDefinitionDraft(characterId: string): boolean {
+  const pending = pendingCharacterScriptDefinitionDrafts.get(characterId)
+  if (!pending) return false
+  clearTimeout(pending.timer)
+  pendingCharacterScriptDefinitionDrafts.delete(characterId)
+  return applyCharacterScriptDefinitionDraft(characterId, pending.scripts, pending.triggers, 0)
+}
+
+/**
+ * Flush and observe both script-definition collections owned by a character.
+ * Display activation asks for final durable settlement; generation uses the
+ * immediate outcome so an offline/failed save blocks the send instead of
+ * hanging indefinitely.
+ */
+export async function waitForPendingCharacterScriptDefinitionSave(
+  characterId: string | null | undefined,
+  options: WaitForPendingCharacterScriptDefinitionSaveOptions = {},
+): Promise<PendingCharacterScriptDefinitionSaveOutcome> {
+  if (!characterId) return 'idle'
+
+  flushPendingCharacterScriptDefinitionDraft(characterId)
+  const keys = [`characterScripts:${characterId}`, `characterTriggers:${characterId}`]
+  for (const key of keys) runPendingScriptDefinitionReplacement(key)
+
+  const dispatches = keys.flatMap((key) => Array.from(trackedScriptDefinitionDispatches.get(key) ?? []))
+  if (dispatches.length === 0) {
+    const knownOutcomes = keys.flatMap((key) =>
+      scriptDefinitionFinalOutcomeByKey.has(key) ? [scriptDefinitionFinalOutcomeByKey.get(key)!] : [],
+    )
+    if (knownOutcomes.length === 0) return 'idle'
+    return knownOutcomes.every(Boolean) ? 'saved' : 'failed'
+  }
+
+  if (options.finalSettlement) {
+    const settlements = await Promise.all(dispatches.map((dispatch) => dispatch.final))
+    return settlements.every(Boolean) ? 'saved' : 'failed'
+  }
+
+  const results = await Promise.all(
+    dispatches.map((dispatch) =>
+      dispatch.immediate.catch(() => ({ status: 'error', error: 'Script definition save failed.' }) as const),
+    ),
+  )
+  if (results.every((result) => result.status === 'ok')) return 'saved'
+  return results.some((result) => result.status === 'unavailable' || result.status === 'conflict') ? 'queued' : 'failed'
+}
+
+export function resetPendingCharacterScriptDefinitionDraftsForTests(): void {
+  for (const pending of pendingCharacterScriptDefinitionDrafts.values()) clearTimeout(pending.timer)
+  pendingCharacterScriptDefinitionDrafts.clear()
+  for (const dispatches of trackedScriptDefinitionDispatches.values()) {
+    for (const dispatch of dispatches) dispatch.settleFinal(false)
+  }
+  trackedScriptDefinitionDispatches.clear()
+  scriptDefinitionFinalOutcomeByKey.clear()
 }
 
 export function applyCharacterScriptDefinitionDraft(
@@ -1880,6 +1990,9 @@ function trackPendingScriptDefinitionSettlement(pending: PendingCollectionReplac
 }
 
 export function flushPendingServerBackedScriptDefinitionPatches(options: ServerCommandTransportOptions = {}): void {
+  for (const characterId of Array.from(pendingCharacterScriptDefinitionDrafts.keys())) {
+    flushPendingCharacterScriptDefinitionDraft(characterId)
+  }
   for (const key of Array.from(pendingReplacements.keys())) {
     runPendingScriptDefinitionReplacement(key, options)
   }
@@ -1939,8 +2052,65 @@ function runPendingScriptDefinitionReplacement(key: string, options: ServerComma
   }
   pending.settlementCleanup?.()
   pending.settlementCleanup = undefined
-  void dispatchDurableMutation(pending.outbox, pending.intent, (transport) =>
+  dispatchTrackedScriptDefinitionReplacement(pending, options)
+}
+
+function dispatchTrackedScriptDefinitionReplacement(
+  pending: PendingCollectionReplacement,
+  options: ServerCommandTransportOptions,
+): void {
+  let finalSettled = false
+  let resolveFinal!: (accepted: boolean) => void
+  let settlementCleanup: (() => void) | undefined
+  const final = new Promise<boolean>((resolve) => {
+    resolveFinal = resolve
+  })
+  const tracked: TrackedScriptDefinitionDispatch = {
+    immediate: Promise.resolve({ status: 'unavailable' } as const),
+    final,
+    settleFinal: (accepted: boolean) => {
+      if (finalSettled) return
+      finalSettled = true
+      settlementCleanup?.()
+      scriptDefinitionFinalOutcomeByKey.set(pending.key, accepted)
+      resolveFinal(accepted)
+      const current = trackedScriptDefinitionDispatches.get(pending.key)
+      current?.delete(tracked)
+      if (current?.size === 0) trackedScriptDefinitionDispatches.delete(pending.key)
+    },
+  }
+
+  settlementCleanup = registerDurableMutationSettlementListener(pending.outbox.mutationId, (settlement) => {
+    tracked.settleFinal(settlement === 'accepted')
+  })
+  scriptDefinitionFinalOutcomeByKey.delete(pending.key)
+  const dispatches = trackedScriptDefinitionDispatches.get(pending.key) ?? new Set()
+  dispatches.add(tracked)
+  trackedScriptDefinitionDispatches.set(pending.key, dispatches)
+
+  tracked.immediate = dispatchDurableMutation(pending.outbox, pending.intent, (transport) =>
     pending.command(pending.previous, pending.plan, { ...options, ...transport }),
+  ).then(
+    (result) => {
+      if (result.status === 'ok') {
+        tracked.settleFinal(true)
+      } else if (
+        !pending.outbox.databaseLineage ||
+        (result.status === 'error' &&
+          (result.reason === 'database-lineage' ||
+            result.reason === 'invalid-request' ||
+            result.reason === 'mutation-id-conflict' ||
+            result.reason === 'not-found' ||
+            result.reason === 'unrecognized-rejection'))
+      ) {
+        tracked.settleFinal(false)
+      }
+      return result
+    },
+    (error) => {
+      if (!pending.outbox.databaseLineage) tracked.settleFinal(false)
+      throw error
+    },
   )
 }
 

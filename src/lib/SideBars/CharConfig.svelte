@@ -9,7 +9,7 @@
     type customscript,
     type triggerscript,
   } from '../../ts/storage/database.svelte'
-  import { onMount, untrack } from 'svelte'
+  import { onDestroy, onMount, untrack } from 'svelte'
   import { CharConfigSubMenu, MobileGUI, selectedCharID, hypaV3ModalOpen, SizeStore } from '../../ts/stores.svelte'
   import {
     PlusIcon,
@@ -110,10 +110,12 @@
     watchServerBackedChatMetadata,
   } from 'src/ts/server/chatBridge.svelte'
   import {
-    applyCharacterScriptDefinitionDraft,
     clearDirtyScriptDefinitionFieldsMatchingAttempt,
+    flushPendingCharacterScriptDefinitionDraft,
     markDirtyScriptDefinitionRowFields,
     mergeScriptDefinitionProjectionRows,
+    scheduleCharacterScriptDefinitionDraft,
+    waitForPendingCharacterScriptDefinitionSave,
     watchServerBackedScriptDefinitions,
   } from 'src/ts/server/scriptDefinitionBridge.svelte'
   import { canUseServerCommands, subscribeServerCommandLocalEffectApplied } from 'src/ts/server/commands'
@@ -243,8 +245,21 @@
   let scriptDraftSnapshot = ''
   let previousScriptDraftResourceApplyEpoch = getServerResourceApplyEpoch()
   let suppressScriptDraftDispatch = false
+  let scriptDraftCompositionActive = $state(false)
+  let previousCharacterConfigSubMenu = $CharConfigSubMenu
   const scriptDirtyFieldsById = new Map<string, Set<string>>()
   const triggerDirtyFieldsById = new Map<string, Set<string>>()
+
+  async function prepareCharacterRegexDisplayActivation(ownerKey: string): Promise<boolean> {
+    const outcome = await waitForPendingCharacterScriptDefinitionSave(ownerKey, { finalSettlement: true })
+    return outcome === 'idle' || outcome === 'saved'
+  }
+
+  function flushCurrentCharacterScriptDefinitionDraft(): void {
+    if (scriptDraftCharacterId) flushPendingCharacterScriptDefinitionDraft(scriptDraftCharacterId)
+  }
+
+  onDestroy(flushCurrentCharacterScriptDefinitionDraft)
 
   function voicevoxStyles(value: unknown): Array<{ id: string | number; name: string }> {
     if (typeof value !== 'string' || value.length === 0) return []
@@ -335,6 +350,7 @@
     const targetChanged = characterId !== scriptDraftCharacterId
 
     if (targetChanged) {
+      untrack(flushCurrentCharacterScriptDefinitionDraft)
       clearScriptDraftDirtyState()
     }
 
@@ -384,22 +400,31 @@
 
   $effect(() => {
     const characterId = scriptDraftCharacterId
+    const compositionActive = scriptDraftCompositionActive
     const snapshot = snapshotJson({
       characterId,
       scripts: characterScriptsDraft,
       triggers: characterTriggersDraft,
     })
 
-    if (suppressScriptDraftDispatch || !characterId || snapshot === scriptDraftSnapshot) return
+    if (compositionActive || suppressScriptDraftDispatch || !characterId || snapshot === scriptDraftSnapshot) return
 
     untrack(() => {
-      if (applyCharacterScriptDefinitionDraft(characterId, characterScriptsDraft, characterTriggersDraft)) {
+      if (scheduleCharacterScriptDefinitionDraft(characterId, characterScriptsDraft, characterTriggersDraft)) {
         const previousDraft = parseScriptDefinitionDraftSnapshot(scriptDraftSnapshot)
         markDirtyScriptDefinitionRowFields(scriptDirtyFieldsById, previousDraft.scripts, characterScriptsDraft)
         markDirtyScriptDefinitionRowFields(triggerDirtyFieldsById, previousDraft.triggers, characterTriggersDraft)
         scriptDraftSnapshot = snapshot
       }
     })
+  })
+
+  $effect(() => {
+    const currentSubMenu = $CharConfigSubMenu
+    if (previousCharacterConfigSubMenu === 4 && currentSubMenu !== 4) {
+      untrack(flushCurrentCharacterScriptDefinitionDraft)
+    }
+    previousCharacterConfigSubMenu = currentSubMenu
   })
 
   let lasttokens = {
@@ -1752,7 +1777,13 @@
       bind:value={characterDraft.value.backgroundHTML}></TextAreaInput>
 
     <span class="text-textcolor mt-4">{language.regexScript} <Help key="regexScript" /></span>
-    <RegexList bind:value={characterScriptsDraft} ownerKey={scriptDraftCharacterId ?? ''} />
+    <RegexList
+      bind:value={characterScriptsDraft}
+      ownerKey={scriptDraftCharacterId ?? ''}
+      beforeDisplayActivation={prepareCharacterRegexDisplayActivation}
+      onCompositionChange={(active) => {
+        scriptDraftCompositionActive = active
+      }} />
     <div class="text-textcolor2 mt-2 flex gap-2">
       <button
         class="font-medium cursor-pointer hover:text-green-500"

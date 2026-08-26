@@ -303,6 +303,7 @@ import {
   applyModuleScriptDefinitionDraft,
   applyCharacterScriptDefinitionDraft,
   beginCharacterScriptDefinitionStructuralWrite,
+  CHARACTER_SCRIPT_DEFINITION_SAVE_DELAY_MS,
   clearDirtyScriptDefinitionFieldsMatchingAttempt,
   collectScriptDefinitionCollectionSnapshots,
   currentScriptDefinitionStateSnapshot,
@@ -315,6 +316,9 @@ import {
   markDirtyScriptDefinitionRowFields,
   mergeScriptDefinitionProjectionRows,
   rejectCharacterScriptDefinitionStructuralWrite,
+  resetPendingCharacterScriptDefinitionDraftsForTests,
+  scheduleCharacterScriptDefinitionDraft,
+  waitForPendingCharacterScriptDefinitionSave,
   watchServerBackedScriptDefinitions,
 } from './scriptDefinitionBridge.svelte'
 
@@ -637,6 +641,7 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
+  resetPendingCharacterScriptDefinitionDraftsForTests()
   await drainDefinitionCommandMicrotasks()
   vi.useRealTimers()
   testDatabaseSetter.database = {}
@@ -774,13 +779,104 @@ describe('character script definition draft bridge', () => {
     expect(scriptDraftStart).toBeGreaterThanOrEqual(0)
     expect(scriptDraftEnd).toBeGreaterThan(scriptDraftStart)
     expect(scriptDraftSource).not.toContain('withTrustedResourceWrite')
-    expect(source).toContain('applyCharacterScriptDefinitionDraft(')
+    expect(source).toContain('scheduleCharacterScriptDefinitionDraft(')
     expect(source).toContain('getServerResourceApplyEpoch')
     expect(source).toContain('markDirtyScriptDefinitionRowFields')
     expect(source).toContain('subscribeServerCommandLocalEffectApplied')
     expect(source).toContain('clearDirtyScriptDefinitionFieldsMatchingAttempt')
     expect(source).toContain('mergeScriptDefinitionProjectionRows')
     expect(source).toContain('clearScriptDraftDirtyState()')
+  })
+
+  it('waits for 300 ms of editor inactivity before staging the latest character script draft', async () => {
+    setupScriptDefinitions()
+    const firstDraft = [script('script-1', 'first keystroke')]
+    const latestDraft = [script('script-1', 'latest keystroke')]
+
+    expect(
+      scheduleCharacterScriptDefinitionDraft('char-1', firstDraft, [trigger('trigger-1', 'initial trigger')]),
+    ).toBe(true)
+    await vi.advanceTimersByTimeAsync(CHARACTER_SCRIPT_DEFINITION_SAVE_DELAY_MS - 1)
+
+    expect(getDatabase().characters[0].customscript).toEqual([script('script-1', 'initial')])
+    expect(durableRecorded.staged).toHaveLength(0)
+
+    expect(
+      scheduleCharacterScriptDefinitionDraft('char-1', latestDraft, [trigger('trigger-1', 'initial trigger')]),
+    ).toBe(true)
+    await vi.advanceTimersByTimeAsync(CHARACTER_SCRIPT_DEFINITION_SAVE_DELAY_MS - 1)
+    expect(durableRecorded.staged).toHaveLength(0)
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(getDatabase().characters[0].customscript).toEqual(latestDraft)
+    expect(durableRecorded.staged).toHaveLength(1)
+    expect(durableRecorded.staged[0].intent).toMatchObject({
+      requests: [{ path: '/characters/char-1/scripts' }],
+    })
+  })
+
+  it('flushes a pending character draft and waits for its server command before generation-style consumers continue', async () => {
+    setupScriptDefinitions()
+    expect(
+      scheduleCharacterScriptDefinitionDraft(
+        'char-1',
+        [script('script-1', 'send-safe')],
+        [trigger('trigger-1', 'initial trigger')],
+      ),
+    ).toBe(true)
+
+    const outcome = await waitForPendingCharacterScriptDefinitionSave('char-1')
+
+    expect(outcome).toBe('saved')
+    expect(recorded.commands).toHaveLength(1)
+    expect(recorded.commands[0].built).toMatchObject({
+      kind: 'replaceCharacterScripts',
+      characterId: 'char-1',
+      scripts: [script('script-1', 'send-safe')],
+    })
+    expect(durableRecorded.staged).toHaveLength(1)
+    expect(durableRecorded.dispatched).toHaveLength(1)
+  })
+
+  it('flushes the 300 ms character draft through the keepalive lifecycle path', async () => {
+    setupScriptDefinitions()
+    expect(
+      scheduleCharacterScriptDefinitionDraft(
+        'char-1',
+        [script('script-1', 'page exit')],
+        [trigger('trigger-1', 'initial trigger')],
+      ),
+    ).toBe(true)
+
+    flushPendingServerBackedScriptDefinitionPatches({ keepalive: true })
+    await drainDefinitionCommandMicrotasks()
+
+    expect(recorded.commands).toHaveLength(1)
+    expect(recorded.commands[0].keepalive).toBe(true)
+    expect(recorded.commands[0].built).toMatchObject({
+      kind: 'replaceCharacterScripts',
+      scripts: [script('script-1', 'page exit')],
+    })
+
+    await vi.advanceTimersByTimeAsync(CHARACTER_SCRIPT_DEFINITION_SAVE_DELAY_MS)
+    expect(recorded.commands).toHaveLength(1)
+  })
+
+  it('keeps a failed character save visible to later display activation checks', async () => {
+    setupScriptDefinitions()
+    recorded.commandResults.push({ status: 'error', error: 'save rejected' })
+    expect(
+      scheduleCharacterScriptDefinitionDraft(
+        'char-1',
+        [script('script-1', 'rejected')],
+        [trigger('trigger-1', 'initial trigger')],
+      ),
+    ).toBe(true)
+
+    await expect(waitForPendingCharacterScriptDefinitionSave('char-1')).resolves.toBe('failed')
+    await expect(waitForPendingCharacterScriptDefinitionSave('char-1', { finalSettlement: true })).resolves.toBe(
+      'failed',
+    )
   })
 
   it('does not settle script dirty fields from a broad resource apply', () => {

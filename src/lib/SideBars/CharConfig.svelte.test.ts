@@ -296,6 +296,7 @@ import CharConfig from './CharConfig.svelte'
 import { CharConfigSubMenu, MobileGUI, selectedCharID } from 'src/ts/stores.svelte'
 import { getDatabase, setDatabaseLite, type character } from 'src/ts/storage/database.svelte'
 import { language } from 'src/lang'
+import { CHARACTER_SCRIPT_DEFINITION_SAVE_DELAY_MS } from 'src/ts/server/scriptDefinitionBridge.svelte'
 
 function charConfigSource(): string {
   return readFileSync(resolve(process.cwd(), 'src/lib/SideBars/CharConfig.svelte'), 'utf8')
@@ -1289,6 +1290,8 @@ describe('CharConfig draft-type-less character actions', () => {
     await settleComponent()
 
     expect(target.querySelector('[data-testid="regex-count"]')?.textContent).toBe('1')
+    await vi.advanceTimersByTimeAsync(CHARACTER_SCRIPT_DEFINITION_SAVE_DELAY_MS)
+    await settleComponent()
     expect(getDatabase().characters[0].customscript).toHaveLength(1)
     expect(getDatabase().characters[0].customscript[0]).toMatchObject({
       comment: '',
@@ -1309,6 +1312,8 @@ describe('CharConfig draft-type-less character actions', () => {
     await settleComponent()
 
     pendingImport.resolve([{ id: 'imported-script', comment: 'Imported', in: 'hello', out: 'hi', type: 'editinput' }])
+    await settleComponent()
+    await vi.advanceTimersByTimeAsync(CHARACTER_SCRIPT_DEFINITION_SAVE_DELAY_MS)
     await settleComponent()
 
     expect(getDatabase().characters[0].customscript).toHaveLength(2)
@@ -1366,6 +1371,8 @@ describe('CharConfig draft-type-less character actions', () => {
     await settleComponent()
 
     expect(target.querySelector('[data-testid="regex-count"]')?.textContent).toBe('2')
+    await vi.advanceTimersByTimeAsync(CHARACTER_SCRIPT_DEFINITION_SAVE_DELAY_MS)
+    await settleComponent()
     expect(getDatabase().characters[0].customscript).toHaveLength(2)
   })
 })

@@ -60,6 +60,7 @@ import {
   type GenerationDisplayProjectionRef,
 } from './generationDisplayProjection.svelte'
 import { updateChatGenerationActivityMetadata } from './generationActivity.svelte'
+import { waitForPendingCharacterScriptDefinitionSave } from '../server/scriptDefinitionBridge.svelte'
 
 export interface ServerBackedStageTimings {
   stage1Start: number
@@ -548,6 +549,17 @@ export async function assembleServerBackedSendChat(args: {
   if (args.durable && (mode === 'send' || mode === 'continue' || mode === 'regenerate')) {
     input.durable = true
   }
+  const wantsServerDispatch = !args.preview && !args.previewPrompt
+  if (wantsServerDispatch) {
+    const scripts = await waitForPendingCharacterScriptDefinitionSave(args.currentChar.chaId)
+    if (scripts === 'queued' || scripts === 'failed') {
+      return {
+        status: 'failed',
+        error: 'Character scripts could not be saved.',
+        currentChat: args.currentChat,
+      }
+    }
+  }
   // New inlay tokens are server asset ids already. Legacy browser-local ids are
   // uploaded before dispatch and sent as id->assetId aliases only; no inlay bytes
   // ride the chat request anymore.
@@ -556,7 +568,6 @@ export async function assembleServerBackedSendChat(args: {
     input.inlayAssetRefs = inlayAssetRefs
   }
 
-  const wantsServerDispatch = !args.preview && !args.previewPrompt
   let served: ServerChatAnyResult
   const targetMessageId = mode === 'regenerate' ? args.regenerateMessageId : lastMessage?.chatId
   let regenerateDisplayProjection: GenerationDisplayProjectionRef | undefined

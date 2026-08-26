@@ -35,6 +35,7 @@ import {
 } from './acceptedSendRecoveryState'
 import { refreshActiveGenerationJobsFromBootstrap } from './reattach'
 import { reconcileAcceptedSendGenerationEffects } from './recoveredGenerationEffects'
+import { waitForPendingCharacterScriptDefinitionSave } from '../server/scriptDefinitionBridge.svelte'
 
 export {
   acceptedSendRecoveries,
@@ -274,6 +275,10 @@ async function prepareAtomicSendGenerationIntent(input: CoordinateAcceptedChatSe
   const persona = await flushPendingSelectedPersonaUpdate()
   if (persona && persona.status !== 'ok') {
     return { status: 'error' as const, error: 'Persona settings could not be saved.' }
+  }
+  const scripts = await waitForPendingCharacterScriptDefinitionSave(input.target.characterId)
+  if (scripts === 'queued' || scripts === 'failed') {
+    return { status: 'error' as const, error: 'Character scripts could not be saved.' }
   }
   const chat = chatForTarget(input.target)
   if (!chat) return { status: 'error' as const, error: 'No active chat found.' }

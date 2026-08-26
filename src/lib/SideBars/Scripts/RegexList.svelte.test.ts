@@ -142,6 +142,60 @@ describe('RegexList display activation', () => {
     vi.useRealTimers()
   })
 
+  it('keeps display activation pending until the owner save gate settles successfully', async () => {
+    vi.useFakeTimers()
+    const save = deferred<boolean>()
+    const beforeDisplayActivation = vi.fn(() => save.promise)
+    component = mount(RegexListHarness, {
+      target,
+      props: {
+        initialOwnerKey: 'char-a',
+        initialValue: [{ id: 'display-script', comment: 'Display', in: 'before', out: 'after', type: 'editdisplay' }],
+        beforeDisplayActivation,
+      },
+    }) as MountedComponent
+    await settle()
+
+    component.patchScript(0, { out: 'saved before display' })
+    await settle()
+    await vi.advanceTimersByTimeAsync(REGEX_DISPLAY_ACTIVATION_DELAY_MS)
+
+    expect(beforeDisplayActivation).toHaveBeenCalledOnce()
+    expect(beforeDisplayActivation).toHaveBeenCalledWith('char-a')
+    expect(regexListMocks.reloadRegexDisplay).not.toHaveBeenCalled()
+    expect(target.querySelector('[data-risu-regex-display-pending]')).not.toBeNull()
+
+    save.resolve(true)
+    await settle()
+
+    expect(regexListMocks.reloadRegexDisplay).toHaveBeenCalledOnce()
+    expect(regexListMocks.reloadRegexDisplay).toHaveBeenCalledWith('char-a')
+    expect(target.querySelector('[data-risu-regex-display-pending]')).toBeNull()
+    vi.useRealTimers()
+  })
+
+  it('does not activate display output when the owner save gate fails', async () => {
+    vi.useFakeTimers()
+    component = mount(RegexListHarness, {
+      target,
+      props: {
+        initialOwnerKey: 'char-a',
+        initialValue: [{ id: 'display-script', comment: 'Display', in: 'before', out: 'after', type: 'editdisplay' }],
+        beforeDisplayActivation: vi.fn(async () => false),
+      },
+    }) as MountedComponent
+    await settle()
+
+    component.patchScript(0, { out: 'rejected display edit' })
+    await settle()
+    await vi.advanceTimersByTimeAsync(REGEX_DISPLAY_ACTIVATION_DELAY_MS)
+    await settle()
+
+    expect(regexListMocks.reloadRegexDisplay).not.toHaveBeenCalled()
+    expect(target.querySelector('[data-risu-regex-display-pending]')).not.toBeNull()
+    vi.useRealTimers()
+  })
+
   it('does not schedule display work for non-display scripts or metadata-only edits', async () => {
     vi.useFakeTimers()
     component = mount(RegexListHarness, {

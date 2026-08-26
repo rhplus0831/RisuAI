@@ -1,13 +1,15 @@
 <script lang="ts">
   import type { customscript } from 'src/ts/storage/database.svelte'
+  import type { RegexDisplayActivationGate } from 'src/ts/process/regexDisplayActivation'
   import RegexList from './RegexList.svelte'
 
   interface Props {
     initialValue: customscript[]
     initialOwnerKey?: string
+    beforeDisplayActivation?: RegexDisplayActivationGate
   }
 
-  let { initialValue, initialOwnerKey = 'preset-a' }: Props = $props()
+  let { initialValue, initialOwnerKey = 'preset-a', beforeDisplayActivation }: Props = $props()
   // svelte-ignore state_referenced_locally
   let value = $state(initialValue)
   // svelte-ignore state_referenced_locally
@@ -28,4 +30,4 @@
   }
 </script>
 
-<RegexList bind:value {ownerKey} buttons />
+<RegexList bind:value {ownerKey} {beforeDisplayActivation} buttons />

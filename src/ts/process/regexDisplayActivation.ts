@@ -9,41 +9,65 @@ export interface RegexDisplayActivationPendingState {
   deadline: number
 }
 
+export type RegexDisplayActivationGate = (ownerKey: string) => boolean | Promise<boolean>
+
 interface PendingRegexDisplayActivation extends RegexDisplayActivationPendingState {
-  timer: ReturnType<typeof setTimeout>
+  timer: ReturnType<typeof setTimeout> | null
+  gate?: RegexDisplayActivationGate
 }
 
 let nextActivationRun = 0
 const pendingActivations = new Map<string, PendingRegexDisplayActivation>()
 export const RegexDisplayActivationPending = writable<Readonly<Record<string, RegexDisplayActivationPendingState>>>({})
 
-export function scheduleRegexDisplayActivation(ownerKey: string | null | undefined): void {
+export function scheduleRegexDisplayActivation(
+  ownerKey: string | null | undefined,
+  gate?: RegexDisplayActivationGate,
+): void {
   const normalizedOwnerKey = normalizeRegexDisplayOwnerKey(ownerKey)
   const previous = pendingActivations.get(normalizedOwnerKey)
-  if (previous) clearTimeout(previous.timer)
+  if (previous?.timer) clearTimeout(previous.timer)
 
   const run = ++nextActivationRun
   const deadline = Date.now() + REGEX_DISPLAY_ACTIVATION_DELAY_MS
   const timer = setTimeout(() => {
-    pendingActivations.delete(normalizedOwnerKey)
-    publishPendingActivations()
-    reloadRegexDisplay(normalizedOwnerKey)
+    const pending = pendingActivations.get(normalizedOwnerKey)
+    if (!pending || pending.run !== run) return
+    pending.timer = null
+    void activateRegexDisplay(normalizedOwnerKey, pending)
   }, REGEX_DISPLAY_ACTIVATION_DELAY_MS)
-  pendingActivations.set(normalizedOwnerKey, { run, deadline, timer })
+  pendingActivations.set(normalizedOwnerKey, { run, deadline, timer, ...(gate ? { gate } : {}) })
   publishPendingActivations()
+}
+
+async function activateRegexDisplay(ownerKey: string, pending: PendingRegexDisplayActivation): Promise<void> {
+  let ready = true
+  try {
+    ready = (await pending.gate?.(ownerKey)) !== false
+  } catch {
+    ready = false
+  }
+
+  const current = pendingActivations.get(ownerKey)
+  if (!current || current.run !== pending.run || !ready) return
+  pendingActivations.delete(ownerKey)
+  publishPendingActivations()
+  reloadRegexDisplay(ownerKey)
 }
 
 export function cancelRegexDisplayActivation(ownerKey: string | null | undefined): void {
   const normalizedOwnerKey = normalizeRegexDisplayOwnerKey(ownerKey)
   const pending = pendingActivations.get(normalizedOwnerKey)
   if (!pending) return
-  clearTimeout(pending.timer)
+  if (pending.timer) clearTimeout(pending.timer)
   pendingActivations.delete(normalizedOwnerKey)
   publishPendingActivations()
 }
 
 export function resetRegexDisplayActivationForTests(): void {
-  for (const pending of pendingActivations.values()) clearTimeout(pending.timer)
+  for (const pending of pendingActivations.values()) {
+    if (pending.timer) clearTimeout(pending.timer)
+  }
   pendingActivations.clear()
   nextActivationRun = 0
   publishPendingActivations()

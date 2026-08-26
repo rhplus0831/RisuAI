@@ -17,6 +17,7 @@ const coordinatorMocks = vi.hoisted(() => ({
   sleep: vi.fn(),
   stageAcceptedSendGenerationOperation: vi.fn(),
   submitStagedAcceptedSendOperation: vi.fn(),
+  waitForPendingCharacterScriptDefinitionSave: vi.fn(),
 }))
 
 vi.mock('../chatCommands', () => ({
@@ -35,6 +36,9 @@ vi.mock('../storage/database.svelte', () => ({
 }))
 
 vi.mock('../persona', () => ({ flushPendingSelectedPersonaUpdate: vi.fn(async () => undefined) }))
+vi.mock('../server/scriptDefinitionBridge.svelte', () => ({
+  waitForPendingCharacterScriptDefinitionSave: coordinatorMocks.waitForPendingCharacterScriptDefinitionSave,
+}))
 vi.mock('../alert', () => ({ alertConfirm: coordinatorMocks.alertConfirm, alertError: coordinatorMocks.alertError }))
 vi.mock('../../lang', () => ({
   language: {
@@ -113,6 +117,7 @@ beforeEach(() => {
   coordinatorMocks.reconcileAcceptedSendGenerationEffects.mockResolvedValue({ durableEffectsReconciled: true })
   coordinatorMocks.refreshActiveGenerationJobsFromBootstrap.mockResolvedValue(undefined)
   coordinatorMocks.sleep.mockResolvedValue(undefined)
+  coordinatorMocks.waitForPendingCharacterScriptDefinitionSave.mockResolvedValue('idle')
   resetAcceptedSendCoordinatorForTests()
 })
 
@@ -125,6 +130,23 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 describe('accepted send coordinator', () => {
+  it('does not stage generation while a character script save is still queued', async () => {
+    coordinatorMocks.waitForPendingCharacterScriptDefinitionSave.mockResolvedValueOnce('queued')
+    const onAppendFailed = vi.fn()
+
+    await expect(
+      coordinateAcceptedChatSend({
+        target: target(),
+        message: { role: 'user', data: 'use the latest character regex' },
+        onAppendFailed,
+      }),
+    ).resolves.toEqual({ status: 'append_failed' })
+
+    expect(coordinatorMocks.waitForPendingCharacterScriptDefinitionSave).toHaveBeenCalledWith('character-a')
+    expect(coordinatorMocks.stageAcceptedSendGenerationOperation).not.toHaveBeenCalled()
+    expect(onAppendFailed).toHaveBeenCalledOnce()
+  })
+
   it('shows a typed notice when a prior reply finalization still fences the chat', async () => {
     const staged = {
       request: { acceptedMessageId: 'message-blocked' },

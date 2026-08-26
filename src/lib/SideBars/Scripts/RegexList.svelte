@@ -13,6 +13,7 @@
     regexDisplayDefinitionSignature,
     regexEditorActivitySignature,
     scheduleRegexDisplayActivation,
+    type RegexDisplayActivationGate,
   } from 'src/ts/process/regexDisplayActivation'
   import { normalizeRegexDisplayOwnerKey } from 'src/ts/process/regexDisplayReload'
   import { language } from 'src/lang'
@@ -20,9 +21,17 @@
     value?: customscript[]
     buttons?: boolean
     ownerKey?: string
+    beforeDisplayActivation?: RegexDisplayActivationGate
+    onCompositionChange?: (active: boolean) => void
   }
 
-  let { value = $bindable([]), buttons = false, ownerKey = '' }: Props = $props()
+  let {
+    value = $bindable([]),
+    buttons = false,
+    ownerKey = '',
+    beforeDisplayActivation,
+    onCompositionChange = () => {},
+  }: Props = $props()
   let stb: Sortable = null
   let ele: HTMLDivElement = $state()
   let sorted = $state(0)
@@ -32,6 +41,7 @@
   let displaySignatureOwner = ''
   let previousDisplaySignature = ''
   let previousActivitySignature = ''
+  let compositionDepth = 0
 
   let normalizedOwnerKey = $derived(normalizeRegexDisplayOwnerKey(ownerKey))
   let displayActivation = $derived($RegexDisplayActivationPending[normalizedOwnerKey])
@@ -120,12 +130,14 @@
     previousActivitySignature = nextActivitySignature
 
     if (displayChanged || (displayActivation && editorActivityChanged)) {
-      scheduleRegexDisplayActivation(nextOwner)
+      scheduleRegexDisplayActivation(nextOwner, beforeDisplayActivation)
     }
   })
 
   onDestroy(() => {
     destroyed = true
+    if (compositionDepth > 0) onCompositionChange(false)
+    compositionDepth = 0
     if (stb) {
       try {
         stb.destroy()
@@ -138,6 +150,14 @@
 {#key sorted}
   <div
     class="contain w-full max-w-full mt-2 flex flex-col p-3 border-selected border-1 bg-darkbg rounded-md"
+    oncompositionstart={() => {
+      compositionDepth += 1
+      if (compositionDepth === 1) onCompositionChange(true)
+    }}
+    oncompositionend={() => {
+      compositionDepth = Math.max(0, compositionDepth - 1)
+      if (compositionDepth === 0) onCompositionChange(false)
+    }}
     bind:this={ele}>
     {#if value.length === 0}
       <div class="text-textcolor2">No Scripts</div>
