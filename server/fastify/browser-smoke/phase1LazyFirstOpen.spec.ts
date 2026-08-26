@@ -349,7 +349,8 @@ test('grid, route handlers, Sidebar panels, and chat dialogs open only on first 
   await page.getByTestId('default-chat-open-chat-list').click()
   await expect(lazySurface(page, 'chat-list')).toHaveAttribute('data-risu-lazy-state', 'ready')
   expect(requestedPaths.has(assetPath('src/lib/Others/ChatList.svelte'))).toBe(true)
-  await lazySurface(page, 'chat-list').getByRole('button', { name: languageEnglish.close }).first().click()
+  await page.keyboard.press('Escape')
+  await expect(lazySurface(page, 'chat-list')).toHaveCount(0)
 
   await page.getByTestId('default-chat-menu-button').click()
   await page.getByTestId('default-chat-open-modules').click()

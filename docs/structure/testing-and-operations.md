@@ -1,6 +1,6 @@
 # Testing And Operations
 
-Last audited: 2026-08-25.
+Last audited: 2026-08-26.
 
 Use `pnpm` for package scripts. Node.js is declared as `>=24.0.0`. The package
 is root-only; there is no `server/fastify/package.json`. `package.json` does not
@@ -350,12 +350,14 @@ not a normal checkout prerequisite.
 `--dry-run` to inspect the lane graph. Browser smoke runs outside that pool and
 waits for `check:server` because declaration checking and the smoke build both
 use `dist/`; its stateful tests remain serial within each spec while two locally
-isolated spec files may run concurrently. The focused UI coverage rerun waits
-for `test:frontend`. The render/clone performance gates run with one Vitest
-worker and no file parallelism. The Fastify/server lane also runs outside the
-concurrent pool because it contains deadline and load-cost assertions. These
-isolated phases keep concurrent load from invalidating timing checks. Every lane
-still runs when another lane fails, and the aggregate exits nonzero at the end.
+isolated spec files may run concurrently. The focused UI coverage lane waits
+for `test:frontend` and owns its six sentinel files during `test:all`, so the
+ordinary frontend subprocess does not execute them twice. The render/clone
+performance gates run with one Vitest worker and no file parallelism. The
+Fastify/server lane also runs outside the concurrent pool because it contains
+deadline and load-cost assertions. These isolated phases keep concurrent load
+from invalidating timing checks. Every lane still runs when another lane fails,
+and the aggregate exits nonzero at the end.
 
 Config details: `vitest.config.ts` composes two thread-pool projects. The
 conservative allowlist in `vitest.node-tests.ts` runs validated pure tests in
@@ -370,7 +372,10 @@ command drains before teardown. `vitest.setup.test.ts` protects the shared
 native, fallback, and global-restoration semantics, while
 `vitest.fetchGuard.test.ts` protects the DOM fetch boundary. Root Vitest
 excludes explicit gate tests unless
-`RISU_TEST_INCLUDE_GATES=true` is set.
+`RISU_TEST_INCLUDE_GATES=true` is set. `test:all` also sets
+`RISU_TEST_EXCLUDE_UI_MAP=true` only for its ordinary frontend subprocess; the
+following coverage lane executes those same six files once with instrumentation
+and thresholds. Standalone `test:frontend` continues to include them.
 `pnpm test:gates`, the
 `pnpm test:gates:*` sub-lanes, `pnpm test:frontend:all`, and
 `pnpm coverage:frontend` set that variable for the lanes that intentionally
@@ -571,8 +576,10 @@ pushes to `main` use Node 24 and pnpm 10. Formatting, both typecheck lanes,
 frontend tests, isolated audit/performance gates, server tests, and serial
 browser smoke run as independent jobs; only the smoke job installs Chromium.
 The focused UI coverage job runs when `src/` or its runner/build configuration
-changes and uploads its report. Playwright failure traces/results are also
-uploaded. A final `verify` job preserves the aggregate pass/fail contract while
+changes and uploads its report. On those changes, the ordinary frontend job
+omits the six sentinel files because the coverage job executes them with the
+same assertions and additional thresholds. Playwright failure traces/results
+are also uploaded. A final `verify` job preserves the aggregate pass/fail contract while
 allowing independent lanes to finish after another lane fails. The local
 `pnpm test:all` command remains the unconditional pre-merge equivalent, using
 bounded local concurrency and isolated load-sensitive phases.

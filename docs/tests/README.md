@@ -1,6 +1,6 @@
 # Test Suite Guide
 
-Last audited: 2026-08-25.
+Last audited: 2026-08-26.
 
 This documentation groups the current suite by protected product behavior. Treat `package.json` and the runner configuration files as the source of truth for commands and discovery; this guide intentionally avoids snapshot case counts and pass totals, which become stale whenever tests are added or parameterized matrices change.
 
@@ -59,7 +59,7 @@ The main weakness is integration depth rather than raw case count. Most frontend
 | `pnpm test:all`          | Bounded-parallel quality aggregate with dist-dependent and load-sensitive lanes isolated                      |
 | `pnpm coverage:frontend` | Broad frontend report, including gates; not part of `test:all`                                                |
 | `pnpm coverage:backend`  | Broad Fastify report; not part of `test:all`                                                                  |
-| `pnpm coverage:ui-map`   | Six-file repeated UI sentinel with aggregate line/statement/function/branch floors of 8%/7%/5%/4%; text/JSON output |
+| `pnpm coverage:ui-map`   | Six-file UI sentinel with aggregate line/statement/function/branch floors of 8%/7%/5%/4%; text/JSON output |
 | `pnpm coverage:ui-map:html` | The same focused gate with an additional on-demand HTML report                                             |
 
 All Vitest projects reject focused tests. The frontend runner composes a
@@ -74,10 +74,12 @@ report-only; only the focused UI map has thresholds.
 `test:all` defaults to two concurrent outer lanes; override it with
 `RISU_TEST_ALL_JOBS=<count>` or `--jobs <count>`, and inspect the schedule with
 `--dry-run`. It waits to build browser smoke until the server typecheck has
-finished writing client declarations under `dist/`, waits to collect the UI map
-until the ordinary frontend run is complete, and runs browser smoke, server, and
-performance lanes outside the outer pool. Smoke uses its own bounded file-level
-parallelism; the other isolated lanes contain load-sensitive checks.
+finished writing client declarations under `dist/`. Its ordinary frontend
+subprocess omits the six UI-map files, then the coverage lane executes them once
+with thresholds after the remaining frontend tests finish. Browser smoke,
+server, and performance lanes run outside the outer pool. Smoke uses its own
+bounded file-level parallelism; the other isolated lanes contain load-sensitive
+checks.
 
 `server/fastify/vitest.config.ts` roots discovery at `server/fastify/` and
 includes `__tests__/**/*.test.ts`. The package aliases keep `pnpm test` on

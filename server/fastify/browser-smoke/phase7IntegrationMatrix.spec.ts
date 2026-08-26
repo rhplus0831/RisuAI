@@ -202,7 +202,7 @@ test('Phase 7 direct-link matrix hydrates every route family from an empty brows
         .poll(() => page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getRouteResourceLoadState()), {
           message: `${entry.path} did not finish its route resource load`,
         })
-        .toMatchObject({ routeKey: routeKey(finalRoute), status: 'ready', error: null })
+        .toMatchObject({ routeKey: routeKey(entry.route), status: 'ready', error: null })
       expect(await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getCurrentRoute())).toEqual(finalRoute)
       expect(pageErrors).toEqual([])
 

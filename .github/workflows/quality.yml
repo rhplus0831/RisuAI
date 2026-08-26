@@ -100,8 +100,13 @@ jobs:
       - run: pnpm check:server
 
   frontend:
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      # When the focused coverage job runs, let it own these six UI test files
+      # instead of executing them a second time in the ordinary frontend lane.
+      RISU_TEST_EXCLUDE_UI_MAP: ${{ needs.changes.outputs.ui }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

@@ -7,6 +7,7 @@ export interface QualityLane {
   id: string
   label: string
   args: string[]
+  env?: Record<string, string>
   after?: string[]
   isolated?: boolean
   priority?: number
@@ -38,6 +39,8 @@ export const qualityLanes: readonly QualityLane[] = [
     id: 'frontend-tests',
     label: 'frontend tests',
     args: ['test:frontend'],
+    // The coverage lane below executes these six files with its thresholds.
+    env: { RISU_TEST_EXCLUDE_UI_MAP: 'true' },
     priority: 1,
   },
   {
@@ -64,7 +67,7 @@ export const qualityLanes: readonly QualityLane[] = [
     id: 'ui-coverage',
     label: 'UI coverage gate',
     args: ['coverage:ui-map'],
-    // These six files are also in test:frontend; do not transform and run them twice at once.
+    // Keep coverage collection after the other frontend transforms have settled.
     after: ['frontend-tests'],
     priority: 3,
   },
@@ -198,7 +201,12 @@ function formatDuration(elapsedMs: number): string {
 }
 
 function displayCommand(lane: QualityLane): string {
-  return `pnpm ${lane.args.join(' ')}`
+  const env = lane.env
+    ? `${Object.entries(lane.env)
+        .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+        .join(' ')} `
+    : ''
+  return `${env}pnpm ${lane.args.join(' ')}`
 }
 
 function printPlan(jobs: number): void {
@@ -236,7 +244,7 @@ async function run(): Promise<void> {
     const exitCode = await new Promise<number>((resolve) => {
       const spawnOptions: SpawnOptions = {
         cwd: process.cwd(),
-        env: process.env,
+        env: { ...process.env, ...lane.env },
         stdio: 'inherit',
       }
       const child = spawn(pnpmCommand, lane.args, spawnOptions)

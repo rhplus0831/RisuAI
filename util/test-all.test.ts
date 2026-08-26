@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { uiCoverageTestFiles } from '../vitest.ui-coverage-tests.js'
 import { parseTestAllJobs, qualityLanes, runLanePool, type QualityLane, type QualityLaneResult } from './test-all.js'
 
 describe('test:all orchestration', () => {
@@ -12,12 +14,16 @@ describe('test:all orchestration', () => {
     const byId = new Map(qualityLanes.map((lane) => [lane.id, lane]))
 
     expect(byId.get('browser-smoke')).toMatchObject({ after: ['server-check'], isolated: true })
+    expect(byId.get('frontend-tests')?.env).toEqual({ RISU_TEST_EXCLUDE_UI_MAP: 'true' })
     expect(byId.get('ui-coverage')?.after).toContain('frontend-tests')
     expect(byId.get('server-tests')?.isolated).toBe(true)
     expect(byId.get('performance-gates')).toMatchObject({
       isolated: true,
       args: ['test:gates:perf', '--no-file-parallelism', '--maxWorkers=1'],
     })
+
+    const packageScripts = JSON.parse(readFileSync('package.json', 'utf8')).scripts as Record<string, string>
+    expect(packageScripts['coverage:ui-map'].match(/src\/\S+\.test\.ts/g)).toEqual([...uiCoverageTestFiles])
   })
 
   it('starts dependents after completion even when a prerequisite fails', async () => {
