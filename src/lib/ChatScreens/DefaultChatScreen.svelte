@@ -403,6 +403,15 @@
   let currentChatGenerationJob = $derived(
     currentChatId ? $activeGenerationJobs.find((job) => job.chatId === currentChatId) : undefined,
   )
+  let currentChatRegenerateTargetMessageId = $derived.by(() => {
+    if (currentChatGenerationActivity?.mode === 'regenerate') {
+      return currentChatGenerationActivity.targetMessageId ?? null
+    }
+    if (currentChatGenerationJob?.mode === 'regenerate') {
+      return currentChatGenerationJob.targetMessageId ?? currentChatGenerationJob.regenerateMessageId ?? null
+    }
+    return null
+  })
   let currentChatGenerationCancellation = $derived.by(() => {
     if (!currentChatId) return undefined
     const controls = $generationOperationCancellations.filter((control) => control.target?.chatId === currentChatId)
@@ -2962,6 +2971,7 @@
               {userIcon}
               {userIconPortrait}
               isGenerationActive={currentChatOwnsGeneration}
+              regenerateTargetMessageId={currentChatRegenerateTargetMessageId}
               generationStage={currentChatGenerationStage}
               initialRowsPending={activeChatMessagesLoading}
               bind:initialDisplayPending={activeChatDisplayLoading}

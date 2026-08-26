@@ -301,8 +301,12 @@ alternates. A failed regenerate therefore needs no browser transcript rollback.
 Negotiated fresh regenerate streams join
 `generationDisplayProjection.svelte.ts` to that authoritative target in
 `Chats.svelte`. `Chat.svelte` receives projected display text separately from
-the persisted row, keeps unsafe row controls unavailable during the operation,
-and leaves raw edit/copy/TTS/translation authority untouched. A mount-local
+the persisted row. From generation activity start until replacement text is
+available, the target renders the standard message-generation status instead
+of the retained response; streamed text then appears in place beside the same
+status. Message controls and metadata actions such as retranslate remain
+unavailable throughout the operation, while raw edit/copy/TTS/translation
+authority stays untouched. A mount-local
 presentation alias maps the terminal generation id back to the target's keyed
 wrapper, so the same row survives the authoritative ID replacement.
 

@@ -1523,6 +1523,8 @@ describe('DefaultChatScreen latest-message alignment', () => {
       rowHeight: () => latestRowHeight,
       trailingHeight: () => 100,
     })
+    await waitFor(() => expect(latestRow.querySelector('.chat-generation-loading')).toBeTruthy())
+    expect(latestRow.textContent).not.toContain('chat-0 message 1')
     const projection = {
       operationId: 'operation-regenerate',
       attemptNo: 1,
@@ -1537,7 +1539,7 @@ describe('DefaultChatScreen latest-message alignment', () => {
     expect(get(generationDisplayProjections)).toEqual([expect.objectContaining(projection)])
     await waitFor(() => expect(latestRow.dataset.generationDisplayProjection).toBe('regenerate'))
     expect(target.querySelectorAll('.chat-message-container')).toHaveLength(2)
-    expect(latestRow.textContent).toContain('chat-0 message 1')
+    expect(latestRow.textContent).not.toContain('chat-0 message 1')
     expect(latestRow.querySelector('[data-generation-projection-loading]')).toBeTruthy()
     expect(spacer.style.height).toBe('0px')
     expect(transcript.scrollTop).toBe(0)

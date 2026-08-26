@@ -2150,72 +2150,96 @@
 </script>
 
 {#snippet genInfo()}
-  <div class="flex flex-wrap justify-end items-center">
-    {#if messageGenerationInfo && (getDatabase().requestInfoInsideChat || aiLawApplies())}
-      <button
-        class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
-                    hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center"
-        onclick={() => {
-          const currentGenerationInfo =
-            idx >= 0
-              ? getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
-                  .message[idx].generationInfo
-              : messageGenerationInfo
-
-          alertRequestData({
-            genInfo: currentGenerationInfo,
-            idx: idx,
-          })
-        }}>
-        <BotIcon size={20} />
-        <span class="ml-1">
-          {capitalize(getModelInfo(messageGenerationInfo.model).shortName)}
-        </span>
-      </button>
-    {/if}
-    {#if canTranslateRawTarget() && translated && !translationInProgress}
-      <button
-        class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
-                            hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center"
-        onclick={confirmServerRawRetranslation}>
-        <RefreshCcwIcon size={20} />
-        <span class="ml-1">
-          {language.retranslate}
-        </span>
-      </button>
-      {#if canEditPersistedTranslation()}
+  {#if !isGenerationLoading}
+    <div class="flex flex-wrap justify-end items-center">
+      {#if messageGenerationInfo && (getDatabase().requestInfoInsideChat || aiLawApplies())}
         <button
-          class={'text-sm p-1 border-darkborderc float-end mr-2 my-1 hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center ' +
-            (editTranslationMode ? 'text-blue-400' : 'text-textcolor2')}
+          class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
+                    hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center"
           onclick={() => {
-            if (editTranslationMode) {
-              saveTranslationEdit()
-            } else {
-              loadTranslationForEdit()
-            }
+            const currentGenerationInfo =
+              idx >= 0
+                ? getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
+                    .message[idx].generationInfo
+                : messageGenerationInfo
+
+            alertRequestData({
+              genInfo: currentGenerationInfo,
+              idx: idx,
+            })
           }}>
-          <PencilIcon size={20} />
+          <BotIcon size={20} />
           <span class="ml-1">
-            {editTranslationMode ? language.editTranslationSave : language.editTranslation}
+            {capitalize(getModelInfo(messageGenerationInfo.model).shortName)}
           </span>
         </button>
       {/if}
-    {:else if !hasServerRawTranslationTarget() && getDatabase().translatorType === 'llm' && translated && !translationInProgress}
-      <button
-        class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
+      {#if canTranslateRawTarget() && translated && !translationInProgress}
+        <button
+          class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
                             hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center"
-        onclick={confirmClientRetranslation}>
-        <RefreshCcwIcon size={20} />
-        <span class="ml-1">
-          {language.retranslate}
-        </span>
-      </button>
+          onclick={confirmServerRawRetranslation}>
+          <RefreshCcwIcon size={20} />
+          <span class="ml-1">
+            {language.retranslate}
+          </span>
+        </button>
+        {#if canEditPersistedTranslation()}
+          <button
+            class={'text-sm p-1 border-darkborderc float-end mr-2 my-1 hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center ' +
+              (editTranslationMode ? 'text-blue-400' : 'text-textcolor2')}
+            onclick={() => {
+              if (editTranslationMode) {
+                saveTranslationEdit()
+              } else {
+                loadTranslationForEdit()
+              }
+            }}>
+            <PencilIcon size={20} />
+            <span class="ml-1">
+              {editTranslationMode ? language.editTranslationSave : language.editTranslation}
+            </span>
+          </button>
+        {/if}
+      {:else if !hasServerRawTranslationTarget() && getDatabase().translatorType === 'llm' && translated && !translationInProgress}
+        <button
+          class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
+                            hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center"
+          onclick={confirmClientRetranslation}>
+          <RefreshCcwIcon size={20} />
+          <span class="ml-1">
+            {language.retranslate}
+          </span>
+        </button>
+      {/if}
+    </div>
+  {/if}
+{/snippet}
+
+{#snippet generationLoading(projection: boolean)}
+  <div
+    class="chat-generation-loading w-full"
+    role="status"
+    aria-live="polite"
+    aria-busy="true"
+    data-generation-projection-loading={projection ? '' : undefined}>
+    <div class="chat-generation-loading-header">
+      <LoaderCircleIcon size={16} class="risu-ongoing-pulse animate-spin shrink-0" />
+      <span>{halfStreamingLoadingText ?? generationLoadingText}</span>
+    </div>
+    {#if halfStreamingLoadingText === undefined}
+      <div class="chat-generation-loading-track">
+        <div
+          class={`risu-ongoing-pulse chat-generation-loading-fill chat-generation-loading-stage-${normalizedGenerationStage}`}
+          style:width={`${generationLoadingProgress}%`}>
+        </div>
+      </div>
     {/if}
   </div>
 {/snippet}
 
 {#snippet textBox()}
-  {#if editTranslationMode}
+  {#if editTranslationMode && !isGenerationLoading}
     <AutoresizeArea
       bind:value={editTranslationText}
       ariaLabel={language.editTranslation}
@@ -2224,7 +2248,7 @@
       handleLongPress={() => {
         saveTranslationEdit()
       }} />
-  {:else if editMode}
+  {:else if editMode && !isGenerationLoading}
     <AutoresizeArea
       bind:value={message}
       ariaLabel={language.messageInput}
@@ -2252,22 +2276,9 @@
         {msgDisplay}
       {/if}
     </div>
-  {:else if isGenerationLoading && !isGenerationProjection}
-    {#if !hasActiveAgentPresetProgress}
-      <div class="chat-generation-loading w-full" role="status" aria-live="polite" aria-busy="true">
-        <div class="chat-generation-loading-header">
-          <LoaderCircleIcon size={16} class="risu-ongoing-pulse animate-spin shrink-0" />
-          <span>{halfStreamingLoadingText ?? generationLoadingText}</span>
-        </div>
-        {#if halfStreamingLoadingText === undefined}
-          <div class="chat-generation-loading-track">
-            <div
-              class={`risu-ongoing-pulse chat-generation-loading-fill chat-generation-loading-stage-${normalizedGenerationStage}`}
-              style:width={`${generationLoadingProgress}%`}>
-            </div>
-          </div>
-        {/if}
-      </div>
+  {:else if isGenerationLoading && (!isGenerationProjection || message.length === 0)}
+    {#if !hasActiveAgentPresetProgress || isGenerationProjection}
+      {@render generationLoading(isGenerationProjection)}
     {/if}
   {:else if blankMessage}
     <div class="w-full flex justify-center text-textcolor2 italic mb-12">
@@ -2346,7 +2357,9 @@
           on:save={handlePartialEditSave} />
       {/if}
     </span>
-    {#if halfStreamingLoadingText !== undefined && isChatGenerating && !isGenerationProjection}
+    {#if isGenerationLoading && isGenerationProjection}
+      {@render generationLoading(true)}
+    {:else if halfStreamingLoadingText !== undefined && isChatGenerating}
       <div class="chat-generation-loading w-full" role="status" aria-live="polite" aria-busy="true">
         <div class="chat-generation-loading-header">
           <LoaderCircleIcon size={16} class="risu-ongoing-pulse animate-spin shrink-0" />
@@ -3240,7 +3253,7 @@
                 {name}
               </h2>
             </div>
-            {#if editMode}
+            {#if editMode && !isGenerationLoading}
               <textarea
                 aria-label={language.messageInput}
                 class="grow h-138 sm:h-96 overflow-y-auto bg-transparent text-black p-2 mb-2 resize-none message-edit-area"

@@ -35,13 +35,6 @@
   import { clearVisibleChat, markChatRead, markChatUnread, setVisibleChat } from 'src/ts/process/chatUnread.svelte'
   import { recordChatRowsBuild } from './chatRowsBuildInstrumentation'
   import { createInitialDisplayReadiness, shouldAwaitInitialDisplayParse } from './initialDisplayReadiness'
-  import { LoaderCircleIcon } from '@lucide/svelte'
-  import { language } from 'src/lang'
-  import {
-    getChatGenerationLoadingLanguageKey,
-    getChatGenerationLoadingProgress,
-    normalizeChatGenerationLoadingStage,
-  } from './chatGenerationLoading'
   import {
     finishGenerationDisplayProjection,
     generationDisplayProjections,
@@ -71,6 +64,7 @@
     userIconPortrait,
     scrollContainer = null,
     isGenerationActive = false,
+    regenerateTargetMessageId = null,
     generationStage = 0,
     hasNewUnreadMessage = $bindable(false),
     initialDisplayPending = $bindable(false),
@@ -89,6 +83,7 @@
     userIconPortrait?: boolean
     scrollContainer?: HTMLDivElement | null
     isGenerationActive?: boolean
+    regenerateTargetMessageId?: string | null
     generationStage?: number
     hasNewUnreadMessage?: boolean
     initialDisplayPending?: boolean
@@ -133,10 +128,6 @@
       .at(-1)
   })
   let presentationKeyAliases: Record<string, string> = $state({})
-  let normalizedGenerationStage = $derived(normalizeChatGenerationLoadingStage(generationStage))
-  let generationLoadingText = $derived(language[getChatGenerationLoadingLanguageKey(normalizedGenerationStage)])
-  let generationLoadingProgress = $derived(getChatGenerationLoadingProgress(normalizedGenerationStage))
-
   let regexDisplayReloadToken = $derived(
     regexDisplayReloadTokenForContext($RegexDisplayReloadPointer, $RegexDisplayReloadScope, {
       characterId: currentCharacter?.chaId,
@@ -180,6 +171,7 @@
       generationPersistenceState: GenerationPersistenceIndicatorState | null
       scopeId: string | null
       awaitInitialDisplayParse: boolean
+      isRegenerationTarget: boolean
       generationDisplayProjection?: GenerationDisplayProjection
     }[] = []
 
@@ -216,6 +208,8 @@
         isLastMemory: isMemoryLimitMessage(database.showMemoryLimit, lastMemoryId, message.chatId),
         scopeId: currentChatId ?? null,
         awaitInitialDisplayParse: shouldAwaitInitialDisplayParse(i, messages.length),
+        isRegenerationTarget:
+          isGenerationActive && regenerateTargetMessageId !== null && regenerateTargetMessageId === message.chatId,
         ...(generationDisplayProjection ? { generationDisplayProjection } : {}),
       })
     }
@@ -775,7 +769,7 @@
       data-risu-dyna-icons={row.key === dynaIconRowKey ? 'true' : undefined}
       data-generation-display-projection={row.generationDisplayProjection ? 'regenerate' : undefined}>
       <Chat
-        message={row.generationDisplayProjection?.text ?? row.message.data}
+        message={row.generationDisplayProjection ? (row.generationDisplayProjection.text ?? '') : row.message.data}
         translation={row.generationDisplayProjection ? null : (row.message.translation ?? null)}
         isLastMemory={row.isLastMemory}
         idx={row.idx}
@@ -793,7 +787,8 @@
         role={row.message.role}
         name={row.name}
         isComment={row.message.isComment ?? false}
-        isGenerationLoading={row.generationDisplayProjection !== undefined ||
+        isGenerationLoading={row.isRegenerationTarget ||
+          row.generationDisplayProjection !== undefined ||
           (isGenerationActive &&
             row.idx === messages.length - 1 &&
             row.message.role === 'char' &&
@@ -817,30 +812,6 @@
         generationPersistenceState={row.generationPersistenceState}
         {generationStage}
         disabled={row.message.disabled ?? false} />
-      {#if row.generationDisplayProjection}
-        <div
-          class="chat-generation-loading w-full"
-          role="status"
-          aria-live="polite"
-          aria-busy="true"
-          data-generation-projection-loading>
-          <div class="chat-generation-loading-header">
-            <LoaderCircleIcon size={16} class="risu-ongoing-pulse animate-spin shrink-0" />
-            <span
-              >{activeHalfStreamingTokensPerSecond === undefined
-                ? generationLoadingText
-                : language.halfStreamingTokensPerSecond(activeHalfStreamingTokensPerSecond)}</span>
-          </div>
-          {#if activeHalfStreamingTokensPerSecond === undefined}
-            <div class="chat-generation-loading-track">
-              <div
-                class={`risu-ongoing-pulse chat-generation-loading-fill chat-generation-loading-stage-${normalizedGenerationStage}`}
-                style:width={`${generationLoadingProgress}%`}>
-              </div>
-            </div>
-          {/if}
-        </div>
-      {/if}
     </div>
   {/each}
 </div>

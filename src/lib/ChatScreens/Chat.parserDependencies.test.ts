@@ -406,7 +406,7 @@ describe('Chat parser dependencies', () => {
     const rows: ParserDependencyRow[] = [
       {
         id: 'loading-row',
-        data: '',
+        data: 'previous response',
         generationStage: 3,
         isGenerationLoading: true,
         name: 'Parser Bot',
@@ -420,6 +420,7 @@ describe('Chat parser dependencies', () => {
     const loading = target.querySelector<HTMLElement>('.chat-generation-loading')
     expect(loading?.classList).toContain('w-full')
     expect(loading?.querySelector('.chat-generation-loading-track')).toBeTruthy()
+    expect(target.textContent).not.toContain('previous response')
   })
 
   it('does not re-run every visible row parser on unrelated guarded projection writes', async () => {

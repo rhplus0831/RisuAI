@@ -9,6 +9,8 @@
     name = '',
     img = '',
     largePortrait = false,
+    isGenerationLoading = false,
+    isGenerationProjection = false,
     halfStreamingTokensPerSecond = undefined,
     onInitialDisplayParseStart = undefined,
     onInitialDisplayParseSettled = undefined,
@@ -19,6 +21,8 @@
     name?: string
     img?: string | Promise<string>
     largePortrait?: boolean
+    isGenerationLoading?: boolean
+    isGenerationProjection?: boolean
     halfStreamingTokensPerSecond?: number
     onInitialDisplayParseStart?: (registration: symbol) => void
     onInitialDisplayParseSettled?: (registration: symbol) => void
@@ -51,7 +55,15 @@
   data-chat-name={name}
   data-chat-image={typeof img === 'string' ? img : ''}
   data-chat-large-portrait={largePortrait ? 'true' : 'false'}>
-  {message || msgDisplay}
+  {#if isGenerationLoading && (!isGenerationProjection || message.length === 0)}
+    <div class="chat-generation-loading" data-generation-projection-loading={isGenerationProjection ? '' : undefined}>
+    </div>
+  {:else}
+    {message || msgDisplay}
+    {#if isGenerationLoading && isGenerationProjection}
+      <div class="chat-generation-loading" data-generation-projection-loading></div>
+    {/if}
+  {/if}
 </div>
 {#if halfStreamingTokensPerSecond !== undefined}
   <div data-testid="half-streaming-throughput">{halfStreamingTokensPerSecond}</div>

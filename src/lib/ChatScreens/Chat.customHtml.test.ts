@@ -543,6 +543,8 @@ function mountCustomHtmlRows(
     autoTranslateOnReady: boolean
     onAutoTranslationEligibilityConsumed: () => void
     isChatGenerating: boolean
+    isGenerationLoading: boolean
+    messageGenerationInfo: { model?: string; generationId?: string }
     generationPersistenceState: 'queued' | 'stalled' | 'terminal' | 'stalled_legacy' | null
   }> = {},
   startIndex = 0,
@@ -756,6 +758,43 @@ describe('generation finalization row indicator', () => {
     expect(affected?.querySelector('[data-generation-persistence-state="stalled_legacy"]')?.textContent).toContain(
       'generationPersistenceStalledLegacy',
     )
+  })
+})
+
+describe('regeneration row feedback', () => {
+  it('replaces the previous response and its metadata controls with generation loading feedback', async () => {
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(1, null as unknown as string)
+    testDatabaseState.db.requestInfoInsideChat = true
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'llm'
+    const chat = testDatabaseState.db.characters[0].chats[0]
+    chat.autoTranslate = true
+    chat.message[0].generationInfo = { model: 'mock-model', generationId: 'message-0' }
+    chat.message[0].translation = {
+      source: 'raw',
+      text: 'translated previous response',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm',
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 123,
+    }
+
+    mountCustomHtmlRows(1, 'char', {
+      isGenerationLoading: true,
+      messageGenerationInfo: chat.message[0].generationInfo,
+      rerollIcon: true,
+    })
+    await settle()
+
+    expect(target.querySelector('.chat-generation-loading[role="status"]')).toBeTruthy()
+    expect(target.textContent).not.toContain('visible message 0')
+    expect(target.textContent).not.toContain('translated previous response')
+    expect(target.textContent).not.toContain('retranslate')
+    expect(target.textContent).not.toContain('Mock-model')
+    expect(target.querySelector('.button-icon-reroll')).toBeNull()
   })
 })
 
