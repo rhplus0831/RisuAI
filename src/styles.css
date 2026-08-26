@@ -665,6 +665,11 @@ html.risu-reduced-motion .risu-ongoing-pulse {
   flex-shrink: 0;
 }
 
+.default-chat-screen[data-chat-initial-display-pending]
+  > :not([data-chat-message-skeleton]):not([data-default-chat-composer-flow]) {
+  display: none;
+}
+
 .chat-message-container .dyna-icon {
   display: none;
 }

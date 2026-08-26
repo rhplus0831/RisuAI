@@ -2293,22 +2293,6 @@
       Loading...
     </div>
   {/if}
-  {#if $selectedCharID >= 0 && activeChatDisplayLoading}
-    <!-- Keep this below App's z-30 responsive sidebar dialog. On wide layouts
-         the sidebar is in flow, but on narrow layouts it overlays this full-width chat root. -->
-    <div
-      class="absolute inset-0 z-20 flex items-center justify-center bg-bgcolor"
-      role="status"
-      aria-live="polite"
-      aria-busy="true"
-      data-chat-loading-cover
-      data-testid="chat-display-loading">
-      <div class="flex flex-col items-center text-textcolor2">
-        <LoaderCircleIcon size={24} class="risu-ongoing-pulse mb-3 animate-spin" aria-hidden="true" />
-        <span class="text-sm">{language.loadingChat}</span>
-      </div>
-    </div>
-  {/if}
   {#if $selectedCharID >= 0 && activeChatMessagesFailed}
     <div
       class="absolute inset-0 z-40 flex items-center justify-center bg-bgcolor px-6"
@@ -2353,6 +2337,39 @@
       class="relative flex h-full min-h-0 w-full flex-col-reverse"
       style={`--chat-screen-width: ${getDatabase().chatScreenWidth ?? 900}px; --chat-content-rendered-width: ${chatContentRenderedWidth === null ? 'min(var(--chat-screen-width), 100%)' : `${chatContentRenderedWidth}px`}; --chat-content-inline-end: ${chatContentInlineEnd ?? 8}px; --chat-content-fixed-inline-end: ${chatContentFixedInlineEnd ?? 16}px`}
       data-default-chat-screen-width>
+      {#snippet chatMessageSkeleton(mode: 'display' | 'hydration')}
+        <div
+          class="chat-screen-content-width flex w-full shrink-0 flex-col gap-5 bg-bgcolor px-4 py-8"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+          data-chat-loading-cover
+          data-chat-message-skeleton
+          data-chat-loading-mode={mode}>
+          <span class="sr-only">{language.loadingChat}</span>
+          <div class="flex w-full justify-start" data-chat-skeleton-row>
+            <div class="w-3/4 max-w-xl animate-pulse rounded-2xl rounded-bl-sm bg-darkbg p-4">
+              <div class="mb-3 h-3 w-1/4 rounded-full bg-selected"></div>
+              <div class="mb-2 h-3 w-full rounded-full bg-selected"></div>
+              <div class="h-3 w-2/3 rounded-full bg-selected"></div>
+            </div>
+          </div>
+          <div class="flex w-full justify-end" data-chat-skeleton-row>
+            <div class="w-2/3 max-w-lg animate-pulse rounded-2xl rounded-br-sm bg-selected p-4">
+              <div class="mb-2 h-3 w-full rounded-full bg-darkbg"></div>
+              <div class="h-3 w-1/2 rounded-full bg-darkbg"></div>
+            </div>
+          </div>
+          <div class="flex w-full justify-start" data-chat-skeleton-row>
+            <div class="w-4/5 max-w-2xl animate-pulse rounded-2xl rounded-bl-sm bg-darkbg p-4">
+              <div class="mb-3 h-3 w-1/5 rounded-full bg-selected"></div>
+              <div class="mb-2 h-3 w-5/6 rounded-full bg-selected"></div>
+              <div class="h-3 w-3/5 rounded-full bg-selected"></div>
+            </div>
+          </div>
+        </div>
+      {/snippet}
+
       {#snippet composerSurface(docked: boolean)}
         <section
           class="flex w-full shrink-0 flex-col-reverse items-center"
@@ -2822,6 +2839,7 @@
         class="default-chat-screen relative flex min-h-0 w-full flex-1 flex-col-reverse overflow-y-auto"
         class:fastify-chat-theme={getDatabase().theme === 'fastify'}
         data-default-chat-transcript
+        data-chat-initial-display-pending={activeChatDisplayLoading ? '' : undefined}
         onwheel={() => chatsInstance?.handleTranscriptUserInteraction()}
         ontouchstart={() => chatsInstance?.handleTranscriptUserInteraction()}
         onpointerdown={(event) => {
@@ -2870,36 +2888,11 @@
           </div>
         {/if}
 
+        {#if activeChatDisplayLoading && !activeChatMessagesLoading}
+          {@render chatMessageSkeleton('display')}
+        {/if}
         {#if activeChatMessagesLoading}
-          <div
-            class="chat-screen-content-width flex w-full flex-col gap-5 px-4 py-8"
-            role="status"
-            aria-live="polite"
-            aria-busy="true"
-            data-chat-loading-cover
-            data-chat-message-skeleton>
-            <span class="sr-only">{language.loadingChat}</span>
-            <div class="flex w-full justify-start" data-chat-skeleton-row>
-              <div class="w-3/4 max-w-xl animate-pulse rounded-2xl rounded-bl-sm bg-darkbg p-4">
-                <div class="mb-3 h-3 w-1/4 rounded-full bg-selected"></div>
-                <div class="mb-2 h-3 w-full rounded-full bg-selected"></div>
-                <div class="h-3 w-2/3 rounded-full bg-selected"></div>
-              </div>
-            </div>
-            <div class="flex w-full justify-end" data-chat-skeleton-row>
-              <div class="w-2/3 max-w-lg animate-pulse rounded-2xl rounded-br-sm bg-selected p-4">
-                <div class="mb-2 h-3 w-full rounded-full bg-darkbg"></div>
-                <div class="h-3 w-1/2 rounded-full bg-darkbg"></div>
-              </div>
-            </div>
-            <div class="flex w-full justify-start" data-chat-skeleton-row>
-              <div class="w-4/5 max-w-2xl animate-pulse rounded-2xl rounded-bl-sm bg-darkbg p-4">
-                <div class="mb-3 h-3 w-1/5 rounded-full bg-selected"></div>
-                <div class="mb-2 h-3 w-5/6 rounded-full bg-selected"></div>
-                <div class="h-3 w-3/5 rounded-full bg-selected"></div>
-              </div>
-            </div>
-          </div>
+          {@render chatMessageSkeleton('hydration')}
         {:else if getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message?.[0]?.data?.startsWith(coldStorageHeader)}
           {#await preLoadChat($selectedCharID, getDatabase().characters[$selectedCharID].chatPage)}
             <div class="chat-screen-content-width w-full flex justify-center text-textcolor2 italic mb-12">

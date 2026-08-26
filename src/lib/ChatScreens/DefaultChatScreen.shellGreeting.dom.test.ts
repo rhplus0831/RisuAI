@@ -450,6 +450,7 @@ describe('chat history hydration loading', () => {
     expect(skeleton).toBeTruthy()
     expect(skeleton?.getAttribute('role')).toBe('status')
     expect(skeleton?.getAttribute('aria-busy')).toBe('true')
+    expect(skeleton?.getAttribute('data-chat-loading-mode')).toBe('hydration')
     expect(skeleton?.textContent).toContain('loadingChat')
     expect(skeleton?.querySelectorAll('[data-chat-skeleton-row]')).toHaveLength(3)
     expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()

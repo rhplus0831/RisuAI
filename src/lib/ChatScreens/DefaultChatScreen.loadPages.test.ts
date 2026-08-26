@@ -895,7 +895,7 @@ describe('DefaultChatScreen persona presentation', () => {
 })
 
 describe('DefaultChatScreen initial display readiness', () => {
-  it('covers the chat content until the newest two cold row parses settle', async () => {
+  it('shows the message skeleton until the newest two cold row parses settle', async () => {
     defaultChatScreenTestChatController.hold()
     seedDatabase([4])
     mountScreen()
@@ -905,26 +905,30 @@ describe('DefaultChatScreen initial display readiness', () => {
     })
     expect(messageRowIndexes()).toEqual([3, 2, 1, 0])
 
-    const cover = target.querySelector<HTMLElement>('[data-chat-loading-cover]')
-    expect(cover).toBeTruthy()
-    expect(cover?.matches('[data-testid="chat-display-loading"]')).toBe(true)
-    expect(cover?.getAttribute('role')).toBe('status')
-    expect(cover?.getAttribute('aria-live')).toBe('polite')
-    expect(cover?.getAttribute('aria-busy')).toBe('true')
-    expect(cover?.textContent).toContain('loadingChat')
-    expect(cover?.querySelector('.animate-spin')).toBeTruthy()
-    expect(cover?.classList.contains('z-20')).toBe(true)
-    expect(cover?.classList.contains('z-40')).toBe(false)
+    const skeleton = target.querySelector<HTMLElement>('[data-chat-message-skeleton]')
+    expect(skeleton).toBeTruthy()
+    const transcript = skeleton?.closest('[data-default-chat-transcript]')
+    expect(transcript).toBeTruthy()
+    expect(transcript?.hasAttribute('data-chat-initial-display-pending')).toBe(true)
+    expect(skeleton?.getAttribute('data-chat-loading-mode')).toBe('display')
+    expect(skeleton?.getAttribute('role')).toBe('status')
+    expect(skeleton?.getAttribute('aria-live')).toBe('polite')
+    expect(skeleton?.getAttribute('aria-busy')).toBe('true')
+    expect(skeleton?.textContent).toContain('loadingChat')
+    expect(skeleton?.querySelectorAll('[data-chat-skeleton-row]')).toHaveLength(3)
+    expect(skeleton?.querySelector('.animate-spin')).toBeNull()
+    expect(skeleton?.contains(target.querySelector('[data-testid="default-chat-composer"]'))).toBe(false)
+    expect(target.querySelector('[data-testid="chat-display-loading"]')).toBeNull()
 
     expect(defaultChatScreenTestChatController.releaseNext()).toBe(true)
     await settle()
     expect(defaultChatScreenTestChatController.pendingCount()).toBe(1)
-    expect(target.querySelector('[data-testid="chat-display-loading"]')).toBeTruthy()
+    expect(target.querySelector('[data-chat-message-skeleton]')).toBeTruthy()
 
     expect(defaultChatScreenTestChatController.releaseNext()).toBe(true)
 
     await waitFor(() => {
-      expect(target.querySelector('[data-testid="chat-display-loading"]')).toBeNull()
+      expect(target.querySelector('[data-chat-message-skeleton]')).toBeNull()
     })
     expect(target.textContent).toContain('chat-0 message 0')
     expect(target.textContent).toContain('chat-0 message 3')
