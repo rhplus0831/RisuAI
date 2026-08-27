@@ -1,6 +1,6 @@
 # Providers And Models
 
-Last audited: 2026-08-17.
+Last audited: 2026-08-27.
 
 This guide owns browser model metadata, durable model profiles and credentials,
 server-owned provider operations, provider dispatch, runtime options, capability
@@ -131,6 +131,13 @@ substitution. Contracts are pinned by `src/ts/model/neuralwatt.test.ts`,
 `server/fastify/__tests__/providerOperations.test.ts`,
 `src/ts/model/modelProfileResolver.test.ts`, and
 `server/fastify/__tests__/chatDispatchProfileOptions.test.ts`.
+
+Legacy selector compatibility is narrower than first-class profile support.
+DeepSeek and DeepInfra model ids still resolve to fixed OpenAI-compatible
+Fastify endpoints. NovelAI, NovelList, Plugin, and local WebLLM selections remain
+live browser/local compatibility surfaces but are explicitly rejected by
+server chat dispatch; they do not become Fastify-routable merely because the
+shared model registry can describe them.
 
 ## Provider Credentials
 

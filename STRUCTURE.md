@@ -1,6 +1,6 @@
 # Project Structure
 
-Last audited: 2026-08-25.
+Last audited: 2026-08-27.
 
 Use this file to orient yourself in the Fastify-only RisuAI codebase. The
 supported toolchain is Node.js 24 or newer with pnpm. Choose the guide for your
@@ -14,8 +14,9 @@ records past decisions and is not authoritative.
 | Unfamiliar code or cross-layer ownership | [Architecture Index](docs/structure/README.md) and [Domain Glossary](docs/structure/domain-glossary.md#cross-layer-ownership) |
 | Fastify composition, routes, generation operations/effects, jobs, timers, tracing, or Web Push | [Backend Map](docs/structure/backend.md) |
 | SQLite, revisions, active writer, command events, or SSE | [Data And Events](docs/structure/data-and-events.md) |
-| Browser resources, hydration, cache/invalidation, bridges, durable mutations, or recovery | [Server Resources And Bridges](docs/structure/server-resources-and-bridges.md), then [Client Runtime](src/docs/client-runtime.md) |
-| Chat, transcript, message, composer, generation UI, drafts, viewport behavior, or completion audio | [Svelte Chat UI](src/docs/svelte-chat-ui.md), then [Client Runtime](src/docs/client-runtime.md#generation-client) for durable generation |
+| Browser resources, cache, or hydration | [Server Resources And Hydration](docs/structure/server-resources-and-bridges.md), then [Client Runtime](src/docs/client-runtime.md) |
+| Durable mutations, command events, invalidation, bridges, writer loss, or recovery | [Durable Mutations And Recovery](docs/structure/durable-mutations-and-recovery.md) |
+| Chat, transcript, message, composer, generation UI, drafts, viewport behavior, or completion audio | [Svelte Chat UI](src/docs/svelte-chat-ui.md), then [Generation Client](src/docs/generation-client.md) for durable generation |
 | Sidebars, routes, chat lists, character selection, or reordering | [Svelte Navigation UI](src/docs/svelte-navigation-ui.md) |
 | Settings, shared controls/accessibility, localization, authoring pages, or provider panels | [Svelte Settings UI](src/docs/svelte-settings-ui.md) and [Svelte UI](src/docs/svelte-ui.md#localization) |
 | App shell, styling/themes, responsive/Lite behavior, Playground, or data-dependent rendering | [Svelte UI](src/docs/svelte-ui.md) |
@@ -25,7 +26,10 @@ records past decisions and is not authoritative.
 | Agents, Agent Presets, prepared inputs, dependencies, or output composition | [Agents And Presets](docs/structure/agents-and-presets.md) |
 | Modules, plugins, permissions, or MCP | [Plugins And MCP](docs/structure/plugins-and-mcp.md) |
 | Assets, inlay catalog, `.risu`/CharX/chat exchange, backups, reset, or Realm conversion | [Assets And Saves](docs/structure/assets-and-saves.md) |
-| Tests, compatibility harness, local dev, CI, generated paths, or removed paths | [Testing And Operations](docs/structure/testing-and-operations.md), [Test Suite Guide](docs/tests/README.md), and [Generated And Legacy](docs/structure/generated-and-legacy.md) |
+| Startup performance, bundle boundaries, observer rollout, or readiness budgets | [Fast Bootstrap](docs/fast-bootstrap/README.md), then the canonical runtime guides it links |
+| Tests, compatibility harness, CI, TypeScript, or formatting | [Testing And Operations](docs/structure/testing-and-operations.md) and [Test Suite Guide](docs/tests/README.md) |
+| Local dev, tracing, startup telemetry, environment, or browser support | [Development And Observability](docs/structure/development-and-observability.md) |
+| Generated, ignored, compatibility-only, or removed paths | [Generated And Legacy](docs/structure/generated-and-legacy.md) |
 
 ## Repository Map
 
@@ -37,6 +41,7 @@ records past decisions and is not authoritative.
 | `index.html`, `vite.config.ts`, `src/` | Svelte 5 SPA, Vite configuration, browser runtime, UI, language packs, and bundled client data. |
 | `server/fastify/` | Fastify API and tests, including SQLite persistence and provider execution; it has no separate package manifest. |
 | `STRUCTURE.md`, `docs/structure/`, `src/docs/` | Current architecture and implementation guides. Start at the [Architecture Index](docs/structure/README.md). |
+| `docs/fast-bootstrap/` | Active startup-performance execution guide and Phase 7 rollout ledger; shipped behavior remains canonical in the architecture/runtime guides. |
 | `docs/tests/` | Test-discovery guides organized by product and domain area. |
 | `.archived-docs/` | Closed workstreams and dated reports, including the August Fastify audits, upstream-sync sweep, data-driven UI inventory, and message-generation parity audit. Do not infer current behavior from them. |
 | `test/compat-harness/` | Opt-in golden compatibility comparison against the pinned pre-Fastify worktree; it is not part of `pnpm test:all`. |
@@ -47,14 +52,15 @@ records past decisions and is not authoritative.
 | `.github/workflows/quality.yml` | Parallel Node 24 CI for pull requests and `main`; preserves the local `test:all` lanes and conditionally runs the focused UI coverage map. |
 | `.claude/`, `.vscode/`, `.npmrc`, `.gitattributes`, `.gitignore`, `.ignore` | Agent tooling, editor, package-manager, Git, and search policy. |
 | `.prettier*`, `README.md`, `version.json`, `LICENSE`, `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md` | Formatting policy, project metadata, and shared/local contributor and agent guidance. |
-| `dist/`, `data/`, `data-agent/`, `node_modules/`, `coverage/`, `test-results/` | Generated or runtime state. Persisted/user-uploaded assets live under `data/assets/`; see [Generated And Legacy](docs/structure/generated-and-legacy.md). |
+| `dist/`, `data/`, `data-agent/`, `node_modules/`, `coverage/`, `test-results/`, `fast-bootstrap-results/` | Generated or runtime state. Persisted/user-uploaded assets live under `data/assets/`; see [Generated And Legacy](docs/structure/generated-and-legacy.md). |
 
 ### Runtime Entrypoints
 
 | Path | Responsibility |
 | ---- | -------------- |
 | `index.html` | Declares the app mount/preloader, loads `src/main.ts`, and requests `interactive-widget=resizes-content`. |
-| `src/main.ts` | Installs routing, push listeners, viewport coordination, root-scroll protection, and shared completion-audio context unlocking; mounts the app, starts bootstrap/hotkeys, and removes the preloader. |
+| `src/main.ts` | Thin browser entry boundary: records entry readiness, installs the runtime environment, handles preload failures, and dynamically imports `src/appStartup.ts`. |
+| `src/appStartup.ts` | Installs routing, push listeners, viewport coordination, root-scroll protection, and completion-audio unlocking; mounts the app, starts bootstrap/hotkeys and route warming, and removes the preloader. |
 | `src/App.svelte` | Svelte application shell, top-level render routing, overlays, and selected-character visibility guard. |
 | `src/ts/bootstrap.ts` | Auth/writer bootstrap, recovery preparation, resource hydration/invalidation, plugin/runtime setup, and active-work reattachment. |
 | `src/ts/startupReadiness.ts` | Monotonic startup milestones, narrow render/route/mutation/plugin/generation capabilities, retry diagnostics, and privacy-safe measurement events. |

@@ -1,6 +1,6 @@
 # Assets And Saves
 
-Last audited: 2026-08-09.
+Last audited: 2026-08-27.
 
 Fastify owns binary persistence, save import/export, Realm import, and backup
 snapshots. Browser code should use server asset URLs and server save routes
@@ -99,10 +99,20 @@ authenticated catalog. `PUT /api/v1/commands/inlay-assets/:assetId` and
 `inlayCatalog.deleted` and update only this targeted table. The browser keeps
 the catalog outside the aggregate compatibility database and refreshes it as a
 fourth root resource. See
-[Server Resources And Bridges](server-resources-and-bridges.md#bootstrap-and-initial-resources)
+[Server Resources And Hydration](server-resources-and-bridges.md#bootstrap-and-initial-resources)
 for reconciliation behavior. Persistence and client projection behavior are
 guarded by `server/fastify/__tests__/inlayCatalog.test.ts` and
 `src/ts/server/inlayCatalog.test.ts`.
+
+`src/ts/process/files/inlays.ts` owns browser ingestion and compatibility
+migration. New decoded-image ingestion rejects sources above 16 Mi-pixels and
+`writeInlayImage()` downsizes accepted images above 1 Mi-pixel before uploading
+PNG bytes; audio/video bytes and signature JSON use their own content types.
+Listing first migrates usable browser-local entries and aliases into the server
+catalog, removes metadata ghosts with no bytes/asset id, and retains
+browser-local reads only as a legacy fallback. Deletion removes the revisioned
+catalog row and matching local aliases; immutable bytes remain subject to the
+server asset-GC policy.
 
 ## `.risu` And Bundle Routes
 
@@ -125,8 +135,10 @@ guarded by `server/fastify/__tests__/inlayCatalog.test.ts` and
 `POST /api/v1/import/risusave` accepts multipart `.risu` uploads or JSON
 database bodies. Imports normalize the database, apply it through the
 repository, replace legacy Hypa V3 rows where needed, emit `state.imported`,
-and return asset reports. Multipart `.risu` and bundle-style imports also
-return import reports; JSON body compatibility imports return only the asset
+and return revision, command-event, database-lineage/writer ownership metadata,
+and asset reports. Multipart `.risu` and bundle-style imports also return
+format-specific import reports; JSON body compatibility imports omit that
+`importReport` detail but retain the common ownership/event metadata and asset
 report. Plain `.risu` responses expose aggregate referenced/missing/orphaned
 counts, where missing means absent asset metadata rather than missing disk
 bytes. They do not fetch remote/cache assets server-side.
@@ -244,7 +256,14 @@ serialization; any incomplete hydration fails the export. All-chat export
 similarly hydrates the target character's chats and writes unchanged
 `risuAllChats` version-2 JSON. Its download passes
 `revokeObjectUrlAfterMs: null`, deliberately keeping the blob URL alive instead
-of applying the helper's normal revocation timeout.
+of applying the helper's normal revocation timeout. Single-chat and all-chat
+exports also reject a transcript whose first row is still a cold-storage
+placeholder; the user must restore that archived content before export.
+
+Chat import accepts Tavern-style JSONL, `risuChat` and `risuAllChats` JSON v1/v2,
+and Risu HTML embeds. It rekeys imported chats/folders, clears unknown folder
+references, normalizes chat-generation settings, and dispatches targeted
+server-backed creation commands.
 
 Only the sidebar's **Export all chats** action offers destructive follow-up:
 after the download succeeds, two confirmations are required before a durable

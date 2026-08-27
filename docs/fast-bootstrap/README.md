@@ -59,7 +59,8 @@ Every phase must preserve these conditions:
    `src/lang`.
 
 The canonical current behavior is documented in
-[Server Resources and Bridges](../structure/server-resources-and-bridges.md),
+[Server Resources and Hydration](../structure/server-resources-and-bridges.md),
+[Durable Mutations and Recovery](../structure/durable-mutations-and-recovery.md),
 [Data and Events](../structure/data-and-events.md), and
 [Client Runtime](../../src/docs/client-runtime.md). Update those documents only
 when shipped behavior changes.

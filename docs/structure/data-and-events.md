@@ -1,6 +1,6 @@
 # Data And Events
 
-Last audited: 2026-08-25.
+Last audited: 2026-08-27.
 
 Fastify owns authoritative application state. The browser reads authenticated
 REST resources and sends revision-checked commands or explicit server-owned
@@ -33,17 +33,23 @@ plus negative sequence positions. Regenerate preserves displaced/new candidates
 as alternates, while send/continue clears the reroll buffer for the appended
 path. Per-chat `hypaV3Data` lives in `chat_hypa_v3`.
 
-`CURRENT_SCHEMA_VERSION` is 28. SQLite includes settings; character, chat,
+`CURRENT_SCHEMA_VERSION` is 32. SQLite includes settings; character, chat,
 message, and per-chat memory rows; split collections; assets; command events and
 mutation receipts; the inlay catalog; push subscriptions; Hypa V3 memory state;
 generation finalization retries; greeting translations; and durable LLM request
-history. Migration v22 drops the retired
-`collection_body_revisions` and `projection_body_cache_state` tables; v23
+history. It also stores lineage-scoped generation operations and attempts, their
+projection epoch, and the generation-effect claim/lease/receipt ledger; active
+stream viewers and job attachments remain process-local. Migration v22 drops
+the retired `collection_body_revisions` and `projection_body_cache_state`
+tables; v23
 persists stable ids for legacy global lorebooks and entries; v24 adds durable
 command-mutation receipts; v25 adds persistent database lineage, durable active
 writer ownership/epochs, and acknowledged-receipt tombstones; v26 adds the
-`inlay_catalog` table; v27 adds greeting translations; and v28 adds
-`request_history`. Current browser state is rebuilt from concrete REST
+`inlay_catalog` table; v27 adds greeting translations; v28 adds
+`request_history`; v29 adds the generation-operation ledger and durable
+operation identity on finalization/events; v30 adds stable memory-job instance
+identity; v31 adds the generation-effect ledger; and v32 adds effect-claim
+leases. Current browser state is rebuilt from concrete REST
 resources rather than a cached database projection.
 
 Prompt-template ownership follows the split-preset contract. Modern template
@@ -102,7 +108,7 @@ scope work before hydration. Same-lineage rows for other sessions remain dormant
 old-lineage rows are discarded during preparation. Retained or unreadable rows
 for the current writer and lineage block hydration so authoritative reads cannot
 replace unresolved local intent. Full browser mechanics belong in
-[Server Resources And Bridges](server-resources-and-bridges.md#durable-mutation-recovery-command-queue-and-local-acknowledgements).
+[Durable Mutations And Recovery](durable-mutations-and-recovery.md#durable-mutation-recovery-command-queue-and-local-acknowledgements).
 
 Base-revision mismatches return `409 revision_conflict`; stale writer sessions
 return `423 active_writer_stale`. Browser command helpers cache the latest
@@ -160,6 +166,15 @@ event, owner, revision, digest, and projection checks pass; malformed, stale,
 tainted, missing, or non-contiguous acknowledgements fail closed to the normal
 authoritative event read.
 
+Protocol-v1 accepted sends use that same rule outside the ordinary command
+transport. The generation-operation response must carry a matching message
+append event and revision. While that response is being applied, matching
+own-session SSE echoes are buffered; a still-current optimistic chat-body
+projection can advance through a typed append effect, while an invalid event,
+projection-epoch change, or overlapping operation falls back into ordered
+authoritative reconciliation. This prevents an event echo from replacing the
+optimistic user row or launching a redundant hydration during stream setup.
+
 `PUT /api/v1/commands/characters/:characterId/chats` is the atomic all-chat
 reset contract. Its targeted character-row transaction deletes that
 character's previous `chats`, `messages`, and `chat_hypa_v3` rows, inserts one
@@ -178,7 +193,7 @@ narrower or cross-resource keys where needed. Treat
 `server/fastify/src/commands/events.ts` and
 `src/ts/server/resourceInvalidation.ts` as the paired source of truth. The
 complete event-to-read mapping and its broad-recovery fallback live in
-[Event Invalidation And Recovery](server-resources-and-bridges.md#event-invalidation-and-recovery).
+[Event Invalidation And Recovery](durable-mutations-and-recovery.md#event-invalidation-and-recovery).
 
 Character list and row responses omit message bodies and, when
 `enableLorebookStubs` is true, character lorebooks. Resource application keeps
@@ -339,7 +354,7 @@ server-owned exceptions remain outside that ordering as listed above.
 
 The canonical REST endpoint, bootstrap, common-revision read, hydration,
 cache-cap, shell/body, and stale-response workflow belongs to
-[Server Resources And Bridges](server-resources-and-bridges.md#read-and-hydration-endpoints).
+[Server Resources And Hydration](server-resources-and-bridges.md#read-and-hydration-endpoints).
 
 ## SSE And Streaming
 

@@ -1,6 +1,6 @@
 # Svelte Navigation UI Guide
 
-Last audited: 2026-08-17.
+Last audited: 2026-08-27.
 
 This guide owns the sidebar, navigation controls, character and chat selection,
 character configuration, and list organization.
@@ -153,6 +153,13 @@ separate focused bridges and freshness guards under `src/ts/server/`. Keep
 script definitions outside the profile draft, and capture character/field
 identity before any asynchronous picker, upload, or provider operation.
 
+Character script/trigger editor activity is held in a 300 ms trailing draft
+before cloning or durable dispatch. Leaving the editor flushes the draft;
+display activation waits for final acceptance, while generation blocks on a
+queued or failed immediate save. The cross-layer persistence and display rules
+are canonical in
+[Prompt Assembly And Scripting](../../docs/structure/prompt-assembly-and-scripting.md#intermediate-display-processing).
+
 `src/ts/hotkey.ts` mixes live store/modal state with DOM class selectors for
 visible controls. A markup or class-name change can therefore break keyboard
 actions even when the routed state is correct; verify both the visible target
@@ -193,7 +200,7 @@ route is open and recreated only for a current list generation.
 These reorder flows are optimistic command mutations. UI code must retain
 queued intent, roll back terminal failure, and allow resource reconciliation to
 replace the projection. The command/outbox contract is canonical in
-[Server Resources And Bridges](../../docs/structure/server-resources-and-bridges.md#durable-mutation-recovery-command-queue-and-local-acknowledgements).
+[Durable Mutations And Recovery](../../docs/structure/durable-mutations-and-recovery.md#durable-mutation-recovery-command-queue-and-local-acknowledgements).
 
 ## Focused Tests
 

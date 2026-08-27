@@ -1,6 +1,6 @@
 # Prompt Assembly And Scripting
 
-Last audited: 2026-08-17.
+Last audited: 2026-08-27.
 
 This guide owns server prompt construction, CBS and history variables,
 lorebook and memory injection, prompt-template precedence, generation
@@ -203,6 +203,16 @@ identical non-streaming targets by namespace, server revision, browser context,
 target/source identity, priority, and the scoped activation token; completed
 results use a bounded LRU and namespace changes clear both in-flight and
 completed deduplication state.
+
+Character-sidebar script and trigger edits have an earlier 300 ms trailing
+draft debounce in `scriptDefinitionBridge.svelte.ts`, before cloning, diffing,
+outbox staging, or network dispatch. Display activation flushes that draft and
+waits for final durable settlement before advancing its owner token; a failed
+save leaves the old display active. Send/continue/regenerate also flush the
+draft, but waits only for the immediate dispatch outcome so offline/queued or
+failed persistence blocks generation instead of hanging or assembling against
+unsaved definitions. Module, prompt-preset, and global display activation keep
+their existing owner-specific persistence paths.
 
 The cache retains up to four recently active namespaces keyed exactly by
 database lineage, writer epoch, ephemeral page session, language, both viewport

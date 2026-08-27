@@ -1,4 +1,4 @@
-# Fast Startup Implementation Plan
+# Fast Bootstrap Implementation Plan
 
 ## Goal
 

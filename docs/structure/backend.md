@@ -1,6 +1,6 @@
 # Backend Map
 
-Last audited: 2026-08-18.
+Last audited: 2026-08-27.
 
 The backend is the Fastify server under `server/fastify`. This guide owns its
 composition root, route policy, request-path boundaries, process-local jobs,
@@ -21,6 +21,8 @@ wired through those boundaries.
 | `server/fastify/src/messageStore.ts`                                                    | Chat `messages`, reroll alternates, and per-chat `chat_hypa_v3` rows.                                                                                                                 |
 | `server/fastify/src/chatGenerationSettingsStorage.ts`                                   | Normalizes persisted chat-scoped generation settings on import/load.                                                                                                                  |
 | `server/fastify/src/routes/resourceReads.ts`                                            | Authenticated settings/collection/character/inlay-catalog REST resources plus lazy chat, lorebook, legacy-preset, and prompt-template hydration reads.                                |
+| `server/fastify/src/displaySourceService.ts`, `routes/displaySources.ts`                | Read-only, revision-fenced intermediate display processing with scoped loads, per-target isolation, aborts, and a bounded process-local cache.                                       |
+| `server/fastify/src/routes/startupTelemetry.ts`                                        | Authenticated, metadata-only startup telemetry ingestion with a 16 KiB request cap; diagnostics never affect readiness.                                                             |
 | `server/fastify/src/commands/mutations.ts`, `commands/events.ts`                        | Revision-checked transaction lanes, durable command-event catalog/history, and live event fanout.                                                                                     |
 | `server/fastify/src/auth.ts`, `http.ts`, `activeWriter.ts`, `providerSecrets.ts`        | Single-user auth/session helpers, route auth assertion, active-writer guard, secret masking/resolution.                                                                               |
 | `server/fastify/src/routeManifest.ts`                                                   | Source of truth for route auth, active-writer, streaming, and exception classifications.                                                                                              |
@@ -117,6 +119,8 @@ bulk asset uploads `180/min`, and generation submit `60/min`.
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Health/auth/bootstrap | `health.ts`, `auth.ts`, `bootstrap.ts`                                                                                            | Health/status/setup/login plus runtime bootstrap; writer intent latches the active writer, while the response carries revision/lineage, generation operation/job/finalization/effect recovery, and message/greeting translation state.                                                                                                                                                      |
 | Resources/events      | `resourceReads.ts`, `events.ts`                                                                                                   | Root and targeted REST resources, greeting translations, the inlay catalog, bounded lazy/bulk hydration, replayable command SSE, and initial/live memory state.                                                                                                                                                                                                                          |
+| Display processing    | `displaySources.ts`                                                                                                                | Revision-fenced, read-only intermediate display transforms; the browser owns final Markdown, sanitization, and DOM rendering.                                                                                                                                                                                                                                                            |
+| Startup telemetry     | `startupTelemetry.ts`                                                                                                              | Authenticated metadata-only browser startup events; payload failures are isolated from readiness and application state.                                                                                                                                                                                                                                                                |
 | Commands              | `commands.ts` plus `commands/`                                                                                                    | First-run initialization plus revision-checked domain mutations, including shared provider credentials, standalone Agents/Agent Presets, and atomic character-owned chat reset. Hot paths accept sparse object/row/definition patches and return contract-specific canonical state or digest-backed receipts when optimistic state can be acknowledged safely.                         |
 | Assets/saves/backups  | `assets.ts`, `save.ts`, `realmImport.ts`, `backups.ts`                                                                            | Content-addressed assets, `.risu`/bundle/local-backup import/export, Realm import, and snapshots. Detailed persistence contracts live in [Assets And Saves](assets-and-saves.md).                                                                                                                                            |
 | Push notifications    | `pushNotifications.ts`                                                                                                            | Web Push VAPID lookup plus authenticated subscription create/delete. Environment keys override the generated key file; initialization failure disables delivery, and 404/410 responses delete expired SQLite subscriptions.                                                                                                                                                              |
@@ -141,7 +145,7 @@ character's previous chat/message/memory rows, preserves the character's chat
 folders, selects page `0`, and emits the `COMMAND_EVENT_CATALOG.chatsReset`
 `characterRow` event. `server/fastify/__tests__/commands.test.ts` guards the
 atomic write and rollback contract; the browser recovery path is documented in
-[Server Resources And Bridges](server-resources-and-bridges.md#durable-mutation-recovery-command-queue-and-local-acknowledgements).
+[Durable Mutations And Recovery](durable-mutations-and-recovery.md#durable-mutation-recovery-command-queue-and-local-acknowledgements).
 
 Owner deletion is also a command transaction, not client cleanup.
 `server/fastify/src/commands/generationReferences.ts` rehomes or clears matching
@@ -225,7 +229,8 @@ protocol table-write metrics and command mutation-budget tests guard those write
 sets.
 
 [Data And Events](data-and-events.md) owns SQLite, revision, event, and targeted
-write contracts. [Server Resources And Bridges](server-resources-and-bridges.md)
+write contracts. [Server Resources And Hydration](server-resources-and-bridges.md)
+and [Durable Mutations And Recovery](durable-mutations-and-recovery.md)
 owns browser command queuing, durable intents/receipts, optimistic
 acknowledgements, invalidation, and hydration.
 
@@ -292,7 +297,7 @@ expired durable claims may be reclaimed, while ephemeral effects are skipped
 during late recovery. Startup reconciles pre-ledger completed operations, and
 the completion-effect retry sweep resumes pending server-owned automatic
 translation. Browser execution and late recovery are documented in
-[Client Runtime](../../src/docs/client-runtime.md#generation-client).
+[Generation Client](../../src/docs/generation-client.md).
 Shutdown does not terminalize an operation while that cancellation snapshot is
 still being persisted. If a restart finds an unjournaled `stopping` operation,
 it recovers it as retryable abandoned work rather than claiming cancellation
@@ -324,7 +329,7 @@ Half-streaming is also a route/SSE contract. An `info` frame marks
 cumulative tokenizer-aware `generatedTokens` plus provider-dispatch
 `elapsedMs`. This lets the browser keep progress live while deferring visible
 provider text until the terminal frame. The browser coordinator is documented
-in [Client Runtime](../../src/docs/client-runtime.md#generation-client).
+in [Generation Client](../../src/docs/generation-client.md).
 On Stop, server-backed streams keep the cancelling viewer attached through the
 cancelled terminal and can recreate a half-stream placeholder already removed
 by local cleanup; local-provider streams, which have no server terminal, flush

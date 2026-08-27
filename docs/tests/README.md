@@ -1,6 +1,6 @@
 # Test Suite Guide
 
-Last audited: 2026-08-26.
+Last audited: 2026-08-27.
 
 This documentation groups the current suite by protected product behavior. Treat `package.json` and the runner configuration files as the source of truth for commands and discovery; this guide intentionally avoids snapshot case counts and pass totals, which become stale whenever tests are added or parameterized matrices change.
 
@@ -42,25 +42,18 @@ The main weakness is integration depth rather than raw case count. Most frontend
 
 ## Running the suite
 
-| Command                  | Scope                                                                                                         |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `pnpm test`              | Alias for the ordinary frontend Vitest lane                                                                   |
-| `pnpm test:quick` / `pnpm test:affected` | Changed-path planner for the local diff; exact changed tests first, dependency-aware source selection otherwise |
-| `pnpm test:frontend`     | Frontend Node + happy-dom projects; excludes `src/ts/__tests__` and `src/lib/_audit`                           |
-| `pnpm test:frontend:all` | Frontend tests including both explicit gate directories                                                       |
-| `pnpm test:gates`        | All explicit performance and audit gates                                                                      |
-| `pnpm test:gates:perf`   | The two named render/clone performance probes                                                                 |
-| `pnpm test:gates:audit`  | The two mounted visible-state audit gates under `src/lib/_audit`                                             |
-| `pnpm test:server`       | Node/Fastify/SQLite tests discovered by `server/fastify/vitest.config.ts`                                     |
-| `pnpm test:compat-harness` | Opt-in golden comparison with the pinned pre-Fastify worktree; requires the external baseline and is not in `test:all` |
-| `pnpm test:smoke`        | Per-file-serial Chromium specs; two local file workers, one in CI                                             |
-| `pnpm measure:fast-bootstrap` | Production preload/boundary reports plus the small/large cold/warm startup matrix                         |
-| `pnpm verify:fast-bootstrap:phase7` | Complete fast-bootstrap measurement plus direct-link, replay, event-gap, writer, observer, and optional-runtime journeys |
-| `pnpm test:all`          | Bounded-parallel quality aggregate with dist-dependent and load-sensitive lanes isolated                      |
-| `pnpm coverage:frontend` | Broad frontend report, including gates; not part of `test:all`                                                |
-| `pnpm coverage:backend`  | Broad Fastify report; not part of `test:all`                                                                  |
-| `pnpm coverage:ui-map`   | Six-file UI sentinel with aggregate line/statement/function/branch floors of 8%/7%/5%/4%; text/JSON output |
-| `pnpm coverage:ui-map:html` | The same focused gate with an additional on-demand HTML report                                             |
+The canonical command inventory and lane semantics are in
+[Testing And Operations](../structure/testing-and-operations.md#scripts). Common
+entrypoints are:
+
+| Goal | Command |
+| ---- | ------- |
+| Current diff | `pnpm test:affected` |
+| Ordinary frontend lane | `pnpm test` |
+| Complete owning frontend/server lane | `pnpm test:frontend:all` / `pnpm test:server` |
+| Built-browser smoke | `pnpm test:smoke` |
+| Full local quality aggregate | `pnpm test:all` |
+| Startup rollout evidence | `pnpm verify:fast-bootstrap:phase7` |
 
 All Vitest projects reject focused tests. The frontend runner composes a
 validated Node allowlist with the default Svelte/happy-dom project; add a test to
@@ -94,7 +87,7 @@ route-manifest direct-link family, offline and response-loss replay, a real
 slow/failing optional-runtime Retry. It writes
 `fast-bootstrap-results/phase7-integration.{json,txt}`. The disposable harness
 owns a temporary authenticated Fastify/SQLite instance per journey. See
-[Testing And Operations](../structure/testing-and-operations.md#fast-bootstrap-measurement-and-rollout-gate)
+[Development And Observability](../structure/development-and-observability.md#fast-bootstrap-measurement-and-rollout-gate)
 for fixtures, budgets, artifact interpretation, and request-trace correlation.
 
 ## Major coverage strengths
@@ -110,7 +103,7 @@ for fixtures, budgets, artifact interpretation, and request-trace correlation.
 
 - **Too few complete browser journeys.** The per-file-serial Chromium suite cannot cover the number of independently tested layers. Missing high-value journeys include normal composer streaming and reload, crash/replay, two-tab writer transfer, profile creation-to-generation, Hypa jobs, multi-step loadouts/modules, and destructive backup restore with queued outbox work.
 - **Mocked external and browser behavior.** Provider APIs, Web Push, Web Speech/AudioContext, image decoding/canvas/compression, workers, IndexedDB quota/upgrade failure, Web Locks, and most service-worker behavior are simulated. Deterministic unit tests should remain, but bounded opt-in canaries and a few real-browser media/storage cases are needed.
-- **Coverage and CI governance are narrow.** The enforced UI map samples six files with low aggregate thresholds; the much broader frontend/backend maps have no floors or changed-file policy. CI does not publish retained Playwright traces and test results. Important low-covered seams include browser Hypa implementations, plugin safety/sandbox branches, parsing/script orchestration, some provider adapters, backend CBS/lorebook/trigger effects, Realm card conversion, and several runtime/error branches.
+- **Coverage and CI governance are narrow.** The enforced UI map samples six files with low aggregate thresholds; the much broader frontend/backend maps have no floors or changed-file policy. CI uploads retained Playwright failure traces/results and the startup matrix, but does not run or publish the Phase 7 integration report. Important low-covered seams include browser Hypa implementations, plugin safety/sandbox branches, parsing/script orchestration, some provider adapters, backend CBS/lorebook/trigger effects, Realm card conversion, and several runtime/error branches.
 - **Duplicated client/server contracts can drift.** Capability eligibility, command routes, SSE event names, prompt/lore behavior, preset schemas, asset-owner catalogs, and provider option matrices are hand-maintained on both sides. Independent tests provide defense in depth, but shared typed fixtures or parity checks are missing.
 - **Scale/stress is not consistently gated.** The 7,000-asset Realm case is skipped in ordinary CI, and the render-cost harness showed resource sensitivity when the audit initially ran it concurrently with other collectors. Large-corpus bounds deserve isolated, named scale/performance lanes.
 - **Some visible outcomes stop at internal state.** Many bridge and command tests assert projections and mocks but do not mount the consuming component. Translation, media, memory, optimistic rollback, and provider-profile changes need selective DOM/browser confirmation.

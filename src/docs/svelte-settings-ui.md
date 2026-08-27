@@ -1,6 +1,6 @@
 # Svelte Settings UI Guide
 
-Last audited: 2026-08-17.
+Last audited: 2026-08-27.
 
 This guide owns settings navigation, data-driven rows, shared controls,
 authoring editors, model-profile presentation, and visible settings persistence
@@ -139,7 +139,7 @@ carry aggregate state. Workflow-specific surfaces can still render their own
 progress, queue, and failure contracts. Individual editors own their
 busy/disabled state and local failure message. The canonical mutation contract
 is in
-[Server Resources And Bridges](../../docs/structure/server-resources-and-bridges.md#durable-mutation-recovery-command-queue-and-local-acknowledgements).
+[Durable Mutations And Recovery](../../docs/structure/durable-mutations-and-recovery.md#durable-mutation-recovery-command-queue-and-local-acknowledgements).
 
 `ModuleSettings.svelte` has separate reload-durable editor recovery in
 `src/ts/server/moduleEditorDraftStore.ts`. It rebases a restored draft over the

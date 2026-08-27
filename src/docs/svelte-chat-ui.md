@@ -1,6 +1,6 @@
 # Svelte Chat UI Guide
 
-Last audited: 2026-08-17.
+Last audited: 2026-08-27.
 
 This guide owns the visible chat frame, transcript, message rows, composer
 variants, generation/loading feedback, and in-chat confirmations. Return to the
@@ -14,7 +14,7 @@ or the [Svelte UI guide](svelte-ui.md) for the application shell.
 | Chat frame, background, or display mode is wrong | `src/lib/ChatScreens/ChatScreen.svelte` | `src/lib/ChatScreens/BackgroundDom.svelte`, `src/styles.css` |
 | Transcript window, hydration, scroll, composer, or menu is wrong | `src/lib/ChatScreens/DefaultChatScreen.svelte` | `src/lib/ChatScreens/DefaultChatScreen.loadPages.ts`, `src/ts/server/chatMessageHydration.svelte.ts` |
 | One message, translation, parser result, or partial edit is wrong | `src/lib/ChatScreens/Chat.svelte`, `src/lib/ChatScreens/ChatBody.svelte` | `src/lib/ChatScreens/ChatBodyParseMemo.ts`, `src/lib/ChatScreens/PartialEditController.svelte` |
-| Generation text, progress bar, stage color, or cancel state is wrong | `src/lib/ChatScreens/chatGenerationLoading.ts`, `Chat.svelte`, `DefaultChatScreen.svelte` | `src/ts/process/index.svelte.ts`, durable generation state in [Client Runtime](client-runtime.md) |
+| Generation text, progress bar, stage color, or cancel state is wrong | `src/lib/ChatScreens/chatGenerationLoading.ts`, `Chat.svelte`, `DefaultChatScreen.svelte` | `src/ts/process/index.svelte.ts`, durable generation state in [Generation Client](generation-client.md) |
 | Draft/BTW hook controls or review state are wrong | `src/lib/SideBars/ChatDraftHookSelector.svelte`, `src/lib/ChatScreens/InputHookPickerDialog.svelte`, `DefaultChatScreen.svelte` | [Translation And Input Hooks](../../docs/structure/translation-and-input-hooks.md) |
 
 ## Chat Surface Ownership
@@ -284,7 +284,7 @@ and the DOM behavior by `DefaultChatScreen.loadPages.test.ts`.
 above the transcript in the shared content column. Their visible snapshots are
 chat-scoped. Agent execution and completeness belong to
 [Agents And Presets](../../docs/structure/agents-and-presets.md), while durable
-send, cancellation, and reattach belong to [Client Runtime](client-runtime.md).
+send, cancellation, and reattach belong to [Generation Client](generation-client.md).
 Visible generation starts in `DefaultChatScreen.svelte`, while durable send and
 reattach live under `src/ts/process/`.
 When the outer reattach budget is exhausted, the composer replaces its healthy

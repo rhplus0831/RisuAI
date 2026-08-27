@@ -1,6 +1,6 @@
 # Frontend Map
 
-Last audited: 2026-08-09.
+Last audited: 2026-08-27.
 
 This file contains no current guidance and exists only so historical archive
 links resolve; current frontend documentation lives under `src/docs/`.
@@ -20,7 +20,10 @@ Start with:
 - [`src/docs/client-runtime.md`](../../src/docs/client-runtime.md) for browser
   coordination: Fastify startup, root-resource ownership, async freshness,
   durable mutation and draft recovery, character-folder confirmation state,
-  generation/reattach, fixed server-operation adapters, and links to canonical
+  fixed server-operation adapters, and links to canonical
   backend/assets/provider/plugin owners.
+- [`src/docs/generation-client.md`](../../src/docs/generation-client.md) for
+  durable generation acceptance, streaming, cancellation, reattach, terminal
+  reconciliation, effects, half-streaming, and completion audio.
 
 Do not add current frontend guidance here.

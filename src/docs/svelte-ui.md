@@ -1,6 +1,6 @@
 # Svelte UI Guide
 
-Last audited: 2026-08-25.
+Last audited: 2026-08-27.
 
 This guide owns the Svelte application shell, routing, shared frontend
 platform behavior, localization, styling, responsive behavior, and Playground.
@@ -14,7 +14,8 @@ surface-specific ownership.
 | [Chat UI](svelte-chat-ui.md) | Transcript and message rendering, composer variants, generation states, and in-chat confirmations. |
 | [Navigation UI](svelte-navigation-ui.md) | Sidebar, character folders, chat and character selection, and internal reordering. |
 | [Settings UI](svelte-settings-ui.md) | Settings routes, data-driven rows, controls, authoring surfaces, model profiles, and settings persistence. |
-| [Client Runtime](client-runtime.md) | Startup resources, hydration, commands, durable recovery, generation reattach, and server-operation adapters. |
+| [Client Runtime](client-runtime.md) | Startup resources, hydration, commands, durable recovery, and server-operation adapters. |
+| [Generation Client](generation-client.md) | Durable generation acceptance, streaming, cancellation, reattach, effects, and completion audio. |
 
 The frontend is a Svelte 5 SPA with no SvelteKit routes tree:
 `src/ts/router.ts` parses URLs and synchronizes Svelte stores, while
@@ -27,30 +28,35 @@ CSS, and plugin execution.
 
 | Symptom | Inspect first | Continue with |
 | ------- | ------------- | ------------- |
-| Loading, settings, grid, chat, or global overlay is wrong | `src/App.svelte`, `src/main.ts`, `src/ts/router.ts` | This guide and [Client Runtime](client-runtime.md) |
+| Loading, settings, grid, chat, or global overlay is wrong | `src/App.svelte`, `src/appStartup.ts`, `src/ts/router.ts` | This guide and [Client Runtime](client-runtime.md) |
 | Transcript, message HTML, composer, generation progress, or chat confirmation is wrong | `src/lib/ChatScreens/DefaultChatScreen.svelte`, `src/lib/ChatScreens/Chat.svelte` | [Chat UI](svelte-chat-ui.md) |
 | Sidebar, character folder, character/chat list, or reorder is wrong | `src/lib/SideBars/Sidebar.svelte`, `src/lib/SideBars/SideChatList.svelte` | [Navigation UI](svelte-navigation-ui.md) |
 | Settings nav, row, authoring editor, model profile, or shared control is wrong | `src/lib/Setting/Settings.svelte`, `src/lib/Setting/SettingRenderer.svelte` | [Settings UI](svelte-settings-ui.md) |
 | Theme, motion, clipping, font, scale, or custom CSS is wrong | `src/styles.css`, `src/ts/gui/colorscheme.ts`, `src/ts/gui/animation.ts`, `src/ts/gui/guisize.ts` | [Styling, Theme, And Layout](#styling-theme-and-layout) |
 | URL, back/forward, settings section, Playground tool, or character route is wrong | `src/ts/router.ts`, route effects in `src/App.svelte` | `src/ts/router.test.ts`, `src/App.routeEffect.dom.test.ts` |
-| The document moved or window scrolling appeared | `src/ts/gui/viewportScrollGuard.ts`, `src/main.ts`, `src/styles.css` | Code that scrolls `window` or `document.scrollingElement` |
+| The document moved or window scrolling appeared | `src/ts/gui/viewportScrollGuard.ts`, `src/appStartup.ts`, `src/styles.css` | Code that scrolls `window` or `document.scrollingElement` |
 
 ## Entrypoints And Shell
 
 | Path | Role |
 | ---- | ---- |
 | `index.html` | Mounts `#app` and loads `/src/main.ts`. |
-| `src/main.ts` | Installs the preload-error alert, router, push listeners, viewport coordinators, and shared completion-audio context unlocking; mounts `App.svelte`; conditionally loads viewport diagnostics; starts bootstrap/hotkeys; removes `#preloading`. |
+| `src/main.ts` | Thin entry boundary: readiness marker, preload-error handling, runtime-environment installation, and dynamic import of `src/appStartup.ts`. |
+| `src/ts/entryStartup.ts`, `src/ts/polyfill.ts`, `src/ts/entryLoadError.ts` | Environment-before-app ordering, conditional baseline globals/polyfills, and the localized pre-mount reload surface. |
+| `src/appStartup.ts` | Installs routing, push and viewport coordinators, mounts `App.svelte`, starts bootstrap/hotkeys and route warming, and removes `#preloading`. |
 | `src/App.svelte` | Main render switch, responsive sidebar dialog, app-level file drop, route effects, and global overlay host. |
 | `src/styles.css` | Tailwind v4 import, theme defaults, full-height shell, global chat text CSS, and compatibility base rules. |
 | `src/ts/bootstrap.ts` | Loads Fastify resources and starts hydration, events, bridges, and UI-derived CSS state. |
 | `src/ts/startupReadiness.ts` | Publishes startup milestones, narrow UI/action capabilities, and localized retry diagnostics. |
 | `src/lib/ObserverShell.svelte` | Dedicated authenticated read-only shell shown before or after writer availability while the observer rollout is enabled. |
+| `src/ts/observerShellLifecycle.svelte.ts`, `observerRouteIntent.ts`, `observerProjectionLifecycle.ts` | Observer status/retry presentation, deferred route intent, and projection discard/promotion lifecycle. |
 | `src/ts/platform.ts` | Fastify-only platform flag; `isFastifyServer` is always true. |
 
-`src/main.ts` listens for `vite:preloadError` before mounting the app. A failed
-lazy chunk logs the event and displays the localized `language.preloadError`
-alert so the user can refresh. `src/ts/globalApi.svelte.ts` loads `streamsaver`
+`src/main.ts` listens for `vite:preloadError` before mounting the app. While the
+entry preloader exists, a failed entry/lazy chunk renders the localized offline
+or stale-build message plus reload action directly into that surface; later
+lazy-component failures remain owned by their local retry UI.
+`src/ts/globalApi.svelte.ts` loads `streamsaver`
 inside `LocalWriter.init()`, so ordinary downloads and imports of the global API
 do not fetch the streamed-download implementation.
 

@@ -1,6 +1,6 @@
 # Plugins And MCP
 
-Last audited: 2026-08-09.
+Last audited: 2026-08-27.
 
 Plugins and MCP tooling are browser runtime features with server-backed records.
 Fastify stores plugin records, plugin storage, settings, and module state, but it
@@ -24,6 +24,15 @@ does not execute browser plugin code.
 | `server/fastify/src/commands/plugins.ts`, `pluginStorage.ts`    | Server validation for plugin records and plugin key/value JSON storage.                                                      |
 | `server/fastify/src/pluginNetwork.ts`, `routes/proxy.ts`        | DNS-pinned public-target validation and the dedicated plugin fetch proxy.                                                    |
 | `src/ts/plugins/migrationGuide.md`                              | Plugin-author V3 migration and compatibility reference.                                                                      |
+
+Plugin startup is an explicit readiness step, not part of the minimal shell
+load. `src/ts/bootstrap.ts` loads the plugin runtime resource, enabled plugins,
+and synchronization after writer/resource startup. Runtime state in
+`plugins.svelte.ts` moves through `idle`, `loading`, `error`, and `ready`; a load
+failure records the `plugins-ready` capability failure and blocks generation
+recovery without discarding the coherent shell. The localized startup Retry
+reruns plugin initialization and then generation recovery rather than replaying
+already-completed writer/resource steps.
 
 Plugin records live in `Database.plugins` and use the plugin `name` as the
 stable id. `currentPluginProvider` selects a plugin-defined provider when one is
