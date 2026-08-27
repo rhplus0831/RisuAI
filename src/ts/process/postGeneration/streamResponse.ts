@@ -25,6 +25,7 @@ import {
   updateGenerationDisplayProjection,
   type GenerationDisplayProjectionRef,
 } from '../generationDisplayProjection.svelte'
+import { registerRetainedChatProjection } from '../../server/chatRetainedProjection'
 
 type StreamingResponse = Extract<requestDataResponse, { type: 'streaming' }>
 
@@ -140,6 +141,8 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
   let anonymousStreamTarget: Message | undefined
   let lastStreamOwnedData = ''
   let appendedGeneratedMessage = false
+  let retainedAppendedMessage: Message | undefined
+  let retainedTranscriptFence: Array<Pick<Message, 'chatId' | 'role' | 'data' | 'name'>> | undefined
   const displayProjection = req.generationDisplayProjection
   const projectsRegenerateTarget = displayProjection?.mode === 'regenerate' && !!displayProjection.targetMessageId
   const extendsContinue = arg.continue === true && req.continueDisposition !== 'append'
@@ -190,7 +193,13 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
           throw new Error('Active chat is unavailable for the streaming response')
         }
         targetChat.message ??= []
-        targetChat.message.push({
+        retainedTranscriptFence = targetChat.message.map((message) => ({
+          chatId: message.chatId,
+          role: message.role,
+          data: message.data,
+          name: message.name,
+        }))
+        retainedAppendedMessage = {
           role: 'char',
           data: '',
           saying: currentChar.chaId,
@@ -198,7 +207,8 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
           generationInfo,
           promptInfo,
           chatId: generationId,
-        })
+        }
+        targetChat.message.push(retainedAppendedMessage)
         appendedGeneratedMessage = true
       })
     }
@@ -233,9 +243,79 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
     return { chat, index, message }
   }
 
-  const projectionEpoch = streamChatId ? captureChatBodyProjectionEpoch(streamChatId) : undefined
+  let projectionEpoch = streamChatId ? captureChatBodyProjectionEpoch(streamChatId) : undefined
   const mutationIntentEpoch = streamChatId ? captureChatMessageMutationIntentEpoch(streamChatId) : undefined
   let streamDetached = false
+  let releaseRetainedStreamProjection = () => {}
+
+  const matchesRetainedTranscriptFence = (messages: readonly Message[]): boolean => {
+    if (!retainedTranscriptFence || messages.length !== retainedTranscriptFence.length) return false
+    return retainedTranscriptFence.every((expected, index) => {
+      const message = messages[index]
+      return (
+        message?.chatId === expected.chatId &&
+        message?.role === expected.role &&
+        message?.data === expected.data &&
+        message?.name === expected.name
+      )
+    })
+  }
+
+  if (appendedGeneratedMessage && streamChatId && retainedAppendedMessage && retainedTranscriptFence) {
+    const transcriptFence = retainedTranscriptFence
+    releaseRetainedStreamProjection = registerRetainedChatProjection(
+      { kind: 'chat-body', chatId: streamChatId },
+      () => {
+        withTrustedResourceWrite(() => {
+          if (streamDetached || !streamChatId || !retainedAppendedMessage) return
+          if (
+            mutationIntentEpoch !== undefined &&
+            captureChatMessageMutationIntentEpoch(streamChatId) !== mutationIntentEpoch
+          ) {
+            streamDetached = true
+            return
+          }
+          const targetChat = currentLiveChat()
+          const messages = targetChat?.message
+          if (!targetChat || !Array.isArray(messages)) {
+            streamDetached = true
+            return
+          }
+          const existingIndex = findStreamMessageIndex(messages)
+          if (existingIndex >= 0) {
+            const existing = messages[existingIndex]
+            if (
+              existingIndex !== transcriptFence.length ||
+              !matchesRetainedTranscriptFence(messages.slice(0, existingIndex)) ||
+              messages.length !== transcriptFence.length + 1 ||
+              existing?.data !== lastStreamOwnedData
+            ) {
+              streamDetached = true
+              return
+            }
+            retainedAppendedMessage = existing
+            msgIndex = existingIndex
+            projectionEpoch = captureChatBodyProjectionEpoch(streamChatId)
+            return
+          }
+          if (!matchesRetainedTranscriptFence(messages)) {
+            streamDetached = true
+            return
+          }
+          const restored = structuredClone(retainedAppendedMessage)
+          restored.data = lastStreamOwnedData
+          messages.push(restored)
+          retainedAppendedMessage = restored
+          msgIndex = messages.length - 1
+          projectionEpoch = captureChatBodyProjectionEpoch(streamChatId)
+        })
+      },
+      () => {
+        streamDetached = true
+      },
+    )
+  }
+
   const ownsStreamTarget = (target: { message: Message } | null): boolean => {
     if (streamDetached) return false
     if (!target) {
@@ -385,6 +465,7 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
     // When the loop threw (reader error), still apply the last received chunk;
     // swallow apply errors here so they cannot mask the propagating one.
     await renderCoalescer.settle().catch(() => {})
+    releaseRetainedStreamProjection()
     withTrustedResourceWrite(() => {
       // A successful server stream supplies either tokens or `done.result`.
       // Therefore an empty generated row at stream termination is a placeholder

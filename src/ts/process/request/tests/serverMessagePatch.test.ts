@@ -273,6 +273,38 @@ describe('applyServerMessagePatch', () => {
     expect(chat.lastMemory).toBe('message-1')
   })
 
+  it('does not overwrite newer identity-addressed, chat-var, or metadata projections', () => {
+    const chat = {
+      message: [{ role: 'user', data: 'newer message edit', chatId: 'message-1' }],
+      note: '',
+      name: '',
+      localLore: [],
+      scriptstate: { $mood: 'newer mood' },
+      lastMemory: 'newer-memory',
+    } satisfies Chat
+
+    applyServerMessagePatch(
+      chat,
+      patch({
+        messageMutations: [
+          {
+            type: 'replace_by_id',
+            source: 'history_inject',
+            messageId: 'message-1',
+            before: { role: 'user', data: 'older message', chatId: 'message-1' },
+            message: { role: 'user', data: 'stale scripted message', chatId: 'message-1' },
+          },
+        ],
+        chatVarMutations: [{ key: '$mood', before: 'older mood', after: 'stale scripted mood' }],
+        chatMetadataMutations: [{ key: 'lastMemory', before: 'older-memory', after: 'stale-memory' }],
+      }),
+    )
+
+    expect(chat.message[0].data).toBe('newer message edit')
+    expect(chat.scriptstate).toEqual({ $mood: 'newer mood' })
+    expect(chat.lastMemory).toBe('newer-memory')
+  })
+
   it('applies trusted terminal character and local-lore mutations only to fresh targets', () => {
     const character = { name: 'Tess', desc: 'old description' } as character
     const chat = {

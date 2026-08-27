@@ -53,6 +53,7 @@ import {
   stageTargetedGenerationOperation,
   submitStagedTargetedGenerationOperation,
 } from '../server/generationOperations'
+import { peekAppliedServerResourceRevision } from '../server/commands'
 import {
   beginGenerationDisplayProjection,
   finishGenerationDisplayProjection,
@@ -1080,8 +1081,42 @@ export async function applyServerBackedTerminal(args: {
   const effectLedger = postGen?.effectLedger
   const resendChat = !!postGen?.resendChat
   const generationId = args.generationInfo.generationId ?? ''
-  const displayAuthorityObserved = await observeDisplayProjectionAuthority(postGen?.messageId ?? generationId)
   const terminalTarget = targetFromPayloadOrContext(postGen?.messagePatch, contextTarget)
+  const displayAuthorityObserved = await observeDisplayProjectionAuthority(postGen?.messageId ?? generationId)
+  const terminalProjectionIsFresh = (() => {
+    const guard = args.restorationGuard
+    if (
+      guard &&
+      (terminalTarget.chatId !== guard.chatId ||
+        captureChatMessageMutationIntentEpoch(guard.chatId) !== guard.mutationIntentEpoch)
+    ) {
+      return false
+    }
+    const postGenerationRevision = postGen?.revision
+    if (
+      typeof postGenerationRevision === 'number' &&
+      Number.isInteger(postGenerationRevision) &&
+      (peekAppliedServerResourceRevision() ?? -1) > postGenerationRevision
+    ) {
+      return false
+    }
+    const projection = args.streamProjection
+    if (!projection) return true
+    if (projection.detached || (projection.chatId && projection.chatId !== terminalTarget.chatId)) return false
+    const resolution = resolveServerBackedLiveChat({
+      selectedChar: args.selectedChar,
+      selectedChat: args.selectedChat,
+      characterId: terminalTarget.characterId,
+      chatId: terminalTarget.chatId,
+    })
+    const messageId = projection.messageId ?? projection.generationId
+    const assistant = resolution?.chat.message.find(
+      (message) =>
+        message.role === 'char' &&
+        (message.chatId === messageId || message.generationInfo?.generationId === projection.generationId),
+    )
+    return assistant?.data === projection.ownedData
+  })()
   if (terminalTarget.chatId && generationId) clearGenerationPersistence(terminalTarget.chatId, generationId)
   type InlayFinalizationState = {
     messageId: string
@@ -1093,55 +1128,61 @@ export async function applyServerBackedTerminal(args: {
   let immediateInlay: InlayFinalizationState | undefined
   let pendingInlay: (InlayFinalizationState & { promise: Promise<string> }) | undefined
   let processedPrimaryTtsText: string | undefined
-  withTrustedResourceWrite(() => {
-    const resolution = resolveServerBackedLiveChat({
-      selectedChar: args.selectedChar,
-      selectedChat: args.selectedChat,
-      characterId: terminalTarget.characterId,
-      chatId: terminalTarget.chatId,
+  if (terminalProjectionIsFresh) {
+    withTrustedResourceWrite(() => {
+      const resolution = resolveServerBackedLiveChat({
+        selectedChar: args.selectedChar,
+        selectedChat: args.selectedChat,
+        characterId: terminalTarget.characterId,
+        chatId: terminalTarget.chatId,
+      })
+      if (!resolution) return
+      const liveChat = resolution.chat
+      if (postGen?.messagePatch) {
+        applyServerMessagePatch(liveChat, postGen.messagePatch, resolution.character)
+      }
+      const assistant =
+        findGeneratedAssistantMessage(liveChat, generationId) ??
+        (args.targetMessageId
+          ? liveChat.message.find((message) => message.chatId === args.targetMessageId && message.role === 'char')
+          : undefined)
+      if (assistant) {
+        if (
+          postGen?.translation?.status === 'succeeded' &&
+          postGen.messageId &&
+          assistant.chatId === postGen.messageId
+        ) {
+          const translation = { ...postGen.translation.translation }
+          if (JSON.stringify(assistant.translation) !== JSON.stringify(translation)) assistant.translation = translation
+        }
+        const baseText = typeof postGen?.finalText === 'string' ? postGen.finalText : assistant.data
+        const inlay = runInlayScreen(resolution.character, baseText)
+        if (assistant.data !== inlay.text) assistant.data = inlay.text
+        if (pendingTtsTexts[0] === baseText) {
+          processedPrimaryTtsText = inlay.text
+        }
+        const messageId = assistant.chatId ?? args.targetMessageId ?? generationId
+        if (inlay.text !== baseText && messageId && generationId) {
+          const finalization = {
+            messageId,
+            expectedServerData: baseText,
+            expectedProjectionData: inlay.text,
+            mutationIntentEpoch: captureChatMessageMutationIntentEpoch(terminalTarget.chatId),
+            projectionEpoch: captureChatBodyProjectionEpoch(terminalTarget.chatId),
+          }
+          if (inlay.promise) {
+            pendingInlay = { ...finalization, promise: inlay.promise }
+          } else {
+            immediateInlay = finalization
+          }
+        }
+      }
     })
-    if (!resolution) return
-    const liveChat = resolution.chat
-    if (postGen?.messagePatch) {
-      applyServerMessagePatch(liveChat, postGen.messagePatch, resolution.character)
-    }
-    const assistant =
-      findGeneratedAssistantMessage(liveChat, generationId) ??
-      (args.targetMessageId
-        ? liveChat.message.find((message) => message.chatId === args.targetMessageId && message.role === 'char')
-        : undefined)
-    if (assistant) {
-      if (postGen?.translation?.status === 'succeeded' && postGen.messageId && assistant.chatId === postGen.messageId) {
-        const translation = { ...postGen.translation.translation }
-        if (JSON.stringify(assistant.translation) !== JSON.stringify(translation)) assistant.translation = translation
-      }
-      const baseText = typeof postGen?.finalText === 'string' ? postGen.finalText : assistant.data
-      const inlay = runInlayScreen(resolution.character, baseText)
-      if (assistant.data !== inlay.text) assistant.data = inlay.text
-      if (pendingTtsTexts[0] === baseText) {
-        processedPrimaryTtsText = inlay.text
-      }
-      const messageId = assistant.chatId ?? args.targetMessageId ?? generationId
-      if (inlay.text !== baseText && messageId && generationId) {
-        const finalization = {
-          messageId,
-          expectedServerData: baseText,
-          expectedProjectionData: inlay.text,
-          mutationIntentEpoch: captureChatMessageMutationIntentEpoch(terminalTarget.chatId),
-          projectionEpoch: captureChatBodyProjectionEpoch(terminalTarget.chatId),
-        }
-        if (inlay.promise) {
-          pendingInlay = { ...finalization, promise: inlay.promise }
-        } else {
-          immediateInlay = finalization
-        }
-      }
-    }
-  })
+  }
 
-  // The terminal patch is already durable on the server. Mirror it before
-  // waiting on best-effort client TTS so a newer message edit cannot be
-  // overwritten when slow synthesis eventually settles.
+  // A fresh terminal patch is already durable on the server. Mirror it before
+  // waiting on best-effort client TTS; stale terminal projections are left to
+  // the newer local/server authority selected above.
   await runLedgeredGenerationEffect(effectLedger, 'tts', 'live_terminal', async () => {
     if (pendingTtsTexts.length === 0) return skippedGenerationEffect('not_requested')
     for (let index = 0; index < pendingTtsTexts.length; index++) {
@@ -1232,7 +1273,7 @@ export async function applyServerBackedTerminal(args: {
   }
 
   const providerAlternates = args.terminal.done?.alternates
-  if (Array.isArray(providerAlternates) && providerAlternates.length > 0) {
+  if (terminalProjectionIsFresh && Array.isArray(providerAlternates) && providerAlternates.length > 0) {
     withTrustedResourceWrite(() => {
       const resolution = resolveServerBackedLiveChat({
         selectedChar: args.selectedChar,

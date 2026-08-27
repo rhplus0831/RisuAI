@@ -38,9 +38,11 @@ function applyMessageMutation(chat: Chat, mutation: ServerChatMessageMutation): 
 
   if (mutation.type === 'replace_by_id') {
     const index = chat.message.findIndex((message) => message.chatId === mutation.messageId)
-    if (index >= 0 && !sameStructuredValue(chat.message[index], mutation.message)) {
-      chat.message[index] = cloneMessage(mutation.message)
-    }
+    if (index < 0) return
+    const current = chat.message[index]
+    if (sameStructuredValue(current, mutation.message)) return
+    if (!sameStructuredValue(current, mutation.before)) return
+    chat.message[index] = cloneMessage(mutation.message)
     return
   }
 
@@ -80,10 +82,9 @@ export function applyServerMessagePatch(chat: Chat, patch: ServerChatMessagePatc
   }
 
   if (patch.chatVarMutations.length > 0) {
-    if (!chat.scriptstate && patch.chatVarMutations.some((mutation) => mutation.after !== null)) {
-      chat.scriptstate = {}
-    }
     for (const mutation of patch.chatVarMutations) {
+      const live = chat.scriptstate?.[mutation.key] ?? null
+      if (live !== mutation.before && live !== mutation.after) continue
       if (mutation.after === null) {
         if (chat.scriptstate && Object.prototype.hasOwnProperty.call(chat.scriptstate, mutation.key)) {
           delete chat.scriptstate[mutation.key]
@@ -96,6 +97,8 @@ export function applyServerMessagePatch(chat: Chat, patch: ServerChatMessagePatc
   }
 
   for (const mutation of patch.chatMetadataMutations ?? []) {
+    const live = chat.lastMemory ?? null
+    if (live !== mutation.before && live !== mutation.after) continue
     if (mutation.after === null) {
       if (Object.prototype.hasOwnProperty.call(chat, 'lastMemory')) delete chat.lastMemory
     } else if (chat.lastMemory !== mutation.after) chat.lastMemory = mutation.after

@@ -38,6 +38,7 @@ import type { StreamResponseChunk, requestDataResponse } from '../request/reques
 import { consumeStreamResponse } from '../postGeneration/streamResponse'
 import { markChatMessageMutationIntent } from '../../server/chatMessageMutationIntent'
 import { markChatBodyProjectionApplied } from '../../server/resourceState.svelte'
+import { applyServerChatMessagesResource } from '../../server/chatMessageHydration.svelte'
 import { halfStreamingProgress, resetHalfStreamingProgressForTests } from '../halfStreamingProgress'
 import {
   generationDisplayProjections,
@@ -513,6 +514,55 @@ describe('consumeStreamResponse', () => {
     const out = await promise
     expect(out.streamAborted).toBe(false)
     expect(testDatabaseState.db.characters[0].chats[0].message).toEqual([{ role: 'user', data: 'hi' }])
+  })
+
+  it('retains the active assistant row across an assembly transcript hydration', async () => {
+    const currentChar = seed()
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(callArgs(streamingReq(stream), currentChar, ctrl.signal))
+
+    expect(testDatabaseState.db.characters[0].chats[0].message.at(-1)).toMatchObject({
+      role: 'char',
+      data: '',
+      chatId: 'gen-1',
+    })
+    expect(applyServerChatMessagesResource('chat-1', [{ role: 'user', data: 'hi' }], undefined, [])).toBe(true)
+    expect(testDatabaseState.db.characters[0].chats[0].message.at(-1)).toMatchObject({
+      role: 'char',
+      data: '',
+      chatId: 'gen-1',
+    })
+
+    push({ msgKey: 'survives hydration' })
+    close()
+
+    const out = await promise
+    expect(out.projection.detached).toBe(false)
+    expect(testDatabaseState.db.characters[0].chats[0].message.at(-1)).toMatchObject({
+      role: 'char',
+      data: 'survives hydration',
+      chatId: 'gen-1',
+    })
+  })
+
+  it('does not retain the active assistant row over a changed authoritative transcript', async () => {
+    const currentChar = seed()
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(callArgs(streamingReq(stream), currentChar, ctrl.signal))
+
+    expect(
+      applyServerChatMessagesResource('chat-1', [{ role: 'user', data: 'newer authoritative edit' }], undefined, []),
+    ).toBe(true)
+    push({ msgKey: 'must not return' })
+    close()
+
+    const out = await promise
+    expect(out.projection.detached).toBe(true)
+    expect(testDatabaseState.db.characters[0].chats[0].message).toEqual([
+      { role: 'user', data: 'newer authoritative edit' },
+    ])
   })
 
   it('durable replay reuses an existing partial generation row', async () => {

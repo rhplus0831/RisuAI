@@ -66,6 +66,7 @@ import {
   generationDisplayProjections,
   resetGenerationDisplayProjectionsForTests,
 } from './generationDisplayProjection.svelte'
+import { clearAppliedServerResourceRevision, setAppliedServerResourceRevision } from '../server/commands'
 
 const testDatabaseState = {
   get db() {
@@ -248,6 +249,7 @@ describe('server-backed terminal stable chat target', () => {
     queuedGenerationPersistences.set([])
     chatOutputListeners.clear()
     resetGenerationDisplayProjectionsForTests()
+    clearAppliedServerResourceRevision()
     selectedCharID.set(0)
   })
 
@@ -256,6 +258,7 @@ describe('server-backed terminal stable chat target', () => {
     resetRerollNavigation()
     queuedGenerationPersistences.set([])
     chatOutputListeners.clear()
+    clearAppliedServerResourceRevision()
     testDatabaseState.db = originalDb
     selectedCharID.set(-1)
   })
@@ -807,6 +810,80 @@ describe('server-backed terminal stable chat target', () => {
     expect(target.scriptstate).toEqual({ $mood: 'steady' })
     expect(staleIndexChat.message[0].data).toBe('stale original')
     expect(staleIndexChat.scriptstate).toBeUndefined()
+  })
+
+  it('does not apply a terminal patch after a newer local message mutation intent', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    target.message.unshift({ role: 'user', data: 'original user text', chatId: 'user-stable' })
+    const restorationGuard = captureServerBackedRestorationGuard('chat-target')
+    target.message[0].data = 'newer user edit'
+    markChatMessageMutationIntent('chat-target')
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'done',
+        done: {
+          postGeneration: {
+            revision: 8,
+            finalText: 'stale terminal final text',
+            messagePatch: makePostGenerationPatch('chat-target', 'stale patched text'),
+          },
+        },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 1,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+      restorationGuard,
+      streamProjection: {
+        chatId: 'chat-target',
+        messageId: 'gen-stable',
+        generationId: 'gen-stable',
+        previousData: '',
+        ownedData: 'target original',
+        appended: true,
+      },
+    })
+
+    expect(result.status).toBe('ok')
+    expect(target.message).toEqual([
+      { role: 'user', data: 'newer user edit', chatId: 'user-stable' },
+      terminalMessage('target original'),
+    ])
+    expect(target.scriptstate).toBeUndefined()
+  })
+
+  it('does not apply a terminal patch older than the projected server revision', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    target.scriptstate = { $mood: 'newer server value' }
+    setAppliedServerResourceRevision(9)
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'done',
+        done: {
+          postGeneration: {
+            revision: 8,
+            finalText: 'stale terminal final text',
+            messagePatch: makePostGenerationPatch('chat-target', 'stale patched text'),
+          },
+        },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 1,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+    })
+
+    expect(result.status).toBe('ok')
+    expect(target.message[0].data).toBe('target original')
+    expect(target.scriptstate).toEqual({ $mood: 'newer server value' })
   })
 
   it('applies an embedded succeeded translation before terminal generation UI settlement', async () => {
