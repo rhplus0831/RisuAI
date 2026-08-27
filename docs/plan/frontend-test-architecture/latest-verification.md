@@ -4,9 +4,120 @@ Date: 2026-08-28
 
 ## State
 
-Phase 2 accessibility-source-contracts slice closeout. Phase 2 remains in
+Phase 2 client-policy-validation slice closeout. Phase 2 remains in
 progress; this record does not authorize repository-wide default inversion, S
 promotion, or bulk migration outside the active phase rules.
+
+## Phase 2 Client-Policy-Validation Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `3042cfc765714940186eb24893b2f16df946e7b9`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Available CPUs: 10
+- Frontend test-all UI-map exclusion: `RISU_TEST_EXCLUDE_UI_MAP=true`
+- Isolation: enabled
+- Measurement tree: the base commit plus the five-file Node ownership change,
+  regenerated inventory, and Phase 2 documentation in this slice; no unrelated
+  working-tree changes were present.
+
+GNU `time` console observations remained uncommitted. Coverage output remained
+under ignored `coverage/`.
+
+## Phase 2 Client-Policy-Validation Probe And Ownership
+
+The fourth bounded Phase 2 slice promotes:
+
+- `src/ts/model/scriptModelOverrides.test.ts`
+- `src/ts/moduleEditorLeaveGuard.test.ts`
+- `src/ts/observerRouteIntent.test.ts`
+- `src/ts/presetFieldMirror.test.ts`
+- `src/ts/process/request/tests/additionalParams.test.ts`
+
+The first three suites import only Vitest and dependency-free or plain
+TypeScript subjects. The preset-mirror and additional-parameter suites retain
+their existing explicit mocks for the Svelte-named database boundary; their
+remaining runtime graphs are plain TypeScript normalization and data shaping.
+No DOM/browser global, Svelte transform, DOM setup, network, storage,
+filesystem, timer, replacement mock, or assertion change was added.
+
+Pre-promotion Happy-DOM command:
+
+```sh
+/usr/bin/time -v pnpm exec vitest run \
+  src/ts/moduleEditorLeaveGuard.test.ts \
+  src/ts/observerRouteIntent.test.ts \
+  src/ts/model/scriptModelOverrides.test.ts \
+  src/ts/presetFieldMirror.test.ts \
+  src/ts/process/request/tests/additionalParams.test.ts
+```
+
+Result: 5 files / 22 tests passed in 1.32s wall and 492ms Vitest duration,
+with 504,612 KiB peak RSS and 914ms aggregate environment time.
+
+After adding the files to `vitest.node-tests.ts`, the target-project probe used
+the same file list with `--project frontend-node`. Result: 5 files / 22 tests
+passed in 0.95s wall and 222ms Vitest duration, with 365,844 KiB peak RSS and no
+aggregate environment time. The later complete Node and frontend runs repeated
+the same tests successfully.
+
+## Phase 2 Client-Policy-Validation Discovery And Classification Proof
+
+Commands:
+
+```sh
+pnpm update:frontend-test-inventory
+pnpm check:frontend-test-inventory
+```
+
+Both passed. The generated inventory removed the five target-N probe markers,
+retained the 537-file universe, and remained exhaustive and disjoint.
+
+| View | Files | Node | Svelte+Node | Happy-DOM |
+| --- | ---: | ---: | ---: | ---: |
+| Full, including explicit performance gates | 537 | 140 | 2 | 395 |
+| Standalone ordinary frontend | 535 | 140 | 2 | 393 |
+| `test:all` ordinary frontend | 529 | 139 | 2 | 388 |
+
+The target distribution remains 174 N, 129 S, 234 D, and 7 B. Outstanding
+target-runtime probes fell from 166 to 161: 34 N and 127 S.
+
+## Phase 2 Client-Policy-Validation Paired Measurements
+
+All paired commands ran on the same host with
+`RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v`. This is one paired slice
+observation, not the three-run phase-level timing gate.
+
+| Lane | State | Result | Wall | Vitest | CPU | Peak RSS KiB |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `frontend-node` | Before | 134 files / 833 tests | 4.35s | 3.63s | 633% | 987,448 |
+| `frontend-node` | After | 139 files / 855 tests | 4.09s | 3.27s | 657% | 982,296 |
+| `frontend-dom` | Before | 393 files / 5,572 tests | 66.61s | 65.73s | 635% | 4,788,528 |
+| `frontend-dom` | After | 388 files / 5,550 tests | 65.36s | 64.47s | 635% | 5,080,288 |
+| Ordinary frontend | Before | 529 files / 6,413 tests | 76.01s | 74.73s | 639% | 5,009,076 |
+| Ordinary frontend | After | 529 files / 6,413 tests | 74.79s | 73.61s | 646% | 4,842,704 |
+
+The paired ordinary wall observation improved by 1.22s (1.6%) and peak RSS by
+166,372 KiB (3.3%). The owning DOM project improved by 1.25s while its peak RSS
+rose by 291,760 KiB (6.1%), within the phase's 10% RSS guard and observed lane
+variability. The Node project improved by 0.26s after absorbing the five files.
+
+## Phase 2 Client-Policy-Validation Command Validation
+
+`pnpm test:frontend` passed 535 files / 6,616 tests. Complete standalone
+`frontend-node` and `frontend-dom` project runs passed 140 files / 860 tests and
+393 files / 5,748 tests respectively.
+
+`pnpm test:affected --dry-run` selected the complete frontend lane, isolated
+performance gates, and server lane because the explicit runtime inventory
+changed. Running the selected plan passed 535 frontend files / 6,616 tests, 2
+performance files / 6 tests, and 154 server files / 3,295 tests with 1 skipped.
+
+`pnpm format:check` and `git diff --check` passed. No production, setup,
+coverage-map, CI, rendered UI contract, or browser-smoke file changed, so the
+preceding test-runtime-tooling `test:all` checkpoint remains the current
+periodic Phase 2 aggregate proof.
 
 ## Phase 2 Accessibility-Source-Contracts Environment And Source State
 

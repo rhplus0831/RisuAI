@@ -11,6 +11,9 @@ Status: In progress
 - [Accessibility source contracts](slices/phase-2/accessibility-source-contracts.md):
   promoted three filesystem-backed source-policy suites and 25 tests from
   Happy-DOM to Node.
+- [Client policy and validation helpers](slices/phase-2/client-policy-validation.md):
+  promoted five plain TypeScript policy, validation, and data-shaping suites
+  and 22 tests from Happy-DOM to Node.
 
 ## Objective
 
