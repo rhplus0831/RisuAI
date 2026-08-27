@@ -17,6 +17,9 @@ Status: In progress
 - [Client runtime utilities](slices/phase-2/client-runtime-utilities.md):
   promoted two dependency-injected or explicitly stubbed runtime utility suites
   and seven tests from Happy-DOM to Node.
+- [Model provider catalogs](slices/phase-2/model-provider-catalogs.md): promoted
+  four discovery, credential-routing, cache, and data-shaping suites and 25
+  tests from Happy-DOM to Node.
 
 ## Objective
 

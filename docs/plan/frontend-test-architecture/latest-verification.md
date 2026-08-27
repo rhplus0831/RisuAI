@@ -4,10 +4,122 @@ Date: 2026-08-28
 
 ## State
 
-Phase 2 display-source batching prerequisite stabilization, followed by the
-retained client-runtime-utilities slice closeout. Phase 2 remains in progress;
-this record does not authorize repository-wide default inversion, S promotion,
-or bulk migration outside the active phase rules.
+Phase 2 model-provider-catalogs slice closeout, following the display-source
+batching prerequisite stabilization. Phase 2 remains in progress; this record
+does not authorize repository-wide default inversion, S promotion, or bulk
+migration outside the active phase rules.
+
+## Phase 2 Model-Provider-Catalogs Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `966cc68383f4163b7e9b878d96c4c80f3d9076d9`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Available CPUs: 10
+- Frontend test-all UI-map exclusion: `RISU_TEST_EXCLUDE_UI_MAP=true`
+- Isolation: enabled
+- Measurement tree: the clean stabilization commit plus the four-file Node
+  ownership change, regenerated inventory, and Phase 2 documentation in this
+  slice; no unrelated working-tree changes were present.
+
+GNU `time` console observations remained uncommitted. Coverage output remained
+under ignored `coverage/`.
+
+## Phase 2 Model-Provider-Catalogs Probe And Ownership
+
+The sixth bounded Phase 2 slice promotes:
+
+- `src/ts/model/modellist.dynamic.test.ts`
+- `src/ts/model/nanogpt.test.ts`
+- `src/ts/model/ollama.test.ts`
+- `src/ts/model/openrouter.test.ts`
+
+All four suites explicitly replace their Svelte-named storage, plugin, global
+fetch, or provider-operation boundaries as applicable. Their remaining runtime
+graphs are plain TypeScript model mapping, mutable registry cleanup, and the
+shared keyed-request cache. The actual `svelte/store` package import retained
+by `modellist.ts` does not require Svelte compilation and passed in Node. No DOM
+or browser storage is accessed, and every upstream operation is represented by
+an existing mock rather than a real network request. No mock, assertion,
+production dependency, or test body changed for promotion.
+
+Pre-promotion Happy-DOM command:
+
+```sh
+/usr/bin/time -v pnpm exec vitest run \
+  src/ts/model/modellist.dynamic.test.ts \
+  src/ts/model/nanogpt.test.ts \
+  src/ts/model/ollama.test.ts \
+  src/ts/model/openrouter.test.ts
+```
+
+Result: 4 files / 25 tests passed in 1.36s wall and 474ms Vitest duration,
+with 452,412 KiB peak RSS and 550ms aggregate environment time.
+
+After adding the files to `vitest.node-tests.ts`, the target-project probe used
+the same file list with `--project frontend-node`. Result: 4 files / 25 tests
+passed in 0.98s wall and 294ms Vitest duration, with 353,132 KiB peak RSS and no
+aggregate environment time. The later complete Node and frontend runs repeated
+the same tests successfully.
+
+## Phase 2 Model-Provider-Catalogs Discovery And Classification Proof
+
+Commands:
+
+```sh
+pnpm update:frontend-test-inventory
+pnpm check:frontend-test-inventory
+```
+
+Both passed. The generated inventory removed the four target-N probe markers,
+retained the 537-file universe, and remained exhaustive and disjoint.
+
+| View | Files | Node | Svelte+Node | Happy-DOM |
+| --- | ---: | ---: | ---: | ---: |
+| Full, including explicit performance gates | 537 | 146 | 2 | 389 |
+| Standalone ordinary frontend | 535 | 146 | 2 | 387 |
+| `test:all` ordinary frontend | 529 | 145 | 2 | 382 |
+
+The target distribution remains 174 N, 129 S, 234 D, and 7 B. Outstanding
+target-runtime probes fell from 159 to 155: 28 N and 127 S.
+
+## Phase 2 Model-Provider-Catalogs Paired Measurements
+
+All paired commands ran on the same host with
+`RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v`. This is one paired slice
+observation, not the three-run phase-level timing gate.
+
+| Lane | State | Result | Wall | Vitest | CPU | Peak RSS KiB |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `frontend-node` | Before | 141 files / 862 tests | 4.54s | 3.74s | 679% | 897,628 |
+| `frontend-node` | After | 145 files / 887 tests | 4.72s | 4.01s | 607% | 919,508 |
+| `frontend-dom` | Before | 386 files / 5,543 tests | 70.45s | 69.53s | 637% | 4,933,796 |
+| `frontend-dom` | After | 382 files / 5,518 tests | 67.69s | 66.80s | 644% | 4,974,240 |
+| Ordinary frontend | Before | 529 files / 6,413 tests | 70.52s | 69.54s | 635% | 4,768,944 |
+| Ordinary frontend | After | 529 files / 6,413 tests | 73.19s | 72.11s | 628% | 4,784,356 |
+
+The paired ordinary wall observation increased by 2.67s (3.8%) while peak RSS
+increased by 15,412 KiB (0.3%). Both remain within observed lane variability,
+so this is not a phase-level performance claim. The owning DOM project improved
+by 2.76s; the Node project varied upward by 0.18s after absorbing the four
+files.
+
+## Phase 2 Model-Provider-Catalogs Command Validation
+
+`pnpm test:frontend` passed 535 files / 6,616 tests. Complete standalone
+`frontend-node` and `frontend-dom` project runs passed 146 files / 892 tests and
+387 files / 5,716 tests respectively.
+
+`pnpm test:affected --dry-run` selected the complete frontend lane, isolated
+performance gates, and server lane because the explicit runtime inventory
+changed. Running the selected plan passed 535 frontend files / 6,616 tests, 2
+performance files / 6 tests, and 154 server files / 3,295 tests with 1 skipped.
+
+`pnpm format:check` and `git diff --check` passed. No production, setup,
+coverage-map, CI, rendered UI contract, or browser-smoke file changed in the
+promotion, so the preceding test-runtime-tooling `test:all` checkpoint remains
+the current periodic Phase 2 aggregate proof.
 
 ## Phase 2 Display-Source Batching Stabilization
 
