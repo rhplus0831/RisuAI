@@ -4,9 +4,117 @@ Date: 2026-08-28
 
 ## State
 
-Phase 2 client-policy-validation slice closeout. Phase 2 remains in
+Phase 2 client-runtime-utilities slice closeout. Phase 2 remains in
 progress; this record does not authorize repository-wide default inversion, S
 promotion, or bulk migration outside the active phase rules.
+
+## Phase 2 Client-Runtime-Utilities Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `bbf330642920d03370c85e44ac9595602ea6c68c`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Available CPUs: 10
+- Frontend test-all UI-map exclusion: `RISU_TEST_EXCLUDE_UI_MAP=true`
+- Isolation: enabled
+- Measurement tree: the base commit plus the two-file Node ownership change,
+  regenerated inventory, and Phase 2 documentation in this slice; no unrelated
+  working-tree changes were present.
+
+GNU `time` console observations remained uncommitted. Coverage output remained
+under ignored `coverage/`.
+
+## Phase 2 Client-Runtime-Utilities Probe And Ownership
+
+The fifth bounded Phase 2 slice promotes:
+
+- `src/ts/polyfill.test.ts`
+- `src/ts/sourcemap.test.ts`
+
+The polyfill suite supplies the runtime target, optional feature loaders,
+support matrix, platform choice, and a minimal document-shaped collaborator
+explicitly. The source-map suite replaces the consumer and stubs every fetch;
+its remaining runtime dependencies are Node-provided `URL`, `AbortController`,
+and timers. Neither suite imports Svelte, mounts a component, performs a real
+network request, reads browser storage, or relies on Happy-DOM setup. No mock,
+assertion, production dependency, or test body changed for promotion.
+
+Pre-promotion Happy-DOM command:
+
+```sh
+/usr/bin/time -v pnpm exec vitest run \
+  src/ts/polyfill.test.ts \
+  src/ts/sourcemap.test.ts
+```
+
+Result: 2 files / 7 tests passed in 1.05s wall and 311ms Vitest duration,
+with 341,440 KiB peak RSS and 236ms aggregate environment time.
+
+After adding the files to `vitest.node-tests.ts`, the target-project probe used
+the same file list with `--project frontend-node`. Result: 2 files / 7 tests
+passed in 0.84s wall and 171ms Vitest duration, with 273,900 KiB peak RSS and no
+aggregate environment time. The later complete Node and frontend runs repeated
+the same tests successfully.
+
+## Phase 2 Client-Runtime-Utilities Discovery And Classification Proof
+
+Commands:
+
+```sh
+pnpm update:frontend-test-inventory
+pnpm check:frontend-test-inventory
+```
+
+Both passed. The generated inventory removed the two target-N probe markers,
+retained the 537-file universe, and remained exhaustive and disjoint.
+
+| View | Files | Node | Svelte+Node | Happy-DOM |
+| --- | ---: | ---: | ---: | ---: |
+| Full, including explicit performance gates | 537 | 142 | 2 | 393 |
+| Standalone ordinary frontend | 535 | 142 | 2 | 391 |
+| `test:all` ordinary frontend | 529 | 141 | 2 | 386 |
+
+The target distribution remains 174 N, 129 S, 234 D, and 7 B. Outstanding
+target-runtime probes fell from 161 to 159: 32 N and 127 S.
+
+## Phase 2 Client-Runtime-Utilities Paired Measurements
+
+All paired commands ran on the same host with
+`RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v`. This is one paired slice
+observation, not the three-run phase-level timing gate.
+
+| Lane | State | Result | Wall | Vitest | CPU | Peak RSS KiB |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `frontend-node` | Before | 139 files / 855 tests | 4.08s | 3.36s | 676% | 990,892 |
+| `frontend-node` | After | 141 files / 862 tests | 4.60s | 3.83s | 593% | 955,244 |
+| `frontend-dom` | Before | 388 files / 5,550 tests | 70.25s | 69.36s | 639% | 4,831,920 |
+| `frontend-dom` | After | 386 files / 5,543 tests | 68.06s | 67.15s | 639% | 4,906,616 |
+| Ordinary frontend | Before | 529 files / 6,413 tests | 70.45s | 69.39s | 634% | 5,025,708 |
+| Ordinary frontend | After | 529 files / 6,413 tests | 72.14s | 71.13s | 630% | 5,018,288 |
+
+The paired ordinary wall observation increased by 1.69s (2.4%) while peak RSS
+decreased by 7,420 KiB (0.1%). The wall movement remains inside the Phase 0
+69.71-72.34s warm range and observed ordinary-lane variability, so it does not
+represent a material regression or a phase-level performance claim. The owning
+DOM project improved by 2.19s; the Node project varied upward by 0.52s after
+absorbing the two files.
+
+## Phase 2 Client-Runtime-Utilities Command Validation
+
+`pnpm test:frontend` passed 535 files / 6,616 tests. Complete standalone
+`frontend-node` and `frontend-dom` project runs passed 142 files / 867 tests and
+391 files / 5,741 tests respectively.
+
+`pnpm test:affected --dry-run` selected the complete frontend lane, isolated
+performance gates, and server lane because the explicit runtime inventory
+changed. Running the selected plan passed 535 frontend files / 6,616 tests, 2
+performance files / 6 tests, and 154 server files / 3,295 tests with 1 skipped.
+
+`pnpm format:check` and `git diff --check` passed. No production, setup,
+coverage-map, CI, rendered UI contract, or browser-smoke file changed, so the
+preceding test-runtime-tooling `test:all` checkpoint remains the current
+periodic Phase 2 aggregate proof.
 
 ## Phase 2 Client-Policy-Validation Environment And Source State
 

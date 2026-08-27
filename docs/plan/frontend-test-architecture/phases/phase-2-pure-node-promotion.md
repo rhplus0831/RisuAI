@@ -14,6 +14,9 @@ Status: In progress
 - [Client policy and validation helpers](slices/phase-2/client-policy-validation.md):
   promoted five plain TypeScript policy, validation, and data-shaping suites
   and 22 tests from Happy-DOM to Node.
+- [Client runtime utilities](slices/phase-2/client-runtime-utilities.md):
+  promoted two dependency-injected or explicitly stubbed runtime utility suites
+  and seven tests from Happy-DOM to Node.
 
 ## Objective
 
