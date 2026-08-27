@@ -20,6 +20,9 @@ Status: In progress
 - [Model provider catalogs](slices/phase-2/model-provider-catalogs.md): promoted
   four discovery, credential-routing, cache, and data-shaping suites and 25
   tests from Happy-DOM to Node.
+- [Prompt conversion and tokenization](slices/phase-2/prompt-tokenization.md):
+  promoted three prompt conversion, tokenization memo/debounce, and tokenizer
+  cache/catalog suites and 16 tests from Happy-DOM to Node.
 
 ## Objective
 

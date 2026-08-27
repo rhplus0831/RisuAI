@@ -4,10 +4,121 @@ Date: 2026-08-28
 
 ## State
 
-Phase 2 model-provider-catalogs slice closeout, following the display-source
-batching prerequisite stabilization. Phase 2 remains in progress; this record
-does not authorize repository-wide default inversion, S promotion, or bulk
-migration outside the active phase rules.
+Phase 2 prompt-tokenization slice closeout. Phase 2 remains in progress; this
+record does not authorize repository-wide default inversion, S promotion, or
+bulk migration outside the active phase rules.
+
+## Phase 2 Prompt-Tokenization Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `edbd48dc6723a030b527f9a26d14f76ad21f8cef`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Available CPUs: 10
+- Frontend test-all UI-map exclusion: `RISU_TEST_EXCLUDE_UI_MAP=true`
+- Isolation: enabled
+- Measurement tree: the clean base commit plus the three-file Node ownership
+  change, regenerated inventory, and Phase 2 documentation in this slice; no
+  unrelated working-tree changes were present.
+
+GNU `time` console observations remained uncommitted. Coverage output remained
+under ignored `coverage/`.
+
+## Phase 2 Prompt-Tokenization Probe And Ownership
+
+The seventh bounded Phase 2 slice promotes:
+
+- `src/ts/process/prompt.conversionDurability.test.ts`
+- `src/ts/process/promptTokenizeMemo.test.ts`
+- `src/ts/tokenizer.test.ts`
+
+The prompt suites explicitly replace their Svelte-named persistence boundary,
+tokenizer, and alert surface. The tokenizer suite explicitly replaces its
+Svelte-named database, plugin, parser, and global-fetch boundaries, as well as
+local tokenization and provider operations. The remaining exercised graphs are
+plain TypeScript conversion, data shaping, memoization, debounce sequencing,
+bounded cache behavior, and tokenizer option data. Vitest fake timers are
+installed explicitly. No DOM or browser storage is accessed, every provider
+operation is mocked, and browser-only tokenizer branches remain outside these
+contracts. No mock, assertion, production dependency, or test body changed for
+promotion.
+
+Pre-promotion Happy-DOM command:
+
+```sh
+/usr/bin/time -v pnpm exec vitest run \
+  src/ts/process/prompt.conversionDurability.test.ts \
+  src/ts/process/promptTokenizeMemo.test.ts \
+  src/ts/tokenizer.test.ts
+```
+
+Result: 3 files / 16 tests passed in 1.39s wall and 596ms Vitest duration,
+with 491,152 KiB peak RSS and 479ms aggregate environment time.
+
+After adding the files to `vitest.node-tests.ts`, the target-project probe used
+the same file list with `--project frontend-node`. Result: 3 files / 16 tests
+passed in 1.16s wall and 398ms Vitest duration, with 436,736 KiB peak RSS and no
+aggregate environment time. The later complete Node and frontend runs repeated
+the same tests successfully.
+
+## Phase 2 Prompt-Tokenization Discovery And Classification Proof
+
+Commands:
+
+```sh
+pnpm update:frontend-test-inventory
+pnpm check:frontend-test-inventory
+```
+
+Both passed. The generated inventory removed the three target-N probe markers,
+retained the 537-file universe, and remained exhaustive and disjoint.
+
+| View | Files | Node | Svelte+Node | Happy-DOM |
+| --- | ---: | ---: | ---: | ---: |
+| Full, including explicit performance gates | 537 | 149 | 2 | 386 |
+| Standalone ordinary frontend | 535 | 149 | 2 | 384 |
+| `test:all` ordinary frontend | 529 | 148 | 2 | 379 |
+
+The target distribution remains 174 N, 129 S, 234 D, and 7 B. Outstanding
+target-runtime probes fell from 155 to 152: 25 N and 127 S.
+
+## Phase 2 Prompt-Tokenization Paired Measurements
+
+All paired commands ran on the same host with
+`RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v`. This is one paired slice
+observation, not the three-run phase-level timing gate.
+
+| Lane | State | Result | Wall | Vitest | CPU | Peak RSS KiB |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `frontend-node` | Before | 145 files / 887 tests | 4.39s | 3.63s | 672% | 945,704 |
+| `frontend-node` | After | 148 files / 903 tests | 4.27s | 3.53s | 689% | 937,580 |
+| `frontend-dom` | Before | 382 files / 5,518 tests | 68.19s | 67.24s | 625% | 4,550,372 |
+| `frontend-dom` | After | 379 files / 5,502 tests | 68.61s | 67.69s | 631% | 4,803,428 |
+| Ordinary frontend | Before | 529 files / 6,413 tests | 69.32s | 68.44s | 636% | 5,009,748 |
+| Ordinary frontend | After | 529 files / 6,413 tests | 70.17s | 69.27s | 634% | 4,957,828 |
+
+The paired ordinary wall observation increased by 0.85s (1.2%) while peak RSS
+decreased by 51,920 KiB (1.0%). Both movements remain within observed lane
+variability, so this is not a phase-level performance claim. The owning DOM
+project varied upward by 0.42s; the Node project improved by 0.12s after
+absorbing the three files.
+
+## Phase 2 Prompt-Tokenization Command Validation
+
+`pnpm test:frontend` passed 535 files / 6,616 tests. Complete standalone
+`frontend-node` and `frontend-dom` project runs passed 149 files / 908 tests and
+384 files / 5,700 tests respectively.
+
+`pnpm test:affected --dry-run` selected the complete frontend lane, isolated
+performance gates, and server lane because the explicit runtime inventory
+changed. Running the selected plan passed 535 frontend files / 6,616 tests, 2
+performance files / 6 tests, and 154 server files / 3,295 tests with 1 skipped.
+
+`pnpm format:check` and `git diff --check` passed. No production, setup,
+coverage-map, CI, rendered UI contract, or browser-smoke file changed in the
+promotion, so the preceding test-runtime-tooling `test:all` checkpoint remains
+the current periodic Phase 2 aggregate proof.
 
 ## Phase 2 Model-Provider-Catalogs Environment And Source State
 
