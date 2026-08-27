@@ -13,7 +13,7 @@ import {
   isStartupTelemetryConfiguration,
   type StartupTelemetryConfiguration,
   type StartupTelemetryEvent,
-} from './startupTelemetryProtocol'
+} from '@risuai/protocol/startup-telemetry'
 
 const STARTUP_TELEMETRY_ENDPOINT = '/api/v1/telemetry/startup'
 const STARTUP_TELEMETRY_MAX_QUEUED_EVENTS = STARTUP_TELEMETRY_MAX_BATCH_EVENTS * 2

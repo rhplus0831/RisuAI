@@ -5,10 +5,12 @@ import {
   STARTUP_TELEMETRY_MAX_DURATION_MS,
   STARTUP_TELEMETRY_MILESTONES,
   STARTUP_TELEMETRY_PROTOCOL_VERSION,
+  StartupTelemetryFailureCodeSchema,
+  StartupTelemetryMilestoneSchema,
   isStartupTelemetryBatch,
   isStartupTelemetryConfiguration,
   type StartupTelemetryBatch,
-} from './startupTelemetryProtocol'
+} from '@risuai/protocol/startup-telemetry'
 
 function batch(events: StartupTelemetryBatch['events']): StartupTelemetryBatch {
   return { version: STARTUP_TELEMETRY_PROTOCOL_VERSION, events }
@@ -35,6 +37,8 @@ describe('startup telemetry protocol', () => {
       'selected-prompt-template-hydration-failed',
       'runtime-initialization-failed',
     ])
+    expect(StartupTelemetryMilestoneSchema.anyOf.map((entry) => entry.const)).toEqual(STARTUP_TELEMETRY_MILESTONES)
+    expect(StartupTelemetryFailureCodeSchema.anyOf.map((entry) => entry.const)).toEqual(STARTUP_TELEMETRY_FAILURE_CODES)
   })
 
   it('accepts the exact bounded event shapes', () => {

@@ -3,7 +3,7 @@ import type { Message } from '../storage/database.svelte'
 import { activeWriterSessionHeader } from './activeWriterSession'
 import { setCachedServerCommandRevision } from './commands'
 import { configureStartupTelemetry } from './startupTelemetry'
-import { isStartupTelemetryConfiguration, type StartupTelemetryConfiguration } from './startupTelemetryProtocol'
+import { isStartupTelemetryConfiguration, type StartupTelemetryConfiguration } from '@risuai/protocol/startup-telemetry'
 
 const BOOTSTRAP_ENDPOINT = '/api/v1/bootstrap'
 const WRITER_OBSERVER_SESSION_HEADER = 'risu-writer-observer-session'

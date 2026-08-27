@@ -200,6 +200,9 @@ persistence/reconstruction rather than visible gesture controls.
 
 - Root `tsconfig.json` is browser-oriented, `strict: false`, allows JS, and uses
   bundler resolution.
+- `packages/protocol/tsconfig.json` strictly checks the browser-safe shared wire
+  schemas. `pnpm check:protocol` runs it directly and `pnpm check:server` includes
+  it before the client-library and Fastify checks.
 - `tsconfig.client-lib.json` emits declarations only into `dist/client-types`
   for server imports from client code; `tsconfig.node.json` covers
   `vite.config.ts`.
@@ -220,7 +223,8 @@ pnpm check:server
 ```
 
 Re-run the client-lib build after client source/type changes that affect server
-imports.
+imports. Protocol package changes are source-exported and checked through both
+the dedicated protocol project and their client/server consumers.
 
 Agent TypeScript navigation wrapper:
 

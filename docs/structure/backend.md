@@ -163,9 +163,10 @@ it is not a literal endpoint inventory because command and hub routes are
 classified by prefixes. Some registrars use plugin-local `instance.*` methods,
 so use `app.printRoutes()` for route inventory audits. Manifest streaming types
 include `sse`, `sse-optional`, `binary`, `websocket`, and `proxy`.
-There is no generated OpenAPI/Swagger artifact or generated browser API client;
-request/response contracts live in route handlers, TypeScript types, and the
-hand-written browser adapters under `src/ts/server/` and
+There is no generated OpenAPI/Swagger artifact or generated browser API client.
+Cross-runtime contracts that have been migrated live as TypeBox schemas and
+schema-derived types in `packages/protocol/`; route-only contracts remain in
+handlers and hand-written browser adapters under `src/ts/server/` and
 `src/ts/process/request/`.
 
 Request-history capture is best-effort diagnostic work and never turns an

@@ -21,7 +21,7 @@ import {
   type ServerChatOperationStream,
   type ServerChatTerminal,
 } from './request/serverChat'
-import type { ServerChatMessagePatch, ServerChatPostGeneration } from './request/serverChatEvents'
+import type { ServerChatMessagePatch, ServerChatPostGeneration } from '@risuai/protocol/generation-sse'
 import type { DispatchSuccessReq } from './dispatch/dispatchRequest'
 import type { OpenAIChat } from './index.svelte'
 import { seedRerollBufferFromAlternates } from './rerollNavigation.svelte'
@@ -46,7 +46,7 @@ import {
   runLedgeredGenerationEffect,
   skippedGenerationEffect,
 } from './generationEffectLedger'
-import type { ServerGenerationEffectLedgerRef } from './request/serverChatEvents'
+import type { ServerGenerationEffectLedgerRef } from '@risuai/protocol/generation-sse'
 import { readBrowserClientContext } from './request/clientContext'
 import {
   canUseGenerationOperationProtocol,

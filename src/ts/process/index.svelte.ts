@@ -59,7 +59,7 @@ import {
   runLedgeredGenerationEffect,
   skippedGenerationEffect,
 } from './generationEffectLedger'
-import type { ServerGenerationEffectLedgerRef } from './request/serverChatEvents'
+import type { ServerGenerationEffectLedgerRef } from '@risuai/protocol/generation-sse'
 import { isChatVisible, markChatUnread } from './chatUnread.svelte'
 import { registerGenerationProcessRuntime } from './generationRuntimeBridge'
 import { hydrateCharacterShell } from '../server/characterShellHydration.svelte'

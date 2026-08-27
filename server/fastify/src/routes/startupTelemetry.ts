@@ -3,7 +3,7 @@ import {
   STARTUP_TELEMETRY_PROTOCOL_VERSION,
   isStartupTelemetryBatch,
   type StartupTelemetryEvent,
-} from '../../../../src/ts/server/startupTelemetryProtocol.js'
+} from '@risuai/protocol/startup-telemetry'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
 import { emitProtocolMetric } from '../protocolMetrics.js'

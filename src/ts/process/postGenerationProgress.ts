@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store'
-import type { PostGenerationProgressEvent } from './request/serverChatEvents'
+import type { PostGenerationProgressEvent } from '@risuai/protocol/generation-sse'
 
 export type ActivePostGenerationProgress = Omit<PostGenerationProgressEvent, 'type'> & {
   target: PostGenerationProgressTarget

@@ -15,7 +15,7 @@ import {
   runLedgeredGenerationEffect,
   skippedGenerationEffect,
 } from './generationEffectLedger'
-import type { ServerGenerationEffectLedgerRef } from './request/serverChatEvents'
+import type { ServerGenerationEffectLedgerRef } from '@risuai/protocol/generation-sse'
 import type { ActiveChatTarget } from '../chatCommands'
 import { registerRecoveredEffectsRuntime } from './generationRuntimeBridge'
 

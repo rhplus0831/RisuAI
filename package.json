@@ -16,7 +16,8 @@
     "verify:fast-bootstrap:phase7": "pnpm measure:fast-bootstrap && playwright test -c playwright.fastify-smoke.config.ts server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "check:server": "tsc -p tsconfig.client-lib.json && tsc -p server/fastify/tsconfig.json --noEmit && tsc -p tsconfig.browser-smoke.json --noEmit",
+    "check:protocol": "tsc -p packages/protocol/tsconfig.json --noEmit",
+    "check:server": "pnpm check:protocol && tsc -p tsconfig.client-lib.json && tsc -p server/fastify/tsconfig.json --noEmit && tsc -p tsconfig.browser-smoke.json --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "pnpm test:frontend",
@@ -48,6 +49,7 @@
     "api:test": "pnpm test:server"
   },
   "dependencies": {
+    "@risuai/protocol": "workspace:*",
     "@adobe/css-tools": "4.4.4",
     "@aws-crypto/sha256-js": "^5.2.0",
     "@breezystack/lamejs": "^1.2.7",

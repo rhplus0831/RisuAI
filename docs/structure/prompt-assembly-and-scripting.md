@@ -51,10 +51,10 @@ frames. `/api/v1/generate/completion` is the lower-level shaped-message surface;
 its provider contract belongs to
 [Providers And Models](providers-and-models.md#chat-dispatch-and-tool-transport).
 
-The browser and server manually mirror chat frame types in
-`src/ts/process/request/serverChatEvents.ts` and
-`server/fastify/src/prompt/sseEvents.ts`. Additive frame changes must update
-both. Negotiated inline streams use
+The browser and server consume the shared, schema-derived chat frame contract in
+`packages/protocol/src/generationSse.ts`. The Fastify-only formatter and response
+writer remain in `server/fastify/src/prompt/sseEvents.ts`; they do not redefine
+the wire types. Additive frame changes update the shared schema once. Negotiated inline streams use
 `clientCapabilities.compactPromptEvent` and `promptMetadataOnly` for compact
 prompt metadata, `firstChangedIndex` for delta-trimmed message patches, and
 `omitDuplicateDoneResult` to omit a repeated `done.result`; durable replay

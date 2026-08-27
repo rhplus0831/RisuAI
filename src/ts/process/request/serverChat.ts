@@ -39,20 +39,19 @@ import {
   type HalfStreamingProgressTarget,
 } from '../halfStreamingProgress'
 import { iterateSseEvents } from './sseParse'
-import type {
-  AgentPresetProgressEvent,
-  DoneEvent,
-  InfoEvent,
-  PostGenerationProgressEvent,
-  PromptEvent,
-  ServerChatGenerationProjection,
-  ServerChatGenerationPersistenceDisposition,
-  ServerChatMessagePatch,
-  ServerChatPostGeneration,
-  ServerChatRestoration,
-  ServerChatSideEffect,
-  ServerChatWarning,
-} from './serverChatEvents'
+import {
+  parsePromptChatSseEvent,
+  type ErrorEvent,
+  type DoneEvent,
+  type InfoEvent,
+  type PromptEvent,
+  type ServerChatGenerationProjection,
+  type ServerChatGenerationPersistenceDisposition,
+  type ServerChatMessagePatch,
+  type ServerChatRestoration,
+  type ServerChatSideEffect,
+  type ServerChatWarning,
+} from '@risuai/protocol/generation-sse'
 import type { requestDataResponse, StreamResponseChunk } from './request'
 import { HYPA_CONTEXT_TRUNCATION_CONFIRMATION_REQUIRED } from './hypaContextTruncation'
 import { GENERATION_IN_PROGRESS_FAILURE_CAUSE } from '../sendChatFailure'
@@ -240,6 +239,11 @@ function parseData(data: string): Record<string, unknown> | null {
   }
 }
 
+function omitEventType<T extends { type: unknown }>(event: T): Omit<T, 'type'> {
+  const { type: _type, ...payload } = event
+  return payload
+}
+
 function nonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
@@ -302,7 +306,7 @@ function debugServerChat(event: string, details: Record<string, unknown>): void 
   console.debug('[risu:protocol]', event, details)
 }
 
-function errorMessageFromEvent(data: Record<string, unknown>, fallback: string): string {
+function errorMessageFromEvent(data: ErrorEvent, fallback: string): string {
   const error = nonEmptyString(data.error) ? data.error : fallback
   const details: string[] = []
   if (typeof data.status === 'number' && Number.isFinite(data.status) && !error.includes(`HTTP ${data.status}`)) {
@@ -564,10 +568,11 @@ async function fetchDurableTerminalSnapshot(
     throw new Error(`Durable terminal snapshot fetch failed with HTTP ${response.status}.`)
   }
   const payload = (await response.json()) as unknown
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+  const event = parsePromptChatSseEvent('done', payload)
+  if (!event || event.type !== 'done') {
     throw new Error('Server returned an invalid durable terminal snapshot payload.')
   }
-  return payload as Omit<DoneEvent, 'type'>
+  return omitEventType(event)
 }
 
 function classifyReattachOpenError(error: {
@@ -629,24 +634,22 @@ export async function requestServerChat(input: ServerChatInput, signal: AbortSig
   // payload carries the remaining fields with `type` stripped (see the
   // server's `writePromptChatEvent`).
   for await (const frame of iterateSseEvents(response.body, signal)) {
-    const data = parseData(frame.data)
-    if (!data) continue
-    switch (frame.event) {
+    const event = parsePromptChatSseEvent(frame.event, parseData(frame.data))
+    if (!event) continue
+    switch (event.type) {
       case 'prompt':
-        prompt = data as unknown as ServerChatPrompt
+        prompt = omitEventType(event)
         break
       case 'info':
-        info = data as unknown as ServerChatInfo
+        info = omitEventType(event)
         reconcileServerCommandRevision(info)
         break
       case 'message_patch':
-        if (data.patch && typeof data.patch === 'object') {
-          messagePatches.push(data.patch as unknown as ServerChatMessagePatch)
-        }
+        messagePatches.push(event.patch)
         break
       case 'error':
-        error = errorMessageFromEvent(data, 'Server returned an error without details during prompt assembly.')
-        errorCode = truncationConfirmationCode(data.code) ?? truncationConfirmationCode(data.reason)
+        error = errorMessageFromEvent(event, 'Server returned an error without details during prompt assembly.')
+        errorCode = truncationConfirmationCode(event.code) ?? truncationConfirmationCode(event.reason)
         done = true
         break
       case 'done':
@@ -1103,31 +1106,28 @@ export async function requestServerChatGeneration(
           let transportError = 'stream ended without a done event'
           try {
             for await (const frame of iterateSseEvents(activeOpened.response.body!, viewerAbortController.signal)) {
-              const data = parseData(frame.data)
-              if (!data) continue
-              switch (frame.event) {
+              const event = parsePromptChatSseEvent(frame.event, parseData(frame.data))
+              if (!event) continue
+              switch (event.type) {
                 case 'job_accepted':
-                  if (typeof data.jobId === 'string') durableJobId = data.jobId
+                  durableJobId = event.jobId
                   observeJobId(durableJobId)
                   operationLineage = {
                     ...operationLineage,
-                    ...(typeof data.operationId === 'string' ? { operationId: data.operationId } : {}),
-                    ...(typeof data.acceptedMessageId === 'string'
-                      ? { acceptedMessageId: data.acceptedMessageId }
+                    ...(typeof event.operationId === 'string' ? { operationId: event.operationId } : {}),
+                    ...(typeof event.acceptedMessageId === 'string'
+                      ? { acceptedMessageId: event.acceptedMessageId }
                       : {}),
-                    ...(Number.isSafeInteger(data.attemptNo) ? { attemptNo: data.attemptNo as number } : {}),
-                    ...(Number.isSafeInteger(data.projectionEpoch)
-                      ? { projectionEpoch: data.projectionEpoch as number }
+                    ...(Number.isSafeInteger(event.attemptNo) ? { attemptNo: event.attemptNo as number } : {}),
+                    ...(Number.isSafeInteger(event.projectionEpoch)
+                      ? { projectionEpoch: event.projectionEpoch as number }
                       : {}),
                   }
-                  applyGenerationOperationSseEvent(
-                    { ...data, type: 'job_accepted' },
-                    {
-                      chatId: input.chatId,
-                      mode: input.mode === 'preview' || input.mode === 'preview_prompt' ? undefined : input.mode,
-                      ...(input.regenerateMessageId ? { regenerateMessageId: input.regenerateMessageId } : {}),
-                    },
-                  )
+                  applyGenerationOperationSseEvent(event, {
+                    chatId: input.chatId,
+                    mode: input.mode === 'preview' || input.mode === 'preview_prompt' ? undefined : input.mode,
+                    ...(input.regenerateMessageId ? { regenerateMessageId: input.regenerateMessageId } : {}),
+                  })
                   // Backward-compatible with servers that predate the response
                   // header: an abort may have won the race with this first frame.
                   if (signal?.aborted) cancelDurableOnAbort()
@@ -1137,18 +1137,18 @@ export async function requestServerChatGeneration(
                   })
                   break
                 case 'prompt':
-                  prompt = data as unknown as ServerChatPrompt
+                  prompt = omitEventType(event)
                   maybeResolveReady()
                   break
                 case 'info':
-                  info = data as unknown as ServerChatInfo
+                  info = omitEventType(event)
                   halfStreaming = info.halfStreaming === true
                   reconcileServerCommandRevision(info)
                   rememberDurableJob()
                   maybeResolveReady()
                   break
                 case 'replay_gap':
-                  if (data.reason === 'replay_budget_exceeded') {
+                  if (event.reason === 'replay_budget_exceeded') {
                     replayGapTruncated = true
                     replayGapPending = true
                     tokenResult = ''
@@ -1159,75 +1159,70 @@ export async function requestServerChatGeneration(
                     debugServerChat('server-chat-replay-gap', {
                       requestUid: activeOpened.requestUid,
                       jobId: durableJobId,
-                      evictedEvents: data.evictedEvents,
-                      evictedBytes: data.evictedBytes,
+                      evictedEvents: event.evictedEvents,
+                      evictedBytes: event.evictedBytes,
                     })
                   }
                   break
                 case 'message_patch':
-                  if (data.patch && typeof data.patch === 'object') {
-                    const signature = JSON.stringify(data.patch)
+                  {
+                    const signature = JSON.stringify(event.patch)
                     if (!seenMessagePatches.has(signature)) {
                       seenMessagePatches.add(signature)
-                      messagePatches.push(data.patch as unknown as ServerChatMessagePatch)
+                      messagePatches.push(event.patch)
                     }
                   }
                   break
                 case 'side_effect':
-                  if (typeof data.kind === 'string') {
-                    const signature = JSON.stringify(data)
+                  {
+                    const sideEffect = omitEventType(event)
+                    const signature = JSON.stringify(sideEffect)
                     if (!seenSideEffects.has(signature)) {
                       seenSideEffects.add(signature)
-                      sideEffects.push(data as unknown as ServerChatSideEffect)
+                      sideEffects.push(sideEffect)
                     }
                   }
                   break
                 case 'agent_preset_progress': {
-                  const signature = JSON.stringify(data)
+                  const signature = JSON.stringify(event)
                   if (!seenAgentProgress.has(signature)) {
                     seenAgentProgress.add(signature)
-                    updateAgentPresetProgress(agentPresetSession, {
-                      type: 'agent_preset_progress',
-                      ...(data as unknown as Omit<AgentPresetProgressEvent, 'type'>),
-                    })
+                    updateAgentPresetProgress(agentPresetSession, event)
                   }
                   break
                 }
                 case 'post_generation_progress': {
-                  const signature = JSON.stringify(data)
+                  const signature = JSON.stringify(event)
                   if (!seenPostGenerationProgress.has(signature)) {
                     seenPostGenerationProgress.add(signature)
-                    updatePostGenerationProgress(postGenerationSession, {
-                      type: 'post_generation_progress',
-                      ...(data as unknown as Omit<PostGenerationProgressEvent, 'type'>),
-                    })
+                    updatePostGenerationProgress(postGenerationSession, event)
                   }
                   break
                 }
                 case 'warning':
-                  if (typeof data.message === 'string') {
-                    const signature = JSON.stringify(data)
+                  {
+                    const warning = omitEventType(event)
+                    const signature = JSON.stringify(warning)
                     if (seenWarnings.has(signature)) break
                     seenWarnings.add(signature)
-                    const warning = data as unknown as ServerChatWarning
                     warnings.push(warning)
                     debugServerChat('server-chat-warning', {
                       requestUid: activeOpened.requestUid,
-                      message: warning.message,
-                      context: warning.context,
+                      message: event.message,
+                      context: event.context,
                     })
-                    console.warn(`Server chat warning: ${warning.message}`, warning.context ?? '')
-                    showServerCompatibilityWarning(warning)
+                    console.warn(`Server chat warning: ${event.message}`, event.context ?? '')
+                    showServerCompatibilityWarning(event)
                   }
                   break
                 case 'token': {
-                  const content = typeof data.content === 'string' ? data.content : ''
+                  const content = event.content
                   tokenResult += content
                   if (halfStreaming) {
                     if (content.length > 0 && halfStreamingTarget) {
                       recordHalfStreamingToken(halfStreamingTarget, Date.now(), {
-                        generatedTokens: typeof data.generatedTokens === 'number' ? data.generatedTokens : undefined,
-                        elapsedMs: typeof data.elapsedMs === 'number' ? data.elapsedMs : undefined,
+                        generatedTokens: event.generatedTokens,
+                        elapsedMs: event.elapsedMs,
                       })
                     }
                   } else if (!replayGapPending) {
@@ -1237,29 +1232,15 @@ export async function requestServerChatGeneration(
                 }
                 case 'error': {
                   const error = errorMessageFromEvent(
-                    data,
+                    event,
                     'Server returned an error without details during generation.',
                   )
-                  const restoration =
-                    data.restoration && typeof data.restoration === 'object'
-                      ? (data.restoration as unknown as ServerChatRestoration)
-                      : undefined
-                  const code = truncationConfirmationCode(data.code) ?? truncationConfirmationCode(data.reason)
-                  const persistenceDisposition: ServerChatGenerationPersistenceDisposition | undefined =
-                    data.persistenceDisposition === 'queued' ||
-                    data.persistenceDisposition === 'rejected' ||
-                    data.persistenceDisposition === 'unconfirmed'
-                      ? data.persistenceDisposition
-                      : undefined
-                  const generationProjection =
-                    data.generationProjection && typeof data.generationProjection === 'object'
-                      ? (data.generationProjection as unknown as ServerChatGenerationProjection)
-                      : undefined
-                  const retainedResult = typeof data.result === 'string' ? data.result : undefined
-                  const postGeneration =
-                    data.postGeneration && typeof data.postGeneration === 'object'
-                      ? (data.postGeneration as unknown as ServerChatPostGeneration)
-                      : undefined
+                  const restoration = event.restoration
+                  const code = truncationConfirmationCode(event.code) ?? truncationConfirmationCode(event.reason)
+                  const persistenceDisposition = event.persistenceDisposition
+                  const generationProjection = event.generationProjection
+                  const retainedResult = event.result
+                  const postGeneration = event.postGeneration
                   if (retainedResult !== undefined) {
                     const previousTokenResult = tokenResult
                     tokenResult = retainedResult
@@ -1270,7 +1251,7 @@ export async function requestServerChatGeneration(
                   if (typeof postGeneration?.revision === 'number') {
                     setCachedServerCommandRevision(postGeneration.revision)
                   }
-                  applyGenerationOperationSseEvent({ ...data, type: 'error', jobId: durableJobId })
+                  applyGenerationOperationSseEvent({ ...event, jobId: durableJobId })
                   resolveReadyOnce({
                     status: 'error',
                     error,
@@ -1306,7 +1287,7 @@ export async function requestServerChatGeneration(
                   return
                 }
                 case 'done':
-                  donePayload = data as unknown as Omit<DoneEvent, 'type'>
+                  donePayload = omitEventType(event)
                   if (donePayload.terminalSnapshot) {
                     try {
                       const snapshotPayload = await fetchDurableTerminalSnapshot(
@@ -1345,7 +1326,7 @@ export async function requestServerChatGeneration(
                   const terminalClosesReplayGap = replayGapPending
                   replayGapPending = false
                   if (streamingRequest) streamingRequest.replayGapPending = false
-                  applyGenerationOperationSseEvent({ ...data, type: 'done', jobId: durableJobId })
+                  applyGenerationOperationSseEvent({ ...event, jobId: durableJobId })
                   const previousTokenResult = tokenResult
                   if (watchesDurableJob && typeof donePayload.result === 'string') {
                     // Durable replay is a lossy token window. Its protected

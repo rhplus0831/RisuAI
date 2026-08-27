@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { character, Chat, Message } from '../../../storage/database.svelte'
-import type { ServerChatMessagePatch } from '../serverChatEvents'
+import type { ServerChatMessagePatch } from '@risuai/protocol/generation-sse'
 import { applyServerMessagePatch } from '../serverMessagePatch'
 
 function patch(overrides: Partial<ServerChatMessagePatch>): ServerChatMessagePatch {

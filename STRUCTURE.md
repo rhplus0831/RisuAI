@@ -37,7 +37,8 @@ records past decisions and is not authoritative.
 
 | Path | Purpose |
 | ---- | ------- |
-| `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` | Root package metadata, scripts, lockfile, and dependency-build policy; this is not a multi-package workspace. |
+| `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` | Root application metadata, scripts, lockfile, workspace membership, and dependency-build policy. |
+| `packages/protocol/` | Browser-safe, schema-first wire contracts shared by the Svelte client and Fastify; it must not import application, Svelte, Fastify, database, or Node-only modules. |
 | `index.html`, `vite.config.ts`, `src/` | Svelte 5 SPA, Vite configuration, browser runtime, UI, language packs, and bundled client data. |
 | `server/fastify/` | Fastify API and tests, including SQLite persistence and provider execution; it has no separate package manifest. |
 | `STRUCTURE.md`, `docs/structure/`, `src/docs/` | Current architecture and implementation guides. Start at the [Architecture Index](docs/structure/README.md). |

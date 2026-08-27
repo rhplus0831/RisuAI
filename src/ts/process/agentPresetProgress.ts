@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store'
-import type { AgentPresetProgressEvent } from './request/serverChatEvents'
+import type { AgentPresetProgressEvent } from '@risuai/protocol/generation-sse'
 
 export type ActiveAgentPresetProgress = Omit<AgentPresetProgressEvent, 'type'> & {
   startedAt: number

@@ -35,8 +35,12 @@ import {
   type ServerChatInput,
 } from '../serverChat'
 import { handleActiveWriterStaleResponse } from '../../../server/activeWriterSession'
-import { CLIENT_PROMPT_CHAT_EVENT_TYPES, type JobAcceptedEvent, type ServerChatMessagePatch } from '../serverChatEvents'
-import { PROMPT_CHAT_EVENT_TYPES } from '../../../../../server/fastify/src/prompt/sseEvents'
+import {
+  CLIENT_PROMPT_CHAT_EVENT_TYPES,
+  PROMPT_CHAT_EVENT_TYPES,
+  type JobAcceptedEvent,
+  type ServerChatMessagePatch,
+} from '@risuai/protocol/generation-sse'
 import {
   getServerChatCalls,
   resetServerChatState,

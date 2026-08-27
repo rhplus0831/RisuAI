@@ -5,7 +5,7 @@ import {
   runLedgeredGenerationEffect,
   setGenerationEffectTimingObserverForTests,
 } from './generationEffectLedger'
-import type { ServerGenerationEffectLedgerRef } from './request/serverChatEvents'
+import type { ServerGenerationEffectLedgerRef } from '@risuai/protocol/generation-sse'
 
 vi.mock('../storage/fastifyStorage', () => ({ getNodeServerProxyAuth: vi.fn().mockResolvedValue('auth') }))
 vi.mock('../server/activeWriterSession', () => ({

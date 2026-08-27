@@ -1,6 +1,10 @@
 import type { character, Chat, Message } from '../../storage/database.svelte'
 import { sameStructuredValue } from '../../server/chatMessageRangeMerge'
-import type { ServerChatMessageMutation, ServerChatMessagePatch, ServerChatRestoration } from './serverChatEvents'
+import type {
+  ServerChatMessageMutation,
+  ServerChatMessagePatch,
+  ServerChatRestoration,
+} from '@risuai/protocol/generation-sse'
 
 function cloneMessage(message: Message): Message {
   return structuredClone(message)

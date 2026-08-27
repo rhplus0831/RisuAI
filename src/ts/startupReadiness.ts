@@ -5,7 +5,7 @@ import {
   type StartupTelemetryEvent,
   type StartupTelemetryFailureCode,
   type StartupTelemetryMilestone,
-} from './server/startupTelemetryProtocol'
+} from '@risuai/protocol/startup-telemetry'
 
 export const STARTUP_MILESTONES = STARTUP_TELEMETRY_MILESTONES
 

@@ -3,7 +3,7 @@ import type { Message } from '../storage/database.svelte'
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from '../server/activeWriterSession'
 import { SERVER_DATABASE_LINEAGE_HEADER } from '../server/commands'
 import type { PendingGenerationEffect } from '../server/bootstrap'
-import type { ServerGenerationEffectLedgerRef } from './request/serverChatEvents'
+import type { ServerGenerationEffectLedgerRef } from '@risuai/protocol/generation-sse'
 
 export type GenerationEffectKind =
   | 'igp'

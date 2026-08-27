@@ -56,7 +56,7 @@ import {
 import { markChatMessageMutationIntent } from '../server/chatMessageMutationIntent'
 import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
 import type { character, Chat, Message, MessageGenerationInfo } from '../storage/database.svelte'
-import type { ServerChatMessagePatch, ServerChatRestoration } from './request/serverChatEvents'
+import type { ServerChatMessagePatch, ServerChatRestoration } from '@risuai/protocol/generation-sse'
 import { getRerollBuffer, getRerollId, resetRerollNavigation } from './rerollNavigation.svelte'
 import { acknowledgeHydratedGenerationPersistences, queuedGenerationPersistences } from './generationPersistenceState'
 import { addChatOutputListener, chatOutputListeners, type ChatOutputListenerArg } from '../plugins/chatOutputListeners'

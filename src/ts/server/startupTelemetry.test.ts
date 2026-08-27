@@ -25,7 +25,7 @@ import {
   configureStartupTelemetry,
   startStartupTelemetryPublisher,
 } from './startupTelemetry'
-import type { StartupTelemetryBatch, StartupTelemetryEvent } from './startupTelemetryProtocol'
+import type { StartupTelemetryBatch, StartupTelemetryEvent } from '@risuai/protocol/startup-telemetry'
 
 interface CapturedRequest {
   url: string

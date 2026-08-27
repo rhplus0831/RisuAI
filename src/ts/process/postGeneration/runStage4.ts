@@ -8,7 +8,7 @@ import { fireDesktopNotification, type DesktopNotificationInput } from './notifi
 import { finalizeStage4, type StageTimings } from './stage4Finalize'
 import type { DispatchSuccessReq } from '../dispatch/dispatchRequest'
 import type { StablePostGenerationMessageTarget } from './stableTarget'
-import type { ServerGenerationEffectLedgerRef } from '../request/serverChatEvents'
+import type { ServerGenerationEffectLedgerRef } from '@risuai/protocol/generation-sse'
 import {
   completedGenerationEffect,
   runLedgeredGenerationEffect,

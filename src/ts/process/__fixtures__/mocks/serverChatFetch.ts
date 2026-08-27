@@ -12,7 +12,7 @@ import type {
   ServerChatPostGeneration,
   ServerChatRestoration,
   ServerChatSideEffect,
-} from '../../request/serverChatEvents'
+} from '@risuai/protocol/generation-sse'
 
 export interface ServerChatCall {
   url: string

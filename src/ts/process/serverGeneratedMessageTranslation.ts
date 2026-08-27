@@ -2,7 +2,7 @@ import { getDatabase, type MessageTranslation } from '../storage/database.svelte
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { beginActiveMessageTranslation, publishSettledMessageTranslation } from '../server/messageTranslationJobs'
 import { consumeServerOwnedGeneratedMessageEligibility } from './generatedMessageTranslationEligibility'
-import type { ServerChatPostGeneration } from './request/serverChatEvents'
+import type { ServerChatPostGeneration } from '@risuai/protocol/generation-sse'
 
 function nonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
