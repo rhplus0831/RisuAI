@@ -980,6 +980,82 @@ describe('reattach open-chat generation', () => {
     })
   })
 
+  it('retries a failed foreground authority probe while a durable observer remains hung', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const job = {
+      chatId: 'chat-1',
+      jobId: 'job-foreground-retry',
+      operationId: 'operation-foreground-retry',
+    }
+    let activity: ReturnType<typeof beginChatGenerationActivity> = null
+    try {
+      openChat('chat-1')
+      startActiveGenerationReattach()
+      setActiveGenerationJobs([job])
+      activity = beginChatGenerationActivity({
+        target: { selectedCharID: 0, chatPage: 0, characterId: 'char-a', chatId: 'chat-1' },
+        kind: 'message',
+        operationId: job.operationId,
+      })
+      h.fetchRuntimeJobs
+        .mockResolvedValueOnce({ status: 'error', error: 'bootstrap offline' })
+        .mockResolvedValueOnce({ status: 'ok', bootstrap: { activeGenerationJobs: [] } })
+
+      window.dispatchEvent(new Event('online'))
+      await vi.advanceTimersByTimeAsync(0)
+      await flushMicrotasks()
+
+      expect(h.fetchRuntimeJobs).toHaveBeenCalledTimes(1)
+      expect(h.retireGenerationJobViewers).not.toHaveBeenCalled()
+      expect(vi.getTimerCount()).toBe(1)
+
+      await vi.advanceTimersToNextTimerAsync()
+      await flushMicrotasks()
+
+      expect(h.fetchRuntimeJobs).toHaveBeenCalledTimes(2)
+      expect(h.hydrateChatMessages).toHaveBeenCalledWith('chat-1', { force: true, strict: true })
+      expect(h.retireGenerationJobViewers).toHaveBeenCalledWith(job.jobId)
+      expect(h.retireGenerationOperationViewers).toHaveBeenCalledWith(job.operationId)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      if (activity) finishChatGenerationActivity(activity.id)
+      resetGenerationJobLifecyclesForTests()
+      vi.useRealTimers()
+    }
+  })
+
+  it('bounds foreground authority retries for a persistently unavailable bootstrap', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    let activity: ReturnType<typeof beginChatGenerationActivity> = null
+    try {
+      openChat('chat-1')
+      startActiveGenerationReattach()
+      setActiveGenerationJobs([{ chatId: 'chat-1', jobId: 'job-bounded-foreground-retry' }])
+      activity = beginChatGenerationActivity({
+        target: { selectedCharID: 0, chatPage: 0, characterId: 'char-a', chatId: 'chat-1' },
+        kind: 'message',
+      })
+      h.fetchRuntimeJobs.mockResolvedValue({ status: 'error', error: 'bootstrap offline' })
+
+      window.dispatchEvent(new Event('online'))
+      await vi.advanceTimersByTimeAsync(0)
+      await flushMicrotasks()
+      expect(h.fetchRuntimeJobs).toHaveBeenCalledTimes(1)
+
+      for (let expectedCalls = 2; expectedCalls <= 4; expectedCalls += 1) {
+        await vi.advanceTimersToNextTimerAsync()
+        await flushMicrotasks()
+        expect(h.fetchRuntimeJobs).toHaveBeenCalledTimes(expectedCalls)
+      }
+
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      if (activity) finishChatGenerationActivity(activity.id)
+      resetGenerationJobLifecyclesForTests()
+      vi.useRealTimers()
+    }
+  })
+
   it('advances the known command revision before applying an accepted recovery bootstrap', async () => {
     h.fetchRuntimeJobs.mockResolvedValueOnce({
       status: 'ok',

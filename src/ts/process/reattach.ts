@@ -886,6 +886,7 @@ export async function stopGenerationJob(jobId: string) {
 let wired = false
 let reattachDisabled = false
 const GENERATION_AUTHORITY_TIMEOUT_MS = 10_000
+const LIFECYCLE_AUTHORITY_RETRY_DELAYS_MS = [500, 2_000, 5_000] as const
 
 type GenerationAuthorityRefreshResult = { status: 'ok' } | { status: 'error'; error: string }
 
@@ -898,6 +899,8 @@ interface GenerationAuthorityRequest {
 let runtimeJobRefresh: GenerationAuthorityRequest | null = null
 let lifecycleWakeupQueued = false
 let pendingLifecycleWakeupSource: GenerationJobProjectionSource | null = null
+let lifecycleRecoverySequence = 0
+let lifecycleAuthorityRetryTimer: ReturnType<typeof setTimeout> | null = null
 let stopSelectedCharacterSubscription: (() => void) | null = null
 let stopGenerationActivitySubscription: (() => void) | null = null
 let stopGenerationLifecycleRecoverySubscription: (() => void) | null = null
@@ -1179,16 +1182,67 @@ export async function refreshActiveGenerationJobsFromBootstrap(
   await refreshGenerationAuthority(source, { signal })
 }
 
-async function refreshRuntimeJobsAndTriggerReattach(source: GenerationJobProjectionSource): Promise<void> {
+function hasActiveDurableGenerationActivity(): boolean {
+  const durableJobChatIds = new Set([...authoritativeGenerationJobsById.values()].map((job) => job.chatId))
+  return get(activeChatGenerations).some(
+    (activity) =>
+      activity.kind === 'message' &&
+      (Boolean(activity.operationId) || Boolean(activity.chatId && durableJobChatIds.has(activity.chatId))),
+  )
+}
+
+function clearLifecycleAuthorityRetry(): void {
+  if (lifecycleAuthorityRetryTimer !== null) clearTimeout(lifecycleAuthorityRetryTimer)
+  lifecycleAuthorityRetryTimer = null
+}
+
+function scheduleLifecycleAuthorityRetry(
+  source: GenerationJobProjectionSource,
+  sequence: number,
+  completedRetries: number,
+): void {
+  const delayMs = LIFECYCLE_AUTHORITY_RETRY_DELAYS_MS[completedRetries]
+  if (
+    delayMs === undefined ||
+    reattachDisabled ||
+    sequence !== lifecycleRecoverySequence ||
+    !hasActiveDurableGenerationActivity()
+  ) {
+    return
+  }
+  clearLifecycleAuthorityRetry()
+  lifecycleAuthorityRetryTimer = setTimeout(() => {
+    lifecycleAuthorityRetryTimer = null
+    if (reattachDisabled || sequence !== lifecycleRecoverySequence || !hasActiveDurableGenerationActivity()) {
+      return
+    }
+    void refreshRuntimeJobsAndTriggerReattach(source, sequence, completedRetries + 1)
+  }, delayMs)
+}
+
+async function refreshRuntimeJobsAndTriggerReattach(
+  source: GenerationJobProjectionSource,
+  sequence: number,
+  completedRetries: number,
+): Promise<void> {
+  let authority: GenerationAuthorityRefreshResult
   try {
-    await refreshGenerationAuthority(source, { supersede: true })
+    authority = await refreshGenerationAuthority(source, { supersede: true })
   } finally {
     if (!reattachDisabled) triggerOpenChatGenerationReattach()
   }
+  if (sequence !== lifecycleRecoverySequence || reattachDisabled) return
+  if (authority.status === 'ok') {
+    clearLifecycleAuthorityRetry()
+    return
+  }
+  scheduleLifecycleAuthorityRetry(source, sequence, completedRetries)
 }
 
 function requestLifecycleGenerationRecovery(source: GenerationJobProjectionSource): void {
   pendingLifecycleWakeupSource = source
+  lifecycleRecoverySequence += 1
+  clearLifecycleAuthorityRetry()
   if (lifecycleWakeupQueued) return
   lifecycleWakeupQueued = true
   queueMicrotask(() => {
@@ -1196,7 +1250,7 @@ function requestLifecycleGenerationRecovery(source: GenerationJobProjectionSourc
     const pendingSource = pendingLifecycleWakeupSource
     pendingLifecycleWakeupSource = null
     if (!pendingSource || reattachDisabled) return
-    void refreshRuntimeJobsAndTriggerReattach(pendingSource)
+    void refreshRuntimeJobsAndTriggerReattach(pendingSource, lifecycleRecoverySequence, 0)
   })
 }
 
@@ -1230,6 +1284,8 @@ export function stopActiveGenerationReattach(): void {
   reattachQueued = false
   lifecycleWakeupQueued = false
   pendingLifecycleWakeupSource = null
+  lifecycleRecoverySequence += 1
+  clearLifecycleAuthorityRetry()
   runtimeJobRefresh?.controller.abort()
   runtimeJobRefresh = null
   reattachingJobIds.clear()
@@ -1243,6 +1299,8 @@ export function stopActiveGenerationReattach(): void {
 }
 
 export function resetGenerationJobLifecyclesForTests(): void {
+  lifecycleRecoverySequence += 1
+  clearLifecycleAuthorityRetry()
   clearActiveGenerationJobProjection()
   activeGenerationProjectionApplicationVersion = 0
   activeGenerationRecoveryEpoch = 0
