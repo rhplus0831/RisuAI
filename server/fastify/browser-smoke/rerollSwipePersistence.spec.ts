@@ -81,7 +81,8 @@ test('rerolled candidates survive a reload and stay swipe-recoverable', async ({
     '.default-chat-screen .chat-message-container[data-generation-display-projection="regenerate"]',
   )
   await expect(projectionRow).toBeVisible({ timeout: 5_000 })
-  await expect(projectionRow).toContainText('old reply')
+  await expect(projectionRow.locator('[data-generation-projection-loading]')).toBeVisible()
+  await expect(projectionRow).not.toContainText('old reply')
   await expect(page.locator('.default-chat-screen .chat-message-container')).toHaveCount(2)
   await expect
     .poll(
