@@ -94,7 +94,7 @@ including when an unauthenticated or invalid request contains a sentinel value;
 the sentinel is absent from JSONL. The canonical enablement, cohort sampling,
 raw/aggregate retention ceilings, aggregation rules, failure-code meanings, and
 failure-isolation behavior are documented in
-[`development-and-observability.md`](../structure/development-and-observability.md#browser-startup-telemetry).
+[`development-and-observability.md`](../../docs/structure/development-and-observability.md#browser-startup-telemetry).
 
 The focused frontend contract/readiness/bootstrap/publisher run passed 196
 tests, and the focused server ingestion/request-trace run passed 15 tests. Both

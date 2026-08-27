@@ -59,9 +59,9 @@ Every phase must preserve these conditions:
    `src/lang`.
 
 The canonical current behavior is documented in
-[Server Resources and Hydration](../structure/server-resources-and-bridges.md),
-[Durable Mutations and Recovery](../structure/durable-mutations-and-recovery.md),
-[Data and Events](../structure/data-and-events.md), and
+[Server Resources and Hydration](../../docs/structure/server-resources-and-bridges.md),
+[Durable Mutations and Recovery](../../docs/structure/durable-mutations-and-recovery.md),
+[Data and Events](../../docs/structure/data-and-events.md), and
 [Client Runtime](../../src/docs/client-runtime.md). Update those documents only
 when shipped behavior changes.
 
@@ -101,10 +101,10 @@ needs instead of comparing phase names.
   the Phase 7 ledger records the completed `loadedStore` removal separately.
 
 The focused test maps are
-[Browser State Sync and Recovery](../tests/browser-state-sync-and-recovery.md),
-[App Navigation and Chat](../tests/app-navigation-and-chat.md),
-[Persistence, Commands, and Events](../tests/persistence-commands-and-events.md),
-and [API Security and Runtime](../tests/api-security-and-runtime.md).
+[Browser State Sync and Recovery](../../docs/tests/browser-state-sync-and-recovery.md),
+[App Navigation and Chat](../../docs/tests/app-navigation-and-chat.md),
+[Persistence, Commands, and Events](../../docs/tests/persistence-commands-and-events.md),
+and [API Security and Runtime](../../docs/tests/api-security-and-runtime.md).
 
 ## Initiative completion gate
 

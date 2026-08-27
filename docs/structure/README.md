@@ -37,7 +37,6 @@ in `docs/structure/` appears below.
 | [`src/docs/README.md`](../../src/docs/README.md) | Choose among the six focused Svelte/browser-runtime guides. |
 | [`docs/tests/README.md`](../tests/README.md) | Find product-flow, domain, server, browser, and visible-state tests without searching the full test tree. |
 | [`server/fastify/__tests__/README.md`](../../server/fastify/__tests__/README.md) | Navigate the flat Fastify test directory by feature area. |
-| [`docs/fast-bootstrap/README.md`](../fast-bootstrap/README.md) | Follow the still-active startup-performance rollout ledger; canonical shipped behavior stays in the structure/runtime guides. |
 
 [`frontend.md`](frontend.md) remains only as a compatibility pointer for older
 archive links. It now routes to the `src/docs/` index plus all six current

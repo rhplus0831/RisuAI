@@ -26,7 +26,7 @@ records past decisions and is not authoritative.
 | Agents, Agent Presets, prepared inputs, dependencies, or output composition | [Agents And Presets](docs/structure/agents-and-presets.md) |
 | Modules, plugins, permissions, or MCP | [Plugins And MCP](docs/structure/plugins-and-mcp.md) |
 | Assets, inlay catalog, `.risu`/CharX/chat exchange, backups, reset, or Realm conversion | [Assets And Saves](docs/structure/assets-and-saves.md) |
-| Startup performance, bundle boundaries, observer rollout, or readiness budgets | [Fast Bootstrap](docs/fast-bootstrap/README.md), then the canonical runtime guides it links |
+| Startup performance, bundle boundaries, observer rollout, or readiness budgets | [Development And Observability](docs/structure/development-and-observability.md#fast-bootstrap-measurement-and-rollout-gate), [Server Resources And Hydration](docs/structure/server-resources-and-bridges.md), and [Client Runtime](src/docs/client-runtime.md) |
 | Tests, compatibility harness, CI, TypeScript, or formatting | [Testing And Operations](docs/structure/testing-and-operations.md) and [Test Suite Guide](docs/tests/README.md) |
 | Local dev, tracing, startup telemetry, environment, or browser support | [Development And Observability](docs/structure/development-and-observability.md) |
 | Generated, ignored, compatibility-only, or removed paths | [Generated And Legacy](docs/structure/generated-and-legacy.md) |
@@ -43,9 +43,8 @@ records past decisions and is not authoritative.
 | `server/fastify/` | Fastify API and tests, including SQLite persistence and provider execution; it has no separate package manifest. |
 | `STRUCTURE.md`, `docs/structure/`, `src/docs/` | Current architecture and implementation guides. Start at the [Architecture Index](docs/structure/README.md). |
 | `docs/plan/` | Active multi-phase workstreams, including live status, phase boundaries, and verification records. These plans do not supersede current runtime documentation until their phases land. |
-| `docs/fast-bootstrap/` | Active startup-performance execution guide and Phase 7 rollout ledger; shipped behavior remains canonical in the architecture/runtime guides. |
 | `docs/tests/` | Test-discovery guides organized by product and domain area. |
-| `.archived-docs/` | Closed workstreams and dated reports, including the August Fastify audits, upstream-sync sweep, data-driven UI inventory, and message-generation parity audit. Do not infer current behavior from them. |
+| `.archived-docs/` | Closed or retired workstreams and dated reports, including the Fast Bootstrap execution guide, August Fastify audits, upstream-sync sweep, data-driven UI inventory, and message-generation parity audit. Do not infer current behavior from them. |
 | `test/compat-harness/` | Opt-in golden compatibility comparison against the pinned pre-Fastify worktree; it is not part of `pnpm test:all`. |
 | `public/` | Static application sources copied or served by Vite, including the service worker and vendor/tokenizer payloads. |
 | `resources/` | Retained packaging artwork; the current Vite/Fastify build does not consume it. |
