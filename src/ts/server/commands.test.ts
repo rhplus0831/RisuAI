@@ -6830,6 +6830,34 @@ describe('server command API adapter', () => {
     expect(deferOwnServerCommandReconciliation(event)).toBe(false)
   })
 
+  it('forwards a direct response local effect through reconciliation', async () => {
+    const event = {
+      type: 'message.appended',
+      revision: 2,
+      resource: 'message',
+      id: 'message-a',
+      parentId: 'chat-a',
+    }
+    const localEffect: ServerCommandLocalEffect = {
+      kind: 'messageMutation',
+      operation: 'append',
+      chatId: 'chat-a',
+      messageId: 'message-a',
+      chatBodyProjectionEpoch: 4,
+    }
+    const reconciledEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      reconciledEffects.push(...localEffects.values())
+    })
+
+    await withDirectServerCommandEventReconciliation(
+      (candidate) => candidate.type === 'message.appended' && candidate.id === 'message-a',
+      async (reconcileResponseEvent) => reconcileResponseEvent(event, localEffect),
+    )
+
+    expect(reconciledEffects).toEqual([localEffect])
+  })
+
   it('releases unmatched and failed direct events through ordinary reconciliation', async () => {
     const unrelatedEvent = {
       type: 'character.created',

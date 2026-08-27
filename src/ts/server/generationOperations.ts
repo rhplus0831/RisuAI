@@ -26,6 +26,10 @@ import {
   peekCachedServerCommandRevision,
   setCachedServerCommandRevision,
   SERVER_DATABASE_LINEAGE_HEADER,
+  withDirectServerCommandEventReconciliation,
+  type CommandEvent,
+  type MessageMutationLocalEffect,
+  type ServerCommandLocalEffect,
 } from './commands'
 import {
   beginPendingMutationDispatch,
@@ -42,8 +46,9 @@ import {
   type ServerBootstrapRuntime,
 } from './bootstrap'
 import { recordGenerationRecoveryEvent } from './protocolDiagnostics'
-import { getChatHydrationRuntime, registerGenerationOperationsRuntime } from '../process/generationRuntimeBridge'
+import { registerGenerationOperationsRuntime } from '../process/generationRuntimeBridge'
 import { canGenerate } from '../startupReadiness'
+import { captureChatBodyProjectionEpoch } from './resourceState.svelte'
 
 const GENERATION_OPERATIONS_ENDPOINT = '/api/v1/generation-operations'
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
@@ -104,6 +109,7 @@ export interface GenerationOperationResponse {
     disposition: 'accepted' | 'not_appended'
     messageId: string
     revision?: number
+    event?: CommandEvent
   }
   stream?: { href: string }
 }
@@ -159,6 +165,7 @@ export interface StagedAcceptedSendOperation {
   intent: DurableMutationIntent & { kind: 'generation-operation-submit' }
   handle: PendingMutationHandle
   optimisticMessage: Message
+  optimisticChatBodyProjectionEpoch: number
   rollbackOptimisticAppend: () => void
 }
 
@@ -508,6 +515,7 @@ export async function stageAcceptedSendGenerationOperation(input: {
     await discardPendingMutation(handle)
     return optimistic
   }
+  const optimisticChatBodyProjectionEpoch = captureChatBodyProjectionEpoch(input.target.chatId)
   trackLocalGenerationOperation(operationId, input.target, optimistic.rollback)
   return {
     target: { ...input.target },
@@ -515,6 +523,7 @@ export async function stageAcceptedSendGenerationOperation(input: {
     intent,
     handle,
     optimisticMessage,
+    optimisticChatBodyProjectionEpoch,
     rollbackOptimisticAppend: optimistic.rollback,
   }
 }
@@ -581,6 +590,35 @@ function operationFromBody(body: unknown): GenerationOperationProjection | undef
   return parseGenerationOperations([record.operation])[0]
 }
 
+function commandEventFromValue(value: unknown): CommandEvent | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  if (typeof record.type !== 'string') return undefined
+  if (!Number.isSafeInteger(record.revision) || (record.revision as number) < 0) return undefined
+  if (typeof record.resource !== 'string') return undefined
+  if (record.id !== undefined && typeof record.id !== 'string') return undefined
+  if (record.parentId !== undefined && typeof record.parentId !== 'string') return undefined
+  if (
+    record.origin !== undefined &&
+    (!record.origin ||
+      typeof record.origin !== 'object' ||
+      Array.isArray(record.origin) ||
+      typeof (record.origin as { writerSessionId?: unknown }).writerSessionId !== 'string')
+  ) {
+    return undefined
+  }
+  return {
+    type: record.type,
+    revision: record.revision as number,
+    resource: record.resource,
+    ...(typeof record.id === 'string' ? { id: record.id } : {}),
+    ...(typeof record.parentId === 'string' ? { parentId: record.parentId } : {}),
+    ...(record.origin
+      ? { origin: { writerSessionId: (record.origin as { writerSessionId: string }).writerSessionId } }
+      : {}),
+  }
+}
+
 function responseFromBody(body: unknown): GenerationOperationResponse | undefined {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
   const record = body as Record<string, unknown>
@@ -593,12 +631,14 @@ function responseFromBody(body: unknown): GenerationOperationResponse | undefine
       (append.disposition === 'accepted' || append.disposition === 'not_appended') &&
       typeof append.messageId === 'string'
     ) {
+      const event = commandEventFromValue(append.event)
       result.append = {
         disposition: append.disposition,
         messageId: append.messageId,
         ...(Number.isSafeInteger(append.revision) && (append.revision as number) >= 0
           ? { revision: append.revision as number }
           : {}),
+        ...(event ? { event } : {}),
       }
     }
   }
@@ -1500,10 +1540,56 @@ function shouldDiscardOperationFailure(code: string | undefined, status: number)
   )
 }
 
+interface AcceptedSendEventTarget {
+  chatId: string
+  messageId: string
+  matches: (event: CommandEvent) => boolean
+}
+
+function acceptedSendEventTarget(intent: DurableMutationIntent): AcceptedSendEventTarget | null {
+  if (intent.kind !== 'generation-operation-submit') return null
+  const body = intent.requests[0]?.body
+  if (body?.mode !== 'send' || typeof body.chatId !== 'string' || typeof body.acceptedMessageId !== 'string') {
+    return null
+  }
+  const chatId = body.chatId
+  const messageId = body.acceptedMessageId
+  return {
+    chatId,
+    messageId,
+    matches: (event) =>
+      event.type === 'message.appended' &&
+      event.resource === 'message' &&
+      event.id === messageId &&
+      event.parentId === chatId,
+  }
+}
+
+function acceptedSendResponseEvent(
+  response: GenerationOperationResponse,
+  target: AcceptedSendEventTarget,
+): { status: 'ok'; event?: CommandEvent } | { status: 'invalid' } {
+  const append = response.append
+  if (!append || append.messageId !== target.messageId) return { status: 'invalid' }
+  if (append.disposition === 'not_appended') {
+    return append.event === undefined ? { status: 'ok' } : { status: 'invalid' }
+  }
+  if (
+    append.revision === undefined ||
+    !append.event ||
+    append.event.revision !== append.revision ||
+    !target.matches(append.event)
+  ) {
+    return { status: 'invalid' }
+  }
+  return { status: 'ok', event: append.event }
+}
+
 async function dispatchPendingGenerationOperation(
   handle: PendingMutationHandle,
   intent: DurableMutationIntent,
   access: GenerationOperationAccess = 'ordinary',
+  acceptedSendLocalEffect?: MessageMutationLocalEffect,
 ): Promise<GenerationOperationDispatchResult> {
   if (!canUseGenerationOperationAccess(access)) {
     return { status: 'retained', error: 'Generation is not ready.' }
@@ -1523,83 +1609,103 @@ async function dispatchPendingGenerationOperation(
   const request = intent.requests[0]
   const body = cloneJson(request.body)
   const auth = await getNodeServerProxyAuth()
-  let revisionRetries = 0
-  while (true) {
-    if (!canUseGenerationOperationAccess(access)) {
-      return { status: 'retained', error: 'Generation is not ready.' }
-    }
-    let response: Response
-    try {
-      response = await fetch(`/api/v1${request.path}`, {
-        method: request.method,
-        headers: {
-          'content-type': 'application/json',
-          'risu-auth': auth,
-          [SERVER_DATABASE_LINEAGE_HEADER]: handle.databaseLineage,
-          ...activeWriterSessionHeader(),
-        },
-        body: JSON.stringify(body),
-      })
-    } catch (error) {
-      return {
-        status: 'retained',
-        error: error instanceof Error ? `Network error: ${error.message}` : `Network error: ${String(error)}`,
+  const acceptedSendTarget = acceptedSendEventTarget(intent)
+  const dispatch = async (
+    reconcileResponseEvent?: (event: CommandEvent, localEffect?: ServerCommandLocalEffect) => Promise<void>,
+  ): Promise<GenerationOperationDispatchResult> => {
+    let revisionRetries = 0
+    while (true) {
+      if (!canUseGenerationOperationAccess(access)) {
+        return { status: 'retained', error: 'Generation is not ready.' }
       }
-    }
+      let response: Response
+      try {
+        response = await fetch(`/api/v1${request.path}`, {
+          method: request.method,
+          headers: {
+            'content-type': 'application/json',
+            'risu-auth': auth,
+            [SERVER_DATABASE_LINEAGE_HEADER]: handle.databaseLineage,
+            ...activeWriterSessionHeader(),
+          },
+          body: JSON.stringify(body),
+        })
+      } catch (error) {
+        return {
+          status: 'retained',
+          error: error instanceof Error ? `Network error: ${error.message}` : `Network error: ${String(error)}`,
+        }
+      }
 
-    let responseBody: unknown = null
-    try {
-      responseBody = await response.json()
-    } catch {
-      // Non-JSON success is retained because the server may already have accepted it.
-    }
-    if (response.ok) {
-      const parsed = responseFromBody(responseBody)
-      if (!parsed) return { status: 'retained', error: 'Invalid generation operation response.' }
-      if (parsed.append?.revision !== undefined) setCachedServerCommandRevision(parsed.append.revision)
-      applyGenerationOperationProjection(parsed.operation)
-      await discardPendingMutation(handle)
-      return { status: 'accepted', response: parsed, stream: generationOperationStreamDescriptor(parsed) }
-    }
+      let responseBody: unknown = null
+      try {
+        responseBody = await response.json()
+      } catch {
+        // Non-JSON success is retained because the server may already have accepted it.
+      }
+      if (response.ok) {
+        const parsed = responseFromBody(responseBody)
+        if (!parsed) return { status: 'retained', error: 'Invalid generation operation response.' }
+        const appendReconciliation = acceptedSendTarget
+          ? acceptedSendResponseEvent(parsed, acceptedSendTarget)
+          : { status: 'ok' as const }
+        if (appendReconciliation.status === 'invalid') {
+          return { status: 'retained', error: 'Invalid accepted-send append response.' }
+        }
+        if (parsed.append?.revision !== undefined) setCachedServerCommandRevision(parsed.append.revision)
+        applyGenerationOperationProjection(parsed.operation)
+        await discardPendingMutation(handle)
+        if (appendReconciliation.event && reconcileResponseEvent) {
+          await reconcileResponseEvent(appendReconciliation.event, acceptedSendLocalEffect)
+        }
+        return { status: 'accepted', response: parsed, stream: generationOperationStreamDescriptor(parsed) }
+      }
 
-    handleActiveWriterStaleResponse(response, responseBody)
-    const code = errorCode(responseBody)
-    if (
-      intent.kind === 'generation-operation-submit' &&
-      response.status === 409 &&
-      code === 'revision_conflict' &&
-      responseBody &&
-      typeof responseBody === 'object' &&
-      Number.isSafeInteger((responseBody as Record<string, unknown>).currentRevision) &&
-      revisionRetries < MAX_REVISION_RETRIES
-    ) {
-      body.baseRevision = (responseBody as Record<string, unknown>).currentRevision
-      setCachedServerCommandRevision(body.baseRevision as number)
-      revisionRetries += 1
-      continue
-    }
+      handleActiveWriterStaleResponse(response, responseBody)
+      const code = errorCode(responseBody)
+      if (
+        intent.kind === 'generation-operation-submit' &&
+        response.status === 409 &&
+        code === 'revision_conflict' &&
+        responseBody &&
+        typeof responseBody === 'object' &&
+        Number.isSafeInteger((responseBody as Record<string, unknown>).currentRevision) &&
+        revisionRetries < MAX_REVISION_RETRIES
+      ) {
+        body.baseRevision = (responseBody as Record<string, unknown>).currentRevision
+        setCachedServerCommandRevision(body.baseRevision as number)
+        revisionRetries += 1
+        continue
+      }
 
-    const operation = operationFromBody(responseBody)
-    if (operation) applyGenerationOperationProjection(operation)
-    const error = errorMessage(responseBody, response)
-    if (shouldDiscardOperationFailure(code, response.status)) {
-      await discardPendingMutation(handle)
-      return { status: 'rejected', error, ...(code ? { code } : {}), ...(operation ? { operation } : {}) }
+      const operation = operationFromBody(responseBody)
+      if (operation) applyGenerationOperationProjection(operation)
+      const error = errorMessage(responseBody, response)
+      if (shouldDiscardOperationFailure(code, response.status)) {
+        await discardPendingMutation(handle)
+        return { status: 'rejected', error, ...(code ? { code } : {}), ...(operation ? { operation } : {}) }
+      }
+      return { status: 'retained', error, ...(code ? { code } : {}) }
     }
-    return { status: 'retained', error, ...(code ? { code } : {}) }
   }
+
+  return acceptedSendTarget
+    ? withDirectServerCommandEventReconciliation(acceptedSendTarget.matches, dispatch)
+    : dispatch()
 }
 
 export async function submitStagedAcceptedSendOperation(
   staged: StagedAcceptedSendOperation,
 ): Promise<GenerationOperationDispatchResult> {
-  const result = await dispatchPendingGenerationOperation(staged.handle, staged.intent)
+  const result = await dispatchPendingGenerationOperation(staged.handle, staged.intent, 'ordinary', {
+    kind: 'messageMutation',
+    operation: 'append',
+    chatId: staged.request.chatId,
+    messageId: staged.request.acceptedMessageId,
+    chatBodyProjectionEpoch: staged.optimisticChatBodyProjectionEpoch,
+  })
   if (result.status === 'accepted') {
     if (result.response.append?.disposition !== 'accepted') staged.rollbackOptimisticAppend()
-    else if (staged.target.chatId) {
-      const { acknowledgeMessageMutationLocalEffect } = getChatHydrationRuntime()
-      acknowledgeMessageMutationLocalEffect(staged.target.chatId)
-    }
   } else if (result.status === 'rejected') {
     staged.rollbackOptimisticAppend()
     updateGenerationOperationCancellation(staged.request.operationId, () => null)

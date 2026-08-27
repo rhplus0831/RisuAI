@@ -3,7 +3,6 @@ import { get } from 'svelte/store'
 import type { GenerationOperationProjection } from './bootstrap'
 
 const operationMocks = vi.hoisted(() => ({
-  acknowledgeLocalEffect: vi.fn(),
   acknowledgeHydratedRecoveries: vi.fn(),
   appendOptimistic: vi.fn(),
   applyAcceptedJobs: vi.fn(),
@@ -13,9 +12,11 @@ const operationMocks = vi.hoisted(() => ({
   discard: vi.fn(),
   getBaseRevision: vi.fn(),
   peekRevision: vi.fn(),
+  reconcileDirectEvent: vi.fn(),
   setRevision: vi.fn(),
   stage: vi.fn(),
   setActiveJobs: vi.fn(() => true),
+  withDirectReconciliation: vi.fn(),
 }))
 
 vi.mock('../chatCommands', () => ({
@@ -48,10 +49,9 @@ vi.mock('./commands', () => ({
   peekCachedServerCommandRevision: operationMocks.peekRevision,
   setCachedServerCommandRevision: operationMocks.setRevision,
   SERVER_DATABASE_LINEAGE_HEADER: 'risu-database-lineage',
+  withDirectServerCommandEventReconciliation: operationMocks.withDirectReconciliation,
 }))
-vi.mock('./chatMessageHydration.svelte', () => ({
-  acknowledgeMessageMutationLocalEffect: operationMocks.acknowledgeLocalEffect,
-}))
+vi.mock('./resourceState.svelte', () => ({ captureChatBodyProjectionEpoch: () => 12 }))
 vi.mock('./pendingMutationOutbox', () => ({
   beginPendingMutationDispatch: operationMocks.beginDispatch,
   discardPendingMutation: operationMocks.discard,
@@ -100,7 +100,12 @@ const messageId = '22222222-2222-4222-8222-222222222222'
 
 function responseBody(state: GenerationOperationProjection['state'] = 'owned_by_job'): {
   operation: GenerationOperationProjection
-  append: { disposition: 'accepted'; messageId: string; revision: number }
+  append: {
+    disposition: 'accepted'
+    messageId: string
+    revision: number
+    event: { type: string; revision: number; resource: string; id: string; parentId: string }
+  }
   stream: { href: string }
 } {
   return {
@@ -132,7 +137,18 @@ function responseBody(state: GenerationOperationProjection['state'] = 'owned_by_
       createdAt: '2026-08-11T00:00:00.000Z',
       updatedAt: '2026-08-11T00:00:01.000Z',
     },
-    append: { disposition: 'accepted', messageId, revision: 8 },
+    append: {
+      disposition: 'accepted',
+      messageId,
+      revision: 8,
+      event: {
+        type: 'message.appended',
+        revision: 8,
+        resource: 'message',
+        id: messageId,
+        parentId: 'chat-a',
+      },
+    },
     stream: {
       href: `/api/v1/generation-operations/${operationId}/stream?attemptNo=1&jobId=job-a&projectionEpoch=3`,
     },
@@ -163,6 +179,13 @@ beforeEach(() => {
   operationMocks.getBaseRevision.mockResolvedValue(7)
   operationMocks.beginDispatch.mockResolvedValue('persisted')
   operationMocks.discard.mockResolvedValue('deleted')
+  operationMocks.reconcileDirectEvent.mockResolvedValue(undefined)
+  operationMocks.withDirectReconciliation.mockImplementation(
+    async (
+      _matches: (event: unknown) => boolean,
+      operation: (reconcileResponseEvent: (event: unknown, localEffect?: unknown) => Promise<void>) => Promise<unknown>,
+    ) => operation(operationMocks.reconcileDirectEvent),
+  )
   operationMocks.appendOptimistic.mockReturnValue({ status: 'ok', rollback: vi.fn() })
   operationMocks.stage.mockImplementation((key: string) => ({
     key,
@@ -278,6 +301,69 @@ describe('generation operation client', () => {
       expect.objectContaining({ chatId: 'chat-a' }),
       expect.objectContaining({ chatId: messageId, data: 'hello' }),
     )
+    expect(staged).toMatchObject({ optimisticChatBodyProjectionEpoch: 12 })
+  })
+
+  it('buffers the accepted append echo and reconciles the response as a local message effect', async () => {
+    const staged = await stageAcceptedSendGenerationOperation({
+      target: { selectedCharID: 0, chatPage: 0, characterId: 'character-a', chatId: 'chat-a' },
+      message: 'hello',
+      generation: {
+        syntheticSayNothing: false,
+        resetMessages: false,
+        inlayAssetRefs: [],
+        clientContext: {},
+        clientCapabilities: {},
+      },
+    })
+    if ('status' in staged) throw new Error(staged.error)
+    const body = responseBody()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify(body), { status: 200 })),
+    )
+
+    await expect(submitStagedAcceptedSendOperation(staged)).resolves.toMatchObject({ status: 'accepted' })
+
+    expect(operationMocks.withDirectReconciliation).toHaveBeenCalledTimes(1)
+    const matches = operationMocks.withDirectReconciliation.mock.calls[0][0] as (event: unknown) => boolean
+    expect(matches({ ...body.append.event, origin: { writerSessionId: 'writer-a' } })).toBe(true)
+    expect(matches({ ...body.append.event, id: 'another-message' })).toBe(false)
+    expect(operationMocks.reconcileDirectEvent).toHaveBeenCalledWith(body.append.event, {
+      kind: 'messageMutation',
+      operation: 'append',
+      chatId: 'chat-a',
+      messageId,
+      chatBodyProjectionEpoch: 12,
+    })
+  })
+
+  it('retains an accepted send whose response omits its reconciliation event', async () => {
+    const staged = await stageAcceptedSendGenerationOperation({
+      target: { selectedCharID: 0, chatPage: 0, characterId: 'character-a', chatId: 'chat-a' },
+      message: 'hello',
+      generation: {
+        syntheticSayNothing: false,
+        resetMessages: false,
+        inlayAssetRefs: [],
+        clientContext: {},
+        clientCapabilities: {},
+      },
+    })
+    if ('status' in staged) throw new Error(staged.error)
+    const body = responseBody()
+    delete (body.append as { event?: unknown }).event
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify(body), { status: 200 })),
+    )
+
+    await expect(submitStagedAcceptedSendOperation(staged)).resolves.toEqual({
+      status: 'retained',
+      error: 'Invalid accepted-send append response.',
+    })
+    expect(operationMocks.reconcileDirectEvent).not.toHaveBeenCalled()
+    expect(operationMocks.discard).not.toHaveBeenCalled()
   })
 
   it('replays the exact staged operation after a lost response without appending twice', async () => {

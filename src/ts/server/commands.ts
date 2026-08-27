@@ -2120,22 +2120,26 @@ async function releaseDirectServerCommandEvents(
  * Matching events that are not the confirmed response event are released back
  * through the normal reconciliation path. This keeps overlapping operations
  * and failed requests from swallowing unrelated own events.
+ * Callers with an already-applied optimistic projection may attach its typed
+ * local effect to the confirmed response event and avoid an authoritative read.
  */
 export async function withDirectServerCommandEventReconciliation<T>(
   matches: (event: CommandEvent) => boolean,
-  operation: (reconcileResponseEvent: (event: CommandEvent) => Promise<void>) => Promise<T>,
+  operation: (
+    reconcileResponseEvent: (event: CommandEvent, localEffect?: ServerCommandLocalEffect) => Promise<void>,
+  ) => Promise<T>,
 ): Promise<T> {
   const direct = beginDirectServerCommandReconciliation(matches)
   let confirmedEvent: CommandEvent | null = null
   try {
-    return await operation(async (event) => {
+    return await operation(async (event, localEffect) => {
       confirmedEvent = event
       // The Realm transport cannot know its new character id before parsing
       // the response, so its provisional matcher is intentionally broader.
       // Drain any unmatched earlier events first to preserve revision order.
       directServerCommandReconciliations.delete(direct)
       await releaseDirectServerCommandEvents(direct, confirmedEvent, true, true)
-      await notifyServerCommandSuccessReconciler(event, true)
+      await notifyServerCommandSuccessReconciler(event, true, localEffect)
     })
   } finally {
     await finishDirectServerCommandReconciliation(direct, confirmedEvent)
