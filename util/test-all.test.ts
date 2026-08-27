@@ -17,6 +17,7 @@ describe('test:all orchestration', () => {
     expect(byId.get('frontend-tests')?.env).toEqual({ RISU_TEST_EXCLUDE_UI_MAP: 'true' })
     expect(byId.get('ui-coverage')?.after).toContain('frontend-tests')
     expect(byId.get('server-tests')?.isolated).toBe(true)
+    expect(byId.has('audit-gates')).toBe(false)
     expect(byId.get('performance-gates')).toMatchObject({
       isolated: true,
       args: ['test:gates:perf', '--no-file-parallelism', '--maxWorkers=1'],

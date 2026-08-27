@@ -42,6 +42,17 @@ describe('affected test planning', () => {
     ])
   })
 
+  it('runs UI audit tests in the ordinary frontend lane', () => {
+    const result = plan([{ path: 'src/lib/_audit/optimisticTogglePaint.dom.test.ts', status: 'M' }])
+
+    expect(result.commands).toEqual([
+      {
+        label: 'changed frontend tests',
+        args: ['exec', 'vitest', 'run', 'src/lib/_audit/optimisticTogglePaint.dom.test.ts', '--bail=1'],
+      },
+    ])
+  })
+
   it('uses dependency-aware selection in both lanes for shared source changes', () => {
     const result = plan([{ path: 'src/ts/model/modelProfileResolver.ts', status: 'M' }])
 
@@ -58,7 +69,7 @@ describe('affected test planning', () => {
 
     expect(result.commands).toEqual([
       { label: 'frontend tests', args: ['test:frontend'] },
-      { label: 'frontend gates', args: ['test:gates'] },
+      { label: 'frontend performance gates', args: ['test:gates:perf'] },
       { label: 'server tests', args: ['test:server'] },
     ])
   })

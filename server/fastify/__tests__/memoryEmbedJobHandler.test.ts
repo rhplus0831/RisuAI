@@ -438,6 +438,7 @@ describe('embed memory job handler', () => {
           embed: createEmbedMemoryJobBatchHandler({
             db,
             loadDatabase: () => database({ embeddingMaxConcurrent: 2 }),
+            sleep: async () => {},
             embed: async () => {
               active += 1
               maxActive = Math.max(maxActive, active)
@@ -646,6 +647,7 @@ describe('embed memory job handler', () => {
           embed: createEmbedMemoryJobBatchHandler({
             db,
             loadDatabase: () => database({ embeddingMaxConcurrent: 2 }),
+            sleep: async () => {},
             embed: async (opts) => {
               const text = String(opts.input[0] ?? '')
               if (text.includes('chunk one')) cancelMemoryJob(db, 'job-1')
@@ -1091,6 +1093,7 @@ describe('embed memory job handler', () => {
             db,
             loadDatabase: database,
             embedGroups: embedGroups as never,
+            sleep: async () => {},
             contextualSubBatchTokenBudget: 20,
           }),
         },
@@ -1147,6 +1150,7 @@ describe('embed memory job handler', () => {
           embed: createEmbedMemoryJobBatchHandler({
             db,
             loadDatabase: database,
+            sleep: async () => {},
             contextualSubBatchTokenBudget: 20,
             embedGroups: async (opts) => {
               call += 1

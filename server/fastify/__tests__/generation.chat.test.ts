@@ -31,6 +31,16 @@ import type { ServerMessageTranslationRunner } from '../src/translation/generati
 import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
 import { createMemoryChunk, createMemoryEmbedding, createMemorySummary } from '../src/memoryRepository.js'
 
+vi.mock('../src/generation/horde.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/generation/horde.js')>()
+  return {
+    ...actual,
+    // Route tests own request mapping; horde.test.ts owns real poll cadence.
+    runHorde: (request: Parameters<typeof actual.runHorde>[0]) =>
+      actual.runHorde({ ...request, pollIntervalMs: request.pollIntervalMs ?? 1 }),
+  }
+})
+
 const subtle = webcrypto.subtle
 
 interface Harness {

@@ -1,7 +1,7 @@
 # UI Audit Gates
 
-This directory contains DOM-level audit acceptance probes. They are intentionally
-outside the default frontend lane and run through the explicit gate scripts.
+This directory contains DOM-level audit acceptance probes. They run in the
+default frontend lane so they share its Vitest startup and transform work.
 
 Run them with:
 
@@ -13,10 +13,11 @@ They are also included in:
 
 ```sh
 pnpm test:gates
+pnpm test:frontend
 pnpm test:frontend:all
 pnpm test:all
 ```
 
 Keep ordinary component regressions next to their components. Use this directory
-only for audit acceptance probes or other UI checks that should not make the
-default frontend lane heavier.
+only for cross-cutting audit acceptance probes that benefit from a dedicated
+location.

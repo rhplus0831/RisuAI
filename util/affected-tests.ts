@@ -34,7 +34,7 @@ interface CliOptions extends AffectedTestOptions {
 
 const frontendTestPattern = /(?:^|\/).+\.test\.[cm]?[jt]sx?$/
 const browserSmokePattern = /^server\/fastify\/browser-smoke\/.+\.spec\.ts$/
-const explicitGatePrefixes = ['src/ts/__tests__/', 'src/lib/_audit/']
+const explicitGatePrefixes = ['src/ts/__tests__/']
 const rootRunnerFiles = new Set([
   'package.json',
   'pnpm-lock.yaml',
@@ -150,7 +150,7 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
   }
 
   if (runFullGates) {
-    commands.push({ label: 'frontend gates', args: ['test:gates'] })
+    commands.push({ label: 'frontend performance gates', args: ['test:gates:perf'] })
   } else if (directGateTests.length > 0) {
     commands.push({
       label: 'changed frontend gates',

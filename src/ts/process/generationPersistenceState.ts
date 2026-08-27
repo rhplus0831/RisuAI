@@ -125,7 +125,9 @@ export const generationFinalizationPersistences: Writable<QueuedGenerationPersis
 export const queuedGenerationPersistences = generationFinalizationPersistences
 
 const retainedProjectionReleases = new Map<string, () => void>()
-const GENERATION_FINALIZATION_REFRESH_INTERVAL_MS = 5_000
+// Smoke builds poll observably rather than spending five seconds on each UI assertion.
+// Production retains the bounded five-second refresh cadence.
+const GENERATION_FINALIZATION_REFRESH_INTERVAL_MS = import.meta.env.VITE_FASTIFY_BROWSER_SMOKE === 'TRUE' ? 100 : 5_000
 let refreshEnabled = false
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
 let refreshInFlight = false

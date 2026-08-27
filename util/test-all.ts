@@ -72,16 +72,10 @@ export const qualityLanes: readonly QualityLane[] = [
     priority: 3,
   },
   {
-    id: 'audit-gates',
-    label: 'frontend audit gates',
-    args: ['test:gates:audit'],
-    priority: 4,
-  },
-  {
     id: 'format',
     label: 'format check',
     args: ['format:check'],
-    priority: 5,
+    priority: 4,
   },
   {
     id: 'performance-gates',

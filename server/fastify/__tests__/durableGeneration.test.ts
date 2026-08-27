@@ -218,6 +218,7 @@ afterEach(async () => {
   durableLifecycleHook = undefined
   for (const controller of openControllers) controller.abort()
   openControllers.clear()
+  harness.app.server.closeAllConnections()
   await harness.app.close()
   rmSync(harness.dataDir, { recursive: true, force: true })
 })
@@ -375,6 +376,10 @@ async function readSse(res: Response, until: (ev: ParsedEvent) => boolean): Prom
     }
   } catch {
     // reader aborted / connection dropped
+  } finally {
+    // The caller owns connection lifetime, but the reader lock must not keep an
+    // aborted or naturally completed fetch alive until garbage collection.
+    reader.releaseLock()
   }
   return events
 }
@@ -3410,6 +3415,8 @@ describe('Durable generation', () => {
         }
       } catch {
         /* dropped */
+      } finally {
+        reader.releaseLock()
       }
     })()
 
@@ -3670,6 +3677,7 @@ describe('Durable generation', () => {
       expect(raw).toContain(': heartbeat\n\n')
       expect(jobId).not.toBe('')
       controller.abort()
+      reader.releaseLock()
 
       // Heartbeats are per-viewer keep-alives: the reattach replay buffer must
       // not contain them.
@@ -3680,6 +3688,7 @@ describe('Durable generation', () => {
       const replayEvents = await readSse(re, (ev) => ev.type === 'done')
       expect(replayEvents.at(-1)?.type).toBe('done')
     } finally {
+      local.app.server.closeAllConnections()
       await local.app.close()
       rmSync(local.dataDir, { recursive: true, force: true })
     }

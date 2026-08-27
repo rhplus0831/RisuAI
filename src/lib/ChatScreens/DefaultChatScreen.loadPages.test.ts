@@ -547,6 +547,13 @@ async function settle() {
   }
 }
 
+async function settleWithoutTimers() {
+  for (let i = 0; i < 8; i += 1) {
+    await tick()
+    await Promise.resolve()
+  }
+}
+
 async function waitFor(assertion: () => void) {
   let lastError: unknown
   for (let i = 0; i < 80; i += 1) {
@@ -815,6 +822,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   _setPluginRuntimePhaseForTesting('idle')
   if (component) {
     unmount(component)
@@ -1629,10 +1637,10 @@ describe('DefaultChatScreen latest-message alignment', () => {
       trailingHeight: () => 100,
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 750))
-    await settle()
-    expect(spacer.style.height).toBe('0px')
-    expect(transcript.scrollTop).toBe(0)
+    await waitFor(() => {
+      expect(spacer.style.height).toBe('0px')
+      expect(transcript.scrollTop).toBe(0)
+    })
 
     getResourceDatabase().characters[0].chats[0].message[2].data = 'Partial streamed response'
     await settle()
@@ -1667,25 +1675,35 @@ describe('DefaultChatScreen latest-message alignment', () => {
       trailingHeight: () => 100,
     })
 
-    getResourceDatabase().characters[0].chats[0].message.push({
-      chatId: 'short-latest-message',
-      role: 'char',
-      data: 'Short response',
-    })
-    await waitFor(() => expect(target.querySelectorAll('.chat-message-container')).toHaveLength(3))
+    vi.useFakeTimers()
+    let latestRow!: HTMLElement
+    let spacer!: HTMLElement
+    try {
+      getResourceDatabase().characters[0].chats[0].message.push({
+        chatId: 'short-latest-message',
+        role: 'char',
+        data: 'Short response',
+      })
+      await settleWithoutTimers()
+      expect(target.querySelectorAll('.chat-message-container')).toHaveLength(3)
 
-    const latestRow = target.querySelector<HTMLElement>('.chat-message-container')!
-    const spacer = target.querySelector<HTMLElement>('[data-latest-message-scroll-spacer]')!
-    stubLatestMessageGeometry({
-      transcript,
-      row: latestRow,
-      spacer,
-      clientHeight: () => 600,
-      rowHeight: () => latestRowHeight,
-      trailingHeight: () => 100,
-    })
+      latestRow = target.querySelector<HTMLElement>('.chat-message-container')!
+      spacer = target.querySelector<HTMLElement>('[data-latest-message-scroll-spacer]')!
+      stubLatestMessageGeometry({
+        transcript,
+        row: latestRow,
+        spacer,
+        clientHeight: () => 600,
+        rowHeight: () => latestRowHeight,
+        trailingHeight: () => 100,
+      })
 
-    await new Promise((resolve) => setTimeout(resolve, 750))
+      // Cover the 700 ms alignment delay plus its requestAnimationFrame guard release.
+      await vi.advanceTimersByTimeAsync(750)
+      await settleWithoutTimers()
+    } finally {
+      vi.useRealTimers()
+    }
     await waitFor(() => expect(spacer.style.height).toBe('420px'))
 
     transcript.scrollTop = -200

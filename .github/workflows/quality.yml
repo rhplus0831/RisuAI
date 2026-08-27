@@ -142,21 +142,6 @@ jobs:
             fast-bootstrap-results/bundle-boundaries.*
           if-no-files-found: error
 
-  gates-audit:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm test:gates:audit
-
   gates-perf:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -243,7 +228,6 @@ jobs:
       - check-server
       - frontend
       - initial-preload
-      - gates-audit
       - gates-perf
       - ui-coverage
       - server
@@ -258,7 +242,6 @@ jobs:
           CHECK_SERVER_RESULT: ${{ needs['check-server'].result }}
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           INITIAL_PRELOAD_RESULT: ${{ needs['initial-preload'].result }}
-          GATES_AUDIT_RESULT: ${{ needs['gates-audit'].result }}
           GATES_PERF_RESULT: ${{ needs['gates-perf'].result }}
           UI_COVERAGE_RESULT: ${{ needs['ui-coverage'].result }}
           SERVER_RESULT: ${{ needs.server.result }}
@@ -270,7 +253,6 @@ jobs:
           test "$CHECK_SERVER_RESULT" = success
           test "$FRONTEND_RESULT" = success
           test "$INITIAL_PRELOAD_RESULT" = success
-          test "$GATES_AUDIT_RESULT" = success
           test "$GATES_PERF_RESULT" = success
           test "$SERVER_RESULT" = success
           test "$SMOKE_RESULT" = success
