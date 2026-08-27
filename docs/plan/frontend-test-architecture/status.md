@@ -8,15 +8,15 @@ codebase remain authoritative until a phase lands.
 
 ## Current Snapshot
 
-- Plan state: Phases 0-1 complete; Phase 2 ready.
+- Plan state: Phases 0-1 complete; Phase 2 in progress.
 - Current phase: Phase 2 — Pure Node Promotion.
-- Active slice: Not yet selected; start with protocol, utilities, parsers,
-  validation, and serialization.
-- Implementation state: Phase 1 topology landed and passed its decision gate;
-  Phase 2 has not started.
+- Active slice: No implementation slice is active; the first protocol-validation
+  promotion slice is complete.
+- Implementation state: Three protocol-validation files and 19 tests have moved
+  from the Happy-DOM fallback to Node with no production changes.
 - Blockers: None.
-- Next action: Prepare the first bounded Phase 2 N-promotion slice using the
-  checked inventory and target-project probes.
+- Next action: Prepare the next bounded Phase 2 N-promotion slice from the
+  remaining utility, validation, or serialization candidates.
 
 ## Phase Router
 
@@ -24,7 +24,7 @@ codebase remain authoritative until a phase lands.
 | --- | --- | --- |
 | [0](phases/phase-0-baseline-and-classification.md) | Complete | Ratified metrics, capability rules, and discovery/completeness proof. |
 | [1](phases/phase-1-runtime-topology.md) | Complete | Added and piloted the Node, Svelte+Node, and Happy-DOM topology. |
-| [2](phases/phase-2-pure-node-promotion.md) | Ready | Promote already-pure tests to Node in bounded domain slices. |
+| [2](phases/phase-2-pure-node-promotion.md) | In progress | Promote already-pure tests to Node in bounded domain slices. |
 | [3](phases/phase-3-svelte-node-promotion.md) | Pending | Promote Svelte-compiled tests that do not require DOM behavior. |
 | [4](phases/phase-4-pure-logic-extraction.md) | Pending | Extract measured pure-logic seams while retaining DOM contracts. |
 | [5](phases/phase-5-dom-contract-consolidation.md) | Pending | Consolidate repeated DOM setup and clarify visible-state ownership. |
@@ -71,6 +71,23 @@ The Happy-DOM fallback excludes both the N and S inventories. The checked
 inventory remains exhaustive and disjoint in full, standalone ordinary, and
 aggregate ordinary views; 175 unpromoted N/S candidates still require probes.
 
+## Phase 2 Cumulative Result
+
+| Measurement | Result |
+| --- | ---: |
+| Completed slices | 1 |
+| Promoted suites | 3 files / 19 tests |
+| Full three-project universe | 537 files: 129 N / 2 S / 406 D |
+| Standalone ordinary frontend | 535 files: 129 N / 2 S / 404 D |
+| `test:all` ordinary frontend | 529 files / 6,413 tests: 128 N / 2 S / 399 D |
+| Remaining target-runtime probes | 172: 45 N / 127 S |
+| Paired ordinary wall observation | 70.92s -> 70.34s (-0.8%) |
+| Paired ordinary peak RSS | 5,121,984 -> 4,741,508 KiB |
+
+The paired timing is slice evidence, not a phase-level median. Phase 2 remains
+open for the remaining 45 N candidates that still require target-project
+probes.
+
 ## Current Decisions
 
 1. Use suffix routing as the end state: plain `*.test.ts` defaults to N,
@@ -90,6 +107,9 @@ aggregate ordinary views; 175 unpromoted N/S candidates still require probes.
    and `CheckInput.svelte.test.ts` in D.
 8. Reassess Phase 4 breadth after Phases 1-3. Meeting the primary target early
    narrows later extraction scope.
+9. The first Phase 2 slice validated `characterSummaryProtocol.test.ts`,
+   `shellProtocol.test.ts`, and `startupTelemetryProtocol.test.ts` in N without
+   changing their assertions or production dependencies.
 
 ## Accepted Observations
 
@@ -114,15 +134,15 @@ slice continues.
 
 ## Latest Completed Slice
 
-[Phase 1 runtime topology and pilots](phases/slices/phase-1/runtime-topology-and-pilots.md)
-landed the three-project runner, Node-backed client-transform S environment,
-pilot ownership, three-project completeness proof, and current documentation.
+[Phase 2 protocol validation](phases/slices/phase-2/protocol-validation.md)
+promoted three pure protocol-validation suites and 19 tests from Happy-DOM to
+Node while preserving the complete discovery universe.
 
 ## Latest Verification
 
-See [`latest-verification.md`](latest-verification.md) for the Phase 1 pilot,
-discovery, three-run timing, project, coverage, affected-test, aggregate, and
-accepted-gap evidence.
+See [`latest-verification.md`](latest-verification.md) for the Phase 2 focused
+probe, discovery, paired timing, complete-project, frontend, affected-test, and
+formatting evidence, followed by the retained Phase 1 closeout record.
 
 ## Maintenance Rules
 

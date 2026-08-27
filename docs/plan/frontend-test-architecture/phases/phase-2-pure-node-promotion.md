@@ -1,6 +1,11 @@
 # Phase 2: Pure Node Promotion
 
-Status: Ready
+Status: In progress
+
+## Completed Slices
+
+- [Protocol validation](slices/phase-2/protocol-validation.md): promoted three
+  protocol-validation suites and 19 tests from Happy-DOM to Node.
 
 ## Objective
 

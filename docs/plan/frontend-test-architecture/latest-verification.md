@@ -4,11 +4,120 @@ Date: 2026-08-28
 
 ## State
 
-Phase 1 runtime-topology closeout. This record authorizes bounded Phase 2 Node
-promotion slices; it does not authorize repository-wide default inversion or
+Phase 2 protocol-validation slice closeout. Phase 2 remains in progress; this
+record does not authorize repository-wide default inversion, S promotion, or
 bulk migration outside the active phase rules.
 
-## Environment And Source State
+## Phase 2 Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `253670c3c280497462adde0d607610548cf9eace`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Available CPUs: 10
+- Frontend test-all UI-map exclusion: `RISU_TEST_EXCLUDE_UI_MAP=true`
+- Isolation: enabled
+- Measurement tree: the base commit plus the three-file Node ownership change,
+  regenerated inventory, and Phase 2 documentation in this slice; no unrelated
+  working-tree changes were present.
+
+GNU `time` and console artifacts were not committed. Coverage output remained
+under ignored `coverage/`.
+
+## Phase 2 Protocol-Validation Probe And Ownership
+
+The first bounded Phase 2 slice promotes:
+
+- `src/ts/server/characterSummaryProtocol.test.ts`
+- `src/ts/server/shellProtocol.test.ts`
+- `src/ts/server/startupTelemetryProtocol.test.ts`
+
+The tests import only Vitest and plain protocol modules. Their runtime subjects
+use plain TypeScript validation or the browser-safe TypeBox protocol package;
+the only `Database` dependency is type-only. No Svelte transform, DOM/browser
+global, DOM setup, fetch guard, or replacement mock is part of their proof.
+
+Pre-promotion Happy-DOM command:
+
+```sh
+/usr/bin/time -v pnpm exec vitest run \
+  src/ts/server/characterSummaryProtocol.test.ts \
+  src/ts/server/shellProtocol.test.ts \
+  src/ts/server/startupTelemetryProtocol.test.ts
+```
+
+Result: 3 files / 19 tests passed in 1.03s wall and 281ms Vitest duration,
+with 392,620 KiB peak RSS and 354ms aggregate environment time.
+
+After adding the files to `vitest.node-tests.ts`, the target-project probe used
+the same file list with `--project frontend-node`. Result: 3 files / 19 tests
+passed in 0.81s wall and 164ms Vitest duration, with 301,484 KiB peak RSS and no
+aggregate environment time. The later complete Node and frontend runs repeated
+the same tests successfully.
+
+## Phase 2 Discovery And Classification Proof
+
+Commands:
+
+```sh
+pnpm update:frontend-test-inventory
+pnpm check:frontend-test-inventory
+```
+
+Both passed. The generated inventory removed the three target-N probe markers,
+retained the 537-file universe, and remained exhaustive and disjoint.
+
+| View | Files | Node | Svelte+Node | Happy-DOM |
+| --- | ---: | ---: | ---: | ---: |
+| Full, including explicit performance gates | 537 | 129 | 2 | 406 |
+| Standalone ordinary frontend | 535 | 129 | 2 | 404 |
+| `test:all` ordinary frontend | 529 | 128 | 2 | 399 |
+
+The target distribution remains 174 N, 129 S, 234 D, and 7 B. Outstanding
+target-runtime probes fell from 175 to 172: 45 N and 127 S.
+
+## Phase 2 Paired Project And Ordinary Measurements
+
+All paired commands ran on the same host with
+`RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v`. This is one paired slice
+observation, not the three-run phase-level timing gate.
+
+| Lane | State | Result | Wall | Vitest | CPU | Peak RSS KiB |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `frontend-node` | Before | 125 files / 771 tests | 3.74s | 3.02s | 661% | 990,304 |
+| `frontend-node` | After | 128 files / 790 tests | 4.24s | 3.54s | 588% | 950,836 |
+| `frontend-dom` | Before | 402 files / 5,634 tests | 72.18s | 71.23s | 646% | 5,021,316 |
+| `frontend-dom` | After | 399 files / 5,615 tests | 69.19s | 68.27s | 645% | 4,832,972 |
+| Ordinary frontend | Before | 529 files / 6,413 tests | 70.92s | 69.81s | 636% | 5,121,984 |
+| Ordinary frontend | After | 529 files / 6,413 tests | 70.34s | 69.30s | 635% | 4,741,508 |
+
+The paired ordinary wall observation improved by 0.58s (0.8%) and peak RSS by
+380,476 KiB. Aggregate worker phases changed from 104.12s transform / 27.74s
+setup / 407.98s import / 82.88s tests / 52.98s environment to 101.07s /
+28.54s / 406.13s / 83.66s / 50.49s. The small complete-Node wall increase is
+the expected cost of adding 3 files and does not produce an ordinary-lane
+regression.
+
+## Phase 2 Command Validation
+
+`pnpm test:frontend` passed 535 files / 6,616 tests in 71.92s Vitest duration.
+Full standalone `frontend-node` and `frontend-dom` project runs passed 129 files
+/ 795 tests and 404 files / 5,813 tests respectively.
+
+`pnpm test:affected --dry-run` selected the complete frontend lane, isolated
+performance gates, and server lane because the explicit runtime inventory
+changed. Running the selected plan passed 535 frontend files / 6,616 tests, 2
+performance files / 6 tests, and 154 server files / 3,295 tests with 1 skipped.
+
+`pnpm format:check` and `git diff --check` passed. No production, setup,
+coverage-map, CI, UI contract, or browser-smoke file changed, so the periodic
+Phase 2 `test:all` checkpoint remains deferred. Owner: frontend test
+architecture. Reason: this slice changes only three explicit file-ownership
+entries, and every affected lane passed. Revisit condition: the next
+runner/setup/coverage/CI change or the next cumulative Phase 2 checkpoint.
+
+## Phase 1 Environment And Source State
 
 - Repository: `/home/codex/risuai-fastify`
 - Base commit: `62a889b345c61581d26ce9737e32e5623cd47078`
@@ -19,11 +128,8 @@ bulk migration outside the active phase rules.
 - Frontend test-all UI-map exclusion: `RISU_TEST_EXCLUDE_UI_MAP=true`
 - Isolation: enabled
 - Measurement tree: the base commit plus the Phase 1 topology, inventory,
-  checker/tests, and documentation in this slice; no unrelated working-tree
+  checker/tests, and documentation in that slice; no unrelated working-tree
   changes were present.
-
-Raw JSON, GNU `time`, and console artifacts were kept under `/tmp` and were not
-committed. Coverage output remained under ignored `coverage/`.
 
 ## Phase 1 Implementation And Pilot Proof
 
