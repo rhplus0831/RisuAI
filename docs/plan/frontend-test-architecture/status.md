@@ -8,21 +8,20 @@ codebase remain authoritative until a phase lands.
 
 ## Current Snapshot
 
-- Plan state: Drafted and ready for Phase 0 implementation.
-- Current phase: Phase 0 — Baseline And Classification.
-- Active slice: Formal baseline, capability taxonomy, and exhaustive/disjoint
-  discovery proof.
-- Implementation state: Not started.
+- Plan state: Phase 0 complete; Phase 1 ready.
+- Current phase: Phase 1 — Runtime Topology.
+- Active slice: Three-project topology and representative N/S/D pilots.
+- Implementation state: Phase 1 not started.
 - Blockers: None.
-- Next action: Produce the Phase 0 inventory and benchmark record without
-  changing project ownership.
+- Next action: Add `frontend-svelte-node`, split setup ownership, and route only
+  the Phase 0 pilots while retaining legacy fallback ownership.
 
 ## Phase Router
 
 | Phase | State | Purpose |
 | --- | --- | --- |
-| [0](phases/phase-0-baseline-and-classification.md) | Ready | Ratify metrics, capability rules, and discovery/completeness proof. |
-| [1](phases/phase-1-runtime-topology.md) | Pending | Add and pilot the Node, Svelte+Node, and Happy-DOM topology. |
+| [0](phases/phase-0-baseline-and-classification.md) | Complete | Ratified metrics, capability rules, and discovery/completeness proof. |
+| [1](phases/phase-1-runtime-topology.md) | Ready | Add and pilot the Node, Svelte+Node, and Happy-DOM topology. |
 | [2](phases/phase-2-pure-node-promotion.md) | Pending | Promote already-pure tests to Node in bounded domain slices. |
 | [3](phases/phase-3-svelte-node-promotion.md) | Pending | Promote Svelte-compiled tests that do not require DOM behavior. |
 | [4](phases/phase-4-pure-logic-extraction.md) | Pending | Extract measured pure-logic seams while retaining DOM contracts. |
@@ -30,66 +29,75 @@ codebase remain authoritative until a phase lands.
 | [6](phases/phase-6-routing-and-ci-enforcement.md) | Pending | Enforce explicit routing and align affected tests, coverage, aggregate execution, and CI. |
 | [7](phases/phase-7-verification-and-closeout.md) | Pending | Prove final budgets and behavior, update current docs, and archive the workstream. |
 
-## Provisional Baseline
-
-These values are planning evidence from 2026-08-28, not the formal Phase 0
-three-run baseline.
+## Formal Phase 0 Baseline
 
 | Measurement | Result |
 | --- | ---: |
-| Ordinary frontend files | 528 passed |
-| Ordinary frontend tests | 6,408 passed |
-| Frontend lane inside `test:all` | 80.11s Vitest / 81.1s lane |
-| Standalone ordinary frontend wall time | 75.13s |
-| Standalone peak RSS | 4,822,384 KiB |
-| Node project | 124 files / 766 tests / 3.92s wall |
-| Happy-DOM project | 404 files / 5,642 tests |
-| Aggregate transform | 129.94s |
-| Aggregate setup | 31.05s |
-| Aggregate import | 485.51s |
-| Aggregate test bodies | 88.89s |
-| Aggregate environment | 60.69s |
-| Full `test:all` wall time | 210.11s |
-| Focused UI coverage lane | 19.15s Vitest / 20.0s lane |
+| Full classified Vitest universe | 537 files |
+| `test:all` ordinary frontend | 529 files / 6,413 tests |
+| Warm standalone wall median | 72.30s (69.71-72.34s) |
+| Warm Vitest duration median | 71.23s |
+| Warm peak RSS median | 4,785,288 KiB |
+| Node ordinary project | 125 files / 771 tests / 4.06s wall |
+| Happy-DOM ordinary project | 404 files / 5,642 tests / 70.67s wall |
+| Focused UI coverage | 6 files / 203 tests / 20.13s wall |
+| Full `test:all` | 208.53s wall |
+| Primary target | 57.84s ordinary frontend wall median |
+| Stretch target | 50.61s ordinary frontend wall median |
 
-The planning profile also found 407 files under 100 ms of test-body time and
-280 under 25 ms. Phase 0 must reproduce and formalize these values.
+The candidate inventory contains 174 N, 129 S, 234 D, and 7 B files. See
+[`phase-0-classification.md`](phase-0-classification.md) for routing, setup, and
+pilot decisions and [`phase-0-inventory.tsv`](phase-0-inventory.tsv) for the
+per-file record.
 
 ## Current Decisions
 
-1. Use a phased plan with status and verification routers.
-2. Preserve per-file isolation by default; global `--no-isolate` is rejected by
-   observed mock/state leakage and unintended test-host DNS attempts.
-3. Target three frontend capability layers: Node, Svelte+Node, and
-   Svelte+Happy-DOM, with Playwright retaining real-browser contracts.
-4. Do not use production logic extraction until current profiling identifies a
-   useful seam, and keep a DOM contract for visible behavior.
-5. Reassess Phase 4 breadth after Phases 1-3. Meeting the primary target early
+1. Use suffix routing as the end state: plain `*.test.ts` defaults to N,
+   `*.svelte-node.test.ts` routes to S, Svelte/component and `*.dom.test.ts`
+   files route to D, and Playwright specs remain B.
+2. Retain explicit legacy inventories during migration. The generated
+   classifier is evidence, not runtime routing authority.
+3. Every current Happy-DOM file proposed for N or S requires a target-project
+   probe before migration.
+4. Keep `vitest.setup.ts` shared by N/S/D; load the Svelte plugin without DOM
+   setup in S; keep Happy-DOM and the unexpected-fetch guard exclusive to D.
+5. Preserve per-file isolation. Global `--no-isolate` remains rejected.
+6. Use the checked exhaustive/disjoint proof for full, standalone ordinary, and
+   aggregate ordinary discovery views.
+7. Phase 1 pilots are `sentenceBreaks.test.ts`, `chatVar.svelte.test.ts`,
+   `CheckInput.svelte.test.ts`, and the `stores.runtimeEffects.svelte.test.ts`
+   classifier stress probe.
+8. Reassess Phase 4 breadth after Phases 1-3. Meeting the primary target early
    narrows later extraction scope.
-6. Treat aggregate `test:all` wall time, correctness, stability, and memory as
-   co-equal with the displayed frontend lane duration.
 
-## Open Phase 0 Decisions
+## Accepted Observations
 
-- Ratify suffix routing versus a generated capability manifest, including the
-  transition mechanism for legacy filenames.
-- Define the exact Svelte+Node setup boundary and which shared setup belongs in
-  every project.
-- Ratify formal median/range measurement commands and final numeric budgets.
-- Choose the first representative pilot files for each capability class.
-- Define the durable completeness artifact and how CI proves no file is omitted
-  or multiply assigned.
+The first Phase 0 `test:all` attempt saw the queued-finalization browser-smoke
+case time out after observing six pending effects. Its exact isolated rerun and
+the complete aggregate rerun passed. Owner: generation browser-smoke. Reason
+for acceptance: no Phase 0 runtime/production path touched that contract and
+the final required run passed. Revisit condition: any repeat in Phase 1 blocks
+Phase 1 closeout until investigated.
+
+The first direct standalone frontend validation also saw the display-source
+same-chat batching assertion receive two batches instead of one. Its exact
+focused rerun passed all 8 tests, and the repeated standalone lane passed all
+535 files/6,616 tests. Owner: display-source batching. Reason for acceptance:
+the Phase 0 slice did not touch that production/test path and the focused plus
+complete reruns passed. Revisit condition: any repeat in Phase 1 blocks Phase 1
+closeout pending investigation.
 
 ## Latest Completed Slice
 
-None. Planning documentation is drafted; no runtime or test ownership changes
-have landed.
+[Phase 0 baseline and classification](phases/slices/phase-0/baseline-and-classification.md)
+landed the checker, inventory, formal baseline, routing/setup decisions, and
+Phase 1 pilot list without migrating pre-existing ownership.
 
 ## Latest Verification
 
-See [`latest-verification.md`](latest-verification.md) for the provisional
-pre-plan timing and correctness record. Phase 0 must replace it with the formal
-baseline before Phase 1 begins.
+See [`latest-verification.md`](latest-verification.md) for commands, the
+three-run baseline, project/resource measurements, coverage, aggregate lane
+results, and the recorded browser-smoke observation.
 
 ## Maintenance Rules
 

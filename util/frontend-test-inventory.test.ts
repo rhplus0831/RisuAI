@@ -1,0 +1,90 @@
+import { describe, expect, it } from 'vitest'
+import {
+  analyzeFrontendTestSource,
+  createFrontendTestInventoryRow,
+  formatFrontendTestInventory,
+  parseVitestFilesOnlyOutput,
+  validateFrontendVitestDiscovery,
+} from './frontend-test-inventory.js'
+
+describe('frontend test inventory', () => {
+  it('parses resolved Vitest project ownership while ignoring unrelated output', () => {
+    const projects = parseVitestFilesOnlyOutput(`
+Svelte warning
+[frontend-node] src/pure.test.ts
+[frontend-dom] src/component.svelte.test.ts
+[frontend-dom] src/browser.dom.test.ts
+`)
+
+    expect([...projects.get('frontend-node')!]).toEqual(['src/pure.test.ts'])
+    expect([...projects.get('frontend-dom')!]).toEqual(['src/component.svelte.test.ts', 'src/browser.dom.test.ts'])
+  })
+
+  it('reports omitted, multiply assigned, and unexpected files independently', () => {
+    const problem = validateFrontendVitestDiscovery(
+      ['src/missing.test.ts', 'src/shared.test.ts'],
+      new Map([
+        ['frontend-node', new Set(['src/shared.test.ts'])],
+        ['frontend-dom', new Set(['src/shared.test.ts', 'src/unexpected.test.ts'])],
+      ]),
+    )
+
+    expect(problem).toEqual({
+      duplicates: ['src/shared.test.ts (frontend-dom, frontend-node)'],
+      missing: ['src/missing.test.ts'],
+      unexpected: ['src/unexpected.test.ts'],
+    })
+  })
+
+  it('records direct capability and dependency evidence with line numbers', () => {
+    const signals = analyzeFrontendTestSource(`
+import { mount } from 'svelte'
+import Component from './Component.svelte'
+import fs from 'node:fs'
+document.body.append(mount(Component))
+await fetch('/api/value')
+vi.useFakeTimers()
+`)
+
+    expect(signals.svelte).toMatchObject({ line: 2 })
+    expect(signals.domOrMount).toMatchObject({ line: 5 })
+    expect(signals.network).toMatchObject({ line: 6 })
+    expect(signals.timers).toMatchObject({ line: 7 })
+    expect(signals.filesystem).toMatchObject({ line: 4 })
+    expect(analyzeFrontendTestSource(`const module = await import('./state.svelte.ts')`).svelte).toMatchObject({
+      line: 1,
+    })
+  })
+
+  it('keeps validated Node files in N and routes static candidates by their smallest direct capability', () => {
+    const node = createFrontendTestInventoryRow(
+      'src/already-node.test.ts',
+      'frontend-node',
+      `document.createElement('div')`,
+    )
+    const svelteNode = createFrontendTestInventoryRow(
+      'src/store.svelte.test.ts',
+      'frontend-dom',
+      `import { writable } from 'svelte/store'`,
+    )
+    const dom = createFrontendTestInventoryRow(
+      'src/component.svelte.test.ts',
+      'frontend-dom',
+      `import Component from './Component.svelte'\ndocument.body.textContent = ''`,
+    )
+
+    expect(node.targetClass).toBe('N')
+    expect(svelteNode).toMatchObject({ targetClass: 'S', confidence: 'medium' })
+    expect(svelteNode.ambiguityOrBlocker).toContain('probe required')
+    expect(dom).toMatchObject({ targetClass: 'D', confidence: 'high' })
+  })
+
+  it('formats a deterministic tab-separated review artifact', () => {
+    const row = createFrontendTestInventoryRow('src/pure.test.ts', 'frontend-node', `import { value } from './pure'`)
+    const output = formatFrontendTestInventory([row])
+
+    expect(output).toMatch(/^file\tcurrentProject\ttargetClass\t/)
+    expect(output).toContain('src/pure.test.ts\tfrontend-node\tN\thigh')
+    expect(output.endsWith('\n')).toBe(true)
+  })
+})

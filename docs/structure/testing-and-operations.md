@@ -35,6 +35,7 @@ the current runner configuration remain authoritative until those phases land.
 | `pnpm check:server`                | Check protocol types, emit client-library declarations, then typecheck strict Fastify and Playwright browser-smoke projects concurrently without emitting server code.        |
 | `pnpm test`                        | Alias for `pnpm test:frontend`; runs the default root/browser Vitest lane, including UI audit probes but excluding explicit performance gates.                                |
 | `pnpm test:quick`, `pnpm test:affected` | Run changed test files directly or use Vitest dependency selection for changed source files; defaults to the uncommitted diff against `HEAD`.                            |
+| `pnpm check:frontend-test-inventory`, `pnpm update:frontend-test-inventory` | Verify or intentionally regenerate the exhaustive/disjoint frontend capability inventory used by the active test-architecture plan. |
 | `pnpm test:frontend`               | Run default root/browser Vitest tests outside `server/**`, excluding explicit performance gates.                                                                              |
 | `pnpm test:frontend:all`           | Run all root/browser Vitest tests, including explicit performance gates.                                                                                                      |
 | `pnpm test:gates`                  | Run the UI-audit and explicit performance gates together; UI-audit coverage is also present in `test:frontend`.                                                              |
@@ -130,6 +131,14 @@ two file workers, while CI stays at one worker. It retains Chromium traces on
 failure and rejects focused tests when CI is truthy.
 Both Vitest configs set `allowOnly: false`. Directly selecting
 `realmImport.test.ts` also enables its otherwise skipped 7,000-asset stress case.
+
+`pnpm check:frontend-test-inventory` compares independent filesystem discovery
+with resolved Vitest project discovery for the full, standalone ordinary, and
+`test:all` ordinary views. It rejects missing, multiply assigned, unexpected,
+or stale inventory entries and tracks browser-smoke specs separately. The
+generated classification is migration evidence rather than runtime routing;
+use `pnpm update:frontend-test-inventory` only for an intentional reviewed
+refresh.
 
 `pnpm coverage:frontend` and `pnpm coverage:backend` are broad coverage views for
 reporting and enforce no thresholds. `pnpm coverage:all` runs both sides and still executes backend

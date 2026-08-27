@@ -23,6 +23,8 @@
     "test": "pnpm test:frontend",
     "test:quick": "tsx util/affected-tests.ts",
     "test:affected": "tsx util/affected-tests.ts",
+    "check:frontend-test-inventory": "tsx util/frontend-test-inventory.ts --check docs/plan/frontend-test-architecture/phase-0-inventory.tsv",
+    "update:frontend-test-inventory": "tsx util/frontend-test-inventory.ts --write docs/plan/frontend-test-architecture/phase-0-inventory.tsv",
     "test:frontend": "vitest run",
     "test:frontend:all": "cross-env RISU_TEST_INCLUDE_GATES=true vitest run",
     "test:gates": "cross-env RISU_TEST_INCLUDE_GATES=true vitest run src/ts/__tests__ src/lib/_audit",

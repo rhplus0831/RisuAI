@@ -206,9 +206,9 @@ ratify final budgets. Initial targets are:
 - zero new flaky retries, unhandled requests, leaked handles, or order
   dependencies in repeated verification.
 
-The provisional standalone reference is 75.13 seconds, making 60.10 seconds the
-provisional 20% target and 52.59 seconds the provisional stretch target. Formal
-targets must use the Phase 0 median rather than this single run.
+Phase 0 ratified a 72.30-second warm standalone reference. The primary 20%
+target is therefore 57.84 seconds and the 30% stretch target is 50.61 seconds.
+See `latest-verification.md` for the three-run range and resource evidence.
 
 ## Work Unit And Commit Rules
 
@@ -305,7 +305,7 @@ Each candidate requires a fresh profile and a slice-specific value hypothesis.
 
 ## Execution Cursor
 
-Planning is drafted. Begin with Phase 0's baseline/classification slice. Do not
-create the Svelte+Node project or migrate test files until the discovery proof,
-capability rules, and formal measurement procedure are ratified and recorded in
-`status.md`.
+Phase 0 is complete. Begin Phase 1 with the three-project topology and only the
+representative pilots named in `phase-0-classification.md`. Do not begin bulk
+promotion until Phase 1's exhaustive/disjoint, setup, stability, and overhead
+decision gates pass.

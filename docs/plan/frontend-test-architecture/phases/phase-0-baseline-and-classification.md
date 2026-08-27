@@ -1,6 +1,6 @@
 # Phase 0: Baseline And Classification
 
-Status: Ready
+Status: Complete
 
 ## Objective
 
@@ -82,3 +82,11 @@ first topology pilot.
 - Focused tests for the inventory/completeness tool
 - `pnpm format:check`
 - `git diff --check`
+
+## Outcome
+
+The ratified decisions and inventory are in
+[`../phase-0-classification.md`](../phase-0-classification.md). The concrete
+proof slice is
+[`slices/phase-0/baseline-and-classification.md`](slices/phase-0/baseline-and-classification.md),
+and exact measurements are in `../latest-verification.md`.
