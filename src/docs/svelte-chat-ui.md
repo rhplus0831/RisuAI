@@ -63,17 +63,17 @@ current. `DefaultChatScreen.loadPages.test.ts`, `src/ts/chatLoadPages.test.ts`,
 On chat entry, `Chats.svelte` waits for the newest persisted row to render and
 aligns that row's start with the transcript scrollport's start. A measured
 trailing spacer supplies only the reverse-scroll range needed for short newest
-rows. While the transcript remains pinned to the newest content, a
-`ResizeObserver` remeasures that spacer as the newest row grows or shrinks so a
-previously aligned row cannot leave stale blank space behind. A resize of only
-the scrollport (the mobile keyboard opening or closing) instead preserves a
-transcript resting at its natural end, since re-asserting start alignment
-there would scroll away from the end of an overflowing newest row. A newly appended
-empty assistant placeholder instead stays at the reverse scroller's natural
-end throughout that streaming turn, avoiding a delayed loading-indicator jump
-to the top; chat-entry and explicit new-message alignment remain available.
-Manual scrolling away from the newest content cancels live alignment; empty
-chats retain their ordinary greeting/composer layout.
+rows. The viewport records an explicit `start`, `end`, or `free` transcript
+anchor scoped to that newest row. A `ResizeObserver` remeasures the spacer as a
+start-anchored row grows or shrinks; while the row still fits, its start remains
+aligned without stale blank space. If the row grows until the spacer reaches
+zero, the viewport transitions to the end anchor and preserves `scrollTop = 0`
+instead of jumping to the row's start. A resize of only the scrollport (the
+mobile keyboard opening or closing) retains the active anchor. A newly appended
+empty assistant placeholder starts at the end anchor throughout that streaming
+turn. Chat entry and explicit new-message actions still request start alignment,
+while manual scrolling into history selects the free anchor. Empty chats retain
+their ordinary greeting/composer layout.
 
 ## Message Rendering
 

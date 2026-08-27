@@ -95,14 +95,17 @@
   let latestMessageDerivedSpacerHeight = 0
   let latestMessageResizeObserver: ResizeObserver | null = null
   let latestMessageResizeTarget: HTMLElement | null = null
+  let latestMessageResizeTargetHeight: number | null = null
   let scrollContainerResizeObserver: ResizeObserver | null = null
   let scrollContainerResizeTarget: HTMLElement | null = null
   let latestMessageGeometryMeasureQueued = false
   let latestMessageGeometryMeasureSawRowResize = false
   let latestMessageGeometryMeasureVersion = 0
   let latestMessageGeometryKey: string | null = null
-  let latestMessageAlignmentPinned = false
-  let latestMessageNaturalEndKey: string | null = null
+  type TranscriptAnchor = 'start' | 'end' | 'free'
+  let transcriptAnchor: TranscriptAnchor = 'free'
+  let transcriptAnchorKey: string | null = null
+  let pendingGeneratedMessageEndKey: string | null = null
   let chatsComponentDestroyed = false
   const initialDisplayReadiness = createInitialDisplayReadiness((pending) => {
     initialDisplayPending = pending
@@ -234,8 +237,21 @@
     return `${chatRoomId}:row:${latestRow.key}`
   }
 
-  function latestMessageUsesNaturalEnd(): boolean {
-    return latestMessageNaturalEndKey !== null && latestMessageNaturalEndKey === getLatestMessageAlignmentKey()
+  function currentTranscriptAnchor(): TranscriptAnchor {
+    const latestMessageKey = getLatestMessageAlignmentKey()
+    if (!latestMessageKey || transcriptAnchorKey !== latestMessageKey) return 'free'
+    return transcriptAnchor
+  }
+
+  function setTranscriptAnchor(nextAnchor: TranscriptAnchor, latestMessageKey = getLatestMessageAlignmentKey()): void {
+    if (nextAnchor === 'free' || !latestMessageKey) {
+      transcriptAnchor = 'free'
+      transcriptAnchorKey = null
+      return
+    }
+
+    transcriptAnchor = nextAnchor
+    transcriptAnchorKey = latestMessageKey
   }
 
   function checkIfAtBottom() {
@@ -287,7 +303,7 @@
   }
 
   function applyLatestMessageSpacerHeight(): boolean {
-    const nextHeight = latestMessageUsesNaturalEnd() ? 0 : latestMessageDerivedSpacerHeight
+    const nextHeight = currentTranscriptAnchor() === 'end' ? 0 : latestMessageDerivedSpacerHeight
     const pendingDomFlush = Math.abs(nextHeight - appliedSpacerDomHeight()) >= latestMessageSpacerEpsilon
     if (Math.abs(nextHeight - latestMessageScrollSpacerHeight) < latestMessageSpacerEpsilon) return pendingDomFlush
 
@@ -315,9 +331,21 @@
       }
     }
 
-    const shouldApply =
-      forceApply || latestMessageAlignmentPinned || transcriptIsAtLatestPosition() || latestMessageUsesNaturalEnd()
+    const shouldApply = forceApply || currentTranscriptAnchor() !== 'free' || transcriptIsAtLatestPosition()
     return shouldApply ? applyLatestMessageSpacerHeight() : false
+  }
+
+  function reassertTranscriptEnd(latestMessageKey: string): void {
+    void tick().then(() => {
+      if (
+        currentTranscriptAnchor() === 'end' &&
+        transcriptAnchorKey === latestMessageKey &&
+        getLatestMessageAlignmentKey() === latestMessageKey &&
+        scrollContainer
+      ) {
+        scrollContainer.scrollTop = 0
+      }
+    })
   }
 
   function scheduleLatestMessageGeometryMeasure(): void {
@@ -339,16 +367,30 @@
       }
 
       const chatRoomId = getCurrentChatRoomId()
-      // A scrollport-only resize (the mobile keyboard opening or closing) must
-      // not move a transcript resting at its natural end: re-asserting start
-      // alignment scrolls away from the end whenever the newest row overflows
-      // the scrollport. Newest-row resizes still re-align so a growing row
-      // keeps its start pinned at the top.
-      const shouldRealign = sawRowResize || !transcriptIsAtLatestPosition()
-      if (latestMessageAlignmentPinned && !latestMessageUsesNaturalEnd() && chatRoomId && shouldRealign) {
+      const activeAnchor = currentTranscriptAnchor()
+      const latestMessageKey = getLatestMessageAlignmentKey()
+
+      // A start-anchored row remains top-aligned while its derived spacer can
+      // absorb height changes. Once the row fills the scrollport, preserving
+      // that alignment would move a transcript at scrollTop=0 away from its
+      // natural end. Transition to the end anchor instead and keep following
+      // the bottom. Scrollport-only resizes retain the active anchor.
+      if (sawRowResize && activeAnchor === 'start') {
+        recomputeLatestMessageGeometry()
+        if (latestMessageDerivedSpacerHeight <= latestMessageSpacerEpsilon && latestMessageKey) {
+          latestMessageAlignmentRun += 1
+          isAligningLatestMessage = false
+          setTranscriptAnchor('end', latestMessageKey)
+          applyLatestMessageSpacerHeight()
+          reassertTranscriptEnd(latestMessageKey)
+        } else if (chatRoomId) {
+          void alignLatestMessageToStart(chatRoomId)
+        }
+      } else if (activeAnchor === 'start' && chatRoomId && !transcriptIsAtLatestPosition()) {
         void alignLatestMessageToStart(chatRoomId)
       } else {
         recomputeLatestMessageGeometry()
+        if (activeAnchor === 'end' && latestMessageKey) reassertTranscriptEnd(latestMessageKey)
       }
     }
 
@@ -362,6 +404,8 @@
     latestMessageResizeObserver?.disconnect()
     latestMessageResizeObserver = null
     latestMessageResizeTarget = target
+    const initialHeight = target?.getBoundingClientRect().height
+    latestMessageResizeTargetHeight = Number.isFinite(initialHeight) ? (initialHeight ?? null) : null
     latestMessageGeometryMeasureVersion += 1
     latestMessageGeometryMeasureQueued = false
     latestMessageGeometryMeasureSawRowResize = false
@@ -370,6 +414,15 @@
 
     latestMessageResizeObserver = new ResizeObserver(() => {
       if (target !== latestMessageResizeTarget) return
+      const nextHeight = target.getBoundingClientRect().height
+      if (!Number.isFinite(nextHeight)) return
+      if (
+        latestMessageResizeTargetHeight !== null &&
+        Math.abs(nextHeight - latestMessageResizeTargetHeight) < latestMessageSpacerEpsilon
+      ) {
+        return
+      }
+      latestMessageResizeTargetHeight = nextHeight
       latestMessageGeometryMeasureSawRowResize = true
       scheduleLatestMessageGeometryMeasure()
     })
@@ -405,15 +458,16 @@
     else setTimeout(clear, 0)
   }
 
-  async function alignLatestMessageToStart(chatRoomId: string): Promise<void> {
-    if (latestMessageUsesNaturalEnd()) return
+  async function alignLatestMessageToStart(chatRoomId: string, force = false): Promise<void> {
+    if (currentTranscriptAnchor() === 'end' && !force) return
+    if (force) setTranscriptAnchor('free')
     const run = ++latestMessageAlignmentRun
     isAligningLatestMessage = true
     if (run !== latestMessageAlignmentRun || getCurrentChatRoomId() !== chatRoomId || !scrollContainer) {
       if (run === latestMessageAlignmentRun) isAligningLatestMessage = false
       return
     }
-    latestMessageAlignmentPinned = true
+    setTranscriptAnchor('start')
 
     const spacerHeightChanged = recomputeLatestMessageGeometry(true)
     if (!getLatestMessageElement()) {
@@ -441,7 +495,7 @@
     const chatRoomId = getCurrentChatRoomId()
     markChatRead(chatRoomId)
     if (chatRoomId) {
-      latestMessageNaturalEndKey = null
+      setTranscriptAnchor('free')
       void alignLatestMessageToStart(chatRoomId)
     }
   }
@@ -450,7 +504,7 @@
     pendingEntryChatRoomId = null
     latestMessageAlignmentRun += 1
     isAligningLatestMessage = false
-    latestMessageAlignmentPinned = false
+    setTranscriptAnchor('free')
   }
 
   interface GenerationFollowState {
@@ -490,14 +544,13 @@
     if (generationFollowState?.follow) {
       if (transcriptIsAtLatestPosition()) {
         transcriptUserIntentPending = false
-        latestMessageAlignmentPinned = false
+        setTranscriptAnchor('end')
         recomputeLatestMessageGeometry()
         return
       }
       if (transcriptUserIntentPending) {
         generationFollowState = { ...generationFollowState, follow: false, userCancelled: true }
         transcriptUserIntentPending = false
-        latestMessageNaturalEndKey = null
         cancelLatestMessageAlignment()
         recomputeLatestMessageGeometry(true)
         return
@@ -506,8 +559,16 @@
       return
     }
     if (transcriptIsAtLatestPosition()) {
-      latestMessageAlignmentPinned = !latestMessageUsesNaturalEnd()
+      setTranscriptAnchor('start')
       recomputeLatestMessageGeometry()
+      if (latestMessageDerivedSpacerHeight <= latestMessageSpacerEpsilon) {
+        const latestMessageKey = getLatestMessageAlignmentKey()
+        if (latestMessageKey) {
+          setTranscriptAnchor('end', latestMessageKey)
+          applyLatestMessageSpacerHeight()
+          reassertTranscriptEnd(latestMessageKey)
+        }
+      }
       return
     }
     cancelLatestMessageAlignment()
@@ -570,10 +631,9 @@
       generationFollowState = { projectionKey, follow, userCancelled: false }
       transcriptUserIntentPending = false
       if (follow) {
-        latestMessageNaturalEndKey = getLatestMessageAlignmentKey()
+        setTranscriptAnchor('end')
         latestMessageAlignmentRun += 1
         isAligningLatestMessage = false
-        latestMessageAlignmentPinned = false
         latestMessageDerivedSpacerHeight = 0
         applyLatestMessageSpacerHeight()
         reassertGenerationNaturalEnd(projectionKey)
@@ -583,7 +643,7 @@
     }
 
     if (projectionKey && generationFollowState?.projectionKey === projectionKey && generationFollowState.follow) {
-      latestMessageNaturalEndKey = getLatestMessageAlignmentKey()
+      setTranscriptAnchor('end')
       latestMessageDerivedSpacerHeight = 0
       applyLatestMessageSpacerHeight()
       reassertGenerationNaturalEnd(projectionKey)
@@ -596,7 +656,7 @@
       generationFollowState = null
       transcriptUserIntentPending = false
       if (settledFollow?.follow && !settledFollow.userCancelled && currentChatRoomId) {
-        latestMessageNaturalEndKey = null
+        setTranscriptAnchor('free')
         recomputeLatestMessageGeometry(true)
         void alignLatestMessageToStart(currentChatRoomId)
       }
@@ -640,8 +700,8 @@
       visibleChatRoomId = currentChatRoomId
       latestMessageAlignmentRun += 1
       isAligningLatestMessage = false
-      latestMessageAlignmentPinned = false
-      latestMessageNaturalEndKey = null
+      setTranscriptAnchor('free')
+      pendingGeneratedMessageEndKey = null
       pendingEntryChatRoomId = currentChatRoomId
       hasNewUnreadMessage = false
       markChatRead(currentChatRoomId)
@@ -670,7 +730,7 @@
     // entry alignment pending until its newest persisted row reaches the DOM.
     if (currentChatRoomId && pendingEntryChatRoomId === currentChatRoomId && chatRows.length > 0 && scrollContainer) {
       pendingEntryChatRoomId = null
-      void alignLatestMessageToStart(currentChatRoomId)
+      void alignLatestMessageToStart(currentChatRoomId, true)
     }
 
     // Only auto-scroll if it's the same chat and new messages were added
@@ -687,10 +747,10 @@
           // A newly appended empty assistant row is the generation placeholder.
           // Keep it at the reverse scroller's natural end instead of manufacturing
           // enough trailing space to pull the loading indicator to the viewport top.
-          latestMessageNaturalEndKey = latestMessageKey
+          setTranscriptAnchor('end', latestMessageKey)
+          pendingGeneratedMessageEndKey = latestMessageKey
           latestMessageAlignmentRun += 1
           isAligningLatestMessage = false
-          latestMessageAlignmentPinned = false
           latestMessageDerivedSpacerHeight = 0
           applyLatestMessageSpacerHeight()
           void tick().then(() => {
@@ -704,7 +764,7 @@
             }
           })
         } else if (shouldFollowLatest) {
-          latestMessageNaturalEndKey = null
+          setTranscriptAnchor('free')
           setTimeout(() => {
             if (getCurrentChatRoomId() === currentChatRoomId && getLatestMessageAlignmentKey() === latestMessageKey) {
               void alignLatestMessageToStart(currentChatRoomId)
@@ -719,11 +779,18 @@
 
     // DefaultChatScreen scopes this prop to its displayed chat id, so its
     // same-chat falling edge cannot be caused by a background generation.
-    if (isSameChat && previousIsGenerationActive && !isGenerationActive && latestMessageUsesNaturalEnd()) {
-      const completedLatestMessageKey = getLatestMessageAlignmentKey()
+    if (
+      isSameChat &&
+      previousIsGenerationActive &&
+      !isGenerationActive &&
+      pendingGeneratedMessageEndKey !== null &&
+      pendingGeneratedMessageEndKey === getLatestMessageAlignmentKey()
+    ) {
+      const completedLatestMessageKey = pendingGeneratedMessageEndKey
+      pendingGeneratedMessageEndKey = null
       const wasAtLatestPosition = transcriptIsAtLatestPosition()
       const database = getDatabase()
-      latestMessageNaturalEndKey = null
+      setTranscriptAnchor('free')
       recomputeLatestMessageGeometry(true)
 
       const shouldFollowLatest =

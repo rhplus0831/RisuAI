@@ -1793,7 +1793,7 @@ describe('DefaultChatScreen latest-message alignment', () => {
     expect(findButtonByText('newMessage')).toBeTruthy()
   })
 
-  it('derives composer-aware spacer geometry and clamps it when the newest row fills the scrollport', async () => {
+  it('transitions from start to end anchoring when the newest row fills the scrollport', async () => {
     const resizeObservers = installResizeObserverHarness()
     seedDatabase([2])
     getResourceDatabase().floatingChatInput = false
@@ -1826,7 +1826,16 @@ describe('DefaultChatScreen latest-message alignment', () => {
     latestRowHeight = 420
     resizeObservers.notify(latestRow)
     await waitFor(() => expect(spacer.style.height).toBe('0px'))
-    expect(latestRow.getBoundingClientRect().top).toBe(0)
+    expect(transcript.scrollTop).toBe(0)
+    expect(latestRow.getBoundingClientRect().top).toBe(-40)
+    expect(latestRow.getBoundingClientRect().bottom).toBe(380)
+
+    latestRowHeight = 180
+    resizeObservers.notify(latestRow)
+    await settle()
+    expect(spacer.style.height).toBe('0px')
+    expect(transcript.scrollTop).toBe(0)
+    expect(latestRow.getBoundingClientRect().top).toBe(200)
   })
 
   it('keeps the natural-end position when only the scrollport resizes around an overflowing newest row', async () => {
