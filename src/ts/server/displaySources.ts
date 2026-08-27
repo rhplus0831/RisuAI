@@ -66,6 +66,7 @@ let databaseLineage: string | null = null
 let activeWriterEpoch: number | null = null
 let projectionEpoch = 0
 const pendingByBatch = new Map<string, PendingDisplaySource[]>()
+const preparingByBatch = new Map<string, number>()
 const scheduledBatches = new Set<string>()
 const activeFetches = new Map<AbortController, ActiveDisplaySourceFetch>()
 const inFlightDisplaySources = new Map<string, Promise<ServerDisplaySourceResult>>()
@@ -128,6 +129,7 @@ export function resetDisplaySourceClientForTests(): void {
   }
   for (const controller of activeFetches.keys()) controller.abort('client_reset')
   pendingByBatch.clear()
+  preparingByBatch.clear()
   scheduledBatches.clear()
   activeFetches.clear()
   clearDisplaySourceDedupeCache()
@@ -179,96 +181,127 @@ export async function requestServerDisplaySource(input: ServerDisplaySourceInput
   }
 
   const context: DisplayRequestContext = { pageSessionId, ...readBrowserClientContext() }
-  const sourceHash = await sha256Hex(input.source)
-  const dedupeKey = input.streaming
-    ? null
-    : displaySourceDedupeKey({
-        input,
-        context,
-        sourceHash,
-        priority,
-        baseRevision: peekCachedServerCommandRevision(),
-        regexDisplayReloadToken: currentRegexDisplayReloadToken({
-          characterId: input.character.chaId,
-          chatId: input.chatId,
-        }),
-      })
-  if (dedupeKey) {
-    const completed = completedDisplaySources.get(dedupeKey)
-    if (completed) {
-      completedDisplaySources.delete(dedupeKey)
-      completedDisplaySources.set(dedupeKey, completed)
-      return completed.result
-    }
-    const inFlight = inFlightDisplaySources.get(dedupeKey)
-    if (inFlight) return inFlight
-  }
-
-  const epoch = ++projectionEpoch
-  const target: DisplaySourceTarget = {
-    requestKey: createRequestKey(epoch, sourceHash),
-    characterId: input.character.chaId,
-    ...(input.messageId ? { messageId: input.messageId } : {}),
-    index: input.index,
-    role: input.role,
-    firstMessage: input.firstMessage,
-    layer: input.layer,
-    source: input.source,
-    sourceHash,
-    projectionEpoch: epoch,
-    ...(input.streaming === true ? { streaming: true } : {}),
-    ...(input.name ? { name: input.name } : {}),
-  }
   const configuredLineage = databaseLineage!
   const configuredWriterEpoch = activeWriterEpoch!
-  const request = enqueueDisplaySourceRequest({
+  const batchKey = stableDisplayDependencyJson({
     chatId: input.chatId,
-    priority,
-    target,
     context,
     configuredLineage,
     configuredWriterEpoch,
   })
+  const preparationGeneration = displaySourceClientGeneration
+  beginDisplaySourceBatchPreparation(batchKey)
 
-  if (!dedupeKey) return request
-  const generation = displaySourceClientGeneration
-  inFlightDisplaySources.set(dedupeKey, request)
-  void request
-    .then((result) => {
-      if (result.status === 'ok' && generation === displaySourceClientGeneration) {
-        rememberCompletedDisplaySource(dedupeKey, result)
+  try {
+    const [sourceHash, expectedContextFingerprint] = await Promise.all([
+      sha256Hex(input.source),
+      sha256Hex(
+        displaySourceNamespaceJson({
+          databaseLineage: configuredLineage,
+          activeWriterEpoch: configuredWriterEpoch,
+          context,
+        }),
+      ),
+    ])
+    if (preparationGeneration !== displaySourceClientGeneration) {
+      return { status: 'fallback', reason: 'display_namespace_changed' }
+    }
+    const dedupeKey = input.streaming
+      ? null
+      : displaySourceDedupeKey({
+          input,
+          context,
+          sourceHash,
+          priority,
+          baseRevision: peekCachedServerCommandRevision(),
+          regexDisplayReloadToken: currentRegexDisplayReloadToken({
+            characterId: input.character.chaId,
+            chatId: input.chatId,
+          }),
+        })
+    if (dedupeKey) {
+      const completed = completedDisplaySources.get(dedupeKey)
+      if (completed) {
+        completedDisplaySources.delete(dedupeKey)
+        completedDisplaySources.set(dedupeKey, completed)
+        return completed.result
       }
+      const inFlight = inFlightDisplaySources.get(dedupeKey)
+      if (inFlight) return inFlight
+    }
+
+    const epoch = ++projectionEpoch
+    const target: DisplaySourceTarget = {
+      requestKey: createRequestKey(epoch, sourceHash),
+      characterId: input.character.chaId,
+      ...(input.messageId ? { messageId: input.messageId } : {}),
+      index: input.index,
+      role: input.role,
+      firstMessage: input.firstMessage,
+      layer: input.layer,
+      source: input.source,
+      sourceHash,
+      projectionEpoch: epoch,
+      ...(input.streaming === true ? { streaming: true } : {}),
+      ...(input.name ? { name: input.name } : {}),
+    }
+    const request = enqueueDisplaySourceRequest({
+      chatId: input.chatId,
+      priority,
+      target,
+      expectedContextFingerprint,
+      batchKey,
     })
-    .finally(() => {
-      if (inFlightDisplaySources.get(dedupeKey) === request) inFlightDisplaySources.delete(dedupeKey)
+
+    if (!dedupeKey) return request
+    const generation = displaySourceClientGeneration
+    inFlightDisplaySources.set(dedupeKey, request)
+    void request
+      .then((result) => {
+        if (result.status === 'ok' && generation === displaySourceClientGeneration) {
+          rememberCompletedDisplaySource(dedupeKey, result)
+        }
+      })
+      .finally(() => {
+        if (inFlightDisplaySources.get(dedupeKey) === request) inFlightDisplaySources.delete(dedupeKey)
+      })
+    return request
+  } finally {
+    completeDisplaySourceBatchPreparation(batchKey, {
+      chatId: input.chatId,
+      context,
+      configuredLineage,
     })
-  return request
+  }
 }
 
-async function enqueueDisplaySourceRequest(input: {
+function beginDisplaySourceBatchPreparation(batchKey: string): void {
+  preparingByBatch.set(batchKey, (preparingByBatch.get(batchKey) ?? 0) + 1)
+}
+
+function completeDisplaySourceBatchPreparation(
+  batchKey: string,
+  batch: { chatId: string; context: DisplayRequestContext; configuredLineage: string },
+): void {
+  const preparing = preparingByBatch.get(batchKey)
+  if (preparing === undefined) return
+  if (preparing > 1) {
+    preparingByBatch.set(batchKey, preparing - 1)
+    return
+  }
+  preparingByBatch.delete(batchKey)
+  scheduleDisplaySourceBatch(batchKey, batch)
+}
+
+function enqueueDisplaySourceRequest(input: {
   chatId: string
   priority: DisplaySourcePriority
   target: DisplaySourceTarget
-  context: DisplayRequestContext
-  configuredLineage: string
-  configuredWriterEpoch: number
+  expectedContextFingerprint: string
+  batchKey: string
 }): Promise<ServerDisplaySourceResult> {
-  const expectedContextFingerprint = await sha256Hex(
-    displaySourceNamespaceJson({
-      databaseLineage: input.configuredLineage,
-      activeWriterEpoch: input.configuredWriterEpoch,
-      context: input.context,
-    }),
-  )
-  const batchKey = stableDisplayDependencyJson({
-    chatId: input.chatId,
-    context: input.context,
-    configuredLineage: input.configuredLineage,
-    configuredWriterEpoch: input.configuredWriterEpoch,
-  })
-
   return new Promise<ServerDisplaySourceResult>((resolve) => {
-    const pending = pendingByBatch.get(batchKey) ?? []
+    const pending = pendingByBatch.get(input.batchKey) ?? []
     if (input.target.streaming) {
       const supersededIndex = pending.findIndex(
         (item) =>
@@ -291,19 +324,29 @@ async function enqueueDisplaySourceRequest(input: {
       chatId: input.chatId,
       priority: input.priority,
       target: input.target,
-      expectedContextFingerprint,
+      expectedContextFingerprint: input.expectedContextFingerprint,
       resolve,
     })
-    pendingByBatch.set(batchKey, pending)
-    if (scheduledBatches.has(batchKey)) return
-    scheduledBatches.add(batchKey)
-    setTimeout(() => {
-      scheduledBatches.delete(batchKey)
-      const batch = pendingByBatch.get(batchKey) ?? []
-      pendingByBatch.delete(batchKey)
-      void flushDisplaySourcePriorityGroups(input.chatId, input.context, input.configuredLineage, batch)
-    }, 0)
+    pendingByBatch.set(input.batchKey, pending)
   })
+}
+
+function scheduleDisplaySourceBatch(
+  batchKey: string,
+  batch: { chatId: string; context: DisplayRequestContext; configuredLineage: string },
+): void {
+  if (!pendingByBatch.has(batchKey) || scheduledBatches.has(batchKey)) return
+  scheduledBatches.add(batchKey)
+  setTimeout(() => {
+    scheduledBatches.delete(batchKey)
+    if (preparingByBatch.has(batchKey)) {
+      scheduleDisplaySourceBatch(batchKey, batch)
+      return
+    }
+    const pending = pendingByBatch.get(batchKey) ?? []
+    pendingByBatch.delete(batchKey)
+    void flushDisplaySourcePriorityGroups(batch.chatId, batch.context, batch.configuredLineage, pending)
+  }, 0)
 }
 
 function displaySourceDedupeKey(input: {

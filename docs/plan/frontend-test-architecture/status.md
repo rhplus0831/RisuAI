@@ -146,6 +146,14 @@ passed. Revisit condition: another full-lane occurrence requires a dedicated
 display-source batching stabilization decision before the active promotion
 slice continues.
 
+That revisit condition fired during the pre-change DOM baseline for the next
+Phase 2 slice: the same-chat contract observed two one-target requests instead
+of one two-target request. The dedicated stabilization now registers pending
+batch preparation before asynchronous hashing and waits for sibling
+preparations before scheduling the flush. Three focused 8-test reruns and the
+complete 386-file DOM project passed. The blocker is resolved; any further
+occurrence reopens the display-source batching owner before another promotion.
+
 ## Latest Completed Slice
 
 [Phase 2 client runtime utilities](phases/slices/phase-2/client-runtime-utilities.md)

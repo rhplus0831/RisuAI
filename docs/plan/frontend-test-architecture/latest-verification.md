@@ -4,9 +4,40 @@ Date: 2026-08-28
 
 ## State
 
-Phase 2 client-runtime-utilities slice closeout. Phase 2 remains in
-progress; this record does not authorize repository-wide default inversion, S
-promotion, or bulk migration outside the active phase rules.
+Phase 2 display-source batching prerequisite stabilization, followed by the
+retained client-runtime-utilities slice closeout. Phase 2 remains in progress;
+this record does not authorize repository-wide default inversion, S promotion,
+or bulk migration outside the active phase rules.
+
+## Phase 2 Display-Source Batching Stabilization
+
+The pre-change aggregate-ordinary DOM baseline for the next model/provider
+promotion slice reproduced the retained display-source observation. The run
+passed 385 files and 5,542 tests but failed
+`src/ts/server/displaySources.test.ts` at the same-chat batching assertion:
+`requests` contained two one-target operations instead of one two-target
+operation. The failed lane reported 65.60s wall, 64.76s Vitest duration, and
+4,793,048 KiB peak RSS.
+
+The dedicated stabilization decision treats this as a production scheduling
+race rather than weakening the batching assertion. Each display request
+previously awaited its source and context hashes before joining the pending
+batch; under full-suite load, the first zero-delay timer could flush while its
+sibling was still hashing. `displaySources.ts` now registers preparation under
+the stable batch key before either hash settles, computes both hashes in
+parallel, and schedules the flush only after all registered preparations for
+that key complete. Namespace resets fence stale preparations, and the existing
+dedupe, priority, revision, response-validation, and fallback contracts remain
+unchanged.
+
+Three consecutive focused runs passed all 8 `displaySources.test.ts` tests in
+3.38-3.59s. The complete aggregate-ordinary DOM project then passed 386 files /
+5,543 tests in 70.45s wall and 69.53s Vitest duration with 4,933,796 KiB peak
+RSS. `pnpm check` passed with zero errors or warnings. The stabilization is an
+independent prerequisite fix. The affected-test plan passed 339 frontend files
+/ 5,164 tests and found no directly affected server test; `pnpm format:check`
+and `git diff --check` passed. The model/provider ownership and paired timing
+baseline begin only after this stabilization lands.
 
 ## Phase 2 Client-Runtime-Utilities Environment And Source State
 
