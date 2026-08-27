@@ -10,13 +10,13 @@ codebase remain authoritative until a phase lands.
 
 - Plan state: Phases 0-1 complete; Phase 2 in progress.
 - Current phase: Phase 2 — Pure Node Promotion.
-- Active slice: No implementation slice is active; the generation-runtime-boundaries
+- Active slice: No implementation slice is active; the startup-lifecycle-state-helpers
   promotion slice is complete.
-- Implementation state: Twenty-six files and 138 tests have moved from the
-  Happy-DOM fallback to Node across eight bounded slices with no production
+- Implementation state: Twenty-eight files and 146 tests have moved from the
+  Happy-DOM fallback to Node across nine bounded slices with no production
   changes.
 - Blockers: None.
-- Next action: Prepare the next bounded Phase 2 command-planning or state-helper
+- Next action: Prepare the next bounded Phase 2 server-transport or storage-helper
   N-promotion slice. Retain the two failed generation-effect Node probes in D
   pending S-target reclassification or a later pure-boundary decision.
 
@@ -77,18 +77,18 @@ aggregate ordinary views; 175 unpromoted N/S candidates still require probes.
 
 | Measurement | Result |
 | --- | ---: |
-| Completed slices | 8 |
-| Promoted suites | 26 files / 138 tests |
-| Full three-project universe | 537 files: 152 N / 2 S / 383 D |
-| Standalone ordinary frontend | 535 files: 152 N / 2 S / 381 D |
-| `test:all` ordinary frontend | 529 files / 6,413 tests: 151 N / 2 S / 376 D |
-| Remaining target-runtime mismatches | 149: 22 N / 127 S |
-| Latest paired ordinary wall observation | 74.45s -> 73.67s (-1.0%) |
-| Latest paired ordinary peak RSS | 4,909,928 -> 4,782,104 KiB |
+| Completed slices | 9 |
+| Promoted suites | 28 files / 146 tests |
+| Full three-project universe | 537 files: 154 N / 2 S / 381 D |
+| Standalone ordinary frontend | 535 files: 154 N / 2 S / 379 D |
+| `test:all` ordinary frontend | 529 files / 6,413 tests: 153 N / 2 S / 374 D |
+| Remaining target-runtime mismatches | 147: 20 N / 127 S |
+| Latest paired ordinary wall observation | 72.82s -> 74.21s (+1.9%) |
+| Latest paired ordinary peak RSS | 4,980,964 -> 4,898,600 KiB |
 
-The paired timing is slice evidence, not a phase-level median. The -1.0% wall
+The paired timing is slice evidence, not a phase-level median. The +1.9% wall
 movement remains inside ordinary run-to-run variability; it is not a
-phase-level performance claim. Phase 2 remains open for 20 unprobed N
+phase-level performance claim. Phase 2 remains open for 18 unprobed N
 candidates. The generated inventory also counts the two probed generation
 suites retained in D pending target reclassification.
 
@@ -140,6 +140,11 @@ suites retained in D pending target reclassification.
     probes executed transitive Svelte rune modules and failed with `$state is
     not defined`; no mocks or production boundaries were weakened to promote
     them.
+17. The ninth Phase 2 slice validated legacy-memory notice detection and
+    dismissal state plus startup telemetry buffering, opt-in, transport, and
+    failure isolation in N. Existing mocks continue to replace the Svelte
+    projection, settings persistence, alert, and authenticated transport
+    boundaries; no browser-shaped contract moved out of D.
 
 ## Accepted Observations
 
@@ -172,10 +177,10 @@ occurrence reopens the display-source batching owner before another promotion.
 
 ## Latest Completed Slice
 
-[Phase 2 generation runtime boundaries](phases/slices/phase-2/generation-runtime-boundaries.md)
-promoted three generation capability-registry, inlay-finalization, and
-raw-caller source-policy suites and six tests from Happy-DOM to Node without
-changing their assertions or production subjects.
+[Phase 2 startup lifecycle state helpers](phases/slices/phase-2/startup-lifecycle-state-helpers.md)
+promoted two dependency-isolated legacy-memory notice and startup telemetry
+suites and eight tests from Happy-DOM to Node without changing their
+assertions or production subjects.
 
 ## Latest Verification
 

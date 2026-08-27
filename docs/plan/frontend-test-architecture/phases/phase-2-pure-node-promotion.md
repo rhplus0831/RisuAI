@@ -26,6 +26,9 @@ Status: In progress
 - [Generation runtime boundaries](slices/phase-2/generation-runtime-boundaries.md):
   promoted three generation capability-registry, inlay-finalization, and raw
   caller source-policy suites and six tests from Happy-DOM to Node.
+- [Startup lifecycle state helpers](slices/phase-2/startup-lifecycle-state-helpers.md):
+  promoted two dependency-isolated legacy-memory notice and startup telemetry
+  state-helper suites and eight tests from Happy-DOM to Node.
 
 ## Objective
 

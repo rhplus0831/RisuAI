@@ -4,9 +4,121 @@ Date: 2026-08-28
 
 ## State
 
-Phase 2 generation-runtime-boundaries slice closeout. Phase 2 remains in
+Phase 2 startup-lifecycle-state-helpers slice closeout. Phase 2 remains in
 progress; this record does not authorize repository-wide default inversion, S
 promotion, or bulk migration outside the active phase rules.
+
+## Phase 2 Startup-Lifecycle-State-Helpers Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `ffd018c37fe2807ad8ab84b2834899c4c4042bf3`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Available CPUs: 10
+- Frontend test-all UI-map exclusion: `RISU_TEST_EXCLUDE_UI_MAP=true`
+- Isolation: enabled
+- Measurement tree: the clean generation-runtime-boundaries commit plus the
+  two-file Node ownership change, regenerated inventory, and Phase 2
+  documentation in this slice; no unrelated working-tree changes were present.
+
+GNU `time` console observations remained uncommitted. Coverage output remained
+under ignored `coverage/`.
+
+## Phase 2 Startup-Lifecycle-State-Helpers Probe And Ownership
+
+The ninth bounded Phase 2 slice promotes:
+
+- `src/ts/process/legacyMemoryMigrationNotice.test.ts`
+- `src/ts/server/startupTelemetry.test.ts`
+
+The legacy-memory suite explicitly replaces its Svelte-named resource
+projection and settings persistence boundaries, plus the alert surface. Its
+remaining graph is retired-algorithm detection, once-per-database notice state,
+and dismissal persistence planning; the production `Database` import is
+type-only. The startup telemetry suite explicitly replaces authenticated server
+storage and stubs `fetch`; its remaining graph is the plain startup-readiness
+state machine, protocol validation, event buffering, and best-effort transport.
+Node 24 supplies the `Response` used by the existing stub. Neither suite mounts
+a component, accesses browser storage, or performs a real network request. No
+mock, assertion, production dependency, or test body changed for promotion.
+
+Pre-promotion Happy-DOM command:
+
+```sh
+/usr/bin/time -v pnpm exec vitest run \
+  src/ts/process/legacyMemoryMigrationNotice.test.ts \
+  src/ts/server/startupTelemetry.test.ts
+```
+
+Result: 2 files / 8 tests passed in 1.38s wall and 616ms Vitest duration,
+with 391,080 KiB peak RSS and 333ms aggregate environment time.
+
+After adding the files to `vitest.node-tests.ts`, the target-project probe used
+the same file list with `--project frontend-node`. Result: 2 files / 8 tests
+passed in 1.13s wall and 411ms Vitest duration, with 332,100 KiB peak RSS and no
+aggregate environment time. The later complete Node and frontend runs repeated
+the same tests successfully.
+
+## Phase 2 Startup-Lifecycle-State-Helpers Discovery And Classification Proof
+
+Commands:
+
+```sh
+pnpm update:frontend-test-inventory
+pnpm check:frontend-test-inventory
+```
+
+Both passed. The generated inventory removed the two promoted target-N probe
+markers, retained the 537-file universe, and remained exhaustive and disjoint.
+
+| View | Files | Node | Svelte+Node | Happy-DOM |
+| --- | ---: | ---: | ---: | ---: |
+| Full, including explicit performance gates | 537 | 154 | 2 | 381 |
+| Standalone ordinary frontend | 535 | 154 | 2 | 379 |
+| `test:all` ordinary frontend | 529 | 153 | 2 | 374 |
+
+The target distribution remains 174 N, 129 S, 234 D, and 7 B. Outstanding
+target-runtime mismatches fell from 149 to 147: 20 N and 127 S. Eighteen N
+files remain unprobed; the other two N mismatches are the failed generation
+effect probes retained in D.
+
+## Phase 2 Startup-Lifecycle-State-Helpers Paired Measurements
+
+All paired commands ran on the same host with
+`RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v`. This is one paired slice
+observation, not the three-run phase-level timing gate.
+
+| Lane | State | Result | Wall | Vitest | CPU | Peak RSS KiB |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `frontend-node` | Before | 151 files / 909 tests | 4.34s | 3.56s | 679% | 953,552 |
+| `frontend-node` | After | 153 files / 917 tests | 4.71s | 3.99s | 631% | 952,752 |
+| `frontend-dom` | Before | 376 files / 5,496 tests | 67.58s | 66.73s | 636% | 4,842,932 |
+| `frontend-dom` | After | 374 files / 5,488 tests | 63.88s | 62.99s | 630% | 4,650,008 |
+| Ordinary frontend | Before | 529 files / 6,413 tests | 72.82s | 71.84s | 634% | 4,980,964 |
+| Ordinary frontend | After | 529 files / 6,413 tests | 74.21s | 73.26s | 638% | 4,898,600 |
+
+The paired ordinary wall observation increased by 1.39s (1.9%) while peak RSS
+decreased by 82,364 KiB (1.7%). Both movements remain within observed lane
+variability, so this is not a phase-level performance claim. The owning DOM
+project improved by 3.70s while the Node project varied upward by 0.37s after
+absorbing the two files.
+
+## Phase 2 Startup-Lifecycle-State-Helpers Command Validation
+
+Complete standalone `frontend-node` and `frontend-dom` project runs passed 154
+files / 922 tests and 379 files / 5,686 tests respectively.
+
+`pnpm test:affected --dry-run` selected the complete frontend lane, isolated
+performance gates, and server lane because the explicit runtime inventory
+changed. Running the selected plan passed 535 frontend files / 6,616 tests, 2
+performance files / 6 tests, and 154 server files / 3,295 tests with 1 skipped.
+
+`pnpm format:check` and `git diff --check` passed.
+
+No production, setup, coverage-map, CI, rendered UI contract, or browser-smoke
+file changed in the promotion, so the preceding test-runtime-tooling `test:all`
+checkpoint remains the current periodic Phase 2 aggregate proof.
 
 ## Phase 2 Generation-Runtime-Boundaries Environment And Source State
 
