@@ -129,5 +129,8 @@ export const nodeTestFiles = [
   'util/check-server.test.ts',
   'util/frontend-test-inventory.test.ts',
   'util/initial-preload-report.test.ts',
+  'util/test-all.test.ts',
   'util/vite-warning-policy.test.ts',
+  'vitest.fetchGuard.test.ts',
+  'vitest.setup.test.ts',
 ] as const

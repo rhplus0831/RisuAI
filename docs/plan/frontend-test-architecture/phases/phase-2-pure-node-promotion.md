@@ -6,6 +6,8 @@ Status: In progress
 
 - [Protocol validation](slices/phase-2/protocol-validation.md): promoted three
   protocol-validation suites and 19 tests from Happy-DOM to Node.
+- [Test runtime tooling](slices/phase-2/test-runtime-tooling.md): promoted three
+  runner/setup contract suites and 18 tests from Happy-DOM to Node.
 
 ## Objective
 
