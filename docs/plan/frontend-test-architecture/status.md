@@ -10,14 +10,15 @@ codebase remain authoritative until a phase lands.
 
 - Plan state: Phases 0-1 complete; Phase 2 in progress.
 - Current phase: Phase 2 — Pure Node Promotion.
-- Active slice: No implementation slice is active; the prompt-tokenization
+- Active slice: No implementation slice is active; the generation-runtime-boundaries
   promotion slice is complete.
-- Implementation state: Twenty-three files and 132 tests have moved from the
-  Happy-DOM fallback to Node across seven bounded slices with no production
+- Implementation state: Twenty-six files and 138 tests have moved from the
+  Happy-DOM fallback to Node across eight bounded slices with no production
   changes.
 - Blockers: None.
-- Next action: Prepare the next bounded Phase 2 generation-helper N-promotion
-  slice.
+- Next action: Prepare the next bounded Phase 2 command-planning or state-helper
+  N-promotion slice. Retain the two failed generation-effect Node probes in D
+  pending S-target reclassification or a later pure-boundary decision.
 
 ## Phase Router
 
@@ -76,19 +77,20 @@ aggregate ordinary views; 175 unpromoted N/S candidates still require probes.
 
 | Measurement | Result |
 | --- | ---: |
-| Completed slices | 7 |
-| Promoted suites | 23 files / 132 tests |
-| Full three-project universe | 537 files: 149 N / 2 S / 386 D |
-| Standalone ordinary frontend | 535 files: 149 N / 2 S / 384 D |
-| `test:all` ordinary frontend | 529 files / 6,413 tests: 148 N / 2 S / 379 D |
-| Remaining target-runtime probes | 152: 25 N / 127 S |
-| Latest paired ordinary wall observation | 69.32s -> 70.17s (+1.2%) |
-| Latest paired ordinary peak RSS | 5,009,748 -> 4,957,828 KiB |
+| Completed slices | 8 |
+| Promoted suites | 26 files / 138 tests |
+| Full three-project universe | 537 files: 152 N / 2 S / 383 D |
+| Standalone ordinary frontend | 535 files: 152 N / 2 S / 381 D |
+| `test:all` ordinary frontend | 529 files / 6,413 tests: 151 N / 2 S / 376 D |
+| Remaining target-runtime mismatches | 149: 22 N / 127 S |
+| Latest paired ordinary wall observation | 74.45s -> 73.67s (-1.0%) |
+| Latest paired ordinary peak RSS | 4,909,928 -> 4,782,104 KiB |
 
-The paired timing is slice evidence, not a phase-level median. The +1.2% wall
+The paired timing is slice evidence, not a phase-level median. The -1.0% wall
 movement remains inside ordinary run-to-run variability; it is not a
-phase-level performance claim. Phase 2 remains open for the remaining 25 N
-candidates that still require target-project probes.
+phase-level performance claim. Phase 2 remains open for 20 unprobed N
+candidates. The generated inventory also counts the two probed generation
+suites retained in D pending target reclassification.
 
 ## Current Decisions
 
@@ -131,6 +133,13 @@ candidates that still require target-project probes.
     memo/debounce, and tokenizer cache/catalog suites in N while retaining
     browser-only tokenizer paths and Svelte/rendered prompt contracts outside
     the slice.
+16. The eighth Phase 2 slice validated generation runtime registration,
+    server-backed inlay finalization planning, and raw-caller source policy in
+    N. `generationEffectLedger.test.ts` and
+    `recoveredGenerationEffects.test.ts` remain in D because their target Node
+    probes executed transitive Svelte rune modules and failed with `$state is
+    not defined`; no mocks or production boundaries were weakened to promote
+    them.
 
 ## Accepted Observations
 
@@ -163,10 +172,10 @@ occurrence reopens the display-source batching owner before another promotion.
 
 ## Latest Completed Slice
 
-[Phase 2 prompt conversion and tokenization](phases/slices/phase-2/prompt-tokenization.md)
-promoted three prompt conversion, tokenization memo/debounce, and tokenizer
-cache/catalog suites and 16 tests from Happy-DOM to Node without changing their
-assertions or production subjects.
+[Phase 2 generation runtime boundaries](phases/slices/phase-2/generation-runtime-boundaries.md)
+promoted three generation capability-registry, inlay-finalization, and
+raw-caller source-policy suites and six tests from Happy-DOM to Node without
+changing their assertions or production subjects.
 
 ## Latest Verification
 

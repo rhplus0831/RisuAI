@@ -4,9 +4,129 @@ Date: 2026-08-28
 
 ## State
 
-Phase 2 prompt-tokenization slice closeout. Phase 2 remains in progress; this
-record does not authorize repository-wide default inversion, S promotion, or
-bulk migration outside the active phase rules.
+Phase 2 generation-runtime-boundaries slice closeout. Phase 2 remains in
+progress; this record does not authorize repository-wide default inversion, S
+promotion, or bulk migration outside the active phase rules.
+
+## Phase 2 Generation-Runtime-Boundaries Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `86fdbc9e177ecef670384d290266c55bd6c019cb`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Available CPUs: 10
+- Frontend test-all UI-map exclusion: `RISU_TEST_EXCLUDE_UI_MAP=true`
+- Isolation: enabled
+- Measurement tree: the clean prompt-tokenization commit plus the three-file
+  Node ownership change, regenerated inventory, and Phase 2 documentation in
+  this slice; no unrelated working-tree changes were present.
+
+GNU `time` console observations remained uncommitted. Coverage output remained
+under ignored `coverage/`.
+
+## Phase 2 Generation-Runtime-Boundaries Probe And Ownership
+
+The eighth bounded Phase 2 slice promotes:
+
+- `src/ts/process/generationRuntimeBridge.test.ts`
+- `src/ts/process/inlayFinalization.test.ts`
+- `src/ts/process/rawGenerationCallerAllowlist.test.ts`
+
+The runtime-bridge subject uses only emitted registry state and type-erased
+module references. The inlay suite explicitly replaces its Svelte-named
+projection state and command dispatcher; its remaining graph is compare-and-set
+command planning and conflict handling. The raw-caller suite is Node-native
+filesystem source inspection and never imports or transforms the Svelte files
+whose policy it checks. No DOM, browser storage, or network is accessed. No
+mock, assertion, production dependency, or test body changed for promotion.
+
+An initial broader Node probe also included
+`generationEffectLedger.test.ts` and `recoveredGenerationEffects.test.ts`.
+Those two suites failed before collection with `$state is not defined`:
+the ledger reaches `persistenceActivity.svelte.ts` through `commands.ts`, while
+the recovery suite's partial ledger mock reaches `coreStores.svelte.ts` through
+`fastifyStorage.ts`. Both remain in D without weakened mocks or production
+changes and require S-target reclassification or a later pure-boundary
+decision.
+
+Pre-promotion Happy-DOM command for the final promoted scope:
+
+```sh
+/usr/bin/time -v pnpm exec vitest run \
+  src/ts/process/generationRuntimeBridge.test.ts \
+  src/ts/process/inlayFinalization.test.ts \
+  src/ts/process/rawGenerationCallerAllowlist.test.ts
+```
+
+Result: 3 files / 6 tests passed in 1.03s wall and 343ms Vitest duration,
+with 395,624 KiB peak RSS and 367ms aggregate environment time.
+
+After adding the files to `vitest.node-tests.ts`, the target-project probe used
+the same file list with `--project frontend-node`. Result: 3 files / 6 tests
+passed in 0.94s wall and 269ms Vitest duration, with 312,660 KiB peak RSS and no
+aggregate environment time. The later complete Node and frontend runs repeated
+the same tests successfully.
+
+## Phase 2 Generation-Runtime-Boundaries Discovery And Classification Proof
+
+Commands:
+
+```sh
+pnpm update:frontend-test-inventory
+pnpm check:frontend-test-inventory
+```
+
+Both passed. The generated inventory removed the three promoted target-N probe
+markers, retained the 537-file universe, and remained exhaustive and disjoint.
+
+| View | Files | Node | Svelte+Node | Happy-DOM |
+| --- | ---: | ---: | ---: | ---: |
+| Full, including explicit performance gates | 537 | 152 | 2 | 383 |
+| Standalone ordinary frontend | 535 | 152 | 2 | 381 |
+| `test:all` ordinary frontend | 529 | 151 | 2 | 376 |
+
+The target distribution remains 174 N, 129 S, 234 D, and 7 B. Outstanding
+target-runtime mismatches fell from 152 to 149: 22 N and 127 S. Twenty N files
+remain unprobed; the other two N mismatches are the failed generation-effect
+probes recorded above.
+
+## Phase 2 Generation-Runtime-Boundaries Paired Measurements
+
+All paired commands ran on the same host with
+`RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v`. This is one paired slice
+observation, not the three-run phase-level timing gate.
+
+| Lane | State | Result | Wall | Vitest | CPU | Peak RSS KiB |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `frontend-node` | Before | 148 files / 903 tests | 4.23s | 3.48s | 680% | 912,104 |
+| `frontend-node` | After | 151 files / 909 tests | 4.24s | 3.50s | 676% | 925,640 |
+| `frontend-dom` | Before | 379 files / 5,502 tests | 65.49s | 64.62s | 636% | 4,720,332 |
+| `frontend-dom` | After | 376 files / 5,496 tests | 66.88s | 65.99s | 641% | 4,644,884 |
+| Ordinary frontend | Before | 529 files / 6,413 tests | 74.45s | 73.60s | 642% | 4,909,928 |
+| Ordinary frontend | After | 529 files / 6,413 tests | 73.67s | 72.66s | 642% | 4,782,104 |
+
+The paired ordinary wall observation improved by 0.78s (1.0%) while peak RSS
+decreased by 127,824 KiB (2.6%). Both movements remain within observed lane
+variability, so this is not a phase-level performance claim. The owning DOM
+project varied upward by 1.39s; the Node project remained effectively flat
+after absorbing the three files.
+
+## Phase 2 Generation-Runtime-Boundaries Command Validation
+
+`pnpm test:frontend` passed 535 files / 6,616 tests. Complete standalone
+`frontend-node` and `frontend-dom` project runs passed 152 files / 914 tests and
+381 files / 5,694 tests respectively.
+
+`pnpm test:affected --dry-run` selected the complete frontend lane, isolated
+performance gates, and server lane because the explicit runtime inventory
+changed. Running the selected plan passed 535 frontend files / 6,616 tests, 2
+performance files / 6 tests, and 154 server files / 3,295 tests with 1 skipped.
+
+`pnpm format:check` and `git diff --check` passed. No production, setup,
+coverage-map, CI, rendered UI contract, or browser-smoke file changed in the
+promotion, so the preceding test-runtime-tooling `test:all` checkpoint remains
+the current periodic Phase 2 aggregate proof.
 
 ## Phase 2 Prompt-Tokenization Environment And Source State
 

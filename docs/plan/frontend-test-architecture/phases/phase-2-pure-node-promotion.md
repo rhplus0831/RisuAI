@@ -23,6 +23,9 @@ Status: In progress
 - [Prompt conversion and tokenization](slices/phase-2/prompt-tokenization.md):
   promoted three prompt conversion, tokenization memo/debounce, and tokenizer
   cache/catalog suites and 16 tests from Happy-DOM to Node.
+- [Generation runtime boundaries](slices/phase-2/generation-runtime-boundaries.md):
+  promoted three generation capability-registry, inlay-finalization, and raw
+  caller source-policy suites and six tests from Happy-DOM to Node.
 
 ## Objective
 
