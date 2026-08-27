@@ -12,11 +12,13 @@ describe('frontend test inventory', () => {
     const projects = parseVitestFilesOnlyOutput(`
 Svelte warning
 [frontend-node] src/pure.test.ts
+[frontend-svelte-node] src/store.svelte.test.ts
 [frontend-dom] src/component.svelte.test.ts
 [frontend-dom] src/browser.dom.test.ts
 `)
 
     expect([...projects.get('frontend-node')!]).toEqual(['src/pure.test.ts'])
+    expect([...projects.get('frontend-svelte-node')!]).toEqual(['src/store.svelte.test.ts'])
     expect([...projects.get('frontend-dom')!]).toEqual(['src/component.svelte.test.ts', 'src/browser.dom.test.ts'])
   })
 
@@ -25,12 +27,13 @@ Svelte warning
       ['src/missing.test.ts', 'src/shared.test.ts'],
       new Map([
         ['frontend-node', new Set(['src/shared.test.ts'])],
-        ['frontend-dom', new Set(['src/shared.test.ts', 'src/unexpected.test.ts'])],
+        ['frontend-svelte-node', new Set(['src/shared.test.ts'])],
+        ['frontend-dom', new Set(['src/unexpected.test.ts'])],
       ]),
     )
 
     expect(problem).toEqual({
-      duplicates: ['src/shared.test.ts (frontend-dom, frontend-node)'],
+      duplicates: ['src/shared.test.ts (frontend-node, frontend-svelte-node)'],
       missing: ['src/missing.test.ts'],
       unexpected: ['src/unexpected.test.ts'],
     })
@@ -67,6 +70,11 @@ vi.useFakeTimers()
       'frontend-dom',
       `import { writable } from 'svelte/store'`,
     )
+    const validatedSvelteNode = createFrontendTestInventoryRow(
+      'src/validated-store.svelte.test.ts',
+      'frontend-svelte-node',
+      `import { writable } from 'svelte/store'`,
+    )
     const dom = createFrontendTestInventoryRow(
       'src/component.svelte.test.ts',
       'frontend-dom',
@@ -76,6 +84,12 @@ vi.useFakeTimers()
     expect(node.targetClass).toBe('N')
     expect(svelteNode).toMatchObject({ targetClass: 'S', confidence: 'medium' })
     expect(svelteNode.ambiguityOrBlocker).toContain('probe required')
+    expect(validatedSvelteNode).toMatchObject({
+      targetClass: 'S',
+      confidence: 'high',
+      ambiguityOrBlocker: '',
+      reason: 'already validated by the Svelte+Node project',
+    })
     expect(dom).toMatchObject({ targetClass: 'D', confidence: 'high' })
   })
 

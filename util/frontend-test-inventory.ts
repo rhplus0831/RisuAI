@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { uiCoverageTestFiles } from '../vitest.ui-coverage-tests.js'
 
 export type FrontendCapability = 'N' | 'S' | 'D' | 'B'
-export type FrontendTestProject = 'frontend-node' | 'frontend-dom' | 'browser-smoke'
+export type FrontendTestProject = 'frontend-node' | 'frontend-svelte-node' | 'frontend-dom' | 'browser-smoke'
 
 export interface SourceSignal {
   line: number
@@ -48,7 +48,7 @@ export interface DiscoveryProblem {
   unexpected: string[]
 }
 
-const vitestProjectNames = ['frontend-node', 'frontend-dom'] as const
+const vitestProjectNames = ['frontend-node', 'frontend-svelte-node', 'frontend-dom'] as const
 const independentVitestRoots = ['packages', 'src', 'util'] as const
 const ignoredDirectoryNames = new Set(['.git', 'coverage', 'dist', 'node_modules'])
 const frontendTestPattern = /\.(?:test|spec)\.[cm]?[jt]sx?$/
@@ -125,6 +125,7 @@ function signalText(signal: SourceSignal | undefined): string {
 function targetCapability(project: FrontendTestProject, signals: FrontendTestSignals): FrontendCapability {
   if (project === 'browser-smoke') return 'B'
   if (project === 'frontend-node') return 'N'
+  if (project === 'frontend-svelte-node') return 'S'
   if (signals.domOrMount) return 'D'
   if (signals.svelte) return 'S'
   return 'N'
@@ -153,6 +154,7 @@ function owningDomain(file: string): string {
 function targetReason(project: FrontendTestProject, target: FrontendCapability, signals: FrontendTestSignals): string {
   if (target === 'B') return 'built-browser/Fastify lifecycle contract'
   if (project === 'frontend-node') return 'already validated by the Node project'
+  if (project === 'frontend-svelte-node') return 'already validated by the Svelte+Node project'
   if (target === 'D') return 'direct mounted-component or DOM/browser evidence'
   if (target === 'S') return 'direct Svelte transform/store/rune evidence without direct DOM evidence'
   if (signals.storage || signals.network || signals.timers || signals.filesystem || signals.fastifyHarness) {

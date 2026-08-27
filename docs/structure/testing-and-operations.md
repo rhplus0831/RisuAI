@@ -11,8 +11,8 @@ environment variables live in
 
 The active
 [Frontend Test Architecture plan](../plan/frontend-test-architecture/status.md)
-tracks proposed phased changes to frontend project ownership. This document and
-the current runner configuration remain authoritative until those phases land.
+tracks the phased rollout of frontend project ownership. This document and the
+current runner configuration describe the phases that have landed.
 
 ## Scripts
 
@@ -61,11 +61,11 @@ There is no ESLint config or `lint` script.
 
 | Area                        | Command/config                                                                          | Environment | Locations                                                                                                                  |
 | --------------------------- | --------------------------------------------------------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Browser/client/domain tests | `pnpm test` or `pnpm test:frontend`, `vitest*.config.ts`                                | Node + `happy-dom` | Root suite outside `server/**`, including `src/**`, `util/**/*.test.ts`, and `src/lib/_audit`, minus performance gates. |
+| Browser/client/domain tests | `pnpm test` or `pnpm test:frontend`, `vitest*.config.ts`                                | Node + Svelte/Node + `happy-dom` | Root suite outside `server/**`, including `src/**`, `util/**/*.test.ts`, and `src/lib/_audit`, minus performance gates. |
 | Specialized frontend gates  | `pnpm test:gates`, `vitest.config.ts`                                                   | `happy-dom` | `src/ts/__tests__/**/*.test.ts` plus `src/lib/_audit/**/*.test.ts`.                                                        |
 | Focused UI audit tests      | `pnpm test:gates:audit`, `vitest.config.ts`                                             | `happy-dom` | `src/lib/_audit/**/*.test.ts`; also included in the ordinary frontend lane.                                                |
-| Full frontend tests         | `pnpm test:frontend:all`, `vitest.config.ts`                                            | `happy-dom` | Root suite outside `server/**`, including explicit performance gates.                                                      |
-| Frontend coverage           | `pnpm coverage:frontend`, `vitest.config.ts`                                            | `happy-dom` | Broad coverage over `src/**/*.{ts,svelte}` and `util/**/*.ts`; reports under `coverage/frontend`.                          |
+| Full frontend tests         | `pnpm test:frontend:all`, `vitest.config.ts`                                            | Node + Svelte/Node + `happy-dom` | Root suite outside `server/**`, including explicit performance gates.                                             |
+| Frontend coverage           | `pnpm coverage:frontend`, `vitest.config.ts`                                            | Node + Svelte/Node + `happy-dom` | Broad coverage over `src/**/*.{ts,svelte}` and `util/**/*.ts`; reports under `coverage/frontend`.                 |
 | UI coverage map             | `pnpm coverage:ui-map`, `vitest.config.ts`                                              | `happy-dom` | Focused UI integration tests mapped over `src/lib/ChatScreens`, `src/lib/Others`, `src/lib/SideBars`, and `src/ts/server`. |
 | Fastify/server tests        | `pnpm test:server` or `pnpm api:test`, `server/fastify/vitest.config.ts`                | Node        | `server/fastify/__tests__/**/*.test.ts`.                                                                                   |
 | Compatibility harness      | `pnpm test:compat-harness`, `test/compat-harness/*.vitest.config.ts`                    | Node        | Golden pre-Fastify/current generation matrix plus focused replay/continue regressions; opt-in and outside `test:all`.      |
@@ -103,19 +103,26 @@ deadline and load-cost assertions. These isolated phases keep concurrent load
 from invalidating timing checks. Every lane still runs when another lane fails,
 and the aggregate exits nonzero at the end.
 
-Config details: `vitest.config.ts` composes two thread-pool projects. The
-conservative allowlist in `vitest.node-tests.ts` runs validated pure tests in
-Node without loading `happy-dom`; new frontend tests default to the Svelte /
-`happy-dom` project until deliberately promoted. Both projects retain browser
-resolve conditions, the `src` alias, and `vitest.setup.ts` to mock `katex` and
-install the shared production `safeStructuredClone` helper. The DOM project
-also loads `vitest.dom.setup.ts`, which blocks unexpected fetches resolving to
-loopback port `3000` and reports the originating stack; tests that perform
-network-shaped work must stub `fetch` explicitly and await fire-and-forget
-command drains before teardown. `vitest.setup.test.ts` protects the shared
-native, fallback, and global-restoration semantics, while
-`vitest.fetchGuard.test.ts` protects the DOM fetch boundary. Root Vitest
-excludes explicit performance gate tests unless
+Config details: `vitest.config.ts` composes three isolated thread-pool projects.
+The conservative allowlist in `vitest.node-tests.ts` runs validated pure tests
+in Node without loading Svelte or `happy-dom`. The transitional allowlist in
+`vitest.svelte-node-tests.ts` runs tests that need client-mode Svelte
+transformation or rune behavior against Node globals without a DOM. Its custom
+environment delegates to Vitest's Node setup while selecting Vite's client
+transform so `$effect` retains client semantics. Unlisted tests continue to
+fall back to the Svelte/`happy-dom` project until deliberately promoted.
+
+All three projects retain browser resolve conditions, the `src` alias, and
+`vitest.setup.ts` to mock `katex`, install the shared production
+`safeStructuredClone` helper, and establish the default startup-readiness
+baseline. Only the two Svelte projects load the Svelte plugin, and only the DOM
+project loads `vitest.dom.setup.ts`. That DOM-only setup blocks unexpected
+fetches resolving to loopback port `3000` and reports the originating stack;
+tests that perform network-shaped work must stub `fetch` explicitly and await
+fire-and-forget command drains before teardown. `vitest.setup.test.ts` protects
+the shared native, fallback, and global-restoration semantics, while
+`vitest.fetchGuard.test.ts` protects the DOM fetch boundary. Root Vitest excludes
+explicit performance gate tests unless
 `RISU_TEST_INCLUDE_GATES=true` is set. `test:all` also sets
 `RISU_TEST_EXCLUDE_UI_MAP=true` only for its ordinary frontend subprocess; the
 following coverage lane executes those same six files once with instrumentation

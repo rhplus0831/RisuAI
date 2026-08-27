@@ -4,28 +4,159 @@ Date: 2026-08-28
 
 ## State
 
-Formal Phase 0 closeout baseline. This record authorizes Phase 1's representative
-topology pilot; it does not authorize bulk test migration.
+Phase 1 runtime-topology closeout. This record authorizes bounded Phase 2 Node
+promotion slices; it does not authorize repository-wide default inversion or
+bulk migration outside the active phase rules.
 
 ## Environment And Source State
 
 - Repository: `/home/codex/risuai-fastify`
-- Commit: `ece14168407b25960d3f3179460627e5dae71f25`
+- Base commit: `62a889b345c61581d26ce9737e32e5623cd47078`
 - Node: 24.19.0
 - pnpm: 11.23.0
 - Vitest: 4.1.2
 - Available CPUs: 10
 - Frontend test-all UI-map exclusion: `RISU_TEST_EXCLUDE_UI_MAP=true`
 - Isolation: enabled
-- Measurement tree: the commit plus the Phase 0 checker, inventory, package
-  scripts, checker test, and its new Node allowlist entry; no unrelated working
-  tree changes were present. The final aggregate rerun also included the Phase 0
-  documentation.
+- Measurement tree: the base commit plus the Phase 1 topology, inventory,
+  checker/tests, and documentation in this slice; no unrelated working-tree
+  changes were present.
 
 Raw JSON, GNU `time`, and console artifacts were kept under `/tmp` and were not
 committed. Coverage output remained under ignored `coverage/`.
 
-## Discovery And Classification Proof
+## Phase 1 Implementation And Pilot Proof
+
+`vitest.config.ts` now composes `frontend-node`, `frontend-svelte-node`, and
+`frontend-dom`. The S project loads the Svelte plugin and shared setup but not
+Happy-DOM or `vitest.dom.setup.ts`. Its environment delegates to Vitest's Node
+setup while selecting Vite's client transform; this was required because the
+built-in Node environment selects the SSR transform and made the stress pilot's
+client `$effect` inert.
+
+The explicit `vitest.svelte-node-tests.ts` inventory contains only the two Phase
+1 S pilots. `vitest.dom.config.ts` excludes the N and S inventories and retains
+the conservative fallback for every other file.
+
+Direct root selection command:
+
+```sh
+pnpm exec vitest run \
+  src/ts/parser/sentenceBreaks.test.ts \
+  src/ts/parser/tests/chatVar.svelte.test.ts \
+  src/ts/stores.runtimeEffects.svelte.test.ts \
+  src/lib/UI/GUI/CheckInput.svelte.test.ts
+```
+
+Result: 4 files and 26 tests passed, with one N, two S, and one D owner. Focused
+target-project runs separately passed 14 N tests, 8 S tests, and 4 D tests. The
+S stress pilot failed under the first plain-Node/SSR-transform probe because its
+`$effect` did not run, then passed under the final Node-backed client-transform
+environment without DOM setup.
+
+## Phase 1 Discovery And Classification Proof
+
+Command:
+
+```sh
+pnpm check:frontend-test-inventory
+```
+
+Result: passed. The filesystem universe and resolved Vitest ownership remained
+exhaustive and disjoint in all supported views.
+
+| View | Files | Node | Svelte+Node | Happy-DOM |
+| --- | ---: | ---: | ---: | ---: |
+| Full, including explicit performance gates | 537 | 126 | 2 | 409 |
+| Standalone ordinary frontend | 535 | 126 | 2 | 407 |
+| `test:all` ordinary frontend | 529 | 125 | 2 | 402 |
+
+All views retain their Phase 0 total. The target candidate distribution remains
+174 N, 129 S, 234 D, and 7 B. The two validated S pilots no longer carry probe
+markers, reducing outstanding target-runtime probes from 177 to 175.
+
+## Phase 1 Warm Ordinary Measurements
+
+Command shape:
+
+```sh
+RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v \
+  pnpm exec vitest run --reporter=json --outputFile=/tmp/<run>.json
+```
+
+| Run | Wall | Vitest | User | System | CPU | Peak RSS KiB |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 73.07s | 72.05s | 428.77s | 35.42s | 635% | 4,818,792 |
+| 2 | 70.44s | 69.59s | 419.50s | 31.00s | 639% | 4,800,148 |
+| 3 | 75.22s | 74.28s | 450.79s | 35.43s | 646% | 4,661,000 |
+| **Median** | **73.07s** | **72.05s** | **428.77s** | **35.42s** | **639%** | **4,800,148** |
+
+All three runs passed 529 files and 6,413 tests. Wall range was 70.44-75.22s.
+The wall median is 1.1% above the 72.30s Phase 0 reference and remains within
+the 5% Phase 1 topology budget. Median peak RSS is 0.3% above the 4,785,288 KiB
+reference and remains within the 10% guard. The first warm run reported 107.29s
+transform, 29.36s setup, 422.61s import, 83.99s test, and 54.26s environment
+aggregate worker time.
+
+## Phase 1 Project And Command Validation
+
+| Command/project | Result | Vitest duration |
+| --- | --- | ---: |
+| `frontend-node` | 126 files / 776 tests passed | 3.11s |
+| `frontend-svelte-node` | 2 files / 8 tests passed | 1.18s |
+| `frontend-dom` final rerun | 407 files / 5,832 tests passed | 68.95s |
+| `pnpm test:frontend` | 535 files / 6,616 tests passed | 72.74s |
+| `pnpm test:frontend:all` | 537 files / 6,622 tests passed | 77.32s |
+| `pnpm test:gates` | 4 files / 9 tests passed | 10.76s |
+
+`pnpm coverage:ui-map` passed 6 files and 203 tests in 18.44s. Lines were
+14.56%, statements 14.97%, functions 18.22%, and branches 9.52%, all above the
+8%/7%/5%/4% thresholds.
+
+`pnpm test:affected --dry-run` selected the complete frontend lane, isolated
+performance gates, and server lane for the runner changes. Running the selected
+plan passed 535 frontend files/6,616 tests, 2 performance files/6 tests, and 154
+server files/3,295 tests with 1 skipped. Direct-file selection, UI-map exclusion,
+gate inclusion, and the unchanged aggregate lane graph all passed.
+
+## Phase 1 Aggregate Closeout
+
+`pnpm test:all --dry-run` reported the expected eight-lane graph. The final
+`pnpm test:all` passed in 206.30s wall time with 5,029,460 KiB peak RSS.
+
+| Lane | Result | Lane time |
+| --- | --- | ---: |
+| Server and browser-smoke typecheck | Passed | 17.8s |
+| Frontend tests | 529 files / 6,413 tests passed | 85.0s |
+| Server tests | 154 files / 3,295 passed / 1 skipped | 17.6s |
+| Browser smoke | 34 passed | 70.6s |
+| Frontend check | Passed | 33.9s |
+| UI coverage | 6 files / 203 tests passed | 19.9s |
+| Format check | Passed | 30.4s |
+| Frontend performance gates | 2 files / 6 tests passed | 12.9s |
+
+The aggregate wall result is 1.1% below the 208.53s Phase 0 observation and its
+peak RSS remains below the 5,263,817 KiB guard. The previously observed
+queued-finalization browser-smoke case passed in 5.4s.
+
+## Phase 1 Accepted Display-Source Observation
+
+The first complete DOM-project run passed 406 files but failed five assertions
+in `src/ts/server/displaySources.test.ts`. The initial failure observed only
+`latest-a` where the test expected `latest-a` and `latest-b` in one critical
+batch. Because that assertion fired before resolving its deferred response, the
+shared revision lane remained held and four later tests in the file failed or
+timed out. This is consistent with the Phase 0 observation that asynchronous
+same-chat work can reach separate zero-delay batches under full-suite load.
+
+Three consecutive focused reruns passed all 8 tests in 3.20-3.34s, the complete
+407-file DOM rerun passed, all later complete frontend runs passed, and the
+final aggregate passed. The Phase 1 slice changed only project ownership and did
+not touch this production/test path. Owner: display-source batching. Revisit
+condition: another full-lane occurrence requires a dedicated stabilization
+decision before the active promotion slice continues.
+
+## Phase 0 Discovery And Classification Proof
 
 Command:
 
@@ -51,7 +182,7 @@ The previous 528-file provisional count was valid for the earlier `test:all`
 ordinary tree. Phase 0 added one five-test Node checker, producing the formal
 529-file/6,413-test ordinary universe.
 
-## Formal Ordinary Frontend Baseline
+## Phase 0 Formal Ordinary Frontend Baseline
 
 Command shape:
 
@@ -98,7 +229,7 @@ Median aggregate Vitest phases across the three warm runs:
 These phase values accumulate across parallel workers and do not add to wall
 time.
 
-## Independent Project Measurements
+## Phase 0 Independent Project Measurements
 
 Both commands used the aggregate ordinary exclusion so their union matches the
 529-file baseline.
@@ -112,7 +243,7 @@ Node phases were 3.64s transform, 8.16s setup, 5.02s import, 3.20s test,
 and 0.01s environment. Happy-DOM phases were 101.45s transform, 22.43s setup,
 423.61s import, 83.61s test, and 57.40s environment.
 
-## Focused UI Coverage
+## Phase 0 Focused UI Coverage
 
 Command:
 
@@ -130,7 +261,7 @@ Result: 6 files and 203 tests passed. Vitest duration was 19.20s; wall time was
 | Functions | 10.16% | 5% |
 | Branches | 9.03% | 4% |
 
-## Aggregate Closeout
+## Phase 0 Aggregate Closeout
 
 `pnpm test:all --dry-run` reported the expected eight-lane graph. The final
 `pnpm test:all` rerun passed in 208.53s wall time with 4,870,692 KiB peak RSS.
@@ -163,7 +294,7 @@ files and 6,616 tests in 72.36s. This test and production path were unchanged by
 Phase 0. A repeat during Phase 1 likewise blocks Phase 1 closeout pending an
 owner investigation.
 
-## Ratified Budgets
+## Phase 0 Ratified Budgets
 
 The 72.30s formal warm median establishes:
 

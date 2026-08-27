@@ -65,7 +65,7 @@ describe('affected test planning', () => {
   })
 
   it('runs the complete Vitest lanes when runner configuration changes', () => {
-    const result = plan([{ path: 'vitest.config.ts', status: 'M' }])
+    const result = plan([{ path: 'vitest.svelte-node.config.ts', status: 'M' }])
 
     expect(result.commands).toEqual([
       { label: 'frontend tests', args: ['test:frontend'] },

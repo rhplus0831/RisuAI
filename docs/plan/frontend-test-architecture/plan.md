@@ -36,10 +36,11 @@ scope, decisions, invariants, phase order, and acceptance model.
 
 ## Why This Requires A Workstream
 
-The provisional baseline contains 528 frontend files and 6,408 tests. The
-existing runner has only two projects: a conservative explicit Node allowlist
-and a default Svelte+Happy-DOM project. During the measured aggregate run, only
-124 files ran in Node while 404 ran in Happy-DOM.
+The provisional baseline contained 528 frontend files and 6,408 tests. The
+Phase 0 runner had only two projects: a conservative explicit Node allowlist and
+a default Svelte+Happy-DOM project. During that measured aggregate run, only 124
+files ran in Node while 404 ran in Happy-DOM. Phase 1 has since landed the
+three-project pilot topology recorded in `status.md`.
 
 The cost is primarily architectural rather than assertion time. Vitest reported
 485.51 seconds of aggregate import work, 129.94 seconds of transform work,
@@ -69,10 +70,12 @@ proof.
 ## Authority And Boundary Sources
 
 - `vitest.config.ts` owns root frontend project composition.
-- `vitest.node.config.ts` and `vitest.node-tests.ts` own the current validated
-  Node route.
-- `vitest.dom.config.ts` and `vitest.dom.setup.ts` own the current Svelte /
-  Happy-DOM route and unexpected-fetch guard.
+- `vitest.node.config.ts` and `vitest.node-tests.ts` own the validated Node
+  route.
+- `vitest.svelte-node.config.ts`, `vitest.svelte-node.environment.ts`, and
+  `vitest.svelte-node-tests.ts` own the validated Svelte+Node route.
+- `vitest.dom.config.ts` and `vitest.dom.setup.ts` own the Svelte/Happy-DOM
+  fallback and unexpected-fetch guard.
 - `vitest.setup.ts` owns setup shared by frontend projects.
 - `vitest.ui-coverage-tests.ts` owns the six-file UI coverage inventory.
 - `package.json` owns user-facing test and coverage commands.
@@ -305,7 +308,7 @@ Each candidate requires a fresh profile and a slice-specific value hypothesis.
 
 ## Execution Cursor
 
-Phase 0 is complete. Begin Phase 1 with the three-project topology and only the
-representative pilots named in `phase-0-classification.md`. Do not begin bulk
-promotion until Phase 1's exhaustive/disjoint, setup, stability, and overhead
-decision gates pass.
+Phases 0-1 are complete. Begin Phase 2 with bounded pure-Node promotion slices,
+starting with protocol, utilities, parsers, validation, and serialization. Use
+the checked inventory and target-project probes; do not invert suffix defaults
+or begin bulk S promotion before their owning phases.

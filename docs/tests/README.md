@@ -1,6 +1,6 @@
 # Test Suite Guide
 
-Last audited: 2026-08-27.
+Last audited: 2026-08-28.
 
 This documentation groups the current suite by protected product behavior. Treat `package.json` and the runner configuration files as the source of truth for commands and discovery; this guide intentionally avoids snapshot case counts and pass totals, which become stale whenever tests are added or parameterized matrices change.
 
@@ -14,9 +14,9 @@ The main weakness is integration depth rather than raw case count. Most frontend
 
 The active
 [Frontend Test Architecture plan](../plan/frontend-test-architecture/status.md)
-tracks the phased migration from the current Node-allowlist/Happy-DOM fallback
-to explicit Node, Svelte+Node, and DOM capability ownership. Until a phase lands,
-the commands and routing documented below remain authoritative.
+tracks the phased migration from the current three-project pilot topology to
+explicit Node, Svelte+Node, and DOM capability ownership. The commands and
+routing documented below are authoritative for the landed phases.
 
 ## Index
 
@@ -62,11 +62,16 @@ entrypoints are:
 | Startup rollout evidence | `pnpm verify:fast-bootstrap:phase7` |
 
 All Vitest projects reject focused tests. The frontend runner composes a
-validated Node allowlist with the default Svelte/happy-dom project; add a test to
-`vitest.node-tests.ts` only after it passes in Node without Svelte rune transform
-or DOM dependencies. Playwright keeps each spec serial, uses two local file
-workers (one in CI), retains traces on failure, and sets `forbidOnly` in CI. The
-normally skipped 7,000-display-asset Realm stress case is enabled by running
+validated Node allowlist, a transitional explicit Svelte+Node allowlist, and the
+default Svelte/Happy-DOM fallback. Add a test to `vitest.node-tests.ts` only
+after it passes without Svelte transformation or DOM dependencies; add one to
+`vitest.svelte-node-tests.ts` only after it passes with client-mode Svelte
+transformation, Node globals, and no DOM setup. The exhaustive inventory check
+rejects omitted or multiply assigned files across all three projects.
+
+Playwright keeps each spec serial, uses two local file workers (one in CI),
+retains traces on failure, and sets `forbidOnly` in CI. The normally skipped
+7,000-display-asset Realm stress case is enabled by running
 `realmImport.test.ts` directly. Broad frontend and backend coverage are
 report-only; only the focused UI map has thresholds.
 
