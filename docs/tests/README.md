@@ -12,6 +12,12 @@ Assertions are commonly exact and stateful: request bodies and headers, SSE fram
 
 The main weakness is integration depth rather than raw case count. Most frontend tests run in happy-dom with mocked network/storage/browser APIs; most provider tests mock upstream services; and the per-file-serial Playwright suite covers selected built-browser/Fastify/SQLite journeys. The Phase 7 fast-bootstrap matrix now provides isolated response-loss replay, offline replay, event-gap recovery, multi-tab writer takeover, observer promotion, direct-link, and optional-runtime failure journeys. There is still no normal composer-to-stream-to-durable-reload browser journey, page-crash/reload outbox journey combined with writer transfer, or destructive backup-restore/outbox-quarantine journey. CI also enforces only a deliberately small UI coverage sentinel, not the much broader frontend or backend coverage maps.
 
+The active
+[Frontend Test Architecture plan](../plan/frontend-test-architecture/status.md)
+tracks the phased migration from the current Node-allowlist/Happy-DOM fallback
+to explicit Node, Svelte+Node, and DOM capability ownership. Until a phase lands,
+the commands and routing documented below remain authoritative.
+
 ## Index
 
 ### Product flows and UI

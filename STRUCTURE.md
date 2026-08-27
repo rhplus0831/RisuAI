@@ -42,6 +42,7 @@ records past decisions and is not authoritative.
 | `index.html`, `vite.config.ts`, `src/` | Svelte 5 SPA, Vite configuration, browser runtime, UI, language packs, and bundled client data. |
 | `server/fastify/` | Fastify API and tests, including SQLite persistence and provider execution; it has no separate package manifest. |
 | `STRUCTURE.md`, `docs/structure/`, `src/docs/` | Current architecture and implementation guides. Start at the [Architecture Index](docs/structure/README.md). |
+| `docs/plan/` | Active multi-phase workstreams, including live status, phase boundaries, and verification records. These plans do not supersede current runtime documentation until their phases land. |
 | `docs/fast-bootstrap/` | Active startup-performance execution guide and Phase 7 rollout ledger; shipped behavior remains canonical in the architecture/runtime guides. |
 | `docs/tests/` | Test-discovery guides organized by product and domain area. |
 | `.archived-docs/` | Closed workstreams and dated reports, including the August Fastify audits, upstream-sync sweep, data-driven UI inventory, and message-generation parity audit. Do not infer current behavior from them. |

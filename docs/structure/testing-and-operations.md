@@ -9,6 +9,11 @@ startup telemetry/measurement, built-SPA serving, browser support, and runtime
 environment variables live in
 [Development And Observability](development-and-observability.md).
 
+The active
+[Frontend Test Architecture plan](../plan/frontend-test-architecture/status.md)
+tracks proposed phased changes to frontend project ownership. This document and
+the current runner configuration remain authoritative until those phases land.
+
 ## Scripts
 
 | Command                            | Purpose                                                                                                                                                                       |
