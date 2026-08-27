@@ -8,6 +8,9 @@ Status: In progress
   protocol-validation suites and 19 tests from Happy-DOM to Node.
 - [Test runtime tooling](slices/phase-2/test-runtime-tooling.md): promoted three
   runner/setup contract suites and 18 tests from Happy-DOM to Node.
+- [Accessibility source contracts](slices/phase-2/accessibility-source-contracts.md):
+  promoted three filesystem-backed source-policy suites and 25 tests from
+  Happy-DOM to Node.
 
 ## Objective
 

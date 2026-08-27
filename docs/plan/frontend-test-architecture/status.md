@@ -10,10 +10,10 @@ codebase remain authoritative until a phase lands.
 
 - Plan state: Phases 0-1 complete; Phase 2 in progress.
 - Current phase: Phase 2 — Pure Node Promotion.
-- Active slice: No implementation slice is active; the test-runtime-tooling
-  promotion slice is complete.
-- Implementation state: Six files and 37 tests have moved from the Happy-DOM
-  fallback to Node across two bounded slices with no production changes.
+- Active slice: No implementation slice is active; the
+  accessibility-source-contracts promotion slice is complete.
+- Implementation state: Nine files and 62 tests have moved from the Happy-DOM
+  fallback to Node across three bounded slices with no production changes.
 - Blockers: None.
 - Next action: Prepare the next bounded Phase 2 N-promotion slice from the
   remaining utility, validation, or serialization candidates.
@@ -75,19 +75,19 @@ aggregate ordinary views; 175 unpromoted N/S candidates still require probes.
 
 | Measurement | Result |
 | --- | ---: |
-| Completed slices | 2 |
-| Promoted suites | 6 files / 37 tests |
-| Full three-project universe | 537 files: 132 N / 2 S / 403 D |
-| Standalone ordinary frontend | 535 files: 132 N / 2 S / 401 D |
-| `test:all` ordinary frontend | 529 files / 6,413 tests: 131 N / 2 S / 396 D |
-| Remaining target-runtime probes | 169: 42 N / 127 S |
-| Latest paired ordinary wall observation | 68.90s -> 69.19s (+0.4%) |
-| Latest paired ordinary peak RSS | 4,734,372 -> 4,938,776 KiB |
+| Completed slices | 3 |
+| Promoted suites | 9 files / 62 tests |
+| Full three-project universe | 537 files: 135 N / 2 S / 400 D |
+| Standalone ordinary frontend | 535 files: 135 N / 2 S / 398 D |
+| `test:all` ordinary frontend | 529 files / 6,413 tests: 134 N / 2 S / 393 D |
+| Remaining target-runtime probes | 166: 39 N / 127 S |
+| Latest paired ordinary wall observation | 72.99s -> 72.03s (-1.3%) |
+| Latest paired ordinary peak RSS | 4,784,700 -> 4,919,184 KiB |
 
-The paired timing is slice evidence, not a phase-level median. The +0.4% wall
-movement is within ordinary run-to-run noise and is not a material regression.
-Phase 2 remains open for the remaining 42 N candidates that still require
-target-project probes.
+The paired timing is slice evidence, not a phase-level median. The -1.3% wall
+movement is within ordinary run-to-run variability and is not a phase-level
+performance claim. Phase 2 remains open for the remaining 39 N candidates that
+still require target-project probes.
 
 ## Current Decisions
 
@@ -114,6 +114,9 @@ target-project probes.
 10. The second Phase 2 slice validated `util/test-all.test.ts`,
     `vitest.fetchGuard.test.ts`, and `vitest.setup.test.ts` in N while retaining
     the DOM-only fetch-guard installation for D-owned suites.
+11. The third Phase 2 slice validated the three filesystem-backed accessibility
+    source-policy suites in N without moving any mounted accessibility contract
+    out of D.
 
 ## Accepted Observations
 
@@ -138,9 +141,10 @@ slice continues.
 
 ## Latest Completed Slice
 
-[Phase 2 test runtime tooling](phases/slices/phase-2/test-runtime-tooling.md)
-promoted three runner/setup contract suites and 18 tests from Happy-DOM to Node
-while preserving the complete discovery universe and DOM setup ownership.
+[Phase 2 accessibility source contracts](phases/slices/phase-2/accessibility-source-contracts.md)
+promoted three filesystem-backed source-policy suites and 25 tests from
+Happy-DOM to Node while keeping rendered accessibility contracts in the DOM
+project.
 
 ## Latest Verification
 
