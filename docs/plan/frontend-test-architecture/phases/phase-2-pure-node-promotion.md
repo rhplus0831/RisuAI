@@ -43,6 +43,10 @@ Status: In progress
   retained the 21-test import/export suite in Happy-DOM after its Node probe
   reached a transitive Svelte rune module; a classification probe passed in
   Svelte+Node for later Phase 3 ownership.
+- [Prompt-toggle durability Node probe](slices/phase-2/prompt-toggle-durability-node-probe.md):
+  retained the two-test durable mutation suite in Happy-DOM after its Node
+  probe reached the outbox activity rune; a classification probe passed in
+  Svelte+Node for later Phase 3 ownership.
 
 ## Objective
 

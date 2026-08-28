@@ -10,14 +10,15 @@ codebase remain authoritative until a phase lands.
 
 - Plan state: Phases 0-1 complete; Phase 2 in progress.
 - Current phase: Phase 2 — Pure Node Promotion.
-- Active slice: No implementation slice is active; the character-card PNG
-  import Node proof is complete without promotion.
+- Active slice: No implementation slice is active; the prompt-toggle durability
+  Node proof is complete without promotion.
 - Implementation state: Thirty-two files and 156 tests have moved from the
   Happy-DOM fallback to Node across eleven bounded slices with no production
   changes.
 - Blockers: None.
-- Next action: Prepare the bounded Phase 2 prompt-toggle durability Node probe.
-  Retain the five completed Node-probe deferrals under their recorded owners.
+- Next action: Prepare the bounded Phase 2 chat-generation toggle-preset Node
+  probe. Retain the six completed Node-probe deferrals under their recorded
+  owners.
 
 ## Phase Router
 
@@ -76,7 +77,7 @@ aggregate ordinary views; 175 unpromoted N/S candidates still require probes.
 
 | Measurement | Result |
 | --- | ---: |
-| Completed slices and proof batches | 13 |
+| Completed slices and proof batches | 14 |
 | Promoted suites | 32 files / 156 tests |
 | Full three-project universe | 537 files: 158 N / 2 S / 377 D |
 | Standalone ordinary frontend | 535 files: 158 N / 2 S / 375 D |
@@ -87,10 +88,10 @@ aggregate ordinary views; 175 unpromoted N/S candidates still require probes.
 
 The paired timing is slice evidence, not a phase-level median. The -0.8% wall
 movement remains inside ordinary run-to-run variability; it is not a
-phase-level performance claim. Phase 2 remains open for 11 unprobed N
-candidates. The generated inventory also counts the probed character-card,
-hydration-read, and two generation-effect suites plus the probed device-backup
-suite retained in D.
+phase-level performance claim. Phase 2 remains open for 10 unprobed N
+candidates. The generated inventory also counts the probed prompt-toggle,
+character-card, hydration-read, and two generation-effect suites plus the
+probed device-backup suite retained in D.
 
 ## Current Decisions
 
@@ -171,6 +172,11 @@ suite retained in D.
     unchanged 21-test suite passed in `frontend-svelte-node`, so it remains in
     D pending deliberate Phase 3 S promotion; no mock or production boundary
     was weakened to force an N promotion.
+22. The prompt-toggle durability Node proof failed before collection because
+    the real pending-mutation outbox reaches `$state` initialization in
+    `persistenceActivity.svelte.ts`. The unchanged two-test suite passed in
+    `frontend-svelte-node`, so it remains in D pending deliberate Phase 3 S
+    promotion; its explicit IndexedDB and command fakes were not weakened.
 
 ## Accepted Observations
 
@@ -203,11 +209,10 @@ occurrence reopens the display-source batching owner before another promotion.
 
 ## Latest Completed Slice
 
-[Phase 2 character-card PNG import Node probe](phases/slices/phase-2/character-card-png-import-node-probe.md)
-retained the 21-test import/export suite in Happy-DOM after proving its
-transitive Svelte rune requirement in Node and its no-DOM compatibility in
-Svelte+Node. No production, test-body, setup, or permanent ownership change
-landed.
+[Phase 2 prompt-toggle durability Node probe](phases/slices/phase-2/prompt-toggle-durability-node-probe.md)
+retained the two-test durable staging and replay suite in Happy-DOM after
+proving its transitive Svelte activity-rune requirement in Node and its no-DOM
+compatibility in Svelte+Node. No permanent ownership change landed.
 
 ## Latest Verification
 

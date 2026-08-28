@@ -4,9 +4,72 @@ Date: 2026-08-28
 
 ## State
 
-Phase 2 character-card PNG-import Node-probe closeout. Phase 2 remains in progress; this record
-does not authorize repository-wide default inversion, S promotion, or bulk
-migration outside the active phase rules.
+Phase 2 prompt-toggle durability Node-probe closeout. Phase 2 remains in
+progress; this record does not authorize repository-wide default inversion, S
+promotion, or bulk migration outside the active phase rules.
+
+## Phase 2 Prompt-Toggle Durability Probe Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `87aec2931736a35668b3cc6d1d37f4b8fd33f4da`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Available CPUs: 10
+- Frontend test-all UI-map exclusion: `RISU_TEST_EXCLUDE_UI_MAP=true`
+- Isolation: enabled
+- Measurement tree: the clean character-card probe commit. The Node and
+  Svelte+Node allowlist additions existed only for their focused probes and
+  were removed before documentation changes; no unrelated working-tree
+  changes were present.
+
+## Phase 2 Prompt-Toggle Durability Capability And Ownership Proof
+
+The proposed one-file slice evaluated
+`src/lib/Setting/Pages/BotSettings.promptToggleDurable.test.ts`. Its two tests
+exercise ordered pending-mutation staging and failed-predecessor replay. The
+suite explicitly supplies IndexedDB and replaces authenticated command
+dispatch; it performs no component mount, DOM operation, implicit browser
+storage, or real network request.
+
+The real pending-mutation outbox imports
+`server/persistenceActivity.svelte.ts`, which initializes `$state` during
+module evaluation. Replacing that production dependency solely for promotion
+would weaken the durable staging/replay graph under test.
+
+Current-owner command:
+
+```sh
+RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v pnpm exec vitest run \
+  src/lib/Setting/Pages/BotSettings.promptToggleDurable.test.ts
+```
+
+Result: 1 file / 2 tests passed in 1.44s wall and 696ms Vitest duration, with
+318,004 KiB peak RSS and 102ms aggregate environment time.
+
+The temporary Node command added `--project frontend-node` to the same file.
+It failed before collection with `ReferenceError: $state is not defined` at
+`src/ts/server/persistenceActivity.svelte.ts:3`. The probe took 0.85s wall and
+219ms Vitest duration, with 268,192 KiB peak RSS and no environment time.
+
+After moving the temporary entry to `vitest.svelte-node-tests.ts`, the same
+command with `--project frontend-svelte-node` passed 1 file / 2 tests in 1.11s
+wall and 545ms Vitest duration, with 288,136 KiB peak RSS and 16ms aggregate
+environment time. This proves S is the smallest current runtime for the
+unchanged suite. Both temporary entries were removed.
+
+## Phase 2 Prompt-Toggle Durability Discovery And Validation
+
+`pnpm check:frontend-test-inventory` passed with unchanged exhaustive and
+disjoint counts: full 537 files at 158 N / 2 S / 377 D, standalone ordinary
+535 files at 158 N / 2 S / 375 D, and aggregate ordinary 529 files at 157 N /
+2 S / 370 D. Target distribution and mismatch counts remain unchanged.
+
+The current-owner and exact Svelte+Node probes passed all two tests; the exact
+Node probe failed for the recorded rune reason. Formatting of changed files and
+`git diff --check` passed. No runtime inventory or production file changed, so
+no affected execution lane, paired ordinary measurement, or `test:all`
+checkpoint was required for this proof-only batch.
 
 ## Phase 2 Character-Card PNG-Import Probe Environment And Source State
 
