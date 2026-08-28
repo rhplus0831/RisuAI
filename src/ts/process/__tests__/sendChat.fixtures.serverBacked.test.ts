@@ -136,6 +136,7 @@ import type {
 } from '../../../../server/fastify/src/routes/generationChat'
 import {
   clearCachedServerCommandRevision,
+  drainServerCommandExecutionForTests,
   getServerCommandBaseRevision,
   setCachedServerCommandRevision,
 } from '../../server/commands'
@@ -440,11 +441,7 @@ function prepareRouteBackedFixture(name: (typeof ROUTE_BACKED_CHAT_FIXTURES)[num
 }
 
 async function drainRouteBackedCommands(): Promise<void> {
-  await Promise.resolve()
-  await Promise.resolve()
-  await Promise.resolve()
-  await new Promise<void>((resolve) => setImmediate(resolve))
-  await new Promise<void>((resolve) => setImmediate(resolve))
+  await drainServerCommandExecutionForTests()
 }
 
 function messageTexts(snapshot: FixtureSnapshot): Array<{ role: string; data: string; saying?: string }> {
