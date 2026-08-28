@@ -73,6 +73,13 @@ describe('finalizeRequestBudget', () => {
     expect(result.formated[0].content).toBe('')
     expect(result.formated[0].multimodals?.length).toBe(1)
     expect(result.formated[1].content).toBe('follow-up')
+    const returnedTokens = (
+      await Promise.all(result.formated.map((chat) => fakeTokenizer().tokenizeChat(chat)))
+    ).reduce((total, tokens) => total + tokens, 0)
+    expect(result.inputTokens).toBe(returnedTokens)
+    expect(result.inputTokens).toBe(109)
+    expect(result.outputTokens).toBe(1)
+    expect(result.inputTokens + result.outputTokens).toBeLessThanOrEqual(110)
   })
 
   it('returns ok=false when no removable entries can bring tokens under the budget', async () => {

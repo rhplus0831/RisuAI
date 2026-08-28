@@ -33,8 +33,10 @@ export async function finalizeRequestBudget(
         return { ok: false, reason: 'overflow', inputTokens }
       }
       if (trimmed[pointer].removable) {
-        inputTokens -= await tokenizer.tokenizeChat(trimmed[pointer])
+        const tokensBeforeTrim = await tokenizer.tokenizeChat(trimmed[pointer])
         trimmed[pointer].content = ''
+        const tokensAfterTrim = await tokenizer.tokenizeChat(trimmed[pointer])
+        inputTokens -= tokensBeforeTrim - tokensAfterTrim
       }
       pointer++
     }
