@@ -68,9 +68,11 @@
     messageId: string
     operation: BookmarkMutationOperation
     label: string
+    sequence: number
     status: 'pending' | 'queued' | 'failed'
   }
   let bookmarkMutations = $state<Record<string, BookmarkMutationState>>({})
+  let bookmarkMutationSequence = 0
 
   function bookmarkMutationKey(chatId: string, messageId: string, operation: BookmarkMutationOperation): string {
     return `${chatId}::${messageId}::${operation}`
@@ -86,7 +88,12 @@
     const matching = Object.values(bookmarkMutations).filter(
       (mutation) => mutation.chatId === chatId && mutation.messageId === messageId,
     )
-    return matching.find((mutation) => mutation.status === 'pending')?.status ?? matching.at(-1)?.status ?? 'idle'
+    return (
+      matching.reduce<BookmarkMutationState | undefined>(
+        (latest, mutation) => (!latest || mutation.sequence > latest.sequence ? mutation : latest),
+        undefined,
+      )?.status ?? 'idle'
+    )
   }
 
   function bookmarkMutationMessage(mutation: BookmarkMutationState): string {
@@ -109,20 +116,47 @@
   ): Promise<void> {
     if (isBookmarkMutationPending(chatId, messageId)) return
     const key = bookmarkMutationKey(chatId, messageId, operation)
-    bookmarkMutations[key] = { chatId, messageId, operation, label, status: 'pending' }
+    const sequence = ++bookmarkMutationSequence
+    const mutation = { chatId, messageId, operation, label, sequence }
+
+    function setCurrentMutationStatus(status: BookmarkMutationState['status']): BookmarkMutationState {
+      const next = { ...mutation, status }
+      if (bookmarkMutations[key]?.sequence === sequence) bookmarkMutations[key] = next
+      return next
+    }
+
+    function clearCurrentMutation(): void {
+      if (bookmarkMutations[key]?.sequence === sequence) delete bookmarkMutations[key]
+    }
+
+    function reportFailure(): void {
+      alertError(bookmarkMutationMessage(setCurrentMutationStatus('failed')))
+    }
+
+    bookmarkMutations[key] = { ...mutation, status: 'pending' }
     try {
       const outcome = await action()
       if (outcome?.status === 'accepted') {
-        delete bookmarkMutations[key]
+        clearCurrentMutation()
         return
       }
-      bookmarkMutations[key] = { chatId, messageId, operation, label, status: outcome?.status ?? 'failed' }
-      const message = bookmarkMutationMessage(bookmarkMutations[key])
-      if (outcome.status === 'queued') alertNormal(message)
-      else alertError(message)
+      if (outcome?.status === 'queued') {
+        alertNormal(bookmarkMutationMessage(setCurrentMutationStatus('queued')))
+        void outcome.settlement.then(
+          (settlement) => {
+            if (settlement.status === 'accepted') {
+              clearCurrentMutation()
+              return
+            }
+            reportFailure()
+          },
+          () => reportFailure(),
+        )
+        return
+      }
+      reportFailure()
     } catch {
-      bookmarkMutations[key] = { chatId, messageId, operation, label, status: 'failed' }
-      alertError(bookmarkMutationMessage(bookmarkMutations[key]))
+      reportFailure()
     }
   }
 
