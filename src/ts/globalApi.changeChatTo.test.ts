@@ -96,4 +96,18 @@ describe('changeChatTo (clone-cost gate)', () => {
     expect(testDatabaseState.db.characters[0].chatPage).toBe(0)
     expect(reattachMocks.trigger).not.toHaveBeenCalled()
   })
+
+  it.each([
+    ['negative', -2],
+    ['too large', 2],
+    ['fractional', 0.5],
+    ['NaN', Number.NaN],
+    ['positive infinity', Number.POSITIVE_INFINITY],
+  ])('returns without mutation for a %s numeric chat index', (_label, index) => {
+    changeChatTo(index)
+
+    expect(testDatabaseState.db.characters[0].chatPage).toBe(0)
+    expect(reattachMocks.trigger).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
+  })
 })

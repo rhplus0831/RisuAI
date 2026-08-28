@@ -2110,7 +2110,7 @@ export function changeChatTo(IdOrIndex: string | number) {
     })
   }
 
-  if (index === -1) {
+  if (!Number.isInteger(index) || index < 0 || index >= currentCharacter.chats.length) {
     return
   }
 
