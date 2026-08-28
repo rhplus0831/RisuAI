@@ -2,6 +2,7 @@ import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult } from './frames.js'
 import { readBoundedBodyJson, readBoundedBodyText } from './body.js'
 import { extractApiResponseMetadata, mergeApiResponseMetadata } from './apiMetadata.js'
+import { formatUpstreamHttpError } from './upstreamError.js'
 
 /**
  * Stable Horde text dispatcher. Mirrors the local SPA's `requestHorde` path:
@@ -284,8 +285,9 @@ export async function runHorde(req: HordeRequest): Promise<CompletionResult> {
       }
 
       let statusResp: Response
+      const statusUrl = `${HORDE_BASE_URL}/generate/text/status/${encodeURIComponent(jobId)}`
       try {
-        statusResp = await fetch(`${HORDE_BASE_URL}/generate/text/status/${encodeURIComponent(jobId)}`, {
+        statusResp = await fetch(statusUrl, {
           method: 'GET',
           headers: { apikey: req.apiKey },
           signal: req.signal,
@@ -296,6 +298,18 @@ export async function runHorde(req: HordeRequest): Promise<CompletionResult> {
         }
         const msg = err instanceof Error ? err.message : String(err)
         return { type: 'fail', result: `horde status poll failed: ${msg}` }
+      }
+
+      if (!statusResp.ok) {
+        let message: string | undefined
+        try {
+          const raw = await readBoundedBodyText(statusResp)
+          if (raw.length > 0) message = raw
+        } catch {
+          // Keep the bounded HTTP status fallback.
+        }
+        fireDeleteJob(jobId, req.apiKey)
+        return { type: 'fail', result: formatUpstreamHttpError(statusResp, statusUrl, { message }) }
       }
 
       let body: StatusResponse

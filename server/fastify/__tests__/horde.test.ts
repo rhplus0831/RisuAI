@@ -236,6 +236,33 @@ describe('runHorde', () => {
     })
   })
 
+  it('fails fast and cleans up when a status poll is non-successful', async () => {
+    const calls: string[] = []
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? 'GET'} ${url}`)
+      if (url.endsWith('/async')) return jsonResp({ id: 'job-auth' }, 202)
+      if (init?.method === 'DELETE') return jsonResp({})
+      return new Response('unauthorized', { status: 401 })
+    })
+    const resolved = resolveHordeRequest({
+      prompt: 'hi',
+      model: 'auto',
+      pollIntervalMs: 1,
+      signal: new AbortController().signal,
+    })!
+
+    const pending = runHorde(resolved)
+    await vi.advanceTimersByTimeAsync(5)
+
+    expect(await pending).toEqual({
+      type: 'fail',
+      result:
+        'Provider request failed: HTTP 401 from https://stablehorde.net/api/v2/generate/text/status/job-auth: unauthorized',
+    })
+    await Promise.resolve()
+    expect(calls).toContain('DELETE https://stablehorde.net/api/v2/generate/text/status/job-auth')
+  })
+
   it('returns fail and fires DELETE when is_possible: false', async () => {
     const calls: string[] = []
     vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
