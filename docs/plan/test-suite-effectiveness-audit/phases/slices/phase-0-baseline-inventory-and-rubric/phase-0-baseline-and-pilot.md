@@ -28,7 +28,8 @@ Machine-readable owners:
 - [`../../../support-artifacts.json`](../../../support-artifacts.json): 253
   standalone support artifacts and 64 production files with explicit test-only
   seams;
-- the checked frontend capability TSV remains the N/S/D/B routing authority.
+- [`../../../frontend-routing-inventory.tsv`](../../../frontend-routing-inventory.tsv)
+  is the checked N/S/D/B routing authority.
 
 Current counts:
 

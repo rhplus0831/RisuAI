@@ -48,6 +48,11 @@ artifacts, and assigned every test file to one primary product-risk category.
 See the Phase 0 slice and live machine-readable manifests for the current
 counts and the intentional `+1` assurance-infrastructure delta.
 
+[`frontend-routing-inventory.tsv`](frontend-routing-inventory.tsv) is the live
+checked N/S/D/B capability manifest. It is intentionally separate from the
+effectiveness inventory because runtime placement and audit disposition are
+different contracts.
+
 ## Working Principle
 
 A test earns retention by protecting at least one distinct, intentional

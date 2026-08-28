@@ -227,7 +227,7 @@ describe('test effectiveness inventory', () => {
     const root = temporaryGitRepository({
       ...Object.fromEntries(
         [
-          '.archived-docs/performance-and-stability/frontend-test-architecture/phase-0-inventory.tsv',
+          'docs/plan/test-suite-effectiveness-audit/frontend-routing-inventory.tsv',
           '.github/workflows/quality.yml',
           'docs/plan/test-suite-effectiveness-audit/inventory.json',
           'docs/plan/test-suite-effectiveness-audit/case-counts.json',

@@ -37,7 +37,7 @@ const frontendTestPattern = /(?:^|\/).+\.test\.[cm]?[jt]sx?$/
 const browserSmokePattern = /^server\/fastify\/browser-smoke\/.+\.spec\.ts$/
 const performanceTestFileSet = new Set<string>(performanceTestFiles)
 const rootRunnerFiles = new Set([
-  '.archived-docs/performance-and-stability/frontend-test-architecture/phase-0-inventory.tsv',
+  'docs/plan/test-suite-effectiveness-audit/frontend-routing-inventory.tsv',
   'docs/plan/test-suite-effectiveness-audit/case-counts.json',
   'docs/plan/test-suite-effectiveness-audit/inventory.json',
   'docs/plan/test-suite-effectiveness-audit/support-artifacts.json',
