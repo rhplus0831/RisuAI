@@ -29,6 +29,9 @@ Status: In progress
 - [Startup lifecycle state helpers](slices/phase-2/startup-lifecycle-state-helpers.md):
   promoted two dependency-isolated legacy-memory notice and startup telemetry
   state-helper suites and eight tests from Happy-DOM to Node.
+- [Storage backup and export helpers](slices/phase-2/storage-backup-export-helpers.md):
+  promoted three dependency-isolated backup, dataset-export, and RisuSave
+  cache-gate suites and nine tests from Happy-DOM to Node.
 
 ## Objective
 

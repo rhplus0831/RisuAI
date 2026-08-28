@@ -10,15 +10,16 @@ codebase remain authoritative until a phase lands.
 
 - Plan state: Phases 0-1 complete; Phase 2 in progress.
 - Current phase: Phase 2 — Pure Node Promotion.
-- Active slice: No implementation slice is active; the startup-lifecycle-state-helpers
+- Active slice: No implementation slice is active; the storage-backup-export-helpers
   promotion slice is complete.
-- Implementation state: Twenty-eight files and 146 tests have moved from the
-  Happy-DOM fallback to Node across nine bounded slices with no production
+- Implementation state: Thirty-one files and 155 tests have moved from the
+  Happy-DOM fallback to Node across ten bounded slices with no production
   changes.
 - Blockers: None.
-- Next action: Prepare the next bounded Phase 2 server-transport or storage-helper
-  N-promotion slice. Retain the two failed generation-effect Node probes in D
-  pending S-target reclassification or a later pure-boundary decision.
+- Next action: Prepare the bounded Phase 2 hydration-reads N-promotion slice.
+  Retain the two failed generation-effect Node probes pending S-target
+  reclassification, and retain the device-backup suite as a D-owned file-picker
+  contract.
 
 ## Phase Router
 
@@ -77,20 +78,20 @@ aggregate ordinary views; 175 unpromoted N/S candidates still require probes.
 
 | Measurement | Result |
 | --- | ---: |
-| Completed slices | 9 |
-| Promoted suites | 28 files / 146 tests |
-| Full three-project universe | 537 files: 154 N / 2 S / 381 D |
-| Standalone ordinary frontend | 535 files: 154 N / 2 S / 379 D |
-| `test:all` ordinary frontend | 529 files / 6,413 tests: 153 N / 2 S / 374 D |
-| Remaining target-runtime mismatches | 147: 20 N / 127 S |
-| Latest paired ordinary wall observation | 72.82s -> 74.21s (+1.9%) |
-| Latest paired ordinary peak RSS | 4,980,964 -> 4,898,600 KiB |
+| Completed slices | 10 |
+| Promoted suites | 31 files / 155 tests |
+| Full three-project universe | 537 files: 157 N / 2 S / 378 D |
+| Standalone ordinary frontend | 535 files: 157 N / 2 S / 376 D |
+| `test:all` ordinary frontend | 529 files / 6,413 tests: 156 N / 2 S / 371 D |
+| Remaining target-runtime mismatches | 144: 17 N / 127 S |
+| Latest paired ordinary wall observation | 68.90s -> 70.10s (+1.7%) |
+| Latest paired ordinary peak RSS | 4,847,236 -> 5,064,564 KiB |
 
-The paired timing is slice evidence, not a phase-level median. The +1.9% wall
+The paired timing is slice evidence, not a phase-level median. The +1.7% wall
 movement remains inside ordinary run-to-run variability; it is not a
-phase-level performance claim. Phase 2 remains open for 18 unprobed N
+phase-level performance claim. Phase 2 remains open for 14 unprobed N
 candidates. The generated inventory also counts the two probed generation
-suites retained in D pending target reclassification.
+suites and the probed device-backup suite retained in D.
 
 ## Current Decisions
 
@@ -145,6 +146,11 @@ suites retained in D pending target reclassification.
     failure isolation in N. Existing mocks continue to replace the Svelte
     projection, settings persistence, alert, and authenticated transport
     boundaries; no browser-shaped contract moved out of D.
+18. The tenth Phase 2 slice validated Risu-Kei backup state, strict dataset
+    export sequencing, and the Fastify RisuSave cache gate in N. A broader Node
+    probe retained `storage/backup.test.ts` in D because seven file-picker
+    contracts require `HTMLInputElement`; the test and production DOM boundary
+    were not weakened for promotion.
 
 ## Accepted Observations
 
@@ -177,9 +183,9 @@ occurrence reopens the display-source batching owner before another promotion.
 
 ## Latest Completed Slice
 
-[Phase 2 startup lifecycle state helpers](phases/slices/phase-2/startup-lifecycle-state-helpers.md)
-promoted two dependency-isolated legacy-memory notice and startup telemetry
-suites and eight tests from Happy-DOM to Node without changing their
+[Phase 2 storage backup and export helpers](phases/slices/phase-2/storage-backup-export-helpers.md)
+promoted three dependency-isolated Risu-Kei backup, dataset-export, and RisuSave
+cache-gate suites and nine tests from Happy-DOM to Node without changing their
 assertions or production subjects.
 
 ## Latest Verification
