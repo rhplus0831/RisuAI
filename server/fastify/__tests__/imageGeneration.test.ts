@@ -416,7 +416,9 @@ describe('image generation provider execution', () => {
 
   it('uses only an explicit draft credential for a configured custom NovelAI endpoint', async () => {
     const archive = fflate.zipSync({ 'image.png': pngBytes('custom-novel') })
-    const fetchImpl = vi.fn(async () => new Response(responseBody(archive)))
+    const fetchImpl = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
+      Promise.resolve(new Response(responseBody(archive))),
+    )
     const request = parseImageGenerationRequest({
       provider: 'novelai',
       credential: { source: 'provided', apiKey: 'draft-nai-key' },
