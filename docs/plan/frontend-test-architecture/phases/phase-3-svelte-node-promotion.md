@@ -11,6 +11,9 @@ Status: In Progress
   promoted two rune-backed command suites and 34 tests to Svelte+Node, while an
   exact smaller-runtime cross-check promoted eleven statically misclassified
   suites and 123 tests to Node.
+- [Process state helpers](slices/phase-3/process-state-helpers.md): promoted
+  eleven suites and 119 tests to Node after the smaller-runtime cross-check
+  proved their Svelte store and type imports need no client transformation.
 
 ## Objective
 

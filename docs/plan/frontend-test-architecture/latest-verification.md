@@ -8,6 +8,36 @@ Phase 3 in progress after its first proof-backed Svelte+Node promotion slice.
 This record does not authorize repository-wide default inversion or migration
 outside the active phase rules.
 
+## Phase 3 Process State Helpers Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `337214c026f2d60ddd2f6e689fcb53b09d5e4360`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Isolation: enabled
+- Measurement tree: the clean client-state-and-command commit plus the
+  eleven-file Node ownership change and regenerated inventory. No production or
+  test-body file changed.
+
+## Phase 3 Process State Helpers Measurements And Validation
+
+The current-owner Happy-DOM scope passed 11 files / 119 tests in 1.88s wall and
+1.18s Vitest duration, with 1,015,376 KiB peak RSS. Aggregate transform, setup,
+import, test, and environment times were 4.07s, 971ms, 4.96s, 650ms, and 1.77s.
+
+The exact Node promotion scope passed 11 files / 119 tests in 1.42s wall and
+746ms Vitest duration, with 660,292 KiB peak RSS. Aggregate transform, setup,
+import, test, and environment times were 1.57s, 987ms, 1.76s, 589ms, and 1ms.
+The exact scope passed again in 718ms Vitest duration.
+
+Inventory update and check commands passed. Full discovery is 537 files at 183
+N / 11 S / 343 D, standalone ordinary is 535 files at 183 N / 11 S / 341 D,
+and aggregate ordinary is 529 files at 182 N / 11 S / 336 D. The generated
+target distribution is 189 N / 114 S / 234 D / 7 B, with 109 still-unpromoted
+static candidates. Formatting and `git diff --check` passed. Complete project
+and root validation remain Phase 3 exit work.
+
 ## Phase 3 Client State And Command Helpers Environment And Source State
 
 - Repository: `/home/codex/risuai-fastify`
