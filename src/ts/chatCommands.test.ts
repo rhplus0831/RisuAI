@@ -3926,86 +3926,6 @@ describe('chat command projection helpers', () => {
     }
   })
 
-  it('chunks an oversized multi-message transcript into durable ordered tail rows', async () => {
-    vi.stubGlobal('indexedDB', new IDBFactory())
-    resetPendingMutationOutboxForTests()
-    await preparePendingMutationOutbox({
-      writerSessionId: 'writer-chat-chunked-import',
-      writerEpoch: 38,
-      databaseLineage: 'lineage-chat-chunked-import',
-      requestedWriterWasActive: true,
-    })
-    setCachedServerCommandRevision(10)
-    const previous = currentChatStateSnapshot()
-    const messageSize = Math.ceil(MAX_DURABLE_MUTATION_PAYLOAD_BYTES / 2)
-    const chunkedChat = {
-      id: 'chat-chunked-import',
-      name: 'Chunked import',
-      note: '',
-      localLore: [],
-      message: [
-        { role: 'user', data: 'a'.repeat(messageSize), chatId: 'message-chunk-a' },
-        { role: 'char', data: 'b'.repeat(messageSize), chatId: 'message-chunk-b' },
-      ],
-    } as Chat
-    withTrustedResourceWrite(() => {
-      getDatabase().characters[0].chats.unshift(chunkedChat)
-    })
-
-    const commandBodies: Array<Record<string, unknown>> = []
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
-        const url = String(input)
-        if (url === '/api/v1/commands/characters/char-a/chats') {
-          commandBodies.push(typeof init.body === 'string' ? JSON.parse(init.body) : {})
-          return jsonResponse({ error: 'temporarily unavailable' }, 503)
-        }
-        return jsonResponse({ error: `unexpected ${url}` }, 404)
-      }) as unknown as typeof fetch,
-    )
-
-    try {
-      await expect(dispatchCreateImportedChats('char-a', [], [chunkedChat], previous)).resolves.toEqual({
-        status: 'ok',
-      })
-      expect(commandBodies).toHaveLength(1)
-      expect(commandBodies[0]).toMatchObject({ chat: { id: chunkedChat.id, message: [] }, select: false })
-      expect(getDatabase().characters[0].chats[0].message).toHaveLength(2)
-
-      const pending = await listPendingMutations()
-      expect(pending).toHaveLength(3)
-      expect(pending.map((entry) => entry.handle.key)).toEqual([
-        'character-owner:char-a',
-        'character-owner:char-a',
-        'character-owner:char-a',
-      ])
-      expect(pending[0].intent.requests[0]).toMatchObject({
-        method: 'POST',
-        path: '/characters/char-a/chats',
-        body: { chat: { id: chunkedChat.id, message: [] }, select: false },
-      })
-      expect(pending[1].intent.requests[0]).toMatchObject({
-        method: 'POST',
-        path: '/chats/chat-chunked-import/messages/tail',
-        body: { afterMessageId: null, messages: [{ chatId: 'message-chunk-a' }] },
-      })
-      expect(pending[2].intent.requests[0]).toMatchObject({
-        method: 'POST',
-        path: '/chats/chat-chunked-import/messages/tail',
-        body: { afterMessageId: 'message-chunk-a', messages: [{ chatId: 'message-chunk-b' }] },
-      })
-      expect(
-        pending.every(
-          (entry) => pendingMutationIntentPayloadByteLength(entry.intent) <= MAX_DURABLE_MUTATION_PAYLOAD_BYTES,
-        ),
-      ).toBe(true)
-    } finally {
-      await clearPendingMutationOutbox()
-      resetPendingMutationOutboxForTests()
-    }
-  })
-
   it('keeps an accepted chunked-import prefix when a later tail is terminally rejected', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
@@ -4035,6 +3955,11 @@ describe('chat command projection helpers', () => {
     let revision = 10
     let tailCalls = 0
     const commandPaths: string[] = []
+    const commandRequests: Array<{
+      method: 'POST'
+      path: string
+      body: Record<string, unknown>
+    }> = []
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -4042,6 +3967,11 @@ describe('chat command projection helpers', () => {
         if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
         if (url === '/api/v1/commands/characters/char-a/chats') {
           commandPaths.push('/characters/char-a/chats')
+          commandRequests.push({
+            method: 'POST',
+            path: '/characters/char-a/chats',
+            body: typeof init.body === 'string' ? JSON.parse(init.body) : {},
+          })
           revision += 1
           return jsonResponse({
             revision,
@@ -4060,8 +3990,13 @@ describe('chat command projection helpers', () => {
         if (url === '/api/v1/commands/chats/chat-chunked-terminal/messages/tail') {
           commandPaths.push('/chats/chat-chunked-terminal/messages/tail')
           tailCalls += 1
-          if (tailCalls === 2) return jsonResponse({ error: 'invalid second tail' }, 400)
           const body = typeof init.body === 'string' ? JSON.parse(init.body) : {}
+          commandRequests.push({
+            method: 'POST',
+            path: '/chats/chat-chunked-terminal/messages/tail',
+            body,
+          })
+          if (tailCalls === 2) return jsonResponse({ error: 'invalid second tail' }, 400)
           revision += 1
           return jsonResponse({
             revision,
@@ -4091,6 +4026,27 @@ describe('chat command projection helpers', () => {
         '/chats/chat-chunked-terminal/messages/tail',
         '/chats/chat-chunked-terminal/messages/tail',
       ])
+      expect(commandRequests[0]).toMatchObject({
+        body: { chat: { id: chunkedChat.id, message: [] }, select: false },
+      })
+      expect(commandRequests[1]).toMatchObject({
+        body: { afterMessageId: null, messages: [{ chatId: 'message-terminal-a' }] },
+      })
+      expect(commandRequests[2]).toMatchObject({
+        body: { afterMessageId: 'message-terminal-a', messages: [{ chatId: 'message-terminal-b' }] },
+      })
+      expect(MAX_DURABLE_MUTATION_PAYLOAD_BYTES).toBe(16 * 1024 * 1024)
+      expect(
+        commandRequests.every((request) => {
+          const { baseRevision: _baseRevision, ...body } = request.body
+          return (
+            pendingMutationIntentPayloadByteLength({
+              version: 1,
+              requests: [{ ...request, body }],
+            }) <= MAX_DURABLE_MUTATION_PAYLOAD_BYTES
+          )
+        }),
+      ).toBe(true)
       const imported = getDatabase().characters[0].chats.find((chat) => chat.id === chunkedChat.id)
       expect(imported?.message).toHaveLength(1)
       expect(imported?.message[0].chatId).toBe('message-terminal-a')

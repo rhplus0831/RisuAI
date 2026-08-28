@@ -8,15 +8,16 @@ codebase remain authoritative until a phase lands.
 
 ## Current Snapshot
 
-- Plan state: Phases 0-3 complete; Phase 4 pending.
-- Current phase: Phase 4 — Pure Logic Extraction (pending).
-- Active slice: None; Phase 3 exit verification is complete.
-- Implementation state: Phase 3 has moved 15 files / 159 tests to Svelte+Node
-  and 28 files / 312 tests to Node without production or test-body changes.
-  Phases 2-3 have promoted 78 files and 647 tests in total.
+- Plan state: Phases 0-3 complete; Phase 4 in progress.
+- Current phase: Phase 4 — Pure Logic Extraction (in progress).
+- Active slice: Settings projection and reconciliation preparation.
+- Implementation state: The first Phase 4 slice extracted chat-import request
+  planning into a plain TypeScript leaf. Six planning tests now run in Node;
+  183 command integration tests retain durable outbox, transport, rollback, and
+  real 16 MiB payload-boundary ownership in Happy-DOM.
 - Blockers: None. Ninety-three retained target-S candidates have recorded Phase
   4/5 owners and revisit conditions.
-- Next action: Prepare the first measured Phase 4 chat-command boundary slice.
+- Next action: Prepare the measured settings projection/reconciliation slice.
 
 ## Phase Router
 
@@ -26,7 +27,7 @@ codebase remain authoritative until a phase lands.
 | [1](phases/phase-1-runtime-topology.md) | Complete | Added and piloted the Node, Svelte+Node, and Happy-DOM topology. |
 | [2](phases/phase-2-pure-node-promotion.md) | Complete | Promoted already-pure tests to Node and recorded every retained N candidate. |
 | [3](phases/phase-3-svelte-node-promotion.md) | Complete | Promoted Svelte-compiled tests that do not require DOM behavior. |
-| [4](phases/phase-4-pure-logic-extraction.md) | Pending | Extract measured pure-logic seams while retaining DOM contracts. |
+| [4](phases/phase-4-pure-logic-extraction.md) | In progress | Extract measured pure-logic seams while retaining DOM contracts. |
 | [5](phases/phase-5-dom-contract-consolidation.md) | Pending | Consolidate repeated DOM setup and clarify visible-state ownership. |
 | [6](phases/phase-6-routing-and-ci-enforcement.md) | Pending | Enforce explicit routing and align affected tests, coverage, aggregate execution, and CI. |
 | [7](phases/phase-7-verification-and-closeout.md) | Pending | Prove final budgets and behavior, update current docs, and archive the workstream. |
@@ -270,6 +271,12 @@ server-backed fixture planning, then router state.
     validation gate passed. The 68.47s warm wall median improves 5.3% from
     Phase 0 but misses the primary target; Phase 4 uses the new measured ranking.
     Svelte+Node remains useful and durable at 17 files / 167 tests.
+36. Phase 4 began by extracting chat-import full-create and tail-chunk request
+    planning into a plain TypeScript leaf. Six Node tests own the boundary and
+    combinatorial matrix; the retained 183-test Happy-DOM suite still proves
+    exact durable requests, the production 16 MiB limit, staging, terminal
+    prefix rollback, and no-send rejection. The focused D test-body observation
+    improved from 5.08s to 4.03s; phase-level measurement remains open.
 
 ## Accepted Observations
 
@@ -312,16 +319,16 @@ promotion continues.
 
 ## Latest Completed Slice
 
-[Phase 3 closeout and re-profile](phases/slices/phase-3/closeout-and-reprofile.md)
-completed the cold and three-run warm benchmark, all project/coverage/affected
-and aggregate validation, the Svelte+Node durability decision, and the measured
-Phase 4 ranking.
+[Phase 4 chat import request planning](phases/slices/phase-4/chat-import-request-planning.md)
+extracted the measured command-boundary seam, moved its planning matrix to Node,
+and retained durable-command and production payload-boundary proof in
+Happy-DOM.
 
 ## Latest Verification
 
-See [`latest-verification.md`](latest-verification.md) for the Phase 3 formal
-benchmark, final aggregate validation, project and coverage results, measured
-Phase 4 ranking, and preceding promotion and probe records.
+See [`latest-verification.md`](latest-verification.md) for the first Phase 4
+slice measurements, current discovery totals, the Phase 3 formal benchmark,
+and preceding promotion and probe records.
 
 ## Maintenance Rules
 

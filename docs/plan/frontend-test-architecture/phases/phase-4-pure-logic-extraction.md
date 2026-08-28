@@ -1,6 +1,14 @@
 # Phase 4: Pure Logic Extraction
 
-Status: Pending
+Status: In Progress
+
+## Progress
+
+- [Chat import request planning](slices/phase-4/chat-import-request-planning.md)
+  extracts full-create and tail-chunk planning into a plain TypeScript leaf,
+  moves the planning matrix to Node, and retains the real durable-command and
+  production payload-boundary contracts in Happy-DOM.
+- Next: settings projection and reconciliation.
 
 ## Objective
 

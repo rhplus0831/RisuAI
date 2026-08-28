@@ -101,6 +101,7 @@ import { language } from '../lang'
 import { reportWriterAccessLostMutation } from './server/activeWriterSession'
 import type { ActiveChatTarget } from './types/activeChatTarget'
 import { guardActiveChatGenerationSettingsForSend } from './activeChatGenerationSettings'
+import { planImportedChatRequests, type PlannedChatImportRequest } from './chatImportPlanning'
 
 export type { ActiveChatTarget } from './types/activeChatTarget'
 
@@ -2391,46 +2392,6 @@ export function dispatchResetChatsWithOutcome(
   return normalizedChatMutationOutcome(outcome, rollbackAttempt)
 }
 
-interface ImportedChatTailChunk {
-  afterMessageId: string | null
-  messages: MessageSnapshot[]
-  acceptedPrefixLength: number
-}
-
-function importedChatTailChunks(chatId: string, messages: MessageSnapshot[]): ImportedChatTailChunk[] | null {
-  if (messages.length === 0) return []
-  const path = `/chats/${encodeURIComponent(chatId)}/messages/tail`
-  const chunks: ImportedChatTailChunk[] = []
-  let afterMessageId: string | null = null
-  let acceptedPrefixLength = 0
-  let pending: MessageSnapshot[] = []
-
-  const intentFor = (anchor: string | null, rows: MessageSnapshot[]) =>
-    durableChatMutationIntent('POST', path, freezeDurableChatRequestBody({ afterMessageId: anchor, messages: rows }))
-  const fits = (anchor: string | null, rows: MessageSnapshot[]) =>
-    pendingMutationIntentPayloadByteLength(intentFor(anchor, rows)) <= MAX_DURABLE_MUTATION_PAYLOAD_BYTES
-
-  for (const message of messages) {
-    const candidate = [...pending, message]
-    if (fits(afterMessageId, candidate)) {
-      pending = candidate
-      continue
-    }
-    if (pending.length === 0) return null
-
-    chunks.push({ afterMessageId, messages: pending, acceptedPrefixLength })
-    acceptedPrefixLength += pending.length
-    const anchor = pending.at(-1)?.chatId
-    if (typeof anchor !== 'string' || anchor.length === 0) return null
-    afterMessageId = anchor
-    pending = [message]
-    if (!fits(afterMessageId, pending)) return null
-  }
-
-  if (pending.length > 0) chunks.push({ afterMessageId, messages: pending, acceptedPrefixLength })
-  return chunks
-}
-
 function restoreRejectedImportedMessageSuffix(
   characterId: string,
   chatId: string,
@@ -2458,9 +2419,7 @@ function importedChatDurableSteps(input: {
   const chatId = attemptedChat.id
   if (!chatId) return null
   const optimisticChatBodyProjectionEpoch = captureChatBodyProjectionEpoch(chatId)
-  const fullBody = freezeDurableChatRequestBody({ chat: toChatSnapshot(attemptedChat), select: input.select })
   const createPath = `/characters/${encodeURIComponent(input.characterId)}/chats`
-  const fullIntent = durableChatMutationIntent('POST', createPath, fullBody)
   let createAccepted = false
 
   const createStep = (body: DurableChatRequestBody): CharacterOwnedDurableBatchStep => ({
@@ -2483,29 +2442,30 @@ function importedChatDurableSteps(input: {
     rollback: input.rollbackCreate,
   })
 
-  if (pendingMutationIntentPayloadByteLength(fullIntent) <= MAX_DURABLE_MUTATION_PAYLOAD_BYTES) {
-    return [createStep(fullBody)]
-  }
-
   const attemptedMessages = cloneJsonValue(attemptedChat.message ?? [])
   const metadataChat = cloneJsonValue(attemptedChat)
   metadataChat.message = []
-  const metadataBody = freezeDurableChatRequestBody({ chat: toChatSnapshot(metadataChat), select: input.select })
-  const metadataIntent = durableChatMutationIntent('POST', createPath, metadataBody)
-  if (pendingMutationIntentPayloadByteLength(metadataIntent) > MAX_DURABLE_MUTATION_PAYLOAD_BYTES) return null
-
   const messageSnapshots = attemptedMessages.map(toMessageSnapshot)
-  const chunks = importedChatTailChunks(chatId, messageSnapshots)
-  if (!chunks || chunks.length === 0) return null
+  const plan = planImportedChatRequests({
+    characterId: input.characterId,
+    chatId,
+    fullChat: toChatSnapshot(attemptedChat),
+    metadataChat: toChatSnapshot(metadataChat),
+    messages: messageSnapshots,
+    select: input.select,
+    maxPayloadBytes: MAX_DURABLE_MUTATION_PAYLOAD_BYTES,
+    payloadByteLength: (request: PlannedChatImportRequest<ChatSnapshot, MessageSnapshot>) =>
+      pendingMutationIntentPayloadByteLength(
+        durableChatMutationIntent(request.method, request.path, freezeDurableChatRequestBody(request.body)),
+      ),
+  })
+  if (!plan) return null
   return [
-    createStep(metadataBody),
-    ...chunks.map<CharacterOwnedDurableBatchStep>((chunk) => ({
-      method: 'POST',
-      path: `/chats/${encodeURIComponent(chatId)}/messages/tail`,
-      body: freezeDurableChatRequestBody({
-        afterMessageId: chunk.afterMessageId,
-        messages: chunk.messages,
-      }),
+    createStep(freezeDurableChatRequestBody(plan.create.body)),
+    ...plan.tails.map<CharacterOwnedDurableBatchStep>((tail) => ({
+      method: tail.method,
+      path: tail.path,
+      body: freezeDurableChatRequestBody(tail.body),
       command: (baseRevision, frozenBody) =>
         replaceTailMessagesCommand({
           baseRevision,
@@ -2516,7 +2476,7 @@ function importedChatDurableSteps(input: {
         }),
       rollback: () => {
         if (createAccepted) {
-          restoreRejectedImportedMessageSuffix(input.characterId, chatId, attemptedMessages, chunk.acceptedPrefixLength)
+          restoreRejectedImportedMessageSuffix(input.characterId, chatId, attemptedMessages, tail.acceptedPrefixLength)
         }
       },
     })),

@@ -4,8 +4,71 @@ Date: 2026-08-28
 
 ## State
 
-Phase 3 closeout complete. This record does not authorize repository-wide
-default inversion or migration outside the later phase rules.
+Phase 4 in progress after the chat-import request-planning slice. This record
+does not authorize repository-wide default inversion or migration outside the
+later phase rules.
+
+## Phase 4 Chat Import Request Planning Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `d00d612f54f08225d759c3f85c48d9895f2508b0`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Isolation: enabled
+- Measurement tree: the clean Phase 3 closeout plus the chat-import planner,
+  Node matrix, consolidated retained D contract, routing inventory, and slice
+  records. No unrelated working-tree changes were present.
+
+## Phase 4 Chat Import Request Planning Measurements
+
+The focused pre-change Happy-DOM owner passed 1 file / 184 tests in 8.21s
+Vitest duration and 8.94s measured wall. Its phases were 2.38s transform, 74ms
+setup, 2.86s import, 5.08s tests, and 117ms environment; peak RSS was 1,570,304
+KiB.
+
+After extraction and consolidation, the retained Happy-DOM owner passed 1 file
+/ 183 tests in 7.01s Vitest duration and 7.70s wall. Its phases were 2.29s
+transform, 78ms setup, 2.73s import, 4.03s tests, and 105ms environment; peak
+RSS was 1,372,248 KiB. The new Node owner passed 1 file / 6 tests in 163ms
+Vitest duration with 5ms test-body time and no environment time.
+
+The complete aggregate-ordinary project and root observations passed:
+
+| Scope | Result | Vitest | Wall | Peak RSS KiB |
+| --- | --- | ---: | ---: | ---: |
+| Node | 189 files / 1,265 tests | 4.38s | 5.09s | 1,045,676 |
+| Happy-DOM | 324 files / 4,986 tests | 59.91s | 60.76s | 4,988,772 |
+| Ordinary frontend | 530 files / 6,418 tests | 68.94s | 69.80s | 4,842,688 |
+
+The focused D test-body observation improves by 1.05s (20.7%). The ordinary
+wall result is a single observation inside the Phase 3 66.76-70.70s warm range,
+not a phase-level claim. Phase 4 closeout owns the cold plus three-run warm
+benchmark.
+
+## Phase 4 Chat Import Request Planning Validation
+
+The planner preserves exact full-create versus metadata-plus-tail decisions,
+encoded paths, greedy packing, UTF-8 sizing, anchors, and accepted-prefix
+lengths. The retained integration owner pins the production limit at
+`16 * 1024 * 1024`, asserts exact live create/tail request bodies, and covers
+terminal-prefix rollback and unchunkable no-send behavior through the real
+outbox/transport path.
+
+Inventory regeneration and check passed. Full discovery is 538 files at 190 N
+/ 17 S / 331 D, standalone ordinary is 536 files at 190 N / 17 S / 329 D, and
+aggregate ordinary is 530 files at 189 N / 17 S / 324 D. Aggregate ordinary
+coverage changes by +1 file and +5 tests: six Node planning cases replace one
+consolidated duplicate production-sized D case.
+
+`pnpm check` passed with zero errors and warnings. Focused Node and retained D
+runs, complete Node and D projects, the ordinary frontend, formatting, inventory
+completeness, and `git diff --check` passed.
+
+`pnpm test:affected --dry-run` selected frontend, isolated performance, and
+server lanes. Execution passed 536 frontend files / 6,621 tests in 69.33s, 2
+performance files / 6 tests in 10.34s, and 154 server files / 3,295 passing
+tests with 1 skip in 18.23s.
 
 ## Phase 3 Closeout Environment And Source State
 
