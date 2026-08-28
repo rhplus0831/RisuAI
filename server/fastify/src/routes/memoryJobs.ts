@@ -68,9 +68,9 @@ function memoryJobsEtag(jobs: unknown): string {
 
 const TERMINAL_JOB_HISTORY_LIMIT = 50
 
-function presentMemoryJobs(jobs: ReturnType<typeof listMemoryJobItems>, explicitStatus: boolean) {
+function presentMemoryJobs(jobs: ReturnType<typeof listMemoryJobItems>, explicitStatus?: MemoryJobStatus) {
   const presented = jobs.map((job) => ({ ...job, error: sanitizeMemoryJobError(job.error) }))
-  if (explicitStatus) return presented
+  if (explicitStatus === 'pending' || explicitStatus === 'running') return presented
   const active = presented.filter((job) => job.status === 'pending' || job.status === 'running')
   const terminal = presented
     .filter((job) => job.status !== 'pending' && job.status !== 'running')
@@ -165,7 +165,7 @@ export function registerMemoryJobRoutes(
         kind: isMemoryJobKind(query.kind) ? query.kind : undefined,
         status: isMemoryJobStatus(query.status) ? query.status : undefined,
       }),
-      query.status !== undefined,
+      isMemoryJobStatus(query.status) ? query.status : undefined,
     )
     const etag = memoryJobsEtag(jobs)
     reply.header('etag', etag)

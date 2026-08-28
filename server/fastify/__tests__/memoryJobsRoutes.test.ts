@@ -284,6 +284,32 @@ describe('memory job routes', () => {
     expect(unchanged.headers['x-risu-memory-version']).toBe(active.headers['x-risu-memory-version'])
   })
 
+  it('bounds explicit terminal-status history', async () => {
+    const db = openDatabase(harness.dataDir)
+    try {
+      for (let index = 0; index < 55; index += 1) {
+        createMemoryJob(db, {
+          id: `completed-${String(index).padStart(2, '0')}`,
+          chatId: 'terminal-history-chat',
+          kind: 'chunk',
+          payload: {},
+          status: 'completed',
+        })
+      }
+    } finally {
+      db.close()
+    }
+
+    const response = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/memory/jobs?chatId=terminal-history-chat&status=completed',
+      headers: { 'risu-auth': assertion },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect((response.json() as { jobs: MemoryJob[] }).jobs).toHaveLength(50)
+  })
+
   it('returns a failed job with a bounded, redacted error and completion time', async () => {
     const db = openDatabase(harness.dataDir)
     try {
