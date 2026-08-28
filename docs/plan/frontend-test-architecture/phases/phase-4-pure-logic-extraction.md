@@ -12,7 +12,11 @@ Status: In Progress
   settings comparison, similarity, Pick eligibility, and active-key projection
   into a plain TypeScript leaf, moves the seven-test matrix to Node, and retains
   the mounted sidebar/dialog behavior in Happy-DOM.
-- Next: server-backed fixture-planning triage.
+- [Server-backed fixture-planning triage](slices/phase-4/server-backed-fixture-planning-triage.md)
+  rejects a test-only extraction after focused profiling and source tracing:
+  both measured suites are integration owners, and their helpers have no
+  production call site or project-level performance mechanism.
+- Next: router route-to-state planning.
 
 ## Objective
 

@@ -10,14 +10,15 @@ codebase remain authoritative until a phase lands.
 
 - Plan state: Phases 0-3 complete; Phase 4 in progress.
 - Current phase: Phase 4 — Pure Logic Extraction (in progress).
-- Active slice: Server-backed fixture-planning triage.
+- Active slice: Router route-to-state planning.
 - Implementation state: Two Phase 4 leaves now own chat-import request planning
   and Saved Toggles comparison/selection planning. Thirteen pure tests run in
   Node; retained Happy-DOM suites still own durable command and mounted settings
   behavior.
 - Blockers: None. Ninety-three retained target-S candidates have recorded Phase
   4/5 owners and revisit conditions.
-- Next action: Evaluate the measured server-backed fixture-planning boundary.
+- Next action: Extract and measure the router's pure route-planning matrix while
+  retaining history, location, store, and asynchronous application behavior.
 
 ## Phase Router
 
@@ -285,6 +286,14 @@ server-backed fixture planning, then router state.
     owner. Translator projection and picker candidates remain D-owned under
     recorded revisit conditions because their current proofs cross resource,
     receipt, focus, interaction, or rollback boundaries.
+38. The server-backed fixture candidate was measured and rejected as a Phase 4
+    extraction. Its 39 local cases execute real `sendChat` state/provider
+    lifecycles, and its 27 server-backed cases execute authenticated Fastify,
+    SQLite, browser-fetch, persistence, replay, and rollback boundaries. The
+    deterministic-looking loader/snapshot helpers are test-only and have no
+    production caller; moving them would add coverage without removing the
+    expensive integration graph. Revisit only for a real shared production
+    fixture protocol or a measured cross-suite Fastify lifecycle boundary.
 
 ## Accepted Observations
 
@@ -327,9 +336,9 @@ promotion continues.
 
 ## Latest Completed Slice
 
-[Phase 4 toggle preset planning](phases/slices/phase-4/toggle-preset-planning.md)
-extracted the measured settings projection seam, moved its expanded matrix to
-Node, and retained mounted sidebar/dialog behavior in Happy-DOM.
+[Phase 4 server-backed fixture-planning triage](phases/slices/phase-4/server-backed-fixture-planning-triage.md)
+retained both measured fixture suites as integration owners after proving the
+available helpers are test-only and cannot reduce their browser/server graph.
 
 ## Latest Verification
 

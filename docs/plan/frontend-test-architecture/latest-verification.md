@@ -4,9 +4,31 @@ Date: 2026-08-28
 
 ## State
 
-Phase 4 in progress after the chat-import and Saved Toggles planning slices.
+Phase 4 in progress after the chat-import and Saved Toggles planning slices and
+the server-backed fixture-planning deferral.
 This record does not authorize repository-wide default inversion or migration
 outside the later phase rules.
+
+## Phase 4 Server-Backed Fixture-Planning Triage
+
+The current-source local fixture owner passed 1 file / 39 tests in 4.24s Vitest
+duration and 4.94s measured wall. Its phases were 2.33s transform, 76ms setup,
+2.47s import, 1.52s tests, and 107ms environment; peak RSS was 1,222,448 KiB.
+
+The current-source server-backed owner passed 1 file / 27 tests in 5.93s
+Vitest duration and 6.63s wall. Its phases were 2.97s transform, 71ms setup,
+3.61s import, 2.06s tests, and 110ms environment; peak RSS was 938,060 KiB.
+
+Source tracing confirmed that the local matrix executes the real `sendChat`
+and Svelte resource/provider lifecycle, while the server-backed matrix builds
+authenticated Fastify applications over temporary SQLite state and exercises
+browser-fetch, command, persistence, replay, streaming, rollback, and terminal
+consumer behavior. The available fixture-reader and snapshot-normalization
+helpers are test-only and have no production call site. Extracting them would
+not move any of the 66 integration cases or reduce the measured graph, so this
+candidate is deferred under the Phase 4 selection criteria. Focused runs are
+the complete validation for this no-code proof batch; inventory and discovery
+remain unchanged.
 
 ## Phase 4 Toggle Preset Planning Environment And Source State
 
