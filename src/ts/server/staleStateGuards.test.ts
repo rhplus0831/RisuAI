@@ -122,7 +122,7 @@ describe('attempted field rollback', () => {
   })
 
   it('recognizes semantically equal attempted JSON regardless of object key insertion order', () => {
-    const target = {
+    const target: { config: { enabled: boolean; nested?: { left: number; right: number } } } = {
       config: { nested: { right: 2, left: 1 }, enabled: true },
     }
 
