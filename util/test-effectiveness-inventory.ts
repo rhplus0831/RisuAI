@@ -177,7 +177,7 @@ export const categoryRules: readonly CategoryRule[] = [
     category: 'D',
     description:
       'Mounted and browser-shaped ChatScreens behavior is visible chat/UI evidence, even when it invokes generation.',
-    patterns: [/^src\/lib\/ChatScreens\//],
+    patterns: [/^src\/lib\/SideBars\/chatGenerationSettingsControls\.test\.ts$/, /^src\/lib\/ChatScreens\//],
   },
   {
     id: 'settings-authoring-ui',

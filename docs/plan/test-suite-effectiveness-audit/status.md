@@ -9,41 +9,47 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Snapshot
 
-- Plan state: Active; planning scaffold complete.
-- Current phase: Phase 0 — Baseline, Inventory, And Rubric.
-- Active slice: None; the first Phase 0 inventory slice is ready to author.
-- Implementation state: No test or production behavior has changed. The audit
-  and remediation pass has not begun.
-- Blockers: None.
-- Next action: Freeze the Phase 0 commit/toolchain, generate the exhaustive audit
-  inventory, ratify the effectiveness rubric on a representative pilot, and
-  record the full baseline command matrix.
+- Plan state: Active; Phase 0 complete.
+- Current phase: Phase 1 — Assurance Architecture And Special Lanes.
+- Active slice: None; `P01-S01 — Frontend discovery, capability routing, and
+  live manifest` is ready to open.
+- Implementation state: exhaustive test/case/support manifests and their local,
+  affected, aggregate, coverage, and CI checks are live. No product behavior or
+  existing product test has been removed.
+- Blockers: the opt-in compatibility harness cannot run because its pinned
+  external worktree is absent. This does not block Phase 1 slices that do not
+  claim compatibility evidence.
+- Next action: audit the exact frontend runner/config/routing/manifest owners in
+  P01-S01, including the live TSV under `.archived-docs`.
 
 ## Planning Baseline
 
 | Measurement                          | Result                                       |
 | ------------------------------------ | -------------------------------------------- |
-| Tracked `*.test.ts` / `*.spec.ts`    | 698 files                                    |
-| Full frontend Vitest universe        | 537: 194 N / 17 S / 326 D                    |
-| Standalone ordinary frontend         | 535: 194 N / 17 S / 324 D                    |
-| `test:all` ordinary frontend         | 529: 193 N / 17 S / 319 D                    |
+| Frozen tracked anchor                | 698 files at `56796fa5a2f651a791e19b4223337b98874efa97` |
+| Live tracked test/spec universe      | 699 files (`+1` inventory-tool test)         |
+| Full frontend Vitest universe        | 538: 195 N / 17 S / 326 D                    |
+| Standalone ordinary frontend         | 536: 195 N / 17 S / 324 D                    |
+| `test:all` ordinary frontend         | 530: 194 N / 17 S / 319 D                    |
 | Fastify Vitest                       | 154 files                                    |
 | Browser smoke                        | 7 files                                      |
 | Compatibility harness                | Opt-in; outside `test:all` and file count     |
-| Primary-category assignments         | 0 of 698 ratified                            |
-| Effectiveness decisions              | 0 ratified                                   |
-| Findings                             | None; Phase 0 has not opened the ledger      |
+| Collected cases                      | 9,975 total; 1 direct-only skip; 1,261 parameterized rows |
+| Support owners                       | 253 standalone; 64 mixed production seams   |
+| Primary-category assignments         | 699 of 699 ratified                          |
+| Complete file dispositions           | 5: 4 Keep / 1 Strengthen                     |
+| Findings                             | 2 confirmed                                  |
 
-The tracked file count and frontend routing check were refreshed during plan
-creation. Test-case counts, support-artifact counts, runtime measurements, and
-per-category totals remain Phase 0 work.
+The 698-file rows preserve the plan-creation anchor. The live counts, support
+owners, runtime evidence, and category totals are checked by the Phase 0
+manifests and verification record.
 
 ## Phase Router
 
 | Phase | State   | Purpose                                                                 |
 | ----: | ------- | ----------------------------------------------------------------------- |
-| [0](phases/phase-0-baseline-inventory-and-rubric.md) | Ready | Freeze the baseline, exhaustive inventory, rubric, and evidence format. |
-| [1](phases/phase-1-assurance-architecture-and-special-lanes.md) | Pending | Audit runners, setup, discovery, CI, fixtures, helpers, and special gates. |
+| [0](phases/phase-0-baseline-inventory-and-rubric.md) | Complete | Froze the baseline, exhaustive inventory, rubric, and evidence format. |
+| [1](phases/phase-1-assurance-architecture-and-special-lanes.md) | Ready | Audit runners, setup, discovery, CI, fixtures, helpers, and special gates. |
 | [2](phases/phase-2-browser-state-sync-and-recovery.md) | Pending | Audit browser state synchronization, durable intent, and recovery. |
 | [3](phases/phase-3-persistence-commands-events-and-bridges.md) | Pending | Audit persistence, commands, events, and editing bridges. |
 | [4](phases/phase-4-app-navigation-chat-and-shared-ui.md) | Pending | Audit app navigation, chat, shared UI, feedback, and accessibility. |
@@ -64,13 +70,13 @@ See [`phases/README.md`](phases/README.md) for links and shared slice rules.
 
 | Decision   | Count | Meaning                                                    |
 | ---------- | ----: | ---------------------------------------------------------- |
-| Keep       |     0 | Distinct contract and suitable evidence layer.             |
-| Strengthen |     0 | Valuable intent, but insufficient or self-fulfilling proof. |
+| Keep       |     4 | Distinct contract and suitable evidence layer.             |
+| Strengthen |     1 | Valuable intent, but insufficient or self-fulfilling proof. |
 | Merge      |     0 | Equivalent failure mode can move into a stronger owner.    |
 | Reclassify |     0 | Valuable test belongs to another category, lane, or type.  |
 | Remove     |     0 | No meaningful unique value after mandatory removal proof.  |
 | Add        |     0 | Material uncovered contract requires new proof.            |
-| Pending    |   698 | Known test owners awaiting Phase 0 inventory and review.    |
+| Pending    |   694 | Known test owners awaiting their owning phase review.       |
 
 ## Current Decisions
 
@@ -89,12 +95,21 @@ See [`phases/README.md`](phases/README.md) for links and shared slice rules.
    threshold. Apply the complete removal proof first.
 6. Keep current testing and architecture documents authoritative until accepted
    findings land.
+7. Keep the routing TSV separate from the effectiveness inventory; the former
+   enforces capability placement, while the latter preserves reviewed audit
+   metadata and cross-lane ownership.
+8. Count a pilot decision at file level only when the complete file was
+   reviewed. Larger files with selected pilot cases remain Pending and record a
+   `pilot-partial` state.
 
 ## Blockers And Accepted Gaps
 
-- Blockers: None.
-- Accepted gaps: None. Phase 0 will define the recorded-gap format and revisit
-  requirements.
+- Blocker: `/home/codex/risu-baseline-71c476e9c` is absent, so the compatibility
+  harness cannot execute. Revisit when the exact pinned worktree and its
+  dependencies exist; never substitute another checkout or refresh goldens.
+- Confirmed gaps: `TSA-P00-001` (protocol import-policy blind spots) and
+  `TSA-P00-002` (load/order-sensitive translator preset retry case). Both have
+  concrete owners and revisit conditions in the findings ledger.
 
 ## Maintenance Rules
 

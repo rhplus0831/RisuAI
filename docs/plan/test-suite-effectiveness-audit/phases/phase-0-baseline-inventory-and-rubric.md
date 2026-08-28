@@ -1,6 +1,7 @@
 # Phase 0: Baseline, Inventory, And Rubric
 
-Status: Ready
+Status: Complete. See
+[`slices/phase-0-baseline-inventory-and-rubric/phase-0-baseline-and-pilot.md`](slices/phase-0-baseline-inventory-and-rubric/phase-0-baseline-and-pilot.md).
 
 ## Objective
 

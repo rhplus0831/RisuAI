@@ -21,6 +21,7 @@
       "category": "D",
       "description": "First matching rule wins. Mounted and browser-shaped ChatScreens behavior is visible chat/UI evidence, even when it invokes generation.",
       "pathPatterns": [
+        "/^src\\/lib\\/SideBars\\/chatGenerationSettingsControls\\.test\\.ts$/",
         "/^src\\/lib\\/ChatScreens\\//"
       ]
     },
@@ -225,22 +226,22 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete protocol runtime import-boundary policy case",
         "valueClasses": [
-          "pending"
+          "architecture policy"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "browser-safe packages/protocol runtime modules and package export boundary",
+        "plausibleDefect": "A nested runtime module, dynamic import, or require introduces Node-only or outside-package dependencies without failing the policy test.",
+        "risk": "High browser bundle breakage or an unenforced shared-protocol architecture boundary.",
+        "companionEvidence": "package exports and TypeScript protocol build constrain shape but do not cover recursive/dynamic imports.",
+        "decision": "Strengthen",
+        "confidence": "medium",
+        "rationale": "The policy is valuable, but non-recursive discovery and a static import/export regex have credible blind spots requiring counterfactual fixtures.",
+        "findingId": "TSA-P00-001",
+        "severity": "Medium",
+        "action": "In Phase 1, prove nested/dynamic counterexamples and replace the scanner with recursive TypeScript-AST or import-graph enforcement.",
+        "validation": "focused importBoundary test plus negative nested and dynamic-import fixtures; pnpm check:protocol",
+        "state": "finding-confirmed"
       }
     },
     {
@@ -4740,22 +4741,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "sanitized upstream failure response case at L515-L535",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
+        "productionOwnerOrContract": "provider operation route/executor error envelope and generation body sanitization",
+        "plausibleDefect": "An upstream diagnostic, response body, or credential draft is serialized back to the browser.",
+        "risk": "Critical secret or provider diagnostic exposure.",
+        "companionEvidence": "client providerOperations envelope tests and direct operation bound/error cases",
         "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "confidence": "high",
+        "rationale": "The exact route JSON and negative secret assertions are strong; remaining provider-operation cases await Phase 7.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Critical",
+        "action": "Retain the selected sanitization owner; review remaining cases in Phase 7.",
+        "validation": "focused providerOperations server test; pnpm test:server",
+        "state": "pilot-partial"
       }
     },
     {
@@ -6361,22 +6363,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "all nine positive and negative terminal-frame oracle cases",
         "valueClasses": [
-          "pending"
+          "diagnostic oracle",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "helpers/terminalFrameAssertions.ts oracle for generation SSE terminal ordering and uniqueness",
+        "plausibleDefect": "Dependent generation tests accept duplicate terminals, terminal-before-error ordering, or success-shaped completion after abort.",
+        "risk": "High false confidence in durable generation terminal semantics.",
+        "companionEvidence": "generation.providerUnits.test.ts and generation.chat.test.ts consume the oracle against production frame streams.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Negative malformed counterexamples independently prove the shared oracle rejects the defects it claims to detect.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain with its generation-test consumers.",
+        "validation": "focused oracle and generation.providerUnits tests; pnpm test:server",
+        "state": "pilot-reviewed"
       }
     },
     {
@@ -10931,22 +10934,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "retryable optimistic delete reassertion case at L2177 plus its file-level server-backed edit fixture",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
+        "productionOwnerOrContract": "TranslatorPresetSettings server-backed optimistic delete and authoritative collection reconciliation",
+        "plausibleDefect": "A load/order race prevents a retryable optimistic delete from being reasserted after an authoritative projection.",
+        "risk": "High stale translator preset reappears and may be edited or selected after deletion.",
+        "companionEvidence": "The case passed alone and the next full frontend run passed, isolating a load/order-sensitive harness or product race.",
         "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "confidence": "medium",
+        "rationale": "One formal full-lane failure is preserved; root cause and defect sensitivity require Phase 5 fault isolation before a file disposition.",
+        "findingId": "TSA-P00-002",
+        "severity": "Medium",
+        "action": "Reproduce under seeded/repeated load, inspect cleanup and projection barriers, then strengthen the harness or product regression owner.",
+        "validation": "focused named case; repeated owning file; pnpm test:frontend:all under recorded seed/load",
+        "state": "finding-confirmed"
       }
     },
     {
@@ -13476,11 +13480,11 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "F",
-      "categoryRule": "prompt-generation-streaming",
+      "primaryCategory": "D",
+      "categoryRule": "visible-chat-ui",
       "seamTags": [
-        "category-D",
         "category-E",
+        "category-F",
         "dom-component"
       ],
       "kind": "component/DOM",
@@ -13498,22 +13502,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "active-chat switch and authoritative character-projection repaint cases at L1039-L1070 and L1249-L1307",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
+        "productionOwnerOrContract": "Toggles.svelte visible controls, activeChatGenerationSettings.ts target resolution, and database.svelte.ts projection replacement",
+        "plausibleDefect": "Mounted controls show a previous chat after local navigation or after authoritative projection replacement.",
+        "risk": "High wrong-chat settings display or edits applied from stale visible state.",
+        "companionEvidence": "The two similar DOM matrices exercise different invalidation causes and intentionally remain defense in depth.",
         "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "confidence": "high",
+        "rationale": "The pilot retains both selected matrices; the other 38 cases remain pending the Phase 4 UI review.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Keep the selected defense in depth and review remaining file cases in Phase 4.",
+        "validation": "pnpm exec vitest run src/lib/SideBars/chatGenerationSettingsControls.test.ts; owning frontend lane",
+        "state": "pilot-partial"
       }
     },
     {
@@ -14973,22 +14978,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "all five variable, definition, display, and repeated large-transcript render-cost gate cases",
         "valueClasses": [
-          "pending"
+          "performance and capacity",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "renderCostHarness.ts, variable-only GUI refresh, and mounted chat-row build/cache boundaries",
+        "plausibleDefect": "A variable-only refresh reparses mounted chat messages or resets caches proportional to visible history.",
+        "risk": "High interactive transcript latency and avoidable large-chat work.",
+        "companionEvidence": "definition/display reload cases deliberately require broader work and distinguish the invalidation classes.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "The isolated gate measures a named zero-parse/cache contract; production browser timing remains a companion, not a replacement.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain in the isolated performance lane and preserve its single-worker execution.",
+        "validation": "pnpm test:gates:perf --no-file-parallelism --maxWorkers=1",
+        "state": "pilot-reviewed"
       }
     },
     {
@@ -19400,22 +19406,22 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "both display-name normalization and search-alias cases",
         "valueClasses": [
-          "pending"
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "src/ts/personaDisplayName.ts visible label and search text mapping",
+        "plausibleDefect": "Whitespace replaces the internal name, display text is not trimmed, or search loses the internal-name alias.",
+        "risk": "Medium incorrect persona labels or missed search results.",
+        "companionEvidence": "Mounted persona consumers commonly mock this helper, leaving this file as the exact mapping owner.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Two cheap exact assertions protect distinct supported mapping/default behavior at the smallest faithful layer.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain as the narrow mapping owner.",
+        "validation": "pnpm exec vitest run src/ts/personaDisplayName.test.ts; ordinary frontend lane",
+        "state": "pilot-reviewed"
       }
     },
     {
@@ -27434,22 +27440,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "all six cross-tab lock, publication, CAS, order, and fresh-IV cases",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "src/ts/server/pendingMutationOutbox.ts locked publication, compare-and-swap, ordering, and AES-GCM IV ownership",
+        "plausibleDefect": "Concurrent tabs publish duplicate order values or reuse an IV after losing a compare-and-swap race.",
+        "risk": "Critical encrypted intent corruption or replay ambiguity across tabs.",
+        "companionEvidence": "pendingMutationOutbox.test.ts transaction injection and Chromium startup recovery replay",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Controlled lock and CAS races fail for distinct concurrency/encryption defects not visible in browser replay alone.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain as the Phase 2 cross-tab ordering and fresh-IV owner.",
+        "validation": "pnpm exec vitest run src/ts/server/pendingMutationOutbox.crossTab.test.ts; pnpm test:frontend:all",
+        "state": "pilot-reviewed"
       }
     },
     {
@@ -27483,22 +27490,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "atomic counter/row commit, rollback, legacy recovery, and corrupt/exhausted counter cases at L143-L248",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
+        "productionOwnerOrContract": "src/ts/server/pendingMutationOutbox.ts staging, locked persistence, counter ordering, key handling, AES-GCM, and IndexedDB lifecycle",
+        "plausibleDefect": "An outbox row and its order counter commit separately, corrupt recovery drops retained intent, or encryption state is reused unsafely.",
+        "risk": "Critical retained-mutation loss, duplicate ordering, or encrypted-outbox integrity failure.",
+        "companionEvidence": "pendingMutationOutbox.crossTab.test.ts and startupRecoveryIntegrationMatrix.spec.ts reload/replay journeys",
         "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "confidence": "high",
+        "rationale": "The pilot selected defect-sensitive atomicity/recovery cases; the remainder of this mega-suite stays pending Phase 2 review.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Critical",
+        "action": "Review the remaining case families in Phase 2 slice P02-S01 and later outbox slices.",
+        "validation": "focused outbox files; pnpm test:frontend:all; exact recovery browser spec; pnpm test:smoke",
+        "state": "pilot-partial"
       }
     },
     {

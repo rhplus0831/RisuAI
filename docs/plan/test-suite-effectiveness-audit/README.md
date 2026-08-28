@@ -2,7 +2,7 @@
 
 Date: 2026-08-29
 
-Status: Active; Phase 0 is ready to begin.
+Status: Active; Phase 0 is complete and Phase 1 is ready to begin.
 
 This workstream audits the complete test system for effectiveness, not merely
 for presence or coverage percentage. It asks whether each test can catch a
@@ -31,7 +31,9 @@ Start with:
 
 ## Baseline Anchor
 
-The planning baseline contains 698 tracked `*.test.ts` and `*.spec.ts` files:
+The frozen planning baseline contains 698 tracked `*.test.ts` and `*.spec.ts`
+files. Phase 0 added one focused inventory test, so the live checked universe is
+699:
 
 | Owner                               | Files | Notes                                                                    |
 | ----------------------------------- | ----: | ------------------------------------------------------------------------ |
@@ -41,8 +43,10 @@ The planning baseline contains 698 tracked `*.test.ts` and `*.spec.ts` files:
 | Compatibility and support artifacts |     — | Opt-in runners, goldens, fixtures, helpers, configs, and setup files.     |
 
 These are file-owner counts, not test-case counts or an effectiveness verdict.
-Phase 0 must re-freeze the exact commit, discover case counts, inventory support
-artifacts, and assign every test file to one primary product-risk category.
+Phase 0 froze the exact commit, discovered case counts, inventoried support
+artifacts, and assigned every test file to one primary product-risk category.
+See the Phase 0 slice and live machine-readable manifests for the current
+counts and the intentional `+1` assurance-infrastructure delta.
 
 ## Working Principle
 

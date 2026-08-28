@@ -1,6 +1,6 @@
 # Phase 1: Assurance Architecture And Special Lanes
 
-Status: Pending; depends on Phase 0.
+Status: Ready; Phase 0 complete.
 
 ## Objective
 

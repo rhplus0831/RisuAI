@@ -383,6 +383,7 @@ recorded.
 
 ## Execution Cursor
 
-Phase 0 is ready. No test has been audited or changed under this workstream. The
-first slice must create the current exhaustive inventory and apply the rubric to
-a representative cross-lane pilot before any removal or broad remediation.
+Phase 0 is complete. The frozen 698-file anchor, live 699-file inventory,
+support universe, formal baseline, and representative rubric pilot are recorded
+in the Phase 0 slice. Phase 1 is ready to begin with frontend discovery,
+capability routing, and live-manifest assurance; no removal has been approved.

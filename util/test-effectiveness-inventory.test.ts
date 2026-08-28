@@ -55,6 +55,7 @@ describe('test effectiveness inventory', () => {
       ['src/ts/server/pendingMutationOutbox.test.ts', 'B'],
       ['server/fastify/__tests__/commands.test.ts', 'C'],
       ['src/lib/ChatScreens/ChatBody.svelte.test.ts', 'D'],
+      ['src/lib/SideBars/chatGenerationSettingsControls.test.ts', 'D'],
       ['src/lib/Setting/CharacterSettings.svelte.test.ts', 'E'],
       ['server/fastify/__tests__/generation.chat.test.ts', 'F'],
       ['server/fastify/__tests__/generation.providerUnits.test.ts', 'G'],
