@@ -171,13 +171,11 @@ function signalText(signal: SourceSignal | undefined): string {
   return `L${signal.line}: ${compactEvidence}`
 }
 
-function targetCapability(project: FrontendTestProject, signals: FrontendTestSignals): FrontendCapability {
+function targetCapability(project: FrontendTestProject): FrontendCapability {
   if (project === 'browser-smoke') return 'B'
   if (project === 'frontend-node') return 'N'
   if (project === 'frontend-svelte-node') return 'S'
-  if (signals.domOrMount) return 'D'
-  if (signals.svelte) return 'S'
-  return 'N'
+  return 'D'
 }
 
 function coverageAndGateOwnership(file: string, project: FrontendTestProject): string {
@@ -202,14 +200,10 @@ function owningDomain(file: string): string {
 
 function targetReason(project: FrontendTestProject, target: FrontendCapability, signals: FrontendTestSignals): string {
   if (target === 'B') return 'built-browser/Fastify lifecycle contract'
-  if (project === 'frontend-node') return 'already validated by the Node project'
-  if (project === 'frontend-svelte-node') return 'already validated by the Svelte+Node project'
-  if (target === 'D') return 'direct mounted-component or DOM/browser evidence'
-  if (target === 'S') return 'direct Svelte transform/store/rune evidence without direct DOM evidence'
-  if (signals.storage || signals.network || signals.timers || signals.filesystem || signals.fastifyHarness) {
-    return 'no direct Svelte/DOM evidence; non-DOM dependency must remain explicitly faked or Node-safe'
-  }
-  return 'no direct Svelte transformation or DOM/browser evidence'
+  if (target === 'N') return 'validated by the Node project'
+  if (target === 'S') return 'validated by the Svelte+Node project'
+  if (signals.domOrMount) return 'validated Happy-DOM owner with direct mounted-component or DOM/browser evidence'
+  return 'validated explicit Happy-DOM owner with probe-backed transitive browser requirements'
 }
 
 export function createFrontendTestInventoryRow(
@@ -218,15 +212,14 @@ export function createFrontendTestInventoryRow(
   source: string,
 ): FrontendTestInventoryRow {
   const signals = analyzeFrontendTestSource(source)
-  const targetClass = targetCapability(currentProject, signals)
+  const targetClass = targetCapability(currentProject)
   const domain = owningDomain(file)
-  const requiresProbe = currentProject === 'frontend-dom' && (targetClass === 'N' || targetClass === 'S')
 
   return {
     file,
     currentProject,
     targetClass,
-    confidence: requiresProbe ? 'medium' : 'high',
+    confidence: 'high',
     svelte: signalText(signals.svelte),
     domOrMount: signalText(signals.domOrMount),
     storage: signalText(signals.storage),
@@ -235,9 +228,7 @@ export function createFrontendTestInventoryRow(
     filesystem: signalText(signals.filesystem),
     fastifyHarness: signalText(signals.fastifyHarness),
     coverageAndGateOwnership: coverageAndGateOwnership(file, currentProject),
-    ambiguityOrBlocker: requiresProbe
-      ? `target-${targetClass.toLowerCase()} probe required; direct-file scan cannot prove transitive runtime needs`
-      : '',
+    ambiguityOrBlocker: '',
     domain,
     suggestedSlice:
       targetClass === 'N'
@@ -559,8 +550,7 @@ function inventorySummary(
     `Standalone ordinary discovery: ${projectSummary(ordinaryProjects)}`,
     `test:all ordinary discovery: ${projectSummary(aggregateOrdinaryProjects)}`,
     `Browser smoke discovery: ${rows.filter((row) => row.currentProject === 'browser-smoke').length} files`,
-    `Target candidates: ${[...targetCounts].map(([target, count]) => `${target}=${count}`).join(', ')}`,
-    `Migration probes required: ${rows.filter((row) => row.ambiguityOrBlocker).length}`,
+    `Explicit capability ownership: ${[...targetCounts].map(([target, count]) => `${target}=${count}`).join(', ')}`,
   ].join('\n')
 }
 

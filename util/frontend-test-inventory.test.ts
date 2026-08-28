@@ -119,7 +119,7 @@ import { Window } from 'happy-dom'
     ])
   })
 
-  it('keeps validated Node files in N and routes static candidates by their smallest direct capability', () => {
+  it('records final runtime ownership independently from supplemental static signals', () => {
     const node = createFrontendTestInventoryRow(
       'src/already-node.test.ts',
       'frontend-node',
@@ -142,13 +142,17 @@ import { Window } from 'happy-dom'
     )
 
     expect(node.targetClass).toBe('N')
-    expect(svelteNode).toMatchObject({ targetClass: 'S', confidence: 'medium' })
-    expect(svelteNode.ambiguityOrBlocker).toContain('probe required')
+    expect(svelteNode).toMatchObject({
+      targetClass: 'D',
+      confidence: 'high',
+      ambiguityOrBlocker: '',
+      reason: 'validated explicit Happy-DOM owner with probe-backed transitive browser requirements',
+    })
     expect(validatedSvelteNode).toMatchObject({
       targetClass: 'S',
       confidence: 'high',
       ambiguityOrBlocker: '',
-      reason: 'already validated by the Svelte+Node project',
+      reason: 'validated by the Svelte+Node project',
     })
     expect(dom).toMatchObject({ targetClass: 'D', confidence: 'high' })
   })
