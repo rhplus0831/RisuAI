@@ -227,6 +227,37 @@ export const categoryRules: readonly CategoryRule[] = [
     ],
   },
   {
+    id: 'reviewed-plugin-adjacent-persistence-boundaries',
+    category: 'C',
+    description:
+      'Reviewed settings and plugin-storage range owners whose dominant contract is durable command mutation.',
+    patterns: [/^server\/fastify\/__tests__\/commandSettingsAndPluginStorageRange\.test\.ts$/],
+  },
+  {
+    id: 'reviewed-plugin-adjacent-browser-state-boundaries',
+    category: 'B',
+    description:
+      'Reviewed module-editor draft storage whose dominant contract is browser recovery and writer isolation.',
+    patterns: [/^src\/ts\/server\/moduleEditorDraftStore\.test\.ts$/],
+  },
+  {
+    id: 'reviewed-plugin-adjacent-provider-boundaries',
+    category: 'G',
+    description:
+      'Reviewed plugin-provider response identity and provider-dashboard freshness owners whose dominant contract is provider request behavior.',
+    patterns: [
+      /^src\/ts\/process\/request\/tests\/pluginProviderModelId\.test\.ts$/,
+      /^src\/ts\/server\/nanoGPTDashboardFetch\.test\.ts$/,
+    ],
+  },
+  {
+    id: 'reviewed-plugin-adjacent-asset-boundaries',
+    category: 'K',
+    description:
+      'Reviewed database analysis whose dominant contract is export materialization and asset ownership diagnostics.',
+    patterns: [/^util\/analyze-database\.test\.ts$/],
+  },
+  {
     id: 'plugin-tool-runtime',
     category: 'J',
     description:

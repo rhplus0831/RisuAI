@@ -165,6 +165,20 @@ describe('test effectiveness inventory', () => {
     }
   })
 
+  it('routes reviewed plugin-adjacent owners by their dominant contract', () => {
+    const counterexamples = new Map<string, string>([
+      ['server/fastify/__tests__/commandSettingsAndPluginStorageRange.test.ts', 'C'],
+      ['src/ts/server/moduleEditorDraftStore.test.ts', 'B'],
+      ['src/ts/process/request/tests/pluginProviderModelId.test.ts', 'G'],
+      ['src/ts/server/nanoGPTDashboardFetch.test.ts', 'G'],
+      ['util/analyze-database.test.ts', 'K'],
+    ])
+
+    for (const [file, category] of counterexamples) {
+      expect(categoryForTestFile(file).category, `${file} must not fall through to plugin-tool-runtime`).toBe(category)
+    }
+  })
+
   it('reuses lane routing and captures special ownership, kind, seams, and static dependencies', () => {
     const frontend = createTestEffectivenessInventoryRow(
       'src/lib/Others/GridCatalog.svelte.test.ts',
