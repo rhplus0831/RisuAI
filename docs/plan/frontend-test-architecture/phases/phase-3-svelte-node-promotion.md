@@ -1,6 +1,6 @@
 # Phase 3: Svelte+Node Promotion
 
-Status: In Progress
+Status: Complete
 
 ## Completed Slices
 
@@ -23,6 +23,28 @@ Status: In Progress
 - [Target-S blocker ledger](slices/phase-3/target-s-blocker-ledger.md): retained
   93 candidates and 1,503 tests after exact Svelte+Node probes reached eager
   browser globals or real DOM parsing behavior.
+- [Closeout and re-profile](slices/phase-3/closeout-and-reprofile.md): completed
+  the formal benchmark and validation gate, retained Svelte+Node as a durable
+  layer, and ranked Phase 4 from current warm-run evidence.
+
+## Exit Result
+
+Phase 3 moved 15 files / 159 tests to Svelte+Node and corrected 28 static
+false-positive S candidates / 312 tests to Node. Ninety-three target-S files
+remain in Happy-DOM with exact browser-global or DOM-parser blockers. Together
+with the four remaining Phase 2 target-N retainers, every mismatch has current
+target-project evidence and no Phase 3 candidate remains unprobed.
+
+The formal 529-file / 6,413-test warm ordinary frontend median is 68.47s wall,
+down 5.3% from the 72.30s Phase 0 baseline. Peak-RSS median is 5,019,644 KiB,
+up 4.9% and inside the 10% guard. The primary 57.84s target is not met, so
+Phase 4 proceeds with the current measured ranking rather than broad static
+extraction.
+
+Svelte+Node remains a durable useful layer: its aggregate ordinary project owns
+17 files / 167 tests, passes in 2.36s wall, and uses 341ms aggregate environment
+time without DOM setup. Phase 4 starts with chat-command boundaries, followed
+by settings projections, server-backed fixture planning, and router state.
 
 ## Objective
 

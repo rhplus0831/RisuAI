@@ -308,7 +308,8 @@ Each candidate requires a fresh profile and a slice-specific value hypothesis.
 
 ## Execution Cursor
 
-Phases 0-1 are complete. Begin Phase 2 with bounded pure-Node promotion slices,
-starting with protocol, utilities, parsers, validation, and serialization. Use
-the checked inventory and target-project probes; do not invert suffix defaults
-or begin bulk S promotion before their owning phases.
+Phases 0-3 are complete. Begin Phase 4 with the measured chat-command boundary,
+then settings projection, server-backed fixture planning, and router-state
+slices as ranked by the Phase 3 re-profile. Each slice still requires a fresh
+value hypothesis and retained DOM/browser companion. Do not invert suffix
+defaults before the Phase 6 completeness gate.

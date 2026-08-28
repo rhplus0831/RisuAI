@@ -4,9 +4,128 @@ Date: 2026-08-28
 
 ## State
 
-Phase 3 in progress after its first proof-backed Svelte+Node promotion slice.
-This record does not authorize repository-wide default inversion or migration
-outside the active phase rules.
+Phase 3 closeout complete. This record does not authorize repository-wide
+default inversion or migration outside the later phase rules.
+
+## Phase 3 Closeout Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `9a65b6d7b7a403fed42f3a21198133ce42c30c24`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Available CPUs: 10
+- Frontend test-all UI-map exclusion: `RISU_TEST_EXCLUDE_UI_MAP=true`
+- Isolation: enabled
+- Measurement tree: the clean target-S blocker-ledger commit with all permanent
+  Phase 3 promotions already landed. No unrelated working-tree changes were
+  present.
+
+## Phase 3 Exit Ownership And Completeness
+
+Phase 3 promoted 43 files / 471 tests out of Happy-DOM. Fifteen files / 159
+tests moved to Svelte+Node; a smaller-runtime cross-check moved 28 static
+false-positive S candidates / 312 tests to Node. The exhaustive target-S probe
+retained 93 files / 1,503 tests with exact browser-global or DOM-parser
+blockers.
+
+Final discovery remains exhaustive and disjoint:
+
+| View | Files | Node | Svelte+Node | Happy-DOM |
+| --- | ---: | ---: | ---: | ---: |
+| Full, including explicit performance gates | 537 | 189 | 17 | 331 |
+| Standalone ordinary frontend | 535 | 189 | 17 | 329 |
+| `test:all` ordinary frontend | 529 | 188 | 17 | 324 |
+
+The aggregate ordinary test count remains 6,413. The 97 remaining generated
+mismatches are 4 N and 93 S, all with target-project evidence and recorded
+owners. No Phase 3 candidate remains unprobed.
+
+## Phase 3 Formal Ordinary Frontend Benchmark
+
+The cold transform-cache run was preceded by `pnpm exec vitest --clearCache`;
+it is not an OS page-cache claim. It passed 529 files / 6,413 tests in 72.59s
+wall and 71.73s Vitest duration, with 435.88s user, 37.41s system, 651% CPU, and
+4,425,224 KiB peak RSS.
+
+Three consecutive warm runs passed the same 529 files / 6,413 tests:
+
+| Run | Wall | Vitest | User | System | CPU | Peak RSS KiB |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 68.47s | 67.41s | 399.30s | 30.67s | 627% | 4,626,468 |
+| 2 | 70.70s | 69.77s | 420.77s | 32.06s | 640% | 5,068,472 |
+| 3 | 66.76s | 65.83s | 397.75s | 29.37s | 639% | 5,019,644 |
+| Median | 68.47s | 67.41s | 399.30s | 30.67s | 639% | 5,019,644 |
+
+The warm wall range is 66.76-70.70s. Against Phase 0, wall median improves by
+3.83s (5.3%) and peak-RSS median increases by 234,356 KiB (4.9%), inside the
+10% guard. Against Phase 2, wall median improves by 1.03s (1.5%). The 57.84s
+primary and 50.61s stretch targets are not met.
+
+Median aggregate Vitest phases are 103.67s transform, 29.09s setup, 405.31s
+import, 81.39s test bodies, and 42.33s environment. These values accumulate
+across parallel workers and do not add to wall time.
+
+## Phase 3 Independent Projects, Root, And Coverage
+
+All independent aggregate ordinary projects passed:
+
+| Project | Result | Vitest | Wall | Peak RSS KiB |
+| --- | --- | ---: | ---: | ---: |
+| `frontend-node` | 188 files / 1,259 tests | 4.74s | 5.51s | 1,052,504 |
+| `frontend-svelte-node` | 17 files / 167 tests | 1.71s | 2.36s | 1,156,464 |
+| `frontend-dom` | 324 files / 4,987 tests | 60.97s | 61.86s | 4,811,348 |
+
+Svelte+Node reported 341ms aggregate environment time. It remains a durable
+useful layer for real rune-dependent contracts without DOM setup.
+
+The standalone root frontend passed 535 files / 6,616 tests in 72.26s wall and
+71.39s Vitest duration, with 4,730,268 KiB peak RSS. The focused UI coverage
+gate passed 6 files / 203 tests in 19.76s wall and 18.89s Vitest duration, with
+14.55% lines, 14.96% statements, 18.2% functions, and 9.52% branches. This is a
+1.8% wall improvement from the 20.13s Phase 0 coverage baseline.
+
+## Phase 3 Re-Profile And Phase 4 Decision
+
+The primary target is not met, so Phase 4 proceeds using current warm-run
+evidence. Three-run median per-file elapsed time ranks the approved families:
+
+1. `chatCommands.test.ts`: 5.00s; start with cohesive chat import/chunk planning.
+2. Settings projection/reconciliation: `TranslatorPresetSettings.svelte.test.ts`
+   at 2.73s, `chatGenerationSettingsControls.test.ts` at 2.21s, and
+   `pickerGenerationSettings.test.ts` at 1.73s.
+3. Server-backed fixture planning: `sendChat.fixtures.serverBacked.test.ts` at
+   2.70s and `sendChat.fixtures.test.ts` at 1.72s.
+4. `router.test.ts`: 1.44s; isolate route-to-state planning while retaining
+   history/location contracts.
+
+`bootstrap.test.ts` (2.41s) and `plugins.test.ts` (2.36s) remain deferred because
+their current high-cost proofs are broad lifecycle/browser contracts without an
+approved pure seam. Revisit after the ranked slices or fresher profile evidence.
+
+## Phase 3 Affected And Aggregate Validation
+
+The affected dry-run against the Phase 2 closeout base
+`88d4b43986d54c88b68b7dc206e01ae0c946cd16` selected the complete frontend,
+frontend performance gates, and server lanes. Execution passed 535 frontend
+files / 6,616 tests in 71.31s Vitest duration, 2 performance files / 6 tests in
+10.10s, and 154 server files / 3,295 passing tests with 1 skip in 16.73s.
+
+`pnpm test:all --dry-run` showed the expected eight-lane graph. The complete
+aggregate passed in 3m24.6s internal duration and 204.98s measured wall:
+
+- server and browser-smoke typecheck: 15.6s;
+- frontend tests: 529 files / 6,413 tests in 1m19.7s;
+- server tests: 154 files / 3,295 passing with 1 skip in 17.1s;
+- browser smoke: 34 tests in 1m13.7s;
+- frontend Svelte check: zero errors and warnings in 30.1s;
+- UI coverage: 6 files / 203 tests in 20.0s;
+- format check: 32.0s;
+- frontend performance gates: 2 files / 6 tests in 14.0s.
+
+The measured aggregate wall improves by 3.55s (1.7%) from the 208.53s Phase 0
+baseline. `pnpm check:frontend-test-inventory`, `pnpm format:check`, and
+`git diff --check` also passed. All Phase 3 exit criteria are satisfied.
 
 ## Phase 3 Target-S Blocker Ledger Environment And Source State
 
@@ -203,7 +322,7 @@ remain Phase 3 exit work.
 ## Phase 3 Probe-Backed Runtime Bridges Environment And Source State
 
 - Repository: `/home/codex/risuai-fastify`
-- Base commit: `88d4b4398a0b11cca40848175b90c8a7540c2af0`
+- Base commit: `88d4b43986d54c88b68b7dc206e01ae0c946cd16`
 - Node: 24.19.0
 - pnpm: 11.23.0
 - Vitest: 4.1.2

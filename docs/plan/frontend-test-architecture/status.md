@@ -8,16 +8,15 @@ codebase remain authoritative until a phase lands.
 
 ## Current Snapshot
 
-- Plan state: Phases 0-2 complete; Phase 3 in progress.
-- Current phase: Phase 3 — Svelte+Node Promotion (in progress).
-- Active slice: Phase 3 exit validation and stopping-gate benchmark.
+- Plan state: Phases 0-3 complete; Phase 4 pending.
+- Current phase: Phase 4 — Pure Logic Extraction (pending).
+- Active slice: None; Phase 3 exit verification is complete.
 - Implementation state: Phase 3 has moved 15 files / 159 tests to Svelte+Node
   and 28 files / 312 tests to Node without production or test-body changes.
   Phases 2-3 have promoted 78 files and 647 tests in total.
-- Blockers: 93 candidate-level Svelte+Node blockers are recorded with owners and
-  revisit conditions; none blocks Phase 3 closeout.
-- Next action: Run complete project, coverage, affected, aggregate, and formal
-  three-run timing validation; record the Phase 4 scope decision.
+- Blockers: None. Ninety-three retained target-S candidates have recorded Phase
+  4/5 owners and revisit conditions.
+- Next action: Prepare the first measured Phase 4 chat-command boundary slice.
 
 ## Phase Router
 
@@ -26,7 +25,7 @@ codebase remain authoritative until a phase lands.
 | [0](phases/phase-0-baseline-and-classification.md) | Complete | Ratified metrics, capability rules, and discovery/completeness proof. |
 | [1](phases/phase-1-runtime-topology.md) | Complete | Added and piloted the Node, Svelte+Node, and Happy-DOM topology. |
 | [2](phases/phase-2-pure-node-promotion.md) | Complete | Promoted already-pure tests to Node and recorded every retained N candidate. |
-| [3](phases/phase-3-svelte-node-promotion.md) | In Progress | Promote Svelte-compiled tests that do not require DOM behavior. |
+| [3](phases/phase-3-svelte-node-promotion.md) | Complete | Promoted Svelte-compiled tests that do not require DOM behavior. |
 | [4](phases/phase-4-pure-logic-extraction.md) | Pending | Extract measured pure-logic seams while retaining DOM contracts. |
 | [5](phases/phase-5-dom-contract-consolidation.md) | Pending | Consolidate repeated DOM setup and clarify visible-state ownership. |
 | [6](phases/phase-6-routing-and-ci-enforcement.md) | Pending | Enforce explicit routing and align affected tests, coverage, aggregate execution, and CI. |
@@ -98,11 +97,11 @@ guard. The workstream-wide 20% target remains open for Phases 3-7. No Phase 2 N
 candidate remains unprobed. The 13 generated N mismatches are all probe-backed
 retainers under recorded Phase 3, Phase 4, or DOM-contract owners.
 
-## Phase 3 Current Result
+## Phase 3 Cumulative Result
 
 | Measurement | Result |
 | --- | ---: |
-| Completed slices and proof batches | 6 |
+| Completed slices and proof batches | 7 |
 | Promoted to Svelte+Node | 15 files / 159 tests |
 | Promoted to Node after cross-check | 28 files / 312 tests |
 | Full three-project universe | 537 files: 189 N / 17 S / 331 D |
@@ -112,14 +111,28 @@ retainers under recorded Phase 3, Phase 4, or DOM-contract owners.
 | Retained target-S blockers | 93 files / 1,503 tests |
 | Remaining static mismatches | 97: 4 N / 93 S, all probe-backed |
 | Unprobed Phase 3 candidates | 0 files |
+| Cold ordinary frontend | 72.59s wall / 71.73s Vitest |
+| Warm ordinary wall median | 68.47s (66.76-70.70s) |
+| Warm Vitest duration median | 67.41s |
+| Warm peak RSS median | 5,019,644 KiB |
+| Wall delta from Phase 0 | -5.3% |
+| Peak-RSS delta from Phase 0 | +4.9% |
+| Focused UI coverage | 6 files / 203 tests / 19.76s wall |
+| Full `test:all` | 204.98s wall |
 
 The first slice promoted only suites with exact Phase 2 Svelte+Node evidence.
 The complete 127-file target-S probe then passed 34 candidates and failed 93 at
 exact browser or import-graph boundaries. A Node cross-check passed 28 of the
 34, correcting false-positive S classifications caused by type-only or otherwise
 Node-safe Svelte imports; six require the client transform because Node reaches
-`$state`. These are capability observations, not the formal Phase 3 performance
-result; the stopping-gate benchmark remains pending.
+`$state`.
+
+The formal warm median improves 3.83s (5.3%) from Phase 0 while the 4.9% RSS
+increase remains inside the 10% guard. The 57.84s primary target is not met, so
+Phase 4 proceeds with the current profile ranking. Svelte+Node remains a durable
+layer at 17 aggregate ordinary files / 167 tests and 341ms environment time.
+The approved Phase 4 order is chat-command boundaries, settings projection,
+server-backed fixture planning, then router state.
 
 ## Current Decisions
 
@@ -252,6 +265,11 @@ result; the stopping-gate benchmark remains pending.
     graphs read `window`, and two suites execute real `DOMParser` behavior. The
     retained Happy-DOM scopes pass all 1,503 tests. Phase 4 stopping-gate triage
     owns measured import-graph seams; Phase 5 owns durable parser contracts.
+35. Phase 3 closed after 43 files / 471 tests moved out of Happy-DOM, every
+    remaining mismatch received target-project evidence, and the complete
+    validation gate passed. The 68.47s warm wall median improves 5.3% from
+    Phase 0 but misses the primary target; Phase 4 uses the new measured ranking.
+    Svelte+Node remains useful and durable at 17 files / 167 tests.
 
 ## Accepted Observations
 
@@ -294,16 +312,16 @@ promotion continues.
 
 ## Latest Completed Slice
 
-[Phase 2 server resource and bootstrap Node probe](phases/slices/phase-2/server-resource-and-bootstrap-node-probe.md)
-retained four suites and 34 tests in Happy-DOM after proving their transitive
-Svelte rune requirements in Node and their no-DOM compatibility in
-Svelte+Node. All Phase 2 N candidates now have target-runtime evidence.
+[Phase 3 closeout and re-profile](phases/slices/phase-3/closeout-and-reprofile.md)
+completed the cold and three-run warm benchmark, all project/coverage/affected
+and aggregate validation, the Svelte+Node durability decision, and the measured
+Phase 4 ranking.
 
 ## Latest Verification
 
-See [`latest-verification.md`](latest-verification.md) for the current Phase 3
-slice evidence, the Phase 2 three-run timing gate, final aggregate validation,
-accepted browser-smoke observation, and preceding promotion and probe records.
+See [`latest-verification.md`](latest-verification.md) for the Phase 3 formal
+benchmark, final aggregate validation, project and coverage results, measured
+Phase 4 ranking, and preceding promotion and probe records.
 
 ## Maintenance Rules
 

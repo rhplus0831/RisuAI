@@ -1,6 +1,6 @@
 # Phase 4: Pure Logic Extraction
 
-Status: Pending Phase 3 Stopping Gate
+Status: Pending
 
 ## Objective
 
@@ -33,6 +33,31 @@ Code aesthetics alone are not sufficient.
 - Fixture parsing/planning and reusable server-backed harness setup.
 
 Re-rank these after Phase 3; add or remove candidates based on current evidence.
+
+## Phase 3 Approved Ranking
+
+The Phase 3 stopping gate did not meet the 57.84s primary target. Its three warm
+runs provide this current per-file median elapsed ranking:
+
+1. Chat command boundaries: `src/ts/chatCommands.test.ts` at 5.00s. Prepare the
+   first slice around cohesive import/chunk planning and retain durable command
+   and browser integration contracts.
+2. Settings projection and reconciliation:
+   `TranslatorPresetSettings.svelte.test.ts` at 2.73s,
+   `chatGenerationSettingsControls.test.ts` at 2.21s, and
+   `pickerGenerationSettings.test.ts` at 1.73s. Select one cohesive projection
+   or pending-write seam per slice and retain mounted contracts.
+3. Server-backed fixture planning:
+   `sendChat.fixtures.serverBacked.test.ts` at 2.70s and
+   `sendChat.fixtures.test.ts` at 1.72s. Separate deterministic fixture planning
+   from the browser-shaped import graph while retaining the integration owner.
+4. Router construction/reset: `src/ts/router.test.ts` at 1.44s. Extract only
+   route-to-state planning; keep history/location behavior in D.
+
+`src/ts/bootstrap.test.ts` (2.41s) and `src/ts/plugins/plugins.test.ts` (2.36s)
+are measured but not yet approved: both currently prove broad lifecycle or
+browser-owned behavior without a demonstrated pure seam. Revisit after the
+ranked slices or when fresher profiler evidence changes the order.
 
 ## Slice Shape
 
