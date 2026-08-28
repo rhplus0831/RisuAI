@@ -2,9 +2,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { subscribeBrowserLifecycleRecovery } from './lifecycleRecovery'
 
 const cleanups: Array<() => void> = []
+const originalVisibilityState = Object.getOwnPropertyDescriptor(document, 'visibilityState')
 
 afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup()
+  if (originalVisibilityState) {
+    Object.defineProperty(document, 'visibilityState', originalVisibilityState)
+  } else {
+    Reflect.deleteProperty(document, 'visibilityState')
+  }
 })
 
 describe('browser lifecycle recovery', () => {
@@ -23,5 +29,55 @@ describe('browser lifecycle recovery', () => {
     expect(generation).toHaveBeenCalledWith('pageshow')
     expect(resources).toHaveBeenCalledOnce()
     expect(resources).toHaveBeenCalledWith('pageshow')
+  })
+
+  it('suppresses hidden visibility changes and reports online and focus recovery separately', async () => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+    const listener = vi.fn()
+    cleanups.push(subscribeBrowserLifecycleRecovery(listener))
+
+    document.dispatchEvent(new Event('visibilitychange'))
+    await Promise.resolve()
+    expect(listener).not.toHaveBeenCalled()
+
+    window.dispatchEvent(new Event('online'))
+    await Promise.resolve()
+    window.dispatchEvent(new Event('focus'))
+    await Promise.resolve()
+
+    expect(listener.mock.calls).toEqual([['online'], ['focus']])
+  })
+
+  it('isolates a throwing recovery domain from the remaining subscribers', async () => {
+    const failure = new Error('generation recovery failed')
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    cleanups.push(
+      subscribeBrowserLifecycleRecovery(() => {
+        throw failure
+      }),
+    )
+    const resources = vi.fn()
+    cleanups.push(subscribeBrowserLifecycleRecovery(resources))
+
+    window.dispatchEvent(new Event('online'))
+    await Promise.resolve()
+
+    expect(consoleError).toHaveBeenCalledWith(failure)
+    expect(resources).toHaveBeenCalledWith('online')
+  })
+
+  it('cancels queued work after the final unsubscribe and reinstalls cleanly', async () => {
+    const abandoned = vi.fn()
+    const unsubscribe = subscribeBrowserLifecycleRecovery(abandoned)
+    window.dispatchEvent(new Event('online'))
+    unsubscribe()
+    await Promise.resolve()
+    expect(abandoned).not.toHaveBeenCalled()
+
+    const reinstalled = vi.fn()
+    cleanups.push(subscribeBrowserLifecycleRecovery(reinstalled))
+    window.dispatchEvent(new Event('focus'))
+    await Promise.resolve()
+    expect(reinstalled).toHaveBeenCalledWith('focus')
   })
 })
