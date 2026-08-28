@@ -169,6 +169,62 @@ describe('IndexedDB resource cache', () => {
     expect(selectResourceCacheHashes(cached)).toHaveLength(8_192)
   })
 
+  it('does not retain a value above the per-entry storage budget', async () => {
+    const oversized = 'x'.repeat(32 * 1024 * 1024)
+    await persistResourceCache([
+      {
+        key: 'settings:oversized',
+        hashes: ['a'.repeat(64)],
+        values: [oversized],
+      },
+    ])
+
+    const cached = (await readResourceCacheSnapshots(['settings:oversized']))!.get('settings:oversized')!
+    expect(cached).toEqual({ hashes: [], valuesByHash: new Map() })
+  })
+
+  it('prunes the oldest manifest population to the database-wide manifest budget', async () => {
+    const values = Array.from({ length: 513 }, (_, index) => ({ index }))
+    const hashes = await Promise.all(values.map((value) => sha256JsonValue(value)))
+    const keys = values.map(({ index }) => `collection:budget-${index.toString().padStart(3, '0')}`)
+    await persistResourceCache(
+      values.map((value, index) => ({
+        key: keys[index]!,
+        hashes: [hashes[index]!],
+        values: [value],
+      })),
+    )
+
+    const snapshots = await readResourceCacheSnapshots(keys)
+    expect([...snapshots!.values()].filter((snapshot) => snapshot.hashes.length > 0)).toHaveLength(512)
+  })
+
+  it('treats an unreadable manifest row as an empty disposable cache snapshot', async () => {
+    const request = indexedDB.open('risu-resource-cache-v1', 1)
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore('entries')
+        request.result.createObjectStore('manifests')
+      }
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    const transaction = database.transaction('manifests', 'readwrite')
+    transaction.objectStore('manifests').put(
+      { version: 1, hashes: ['b'.repeat(64)], sizes: [], updatedAt: Date.now() },
+      'collection:corrupt',
+    )
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve()
+      transaction.onerror = () => reject(transaction.error)
+      transaction.onabort = () => reject(transaction.error)
+    })
+    database.close()
+
+    const cached = (await readResourceCacheSnapshots(['collection:corrupt']))!.get('collection:corrupt')!
+    expect(cached).toEqual({ hashes: [], valuesByHash: new Map() })
+  })
+
   it('accepts only the negotiated SHA-256 cache metadata', () => {
     expect(isResourceCacheMetadata({ version: 2, algorithm: 'sha256' })).toBe(true)
     expect(isResourceCacheMetadata({ version: 1, algorithm: 'sha256' })).toBe(false)
