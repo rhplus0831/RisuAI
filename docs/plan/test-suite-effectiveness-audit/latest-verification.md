@@ -309,3 +309,18 @@ pnpm --version
 
 Results: the frozen install was already up to date and reported pnpm `11.23.0`;
 the lockfile did not change.
+
+### Production-only UI coverage denominator
+
+`TSA-P01-005` is done. The coverage config excludes exactly the 28 test-only UI
+hosts/stubs/harnesses in the checked support manifest; a policy case prevents
+the registry from drifting. Thresholds did not change.
+
+```sh
+pnpm exec vitest run util/test-all.test.ts
+pnpm coverage:ui-map
+```
+
+Results: 7/7 policy cases and 203/203 UI cases passed. Production-only coverage
+is 14.44% lines, 14.83% statements, 18.13% functions, and 9.45% branches. One
+policy case takes the live total from 9,984 to 9,985.

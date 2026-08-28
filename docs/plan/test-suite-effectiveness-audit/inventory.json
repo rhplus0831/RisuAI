@@ -30658,27 +30658,27 @@
         "filesystem"
       ],
       "caseCounts": {
-        "cases": 6,
+        "cases": 7,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "all six aggregate topology, isolation, failure-preservation, and CI-parity cases",
+        "caseOrMatrixOwner": "all seven aggregate topology, isolation, CI-parity, and coverage-owner cases",
         "valueClasses": [
           "architecture policy"
         ],
-        "productionOwnerOrContract": "util/test-all.ts nine-lane phase graph and .github/workflows/quality.yml required owner parity",
+        "productionOwnerOrContract": "aggregate phase graph, CI required-owner parity, and production-only UI coverage denominator",
         "plausibleDefect": "An isolated dependency is invalid or a local aggregate owner disappears from CI without a failing policy test.",
         "risk": "Low silent scheduling drift that can expose timing gates to load or omit a required CI owner.",
         "companionEvidence": "The dry-run exposes commands; the final aggregate and CI execute the policies against real lanes.",
         "decision": "Keep",
         "confidence": "high",
-        "rationale": "Counterexamples reject invalid regular/isolated dependencies and the workflow assertion maps every local lane to a required CI job while preserving the intentional initial-preload superset.",
+        "rationale": "Counterexamples reject invalid phase dependencies, map every local lane to required CI, and keep the exact UI support exclusions aligned with the checked support manifest.",
         "findingId": "TSA-P01-003",
         "severity": "Low",
         "action": "Retain complete graph validation and CI owner mapping with the aggregate orchestrator.",
-        "validation": "6/6 focused cases and test:all dry-run passed; full aggregate at slice close",
+        "validation": "7/7 focused cases, test:all dry-run, and 203/203 production-denominator UI coverage passed",
         "state": "remediated"
       }
     },

@@ -2,7 +2,7 @@
 
 Date: 2026-08-29
 
-Status: Active; five findings are done and one remains confirmed.
+Status: Active; six findings are done and one remains confirmed.
 
 This directory owns durable finding and decision records for the audit. Phase 0
 will decide whether the working ledger remains in this index, splits into
@@ -243,3 +243,33 @@ Every finding records:
 - Count delta: none.
 - Revisit condition: update declaration and workflow together when intentionally
   upgrading pnpm, with a frozen install and full aggregate.
+
+### TSA-P01-005: UI coverage denominator includes test harnesses
+
+- State: Done.
+- Severity: Low.
+- Category: A.
+- Decision: Strengthen configuration.
+- Tests/cases: the six UI-map sentinel files (203 cases) and the coverage-owner
+  assertion in `util/test-all.test.ts`.
+- Production owner: focused UI coverage denominator across ChatScreens, Others,
+  SideBars, and client server bridges.
+- Protected contract or plausible defect: test-only mounted hosts, stubs, and
+  harness utilities inflate the reported production coverage signal and can
+  hide denominator drift.
+- Evidence: 28 checked `shared-helper-harness` files contributed 160 lines and
+  201 statements; 56 lines and 75 statements were covered. Their inclusion
+  raised the aggregate slightly from production-only values.
+- Companion/overlap analysis: the harness files remain valuable support owners
+  and are tested through their consumers; excluding them from a production
+  denominator does not remove execution or assertions.
+- Action and rollback: add the exact 28 support paths to a coverage exclusion
+  registry and check that registry against the support manifest. Thresholds
+  remain unchanged.
+- Validation: 7/7 aggregate/owner policy cases passed; UI coverage passed
+  203/203 at 14.44% lines, 14.83% statements, 18.13% functions, and 9.45%
+  branches, above the 8/7/5/4 floors.
+- Count delta: no file delta; one owner-policy case added, taking the live total
+  from 9,984 to 9,985.
+- Revisit condition: any support-manifest or UI coverage root change must update
+  the checked registry before the gate can pass.

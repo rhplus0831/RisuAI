@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { uiCoverageTestFiles } from '../vitest.ui-coverage-tests.js'
+import { uiCoverageSupportFiles, uiCoverageTestFiles } from '../vitest.ui-coverage-tests.js'
 import { performanceTestFiles } from '../vitest.performance-tests.js'
 import {
   parseTestAllJobs,
@@ -111,5 +111,18 @@ describe('test:all orchestration', () => {
       expect(verifySection, `${job} verify dependency`).toContain(`- ${job}`)
     }
     expect(verifySection).toContain('- initial-preload')
+  })
+
+  it('excludes every checked UI test harness from coverage denominators', () => {
+    const support = JSON.parse(
+      readFileSync('docs/plan/test-suite-effectiveness-audit/support-artifacts.json', 'utf8'),
+    ) as { groups: Array<{ role: string; files: string[] }> }
+    const uiRoots = /^(?:src\/lib\/(?:ChatScreens|Others|SideBars)|src\/ts\/server)\//
+    const expected = support.groups
+      .find((group) => group.role === 'shared-helper-harness')!
+      .files.filter((file) => uiRoots.test(file))
+      .sort()
+
+    expect([...uiCoverageSupportFiles].sort()).toEqual(expected)
   })
 })

@@ -29,6 +29,8 @@ P01-S02.
   dependency. Initial preload remains the documented CI-only superset.
 - Closed `TSA-P01-004`: local and CI now use the exact declared pnpm 11.23.0;
   the frozen lockfile installs unchanged.
+- Closed `TSA-P01-005`: the focused UI coverage denominator excludes the exact
+  28 checked test-only harness/stub owners while keeping the thresholds fixed.
 
 No product behavior or existing test was removed. The affected policy gained
 eight cases; live totals are 699 files and 9,984 cases.

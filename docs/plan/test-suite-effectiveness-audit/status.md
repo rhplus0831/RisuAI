@@ -35,11 +35,11 @@ in [`latest-verification.md`](latest-verification.md).
 | Fastify Vitest                       | 154 files                                    |
 | Browser smoke                        | 7 files                                      |
 | Compatibility harness                | Opt-in; outside `test:all` and file count     |
-| Collected cases                      | 9,984 total; 1 direct-only skip; 1,261 parameterized rows |
+| Collected cases                      | 9,985 total; 1 direct-only skip; 1,261 parameterized rows |
 | Support owners                       | 253 standalone; 64 mixed production seams   |
 | Primary-category assignments         | 699 of 699 ratified                          |
 | Complete file dispositions           | 8 Keep                                       |
-| Findings                             | 5 done / 1 confirmed                         |
+| Findings                             | 6 done / 1 confirmed                         |
 
 The 698-file rows preserve the plan-creation anchor. The live counts, support
 owners, runtime evidence, and category totals are checked by the Phase 0

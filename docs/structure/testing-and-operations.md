@@ -166,9 +166,11 @@ coverage when frontend tests fail, then exits non-zero if either side failed.
 `pnpm test:all`. It uses `@vitest/coverage-v8`, runs the focused ChatScreens,
 Others, and SideBars UI test files, enforces line `8%`, statement `7%`, function
 `5%`, and branch `4%` thresholds, and emits `text` and `json-summary` reports
-under `coverage/ui-map`. `pnpm coverage:ui-map:html` additionally emits HTML on
-demand. The repository ignores `coverage/`; keep all coverage reports local
-unless a plan slice explicitly asks for extracted results.
+under `coverage/ui-map`. Its denominator excludes the exact test-only UI hosts,
+stubs, and harnesses checked in the support manifest. `pnpm coverage:ui-map:html`
+additionally emits HTML on demand. The repository ignores `coverage/`; keep all
+coverage reports local unless a plan slice explicitly asks for extracted
+results.
 
 Browser smoke also owns tracked desktop/mobile screenshot baselines under
 `server/fastify/browser-smoke/*-snapshots/`. The core-chat and blocking-alert
