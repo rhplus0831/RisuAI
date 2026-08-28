@@ -1,5 +1,6 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { defineProject } from 'vitest/config'
+import { svelteNodeTestFileGlob } from './vitest.frontend-routing'
 import { excludeUiCoverageTests, uiCoverageTestFiles } from './vitest.ui-coverage-tests'
 
 export default defineProject({
@@ -16,7 +17,7 @@ export default defineProject({
     pool: 'threads',
     environment: './vitest.svelte-node.environment.ts',
     setupFiles: ['vitest.setup.ts'],
-    include: ['**/*.svelte-node.test.ts'],
+    include: [svelteNodeTestFileGlob],
     exclude: ['**/node_modules/**', 'server/**', ...(excludeUiCoverageTests ? uiCoverageTestFiles : [])],
   },
 })

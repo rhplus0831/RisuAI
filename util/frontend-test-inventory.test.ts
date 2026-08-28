@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   analyzeFrontendTestSource,
+  analyzeForbiddenDomCapabilityImports,
   createFrontendTestInventoryRow,
+  frontendCapabilityOverrideReason,
   formatFrontendTestInventory,
   parseVitestFilesOnlyOutput,
+  validateFrontendCapabilityRouting,
   validateFrontendVitestDiscovery,
 } from './frontend-test-inventory.js'
 
@@ -57,6 +60,63 @@ vi.useFakeTimers()
     expect(analyzeFrontendTestSource(`const module = await import('./state.svelte.ts')`).svelte).toMatchObject({
       line: 1,
     })
+  })
+
+  it('detects only statically reliable DOM imports and accepts a reviewed override', () => {
+    const source = `
+import { get, mount as mountComponent } from 'svelte'
+import { render } from '@testing-library/svelte'
+import { Window } from 'happy-dom'
+`
+
+    expect(analyzeForbiddenDomCapabilityImports(source)).toEqual([
+      expect.objectContaining({ line: 2, evidence: expect.stringContaining('mount as mountComponent') }),
+      expect.objectContaining({ line: 3, evidence: expect.stringContaining('@testing-library/svelte') }),
+      expect.objectContaining({ line: 4, evidence: expect.stringContaining('happy-dom') }),
+    ])
+    expect(
+      frontendCapabilityOverrideReason('// @frontend-test-capability-override: dependency-injected fake DOM'),
+    ).toBe('dependency-injected fake DOM')
+  })
+
+  it('reports filename, registration, project, and forbidden-capability routing gaps', () => {
+    const files = [
+      'src/pure.test.ts',
+      'src/state.svelte-node.test.ts',
+      'src/component.svelte.test.ts',
+      'src/legacy.test.ts',
+      'src/unclassified.spec.ts',
+    ]
+    const projects = new Map([
+      ['frontend-node', new Set(['src/pure.test.ts', 'src/component.svelte.test.ts'])],
+      ['frontend-svelte-node', new Set(['src/state.svelte-node.test.ts'])],
+      ['frontend-dom', new Set(['src/legacy.test.ts'])],
+    ])
+    const sources = new Map([
+      ['src/pure.test.ts', `import { mount } from 'svelte'`],
+      [
+        'src/state.svelte-node.test.ts',
+        `// @frontend-test-capability-override: injected mount adapter\nimport { mount } from 'svelte'`,
+      ],
+    ])
+
+    const problem = validateFrontendCapabilityRouting(files, projects, sources, [
+      'src/legacy.test.ts',
+      'src/legacy.test.ts',
+      'src/stale.test.ts',
+      'src/component.svelte.test.ts',
+    ])
+
+    expect(problem.unclassified).toEqual([expect.stringContaining('src/unclassified.spec.ts')])
+    expect(problem.mismatched).toEqual([
+      'src/component.svelte.test.ts (filename/registration=frontend-dom, discovered=frontend-node)',
+    ])
+    expect(problem.duplicateRegistrations).toEqual(['src/legacy.test.ts (2 entries)'])
+    expect(problem.staleRegistrations).toEqual(['src/stale.test.ts'])
+    expect(problem.redundantRegistrations).toEqual(['src/component.svelte.test.ts'])
+    expect(problem.forbiddenCapabilityImports).toEqual([
+      expect.stringContaining('src/pure.test.ts:1 imports a DOM capability in frontend-node'),
+    ])
   })
 
   it('keeps validated Node files in N and routes static candidates by their smallest direct capability', () => {

@@ -1,6 +1,6 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { defineProject } from 'vitest/config'
-import { nodeTestFiles } from './vitest.node-tests'
+import { explicitDomTestFileGlobs, legacyDomTestFiles } from './vitest.frontend-routing'
 import { excludeUiCoverageTests, uiCoverageTestFiles } from './vitest.ui-coverage-tests'
 
 const explicitPerformanceTests = ['src/ts/__tests__/**/*.test.ts']
@@ -20,11 +20,10 @@ export default defineProject({
     pool: 'threads',
     environment: 'happy-dom',
     setupFiles: ['vitest.setup.ts', 'vitest.dom.setup.ts'],
+    include: [...explicitDomTestFileGlobs, ...legacyDomTestFiles],
     exclude: [
       '**/node_modules/**',
       'server/**',
-      ...nodeTestFiles,
-      '**/*.svelte-node.test.ts',
       ...(includeExplicitPerformanceTests ? [] : explicitPerformanceTests),
       ...(excludeUiCoverageTests ? uiCoverageTestFiles : []),
     ],

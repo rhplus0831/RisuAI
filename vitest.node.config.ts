@@ -1,8 +1,11 @@
 import { defineProject } from 'vitest/config'
-import { nodeTestFiles } from './vitest.node-tests'
+import {
+  explicitDomTestFileGlobs,
+  frontendTestFileGlob,
+  legacyDomTestFiles,
+  svelteNodeTestFileGlob,
+} from './vitest.frontend-routing'
 import { excludeUiCoverageTests, uiCoverageTestFiles } from './vitest.ui-coverage-tests'
-
-const uiCoverageTestFileSet = new Set<string>(uiCoverageTestFiles)
 
 export default defineProject({
   resolve: {
@@ -17,8 +20,14 @@ export default defineProject({
     pool: 'threads',
     environment: 'node',
     setupFiles: ['vitest.setup.ts'],
-    include: excludeUiCoverageTests
-      ? nodeTestFiles.filter((file) => !uiCoverageTestFileSet.has(file))
-      : [...nodeTestFiles],
+    include: [frontendTestFileGlob],
+    exclude: [
+      '**/node_modules/**',
+      'server/**',
+      svelteNodeTestFileGlob,
+      ...explicitDomTestFileGlobs,
+      ...legacyDomTestFiles,
+      ...(excludeUiCoverageTests ? uiCoverageTestFiles : []),
+    ],
   },
 })

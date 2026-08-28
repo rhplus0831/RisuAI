@@ -3,10 +3,16 @@ import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
+import * as ts from 'typescript'
+import {
+  frontendVitestProjectForFile,
+  legacyDomTestFiles,
+  type FrontendVitestProject,
+} from '../vitest.frontend-routing.js'
 import { uiCoverageTestFiles } from '../vitest.ui-coverage-tests.js'
 
 export type FrontendCapability = 'N' | 'S' | 'D' | 'B'
-export type FrontendTestProject = 'frontend-node' | 'frontend-svelte-node' | 'frontend-dom' | 'browser-smoke'
+export type FrontendTestProject = FrontendVitestProject | 'browser-smoke'
 
 export interface SourceSignal {
   line: number
@@ -46,6 +52,15 @@ export interface DiscoveryProblem {
   duplicates: string[]
   missing: string[]
   unexpected: string[]
+}
+
+export interface FrontendRoutingProblem {
+  duplicateRegistrations: string[]
+  forbiddenCapabilityImports: string[]
+  mismatched: string[]
+  redundantRegistrations: string[]
+  staleRegistrations: string[]
+  unclassified: string[]
 }
 
 const vitestProjectNames = ['frontend-node', 'frontend-svelte-node', 'frontend-dom'] as const
@@ -93,6 +108,10 @@ const signalPatterns: Record<keyof FrontendTestSignals, readonly RegExp[]> = {
   ],
 }
 
+const capabilityOverridePattern = /^\s*\/\/\s*@frontend-test-capability-override:\s*(\S.*)$/m
+const forbiddenDomPackages = new Set(['@testing-library/svelte', 'happy-dom', 'jsdom'])
+const forbiddenSvelteDomImports = new Set(['hydrate', 'mount', 'unmount'])
+
 function normalizeRepoPath(file: string): string {
   return file.replaceAll('\\', '/').replace(/^\.\//, '')
 }
@@ -114,6 +133,38 @@ export function analyzeFrontendTestSource(source: string): FrontendTestSignals {
       .map(([name, patterns]) => [name, firstSignal(lines, patterns)])
       .filter((entry) => entry[1] !== undefined),
   ) as FrontendTestSignals
+}
+
+export function frontendCapabilityOverrideReason(source: string): string | undefined {
+  return source.match(capabilityOverridePattern)?.[1].trim()
+}
+
+export function analyzeForbiddenDomCapabilityImports(source: string): SourceSignal[] {
+  const sourceFile = ts.createSourceFile('frontend-test.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const signals: SourceSignal[] = []
+
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue
+    const moduleName = statement.moduleSpecifier.text
+    const runtimeImport = !statement.importClause?.isTypeOnly
+    let forbidden =
+      runtimeImport && (forbiddenDomPackages.has(moduleName) || moduleName.startsWith('@testing-library/svelte/'))
+
+    if (moduleName === 'svelte' && statement.importClause && !statement.importClause.isTypeOnly) {
+      const bindings = statement.importClause.namedBindings
+      if (bindings && ts.isNamedImports(bindings)) {
+        forbidden ||= bindings.elements.some((element) =>
+          forbiddenSvelteDomImports.has((element.propertyName ?? element.name).text),
+        )
+      }
+    }
+
+    if (!forbidden) continue
+    const { line } = sourceFile.getLineAndCharacterOfPosition(statement.getStart(sourceFile))
+    signals.push({ line: line + 1, evidence: statement.getText(sourceFile).replace(/\s+/g, ' ').slice(0, 160) })
+  }
+
+  return signals
 }
 
 function signalText(signal: SourceSignal | undefined): string {
@@ -274,6 +325,88 @@ export function validateFrontendVitestDiscovery(
   }
 }
 
+export function validateFrontendCapabilityRouting(
+  expectedFiles: readonly string[],
+  projects: ReadonlyMap<string, ReadonlySet<string>>,
+  sources: ReadonlyMap<string, string>,
+  registeredDomFiles: readonly string[] = legacyDomTestFiles,
+): FrontendRoutingProblem {
+  const registrationCounts = new Map<string, number>()
+  for (const file of registeredDomFiles) registrationCounts.set(file, (registrationCounts.get(file) ?? 0) + 1)
+  const registeredDomFileSet = new Set(registeredDomFiles)
+  const expectedFileSet = new Set(expectedFiles)
+  const ownership = new Map<string, string[]>()
+  for (const [project, files] of projects) {
+    for (const file of files) {
+      const owners = ownership.get(file) ?? []
+      owners.push(project)
+      ownership.set(file, owners)
+    }
+  }
+
+  const unclassified: string[] = []
+  const mismatched: string[] = []
+  const forbiddenCapabilityImports: string[] = []
+  for (const file of expectedFiles) {
+    const expectedProject = frontendVitestProjectForFile(file, registeredDomFileSet)
+    if (!expectedProject) {
+      unclassified.push(`${file} (use .test.ts, .svelte-node.test.ts, .svelte.test.ts, or .dom.test.ts)`)
+      continue
+    }
+
+    const owners = ownership.get(file) ?? []
+    if (owners.length === 1 && owners[0] !== expectedProject) {
+      mismatched.push(`${file} (filename/registration=${expectedProject}, discovered=${owners[0]})`)
+    }
+
+    if (expectedProject === 'frontend-dom') continue
+    const source = sources.get(file) ?? ''
+    if (frontendCapabilityOverrideReason(source)) continue
+    for (const signal of analyzeForbiddenDomCapabilityImports(source)) {
+      forbiddenCapabilityImports.push(
+        `${file}:${signal.line} imports a DOM capability in ${expectedProject}: ${signal.evidence}`,
+      )
+    }
+  }
+
+  return {
+    duplicateRegistrations: [...registrationCounts]
+      .filter(([, count]) => count > 1)
+      .map(([file, count]) => `${file} (${count} entries)`)
+      .sort(),
+    forbiddenCapabilityImports: forbiddenCapabilityImports.sort(),
+    mismatched: mismatched.sort(),
+    redundantRegistrations: registeredDomFiles
+      .filter((file) => file.endsWith('.svelte.test.ts') || file.endsWith('.dom.test.ts'))
+      .sort(),
+    staleRegistrations: registeredDomFiles.filter((file) => !expectedFileSet.has(file)).sort(),
+    unclassified: unclassified.sort(),
+  }
+}
+
+function assertFrontendCapabilityRouting(
+  expectedFiles: readonly string[],
+  projects: ReadonlyMap<string, ReadonlySet<string>>,
+  sources: ReadonlyMap<string, string>,
+): void {
+  const problem = validateFrontendCapabilityRouting(expectedFiles, projects, sources)
+  const details = [
+    problem.unclassified.length ? `unclassified filenames: ${problem.unclassified.join(', ')}` : '',
+    problem.mismatched.length ? `routing mismatches: ${problem.mismatched.join(', ')}` : '',
+    problem.duplicateRegistrations.length
+      ? `duplicate DOM registrations: ${problem.duplicateRegistrations.join(', ')}`
+      : '',
+    problem.staleRegistrations.length ? `stale DOM registrations: ${problem.staleRegistrations.join(', ')}` : '',
+    problem.redundantRegistrations.length
+      ? `redundant DOM registrations (remove the entry): ${problem.redundantRegistrations.join(', ')}`
+      : '',
+    problem.forbiddenCapabilityImports.length
+      ? `forbidden zero-DOM imports: ${problem.forbiddenCapabilityImports.join(', ')}. Rename the test for DOM ownership or add // @frontend-test-capability-override: <reviewed reason>.`
+      : '',
+  ].filter(Boolean)
+  if (details.length > 0) throw new Error(['Frontend capability routing failed', ...details].join('\n'))
+}
+
 interface VitestDiscoveryMode {
   includePerformanceGates: boolean
   excludeUiCoverage: boolean
@@ -335,6 +468,9 @@ interface InventoryResult {
 
 function inventoryRows(rootDir: string): InventoryResult {
   const independentFiles = discoverIndependentFrontendVitestFiles(rootDir)
+  const frontendSources = new Map(
+    independentFiles.map((file) => [file, fs.readFileSync(path.join(rootDir, file), 'utf8')] as const),
+  )
   const fullProjects = collectConfiguredVitestProjects(rootDir, {
     includePerformanceGates: true,
     excludeUiCoverage: false,
@@ -349,6 +485,7 @@ function inventoryRows(rootDir: string): InventoryResult {
   })
 
   assertDiscoveryVariant('full frontend', independentFiles, fullProjects)
+  assertFrontendCapabilityRouting(independentFiles, fullProjects, frontendSources)
   assertDiscoveryVariant(
     'standalone ordinary frontend',
     independentFiles.filter((file) => !performanceGateFiles.has(file)),
@@ -363,13 +500,7 @@ function inventoryRows(rootDir: string): InventoryResult {
   const rows: FrontendTestInventoryRow[] = []
   for (const [project, files] of fullProjects) {
     for (const file of files) {
-      rows.push(
-        createFrontendTestInventoryRow(
-          file,
-          project as FrontendTestProject,
-          fs.readFileSync(path.join(rootDir, file), 'utf8'),
-        ),
-      )
+      rows.push(createFrontendTestInventoryRow(file, project as FrontendTestProject, frontendSources.get(file) ?? ''))
     }
   }
   for (const file of discoverBrowserSmokeSpecs(rootDir)) {
