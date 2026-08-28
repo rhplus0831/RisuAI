@@ -462,6 +462,7 @@ describe('schema migrations', () => {
                      database_lineage,
                      creator_writer_session_id,
                      request_fingerprint,
+                     response_json,
                      acknowledged_at,
                      delete_after
               FROM command_mutation_receipts
@@ -473,6 +474,11 @@ describe('schema migrations', () => {
         database_lineage: (metadata as { lineage: string }).lineage,
         creator_writer_session_id: 'writer-before-upgrade',
         request_fingerprint: 'fingerprint',
+        response_json: JSON.stringify({
+          revision: 13,
+          event: { type: 'settings.updated', resource: 'settings', revision: 13 },
+          extra: { settings: { theme: 'light' } },
+        }),
         acknowledged_at: null,
         delete_after: null,
       })
