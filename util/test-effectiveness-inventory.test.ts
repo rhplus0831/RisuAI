@@ -215,6 +215,23 @@ describe('test effectiveness inventory', () => {
     expect(() => checkTestEffectivenessInventory(root, 'inventory.json')).toThrow(/inventory is stale/)
   })
 
+  it('drops preserved case metadata when a tracked test is deleted', () => {
+    const root = temporaryGitRepository({
+      'src/kept.test.ts': 'export {}',
+      'src/removed.test.ts': 'export {}',
+    })
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    const initial = writeTestEffectivenessInventory(root, 'inventory.json')
+    expect(initial.rows.map((row) => row.file)).toEqual(['src/kept.test.ts', 'src/removed.test.ts'])
+
+    const removed = spawnSync('git', ['rm', '-f', 'src/removed.test.ts'], { cwd: root, encoding: 'utf8' })
+    expect(removed.status, removed.stderr).toBe(0)
+
+    const rewritten = writeTestEffectivenessInventory(root, 'inventory.json')
+    expect(rewritten.rows.map((row) => row.file)).toEqual(['src/kept.test.ts'])
+  })
+
   it('validates exhaustive row shape, sorting, uniqueness, and review enums', () => {
     const row = createTestEffectivenessInventoryRow('src/pure.test.ts', 'export {}')
     const document: TestEffectivenessInventoryDocument = {

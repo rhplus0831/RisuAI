@@ -911,8 +911,10 @@ export function writeTestEffectivenessInventory(
   let supportArtifacts = pendingSupportArtifactLink()
   if (fs.existsSync(absoluteOutput)) {
     const previous = parseInventoryFile(absoluteOutput)
-    previousAudits = new Map(previous.rows.map((row) => [row.file, row.audit]))
-    previousCaseCounts = new Map(previous.rows.map((row) => [row.file, row.caseCounts]))
+    const trackedFiles = new Set(discoverTrackedTestFiles(rootDir))
+    const retainedRows = previous.rows.filter((row) => trackedFiles.has(row.file))
+    previousAudits = new Map(retainedRows.map((row) => [row.file, row.audit]))
+    previousCaseCounts = new Map(retainedRows.map((row) => [row.file, row.caseCounts]))
     supportArtifacts = previous.supportArtifacts
   }
   const caseCounts = new Map(previousCaseCounts)
