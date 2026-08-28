@@ -4,9 +4,67 @@ Date: 2026-08-28
 
 ## State
 
-Phase 2 plugin-policy-and-updates closeout. Phase 2 remains in progress; this
+Phase 2 MCP-and-transformer-helpers closeout. Phase 2 remains in progress; this
 record does not authorize repository-wide default inversion, S promotion, or
 bulk migration outside the active phase rules.
+
+## Phase 2 MCP And Transformer Helpers Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `ebb8ba34909ec703c1205f2b1eef2521f2971c33`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Available CPUs: 10
+- Frontend test-all UI-map exclusion: `RISU_TEST_EXCLUDE_UI_MAP=true`
+- Isolation: enabled
+- Measurement tree: the clean plugin-policy-and-updates commit plus the
+  two-file Node ownership change, regenerated inventory, and documentation.
+
+## Phase 2 MCP And Transformer Helpers Probe And Ownership
+
+The bounded slice evaluated Google-search response shaping, transformer device
+selection, and internal MCP client behavior. The three-file current owner
+passed 3 files / 9 tests in 1.02s wall and 364ms Vitest duration, with 401,720
+KiB peak RSS and 333ms environment time.
+
+The broader Node probe passed the six Google-search and transformer cases plus
+one internal-client case. Two real directory-handle reuse cases failed with
+`window is not defined` at `filesystemclient.ts:360`, so the internal-client
+suite remains D-owned without a weaker browser-capability fake.
+
+The exact two-file promotion scope passed twice in Node. The measured probe
+completed 2 files / 6 tests in 1.03s wall and 277ms Vitest duration, with
+272,252 KiB peak RSS and no environment time; the repeat took 240ms Vitest
+duration.
+
+## Phase 2 MCP And Transformer Helpers Discovery And Measurements
+
+Inventory update and check commands passed. Full discovery is 537 files at 161
+N / 2 S / 374 D, standalone ordinary is 535 files at 161 N / 2 S / 372 D, and
+aggregate ordinary is 529 files at 160 N / 2 S / 367 D. Mismatches fell from
+142 to 140.
+
+| Lane | State | Result | Wall | Vitest | CPU | Peak RSS KiB |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `frontend-node` | Before | 158 files / 941 tests | 4.03s | 3.39s | 689% | 922,624 |
+| `frontend-node` | After | 160 files / 947 tests | 4.38s | 3.70s | 696% | 1,058,464 |
+| `frontend-dom` | Before | 369 files / 5,464 tests | 62.40s | 61.63s | 631% | 4,800,256 |
+| `frontend-dom` | After | 367 files / 5,458 tests | 63.54s | 62.74s | 633% | 4,761,868 |
+| Ordinary frontend | Before | 529 files / 6,413 tests | 66.60s | 65.76s | 635% | 4,696,532 |
+| Ordinary frontend | After | 529 files / 6,413 tests | 68.24s | 67.42s | 644% | 5,128,488 |
+
+The paired ordinary wall observation increased by 1.64s (2.5%) and peak RSS by
+431,956 KiB (9.2%). Both remain inside the slice acceptance guards; final
+phase-level conclusions require the three-run closeout median.
+
+## Phase 2 MCP And Transformer Helpers Validation
+
+Complete Node, DOM, and ordinary frontend runs passed 160 files / 947 tests,
+367 files / 5,458 tests, and 529 files / 6,413 tests. The affected plan passed
+535 frontend files / 6,616 tests, 2 performance files / 6 tests, and 154 server
+files / 3,295 tests with 1 skipped. `pnpm format:check` and `git diff --check`
+passed.
 
 ## Phase 2 Plugin Policy And Updates Environment And Source State
 

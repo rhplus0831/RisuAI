@@ -54,6 +54,9 @@ Status: In progress
 - [Plugin policy and update helpers](slices/phase-2/plugin-policy-and-updates.md):
   promoted the 14-test update-planning suite to Node and retained the two-test
   real DOMPurify icon-sanitization contract in Happy-DOM.
+- [MCP and transformer helpers](slices/phase-2/mcp-and-transformer-helpers.md):
+  promoted six Google-search shaping and transformer device-selection tests to
+  Node while retaining the real filesystem-picker MCP contract in Happy-DOM.
 
 ## Objective
 

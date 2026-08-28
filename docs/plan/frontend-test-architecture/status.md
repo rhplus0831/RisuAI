@@ -10,15 +10,15 @@ codebase remain authoritative until a phase lands.
 
 - Plan state: Phases 0-1 complete; Phase 2 in progress.
 - Current phase: Phase 2 — Pure Node Promotion.
-- Active slice: No implementation slice is active; the plugin policy and
-  update-helper slice is complete.
-- Implementation state: Thirty-three files and 170 tests have moved from the
-  Happy-DOM fallback to Node across twelve bounded slices with no production
+- Active slice: No implementation slice is active; the MCP and transformer
+  helper slice is complete.
+- Implementation state: Thirty-five files and 176 tests have moved from the
+  Happy-DOM fallback to Node across thirteen bounded slices with no production
   changes.
 - Blockers: None.
-- Next action: Prepare the bounded Phase 2 MCP client and transformer Node
-  probe. Retain the eight completed Node-probe deferrals under their recorded
-  owners.
+- Next action: Prepare the final bounded Phase 2 server resource and bootstrap
+  Node probe. Retain the nine completed Node-probe deferrals under their
+  recorded owners.
 
 ## Phase Router
 
@@ -77,21 +77,21 @@ aggregate ordinary views; 175 unpromoted N/S candidates still require probes.
 
 | Measurement | Result |
 | --- | ---: |
-| Completed slices and proof batches | 16 |
-| Promoted suites | 33 files / 170 tests |
-| Full three-project universe | 537 files: 159 N / 2 S / 376 D |
-| Standalone ordinary frontend | 535 files: 159 N / 2 S / 374 D |
-| `test:all` ordinary frontend | 529 files / 6,413 tests: 158 N / 2 S / 369 D |
-| Remaining target-runtime mismatches | 142: 15 N / 127 S |
-| Latest paired ordinary wall observation | 66.02s -> 66.60s (+0.9%) |
-| Latest paired ordinary peak RSS | 5,063,636 -> 4,696,532 KiB |
+| Completed slices and proof batches | 17 |
+| Promoted suites | 35 files / 176 tests |
+| Full three-project universe | 537 files: 161 N / 2 S / 374 D |
+| Standalone ordinary frontend | 535 files: 161 N / 2 S / 372 D |
+| `test:all` ordinary frontend | 529 files / 6,413 tests: 160 N / 2 S / 367 D |
+| Remaining target-runtime mismatches | 140: 13 N / 127 S |
+| Latest paired ordinary wall observation | 66.60s -> 68.24s (+2.5%) |
+| Latest paired ordinary peak RSS | 4,696,532 -> 5,128,488 KiB |
 
-The paired timing is slice evidence, not a phase-level median. The +0.9% wall
+The paired timing is slice evidence, not a phase-level median. The +2.5% wall
 movement remains inside ordinary run-to-run variability; it is not a
-phase-level performance claim. Phase 2 remains open for 7 unprobed N candidates.
-The generated inventory also counts the probed plugin-icon, chat-toggle,
-prompt-toggle, character-card, hydration-read, and two generation-effect suites
-plus the probed device-backup suite retained in D.
+phase-level performance claim. Phase 2 remains open for 4 unprobed N candidates.
+The generated inventory also counts the probed internal MCP client, plugin-icon,
+chat-toggle, prompt-toggle, character-card, hydration-read, and two
+generation-effect suites plus the probed device-backup suite retained in D.
 
 ## Current Decisions
 
@@ -186,6 +186,10 @@ plus the probed device-backup suite retained in D.
     two-test icon-safety suite remains D because its real DOMPurify sanitizer is
     the security behavior under test and is not callable in the plain Node
     binding.
+25. The MCP and transformer slice promoted six Google-search shaping and
+    device-selection tests to N. The three-test internal-client suite remains D
+    because two directory-handle reuse cases execute the real filesystem
+    client's `window`-owned picker capability.
 
 ## Accepted Observations
 
@@ -218,10 +222,10 @@ occurrence reopens the display-source batching owner before another promotion.
 
 ## Latest Completed Slice
 
-[Phase 2 plugin policy and update helpers](phases/slices/phase-2/plugin-policy-and-updates.md)
-promoted the 14-test update-planning suite to Node and retained the real
-DOMPurify icon-sanitization contract in Happy-DOM. Discovery and affected lanes
-remain complete.
+[Phase 2 MCP and transformer helpers](phases/slices/phase-2/mcp-and-transformer-helpers.md)
+promoted six pure Google-search shaping and transformer device-selection tests
+to Node while retaining the browser filesystem-client integration in
+Happy-DOM. Discovery and affected lanes remain complete.
 
 ## Latest Verification
 
