@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "standaloneCount": 253,
+  "standaloneCount": 252,
   "mixedProductionCount": 65,
   "groups": [
     {
@@ -219,7 +219,6 @@
         "src/lib/ChatScreens/DefaultChatScreen.testChat.svelte",
         "src/lib/ChatScreens/DefaultChatScreen.testChatController.ts",
         "src/lib/ChatScreens/TransitionImage.testHost.svelte",
-        "src/lib/Mobile/MobileControls.testState.ts",
         "src/lib/Mobile/MobileControls.testStub.svelte",
         "src/lib/Others/BookmarkList.testChat.svelte",
         "src/lib/Others/HypaV3Modal/tag-manager-modal.testHost.svelte",

@@ -584,7 +584,7 @@
     },
     "server/fastify/__tests__/realmImport.test.ts": {
       "cases": 26,
-      "skipped": 1,
+      "skipped": 0,
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/repositoryWriterKit.test.ts": {
@@ -848,7 +848,7 @@
       "parameterizedRows": 0
     },
     "src/lib/ChatScreens/AssetInput.svelte.test.ts": {
-      "cases": 1,
+      "cases": 2,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -868,7 +868,7 @@
       "parameterizedRows": 0
     },
     "src/lib/ChatScreens/Chat.customHtml.test.ts": {
-      "cases": 53,
+      "cases": 54,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -923,9 +923,9 @@
       "parameterizedRows": 0
     },
     "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts": {
-      "cases": 95,
+      "cases": 97,
       "skipped": 0,
-      "parameterizedRows": 0
+      "parameterizedRows": 2
     },
     "src/lib/ChatScreens/DefaultChatScreen.shellGreeting.dom.test.ts": {
       "cases": 6,
@@ -1007,11 +1007,6 @@
       "skipped": 0,
       "parameterizedRows": 0
     },
-    "src/lib/Mobile/MobileControls.svelte.test.ts": {
-      "cases": 2,
-      "skipped": 0,
-      "parameterizedRows": 0
-    },
     "src/lib/ObserverShell.svelte.test.ts": {
       "cases": 4,
       "skipped": 0,
@@ -1038,7 +1033,7 @@
       "parameterizedRows": 0
     },
     "src/lib/Others/BookmarkList.svelte.test.ts": {
-      "cases": 6,
+      "cases": 7,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -1123,7 +1118,7 @@
       "parameterizedRows": 0
     },
     "src/lib/Others/SavePopupIcon.svelte.test.ts": {
-      "cases": 2,
+      "cases": 3,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -1577,6 +1572,11 @@
       "skipped": 0,
       "parameterizedRows": 0
     },
+    "src/lib/UI/GUI/Button.svelte.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
     "src/lib/UI/GUI/CheckInput.svelte.test.ts": {
       "cases": 4,
       "skipped": 0,
@@ -1693,7 +1693,7 @@
       "parameterizedRows": 0
     },
     "src/lib/UI/Title.svelte.test.ts": {
-      "cases": 2,
+      "cases": 3,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -1853,9 +1853,9 @@
       "parameterizedRows": 0
     },
     "src/ts/globalApi.changeChatTo.test.ts": {
-      "cases": 3,
+      "cases": 8,
       "skipped": 0,
-      "parameterizedRows": 0
+      "parameterizedRows": 5
     },
     "src/ts/globalApi.downloadFile.test.ts": {
       "cases": 4,
@@ -1903,7 +1903,7 @@
       "parameterizedRows": 8
     },
     "src/ts/gui/highlight.test.ts": {
-      "cases": 2,
+      "cases": 3,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -1958,7 +1958,7 @@
       "parameterizedRows": 0
     },
     "src/ts/hotkey.resourceGuard.test.ts": {
-      "cases": 11,
+      "cases": 12,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -2103,7 +2103,7 @@
       "parameterizedRows": 0
     },
     "src/ts/observer.svelte.test.ts": {
-      "cases": 11,
+      "cases": 12,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -2953,7 +2953,7 @@
       "parameterizedRows": 0
     },
     "src/ts/server/chatMessageHydration.test.ts": {
-      "cases": 70,
+      "cases": 71,
       "skipped": 0,
       "parameterizedRows": 3
     },
@@ -3169,7 +3169,7 @@
     },
     "src/ts/server/realmImport.test.ts": {
       "cases": 5,
-      "skipped": 0,
+      "skipped": 1,
       "parameterizedRows": 0
     },
     "src/ts/server/replacementDatabaseOwnership.svelte-node.test.ts": {
@@ -3473,7 +3473,7 @@
       "parameterizedRows": 0
     },
     "util/test-effectiveness-inventory.test.ts": {
-      "cases": 7,
+      "cases": 8,
       "skipped": 0,
       "parameterizedRows": 0
     },
