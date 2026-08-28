@@ -1773,3 +1773,301 @@ Every finding records:
 - Count delta: none in the deferred item.
 - Revisit condition: Phase 11 asset audit, Phase 13 consolidation, and mandatory
   Phase 14 closeout decision.
+
+## Phase 6 Findings
+
+### TSA-P06-001: Surviving multimodal prompt rows lose token cost
+
+- State: Done.
+- Severity: High.
+- Category: F.
+- Decision: Strengthen, then Keep.
+- Tests/cases: complete client `finalizeRequestBudget.test.ts` and Fastify
+  `budgetFinalize.test.ts` owners.
+- Production owner: client and Fastify final prompt budget trimming.
+- Protected contract or plausible defect: trimming text from a row that retains
+  image/audio content could subtract the entire original row cost, dispatching
+  input plus output beyond the context limit.
+- Evidence: multimodal rows now retain non-text and row-overhead cost; only
+  completely removed rows release the whole cost. Both owners re-tokenize the
+  returned prompt and require the context inequality.
+- Companion/overlap analysis: client and Fastify implementations are separate
+  dispatch boundaries, so neither regression owner substitutes for the other.
+- Action and rollback: subtract only removed text for surviving rows and the
+  full cost for removed rows. Revert is isolated to budget accounting.
+- Validation: 6/6 client and 9/9 Fastify budget cases passed; exact and complete
+  lanes passed.
+- Count delta: one client case added; no file delta.
+- Revisit condition: unify the walkers only with semantic parity proof.
+
+### TSA-P06-002: Accepted-send response loss lacked browser proof
+
+- State: Done.
+- Severity: High.
+- Category: F, with B/C seams.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all ten `acceptedSendProtocol.spec.ts` browser journeys.
+- Production owner: accepted operation identity, lifecycle reconciliation, and
+  durable transcript finalization after transport response loss.
+- Protected contract or plausible defect: the server can accept a send while
+  the browser loses its response, allowing retry to duplicate provider billing
+  or leaving the accepted reply undiscoverable.
+- Evidence: the browser now aborts the operation response before identity is
+  visible, emits lifecycle recovery events, and observes one provider call and
+  one correct terminal reply.
+- Companion/overlap analysis: unit recovery state and Fastify idempotency do not
+  prove composed browser reconciliation.
+- Action and rollback: retain the production protocol and add the missing
+  controlled loss journey.
+- Validation: 11/11 exact Phase 6 browser cases passed.
+- Count delta: one browser case added; no file delta.
+- Revisit condition: automatic no-lifecycle probing remains `TSA-P06-013`.
+
+### TSA-P06-003: Route-backed prompt fixtures did not assert dispatch semantics
+
+- State: Done.
+- Severity: High.
+- Category: F.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 27 `sendChat.fixtures.serverBacked.test.ts` cases.
+- Production owner: client fixture inputs through the Fastify preview/dispatch
+  prompt formatter.
+- Protected contract or plausible defect: both local and route paths could
+  return plausible object shapes while differing in model-visible row order or
+  content.
+- Evidence: each route-backed fixture now compares the actual formatted prompt
+  to its semantic local expectation, normalizing only empty optional attributes
+  and thoughts.
+- Companion/overlap analysis: generic local goldens and exact server preview
+  tests remain distinct; no golden was changed.
+- Action and rollback: retain the fixtures with semantic comparison.
+- Validation: 27/27 focused cases and complete lanes passed.
+- Count delta: none.
+- Revisit condition: update normalization only for an intentional provider-
+  visible compatibility decision.
+
+### TSA-P06-004: Client lore injection combinations were implicit
+
+- State: Done.
+- Severity: High.
+- Category: F, with E seams.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 16 `buildLorebookContext.test.ts` cases.
+- Production owner: client lore activation, ordering, positioning, and content
+  combination before prompt rendering.
+- Protected contract or plausible defect: append/prepend/replace modes or mixed
+  positions could silently omit or reorder activated lore.
+- Evidence: parameterized combined fixtures require append, prepend, replace,
+  stable ordering, and intended prompt positions.
+- Companion/overlap analysis: Fastify lore activation proves server semantics;
+  it does not execute the client builder.
+- Action and rollback: retain the expanded semantic matrix.
+- Validation: 16/16 focused cases and exact/complete lanes passed.
+- Count delta: four cases, including three parameterized rows, added.
+- Revisit condition: add a mode only when it becomes supported input.
+
+### TSA-P06-005: Retrieved prompt descriptions lacked placement proof
+
+- State: Done.
+- Severity: High.
+- Category: F.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all nine `buildDescription.test.ts` cases.
+- Production owner: parsed `additionalInformations` placement in assembled
+  prompt descriptions.
+- Protected contract or plausible defect: retrieved descriptions could parse
+  but land in the wrong prompt position or disappear during combination.
+- Evidence: the added fixture requires parser output and exact placement among
+  surrounding description rows.
+- Companion/overlap analysis: retrieval and parser unit owners do not prove the
+  final prompt builder's use of their output.
+- Action and rollback: retain the combined placement regression.
+- Validation: 9/9 focused and complete frontend cases passed.
+- Count delta: one case added.
+- Revisit condition: none unless the prompt schema changes.
+
+### TSA-P06-006: Parent Agent cancellation is reported as timeout
+
+- State: Done.
+- Severity: High.
+- Category: F.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 25 Fastify `agentPresetExecution.test.ts` cases.
+- Production owner: Agent Preset phase execution and parent abort propagation.
+- Protected contract or plausible defect: user cancellation during a phase
+  could be converted into a timeout failure, producing false diagnostics and
+  the wrong terminal contract.
+- Evidence: an externally aborted execution now propagates its abort reason;
+  the timeout path remains distinct.
+- Companion/overlap analysis: client Stop UI cannot prove server executor
+  disposition.
+- Action and rollback: propagate the parent signal reason through phase abort.
+- Validation: 25/25 focused and complete Fastify cases passed.
+- Count delta: one case added.
+- Revisit condition: none.
+
+### TSA-P06-007: Agent output keys can be ambiguous across phases
+
+- State: Done.
+- Severity: High.
+- Category: F.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 11 `agentPresetResolver.test.ts` cases with the complete
+  `agentPresetRecords` schema companion.
+- Production owner: Agent Preset record validation and output-key resolution.
+- Protected contract or plausible defect: the same key in execution and output
+  phases could resolve differently by traversal order and compose the wrong
+  value.
+- Evidence: validation now requires output-key uniqueness across both phases;
+  the cross-phase duplicate counterexample fails closed.
+- Companion/overlap analysis: the resolver consumes records after validation;
+  its happy paths alone did not own ambiguity rejection.
+- Action and rollback: enforce record-wide key uniqueness.
+- Validation: 25/25 records/resolver cases and complete frontend passed.
+- Count delta: no collected-case delta; an existing matrix gained the
+  counterexample.
+- Revisit condition: introduce explicit qualified keys before allowing reuse.
+
+### TSA-P06-008: A terminal post-generation run clears later progress
+
+- State: Done.
+- Severity: High.
+- Category: F.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all three `postGenerationProgress.test.ts` cases and the durable
+  server-chat companion.
+- Production owner: phase/run-scoped post-generation progress projection.
+- Protected contract or plausible defect: completion of an earlier run could
+  clear a later live run, while stale terminal events could overwrite current
+  visible progress.
+- Evidence: sessions remain live across run terminals, phase/run ordering fences
+  stale terminals, and clearing happens only at session termination.
+- Companion/overlap analysis: server event order does not prove client
+  projection across multiple runs.
+- Action and rollback: retain the session and clear it at the true terminal
+  boundary.
+- Validation: 79/79 focused progress/server-chat cases passed.
+- Count delta: none; the existing state-machine case was extended.
+- Revisit condition: none unless concurrent runs become supported.
+
+### TSA-P06-009: Expanded character depth prompts bypass preflight budget
+
+- State: Done.
+- Severity: High.
+- Category: F.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 17 client and 28 Fastify preflight cases.
+- Production owner: client and server template expansion before context-limit
+  admission.
+- Protected contract or plausible defect: `depth_prompt` content could expand
+  after preflight and overflow the provider context despite a green estimate.
+- Evidence: both implementations include the expanded depth prompt in
+  preflight token demand.
+- Companion/overlap analysis: final trimming is a second boundary and cannot
+  make an under-counting preflight truthful.
+- Action and rollback: account for depth-prompt expansion in both walkers.
+- Validation: 45/45 focused and complete lanes passed.
+- Count delta: two cases added.
+- Revisit condition: Phase 13 may unify walkers only with parity fixtures.
+
+### TSA-P06-010: Early SSE consumer return leaves its reader locked
+
+- State: Done.
+- Severity: High.
+- Category: F, with L seams.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 12 `sseParse.test.ts` cases.
+- Production owner: client SSE reader lifecycle and fragmented event parsing.
+- Protected contract or plausible defect: a consumer that stops before EOF can
+  leave a network reader locked; pending abort/fragment boundaries could also
+  strand iteration.
+- Evidence: iteration distinguishes natural close and cancels the reader on
+  early return. Split UTF-8, split CRLF, pending abort, and early-return
+  counterexamples are retained.
+- Companion/overlap analysis: Fastify stream tests own server framing and
+  backpressure, not browser reader release.
+- Action and rollback: cancel the reader in generator cleanup unless it closed
+  naturally.
+- Validation: 88/88 focused SSE/server-chat cases passed.
+- Count delta: four cases added.
+- Revisit condition: none unless transport moves away from streams.
+
+### TSA-P06-011: Prompt-shaped names hide nine product-risk categories
+
+- State: Done.
+- Severity: Medium.
+- Category: F to A/B/C/D/E/G/I/K/L.
+- Decision: Reclassify.
+- Tests/cases: 18 complete owners and 430 cases listed by
+  `phase6-reclassified` state in `inventory.json`.
+- Production owner: raw-generation policy, template hydration/bridges,
+  settings/UI, tokenizer/provider completion, variables, asset upload, abort,
+  and backpressure.
+- Protected contract or plausible defect: reviewing these owners only as
+  prompting hides their dominant architecture, UI, persistence, provider,
+  parser, asset, or runtime companions.
+- Evidence: exact-path counterexamples route every owner; tokenizer/completion
+  owners now join the canonical Phase 7 set.
+- Companion/overlap analysis: lane execution and seam tags are unchanged.
+- Action and rollback: retain every owner under its corrected category.
+- Validation: 8/8 routing-policy cases plus complete lanes passed.
+- Count delta: one assurance-policy counterexample added; no owner delta.
+- Revisit condition: only if a file's dominant protected contract changes.
+
+### TSA-P06-012: Prompt and generation evidence layers remain distinct
+
+- State: Done.
+- Severity: Informational.
+- Category: F with B/C/E/G/I/L seams.
+- Decision: Keep.
+- Tests/cases: the complete 93-file, 1,936-case reviewed opening set.
+- Production owner: model-visible prompt inputs through dispatch, response
+  parsing, durable finalization, effects, visible projection, and reload.
+- Protected contract or plausible defect: merging by shared vocabulary would
+  erase distinct client/server semantic drift, transport cleanup, durable
+  identity, mounted projection, and browser recovery failures.
+- Evidence: every file has a named complete contract in `inventory.json`; no
+  owner met the mandatory replacement/removal proof.
+- Companion/overlap analysis: pure, DOM, Svelte+Node, Fastify, and browser
+  layers fail at different boundaries. Local trigger/Lua fixture doubles retain
+  distinct Phase 9 runtime companions.
+- Action and rollback: retain all reviewed owners and corrected-category
+  companions; no test was merged or removed.
+- Validation: 1,936/1,936 exact opening-owner cases passed after remediation.
+- Count delta: fourteen cases in opening owners; one routing-policy case.
+- Revisit condition: Phase 13 may consolidate only with complete semantic and
+  failure-layer replacement proof.
+
+### TSA-P06-013: Recovery, effect, journal, and compatibility claims are bounded
+
+- State: Deferred with retained owners and explicit phase ownership.
+- Severity: High.
+- Category: F, with G/H/I/L and Phase 12/13/14 ownership.
+- Decision: Keep current evidence; add or gate only at the named owners.
+- Tests/cases: Agent lore input, accepted-send recovery, finalization journal,
+  generation effects, controlled provider fixtures, prompt walkers, browser
+  protocol, and compatibility owners.
+- Production owner: required Agent input truncation policy, recovery without a
+  wake event, journal row isolation/observability, failed-effect retry,
+  provider fidelity, prompt-walker parity, and historical compatibility.
+- Protected contract or plausible defect: tiny Agent input limits can skip a
+  required lore input; an accepted response loss is recovered after lifecycle
+  events but has no same-page timer; one malformed SQLite-JSON-valid journal
+  payload can poison a list sweep; failed terminal effects lack a settled retry
+  policy. Current browser/provider doubles do not prove real provider networks,
+  process crash with a fresh browser context, or multi-tab response loss.
+- Evidence: direct control-flow and counterexample review bounds each claim.
+  The exact pinned compatibility worktree is absent. No demonstrated current
+  false terminal or transcript loss remains after the accepted fixes.
+- Companion/overlap analysis: Phase 12 owns journal/runtime observability;
+  Phase 13 owns recovery timers, provider/browser composition, effect policy,
+  and duplicated-walker parity; Phase 14 owns the final compatibility and
+  residual verdict.
+- Action and rollback: retain current bounded owners. Do not refresh goldens,
+  invent unsupported provider behavior, or add automatic retry before product
+  semantics are chosen.
+- Validation: all current exact/complete owners pass; this finding deliberately
+  limits broader claims.
+- Count delta: none.
+- Revisit condition: Phase 12 runtime audit, Phase 13 cross-suite remediation,
+  and mandatory Phase 14 closeout decision.
