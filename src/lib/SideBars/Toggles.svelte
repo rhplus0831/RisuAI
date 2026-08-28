@@ -15,10 +15,8 @@
   import ChatDraftHookSelector from './ChatDraftHookSelector.svelte'
   import ChatTranslationSettings from './ChatTranslationSettings.svelte'
   import CustomSideBar from './CustomSidebar.svelte'
-  import {
-    compareChatGenerationTogglePresetToActiveState,
-    getChatGenerationTogglePresets,
-  } from 'src/ts/chatGenerationTogglePresets'
+  import { getChatGenerationTogglePresets } from 'src/ts/chatGenerationTogglePresets'
+  import { compareChatGenerationTogglePresetToActiveState } from 'src/ts/chatGenerationTogglePresetPlanning'
   import { setCharacterSupaMemoryWithOutcome } from 'src/ts/characterCommands'
   import {
     ensureActiveChatSidebarToggleDefaults,

@@ -1,29 +1,13 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
-vi.mock('./process/modules', () => ({
-  exportModule: vi.fn(),
-  getModuleAssets: vi.fn(() => []),
-  getModuleLorebooks: vi.fn(() => []),
-  getModuleMcps: vi.fn(() => []),
-  getModuleRegexScripts: vi.fn(() => []),
-  getModuleToggles: vi.fn(() => ''),
-  getModuleTriggers: vi.fn(() => []),
-  getModules: vi.fn(() => []),
-  importModule: vi.fn(),
-  moduleUpdate: vi.fn(),
-  readModule: vi.fn(),
-  refreshModules: vi.fn(),
-}))
-
-vi.mock('./process/scripts', () => ({
-  resetScriptCache: vi.fn(),
-}))
 import {
+  compareChatGenerationTogglePresetToActiveState,
   createChatGenerationTogglePresetPickValues,
+  createSidebarToggleValuesForActiveChat,
   getChatGenerationTogglePresetPickEligibility,
   sortChatGenerationTogglePresetsBySimilarity,
   type ChatGenerationTogglePreset,
-} from './chatGenerationTogglePresets'
+} from './chatGenerationTogglePresetPlanning'
 import { normalizeChatGenerationTogglePresets } from './chatGenerationTogglePresetRecords'
 
 function preset(
@@ -101,6 +85,50 @@ describe('Saved Toggles domain helpers', () => {
     })
     expect(getChatGenerationTogglePresetPickEligibility(eligible, source).eligible).toBe(true)
     expect(createChatGenerationTogglePresetPickValues(eligible, source)).toEqual({ a: '1', b: 'value' })
+  })
+
+  it('reports missing, stale, kind-mismatched, and value-mismatched active fields', () => {
+    const saved = preset(
+      'saved',
+      'Saved',
+      { boolean: '0', text: 'saved', stale: '1' },
+      { boolean: 'select', text: 'text', stale: 'boolean' },
+    )
+    const comparison = compareChatGenerationTogglePresetToActiveState(saved, {
+      settings: { sidebarToggles: { boolean: '1', text: 'live', missing: 'value' } },
+      requiredSidebarToggles: [
+        { key: 'boolean', label: 'Boolean', kind: 'boolean', options: [], source: 'preset' },
+        { key: 'text', label: 'Text', kind: 'text', options: [], source: 'preset' },
+        { key: 'missing', label: 'Missing', kind: 'text', options: [], source: 'preset' },
+      ],
+    })
+
+    expect(comparison.hasAnyDifference).toBe(true)
+    expect(comparison.hasToggleTypeMismatch).toBe(true)
+    expect([...comparison.differingSidebarToggleKeys]).toEqual(['boolean', 'text', 'missing'])
+    expect(comparison.missingSidebarToggleKeys).toEqual(['missing'])
+    expect(comparison.staleSidebarToggleKeys).toEqual(['stale'])
+    expect(comparison.kindMismatchSidebarToggleKeys).toEqual(['boolean'])
+  })
+
+  it('projects only active keys and supplies kind-specific defaults', () => {
+    const saved = preset('saved', 'Saved', { selected: 'warm', stale: '1' }, { selected: 'select' })
+
+    expect(
+      createSidebarToggleValuesForActiveChat(saved, {
+        requiredSidebarToggles: [
+          {
+            key: 'selected',
+            label: 'Selected',
+            kind: 'select',
+            source: 'preset',
+            options: ['warm', 'cold'],
+          },
+          { key: 'boolean', label: 'Boolean', kind: 'boolean', options: [], source: 'preset' },
+          { key: 'text', label: 'Text', kind: 'text', options: [], source: 'preset' },
+        ],
+      }),
+    ).toEqual({ selected: 'warm', boolean: '0', text: '' })
   })
 
   it('drops legacy jailbreakToggle data while normalizing records', () => {

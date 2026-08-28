@@ -8,7 +8,11 @@ Status: In Progress
   extracts full-create and tail-chunk planning into a plain TypeScript leaf,
   moves the planning matrix to Node, and retains the real durable-command and
   production payload-boundary contracts in Happy-DOM.
-- Next: settings projection and reconciliation.
+- [Toggle preset planning](slices/phase-4/toggle-preset-planning.md) extracts
+  settings comparison, similarity, Pick eligibility, and active-key projection
+  into a plain TypeScript leaf, moves the seven-test matrix to Node, and retains
+  the mounted sidebar/dialog behavior in Happy-DOM.
+- Next: server-backed fixture-planning triage.
 
 ## Objective
 

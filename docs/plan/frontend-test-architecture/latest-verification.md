@@ -4,9 +4,77 @@ Date: 2026-08-28
 
 ## State
 
-Phase 4 in progress after the chat-import request-planning slice. This record
-does not authorize repository-wide default inversion or migration outside the
-later phase rules.
+Phase 4 in progress after the chat-import and Saved Toggles planning slices.
+This record does not authorize repository-wide default inversion or migration
+outside the later phase rules.
+
+## Phase 4 Toggle Preset Planning Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `d7a9dacdb`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Isolation: enabled
+- Measurement tree: the clean chat-import planning commit plus the Saved
+  Toggles leaf, direct production consumers, Node ownership change, expanded
+  pure matrix, inventory, and slice records. No unrelated changes were present.
+
+## Phase 4 Toggle Preset Planning Measurements
+
+The pre-change five-test Happy-DOM owner passed in 2.86s Vitest duration and
+3.59s measured wall, with 2.19s transform, 77ms setup, 2.60s import, 5ms tests,
+109ms environment, and 664,596 KiB peak RSS. The expanded seven-test Node owner
+passed in 169ms Vitest duration, with 38ms transform, 74ms setup, 12ms import,
+6ms tests, and no environment time.
+
+The retained 40-test sidebar owner passed before the slice in 12.66s Vitest
+duration and 13.38s wall, with 10.40s import and 1.99s tests. After the slice it
+passed in 12.45s Vitest duration and 13.20s wall, with 10.22s import and 1.96s
+tests. These retained-owner movements are inside focused run noise.
+
+The first complete post-extraction project observations passed 190 Node files /
+1,270 tests in 4.41s Vitest and 5.11s wall, then 323 Happy-DOM files / 4,981
+tests in 60.52s Vitest and 61.35s wall. The first ordinary frontend observation
+passed 530 files / 6,418 tests in 70.67s Vitest and 71.54s wall, with 4,686,416
+KiB peak RSS.
+
+After two comparison/default-projection cases completed the Node matrix, the
+current-source Node project passed 190 files / 1,272 tests in 4.39s Vitest and
+5.11s wall. The current-source ordinary frontend passed 530 files / 6,420 tests
+in 69.97s Vitest and 70.83s wall, with 4,680,480 KiB peak RSS.
+
+The focused suite removes 2.59s of browser-shaped import/environment work. The
+ordinary observations remain near the Phase 3 warm range and are not a
+phase-level performance claim.
+
+## Phase 4 Toggle Preset Planning Validation And Deferrals
+
+The Node leaf owns similarity and deterministic tie-breaks, full comparison
+classification, Pick key/kind eligibility and exact value projection,
+active-key/default projection, and legacy record normalization. The mounted
+sidebar owner retains visible mismatch/edited/unlinked labels, confirmations,
+ineligible Pick rows, exact chosen values, active-chat persistence status, and
+failed-save rollback. The active-chat helper companion passed 19 tests.
+
+Inventory regeneration and check passed. Full discovery is 538 files at 191 N
+/ 17 S / 330 D, standalone ordinary is 536 files at 191 N / 17 S / 328 D, and
+aggregate ordinary is 530 files at 190 N / 17 S / 323 D. The remaining static
+probe count falls from 97 to 96.
+
+`TranslatorPresetSettings.svelte.test.ts` remains D because its measured cases
+cross resource epochs, local-effect receipts, lifecycle flushes, pending writes,
+and rollback; extracting record helpers would leave the same expensive import
+graph. `pickerGenerationSettings.test.ts` remains D because its cases own focus,
+archive/rename/reorder interaction, scoped selection, pending state, and
+rollback. Revisit either only with a fresh profile and a reducer/planner that
+moves multiple behavioral cases without weakening those retained contracts.
+
+`pnpm test:affected --dry-run` selected frontend, isolated performance, and
+server lanes. Execution passed 536 frontend files / 6,623 tests in 69.83s, 2
+performance files / 6 tests in 11.78s, and 154 server files / 3,295 passing
+tests with 1 skip in 17.81s. `pnpm check`, formatting, inventory completeness,
+and `git diff --check` passed.
 
 ## Phase 4 Chat Import Request Planning Environment And Source State
 

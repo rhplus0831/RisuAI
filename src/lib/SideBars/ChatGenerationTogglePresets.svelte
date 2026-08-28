@@ -1,10 +1,8 @@
 <script lang="ts">
   import { language } from 'src/lang'
   import { resolveActiveChatGenerationSettings } from 'src/ts/activeChatGenerationSettings'
-  import {
-    compareChatGenerationTogglePresetToActiveState,
-    getChatGenerationTogglePresets,
-  } from 'src/ts/chatGenerationTogglePresets'
+  import { getChatGenerationTogglePresets } from 'src/ts/chatGenerationTogglePresets'
+  import { compareChatGenerationTogglePresetToActiveState } from 'src/ts/chatGenerationTogglePresetPlanning'
   import { captureActiveChatTarget } from 'src/ts/chatCommands'
   import {
     chatGenerationTogglePresetListModalStore,

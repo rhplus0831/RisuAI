@@ -12,18 +12,20 @@
   } from 'src/ts/activeChatGenerationSettings'
   import {
     applyChatGenerationTogglePresetWithOutcome,
-    compareChatGenerationTogglePresetToActiveState,
-    createChatGenerationTogglePresetPickValues,
     deleteChatGenerationTogglePreset,
-    getChatGenerationTogglePresetPickEligibility,
     getChatGenerationTogglePresets,
     overwriteCurrentChatGenerationTogglePreset,
     renameChatGenerationTogglePreset,
     saveCurrentChatGenerationTogglePreset,
-    sortChatGenerationTogglePresetsBySimilarity,
     type ChatGenerationTogglePreset,
-    type ChatGenerationToggleSimilarityToggle,
   } from 'src/ts/chatGenerationTogglePresets'
+  import {
+    compareChatGenerationTogglePresetToActiveState,
+    createChatGenerationTogglePresetPickValues,
+    getChatGenerationTogglePresetPickEligibility,
+    sortChatGenerationTogglePresetsBySimilarity,
+    type ChatGenerationToggleSimilarityToggle,
+  } from 'src/ts/chatGenerationTogglePresetPlanning'
   import type { ChatGenerationRequiredSidebarToggle } from 'src/ts/chatGenerationSettings'
   import type { ActiveChatTarget, ChatGenerationSettingsSaveOperation } from 'src/ts/chatCommands'
   import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'

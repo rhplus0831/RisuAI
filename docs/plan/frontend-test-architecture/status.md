@@ -10,14 +10,14 @@ codebase remain authoritative until a phase lands.
 
 - Plan state: Phases 0-3 complete; Phase 4 in progress.
 - Current phase: Phase 4 — Pure Logic Extraction (in progress).
-- Active slice: Settings projection and reconciliation preparation.
-- Implementation state: The first Phase 4 slice extracted chat-import request
-  planning into a plain TypeScript leaf. Six planning tests now run in Node;
-  183 command integration tests retain durable outbox, transport, rollback, and
-  real 16 MiB payload-boundary ownership in Happy-DOM.
+- Active slice: Server-backed fixture-planning triage.
+- Implementation state: Two Phase 4 leaves now own chat-import request planning
+  and Saved Toggles comparison/selection planning. Thirteen pure tests run in
+  Node; retained Happy-DOM suites still own durable command and mounted settings
+  behavior.
 - Blockers: None. Ninety-three retained target-S candidates have recorded Phase
   4/5 owners and revisit conditions.
-- Next action: Prepare the measured settings projection/reconciliation slice.
+- Next action: Evaluate the measured server-backed fixture-planning boundary.
 
 ## Phase Router
 
@@ -277,6 +277,14 @@ server-backed fixture planning, then router state.
     exact durable requests, the production 16 MiB limit, staging, terminal
     prefix rollback, and no-send rejection. The focused D test-body observation
     improved from 5.08s to 4.03s; phase-level measurement remains open.
+37. The settings slice extracted Saved Toggles comparison, similarity, Pick
+    eligibility/value projection, and active-key projection from the browser
+    command graph. The suite expanded from five D tests to seven N tests; its
+    focused runtime moved from 2.86s Vitest / 109ms environment to 169ms / no
+    environment. The mounted sidebar remains the visible-state and persistence
+    owner. Translator projection and picker candidates remain D-owned under
+    recorded revisit conditions because their current proofs cross resource,
+    receipt, focus, interaction, or rollback boundaries.
 
 ## Accepted Observations
 
@@ -319,16 +327,15 @@ promotion continues.
 
 ## Latest Completed Slice
 
-[Phase 4 chat import request planning](phases/slices/phase-4/chat-import-request-planning.md)
-extracted the measured command-boundary seam, moved its planning matrix to Node,
-and retained durable-command and production payload-boundary proof in
-Happy-DOM.
+[Phase 4 toggle preset planning](phases/slices/phase-4/toggle-preset-planning.md)
+extracted the measured settings projection seam, moved its expanded matrix to
+Node, and retained mounted sidebar/dialog behavior in Happy-DOM.
 
 ## Latest Verification
 
-See [`latest-verification.md`](latest-verification.md) for the first Phase 4
-slice measurements, current discovery totals, the Phase 3 formal benchmark,
-and preceding promotion and probe records.
+See [`latest-verification.md`](latest-verification.md) for current Phase 4 slice
+measurements and discovery totals, the Phase 3 formal benchmark, and preceding
+promotion and probe records.
 
 ## Maintenance Rules
 

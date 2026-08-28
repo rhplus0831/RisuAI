@@ -42,6 +42,7 @@ export const nodeTestFiles = [
   'src/ts/browserLocalSurface.test.ts',
   'src/ts/characterFolderOpening.test.ts',
   'src/ts/chatGenerationSettings.test.ts',
+  'src/ts/chatGenerationTogglePresets.test.ts',
   'src/ts/chatLoadPages.test.ts',
   'src/ts/dragTypes.test.ts',
   'src/ts/gui/loginMessageOrigin.test.ts',
