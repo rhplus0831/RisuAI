@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushSync } from 'svelte'
 
@@ -523,27 +522,6 @@ describe('settingsBridge coalescing', () => {
       promptPresetId: 'prompt-owner',
     })
     expect(await setupResult).toBe(true)
-  })
-
-  it('keeps the WelcomeRisu component free of direct trusted projection writes', () => {
-    const source = readFileSync('src/lib/Others/WelcomeRisu.svelte', 'utf8')
-
-    expect(source).toContain('applyOnboardingServerBackedSettings')
-    expect(source).not.toContain('withTrustedResourceWrite')
-  })
-
-  it('settles BotSettings prompt drafts through owner-aware applied receipts', () => {
-    const source = readFileSync('src/lib/Setting/Pages/BotSettings.svelte', 'utf8')
-    const promptDraftStart = source.indexOf('function createPromptFieldDraft')
-    const promptOwnerStart = source.indexOf('function promptFieldOwnerSignature', promptDraftStart)
-    const promptDraftSource = source.slice(promptDraftStart, promptOwnerStart)
-
-    expect(promptDraftStart).toBeGreaterThanOrEqual(0)
-    expect(promptOwnerStart).toBeGreaterThan(promptDraftStart)
-    expect(promptDraftSource).toContain('subscribeServerCommandLocalEffectApplied')
-    expect(promptDraftSource).toContain('appliedLocalEffectAcknowledgesSettingDraft')
-    expect(promptDraftSource).toContain("splitPresetProjection: 'presetRow'")
-    expect(promptDraftSource).toContain('currentPromptFieldValue(key, fallback)')
   })
 
   it('skips immediate patches whose values already match the projection', async () => {

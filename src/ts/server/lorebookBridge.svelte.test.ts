@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushSync } from 'svelte'
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
 
 // No-data-loss invariant for `watchServerBackedLorebooks`.
 // The watcher auto-persists any lorebook change it diffs; stubbing character
@@ -312,20 +310,6 @@ function publishLorebookSettlement(mutationId: string, settlement: 'accepted' | 
   for (const listener of listeners) listener(settlement)
 }
 
-function exportedFunctionSource(source: string, name: string): string {
-  const start = source.indexOf(`export function ${name}`)
-  expect(start).toBeGreaterThanOrEqual(0)
-  const next = source.indexOf('\nexport function ', start + 1)
-  return source.slice(start, next === -1 ? source.length : next)
-}
-
-function localFunctionSource(source: string, name: string): string {
-  const start = source.indexOf(`function ${name}`)
-  expect(start).toBeGreaterThanOrEqual(0)
-  const next = source.indexOf('\nfunction ', start + 1)
-  return source.slice(start, next === -1 ? source.length : next)
-}
-
 beforeEach(() => {
   vi.useFakeTimers()
   resourceGuardState.epoch = 0
@@ -441,32 +425,6 @@ describe('lorebook entry dirty projection merge', () => {
     )
 
     expect(rollback).toEqual({ draft, restoredFields: [] })
-  })
-
-  it('LoreBookData uses dirty projection merge instead of blind draft replacement', () => {
-    const source = readFileSync(path.join(process.cwd(), 'src/lib/SideBars/LoreBook/LoreBookData.svelte'), 'utf8')
-
-    expect(source).toContain('dirtyDraftFields')
-    expect(source).toContain('changedLorebookEntryDraftFields')
-    expect(source).toContain('clearDirtyLorebookEntryFieldsMatchingProjection')
-    expect(source).toContain('mergeLorebookEntryProjectionDraft')
-    expect(source).toContain('subscribeLorebookEntryDraftRollbacks')
-    expect(source).toContain('applyLorebookEntryDraftRollback')
-    expect(source).toContain('entryDraftScopeKey')
-  })
-
-  it('LoreBookData clears matching dirty fields before the value/draft mismatch branch', () => {
-    const source = readFileSync(path.join(process.cwd(), 'src/lib/SideBars/LoreBook/LoreBookData.svelte'), 'utf8')
-    const valueChangedIndex = source.indexOf('if (valueSnapshot !== previousValueSnapshot)')
-    const draftMismatchIndex = source.indexOf('if (valueSnapshot !== draftSnapshot)', valueChangedIndex)
-    const clearIndex = source.indexOf('clearDirtyLorebookEntryFieldsMatchingProjection', valueChangedIndex)
-    const preMismatchSource = source.slice(valueChangedIndex, draftMismatchIndex)
-
-    expect(valueChangedIndex).toBeGreaterThanOrEqual(0)
-    expect(draftMismatchIndex).toBeGreaterThan(valueChangedIndex)
-    expect(clearIndex).toBeGreaterThan(valueChangedIndex)
-    expect(clearIndex).toBeLessThan(draftMismatchIndex)
-    expect(preMismatchSource).toContain('!targetChanged')
   })
 })
 
@@ -858,40 +816,6 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
     }
   })
 
-  it('global lorebook direct rollback parity routes every dispatcher through suppressed helpers', () => {
-    const source = readFileSync(path.join(process.cwd(), 'src/ts/server/lorebookBridge.svelte.ts'), 'utf8')
-
-    const createDispatcher = exportedFunctionSource(source, 'dispatchCreateGlobalLorebook')
-    expect(createDispatcher).toContain("hasCollectionProjectionEpochChanged('loreBook', collectionProjectionEpoch)")
-    expect(createDispatcher).toContain('rollbackGlobalLorebookListEntry(rollbackEntry)')
-    const deleteDispatcher = exportedFunctionSource(source, 'dispatchDeleteGlobalLorebook')
-    expect(deleteDispatcher).toContain('restoreRow: !hasCollectionProjectionEpochChanged')
-    expect(deleteDispatcher).toContain('restoreSelection: !hasLorebookPageProjectionEpochChanged')
-    expect(deleteDispatcher).toContain('rollbackDeletedGlobalLorebook(rollbackEntry, selectionRollback')
-    const selectDispatcher = exportedFunctionSource(source, 'dispatchSelectGlobalLorebook')
-    expect(selectDispatcher).toContain('hasLorebookPageProjectionEpochChanged(pageProjectionEpoch)')
-    expect(selectDispatcher).toContain('rollbackGlobalLorebookSelection(rollback)')
-    const updateDispatcher = exportedFunctionSource(source, 'dispatchUpdateGlobalLorebook')
-    expect(updateDispatcher).toContain("hasCollectionProjectionEpochChanged('loreBook', collectionProjectionEpoch)")
-    expect(updateDispatcher).toContain('rollbackGlobalLorebookName(rollback)')
-    const reorderDispatcher = exportedFunctionSource(source, 'dispatchReorderGlobalLorebooks')
-    expect(reorderDispatcher).toContain('rollbackGlobalLorebookOrder(rollback)')
-    expect(reorderDispatcher).toContain('rollbackGlobalLorebookSelection(selectionRollback)')
-
-    const globalCreateRollback = localFunctionSource(source, 'rollbackGlobalLorebookListEntry')
-    expect(globalCreateRollback).toContain('canApplyGlobalLorebookListRollback(rollbackEntry)')
-    expect(globalCreateRollback).toContain('withSuppressedLorebookWatcher')
-    expect(globalCreateRollback).toContain('applyAttemptedKeyedListRollback')
-
-    const globalNameRollback = localFunctionSource(source, 'rollbackGlobalLorebookName')
-    expect(globalNameRollback).toContain('canApplyGlobalLorebookNameRollback(rollback)')
-    expect(globalNameRollback).toContain('withSuppressedLorebookWatcher')
-    expect(globalNameRollback).toContain('applyAttemptedFieldRollback')
-
-    const globalOrderRollback = localFunctionSource(source, 'rollbackGlobalLorebookOrder')
-    expect(globalOrderRollback).toContain('sameStringArray(liveIds, rollback.attemptedIds)')
-  })
-
   it('global lorebook direct rollback closures restore under an active watcher without echoes', async () => {
     const scenarios: Array<{
       label: string
@@ -1037,18 +961,6 @@ describe('lorebook snapshot purity', () => {
 })
 
 describe('global lorebook modal bridge helpers', () => {
-  it('routes lorepreset create, rename, and delete writes through bridge helpers', () => {
-    const source = readFileSync(path.join(process.cwd(), 'src/lib/Setting/lorepreset.svelte'), 'utf8')
-
-    expect(source).not.toContain('withTrustedResourceWrite')
-    expect(source).not.toContain('currentGlobalLorebookStateSnapshot')
-    expect(source).not.toContain('dispatchCreateGlobalLorebook')
-    expect(source).not.toContain('dispatchDeleteGlobalLorebook')
-    expect(source).toContain('createGlobalLorebook()')
-    expect(source).toContain('renameGlobalLorebookById(lorebookId, value)')
-    expect(source).toContain('deleteGlobalLorebookByIdWithOutcome(lorebookId)')
-  })
-
   it('creates a global lorebook, dispatches create, and rolls back to the previous list', async () => {
     setupGlobalLorebooks()
 
@@ -2294,51 +2206,6 @@ describe('lorebook editor entry draft scope', () => {
 
     await vi.advanceTimersByTimeAsync(DELAY * 10)
     expect(moduleEntryCommands()).toHaveLength(1)
-  })
-
-  it('ModuleMenu wires external LoreBookList typing through module draft handlers', () => {
-    const source = readFileSync(path.join(process.cwd(), 'src/lib/Setting/Pages/Module/ModuleMenu.svelte'), 'utf8')
-    const lorebookList = source.slice(
-      source.indexOf('<LoreBookList'),
-      source.indexOf('<div class="text-textcolor2 mt-2 flex">'),
-    )
-
-    expect(source).toContain("applyLorebookEntryDraftEdit({ kind: 'module', moduleId }, index, value)")
-    expect(source).toContain("flushPendingLorebookEntryDraftEdit({ kind: 'module', moduleId })")
-    expect(source).toContain('replaceModuleLorebookCollectionDraft(moduleId, currentModule, entries)')
-    expect(source).not.toContain('withTrustedResourceWrite')
-    expect(source).not.toContain('currentLorebookCollectionScopedSnapshot')
-    expect(source).not.toContain('dispatchReplaceModuleLorebooks')
-    expect(lorebookList).toContain('onEntryChange={updateModuleLorebookValue}')
-    expect(lorebookList).toContain('onEntrySettled={flushModuleLorebookValue}')
-    expect(lorebookList).toContain('onCollectionChange={updateModuleLorebookCollection}')
-  })
-
-  it('Batch 4: lorebook components route collection writes through bridge helpers', () => {
-    const setting = readFileSync(path.join(process.cwd(), 'src/lib/SideBars/LoreBook/LoreBookSetting.svelte'), 'utf8')
-    const list = readFileSync(path.join(process.cwd(), 'src/lib/SideBars/LoreBook/LoreBookList.svelte'), 'utf8')
-
-    for (const source of [setting, list]) {
-      expect(source).not.toContain('withTrustedResourceWrite')
-      expect(source).not.toContain('currentLorebookCollectionScopedSnapshot')
-      expect(source).not.toContain('dispatchReplaceCharacterLorebooks')
-      expect(source).not.toContain('dispatchReplaceChatLorebooks')
-      expect(source).not.toContain('dispatchReplaceGlobalLorebookEntries')
-    }
-
-    expect(setting).toContain("import { getDatabase } from 'src/ts/storage/database.svelte'")
-    expect(setting).toContain('replaceCharacterLorebookCollection')
-    expect(setting).toContain('replaceChatLorebookCollection')
-    expect(list).toContain('replaceGlobalLorebookEntryCollection')
-  })
-
-  it('Batch 5: LoreBookData local activation delegates trusted writes to the bridge', () => {
-    const source = readFileSync(path.join(process.cwd(), 'src/lib/SideBars/LoreBook/LoreBookData.svelte'), 'utf8')
-
-    expect(source).not.toContain('withTrustedResourceWrite')
-    expect(source).not.toContain('currentLorebookCollectionScopedSnapshot')
-    expect(source).not.toContain('dispatchReplaceChatLorebooks')
-    expect(source).toContain('setActiveChatLorebookLocalActivation')
   })
 
   it('Batch 5: activating a global lorebook locally assigns an id, creates child lore, and dispatches', async () => {
@@ -3606,14 +3473,6 @@ describe('watchServerBackedLorebooks — scoped change detection', () => {
     expect(recorded.commands).toHaveLength(0)
     expect(entry.id).toBeUndefined()
     stop()
-  })
-
-  it('the global lorebook modal mount does not normalize ids', () => {
-    const source = readFileSync(path.join(process.cwd(), 'src/lib/Setting/lorepreset.svelte'), 'utf8')
-    const mountEffect = source.slice(source.indexOf('$effect'), source.indexOf('</script>'))
-
-    expect(mountEffect).not.toContain('ensureGlobalLorebookListIds')
-    expect(mountEffect).not.toContain('ensureAllClientLorebookIds')
   })
 
   it('character-scoped watcher dispatches a selected-character edit but ignores a sibling chat edit', async () => {

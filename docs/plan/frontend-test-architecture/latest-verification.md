@@ -5,9 +5,31 @@ Date: 2026-08-28
 ## State
 
 Phase 5 is in progress after its fresh Happy-DOM profile and ownership
-accounting selected three repeated-import families plus one explicit
-static-source-policy follow-up. This record does not authorize repository-wide
-default inversion or migration outside the later phase rules.
+accounting completed three repeated-import consolidations and one explicit
+static-source-policy gate. Formal closeout is next. This record does not
+authorize repository-wide default inversion or migration outside the later
+phase rules.
+
+## Phase 5 Static Architecture Gate
+
+The seven pre-change D owners passed 7 files / 397 tests in 13.41s Vitest and
+14.27s wall. Their worker-phase sums were 45.64s transform, 1.07s setup, 59.00s
+import, 1.94s tests, and 1.20s environment; peak RSS was 2,283,868 KiB.
+
+The post-change slice passed the same 397 tests as seven D owners / 368 tests
+plus one N gate / 29 tests in 12.99s Vitest and 13.93s wall. Its phases were
+44.91s transform, 1.65s setup, 57.46s import, 1.85s tests, and 1.42s
+environment; peak RSS was 2,279,492 KiB. Timing and memory are unchanged inside
+noise. The Node gate alone passed in 176ms with 0ms environment setup.
+
+The original D owners retain their mounted, focus, race, rollback, persistence,
+and visible-state cases without importing source files. Shuffled Node-gate runs
+with seeds 101, 202, and 303 passed with retries disabled.
+
+Inventory regeneration passed. Full discovery is now 536 files at 193 N / 17 S
+/ 326 D, standalone ordinary is 534 at 193 N / 17 S / 324 D, and aggregate
+ordinary is 528 at 192 N / 17 S / 319 D. The move adds one explicit Node owner
+without changing the 397-contract slice.
 
 ## Phase 5 Provider Control Consolidation
 

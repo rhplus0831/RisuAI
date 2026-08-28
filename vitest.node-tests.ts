@@ -1,6 +1,7 @@
 // Conservative allowlist: every file here is validated by the frontend Node
 // project. New tests remain in happy-dom until they are deliberately promoted.
 export const nodeTestFiles = [
+  'src/lib/_audit/frontendArchitecture.static.test.ts',
   'src/ts/chatImportPlanning.test.ts',
   'packages/protocol/src/generationSse.test.ts',
   'packages/protocol/src/importBoundary.test.ts',

@@ -1,6 +1,5 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { readFileSync } from 'node:fs'
 
 vi.mock('src/ts/storage/database.svelte', () => ({
   getDatabase: () => ({ lineHeight: 1.25, zoomsize: 100 }),
@@ -607,48 +606,5 @@ describe('PartialEditController modal accessibility', () => {
     await settleEffects()
     expect(document.querySelector('.partial-match-failed-modal')).toBeNull()
     expect(document.activeElement).toBe(failureEditAction)
-  })
-
-  it('caps every dialog to the padded viewport instead of enforcing a 400px mobile minimum', async () => {
-    const fixture = createHoverFixture({
-      text: 'responsive target block',
-      left: 40,
-      top: 100,
-      width: 180,
-      height: 48,
-    })
-    mountController(fixture.bodyRoot)
-    await settleEffects()
-
-    const componentSource = readFileSync('src/lib/ChatScreens/PartialEditController.svelte', 'utf8')
-    const declarationsFor = (selector: string): string => {
-      const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      const matches = Array.from(componentSource.matchAll(new RegExp(`${escapedSelector}\\s*\\{([^}]+)\\}`, 'g')))
-      const responsiveDeclarations = matches
-        .map((match) => match[1])
-        .find((declarations) => declarations.includes('min-width'))
-      expect(responsiveDeclarations, `${selector} responsive CSS rule`).toBeTruthy()
-      return responsiveDeclarations!
-    }
-
-    const desktopMinimums = new Map([
-      ['.partial-match-failed-modal', '320px'],
-      ['.partial-delete-modal', '400px'],
-      ['.partial-edit-modal', '400px'],
-      ['.partial-match-selection-modal', '400px'],
-    ])
-
-    for (const [selector, desktopMinimum] of desktopMinimums) {
-      const declarations = declarationsFor(selector)
-      expect(declarations).toContain(`min-width: min(${desktopMinimum}, calc(100vw - 24px));`)
-      expect(declarations).toMatch(/max-width: min\([^;]+calc\(100vw - 24px\)\);/)
-      expect(declarations).toContain('box-sizing: border-box;')
-    }
-
-    for (const viewportWidth of [320, 360]) {
-      const availableWidth = viewportWidth - 24
-      expect(Math.min(400, availableWidth)).toBe(availableWidth)
-      expect(availableWidth).toBeLessThan(viewportWidth)
-    }
   })
 })

@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -297,20 +295,6 @@ import { CharConfigSubMenu, MobileGUI, selectedCharID } from 'src/ts/stores.svel
 import { getDatabase, setDatabaseLite, type character } from 'src/ts/storage/database.svelte'
 import { language } from 'src/lang'
 import { CHARACTER_SCRIPT_DEFINITION_SAVE_DELAY_MS } from 'src/ts/server/scriptDefinitionBridge.svelte'
-
-function charConfigSource(): string {
-  return readFileSync(resolve(process.cwd(), 'src/lib/SideBars/CharConfig.svelte'), 'utf8')
-}
-
-function sourceBetween(source: string, startNeedle: string, endNeedle: string): string {
-  const start = source.indexOf(startNeedle)
-  const end = source.indexOf(endNeedle, start + startNeedle.length)
-
-  expect(start).toBeGreaterThanOrEqual(0)
-  expect(end).toBeGreaterThan(start)
-
-  return source.slice(start, end)
-}
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -654,102 +638,6 @@ describe('CharConfig character media callback freshness contracts', () => {
     expect(navigationUserIcon()?.getAttribute('width')).toBe('24')
   })
 
-  it('routes VITS and GPT-SoVITS media buttons through guarded helper functions', () => {
-    const source = charConfigSource()
-
-    expect(source).toContain("from 'src/ts/server/characterTtsAssetUpload'")
-    expect(source).toContain("import { registerOnnxModelFromFile } from 'src/ts/process/transformers'")
-    expect(source).toContain('async function registerVitsModelFromEditor()')
-    expect(source).toContain('async function uploadGptSoVitsReferenceAudioFromEditor()')
-    expect(source).toContain('onclick={registerVitsModelFromEditor}')
-    expect(source).toContain('onclick={uploadGptSoVitsReferenceAudioFromEditor}')
-    expect(source).not.toContain('onclick={async () => {\n          const model = await registerOnnxModel()')
-    expect(source).not.toContain("import { registerOnnxModel } from 'src/ts/process/transformers'")
-  })
-
-  it('issues additional asset upload tokens from the multi-file picker callback', () => {
-    const source = charConfigSource()
-    const body = sourceBetween(
-      source,
-      'async function uploadCharacterAdditionalAssetsFromEditor()',
-      'function currentEditorTtsAssetUploadTarget(',
-    )
-
-    expect(body).toContain('const files = await selectMultipleFile(CHARACTER_ADDITIONAL_ASSET_EXTENSIONS, {')
-    expect(body).toContain('onFilesSelected: () => {')
-    expect(body).toContain('operation = beginCharacterAdditionalAssetUpload(target)')
-    expect(body.indexOf('operation = beginCharacterAdditionalAssetUpload(target)')).toBeLessThan(
-      body.indexOf('if (!files || files.length === 0 || !operation) return'),
-    )
-    expect(body).toContain('clearCharacterAdditionalAssetUpload(operation)')
-  })
-
-  it('issues notification-image tokens from the picker callback and guards the target fields', () => {
-    const source = charConfigSource()
-    const body = sourceBetween(
-      source,
-      'function currentEditorNotificationImageUploadTarget()',
-      'function currentEditorTtsAssetUploadTarget(',
-    )
-
-    expect(body).toContain('rowNotificationImage: target.character.notificationImage')
-    expect(body).toContain('draftNotificationImage: characterDraft.value.notificationImage')
-    expect(body).toContain('const selected = (await selectSingleFile(NOTIFICATION_IMAGE_EXTENSIONS, {')
-    expect(body).toContain('onFileSelected: () => {')
-    expect(body).toContain('operation = beginCharacterNotificationImageUpload(target)')
-    expect(body.indexOf('operation = beginCharacterNotificationImageUpload(target)')).toBeLessThan(
-      body.indexOf('if (!selected || !operation) return'),
-    )
-    expect(body).toContain('if (!isCurrentEditorNotificationImageUpload(activeOperation)) return')
-    expect(body).toContain('applyFreshCharacterNotificationImageUpload({')
-    expect(body).toContain('clearCharacterNotificationImageUpload(operation)')
-  })
-
-  it('issues VITS tokens from the single-file picker callback and guards registration before final apply', () => {
-    const source = charConfigSource()
-    const body = sourceBetween(
-      source,
-      'async function registerVitsModelFromEditor()',
-      'async function uploadGptSoVitsReferenceAudioFromEditor()',
-    )
-
-    expect(body).toContain("const selected = (await selectSingleFile(['zip'], {")
-    expect(body).toContain('onFileSelected: () => {')
-    expect(body).toContain('operation = beginCharacterTtsAssetUpload(target)')
-    expect(body.indexOf('operation = beginCharacterTtsAssetUpload(target)')).toBeLessThan(
-      body.indexOf('if (!selected || !operation) return'),
-    )
-    expect(body).toContain('if (!isCurrentEditorTtsAssetUpload(activeOperation)) return')
-    expect(body).toContain('const model = await registerOnnxModelFromFile(selected, {')
-    expect(body).toContain('shouldContinue: () => isCurrentEditorTtsAssetUpload(activeOperation)')
-    expect(body).toContain('applyFreshCharacterVitsModelRegistration({')
-    expect(body).toContain('character.vits = nextModel')
-    expect(body).toContain('clearCharacterTtsAssetUpload(operation)')
-    expect(body).not.toContain('character.vits = model')
-  })
-
-  it('issues GPT-SoVITS audio tokens from the single-file picker callback and guards saveAsset before final apply', () => {
-    const source = charConfigSource()
-    const body = sourceBetween(
-      source,
-      'async function uploadGptSoVitsReferenceAudioFromEditor()',
-      'function clearOrRotateCharacterImage()',
-    )
-
-    expect(body).toContain("const audio = (await selectSingleFile(['wav', 'ogg', 'aac', 'mp3'], {")
-    expect(body).toContain('onFileSelected: () => {')
-    expect(body).toContain('operation = beginCharacterTtsAssetUpload(target)')
-    expect(body.indexOf('operation = beginCharacterTtsAssetUpload(target)')).toBeLessThan(
-      body.indexOf('if (!audio || !operation) return'),
-    )
-    expect(body).toContain('if (!isCurrentEditorTtsAssetUpload(activeOperation)) return')
-    expect(body).toContain("const saveId = await saveAsset(audio.data, '', audio.name)")
-    expect(body).toContain('applyFreshCharacterGptSoVitsReferenceAudioUpload({')
-    expect(body).toContain('character.gptSoVitsConfig.ref_audio_data = nextRefAudioData')
-    expect(body).toContain('clearCharacterTtsAssetUpload(operation)')
-    expect(body).not.toContain('character.gptSoVitsConfig.ref_audio_data = {\n              fileName: audio.name')
-  })
-
   it('keeps an older delayed VITS picker read from superseding a newer selection', async () => {
     const olderFile = selectedFile('older.zip', new Uint8Array([1]))
     const newerFile = selectedFile('newer.zip', new Uint8Array([2]))
@@ -929,19 +817,6 @@ describe('CharConfig TTS control accessible names', () => {
     )
   })
 
-  it('keeps every direct shared form control named for its visible setting', () => {
-    const source = charConfigSource()
-
-    for (const componentName of ['TextInput', 'TextAreaInput', 'NumberInput', 'SelectInput', 'SecretInput']) {
-      const tags = source.match(new RegExp(`<${componentName}\\b[\\s\\S]*?(?:\\/>|</${componentName}>)`, 'g')) ?? []
-      expect(tags.length, componentName).toBeGreaterThan(0)
-      expect(
-        tags.filter((tag) => !tag.includes('ariaLabel=')),
-        `${componentName} controls without names`,
-      ).toEqual([])
-    }
-  })
-
   it.each([
     { mode: 'novelai', name: language.ttsCustomVoiceSeed },
     { mode: 'openai', name: language.ttsAdvancedEndpoint },
@@ -1105,41 +980,6 @@ describe('CharConfig draft-backed avatar and emotion controls', () => {
 
     expect(target.querySelector('img[src="stale-upload"]')).toBeNull()
     expect(getDatabase().characters[0].emotionImages).toEqual([])
-  })
-})
-
-describe('CharConfig character draft target guards', () => {
-  it('does not gate persistent character actions on the profile draft type field', () => {
-    const source = charConfigSource()
-
-    expect(source).not.toContain('characterDraft.value.type')
-    expect(source).toContain('function currentRealCharacterDraftTarget()')
-    expect(source).toContain('isServerCharacterShell(selectedCharacter)')
-    expect(source).toContain("selectedCharacter.type && selectedCharacter.type !== 'character'")
-    expect(source).toContain('characterDraft.characterId !== selectedCharacter.chaId')
-    expect(source).not.toContain('changeCharImage($selectedCharID')
-    expect(source).not.toContain('rmCharEmotion($selectedCharID')
-    expect(source).not.toContain('addCharEmotion($selectedCharID')
-  })
-
-  it('keeps script definitions out of the profile draft and validates the script draft target before adding', () => {
-    const source = charConfigSource()
-    const draftSeed = sourceBetween(
-      source,
-      'const characterDraft = createServerBackedCharacterDraft([',
-      '  let characterScriptsDraft = $state<customscript[]>([])',
-    )
-    const scriptAddHandler = sourceBetween(
-      source,
-      '<span class="text-textcolor mt-4">{language.regexScript}',
-      '<span class="text-textcolor mt-4">{language.triggerScript}',
-    )
-
-    expect(draftSeed).not.toContain("'type'")
-    expect(draftSeed).not.toContain("'customscript'")
-    expect(draftSeed).not.toContain("'triggerscript'")
-    expect(scriptAddHandler).toContain('const target = currentRealCharacterDraftTarget()')
-    expect(scriptAddHandler).toContain('scriptDraftCharacterId === target.character.chaId')
   })
 })
 

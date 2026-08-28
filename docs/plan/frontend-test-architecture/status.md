@@ -10,13 +10,14 @@ codebase remain authoritative until a phase lands.
 
 - Plan state: Phases 0-4 complete; Phase 5 in progress.
 - Current phase: Phase 5 — DOM Contract Consolidation (in progress).
-- Active slice: Static source-policy consolidation.
+- Active slice: Formal Phase 5 closeout and reprofile.
 - Implementation state: Toggles, AlertComp, and provider controls now have one
   coherent DOM owner apiece. Four original D file boundaries were removed with
-  all 22 selected visible-behavior cases retained.
+  all 22 selected visible-behavior cases retained; 29 source policies now have
+  one explicit zero-DOM Node architecture owner.
 - Blockers: None.
-- Next action: Move embedded source-string policies into one explicit static
-  Node architecture gate while retaining mounted/durable D behavior in place.
+- Next action: Run the complete validation lanes and cold/three-warm ordinary
+  profile, then record the Phase 5 stopping decision.
 
 ## Phase Router
 
@@ -349,6 +350,11 @@ DOM setup now belongs to Phase 5.
     real OptionalInput/TextInput behavior retained. Focused wall was unchanged
     inside noise, while import sum fell 49.5%, environment sum 51.1%, and peak
     RSS 25.8%; three shuffled seeds passed.
+44. Twenty-nine source-policy assertions moved from seven mixed Happy-DOM
+    owners into one explicitly labeled Node architecture gate. The same 397
+    focused contracts passed, the gate has 0ms DOM-environment setup, and three
+    shuffled seeds passed. The seven D owners now contain only their behavioral
+    contracts; the exceptional assertion style has one discoverable owner.
 
 ## Accepted Observations
 
@@ -391,9 +397,9 @@ promotion continues.
 
 ## Latest Completed Slice
 
-[Phase 5 provider control consolidation](phases/slices/phase-5/provider-control-consolidation.md)
-retained all four Ooba/OpenRouter accessibility cases under one component
-lifecycle and removed one Happy-DOM file boundary.
+[Phase 5 static architecture gate](phases/slices/phase-5/static-architecture-gate.md)
+moved all 29 embedded source-policy assertions to one zero-DOM Node owner while
+retaining the seven original behavioral owners in Happy-DOM.
 
 ## Latest Verification
 

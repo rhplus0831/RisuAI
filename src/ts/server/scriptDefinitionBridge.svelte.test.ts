@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushSync } from 'svelte'
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
 
 const recorded = vi.hoisted(() => ({
   commands: [] as Array<{
@@ -770,24 +768,6 @@ describe('script definition watcher purity', () => {
 })
 
 describe('character script definition draft bridge', () => {
-  it('routes CharConfig script draft writes through the bridge helper', () => {
-    const source = readFileSync(path.join(process.cwd(), 'src/lib/SideBars/CharConfig.svelte'), 'utf8')
-    const scriptDraftStart = source.indexOf('let characterScriptsDraft')
-    const scriptDraftEnd = source.indexOf('let lasttokens', scriptDraftStart)
-    const scriptDraftSource = source.slice(scriptDraftStart, scriptDraftEnd)
-
-    expect(scriptDraftStart).toBeGreaterThanOrEqual(0)
-    expect(scriptDraftEnd).toBeGreaterThan(scriptDraftStart)
-    expect(scriptDraftSource).not.toContain('withTrustedResourceWrite')
-    expect(source).toContain('scheduleCharacterScriptDefinitionDraft(')
-    expect(source).toContain('getServerResourceApplyEpoch')
-    expect(source).toContain('markDirtyScriptDefinitionRowFields')
-    expect(source).toContain('subscribeServerCommandLocalEffectApplied')
-    expect(source).toContain('clearDirtyScriptDefinitionFieldsMatchingAttempt')
-    expect(source).toContain('mergeScriptDefinitionProjectionRows')
-    expect(source).toContain('clearScriptDraftDirtyState()')
-  })
-
   it('waits for 300 ms of editor inactivity before staging the latest character script draft', async () => {
     setupScriptDefinitions()
     const firstDraft = [script('script-1', 'first keystroke')]
@@ -877,21 +857,6 @@ describe('character script definition draft bridge', () => {
     await expect(waitForPendingCharacterScriptDefinitionSave('char-1', { finalSettlement: true })).resolves.toBe(
       'failed',
     )
-  })
-
-  it('does not settle script dirty fields from a broad resource apply', () => {
-    const source = readFileSync(path.join(process.cwd(), 'src/lib/SideBars/CharConfig.svelte'), 'utf8')
-    const projectionChangedIndex = source.indexOf('const resourceApplyChanged')
-    const mismatchBranchIndex = source.indexOf(
-      'if (targetChanged || snapshot !== scriptDraftSnapshot)',
-      projectionChangedIndex,
-    )
-    const preMismatchSource = source.slice(projectionChangedIndex, mismatchBranchIndex)
-
-    expect(projectionChangedIndex).toBeGreaterThanOrEqual(0)
-    expect(mismatchBranchIndex).toBeGreaterThan(projectionChangedIndex)
-    expect(preMismatchSource).toContain('resourceApplyChanged')
-    expect(preMismatchSource).not.toContain('clearDirtyScriptDefinitionFieldsMatchingAttempt')
   })
 
   it('applies cloned drafts, dispatches replacements, and preserves newer definitions on stale rollback', async () => {
@@ -2882,14 +2847,5 @@ describe('applyModuleScriptDefinitionDraft', () => {
 
     expect(recorded.commands).toEqual([])
     expect(getDatabase().modules.map((module) => module.id)).toEqual(['module-1'])
-  })
-
-  it('ModuleMenu wires module regex and trigger drafts through the module script bridge', () => {
-    const source = readFileSync(path.join(process.cwd(), 'src/lib/Setting/Pages/Module/ModuleMenu.svelte'), 'utf8')
-
-    expect(source).toContain('applyModuleScriptDefinitionDraft')
-    expect(source).toContain('snapshotModuleScriptDraft')
-    expect(source).toContain('currentModule?.regex ?? []')
-    expect(source).toContain('currentModule?.trigger ?? []')
   })
 })

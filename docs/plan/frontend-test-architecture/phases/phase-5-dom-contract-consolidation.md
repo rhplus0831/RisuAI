@@ -17,8 +17,10 @@ Status: In Progress
 - [Provider control consolidation](slices/phase-5/provider-control-consolidation.md)
   retains four Ooba/OpenRouter accessibility cases under one provider-control
   lifecycle while keeping the real inputs under test.
-- Next: move the remaining source-string policies out of mixed D suites and
-  into one explicitly labeled static Node architecture gate.
+- [Static architecture gate](slices/phase-5/static-architecture-gate.md) moves
+  all 29 embedded source-policy checks out of seven mixed D suites and into one
+  explicitly labeled zero-DOM Node owner.
+- Next: run the formal Phase 5 closeout lanes and record the cold/warm profile.
 
 ## Objective
 

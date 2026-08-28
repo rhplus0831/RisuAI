@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, tick, unmount } from 'svelte'
 
@@ -372,10 +370,6 @@ function seedTemplate(): void {
   resourceDatabase.current = {
     promptTemplate: [item('p-0', 'small'), item('p-1', BIG), item('p-2', BIG), item('p-3', BIG)],
   }
-}
-
-function readSource(path: string): string {
-  return readFileSync(resolve(process.cwd(), path), 'utf8')
 }
 
 function durableStageByRequestPath(path: string) {
@@ -3201,45 +3195,6 @@ describe('PromptSettings action accessibility', () => {
       if (component) unmount(component)
       target.remove()
     }
-  })
-})
-
-describe('prompt settings draft dispatch contracts', () => {
-  it('does not redispatch PromptSettings drafts after accepting selected-preset projection changes', () => {
-    const source = readSource('src/lib/Setting/Pages/PromptSettings.svelte')
-
-    expect(source).toContain('let previousDraftDispatchSnapshot = snapshotJson(initialValue)')
-    expect(source).toContain('previousDraftDispatchSnapshot = serverSnapshot')
-    expect(source).toContain('if (snapshot === previousDraftDispatchSnapshot) return')
-  })
-
-  it('does not redispatch prompt preset model override drafts after accepting projection changes', () => {
-    const source = readSource('src/ts/promptPresetModelOverrides.svelte.ts')
-
-    expect(source).toContain('let previousDraftDispatchSnapshot = snapshotJson(initialValue)')
-    expect(source).toContain('previousDraftDispatchSnapshot = serverSnapshot')
-    expect(source).toContain('if (snapshot === previousDraftDispatchSnapshot) return')
-  })
-
-  it('does not mirror prompt item row edits through whole prompt preset update commands', () => {
-    const source = readSource('src/ts/server/promptTemplateBridge.svelte.ts')
-
-    expect(source).not.toContain("mirrorTopLevelPresetField('promptTemplate'")
-  })
-
-  it('keeps PromptSettings row edits on prompt item commands after selected-template id repair', () => {
-    const source = readSource('src/lib/Setting/Pages/PromptSettings.svelte')
-
-    expect(source).toContain('queuePromptPresetTemplateIdServerSync(ownerId)')
-    expect(source).toContain('syncSelectedPromptPresetItemProjection(itemId, promptItem)')
-    expect(source).toContain('syncSelectedPromptPresetItemProjection(itemId, currentItem)')
-    expect(source).toContain('queueRowPatch(projectionFence, null)')
-    expect(source).toContain('armPendingPromptItemProjectionUpdate(')
-    expect(source).toContain('queuePromptItemProjectionUpdate(')
-    expect(source).toContain('syncSelectedPromptPresetTemplateProjection(templates)')
-    expect(source).toContain('promptPresetId: promptTemplateOwnerCommandId(ownerId)')
-    expect(source).toContain('markPromptTemplateOwnerAcknowledgementTainted(ownerId)')
-    expect(source).toContain('markPromptTemplateOwnerAcknowledgementTainted(currentPromptTemplateOwnerId())')
   })
 })
 

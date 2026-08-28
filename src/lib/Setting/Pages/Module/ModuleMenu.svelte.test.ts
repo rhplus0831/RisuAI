@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('src/ts/server/commands', async (importActual) => {
@@ -28,15 +26,6 @@ let draftModule: RisuModule
 
 function cloneJsonValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
-}
-
-function sourceBetween(file: string, start: string, end: string): string {
-  const source = readFileSync(resolve(process.cwd(), file), 'utf8')
-  const startIndex = source.indexOf(start)
-  const endIndex = source.indexOf(end, startIndex + start.length)
-  expect(startIndex).toBeGreaterThanOrEqual(0)
-  expect(endIndex).toBeGreaterThan(startIndex)
-  return source.slice(startIndex, endIndex)
 }
 
 function loreEntry(id: string, content: string): loreBook {
@@ -188,45 +177,4 @@ describe('ModuleMenu stale import guards', () => {
     expect(draftModule.regex).toEqual(liveModule.regex)
     expect(draftModule.trigger).toEqual(liveModule.trigger)
   })
-})
-
-describe('media upload picker token timing', () => {
-  it.each([
-    {
-      file: 'src/lib/Setting/Pages/Module/ModuleMenu.svelte',
-      start: 'async function uploadModuleAssets()',
-      end: 'function addLorebook()',
-      picker: 'selectMultipleFile(MODULE_ASSET_EXTENSIONS, {',
-      callback: 'onFilesSelected: () => {',
-      begin: 'operation = beginModuleAssetUpload(target)',
-      guard: 'if (!files || files.length === 0 || !operation) return',
-    },
-    {
-      file: 'src/lib/Setting/Pages/OtherBotSettings.svelte',
-      start: 'async function uploadSettingsMediaAsset(',
-      end: 'async function uploadNaiCharacterReferenceImage()',
-      picker: "selectSingleFile(['jpg', 'jpeg', 'png', 'webp'], {",
-      callback: 'onFileSelected: () => {',
-      begin: 'operation = beginSettingsMediaAssetUpload(target)',
-      guard: 'if (!img || !operation) return',
-    },
-    {
-      file: 'src/lib/Setting/Pages/BotSettings.svelte',
-      start: 'async function uploadSelectedPromptPresetIcon()',
-      end: 'function snapshotJson(',
-      picker: "selectSingleFile(['png', 'jpg', 'jpeg', 'webp'], {",
-      callback: 'onFileSelected: () => {',
-      begin: 'operation = beginPromptPresetIconUpload(target)',
-      guard: 'if (!selected || !operation) return',
-    },
-  ])(
-    'issues the latest-operation token from the picker callback in $file',
-    ({ file, start, end, picker, callback, begin, guard }) => {
-      const body = sourceBetween(file, start, end)
-      expect(body).toContain(picker)
-      expect(body).toContain(callback)
-      expect(body).toContain(begin)
-      expect(body.indexOf(begin)).toBeLessThan(body.indexOf(guard))
-    },
-  )
 })
