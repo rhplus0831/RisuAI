@@ -166,6 +166,7 @@ export const categoryRules: readonly CategoryRule[] = [
       /^vitest\..*\.test\.ts$/,
       /^packages\/protocol\/src\/importBoundary\.test\.ts$/,
       /^src\/lib\/_audit\/frontendArchitecture\.static\.test\.ts$/,
+      /^src\/ts\/alert\.importSafety\.test\.ts$/,
       /^src\/ts\/__tests__\/(?:renderCostHarness|sendCloneCountProbe)\.test\.ts$/,
       /^src\/ts\/stores\.importSafety\.svelte\.test\.ts$/,
       /^server\/fastify\/__tests__\/(?:protocolPackage|serverLoadCostHarness|terminalFrameAssertions)\.test\.ts$/,
@@ -180,6 +181,7 @@ export const categoryRules: readonly CategoryRule[] = [
     patterns: [
       /^src\/lib\/SideBars\/chatGenerationSettingsControls\.test\.ts$/,
       /^src\/lib\/ChatScreens\//,
+      /^src\/lang\/index\.test\.ts$/,
       /^src\/ts\/observer\.svelte\.test\.ts$/,
     ],
   },
@@ -200,6 +202,7 @@ export const categoryRules: readonly CategoryRule[] = [
     description:
       'Authentication, authorization, egress and body limits, tracing, startup/shutdown, service workers, and platform routes.',
     patterns: [
+      /^src\/ts\/gui\/loginMessageOrigin\.test\.ts$/,
       /(?:^|\/)(?:auth|config|echo|http|index|apiStatus|requestLimits|requestPolicy|ssrf|webPush|pushNotifications|serviceWorker|startupShutdown|shutdown|traceRedaction|tracing|agentDataSandbox)(?:\.|\/)/i,
       /(?:bodyCap|decompression|prototypePollution|routeProtection|security|TraceSidecar|startupTelemetry|runtimeLimits|payloadBudgets|requestTrace|sourcemap|browserLocalSurface|pushNotification|globalApi\.proxy|globalApi\.fetchNative|localNetwork|proxyJobWs|polyfill|\/proxy\.test|\/smoke\.test|\/static\.test|notification\.test)/i,
     ],
@@ -210,6 +213,7 @@ export const categoryRules: readonly CategoryRule[] = [
     description:
       'Asset bytes and ownership, imports/exports, saves, backups, archive codecs, Realm staging, and historical formats.',
     patterns: [
+      /^src\/ts\/chatImportPlanning\.test\.ts$/,
       /(?:^|\/)(?:assets?|assetGc|assetMetadataIndex|backups?|saveCodec|saveFiles?|browserFileService|inlayCatalog)(?:\.|\/)/i,
       /(?:realmImport|charx|risuSave|processzip|importChat|exportChat|importPreset|downloadPreset|backupRestore|bundleImport|bundleExport|historicalFormat|compatibilityAdapters|filePicker|globalApi\.(?:downloadFile|getFileSrc|saveAssets)|dynamicutils\/pdf|files\/multisend|files\/tests\/inlays|biasImport|moduleAssetUpload|naiVibeImport|sha256Fallback)/i,
     ],
@@ -247,6 +251,7 @@ export const categoryRules: readonly CategoryRule[] = [
     category: 'G',
     description: 'Provider adapters, models and credentials, translation, image/audio/transcription, and media codecs.',
     patterns: [
+      /^server\/fastify\/__tests__\/(?:chatDispatchLogitBias|chatDispatchProfileOptions|openrouterFreeModel)\.test\.ts$/,
       /(?:^|\/)(?:providers?|models?|credentials?|translator|translation|media|audio|speech|transcription|imageGeneration|compressImage)(?:\.|\/)/i,
       /(?:anthropic|bedrock|cohere|gemini|google|horde|kobold|ollama|openai|ooba|mistral|vertex|sigv4|stableDiff|novelAi|elevenLabs|whisper|provider|modelProfile|credential|translation|translator|imggen|imageEmotion|completionSound|stripCoT|tts|jsonControls|additionalParams|seperateParameters|requestHistory|dispatchRequest|emotionFallback|emotionFromResponse|clientContext|modelRoleRouting|transformers)/i,
     ],
@@ -257,6 +262,7 @@ export const categoryRules: readonly CategoryRule[] = [
     description:
       'Prompt assembly, generation operations and effects, streaming, finalization, reroll, and Agent Presets.',
     patterns: [
+      /^src\/ts\/process\/request\/tests\/serverChat\.test\.ts$/,
       /(?:^|\/)(?:generation|prompting|prompts?|streaming|agentPresets?)(?:\.|\/)/i,
       /(?:assemble|generation|sendChat|prompt|streamResponse|nonStreamResponse|orchestrateResponse|durableGeneration|reroll|preflight|runStage|stage4|agentPreset|budgetFinalize|formatHistory|lorebookContext|acceptedSend|plainSections|staticSections|streamBackpressure|templates|tokens?(?:\.test)|tokenizer|buildDescription|buildHistoryWindow|charEmotionStore|normalizeTemplate|reattach|finalizeRequestBudget|streamCoalescer|halfStreamingProgress|inlayFinalization|serverMessagePatch|sseParse|serverCompletion|requestAbort|history\.test|\/igp\.test)/i,
     ],
@@ -267,6 +273,7 @@ export const categoryRules: readonly CategoryRule[] = [
     description:
       'Browser bootstrap, writer/observer state, outbox/replay, hydration, invalidation, refresh, and recovery.',
     patterns: [
+      /^src\/ts\/server\/chatMessageHydration(?:\.reactivity\.svelte)?\.test\.ts$/,
       /(?:^|\/)(?:bootstrap|recovery|hydration|invalidation|outbox|replay|startupReadiness)(?:\.|\/)/i,
       /(?:activeWriter|observer|pendingMutation|lifecycleRecovery|startupRecovery|resourceState|resourceRefresh|resourceInvalidation|resourceCache|resourceManifest|cachePopulation|visibleStateRecovery|routeResourceLoader|preload|entryStartup|hydrationReads|shellHydration|shellProtocol|staleStateGuards|stores\.runtimeEffects)/i,
     ],
