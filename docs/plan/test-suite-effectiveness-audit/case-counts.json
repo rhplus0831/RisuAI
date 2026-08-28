@@ -138,7 +138,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/commands.test.ts": {
-      "cases": 222,
+      "cases": 223,
       "skipped": 0,
       "parameterizedRows": 2
     },
@@ -358,7 +358,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/memoryEmbeddingAdapter.test.ts": {
-      "cases": 13,
+      "cases": 14,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -373,17 +373,17 @@
       "parameterizedRows": 2
     },
     "server/fastify/__tests__/memoryEvents.test.ts": {
-      "cases": 6,
+      "cases": 13,
       "skipped": 0,
-      "parameterizedRows": 5
+      "parameterizedRows": 12
     },
     "server/fastify/__tests__/memoryJobsRoutes.test.ts": {
-      "cases": 9,
+      "cases": 10,
       "skipped": 0,
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/memoryLegacyImport.test.ts": {
-      "cases": 5,
+      "cases": 7,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -1073,7 +1073,7 @@
       "parameterizedRows": 0
     },
     "src/lib/Others/HypaV3Modal/server-memory-jobs.svelte.test.ts": {
-      "cases": 4,
+      "cases": 5,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -2608,7 +2608,7 @@
       "parameterizedRows": 0
     },
     "src/ts/process/memory/embeddingCacheKey.test.ts": {
-      "cases": 2,
+      "cases": 3,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -3048,12 +3048,12 @@
       "parameterizedRows": 0
     },
     "src/ts/server/memoryJobEvents.test.ts": {
-      "cases": 1,
+      "cases": 2,
       "skipped": 0,
       "parameterizedRows": 0
     },
     "src/ts/server/memoryJobProjection.test.ts": {
-      "cases": 6,
+      "cases": 8,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -3468,7 +3468,7 @@
       "parameterizedRows": 0
     },
     "util/test-effectiveness-inventory.test.ts": {
-      "cases": 9,
+      "cases": 10,
       "skipped": 0,
       "parameterizedRows": 0
     },

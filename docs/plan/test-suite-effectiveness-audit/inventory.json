@@ -86,6 +86,50 @@
       ]
     },
     {
+      "id": "reviewed-memory-adjacent-generation-boundaries",
+      "category": "F",
+      "description": "First matching rule wins. Reviewed memory-named owners whose dominant contract is prompt and generation composition.",
+      "pathPatterns": [
+        "/^server\\/fastify\\/__tests__\\/(?:memory|memorySummaryPrompt|promptMemoryAdapter)\\.test\\.ts$/",
+        "/^src\\/ts\\/process\\/__tests__\\/buildMemoryWindow\\.test\\.ts$/"
+      ]
+    },
+    {
+      "id": "reviewed-memory-adjacent-provider-boundaries",
+      "category": "G",
+      "description": "First matching rule wins. Reviewed embedding and summary adapter/model owners whose dominant contract is provider request behavior.",
+      "pathPatterns": [
+        "/^server\\/fastify\\/__tests__\\/(?:embeddingOperations|memoryEmbeddingAdapter|memoryEmbeddingModel|memorySummaryAdapter|memorySummaryModel)\\.test\\.ts$/",
+        "/^src\\/ts\\/process\\/__tests__\\/emotionFallbackEmbedding\\.test\\.ts$/",
+        "/^src\\/ts\\/process\\/memory\\/(?:contextualEmbedding|remoteEmbeddingPaths)\\.test\\.ts$/",
+        "/^src\\/ts\\/server\\/embeddingOperations\\.test\\.ts$/"
+      ]
+    },
+    {
+      "id": "reviewed-memory-adjacent-runtime-boundaries",
+      "category": "L",
+      "description": "First matching rule wins. Reviewed stream-job registry and route owners whose dominant contract is shared runtime infrastructure.",
+      "pathPatterns": [
+        "/^server\\/fastify\\/__tests__\\/streamJobs(?:Routes)?\\.test\\.ts$/"
+      ]
+    },
+    {
+      "id": "reviewed-memory-adjacent-visible-state-boundaries",
+      "category": "D",
+      "description": "First matching rule wins. Reviewed worker-error presentation whose dominant contract is visible application feedback.",
+      "pathPatterns": [
+        "/^src\\/lib\\/Others\\/monacoWorkerErrors\\.test\\.ts$/"
+      ]
+    },
+    {
+      "id": "reviewed-memory-adjacent-browser-state-boundaries",
+      "category": "B",
+      "description": "First matching rule wins. Reviewed character-summary protocol projection whose dominant contract is browser state synchronization.",
+      "pathPatterns": [
+        "/^src\\/ts\\/server\\/characterSummaryProtocol\\.test\\.ts$/"
+      ]
+    },
+    {
       "id": "memory-jobs-workers",
       "category": "H",
       "description": "First matching rule wins. Memory, embeddings, summaries, ranking, jobs, queues, and worker lifecycle.",
@@ -1506,7 +1550,7 @@
         "globals"
       ],
       "caseCounts": {
-        "cases": 222,
+        "cases": 223,
         "skipped": 0,
         "parameterizedRows": 2,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
@@ -1913,9 +1957,11 @@
       "specializedOwnership": [
         "server"
       ],
-      "primaryCategory": "H",
-      "categoryRule": "memory-jobs-workers",
-      "seamTags": [],
+      "primaryCategory": "G",
+      "categoryRule": "reviewed-memory-adjacent-provider-boundaries",
+      "seamTags": [
+        "category-H"
+      ],
       "kind": "API integration",
       "dependencySignals": [
         "mocks",
@@ -1931,22 +1977,22 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (13 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "embedding provider operation transport",
+        "plausibleDefect": "Memory-shaped vocabulary can assign this owner to H even though its dominant failure mode belongs to another product contract.",
+        "risk": "Medium audit blind spot and misleading overlap analysis.",
+        "companionEvidence": "The executable category counterexample routes this owner to G; Phase 8 reviewed the complete opening owner before transfer.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "The complete owner protects embedding provider operation transport, not the durable memory/job lifecycle.",
+        "findingId": "TSA-P08-010",
+        "severity": "Medium",
+        "action": "Route the owner from H to G and preserve its tests unchanged.",
+        "validation": "The category counterexample matrix passed 10/10 and regenerated inventory assigns the intended category.",
+        "state": "phase8-reclassified"
       }
     },
     {
@@ -3157,9 +3203,11 @@
       "specializedOwnership": [
         "server"
       ],
-      "primaryCategory": "H",
-      "categoryRule": "memory-jobs-workers",
-      "seamTags": [],
+      "primaryCategory": "F",
+      "categoryRule": "reviewed-memory-adjacent-generation-boundaries",
+      "seamTags": [
+        "category-H"
+      ],
       "kind": "storage integration",
       "dependencySignals": [
         "database"
@@ -3171,22 +3219,22 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (8 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "legacy memory prompt-window semantics",
+        "plausibleDefect": "Memory-shaped vocabulary can assign this owner to H even though its dominant failure mode belongs to another product contract.",
+        "risk": "Medium audit blind spot and misleading overlap analysis.",
+        "companionEvidence": "The executable category counterexample routes this owner to F; Phase 8 reviewed the complete opening owner before transfer.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "The complete owner protects legacy memory prompt-window semantics, not the durable memory/job lifecycle.",
+        "findingId": "TSA-P08-010",
+        "severity": "Medium",
+        "action": "Route the owner from H to F and preserve its tests unchanged.",
+        "validation": "The category counterexample matrix passed 10/10 and regenerated inventory assigns the intended category.",
+        "state": "phase8-reclassified"
       }
     },
     {
@@ -3208,22 +3256,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (6 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "memory planning, chunk/summary/embedding repository invariants, ranking, selection, and legacy salvage",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -3248,22 +3297,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (6 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "memory planning, chunk/summary/embedding repository invariants, ranking, selection, and legacy salvage",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -3292,22 +3342,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (29 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "durable memory job transitions, worker scheduling/retry/cancel/shutdown, routes, and event presentation",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -3317,9 +3368,11 @@
       "specializedOwnership": [
         "server"
       ],
-      "primaryCategory": "H",
-      "categoryRule": "memory-jobs-workers",
-      "seamTags": [],
+      "primaryCategory": "G",
+      "categoryRule": "reviewed-memory-adjacent-provider-boundaries",
+      "seamTags": [
+        "category-H"
+      ],
       "kind": "pure unit",
       "dependencySignals": [
         "mocks",
@@ -3327,28 +3380,28 @@
         "browser"
       ],
       "caseCounts": {
-        "cases": 13,
+        "cases": 14,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (14 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "embedding provider request and response adaptation",
+        "plausibleDefect": "Memory-shaped vocabulary can assign this owner to H even though its dominant failure mode belongs to another product contract.",
+        "risk": "Medium audit blind spot and misleading overlap analysis.",
+        "companionEvidence": "The executable category counterexample routes this owner to G; Phase 8 reviewed the complete opening owner before transfer.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "The complete owner protects embedding provider request and response adaptation, not the durable memory/job lifecycle.",
+        "findingId": "TSA-P08-010",
+        "severity": "Medium",
+        "action": "Route the owner from H to G and preserve its tests unchanged.",
+        "validation": "The category counterexample matrix passed 10/10 and regenerated inventory assigns the intended category.",
+        "state": "phase8-reclassified"
       }
     },
     {
@@ -3358,9 +3411,11 @@
       "specializedOwnership": [
         "server"
       ],
-      "primaryCategory": "H",
-      "categoryRule": "memory-jobs-workers",
-      "seamTags": [],
+      "primaryCategory": "G",
+      "categoryRule": "reviewed-memory-adjacent-provider-boundaries",
+      "seamTags": [
+        "category-H"
+      ],
       "kind": "storage integration",
       "dependencySignals": [
         "database"
@@ -3372,22 +3427,22 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (11 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "embedding provider/model resolution",
+        "plausibleDefect": "Memory-shaped vocabulary can assign this owner to H even though its dominant failure mode belongs to another product contract.",
+        "risk": "Medium audit blind spot and misleading overlap analysis.",
+        "companionEvidence": "The executable category counterexample routes this owner to G; Phase 8 reviewed the complete opening owner before transfer.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "The complete owner protects embedding provider/model resolution, not the durable memory/job lifecycle.",
+        "findingId": "TSA-P08-010",
+        "severity": "Medium",
+        "action": "Route the owner from H to G and preserve its tests unchanged.",
+        "validation": "The category counterexample matrix passed 10/10 and regenerated inventory assigns the intended category.",
+        "state": "phase8-reclassified"
       }
     },
     {
@@ -3403,28 +3458,29 @@
       "kind": "pure unit",
       "dependencySignals": [],
       "caseCounts": {
-        "cases": 6,
+        "cases": 13,
         "skipped": 0,
-        "parameterizedRows": 5,
+        "parameterizedRows": 12,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (13 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "durable memory job transitions, worker scheduling/retry/cancel/shutdown, routes, and event presentation",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -3447,28 +3503,29 @@
         "globals"
       ],
       "caseCounts": {
-        "cases": 9,
+        "cases": 10,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (10 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "durable memory job transitions, worker scheduling/retry/cancel/shutdown, routes, and event presentation",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -3491,28 +3548,29 @@
         "globals"
       ],
       "caseCounts": {
-        "cases": 5,
+        "cases": 7,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (7 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "memory planning, chunk/summary/embedding repository invariants, ranking, selection, and legacy salvage",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -3537,22 +3595,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (14 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "memory planning, chunk/summary/embedding repository invariants, ranking, selection, and legacy salvage",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -3581,22 +3640,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (13 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "memory embedding/summary execution, transactional commit, and partial-failure handling",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -3623,22 +3683,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (21 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "memory planning, chunk/summary/embedding repository invariants, ranking, selection, and legacy salvage",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -3663,22 +3724,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (9 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "memory planning, chunk/summary/embedding repository invariants, ranking, selection, and legacy salvage",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -3700,22 +3762,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (9 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "memory planning, chunk/summary/embedding repository invariants, ranking, selection, and legacy salvage",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -3743,22 +3806,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (19 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "durable memory job transitions, worker scheduling/retry/cancel/shutdown, routes, and event presentation",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -3768,9 +3832,11 @@
       "specializedOwnership": [
         "server"
       ],
-      "primaryCategory": "H",
-      "categoryRule": "memory-jobs-workers",
-      "seamTags": [],
+      "primaryCategory": "G",
+      "categoryRule": "reviewed-memory-adjacent-provider-boundaries",
+      "seamTags": [
+        "category-H"
+      ],
       "kind": "pure unit",
       "dependencySignals": [
         "mocks",
@@ -3783,22 +3849,22 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (7 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "summary provider request and response adaptation",
+        "plausibleDefect": "Memory-shaped vocabulary can assign this owner to H even though its dominant failure mode belongs to another product contract.",
+        "risk": "Medium audit blind spot and misleading overlap analysis.",
+        "companionEvidence": "The executable category counterexample routes this owner to G; Phase 8 reviewed the complete opening owner before transfer.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "The complete owner protects summary provider request and response adaptation, not the durable memory/job lifecycle.",
+        "findingId": "TSA-P08-010",
+        "severity": "Medium",
+        "action": "Route the owner from H to G and preserve its tests unchanged.",
+        "validation": "The category counterexample matrix passed 10/10 and regenerated inventory assigns the intended category.",
+        "state": "phase8-reclassified"
       }
     },
     {
@@ -3808,9 +3874,11 @@
       "specializedOwnership": [
         "server"
       ],
-      "primaryCategory": "H",
-      "categoryRule": "memory-jobs-workers",
-      "seamTags": [],
+      "primaryCategory": "G",
+      "categoryRule": "reviewed-memory-adjacent-provider-boundaries",
+      "seamTags": [
+        "category-H"
+      ],
       "kind": "storage integration",
       "dependencySignals": [
         "database"
@@ -3822,22 +3890,22 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (9 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "summary provider/model resolution",
+        "plausibleDefect": "Memory-shaped vocabulary can assign this owner to H even though its dominant failure mode belongs to another product contract.",
+        "risk": "Medium audit blind spot and misleading overlap analysis.",
+        "companionEvidence": "The executable category counterexample routes this owner to G; Phase 8 reviewed the complete opening owner before transfer.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "The complete owner protects summary provider/model resolution, not the durable memory/job lifecycle.",
+        "findingId": "TSA-P08-010",
+        "severity": "Medium",
+        "action": "Route the owner from H to G and preserve its tests unchanged.",
+        "validation": "The category counterexample matrix passed 10/10 and regenerated inventory assigns the intended category.",
+        "state": "phase8-reclassified"
       }
     },
     {
@@ -3847,10 +3915,10 @@
       "specializedOwnership": [
         "server"
       ],
-      "primaryCategory": "H",
-      "categoryRule": "memory-jobs-workers",
+      "primaryCategory": "F",
+      "categoryRule": "reviewed-memory-adjacent-generation-boundaries",
       "seamTags": [
-        "category-F"
+        "category-H"
       ],
       "kind": "pure unit",
       "dependencySignals": [],
@@ -3861,22 +3929,22 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (7 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "summary prompt construction and parsing",
+        "plausibleDefect": "Memory-shaped vocabulary can assign this owner to H even though its dominant failure mode belongs to another product contract.",
+        "risk": "Medium audit blind spot and misleading overlap analysis.",
+        "companionEvidence": "The executable category counterexample routes this owner to F; Phase 8 reviewed the complete opening owner before transfer.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "The complete owner protects summary prompt construction and parsing, not the durable memory/job lifecycle.",
+        "findingId": "TSA-P08-010",
+        "severity": "Medium",
+        "action": "Route the owner from H to F and preserve its tests unchanged.",
+        "validation": "The category counterexample matrix passed 10/10 and regenerated inventory assigns the intended category.",
+        "state": "phase8-reclassified"
       }
     },
     {
@@ -3903,22 +3971,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (23 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "durable memory job transitions, worker scheduling/retry/cancel/shutdown, routes, and event presentation",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -4665,10 +4734,10 @@
       "specializedOwnership": [
         "server"
       ],
-      "primaryCategory": "H",
-      "categoryRule": "memory-jobs-workers",
+      "primaryCategory": "F",
+      "categoryRule": "reviewed-memory-adjacent-generation-boundaries",
       "seamTags": [
-        "category-F"
+        "category-H"
       ],
       "kind": "storage integration",
       "dependencySignals": [
@@ -4683,22 +4752,22 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (10 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "selected-memory prompt composition",
+        "plausibleDefect": "Memory-shaped vocabulary can assign this owner to H even though its dominant failure mode belongs to another product contract.",
+        "risk": "Medium audit blind spot and misleading overlap analysis.",
+        "companionEvidence": "The executable category counterexample routes this owner to F; Phase 8 reviewed the complete opening owner before transfer.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "The complete owner protects selected-memory prompt composition, not the durable memory/job lifecycle.",
+        "findingId": "TSA-P08-010",
+        "severity": "Medium",
+        "action": "Route the owner from H to F and preserve its tests unchanged.",
+        "validation": "The category counterexample matrix passed 10/10 and regenerated inventory assigns the intended category.",
+        "state": "phase8-reclassified"
       }
     },
     {
@@ -6314,9 +6383,11 @@
       "specializedOwnership": [
         "server"
       ],
-      "primaryCategory": "H",
-      "categoryRule": "memory-jobs-workers",
-      "seamTags": [],
+      "primaryCategory": "L",
+      "categoryRule": "reviewed-memory-adjacent-runtime-boundaries",
+      "seamTags": [
+        "category-H"
+      ],
       "kind": "pure unit",
       "dependencySignals": [
         "timers",
@@ -6330,22 +6401,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (65 cases)",
         "valueClasses": [
-          "pending"
+          "architecture policy",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "shared stream-job registry lifecycle",
+        "plausibleDefect": "Memory-shaped vocabulary can assign this owner to H even though its dominant failure mode belongs to another product contract.",
+        "risk": "Medium audit blind spot and misleading overlap analysis.",
+        "companionEvidence": "The executable category counterexample routes this owner to L; Phase 8 reviewed the complete opening owner before transfer.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "The complete owner protects shared stream-job registry lifecycle, not the durable memory/job lifecycle.",
+        "findingId": "TSA-P08-010",
+        "severity": "Medium",
+        "action": "Route the owner from H to L and preserve its tests unchanged.",
+        "validation": "The category counterexample matrix passed 10/10 and regenerated inventory assigns the intended category.",
+        "state": "phase8-reclassified"
       }
     },
     {
@@ -6355,9 +6427,11 @@
       "specializedOwnership": [
         "server"
       ],
-      "primaryCategory": "H",
-      "categoryRule": "memory-jobs-workers",
-      "seamTags": [],
+      "primaryCategory": "L",
+      "categoryRule": "reviewed-memory-adjacent-runtime-boundaries",
+      "seamTags": [
+        "category-H"
+      ],
       "kind": "API integration",
       "dependencySignals": [
         "timers",
@@ -6372,22 +6446,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (15 cases)",
         "valueClasses": [
-          "pending"
+          "architecture policy",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "shared stream-job runtime routes",
+        "plausibleDefect": "Memory-shaped vocabulary can assign this owner to H even though its dominant failure mode belongs to another product contract.",
+        "risk": "Medium audit blind spot and misleading overlap analysis.",
+        "companionEvidence": "The executable category counterexample routes this owner to L; Phase 8 reviewed the complete opening owner before transfer.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "The complete owner protects shared stream-job runtime routes, not the durable memory/job lifecycle.",
+        "findingId": "TSA-P08-010",
+        "severity": "Medium",
+        "action": "Route the owner from H to L and preserve its tests unchanged.",
+        "validation": "The category counterexample matrix passed 10/10 and regenerated inventory assigns the intended category.",
+        "state": "phase8-reclassified"
       }
     },
     {
@@ -9186,22 +9261,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (12 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "browser memory-job refresh/projection, modal owner races, reset behavior, and visible status",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -9233,22 +9309,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (14 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "browser memory-job refresh/projection, modal owner races, reset behavior, and visible status",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -9279,22 +9356,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (1 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "browser memory-job refresh/projection, modal owner races, reset behavior, and visible status",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -9326,22 +9404,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (8 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "browser memory-job refresh/projection, modal owner races, reset behavior, and visible status",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -9366,28 +9445,29 @@
         "browser"
       ],
       "caseCounts": {
-        "cases": 4,
+        "cases": 5,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (5 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "browser memory-job refresh/projection, modal owner races, reset behavior, and visible status",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -9414,22 +9494,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "browser memory-job refresh/projection, modal owner races, reset behavior, and visible status",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -9460,22 +9541,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (1 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "browser memory-job refresh/projection, modal owner races, reset behavior, and visible status",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -9815,10 +9897,10 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "H",
-      "categoryRule": "memory-jobs-workers",
+      "primaryCategory": "D",
+      "categoryRule": "reviewed-memory-adjacent-visible-state-boundaries",
       "seamTags": [
-        "category-D"
+        "category-H"
       ],
       "kind": "pure unit",
       "dependencySignals": [
@@ -9832,22 +9914,22 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (1 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "visible worker-error presentation",
+        "plausibleDefect": "Memory-shaped vocabulary can assign this owner to H even though its dominant failure mode belongs to another product contract.",
+        "risk": "Medium audit blind spot and misleading overlap analysis.",
+        "companionEvidence": "The executable category counterexample routes this owner to D; Phase 8 reviewed the complete opening owner before transfer.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "The complete owner protects visible worker-error presentation, not the durable memory/job lifecycle.",
+        "findingId": "TSA-P08-010",
+        "severity": "Medium",
+        "action": "Route the owner from H to D and preserve its tests unchanged.",
+        "validation": "The category counterexample matrix passed 10/10 and regenerated inventory assigns the intended category.",
+        "state": "phase8-reclassified"
       }
     },
     {
@@ -20707,9 +20789,10 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "H",
-      "categoryRule": "memory-jobs-workers",
+      "primaryCategory": "F",
+      "categoryRule": "reviewed-memory-adjacent-generation-boundaries",
       "seamTags": [
+        "category-H",
         "dom-component"
       ],
       "kind": "component/DOM",
@@ -20727,22 +20810,22 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (14 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "client generation memory-window composition",
+        "plausibleDefect": "Memory-shaped vocabulary can assign this owner to H even though its dominant failure mode belongs to another product contract.",
+        "risk": "Medium audit blind spot and misleading overlap analysis.",
+        "companionEvidence": "The executable category counterexample routes this owner to F; Phase 8 reviewed the complete opening owner before transfer.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "The complete owner protects client generation memory-window composition, not the durable memory/job lifecycle.",
+        "findingId": "TSA-P08-010",
+        "severity": "Medium",
+        "action": "Route the owner from H to F and preserve its tests unchanged.",
+        "validation": "The category counterexample matrix passed 10/10 and regenerated inventory assigns the intended category.",
+        "state": "phase8-reclassified"
       }
     },
     {
@@ -20987,10 +21070,10 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "H",
-      "categoryRule": "memory-jobs-workers",
+      "primaryCategory": "G",
+      "categoryRule": "reviewed-memory-adjacent-provider-boundaries",
       "seamTags": [
-        "category-G",
+        "category-H",
         "dom-component"
       ],
       "kind": "component/DOM",
@@ -21006,22 +21089,22 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (6 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "embedding-backed provider fallback behavior",
+        "plausibleDefect": "Memory-shaped vocabulary can assign this owner to H even though its dominant failure mode belongs to another product contract.",
+        "risk": "Medium audit blind spot and misleading overlap analysis.",
+        "companionEvidence": "The executable category counterexample routes this owner to G; Phase 8 reviewed the complete opening owner before transfer.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "The complete owner protects embedding-backed provider fallback behavior, not the durable memory/job lifecycle.",
+        "findingId": "TSA-P08-010",
+        "severity": "Medium",
+        "action": "Route the owner from H to G and preserve its tests unchanged.",
+        "validation": "The category counterexample matrix passed 10/10 and regenerated inventory assigns the intended category.",
+        "state": "phase8-reclassified"
       }
     },
     {
@@ -23151,22 +23234,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "browser memory-job refresh/projection, modal owner races, reset behavior, and visible status",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -23585,9 +23669,10 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "H",
-      "categoryRule": "memory-jobs-workers",
+      "primaryCategory": "G",
+      "categoryRule": "reviewed-memory-adjacent-provider-boundaries",
       "seamTags": [
+        "category-H",
         "dom-component"
       ],
       "kind": "component/DOM",
@@ -23603,22 +23688,22 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (2 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "contextual embedding provider grouping",
+        "plausibleDefect": "Memory-shaped vocabulary can assign this owner to H even though its dominant failure mode belongs to another product contract.",
+        "risk": "Medium audit blind spot and misleading overlap analysis.",
+        "companionEvidence": "The executable category counterexample routes this owner to G; Phase 8 reviewed the complete opening owner before transfer.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "The complete owner protects contextual embedding provider grouping, not the durable memory/job lifecycle.",
+        "findingId": "TSA-P08-010",
+        "severity": "Medium",
+        "action": "Route the owner from H to G and preserve its tests unchanged.",
+        "validation": "The category counterexample matrix passed 10/10 and regenerated inventory assigns the intended category.",
+        "state": "phase8-reclassified"
       }
     },
     {
@@ -23637,28 +23722,29 @@
       "kind": "pure unit",
       "dependencySignals": [],
       "caseCounts": {
-        "cases": 2,
+        "cases": 3,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "browser memory-job refresh/projection, modal owner races, reset behavior, and visible status",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -23671,9 +23757,10 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "H",
-      "categoryRule": "memory-jobs-workers",
+      "primaryCategory": "G",
+      "categoryRule": "reviewed-memory-adjacent-provider-boundaries",
       "seamTags": [
+        "category-H",
         "dom-component"
       ],
       "kind": "component/DOM",
@@ -23689,22 +23776,22 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "remote embedding provider routing",
+        "plausibleDefect": "Memory-shaped vocabulary can assign this owner to H even though its dominant failure mode belongs to another product contract.",
+        "risk": "Medium audit blind spot and misleading overlap analysis.",
+        "companionEvidence": "The executable category counterexample routes this owner to G; Phase 8 reviewed the complete opening owner before transfer.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "The complete owner protects remote embedding provider routing, not the durable memory/job lifecycle.",
+        "findingId": "TSA-P08-010",
+        "severity": "Medium",
+        "action": "Route the owner from H to G and preserve its tests unchanged.",
+        "validation": "The category counterexample matrix passed 10/10 and regenerated inventory assigns the intended category.",
+        "state": "phase8-reclassified"
       }
     },
     {
@@ -24907,22 +24994,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (17 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "browser memory-job refresh/projection, modal owner races, reset behavior, and visible status",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -26502,10 +26590,11 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "H",
-      "categoryRule": "memory-jobs-workers",
+      "primaryCategory": "B",
+      "categoryRule": "reviewed-memory-adjacent-browser-state-boundaries",
       "seamTags": [
-        "category-E"
+        "category-E",
+        "category-H"
       ],
       "kind": "pure unit",
       "dependencySignals": [],
@@ -26516,22 +26605,22 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (11 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "browser character-summary projection protocol",
+        "plausibleDefect": "Memory-shaped vocabulary can assign this owner to H even though its dominant failure mode belongs to another product contract.",
+        "risk": "Medium audit blind spot and misleading overlap analysis.",
+        "companionEvidence": "The executable category counterexample routes this owner to B; Phase 8 reviewed the complete opening owner before transfer.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "The complete owner protects browser character-summary projection protocol, not the durable memory/job lifecycle.",
+        "findingId": "TSA-P08-010",
+        "severity": "Medium",
+        "action": "Route the owner from H to B and preserve its tests unchanged.",
+        "validation": "The category counterexample matrix passed 10/10 and regenerated inventory assigns the intended category.",
+        "state": "phase8-reclassified"
       }
     },
     {
@@ -27045,9 +27134,10 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "H",
-      "categoryRule": "memory-jobs-workers",
+      "primaryCategory": "G",
+      "categoryRule": "reviewed-memory-adjacent-provider-boundaries",
       "seamTags": [
+        "category-H",
         "dom-component"
       ],
       "kind": "component/DOM",
@@ -27064,22 +27154,22 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "browser-to-server embedding provider operation transport",
+        "plausibleDefect": "Memory-shaped vocabulary can assign this owner to H even though its dominant failure mode belongs to another product contract.",
+        "risk": "Medium audit blind spot and misleading overlap analysis.",
+        "companionEvidence": "The executable category counterexample routes this owner to G; Phase 8 reviewed the complete opening owner before transfer.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "The complete owner protects browser-to-server embedding provider operation transport, not the durable memory/job lifecycle.",
+        "findingId": "TSA-P08-010",
+        "severity": "Medium",
+        "action": "Route the owner from H to G and preserve its tests unchanged.",
+        "validation": "The category counterexample matrix passed 10/10 and regenerated inventory assigns the intended category.",
+        "state": "phase8-reclassified"
       }
     },
     {
@@ -27593,30 +27683,33 @@
       "categoryRule": "memory-jobs-workers",
       "seamTags": [],
       "kind": "pure unit",
-      "dependencySignals": [],
+      "dependencySignals": [
+        "mocks"
+      ],
       "caseCounts": {
-        "cases": 1,
+        "cases": 2,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (2 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "browser memory-job refresh/projection, modal owner races, reset behavior, and visible status",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -27635,28 +27728,29 @@
       "kind": "pure unit",
       "dependencySignals": [],
       "caseCounts": {
-        "cases": 6,
+        "cases": 8,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (8 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "browser memory-job refresh/projection, modal owner races, reset behavior, and visible status",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -27684,22 +27778,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (14 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "browser memory-job refresh/projection, modal owner races, reset behavior, and visible status",
+        "plausibleDefect": "Malformed, stale, duplicated, or partially committed memory state can corrupt retrieval, strand work, or project the wrong job status after an edit or race.",
+        "risk": "Critical/High durable memory corruption, permanently active work, stale prompt input, or misleading visible progress.",
+        "companionEvidence": "Phase 8 mapped planners and adapters to SQLite repositories, handlers/workers, routes/events, client refresh/projection, and mounted modal owners; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct memory, embedding, job, worker, or browser-reconciliation contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P08-011",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful lifecycle evidence.",
+        "validation": "The exact Phase 8 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser and compatibility residuals are explicitly bounded.",
+        "state": "phase8-reviewed"
       }
     },
     {
@@ -31358,7 +31453,7 @@
         "browser"
       ],
       "caseCounts": {
-        "cases": 9,
+        "cases": 10,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
