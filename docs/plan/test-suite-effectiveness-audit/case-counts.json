@@ -1138,7 +1138,7 @@
       "parameterizedRows": 0
     },
     "src/lib/Playground/PlaygroundImageTrans.svelte.test.ts": {
-      "cases": 17,
+      "cases": 18,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -2243,7 +2243,7 @@
       "parameterizedRows": 0
     },
     "src/ts/plugins/apiV3/v3.svelte.test.ts": {
-      "cases": 65,
+      "cases": 67,
       "skipped": 0,
       "parameterizedRows": 2
     },
@@ -2573,7 +2573,7 @@
       "parameterizedRows": 0
     },
     "src/ts/process/mcp/filesystemclient.test.ts": {
-      "cases": 5,
+      "cases": 6,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -2593,19 +2593,19 @@
       "parameterizedRows": 3
     },
     "src/ts/process/mcp/mcplib.test.ts": {
-      "cases": 34,
+      "cases": 41,
       "skipped": 0,
       "parameterizedRows": 4
     },
     "src/ts/process/mcp/risuaccess/tests/characters.setCharacterInfo.test.ts": {
-      "cases": 14,
+      "cases": 17,
       "skipped": 0,
-      "parameterizedRows": 0
+      "parameterizedRows": 3
     },
     "src/ts/process/mcp/risuaccess/tests/modules.optimisticProjection.test.ts": {
-      "cases": 14,
+      "cases": 17,
       "skipped": 0,
-      "parameterizedRows": 0
+      "parameterizedRows": 3
     },
     "src/ts/process/mcp/risuaccess/tests/modules.test.ts": {
       "cases": 8,
@@ -2633,7 +2633,7 @@
       "parameterizedRows": 0
     },
     "src/ts/process/modules.test.ts": {
-      "cases": 39,
+      "cases": 40,
       "skipped": 0,
       "parameterizedRows": 6
     },
@@ -3478,7 +3478,7 @@
       "parameterizedRows": 0
     },
     "util/test-effectiveness-inventory.test.ts": {
-      "cases": 11,
+      "cases": 12,
       "skipped": 0,
       "parameterizedRows": 0
     },

@@ -67,6 +67,39 @@
       ]
     },
     {
+      "id": "reviewed-plugin-adjacent-persistence-boundaries",
+      "category": "C",
+      "description": "First matching rule wins. Reviewed settings and plugin-storage range owners whose dominant contract is durable command mutation.",
+      "pathPatterns": [
+        "/^server\\/fastify\\/__tests__\\/commandSettingsAndPluginStorageRange\\.test\\.ts$/"
+      ]
+    },
+    {
+      "id": "reviewed-plugin-adjacent-browser-state-boundaries",
+      "category": "B",
+      "description": "First matching rule wins. Reviewed module-editor draft storage whose dominant contract is browser recovery and writer isolation.",
+      "pathPatterns": [
+        "/^src\\/ts\\/server\\/moduleEditorDraftStore\\.test\\.ts$/"
+      ]
+    },
+    {
+      "id": "reviewed-plugin-adjacent-provider-boundaries",
+      "category": "G",
+      "description": "First matching rule wins. Reviewed plugin-provider response identity and provider-dashboard freshness owners whose dominant contract is provider request behavior.",
+      "pathPatterns": [
+        "/^src\\/ts\\/process\\/request\\/tests\\/pluginProviderModelId\\.test\\.ts$/",
+        "/^src\\/ts\\/server\\/nanoGPTDashboardFetch\\.test\\.ts$/"
+      ]
+    },
+    {
+      "id": "reviewed-plugin-adjacent-asset-boundaries",
+      "category": "K",
+      "description": "First matching rule wins. Reviewed database analysis whose dominant contract is export materialization and asset ownership diagnostics.",
+      "pathPatterns": [
+        "/^util\\/analyze-database\\.test\\.ts$/"
+      ]
+    },
+    {
       "id": "plugin-tool-runtime",
       "category": "J",
       "description": "First matching rule wins. Plugin/module permissions and lifecycle, MCP, RisuAccess, Playground, and developer-specialized tools.",
@@ -1476,12 +1509,12 @@
       "specializedOwnership": [
         "server"
       ],
-      "primaryCategory": "J",
-      "categoryRule": "plugin-tool-runtime",
+      "primaryCategory": "C",
+      "categoryRule": "reviewed-plugin-adjacent-persistence-boundaries",
       "seamTags": [
         "api-persistence",
-        "category-C",
-        "category-E"
+        "category-E",
+        "category-J"
       ],
       "kind": "storage integration",
       "dependencySignals": [
@@ -1498,22 +1531,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (14 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "targeted settings and plugin-custom-storage command persistence, row stability, and mutation metrics",
+        "plausibleDefect": "A plugin-shaped filename could hide broad or misrouted durable writes and unrelated row churn.",
+        "risk": "High unexpected persistence churn or incorrect command ownership.",
+        "companionEvidence": "Phase 10 traced the complete owner through its durable/browser/provider/asset companions; the dominant failure mode belongs to the corrected category while extension/tool seams remain tagged.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "Complete file review found the primary product risk outside category J; retaining the owner under its dominant contract prevents name-based audit drift.",
+        "findingId": "TSA-P10-007",
+        "severity": "Informational",
+        "action": "Retain the unchanged owner under category C with its category-J seam.",
+        "validation": "Executable category counterexamples, regenerated 700-owner inventory, exact Phase 10 owners, and complete owning lanes passed.",
+        "state": "phase10-reclassified"
       }
     },
     {
@@ -3214,22 +3248,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (18 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "MCP OAuth, handshake, HTTP/SSE/custom transports, deadlines, framing, pagination, registry identity, and cleanup",
+        "plausibleDefect": "A stalled body, malformed frame, cyclic cursor, expired identity, or late response could hang, misroute, or leak a request.",
+        "risk": "High permanently pending tool work, protocol confusion, or leaked authority.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-002",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -4251,22 +4286,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (11 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "module activation identity, ordering, imports, command settlement, memoization, and state projection",
+        "plausibleDefect": "In-place identity edits, stale imports, or partial commands could leave activation and visible module state inconsistent.",
+        "risk": "High wrong module execution or lost/rolled-back module state.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-004",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -4290,22 +4326,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (6 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "module activation identity, ordering, imports, command settlement, memoization, and state projection",
+        "plausibleDefect": "In-place identity edits, stale imports, or partial commands could leave activation and visible module state inconsistent.",
+        "risk": "High wrong module execution or lost/rolled-back module state.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-004",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -4705,22 +4742,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (24 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "plugin network/update/import permissions, identity, command durability, icon normalization, and server enforcement",
+        "plausibleDefect": "Permissive mocks or stale identities could permit transport, reload, or persistence after denial/replacement.",
+        "risk": "Critical/High extension egress, stale authority, or durable state corruption.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-008",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -10048,22 +10086,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Playground and specialized-tool execution, visible outcome, retry, stale-result ownership, and cleanup",
+        "plausibleDefect": "A specialized tool could execute the wrong target, retain stale output, remain busy, or hide partial failure.",
+        "risk": "High wrong visible result, destructive tool selection, or unusable retry state.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -10093,22 +10132,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Playground and specialized-tool execution, visible outcome, retry, stale-result ownership, and cleanup",
+        "plausibleDefect": "A specialized tool could execute the wrong target, retain stale output, remain busy, or hide partial failure.",
+        "risk": "High wrong visible result, destructive tool selection, or unusable retry state.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -10133,28 +10173,29 @@
         "browser"
       ],
       "caseCounts": {
-        "cases": 17,
+        "cases": 18,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (18 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "image selection, model-request ownership, canvas projection, abort, and component cleanup",
+        "plausibleDefect": "A translation could outlive its component or apply to a different image, mode, prompt, or language.",
+        "risk": "High stale visible output, leaked work, or post-unmount feedback.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-005",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -10185,22 +10226,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (12 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Playground and specialized-tool execution, visible outcome, retry, stale-result ownership, and cleanup",
+        "plausibleDefect": "A specialized tool could execute the wrong target, retain stale output, remain busy, or hide partial failure.",
+        "risk": "High wrong visible result, destructive tool selection, or unusable retry state.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -10230,22 +10272,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Playground and specialized-tool execution, visible outcome, retry, stale-result ownership, and cleanup",
+        "plausibleDefect": "A specialized tool could execute the wrong target, retain stale output, remain busy, or hide partial failure.",
+        "risk": "High wrong visible result, destructive tool selection, or unusable retry state.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -10277,22 +10320,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Playground and specialized-tool execution, visible outcome, retry, stale-result ownership, and cleanup",
+        "plausibleDefect": "A specialized tool could execute the wrong target, retain stale output, remain busy, or hide partial failure.",
+        "risk": "High wrong visible result, destructive tool selection, or unusable retry state.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -10322,22 +10366,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (7 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Playground and specialized-tool execution, visible outcome, retry, stale-result ownership, and cleanup",
+        "plausibleDefect": "A specialized tool could execute the wrong target, retain stale output, remain busy, or hide partial failure.",
+        "risk": "High wrong visible result, destructive tool selection, or unusable retry state.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -10369,22 +10414,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (9 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Playground and specialized-tool execution, visible outcome, retry, stale-result ownership, and cleanup",
+        "plausibleDefect": "A specialized tool could execute the wrong target, retain stale output, remain busy, or hide partial failure.",
+        "risk": "High wrong visible result, destructive tool selection, or unusable retry state.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -10415,22 +10461,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Playground and specialized-tool execution, visible outcome, retry, stale-result ownership, and cleanup",
+        "plausibleDefect": "A specialized tool could execute the wrong target, retain stale output, remain busy, or hide partial failure.",
+        "risk": "High wrong visible result, destructive tool selection, or unusable retry state.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -10461,22 +10508,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (10 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Playground and specialized-tool execution, visible outcome, retry, stale-result ownership, and cleanup",
+        "plausibleDefect": "A specialized tool could execute the wrong target, retain stale output, remain busy, or hide partial failure.",
+        "risk": "High wrong visible result, destructive tool selection, or unusable retry state.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -10506,22 +10554,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (2 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Playground and specialized-tool execution, visible outcome, retry, stale-result ownership, and cleanup",
+        "plausibleDefect": "A specialized tool could execute the wrong target, retain stale output, remain busy, or hide partial failure.",
+        "risk": "High wrong visible result, destructive tool selection, or unusable retry state.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -18843,22 +18892,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (5 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "module activation identity, ordering, imports, command settlement, memoization, and state projection",
+        "plausibleDefect": "In-place identity edits, stale imports, or partial commands could leave activation and visible module state inconsistent.",
+        "risk": "High wrong module execution or lost/rolled-back module state.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-004",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -18891,22 +18941,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (42 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "module activation identity, ordering, imports, command settlement, memoization, and state projection",
+        "plausibleDefect": "In-place identity edits, stale imports, or partial commands could leave activation and visible module state inconsistent.",
+        "risk": "High wrong module execution or lost/rolled-back module state.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-004",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -18976,22 +19027,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (2 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "module activation identity, ordering, imports, command settlement, memoization, and state projection",
+        "plausibleDefect": "In-place identity edits, stale imports, or partial commands could leave activation and visible module state inconsistent.",
+        "risk": "High wrong module execution or lost/rolled-back module state.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-004",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -20061,22 +20113,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "module activation identity, ordering, imports, command settlement, memoization, and state projection",
+        "plausibleDefect": "In-place identity edits, stale imports, or partial commands could leave activation and visible module state inconsistent.",
+        "risk": "High wrong module execution or lost/rolled-back module state.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-004",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -20147,22 +20200,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (9 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Playground and specialized-tool execution, visible outcome, retry, stale-result ownership, and cleanup",
+        "plausibleDefect": "A specialized tool could execute the wrong target, retain stale output, remain busy, or hide partial failure.",
+        "risk": "High wrong visible result, destructive tool selection, or unusable retry state.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -20194,22 +20248,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "plugin network/update/import permissions, identity, command durability, icon normalization, and server enforcement",
+        "plausibleDefect": "Permissive mocks or stale identities could permit transport, reload, or persistence after denial/replacement.",
+        "risk": "Critical/High extension egress, stale authority, or durable state corruption.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-008",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -20241,22 +20296,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (31 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "plugin network/update/import permissions, identity, command durability, icon normalization, and server enforcement",
+        "plausibleDefect": "Permissive mocks or stale identities could permit transport, reload, or persistence after denial/replacement.",
+        "risk": "Critical/High extension egress, stale authority, or durable state corruption.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-008",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -20288,22 +20344,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Plugin V3 permission identity, sandbox RPC, runtime registration, delayed callbacks, and lifecycle cleanup",
+        "plausibleDefect": "A callback or registration could survive removal and execute with stale plugin authority.",
+        "risk": "High stale-authority execution or leaked runtime resources.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-001",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -20333,22 +20390,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (10 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Plugin V3 permission identity, sandbox RPC, runtime registration, delayed callbacks, and lifecycle cleanup",
+        "plausibleDefect": "A callback or registration could survive removal and execute with stale plugin authority.",
+        "risk": "High stale-authority execution or leaked runtime resources.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-001",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -20369,33 +20427,35 @@
       "kind": "component/DOM",
       "dependencySignals": [
         "mocks",
+        "timers",
         "database",
         "globals",
         "browser"
       ],
       "caseCounts": {
-        "cases": 65,
+        "cases": 67,
         "skipped": 0,
         "parameterizedRows": 2,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (67 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Plugin V3 permission identity, sandbox RPC, runtime registration, delayed callbacks, and lifecycle cleanup",
+        "plausibleDefect": "A callback or registration could survive removal and execute with stale plugin authority.",
+        "risk": "High stale-authority execution or leaked runtime resources.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-001",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -20423,22 +20483,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (2 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "plugin network/update/import permissions, identity, command durability, icon normalization, and server enforcement",
+        "plausibleDefect": "Permissive mocks or stale identities could permit transport, reload, or persistence after denial/replacement.",
+        "risk": "Critical/High extension egress, stale authority, or durable state corruption.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-008",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -20465,22 +20526,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (14 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "plugin network/update/import permissions, identity, command durability, icon normalization, and server enforcement",
+        "plausibleDefect": "Permissive mocks or stale identities could permit transport, reload, or persistence after denial/replacement.",
+        "risk": "Critical/High extension egress, stale authority, or durable state corruption.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-008",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -20507,22 +20569,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (14 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "plugin network/update/import permissions, identity, command durability, icon normalization, and server enforcement",
+        "plausibleDefect": "Permissive mocks or stale identities could permit transport, reload, or persistence after denial/replacement.",
+        "risk": "Critical/High extension egress, stale authority, or durable state corruption.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-008",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -20555,22 +20618,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (58 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "plugin network/update/import permissions, identity, command durability, icon normalization, and server enforcement",
+        "plausibleDefect": "Permissive mocks or stale identities could permit transport, reload, or persistence after denial/replacement.",
+        "risk": "Critical/High extension egress, stale authority, or durable state corruption.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-008",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -23344,22 +23408,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (5 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "internal MCP tool catalogs, cloned schemas, bounded filesystem/media work, credential handling, and advertised support",
+        "plausibleDefect": "A catalog could advertise an impossible operation or permit unbounded reads, mutable schemas, or unsafe routing.",
+        "risk": "High resource use or tool-contract mismatch.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-006",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -23381,28 +23446,29 @@
         "globals"
       ],
       "caseCounts": {
-        "cases": 5,
+        "cases": 6,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (6 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "internal MCP tool catalogs, cloned schemas, bounded filesystem/media work, credential handling, and advertised support",
+        "plausibleDefect": "A catalog could advertise an impossible operation or permit unbounded reads, mutable schemas, or unsafe routing.",
+        "risk": "High resource use or tool-contract mismatch.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-006",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -23431,22 +23497,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (1 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "internal MCP tool catalogs, cloned schemas, bounded filesystem/media work, credential handling, and advertised support",
+        "plausibleDefect": "A catalog could advertise an impossible operation or permit unbounded reads, mutable schemas, or unsafe routing.",
+        "risk": "High resource use or tool-contract mismatch.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-006",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -23476,22 +23543,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "internal MCP tool catalogs, cloned schemas, bounded filesystem/media work, credential handling, and advertised support",
+        "plausibleDefect": "A catalog could advertise an impossible operation or permit unbounded reads, mutable schemas, or unsafe routing.",
+        "risk": "High resource use or tool-contract mismatch.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-006",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -23523,22 +23591,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (31 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "MCP OAuth, handshake, HTTP/SSE/custom transports, deadlines, framing, pagination, registry identity, and cleanup",
+        "plausibleDefect": "A stalled body, malformed frame, cyclic cursor, expired identity, or late response could hang, misroute, or leak a request.",
+        "risk": "High permanently pending tool work, protocol confusion, or leaked authority.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-002",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -23563,28 +23632,29 @@
         "browser"
       ],
       "caseCounts": {
-        "cases": 34,
+        "cases": 41,
         "skipped": 0,
         "parameterizedRows": 4,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (41 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "MCP OAuth, handshake, HTTP/SSE/custom transports, deadlines, framing, pagination, registry identity, and cleanup",
+        "plausibleDefect": "A stalled body, malformed frame, cyclic cursor, expired identity, or late response could hang, misroute, or leak a request.",
+        "risk": "High permanently pending tool work, protocol confusion, or leaked authority.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-002",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -23607,31 +23677,33 @@
       "dependencySignals": [
         "mocks",
         "timers",
+        "database",
         "globals"
       ],
       "caseCounts": {
-        "cases": 14,
+        "cases": 17,
         "skipped": 0,
-        "parameterizedRows": 0,
+        "parameterizedRows": 3,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (17 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "RisuAccess resource schemas, permission prompts, stable mutation targets, optimistic projection, rollback, and pagination",
+        "plausibleDefect": "Permission-delayed work could mutate a replacement owner, project stale state, or roll back unrelated changes.",
+        "risk": "High cross-owner data corruption or privileged stale mutation.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-003",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -23657,28 +23729,29 @@
         "globals"
       ],
       "caseCounts": {
-        "cases": 14,
+        "cases": 17,
         "skipped": 0,
-        "parameterizedRows": 0,
+        "parameterizedRows": 3,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (17 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "RisuAccess resource schemas, permission prompts, stable mutation targets, optimistic projection, rollback, and pagination",
+        "plausibleDefect": "Permission-delayed work could mutate a replacement owner, project stale state, or roll back unrelated changes.",
+        "risk": "High cross-owner data corruption or privileged stale mutation.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-003",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -23708,22 +23781,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (8 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "RisuAccess resource schemas, permission prompts, stable mutation targets, optimistic projection, rollback, and pagination",
+        "plausibleDefect": "Permission-delayed work could mutate a replacement owner, project stale state, or roll back unrelated changes.",
+        "risk": "High cross-owner data corruption or privileged stale mutation.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-003",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -23927,28 +24001,29 @@
         "database"
       ],
       "caseCounts": {
-        "cases": 39,
+        "cases": 40,
         "skipped": 0,
         "parameterizedRows": 6,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (40 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "module activation identity, ordering, imports, command settlement, memoization, and state projection",
+        "plausibleDefect": "In-place identity edits, stale imports, or partial commands could leave activation and visible module state inconsistent.",
+        "risk": "High wrong module execution or lost/rolled-back module state.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-004",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -24864,10 +24939,10 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "J",
-      "categoryRule": "plugin-tool-runtime",
+      "primaryCategory": "G",
+      "categoryRule": "reviewed-plugin-adjacent-provider-boundaries",
       "seamTags": [
-        "category-G",
+        "category-J",
         "dom-component"
       ],
       "kind": "component/DOM",
@@ -24882,22 +24957,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (6 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "plugin-provider dispatch, response model identity, streaming, failure, and fallback behavior",
+        "plausibleDefect": "Extension vocabulary could hide a provider-routing or response-attribution regression.",
+        "risk": "High wrong-provider execution or misleading response identity.",
+        "companionEvidence": "Phase 10 traced the complete owner through its durable/browser/provider/asset companions; the dominant failure mode belongs to the corrected category while extension/tool seams remain tagged.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "Complete file review found the primary product risk outside category J; retaining the owner under its dominant contract prevents name-based audit drift.",
+        "findingId": "TSA-P10-007",
+        "severity": "Informational",
+        "action": "Retain the unchanged owner under category G with its category-J seam.",
+        "validation": "Executable category counterexamples, regenerated 700-owner inventory, exact Phase 10 owners, and complete owning lanes passed.",
+        "state": "phase10-reclassified"
       }
     },
     {
@@ -27728,22 +27804,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "MCP OAuth, handshake, HTTP/SSE/custom transports, deadlines, framing, pagination, registry identity, and cleanup",
+        "plausibleDefect": "A stalled body, malformed frame, cyclic cursor, expired identity, or late response could hang, misroute, or leak a request.",
+        "risk": "High permanently pending tool work, protocol confusion, or leaked authority.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-002",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -27970,9 +28047,11 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "J",
-      "categoryRule": "plugin-tool-runtime",
-      "seamTags": [],
+      "primaryCategory": "B",
+      "categoryRule": "reviewed-plugin-adjacent-browser-state-boundaries",
+      "seamTags": [
+        "category-J"
+      ],
       "kind": "storage integration",
       "dependencySignals": [
         "mocks",
@@ -27987,22 +28066,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (10 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "encrypted browser draft recovery, writer/lineage isolation, cleanup, and generation fencing",
+        "plausibleDefect": "A module-shaped name could hide browser recovery, encryption, or writer-isolation failure.",
+        "risk": "High lost or cross-writer draft state.",
+        "companionEvidence": "Phase 10 traced the complete owner through its durable/browser/provider/asset companions; the dominant failure mode belongs to the corrected category while extension/tool seams remain tagged.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "Complete file review found the primary product risk outside category J; retaining the owner under its dominant contract prevents name-based audit drift.",
+        "findingId": "TSA-P10-007",
+        "severity": "Informational",
+        "action": "Retain the unchanged owner under category B with its category-J seam.",
+        "validation": "Executable category counterexamples, regenerated 700-owner inventory, exact Phase 10 owners, and complete owning lanes passed.",
+        "state": "phase10-reclassified"
       }
     },
     {
@@ -28055,9 +28135,11 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "J",
-      "categoryRule": "plugin-tool-runtime",
-      "seamTags": [],
+      "primaryCategory": "G",
+      "categoryRule": "reviewed-plugin-adjacent-provider-boundaries",
+      "seamTags": [
+        "category-J"
+      ],
       "kind": "pure unit",
       "dependencySignals": [],
       "caseCounts": {
@@ -28067,22 +28149,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (6 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "provider dashboard request freshness, key binding, unmount cleanup, and response validation",
+        "plausibleDefect": "A developer-dashboard name could hide stale provider account state.",
+        "risk": "High stale or cross-key provider status projection.",
+        "companionEvidence": "Phase 10 traced the complete owner through its durable/browser/provider/asset companions; the dominant failure mode belongs to the corrected category while extension/tool seams remain tagged.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "Complete file review found the primary product risk outside category J; retaining the owner under its dominant contract prevents name-based audit drift.",
+        "findingId": "TSA-P10-007",
+        "severity": "Informational",
+        "action": "Retain the unchanged owner under category G with its category-J seam.",
+        "validation": "Executable category counterexamples, regenerated 700-owner inventory, exact Phase 10 owners, and complete owning lanes passed.",
+        "state": "phase10-reclassified"
       }
     },
     {
@@ -28428,22 +28511,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (5 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "plugin network/update/import permissions, identity, command durability, icon normalization, and server enforcement",
+        "plausibleDefect": "Permissive mocks or stale identities could permit transport, reload, or persistence after denial/replacement.",
+        "risk": "Critical/High extension egress, stale authority, or durable state corruption.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-008",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -30719,22 +30803,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "module activation identity, ordering, imports, command settlement, memoization, and state projection",
+        "plausibleDefect": "In-place identity edits, stale imports, or partial commands could leave activation and visible module state inconsistent.",
+        "risk": "High wrong module execution or lost/rolled-back module state.",
+        "companionEvidence": "Phase 10 traced permission, sandbox, transport, durable command, mounted UI, and authoritative Fastify companions; retained layers fail at distinct identity, lifecycle, protocol, or visible-outcome boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct extension, module, MCP, or specialized-tool protection; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P10-004",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful permission, lifecycle, protocol, or visible-outcome evidence.",
+        "validation": "The exact Phase 10 opening set, focused regressions, complete frontend and Fastify lanes, Chromium icon probe, and inventory checks passed; live-browser/server residuals are explicitly bounded.",
+        "state": "phase10-reviewed"
       }
     },
     {
@@ -31242,10 +31327,11 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "J",
-      "categoryRule": "plugin-tool-runtime",
+      "primaryCategory": "K",
+      "categoryRule": "reviewed-plugin-adjacent-asset-boundaries",
       "seamTags": [
         "category-C",
+        "category-J",
         "client-fastify"
       ],
       "kind": "storage integration",
@@ -31261,22 +31347,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "diagnostic oracle",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "save-envelope materialization and asset/reference corpus diagnostics",
+        "plausibleDefect": "A specialized-tool name could hide omitted export formats or asset owners.",
+        "risk": "Medium misleading save/asset diagnostics.",
+        "companionEvidence": "Phase 10 traced the complete owner through its durable/browser/provider/asset companions; the dominant failure mode belongs to the corrected category while extension/tool seams remain tagged.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "Complete file review found the primary product risk outside category J; retaining the owner under its dominant contract prevents name-based audit drift.",
+        "findingId": "TSA-P10-007",
+        "severity": "Informational",
+        "action": "Retain the unchanged owner under category K with its category-J seam.",
+        "validation": "Executable category counterexamples, regenerated 700-owner inventory, exact Phase 10 owners, and complete owning lanes passed.",
+        "state": "phase10-reclassified"
       }
     },
     {
@@ -31530,7 +31617,7 @@
         "browser"
       ],
       "caseCounts": {
-        "cases": 11,
+        "cases": 12,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
