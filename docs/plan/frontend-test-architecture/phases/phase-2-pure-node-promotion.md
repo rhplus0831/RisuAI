@@ -57,6 +57,10 @@ Status: In progress
 - [MCP and transformer helpers](slices/phase-2/mcp-and-transformer-helpers.md):
   promoted six Google-search shaping and transformer device-selection tests to
   Node while retaining the real filesystem-picker MCP contract in Happy-DOM.
+- [Server resource and bootstrap Node probe](slices/phase-2/server-resource-and-bootstrap-node-probe.md):
+  retained four suites and 34 tests in Happy-DOM after their Node probes
+  reached persistence and core-store runes; Svelte+Node passed for later Phase
+  3 ownership.
 
 ## Objective
 

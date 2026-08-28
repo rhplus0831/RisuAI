@@ -4,9 +4,60 @@ Date: 2026-08-28
 
 ## State
 
-Phase 2 MCP-and-transformer-helpers closeout. Phase 2 remains in progress; this
-record does not authorize repository-wide default inversion, S promotion, or
-bulk migration outside the active phase rules.
+Phase 2 server-resource-and-bootstrap Node-probe closeout. Phase 2 remains in
+progress pending exit verification; this record does not authorize
+repository-wide default inversion, S promotion, or bulk migration outside the
+active phase rules.
+
+## Phase 2 Server Resource And Bootstrap Probe Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `459d9f18386e503898180c33cf032d0363f6d535`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Available CPUs: 10
+- Frontend test-all UI-map exclusion: `RISU_TEST_EXCLUDE_UI_MAP=true`
+- Isolation: enabled
+- Measurement tree: the clean MCP-and-transformer-helpers commit. Temporary
+  Node and Svelte+Node entries were removed before documentation changes.
+
+## Phase 2 Server Resource And Bootstrap Capability Proof
+
+The proposed four-file slice evaluated assets, backups, bootstrap, and
+replacement-database ownership. Their 34 tests cover server asset operations,
+backup/restore ownership, bootstrap normalization, and durable outbox
+settlement with explicit external boundaries and no direct DOM behavior.
+
+The current-owner command passed 4 files / 34 tests in 1.71s wall and 978ms
+Vitest duration, with 699,808 KiB peak RSS and 515ms environment time.
+
+After temporarily adding all four files to `vitest.node-tests.ts`, all suites
+failed before collection. Assets, backups, and bootstrap reached
+`persistenceActivity.svelte.ts:3`; replacement-database ownership reached
+`stores/coreStores.svelte.ts:5`. Both locations initialize `$state`. The Node
+probe took 1.45s wall and 651ms Vitest duration, with 543,656 KiB peak RSS and
+no environment time.
+
+After moving the temporary entries to `vitest.svelte-node-tests.ts`, the exact
+classification probe passed 4 files / 34 tests in 1.49s wall and 867ms Vitest
+duration, with 621,280 KiB peak RSS and 68ms environment time. This proves S is
+the smallest current runtime for the unchanged suites. All temporary entries
+were removed.
+
+## Phase 2 Server Resource And Bootstrap Discovery And Validation
+
+`pnpm check:frontend-test-inventory` passed with unchanged exhaustive and
+disjoint counts: full 537 files at 161 N / 2 S / 374 D, standalone ordinary
+535 files at 161 N / 2 S / 372 D, and aggregate ordinary 529 files at 160 N /
+2 S / 367 D. The generated 140 mismatches now consist of 13 probe-backed N
+retainers and 127 Phase 3 S candidates; no Phase 2 N candidate remains
+unprobed.
+
+The current-owner and exact Svelte+Node probes passed all 34 tests; the exact
+Node probe failed for the recorded rune reasons. Formatting of changed files
+and `git diff --check` passed. No permanent ownership changed, so no paired
+ordinary or affected execution was required.
 
 ## Phase 2 MCP And Transformer Helpers Environment And Source State
 

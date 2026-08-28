@@ -10,15 +10,14 @@ codebase remain authoritative until a phase lands.
 
 - Plan state: Phases 0-1 complete; Phase 2 in progress.
 - Current phase: Phase 2 — Pure Node Promotion.
-- Active slice: No implementation slice is active; the MCP and transformer
-  helper slice is complete.
+- Active slice: No implementation slice is active; all Phase 2 candidate probes
+  are complete and exit verification is pending.
 - Implementation state: Thirty-five files and 176 tests have moved from the
   Happy-DOM fallback to Node across thirteen bounded slices with no production
   changes.
 - Blockers: None.
-- Next action: Prepare the final bounded Phase 2 server resource and bootstrap
-  Node probe. Retain the nine completed Node-probe deferrals under their
-  recorded owners.
+- Next action: Run the Phase 2 three-run ordinary-frontend timing gate,
+  completeness checks, and final `test:all` checkpoint, then close the phase.
 
 ## Phase Router
 
@@ -77,7 +76,7 @@ aggregate ordinary views; 175 unpromoted N/S candidates still require probes.
 
 | Measurement | Result |
 | --- | ---: |
-| Completed slices and proof batches | 17 |
+| Completed slices and proof batches | 18 |
 | Promoted suites | 35 files / 176 tests |
 | Full three-project universe | 537 files: 161 N / 2 S / 374 D |
 | Standalone ordinary frontend | 535 files: 161 N / 2 S / 372 D |
@@ -88,10 +87,9 @@ aggregate ordinary views; 175 unpromoted N/S candidates still require probes.
 
 The paired timing is slice evidence, not a phase-level median. The +2.5% wall
 movement remains inside ordinary run-to-run variability; it is not a
-phase-level performance claim. Phase 2 remains open for 4 unprobed N candidates.
-The generated inventory also counts the probed internal MCP client, plugin-icon,
-chat-toggle, prompt-toggle, character-card, hydration-read, and two
-generation-effect suites plus the probed device-backup suite retained in D.
+phase-level performance claim. No Phase 2 N candidate remains unprobed. The 13
+generated N mismatches are all probe-backed retainers under recorded Phase 3,
+Phase 4, or DOM-contract owners.
 
 ## Current Decisions
 
@@ -190,6 +188,10 @@ generation-effect suites plus the probed device-backup suite retained in D.
     device-selection tests to N. The three-test internal-client suite remains D
     because two directory-handle reuse cases execute the real filesystem
     client's `window`-owned picker capability.
+26. The final server-resource proof retained four suites and 34 tests after N
+    reached persistence-activity or core-store `$state` initializers. The
+    unchanged batch passed in S and is owned by Phase 3 client-server
+    promotion; Phase 2 has no remaining unprobed N candidate.
 
 ## Accepted Observations
 
@@ -222,10 +224,10 @@ occurrence reopens the display-source batching owner before another promotion.
 
 ## Latest Completed Slice
 
-[Phase 2 MCP and transformer helpers](phases/slices/phase-2/mcp-and-transformer-helpers.md)
-promoted six pure Google-search shaping and transformer device-selection tests
-to Node while retaining the browser filesystem-client integration in
-Happy-DOM. Discovery and affected lanes remain complete.
+[Phase 2 server resource and bootstrap Node probe](phases/slices/phase-2/server-resource-and-bootstrap-node-probe.md)
+retained four suites and 34 tests in Happy-DOM after proving their transitive
+Svelte rune requirements in Node and their no-DOM compatibility in
+Svelte+Node. All Phase 2 N candidates now have target-runtime evidence.
 
 ## Latest Verification
 
