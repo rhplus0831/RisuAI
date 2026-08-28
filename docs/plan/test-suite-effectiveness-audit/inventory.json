@@ -4829,7 +4829,7 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "complete collected file (24 cases)",
+        "caseOrMatrixOwner": "complete collected file (26 cases)",
         "valueClasses": [
           "architecture policy",
           "protocol and integration"
@@ -25427,13 +25427,13 @@
         "globals"
       ],
       "caseCounts": {
-        "cases": 12,
+        "cases": 15,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "complete collected file (12 cases)",
+        "caseOrMatrixOwner": "complete collected file (15 cases)",
         "valueClasses": [
           "user-visible behavior",
           "security and safety"
@@ -25516,13 +25516,13 @@
       "kind": "component/DOM",
       "dependencySignals": [],
       "caseCounts": {
-        "cases": 7,
+        "cases": 9,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "complete collected file (7 cases)",
+        "caseOrMatrixOwner": "complete collected file (9 cases)",
         "valueClasses": [
           "user-visible behavior",
           "security and safety"

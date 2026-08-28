@@ -2798,7 +2798,7 @@
       "parameterizedRows": 0
     },
     "src/ts/process/scripts.editdisplay.test.ts": {
-      "cases": 12,
+      "cases": 15,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -2808,7 +2808,7 @@
       "parameterizedRows": 0
     },
     "src/ts/process/scripts.regexCache.test.ts": {
-      "cases": 7,
+      "cases": 9,
       "skipped": 0,
       "parameterizedRows": 0
     },
