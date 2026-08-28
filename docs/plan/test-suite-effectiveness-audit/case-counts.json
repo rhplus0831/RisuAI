@@ -3468,7 +3468,7 @@
       "parameterizedRows": 0
     },
     "util/test-all.test.ts": {
-      "cases": 4,
+      "cases": 6,
       "skipped": 0,
       "parameterizedRows": 0
     },

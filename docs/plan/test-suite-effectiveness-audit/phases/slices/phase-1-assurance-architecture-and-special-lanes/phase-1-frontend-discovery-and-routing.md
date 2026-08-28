@@ -24,13 +24,15 @@ P01-S02.
 - Closed `TSA-P01-002`: independent filesystem owners now match resolved
   Fastify Vitest and Playwright discovery, alongside the three existing
   frontend project comparisons.
+- Closed `TSA-P01-003`: the complete regular/isolated aggregate graph is
+  validated, and every local lane has a checked CI command and required verify
+  dependency. Initial preload remains the documented CI-only superset.
 
 No product behavior or existing test was removed. The affected policy gained
-six cases; live totals are 699 files and 9,982 cases.
+eight cases; live totals are 699 files and 9,984 cases.
 
 ## Remaining Slice Gates
 
-- Validate the complete aggregate graph and local/CI owner parity.
 - Ratify dispositions for every in-scope Category A test and runner/config
   support owner.
 - Run representative changed/deleted dry-run cases, checked inventories, focused

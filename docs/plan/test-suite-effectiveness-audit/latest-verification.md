@@ -279,3 +279,18 @@ pnpm check:frontend-test-inventory
 Results: 9/9 oracle cases passed; live discovery matched 538 frontend files,
 154 Fastify files, and 7 browser specs. Two cases take the live collected total
 from 9,980 to 9,982 without a file-count change.
+
+### Aggregate graph and CI owner parity
+
+`TSA-P01-003` is done. The aggregate validates dependencies across regular and
+isolated phases before execution, and its focused policy test maps every local
+lane to a CI command plus `verify.needs` dependency. Initial preload is retained
+as the intentional CI-only superset.
+
+```sh
+pnpm exec vitest run util/test-all.test.ts
+pnpm test:all --dry-run
+```
+
+Results: 6/6 policy cases and the nine-lane dry run passed. Two cases take the
+live total from 9,982 to 9,984 without a file-count change.

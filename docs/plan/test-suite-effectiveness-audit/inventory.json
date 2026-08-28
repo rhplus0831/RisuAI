@@ -30658,28 +30658,28 @@
         "filesystem"
       ],
       "caseCounts": {
-        "cases": 4,
+        "cases": 6,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "all six aggregate topology, isolation, failure-preservation, and CI-parity cases",
         "valueClasses": [
-          "pending"
+          "architecture policy"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "util/test-all.ts nine-lane phase graph and .github/workflows/quality.yml required owner parity",
+        "plausibleDefect": "An isolated dependency is invalid or a local aggregate owner disappears from CI without a failing policy test.",
+        "risk": "Low silent scheduling drift that can expose timing gates to load or omit a required CI owner.",
+        "companionEvidence": "The dry-run exposes commands; the final aggregate and CI execute the policies against real lanes.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Counterexamples reject invalid regular/isolated dependencies and the workflow assertion maps every local lane to a required CI job while preserving the intentional initial-preload superset.",
+        "findingId": "TSA-P01-003",
+        "severity": "Low",
+        "action": "Retain complete graph validation and CI owner mapping with the aggregate orchestrator.",
+        "validation": "6/6 focused cases and test:all dry-run passed; full aggregate at slice close",
+        "state": "remediated"
       }
     },
     {

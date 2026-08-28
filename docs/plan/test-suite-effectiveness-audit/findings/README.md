@@ -2,7 +2,7 @@
 
 Date: 2026-08-29
 
-Status: Active; three findings are done and one remains confirmed.
+Status: Active; four findings are done and one remains confirmed.
 
 This directory owns durable finding and decision records for the audit. Phase 0
 will decide whether the working ledger remains in this index, splits into
@@ -189,3 +189,32 @@ Every finding records:
   9,980 to 9,982.
 - Revisit condition: reopen if a second Fastify/Playwright project or non-TS
   test suffix is introduced.
+
+### TSA-P01-003: Aggregate phase and CI parity are only implicit
+
+- State: Done.
+- Severity: Low.
+- Category: A.
+- Decision: Strengthen, then Keep.
+- Tests/cases: `util/test-all.test.ts`, all six topology and parity cases.
+- Production owner: `util/test-all.ts` regular/isolated phase graph and
+  `.github/workflows/quality.yml` required jobs.
+- Protected contract or plausible defect: isolated-lane dependencies escaped
+  graph validation because only regular lanes entered the scheduler; local and
+  CI owner parity could drift without a failing test.
+- Evidence: `browser-smoke.after = ['server-check']` worked because all isolated
+  lanes happened to run after the regular pool, not because the complete graph
+  was checked. No test mapped the nine aggregate owners to CI commands and
+  `verify.needs`.
+- Companion/overlap analysis: real aggregate/CI runs detect lane failures but
+  cannot detect a lane silently removed from both scheduling or verification.
+  Initial preload remains an intentional documented CI-only superset.
+- Action and rollback: validate all lane IDs/dependencies, reject regular lanes
+  depending on isolated phases, enforce isolated declaration order, and map
+  every local lane to its CI job/command/verify dependency.
+- Validation: 6/6 focused cases and `pnpm test:all --dry-run` passed; the real
+  aggregate remains the slice closeout proof.
+- Count delta: no file delta; two policy cases added, taking the live total from
+  9,982 to 9,984.
+- Revisit condition: reopen when aggregate phase semantics or quality workflow
+  job ownership changes.

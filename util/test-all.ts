@@ -152,6 +152,31 @@ function validateLaneGraph(lanes: readonly QualityLane[]): void {
   }
 }
 
+export function validateQualityLanePhases(lanes: readonly QualityLane[]): void {
+  validateLaneGraph(lanes)
+  const isolatedIds = new Set(lanes.filter((lane) => lane.isolated).map((lane) => lane.id))
+  const completedBeforeIsolation = new Set(lanes.filter((lane) => !lane.isolated).map((lane) => lane.id))
+
+  for (const lane of lanes.filter((candidate) => !candidate.isolated)) {
+    const isolatedDependencies = (lane.after ?? []).filter((dependency) => isolatedIds.has(dependency))
+    if (isolatedDependencies.length > 0) {
+      throw new Error(
+        `regular quality lane ${lane.id} cannot depend on isolated lane(s): ${isolatedDependencies.join(', ')}`,
+      )
+    }
+  }
+
+  for (const lane of lanes.filter((candidate) => candidate.isolated)) {
+    const unavailable = (lane.after ?? []).filter((dependency) => !completedBeforeIsolation.has(dependency))
+    if (unavailable.length > 0) {
+      throw new Error(
+        `isolated quality lane ${lane.id} must appear after its isolated dependency lane(s): ${unavailable.join(', ')}`,
+      )
+    }
+    completedBeforeIsolation.add(lane.id)
+  }
+}
+
 export async function runLanePool(
   lanes: readonly QualityLane[],
   jobs: number,
@@ -222,6 +247,7 @@ function printPlan(jobs: number): void {
 
 async function run(): Promise<void> {
   const options = parseCli(process.argv.slice(2))
+  validateQualityLanePhases(qualityLanes)
   printPlan(options.jobs)
   if (options.dryRun) return
 
