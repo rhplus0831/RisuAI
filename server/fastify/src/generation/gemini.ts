@@ -817,6 +817,23 @@ export async function* runGeminiStream(req: GeminiRequest): AsyncGenerator<Compl
           yield { kind: 'error', error: `invalid upstream stream JSON: ${msg}` }
           return
         }
+        if (frame.error && typeof frame.error === 'object') {
+          const message =
+            typeof frame.error.message === 'string' && frame.error.message.length > 0
+              ? frame.error.message
+              : 'upstream returned an error frame'
+          const code =
+            typeof frame.error.status === 'string' && frame.error.status.length > 0 ? frame.error.status : undefined
+          const statusText = upstreamStatusText(response)
+          yield {
+            kind: 'error',
+            error: formatUpstreamHttpError(response, url, { message, code }),
+            status: response.status,
+            ...(statusText ? { statusText } : {}),
+            ...(code ? { code } : {}),
+          }
+          return
+        }
         apiMetadata = mergeApiResponseMetadata(apiMetadata, extractApiResponseMetadata(frame, ['candidates', 'error']))
         const text = extractText(frame, extractionState, false)
         if (text.length > 0) {

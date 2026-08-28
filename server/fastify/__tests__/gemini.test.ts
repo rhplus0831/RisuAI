@@ -1005,6 +1005,36 @@ describe('runGeminiStream', () => {
     expect((frames[0] as { error: string }).error).not.toContain('key=')
   })
 
+  it('treats a valid 200 SSE error frame as the single terminal result', async () => {
+    vi.stubGlobal('fetch', async () =>
+      sseUpstream([
+        `data: ${JSON.stringify({
+          error: { message: 'quota depleted', status: 'RESOURCE_EXHAUSTED' },
+        })}\n\n`,
+        geminiFrame('must not be emitted', 'STOP'),
+      ]),
+    )
+    const resolved = resolveGeminiRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+
+    for await (const frame of runGeminiStream(resolved)) frames.push(frame)
+
+    expect(frames).toEqual([
+      {
+        kind: 'error',
+        error:
+          'Provider request failed: HTTP 200 from https://generativelanguage.googleapis.com/v1beta/models/m:streamGenerateContent (RESOURCE_EXHAUSTED): quota depleted',
+        status: 200,
+        code: 'RESOURCE_EXHAUSTED',
+      },
+    ])
+  })
+
   it('surfaces a missing upstream stream body as an error frame', async () => {
     vi.stubGlobal('fetch', async () => new Response(null, { status: 200 }))
     const resolved = resolveGeminiRequest({
