@@ -957,28 +957,29 @@
         "database"
       ],
       "caseCounts": {
-        "cases": 8,
+        "cases": 15,
         "skipped": 0,
-        "parameterizedRows": 0,
+        "parameterizedRows": 3,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (15 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "regex definition, import, memoization, bounded execution, replacement, and output semantics",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-002",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -1787,22 +1788,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (5 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "display-source protocol, transform ordering, reload, and cache ownership",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -1831,22 +1833,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (2 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "display-source protocol, transform ordering, reload, and cache ownership",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -3162,28 +3165,29 @@
         "browser"
       ],
       "caseCounts": {
-        "cases": 51,
+        "cases": 52,
         "skipped": 0,
         "parameterizedRows": 3,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (52 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Lua/Python runtime budgets, state isolation, cache recovery, egress, and cleanup",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-003",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -4819,9 +4823,9 @@
         "database"
       ],
       "caseCounts": {
-        "cases": 24,
+        "cases": 26,
         "skipped": 0,
-        "parameterizedRows": 0,
+        "parameterizedRows": 2,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
@@ -5888,22 +5892,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (55 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "script parsing, transformation, cache, and automation semantics",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -6803,22 +6808,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (94 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "trigger schema, ordering, resource budgets, effects, deletion races, and client/server execution",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -7364,22 +7370,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (7 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "trigger schema, ordering, resource budgets, effects, deletion races, and client/server execution",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -13415,22 +13422,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (7 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "script parsing, transformation, cache, and automation semantics",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -13462,22 +13470,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (6 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "regex definition, import, memoization, bounded execution, replacement, and output semantics",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -13510,22 +13519,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (8 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "regex definition, import, memoization, bounded execution, replacement, and output semantics",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -13557,22 +13567,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "trigger schema, ordering, resource budgets, effects, deletion races, and client/server execution",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -13604,22 +13615,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "trigger schema, ordering, resource budgets, effects, deletion races, and client/server execution",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -13652,22 +13664,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (19 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "trigger schema, ordering, resource budgets, effects, deletion races, and client/server execution",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -13688,28 +13701,29 @@
       "kind": "pure unit",
       "dependencySignals": [],
       "caseCounts": {
-        "cases": 7,
+        "cases": 17,
         "skipped": 0,
-        "parameterizedRows": 4,
+        "parameterizedRows": 13,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (17 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "script parsing, transformation, cache, and automation semantics",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-005",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -17919,22 +17933,22 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "hub additional-HTML fetch and transport policy",
+        "plausibleDefect": "Scripting-shaped vocabulary can assign this owner to I even though its dominant failure mode belongs to another product contract.",
+        "risk": "Medium audit blind spot and misleading overlap analysis.",
+        "companionEvidence": "The executable category counterexample routes this complete owner to its dominant product-risk phase while preserving scripting as a seam.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "The complete owner protects hub additional-HTML fetch and transport policy, not the category-I interpreter/runtime lifecycle.",
+        "findingId": "TSA-P09-007",
+        "severity": "Medium",
+        "action": "Route the owner from I to L and preserve its tests unchanged.",
+        "validation": "The routing-policy matrix and regenerated 700-owner inventory assign the intended category.",
+        "state": "phase9-reclassified"
       }
     },
     {
@@ -19312,22 +19326,22 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (2 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "visible partial-edit projection and cleanup",
+        "plausibleDefect": "Scripting-shaped vocabulary can assign this owner to I even though its dominant failure mode belongs to another product contract.",
+        "risk": "Medium audit blind spot and misleading overlap analysis.",
+        "companionEvidence": "The executable category counterexample routes this complete owner to its dominant product-risk phase while preserving scripting as a seam.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "The complete owner protects visible partial-edit projection and cleanup, not the category-I interpreter/runtime lifecycle.",
+        "findingId": "TSA-P09-007",
+        "severity": "Medium",
+        "action": "Route the owner from I to D and preserve its tests unchanged.",
+        "validation": "The routing-policy matrix and regenerated 700-owner inventory assign the intended category.",
+        "state": "phase9-reclassified"
       }
     },
     {
@@ -19355,22 +19369,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (14 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "CBS/template parsing, escaping, history, loop, reinjection, and render fast-path semantics",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -19400,22 +19415,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "parser asset/inlay projection identity and cache invalidation",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -19445,22 +19461,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (27 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "CBS/template parsing, escaping, history, loop, reinjection, and render fast-path semantics",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-001",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -19490,22 +19507,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (10 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "CBS/template parsing, escaping, history, loop, reinjection, and render fast-path semantics",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-001",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -19535,22 +19553,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (12 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "CBS/template parsing, escaping, history, loop, reinjection, and render fast-path semantics",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-001",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -19582,22 +19601,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (7 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "CBS/template parsing, escaping, history, loop, reinjection, and render fast-path semantics",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-001",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -19627,22 +19647,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (11 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "CBS/template parsing, escaping, history, loop, reinjection, and render fast-path semantics",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-001",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -19672,22 +19693,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (15 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "CBS/template parsing, escaping, history, loop, reinjection, and render fast-path semantics",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-001",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -19716,22 +19738,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (5 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "CBS/template parsing, escaping, history, loop, reinjection, and render fast-path semantics",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -19761,22 +19784,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (7 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "CBS/template parsing, escaping, history, loop, reinjection, and render fast-path semantics",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -19807,22 +19831,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (5 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "parser asset/inlay projection identity and cache invalidation",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -19853,22 +19878,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "real-KaTeX MathML case reviewed in Phase 1; remaining nine parser fast-path cases pending Phase 9",
+        "caseOrMatrixOwner": "complete collected file (10 cases)",
         "valueClasses": [
-          "user-visible behavior"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "parser.svelte.ts formula rendering plus other parsing fast paths",
-        "plausibleDefect": "Global setup replaces KaTeX so formula tests exercise only the error fallback and raw delimiters reach users.",
-        "risk": "Medium visible math-rendering regression hidden across the frontend suite.",
-        "companionEvidence": "Real KaTeX package behavior is now exercised at the DOM output; remaining parser cases have Phase 9 ownership.",
-        "decision": "pending",
-        "confidence": "high",
-        "rationale": "The selected case asserts sanitized MathML and exponent structure without mocking the behavior owner; the complete file still awaits its product-domain review.",
-        "findingId": "TSA-P01-009",
-        "severity": "Medium",
-        "action": "Retain the real formula case; review all other file cases in Phase 9.",
-        "validation": "focused 10-case file and complete 6,651-case frontend lane passed",
-        "state": "phase1-partial"
+        "productionOwnerOrContract": "CBS/template parsing, escaping, history, loop, reinjection, and render fast-path semantics",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -21681,22 +21707,22 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (7 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "generation output-trigger sequencing",
+        "plausibleDefect": "Scripting-shaped vocabulary can assign this owner to I even though its dominant failure mode belongs to another product contract.",
+        "risk": "Medium audit blind spot and misleading overlap analysis.",
+        "companionEvidence": "The executable category counterexample routes this complete owner to its dominant product-risk phase while preserving scripting as a seam.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "The complete owner protects generation output-trigger sequencing, not the category-I interpreter/runtime lifecycle.",
+        "findingId": "TSA-P09-007",
+        "severity": "Medium",
+        "action": "Route the owner from I to F and preserve its tests unchanged.",
+        "validation": "The routing-policy matrix and regenerated 700-owner inventory assign the intended category.",
+        "state": "phase9-reclassified"
       }
     },
     {
@@ -22354,22 +22380,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (15 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "trigger schema, ordering, resource budgets, effects, deletion races, and client/server execution",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -22610,22 +22637,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (2 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "display-source protocol, transform ordering, reload, and cache ownership",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -23183,22 +23211,22 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "provider-facing input-hook activity policy",
+        "plausibleDefect": "Scripting-shaped vocabulary can assign this owner to I even though its dominant failure mode belongs to another product contract.",
+        "risk": "Medium audit blind spot and misleading overlap analysis.",
+        "companionEvidence": "The executable category counterexample routes this complete owner to its dominant product-risk phase while preserving scripting as a seam.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "The complete owner protects provider-facing input-hook activity policy, not the category-I interpreter/runtime lifecycle.",
+        "findingId": "TSA-P09-007",
+        "severity": "Medium",
+        "action": "Route the owner from I to G and preserve its tests unchanged.",
+        "validation": "The routing-policy matrix and regenerated 700-owner inventory assign the intended category.",
+        "state": "phase9-reclassified"
       }
     },
     {
@@ -23229,22 +23257,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (12 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "input-hook transformation ordering and automation semantics",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -24295,22 +24324,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (5 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "display-source protocol, transform ordering, reload, and cache ownership",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -25344,32 +25374,34 @@
       "kind": "component/DOM",
       "dependencySignals": [
         "mocks",
+        "timers",
         "database",
         "globals"
       ],
       "caseCounts": {
-        "cases": 24,
+        "cases": 28,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (28 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Lua/Python runtime budgets, state isolation, cache recovery, egress, and cleanup",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-003",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -25395,28 +25427,29 @@
         "globals"
       ],
       "caseCounts": {
-        "cases": 11,
+        "cases": 12,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (12 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "regex definition, import, memoization, bounded execution, replacement, and output semantics",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-006",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -25446,22 +25479,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (5 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "regex definition, import, memoization, bounded execution, replacement, and output semantics",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -25488,22 +25522,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (7 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "regex definition, import, memoization, bounded execution, replacement, and output semantics",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -25761,22 +25796,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "trigger schema, ordering, resource budgets, effects, deletion races, and client/server execution",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -25807,22 +25843,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (2 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "trigger schema, ordering, resource budgets, effects, deletion races, and client/server execution",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -25853,22 +25890,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (6 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "regex definition, import, memoization, bounded execution, replacement, and output semantics",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -27048,22 +27086,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (8 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "display-source protocol, transform ordering, reload, and cache ownership",
+        "plausibleDefect": "Malformed or adversarial content, stale interpreter state, cache aliasing, ordering drift, or an execution-budget failure can produce wrong output, leak state, or stall a request.",
+        "risk": "Critical/High untrusted-content execution, denial of service, state leakage, or silently incorrect visible output.",
+        "companionEvidence": "Phase 9 traced parser and definition owners through client/server execution, cache/protocol seams, mounted editors, and output projection; retained layers fail at distinct boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found a distinct parser, runtime, trigger, cache, editor, or projection contract; no owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P09-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful interpreter or automation evidence.",
+        "validation": "The exact Phase 9 opening set, complete frontend and Fastify lanes, focused regressions, and inventory checks passed; browser/runtime parity residuals are explicitly bounded.",
+        "state": "phase9-reviewed"
       }
     },
     {
@@ -31491,7 +31530,7 @@
         "browser"
       ],
       "caseCounts": {
-        "cases": 10,
+        "cases": 11,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"

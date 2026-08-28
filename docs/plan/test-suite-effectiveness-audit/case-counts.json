@@ -78,9 +78,9 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/boundedRegex.test.ts": {
-      "cases": 8,
+      "cases": 15,
       "skipped": 0,
-      "parameterizedRows": 0
+      "parameterizedRows": 3
     },
     "server/fastify/__tests__/budgetFinalize.test.ts": {
       "cases": 9,
@@ -333,7 +333,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/luaRuntime.test.ts": {
-      "cases": 51,
+      "cases": 52,
       "skipped": 0,
       "parameterizedRows": 3
     },
@@ -533,9 +533,9 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/promptVariables.test.ts": {
-      "cases": 24,
+      "cases": 26,
       "skipped": 0,
-      "parameterizedRows": 0
+      "parameterizedRows": 2
     },
     "server/fastify/__tests__/protocolPackage.test.ts": {
       "cases": 2,
@@ -1533,9 +1533,9 @@
       "parameterizedRows": 0
     },
     "src/lib/SideBars/Scripts/triggerV2Import.test.ts": {
-      "cases": 7,
+      "cases": 17,
       "skipped": 0,
-      "parameterizedRows": 4
+      "parameterizedRows": 13
     },
     "src/lib/SideBars/Scripts/TriggerV2List.svelte.test.ts": {
       "cases": 19,
@@ -1699,6 +1699,16 @@
     },
     "src/lib/UI/Title.svelte.test.ts": {
       "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/__tests__/renderCostHarness.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 1
+    },
+    "src/ts/__tests__/sendCloneCountProbe.test.ts": {
+      "cases": 1,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -2783,12 +2793,12 @@
       "parameterizedRows": 0
     },
     "src/ts/process/scriptings.test.ts": {
-      "cases": 24,
+      "cases": 28,
       "skipped": 0,
       "parameterizedRows": 0
     },
     "src/ts/process/scripts.editdisplay.test.ts": {
-      "cases": 11,
+      "cases": 12,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -3468,7 +3478,7 @@
       "parameterizedRows": 0
     },
     "util/test-effectiveness-inventory.test.ts": {
-      "cases": 10,
+      "cases": 11,
       "skipped": 0,
       "parameterizedRows": 0
     },
