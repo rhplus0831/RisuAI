@@ -7,6 +7,10 @@ Status: In Progress
 - [Probe-backed runtime bridges](slices/phase-3/probe-backed-runtime-bridges.md):
   promoted seven suites and 69 tests whose unchanged Svelte+Node capability
   probes already passed during Phase 2.
+- [Client state and command helpers](slices/phase-3/client-state-and-command-helpers.md):
+  promoted two rune-backed command suites and 34 tests to Svelte+Node, while an
+  exact smaller-runtime cross-check promoted eleven statically misclassified
+  suites and 123 tests to Node.
 
 ## Objective
 

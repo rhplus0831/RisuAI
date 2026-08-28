@@ -4,6 +4,8 @@ export const svelteNodeTestFiles = [
   'src/lib/Setting/Pages/BotSettings.promptToggleDurable.test.ts',
   'src/ts/characterCards.pngImport.test.ts',
   'src/ts/parser/tests/chatVar.svelte.test.ts',
+  'src/ts/pluginCommands.durable.test.ts',
+  'src/ts/pluginCommands.test.ts',
   'src/ts/server/assets.test.ts',
   'src/ts/server/backups.test.ts',
   'src/ts/server/bootstrap.test.ts',

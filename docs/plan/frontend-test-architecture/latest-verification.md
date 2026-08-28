@@ -8,6 +8,64 @@ Phase 3 in progress after its first proof-backed Svelte+Node promotion slice.
 This record does not authorize repository-wide default inversion or migration
 outside the active phase rules.
 
+## Phase 3 Client State And Command Helpers Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `f362a56156d29ceabfadf1e0f5c9301bb5e22cff`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Isolation: enabled
+- Measurement tree: the clean first Phase 3 slice plus temporary exhaustive
+  target-S and smaller-runtime Node probe entries. Temporary failures were
+  pruned before the permanent thirteen-file ownership change.
+
+## Phase 3 Exhaustive Target-S And Smaller-Runtime Probes
+
+All 127 remaining static target-S candidates were added temporarily to
+`frontend-svelte-node`. The 136-file project, including nine existing owners,
+reported 43 passing files and 93 failing files. The 34 passing candidates were
+then assigned temporarily to `frontend-node`: 28 passed unchanged and six
+failed before collection with `$state is not defined`.
+
+The failed Node scope consisted of `pluginCommands.durable.test.ts`,
+`pluginCommands.test.ts`, `persistenceActivity.svelte.test.ts`,
+`resourceReads.test.ts`, `shellHydration.test.ts`, and
+`translator.cache.test.ts`. Their exact rune boundaries are
+`persistenceActivity.svelte.ts:3`, `resourceState.svelte.ts:658`, or
+`coreStores.svelte.ts:5`. Svelte+Node is the smallest valid runtime for those
+six unchanged suites. The other 28 do not require client transformation despite
+their static type-only, mock, compiler-library, or runtime-package Svelte signal.
+
+The broad S probe took 9.73s wall and 8.80s Vitest duration, with 1,287,804 KiB
+peak RSS. Its aggregate transform, setup, import, test, and environment times
+were 18.73s, 8.65s, 9.54s, 2.63s, and 1.72s. These partial-collection figures
+are capability evidence only. The 34-file Node cross-check took 2.38s wall and
+891,904 KiB peak RSS; 28 files passed and the six rune owners failed before
+collection as expected.
+
+## Phase 3 Client State And Command Helpers Measurements And Validation
+
+The current-owner Happy-DOM scope passed 13 files / 157 tests in 3.08s wall and
+2.36s Vitest duration, with 970,260 KiB peak RSS. Aggregate transform, setup,
+import, test, and environment times were 3.94s, 1.50s, 4.94s, 790ms, and 2.34s.
+
+The exact Node promotion scope passed 11 files / 123 tests in 1.44s wall and
+751ms Vitest duration, with 565,356 KiB peak RSS. Aggregate transform, setup,
+import, test, and environment times were 1.05s, 893ms, 1.15s, 539ms, and 1ms.
+The exact Svelte+Node scope passed 2 files / 34 tests in 1.78s wall and 1.16s
+Vitest duration, with 574,132 KiB peak RSS. Aggregate transform, setup, import,
+test, and environment times were 1.27s, 129ms, 1.65s, 264ms, and 33ms.
+
+Inventory update and check commands passed. Full discovery is 537 files at 172
+N / 11 S / 354 D, standalone ordinary is 535 files at 172 N / 11 S / 352 D,
+and aggregate ordinary is 529 files at 171 N / 11 S / 347 D. The generated
+target distribution is 178 N / 125 S / 234 D / 7 B, with 120 still-unpromoted
+static candidates. Exact target-project scopes passed; formatting and
+`git diff --check` passed. The complete Node and Svelte+Node projects passed 183
+files / 1,186 tests in 5.69s Vitest duration. Complete DOM and root validation
+remain Phase 3 exit work.
+
 ## Phase 3 Probe-Backed Runtime Bridges Environment And Source State
 
 - Repository: `/home/codex/risuai-fastify`

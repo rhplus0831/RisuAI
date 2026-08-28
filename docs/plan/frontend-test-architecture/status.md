@@ -10,14 +10,14 @@ codebase remain authoritative until a phase lands.
 
 - Plan state: Phases 0-2 complete; Phase 3 in progress.
 - Current phase: Phase 3 — Svelte+Node Promotion (in progress).
-- Active slice: Prepare the next bounded target-S probe batch after the
-  proof-backed runtime-bridge promotion.
-- Implementation state: Phase 3 has moved seven files and 69 tests from
-  Happy-DOM to Svelte+Node without production or test-body changes. Phases 2-3
-  have promoted 42 files and 245 tests in total.
+- Active slice: Route the remaining 21 target-S successes after the complete
+  candidate and smaller-runtime probes.
+- Implementation state: Phase 3 has moved nine files / 103 tests to
+  Svelte+Node and eleven files / 123 tests to Node without production or
+  test-body changes. Phases 2-3 have promoted 55 files and 402 tests in total.
 - Blockers: None.
-- Next action: Probe the remaining Phase 0 target-S candidates in bounded
-  domain slices and record exact blockers for any real DOM/browser dependency.
+- Next action: Promote the remaining 21 successful candidates in process and
+  server slices, then record the 93 exact Svelte+Node blockers.
 
 ## Phase Router
 
@@ -102,20 +102,22 @@ retainers under recorded Phase 3, Phase 4, or DOM-contract owners.
 
 | Measurement | Result |
 | --- | ---: |
-| Completed slices | 1 |
-| Promoted suites | 7 files / 69 tests |
-| Full three-project universe | 537 files: 161 N / 9 S / 367 D |
-| Standalone ordinary frontend | 535 files: 161 N / 9 S / 365 D |
-| `test:all` ordinary frontend | 529 files: 160 N / 9 S / 360 D |
-| Remaining target-runtime probes | 133 |
-| Focused Happy-DOM environment time | 1.35s |
-| Focused Svelte+Node environment time | 170ms |
+| Completed slices | 2 |
+| Promoted to Svelte+Node | 9 files / 103 tests |
+| Promoted to Node after cross-check | 11 files / 123 tests |
+| Full three-project universe | 537 files: 172 N / 11 S / 354 D |
+| Standalone ordinary frontend | 535 files: 172 N / 11 S / 352 D |
+| `test:all` ordinary frontend | 529 files: 171 N / 11 S / 347 D |
+| Broad target-S probe result | 34 passed / 93 blocked |
+| Remaining proven promotions | 21 files |
 
 The first slice promoted only suites with exact Phase 2 Svelte+Node evidence.
-Its combined focused wall observation moved from 2.52s to 1.97s and peak RSS
-from 939,396 KiB to 785,804 KiB. These are capability and mechanism observations,
-not the formal Phase 3 performance result; the stopping-gate benchmark remains
-pending until every target-S candidate is promoted or blocked.
+The complete 127-file target-S probe then passed 34 candidates and failed 93 at
+exact browser or import-graph boundaries. A Node cross-check passed 28 of the
+34, correcting false-positive S classifications caused by type-only or otherwise
+Node-safe Svelte imports; six require the client transform because Node reaches
+`$state`. These are capability observations, not the formal Phase 3 performance
+result; the stopping-gate benchmark remains pending.
 
 ## Current Decisions
 
@@ -227,6 +229,13 @@ pending until every target-S candidate is promoted or blocked.
     had already passed during Phase 2. Their durable prompt, character-card,
     hydration, asset, backup, bootstrap, and replacement-database contracts now
     run without Happy-DOM; no production or test-body boundary changed.
+29. The complete target-S probe passed 34 of 127 candidates without Happy-DOM
+    and gave exact blockers for 93. A smaller-runtime Node cross-check passed 28
+    of those 34; Phase 3 routes Node-safe type-only and compiler-library imports
+    to N instead of preserving the static classifier's false-positive S label.
+30. The client state and command slice moved eleven suites / 123 tests to Node
+    and two durable plugin-command suites / 34 tests to Svelte+Node. The latter
+    fail in Node at `persistenceActivity.svelte.ts` `$state` initialization.
 
 ## Accepted Observations
 
