@@ -31,6 +31,8 @@ P01-S02.
   the frozen lockfile installs unchanged.
 - Closed `TSA-P01-005`: the focused UI coverage denominator excludes the exact
   28 checked test-only harness/stub owners while keeping the thresholds fixed.
+- Closed `TSA-P01-006`: CI publishes the Phase 7 integration reports produced by
+  normal smoke discovery and fails when expected smoke/UI artifacts are absent.
 
 No product behavior or existing test was removed. The affected policy gained
 eight cases; live totals are 699 files and 9,984 cases.

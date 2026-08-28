@@ -324,3 +324,14 @@ pnpm coverage:ui-map
 Results: 7/7 policy cases and 203/203 UI cases passed. Production-only coverage
 is 14.44% lines, 14.83% statements, 18.13% functions, and 9.45% branches. One
 policy case takes the live total from 9,984 to 9,985.
+
+### Phase 7 browser artifact ownership
+
+`TSA-P01-006` is done. Normal smoke discovery includes all 7 specs and 34 cases,
+including the Phase 7 integration matrix. CI now uploads its JSON/text reports
+and treats missing smoke/UI artifacts as errors. The workflow policy assertion
+checks these paths.
+
+The Phase 0 aggregate's successful normal smoke execution produced both
+`fast-bootstrap-results/phase7-integration.json` and `.txt`, confirming the
+artifact path before workflow enforcement changed.

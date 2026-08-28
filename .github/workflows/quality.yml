@@ -150,7 +150,7 @@ jobs:
         with:
           name: ui-coverage
           path: coverage/ui-map
-          if-no-files-found: ignore
+          if-no-files-found: error
 
   server:
     runs-on: ubuntu-latest
@@ -189,7 +189,8 @@ jobs:
           path: |
             test-results
             fast-bootstrap-results/startup-matrix.*
-          if-no-files-found: ignore
+            fast-bootstrap-results/phase7-integration.*
+          if-no-files-found: error
 
   verify:
     if: always()

@@ -245,11 +245,13 @@ Interpret failures from the first failing layer:
    taxonomy above; route/content values are intentionally absent.
 
 CI runs `pnpm build:initial-preload` in its dedicated initial-preload lane and
-uploads both report families. The normal smoke lane uploads the startup matrix
-and Playwright results. CI does not currently run
-`verify:fast-bootstrap:phase7`, so `phase7-integration.*` remains local rollout
-evidence unless that workflow changes. Do not commit `fast-bootstrap-results/`,
-`test-results/`, `dist/`, trace data, or temporary fixture databases.
+uploads both report families. The normal smoke lane discovers the Phase 7
+integration spec with the other seven browser owners and uploads the startup
+matrix, `phase7-integration.*`, and Playwright results. The explicit
+`verify:fast-bootstrap:phase7` wrapper remains a local convenience that also
+runs the standalone preload measurement first. Do not commit
+`fast-bootstrap-results/`, `test-results/`, `dist/`, trace data, or temporary
+fixture databases.
 
 ## Built SPA Serving
 
@@ -334,4 +336,3 @@ Test/audit summary variables include `RISU_TEST_INCLUDE_GATES`,
 `RISU_COMMAND_METRIC_SUMMARY`,
 `RISU_ASSET_BYTE_SUMMARY`, `RISU_EXPORT_MATERIALIZE_SUMMARY`, and
 `RISU_GENERATION_METRIC_SUMMARY`.
-

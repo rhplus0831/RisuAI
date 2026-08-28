@@ -111,6 +111,14 @@ describe('test:all orchestration', () => {
       expect(verifySection, `${job} verify dependency`).toContain(`- ${job}`)
     }
     expect(verifySection).toContain('- initial-preload')
+    const smokeUpload = workflow.slice(
+      workflow.indexOf('name: playwright-test-results'),
+      workflow.indexOf('\n\n  verify:'),
+    )
+    expect(smokeUpload).toContain('fast-bootstrap-results/phase7-integration.*')
+    expect(smokeUpload).toContain('if-no-files-found: error')
+    const uiUpload = workflow.slice(workflow.indexOf('name: ui-coverage'), workflow.indexOf('\n\n  server:'))
+    expect(uiUpload).toContain('if-no-files-found: error')
   })
 
   it('excludes every checked UI test harness from coverage denominators', () => {

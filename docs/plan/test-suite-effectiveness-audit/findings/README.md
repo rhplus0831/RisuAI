@@ -2,7 +2,7 @@
 
 Date: 2026-08-29
 
-Status: Active; six findings are done and one remains confirmed.
+Status: Active; seven findings are done and one remains confirmed.
 
 This directory owns durable finding and decision records for the audit. Phase 0
 will decide whether the working ledger remains in this index, splits into
@@ -273,3 +273,31 @@ Every finding records:
   from 9,984 to 9,985.
 - Revisit condition: any support-manifest or UI coverage root change must update
   the checked registry before the gate can pass.
+
+### TSA-P01-006: CI omits successful Phase 7 browser artifacts
+
+- State: Done.
+- Severity: Medium.
+- Category: A, with B/L seams.
+- Decision: Strengthen CI reporting and correct documentation.
+- Tests/cases: all seven browser specs / 34 cases; workflow owner assertion in
+  `util/test-all.test.ts`.
+- Production owner: browser-smoke artifact reporting and quality workflow.
+- Protected contract or plausible defect: CI runs the Phase 7 recovery matrix
+  but discards its successful machine/human reports, while documentation claims
+  it is not run at all.
+- Evidence: Playwright listing includes
+  `startupRecoveryIntegrationMatrix.spec.ts`; its `afterAll` writes
+  `fast-bootstrap-results/phase7-integration.{json,txt}`. The smoke upload
+  included only `test-results` and `startup-matrix.*` and ignored absent files.
+- Companion/overlap analysis: retained failure traces help browser debugging but
+  do not replace the successful semantic matrix artifact. The explicit Phase 7
+  wrapper remains a useful local combined measurement command.
+- Action and rollback: upload Phase 7 reports, require expected smoke/UI
+  artifacts to exist, check the workflow upload policy, and correct current
+  documentation.
+- Validation: focused workflow parity test passed; the Phase 0 aggregate had
+  already produced both Phase 7 report files during the normal 34/34 smoke run.
+- Count delta: none.
+- Revisit condition: any browser artifact filename or smoke discovery change
+  must update workflow ownership and the parity assertion together.
