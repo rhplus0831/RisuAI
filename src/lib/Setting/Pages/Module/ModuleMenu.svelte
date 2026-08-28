@@ -275,7 +275,9 @@
     if (getResourceDatabase().useAdditionalAssetsPreview) {
       for (const asset of currentModule?.assets ?? []) {
         const assetPath = asset[1]
-        nextExtensions[assetPath] = asset.length > 2 && asset[2] ? asset[2] : assetPath.split('.').pop()
+        nextExtensions[assetPath] = (
+          asset.length > 2 && asset[2] ? asset[2] : assetPath.split('.').pop()
+        )?.toLowerCase()
         getFileSrc(assetPath).then((filePath) => {
           if (run !== assetPreviewRun) return
           assetFilePath[assetPath] = filePath

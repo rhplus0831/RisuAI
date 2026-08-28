@@ -1,4 +1,9 @@
+import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const globalApiSpies = vi.hoisted(() => ({
+  getFileSrc: vi.fn(),
+}))
 
 vi.mock('src/ts/server/commands', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/server/commands')>()
@@ -8,11 +13,18 @@ vi.mock('src/ts/server/commands', async (importActual) => {
   }
 })
 
+vi.mock('src/ts/globalApi.svelte', async (importActual) => ({
+  ...(await importActual<typeof import('src/ts/globalApi.svelte')>()),
+  getFileSrc: globalApiSpies.getFileSrc,
+}))
+
 import {
   applyImportedModuleLorebookRows,
   applyImportedModuleRegexRows,
   parseImportedLorebookRows,
 } from './ModuleMenu.svelte'
+import ModuleMenu from './ModuleMenu.svelte'
+import { language } from 'src/lang'
 import type { RisuModule } from 'src/ts/process/modules'
 import type { customscript, loreBook, triggerscript } from 'src/ts/storage/database.svelte'
 import { resetServerBackedLorebookBridgeForTests } from 'src/ts/server/lorebookBridge.svelte'
@@ -93,6 +105,7 @@ function seedModule(): void {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  globalApiSpies.getFileSrc.mockResolvedValue('blob:module-asset')
   seedModule()
 })
 
@@ -176,5 +189,35 @@ describe('ModuleMenu stale import guards', () => {
     expect(liveModule.trigger?.map((entry) => entry.comment)).toEqual(['concurrent trigger'])
     expect(draftModule.regex).toEqual(liveModule.regex)
     expect(draftModule.trigger).toEqual(liveModule.trigger)
+  })
+})
+
+describe('ModuleMenu asset previews', () => {
+  it('normalizes persisted uppercase video extensions before choosing the preview element', async () => {
+    getDatabase().useAdditionalAssetsPreview = true
+    draftModule.assets = [['Clip', 'asset-video', 'MP4']]
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(ModuleMenu, { target, props: { currentModule: draftModule, draftOnly: true } })
+
+    try {
+      await vi.waitFor(() => {
+        expect(globalApiSpies.getFileSrc).toHaveBeenCalledWith('asset-video')
+      })
+      const assetTab = Array.from(target.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes(language.additionalAssets),
+      )
+      if (!assetTab) throw new Error('Additional assets tab was not rendered')
+      assetTab.click()
+      await tick()
+
+      const source = target.querySelector<HTMLSourceElement>('video source')
+      expect(source?.getAttribute('src')).toBe('blob:module-asset')
+      expect(source?.getAttribute('type')).toBe('video/mp4')
+      expect(target.querySelector('img')).toBeNull()
+    } finally {
+      unmount(component)
+      target.remove()
+    }
   })
 })
