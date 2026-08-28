@@ -237,6 +237,33 @@ export const categoryRules: readonly CategoryRule[] = [
     ],
   },
   {
+    id: 'reviewed-scripting-adjacent-runtime-boundaries',
+    category: 'L',
+    description:
+      'Reviewed additional-HTML sanitization whose dominant contract is the platform untrusted-content boundary.',
+    patterns: [/^src\/ts\/hubAdditionalHtml\.test\.ts$/],
+  },
+  {
+    id: 'reviewed-scripting-adjacent-visible-parser-boundaries',
+    category: 'D',
+    description: 'Reviewed partial-edit range projection whose dominant contract is visible editor behavior.',
+    patterns: [/^src\/ts\/parser\/partialEdit\.test\.ts$/],
+  },
+  {
+    id: 'reviewed-scripting-adjacent-generation-boundaries',
+    category: 'F',
+    description:
+      'Reviewed output-trigger orchestration whose dominant contract is post-generation response processing.',
+    patterns: [/^src\/ts\/process\/__tests__\/outputTrigger\.test\.ts$/],
+  },
+  {
+    id: 'reviewed-scripting-adjacent-provider-boundaries',
+    category: 'G',
+    description:
+      'Reviewed input-hook activity whose dominant contract is translation/provider request selection and accounting.',
+    patterns: [/^src\/ts\/process\/inputHookActivity\.test\.ts$/],
+  },
+  {
     id: 'scripting-parsing-automation',
     category: 'I',
     description: 'CBS, parsing, regex/display scripts, triggers, Lua, automation, and bounded execution.',

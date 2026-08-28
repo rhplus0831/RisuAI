@@ -76,6 +76,38 @@
       ]
     },
     {
+      "id": "reviewed-scripting-adjacent-runtime-boundaries",
+      "category": "L",
+      "description": "First matching rule wins. Reviewed additional-HTML sanitization whose dominant contract is the platform untrusted-content boundary.",
+      "pathPatterns": [
+        "/^src\\/ts\\/hubAdditionalHtml\\.test\\.ts$/"
+      ]
+    },
+    {
+      "id": "reviewed-scripting-adjacent-visible-parser-boundaries",
+      "category": "D",
+      "description": "First matching rule wins. Reviewed partial-edit range projection whose dominant contract is visible editor behavior.",
+      "pathPatterns": [
+        "/^src\\/ts\\/parser\\/partialEdit\\.test\\.ts$/"
+      ]
+    },
+    {
+      "id": "reviewed-scripting-adjacent-generation-boundaries",
+      "category": "F",
+      "description": "First matching rule wins. Reviewed output-trigger orchestration whose dominant contract is post-generation response processing.",
+      "pathPatterns": [
+        "/^src\\/ts\\/process\\/__tests__\\/outputTrigger\\.test\\.ts$/"
+      ]
+    },
+    {
+      "id": "reviewed-scripting-adjacent-provider-boundaries",
+      "category": "G",
+      "description": "First matching rule wins. Reviewed input-hook activity whose dominant contract is translation/provider request selection and accounting.",
+      "pathPatterns": [
+        "/^src\\/ts\\/process\\/inputHookActivity\\.test\\.ts$/"
+      ]
+    },
+    {
       "id": "scripting-parsing-automation",
       "category": "I",
       "description": "First matching rule wins. CBS, parsing, regex/display scripts, triggers, Lua, automation, and bounded execution.",
@@ -17869,9 +17901,10 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "I",
-      "categoryRule": "scripting-parsing-automation",
+      "primaryCategory": "L",
+      "categoryRule": "reviewed-scripting-adjacent-runtime-boundaries",
       "seamTags": [
+        "category-I",
         "dom-component"
       ],
       "kind": "component/DOM",
@@ -19265,9 +19298,11 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "I",
-      "categoryRule": "scripting-parsing-automation",
-      "seamTags": [],
+      "primaryCategory": "D",
+      "categoryRule": "reviewed-scripting-adjacent-visible-parser-boundaries",
+      "seamTags": [
+        "category-I"
+      ],
       "kind": "pure unit",
       "dependencySignals": [],
       "caseCounts": {
@@ -21627,9 +21662,10 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "I",
-      "categoryRule": "scripting-parsing-automation",
+      "primaryCategory": "F",
+      "categoryRule": "reviewed-scripting-adjacent-generation-boundaries",
       "seamTags": [
+        "category-I",
         "dom-component"
       ],
       "kind": "component/DOM",
@@ -23133,9 +23169,11 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "I",
-      "categoryRule": "scripting-parsing-automation",
-      "seamTags": [],
+      "primaryCategory": "G",
+      "categoryRule": "reviewed-scripting-adjacent-provider-boundaries",
+      "seamTags": [
+        "category-I"
+      ],
       "kind": "pure unit",
       "dependencySignals": [],
       "caseCounts": {

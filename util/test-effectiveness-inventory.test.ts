@@ -150,6 +150,21 @@ describe('test effectiveness inventory', () => {
     }
   })
 
+  it('routes reviewed scripting-adjacent owners by their dominant contract', () => {
+    const counterexamples = new Map<string, string>([
+      ['src/ts/hubAdditionalHtml.test.ts', 'L'],
+      ['src/ts/parser/partialEdit.test.ts', 'D'],
+      ['src/ts/process/__tests__/outputTrigger.test.ts', 'F'],
+      ['src/ts/process/inputHookActivity.test.ts', 'G'],
+    ])
+
+    for (const [file, category] of counterexamples) {
+      expect(categoryForTestFile(file).category, `${file} must not fall through to scripting-parsing-automation`).toBe(
+        category,
+      )
+    }
+  })
+
   it('reuses lane routing and captures special ownership, kind, seams, and static dependencies', () => {
     const frontend = createTestEffectivenessInventoryRow(
       'src/lib/Others/GridCatalog.svelte.test.ts',
