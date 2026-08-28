@@ -4,9 +4,69 @@ Date: 2026-08-28
 
 ## State
 
-Phase 2 chat-generation toggle-presets runtime-probe closeout. Phase 2 remains
-in progress; this record does not authorize repository-wide default inversion,
-S promotion, or bulk migration outside the active phase rules.
+Phase 2 plugin-policy-and-updates closeout. Phase 2 remains in progress; this
+record does not authorize repository-wide default inversion, S promotion, or
+bulk migration outside the active phase rules.
+
+## Phase 2 Plugin Policy And Updates Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `4b6aeb44594a18755c1bbe9c8d91ae80583707e0`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Available CPUs: 10
+- Frontend test-all UI-map exclusion: `RISU_TEST_EXCLUDE_UI_MAP=true`
+- Isolation: enabled
+- Measurement tree: the clean chat-toggle probe commit plus the one-file Node
+  ownership change, regenerated inventory, and Phase 2 documentation.
+
+## Phase 2 Plugin Policy And Updates Probe And Ownership
+
+The bounded slice evaluated `pluginIconSafety.test.ts` and
+`pluginUpdates.test.ts`. The 14-test update suite covers version parsing,
+compatibility filtering, deterministic planning, invalid metadata, install
+routing, and failure isolation with explicit fetch/install fakes. The two icon
+tests execute the real DOMPurify sanitizer as their network-safety oracle.
+
+The current-owner two-file command passed 2 files / 16 tests in 1.22s wall and
+525ms Vitest duration, with 391,916 KiB peak RSS and 238ms environment time.
+The broader Node probe passed all 14 update tests and one icon test, but the
+real sanitizer case failed with `DOMPurify.sanitize is not a function`.
+
+After retaining the icon suite in D, the exact update suite passed twice in
+Node. The measured probe completed 1 file / 14 tests in 1.01s wall and 404ms
+Vitest duration, with 338,508 KiB peak RSS and no environment time; the repeat
+took 401ms Vitest duration.
+
+## Phase 2 Plugin Policy And Updates Discovery And Measurements
+
+Inventory update and check commands passed. Full discovery is 537 files at 159
+N / 2 S / 376 D, standalone ordinary is 535 files at 159 N / 2 S / 374 D, and
+aggregate ordinary is 529 files at 158 N / 2 S / 369 D. The 174 N / 129 S /
+234 D / 7 B target distribution is unchanged; mismatches fell to 142.
+
+| Lane | State | Result | Wall | Vitest | CPU | Peak RSS KiB |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `frontend-node` | Before | 157 files / 927 tests | 4.27s | 3.60s | 679% | 975,084 |
+| `frontend-node` | After | 158 files / 941 tests | 4.03s | 3.39s | 689% | 922,624 |
+| `frontend-dom` | Before | 370 files / 5,478 tests | 63.79s | 63.00s | 641% | 4,579,460 |
+| `frontend-dom` | After | 369 files / 5,464 tests | 62.40s | 61.63s | 631% | 4,800,256 |
+| Ordinary frontend | Before | 529 files / 6,413 tests | 66.02s | 65.15s | 640% | 5,063,636 |
+| Ordinary frontend | After | 529 files / 6,413 tests | 66.60s | 65.76s | 635% | 4,696,532 |
+
+The paired ordinary wall observation moved by +0.58s (+0.9%) while peak RSS
+decreased by 367,104 KiB (-7.2%). Both are inside observed variability; this is
+slice evidence rather than a phase-level claim.
+
+## Phase 2 Plugin Policy And Updates Validation
+
+Complete Node, DOM, and ordinary frontend runs passed 158 files / 941 tests,
+369 files / 5,464 tests, and 529 files / 6,413 tests. The affected dry-run
+selected the complete frontend, performance-gate, and server lanes. Execution
+passed 535 frontend files / 6,616 tests, 2 performance files / 6 tests, and 154
+server files / 3,295 tests with 1 skipped. `pnpm format:check` and
+`git diff --check` passed.
 
 ## Phase 2 Chat-Generation Toggle-Presets Probe Environment And Source State
 

@@ -71,6 +71,7 @@ export const nodeTestFiles = [
   'src/ts/personaDisplayName.test.ts',
   'src/ts/personaMutationCertificate.test.ts',
   'src/ts/plugins/pluginNetworkAccess.test.ts',
+  'src/ts/plugins/pluginUpdates.test.ts',
   'src/ts/polyfill.test.ts',
   'src/ts/presetFieldMirror.test.ts',
   'src/ts/presetSplit.test.ts',

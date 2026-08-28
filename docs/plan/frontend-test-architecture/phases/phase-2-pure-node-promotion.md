@@ -51,6 +51,9 @@ Status: In progress
   retained the five-test helper suite in Happy-DOM after Node reached a rune
   and Svelte+Node reached an eager `window` read; later extraction owns any
   smaller-runtime seam.
+- [Plugin policy and update helpers](slices/phase-2/plugin-policy-and-updates.md):
+  promoted the 14-test update-planning suite to Node and retained the two-test
+  real DOMPurify icon-sanitization contract in Happy-DOM.
 
 ## Objective
 

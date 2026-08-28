@@ -10,14 +10,14 @@ codebase remain authoritative until a phase lands.
 
 - Plan state: Phases 0-1 complete; Phase 2 in progress.
 - Current phase: Phase 2 — Pure Node Promotion.
-- Active slice: No implementation slice is active; the chat-generation
-  toggle-preset runtime proof is complete without promotion.
-- Implementation state: Thirty-two files and 156 tests have moved from the
-  Happy-DOM fallback to Node across eleven bounded slices with no production
+- Active slice: No implementation slice is active; the plugin policy and
+  update-helper slice is complete.
+- Implementation state: Thirty-three files and 170 tests have moved from the
+  Happy-DOM fallback to Node across twelve bounded slices with no production
   changes.
 - Blockers: None.
-- Next action: Prepare the bounded Phase 2 plugin policy and update-helper Node
-  probe. Retain the seven completed Node-probe deferrals under their recorded
+- Next action: Prepare the bounded Phase 2 MCP client and transformer Node
+  probe. Retain the eight completed Node-probe deferrals under their recorded
   owners.
 
 ## Phase Router
@@ -77,21 +77,21 @@ aggregate ordinary views; 175 unpromoted N/S candidates still require probes.
 
 | Measurement | Result |
 | --- | ---: |
-| Completed slices and proof batches | 15 |
-| Promoted suites | 32 files / 156 tests |
-| Full three-project universe | 537 files: 158 N / 2 S / 377 D |
-| Standalone ordinary frontend | 535 files: 158 N / 2 S / 375 D |
-| `test:all` ordinary frontend | 529 files / 6,413 tests: 157 N / 2 S / 370 D |
-| Remaining target-runtime mismatches | 143: 16 N / 127 S |
-| Latest paired ordinary wall observation | 69.11s -> 68.57s (-0.8%) |
-| Latest paired ordinary peak RSS | 4,999,492 -> 4,751,748 KiB |
+| Completed slices and proof batches | 16 |
+| Promoted suites | 33 files / 170 tests |
+| Full three-project universe | 537 files: 159 N / 2 S / 376 D |
+| Standalone ordinary frontend | 535 files: 159 N / 2 S / 374 D |
+| `test:all` ordinary frontend | 529 files / 6,413 tests: 158 N / 2 S / 369 D |
+| Remaining target-runtime mismatches | 142: 15 N / 127 S |
+| Latest paired ordinary wall observation | 66.02s -> 66.60s (+0.9%) |
+| Latest paired ordinary peak RSS | 5,063,636 -> 4,696,532 KiB |
 
-The paired timing is slice evidence, not a phase-level median. The -0.8% wall
+The paired timing is slice evidence, not a phase-level median. The +0.9% wall
 movement remains inside ordinary run-to-run variability; it is not a
-phase-level performance claim. Phase 2 remains open for 9 unprobed N candidates.
-The generated inventory also counts the probed chat-toggle, prompt-toggle,
-character-card, hydration-read, and two generation-effect suites plus the
-probed device-backup suite retained in D.
+phase-level performance claim. Phase 2 remains open for 7 unprobed N candidates.
+The generated inventory also counts the probed plugin-icon, chat-toggle,
+prompt-toggle, character-card, hydration-read, and two generation-effect suites
+plus the probed device-backup suite retained in D.
 
 ## Current Decisions
 
@@ -181,6 +181,11 @@ probed device-backup suite retained in D.
     initializer in N and an eager `window.innerWidth` read in S. The unchanged
     five-test suite therefore remains D-owned; extracting its pure helpers is a
     Phase 4 decision and was not folded into this promotion phase.
+24. The plugin slice promoted the 14-test semantic-version and update-planning
+    suite to N without changing its fakes or production dependencies. The
+    two-test icon-safety suite remains D because its real DOMPurify sanitizer is
+    the security behavior under test and is not callable in the plain Node
+    binding.
 
 ## Accepted Observations
 
@@ -213,10 +218,10 @@ occurrence reopens the display-source batching owner before another promotion.
 
 ## Latest Completed Slice
 
-[Phase 2 chat-generation toggle presets Node probe](phases/slices/phase-2/chat-generation-toggle-presets-node-probe.md)
-retained the five-test helper suite in Happy-DOM after its Node and Svelte+Node
-probes proved that the unchanged entry graph requires both rune transformation
-and a browser global. No permanent ownership change landed.
+[Phase 2 plugin policy and update helpers](phases/slices/phase-2/plugin-policy-and-updates.md)
+promoted the 14-test update-planning suite to Node and retained the real
+DOMPurify icon-sanitization contract in Happy-DOM. Discovery and affected lanes
+remain complete.
 
 ## Latest Verification
 
