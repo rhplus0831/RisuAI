@@ -421,6 +421,48 @@ describe('translateRawMessageData', () => {
     expect(result.text).toBe(rawResponse)
   })
 
+  it('materializes durable profile runtime samplers for LLM translation dispatch', async () => {
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
+    const settings = {
+      ...llmSettings(true),
+      modelProfiles: [
+        {
+          id: 'translate-profile',
+          name: 'Translate Profile',
+          modelId: 'echo_model',
+          runtimeOptions: {
+            temperature: 35,
+            topP: 0.42,
+            topK: 17,
+            frequencyPenalty: 25,
+            presencePenalty: 30,
+            useStreaming: true,
+          },
+        },
+      ],
+      modelRoleProfiles: {
+        translate: { mode: 'profile', profileId: 'translate-profile' },
+      },
+    }
+
+    await translateRawMessageData({
+      settings,
+      text: 'source',
+      signal: new AbortController().signal,
+    })
+
+    expect(rawTranslationMocks.dispatchChatProvider.mock.calls[0][0].database).toMatchObject({
+      aiModel: 'echo_model',
+      temperature: 35,
+      top_p: 0.42,
+      top_k: 17,
+      frequencyPenalty: 25,
+      PresensePenalty: 30,
+      halfStreaming: false,
+      useStreaming: false,
+    })
+  })
+
   it('removes internal reasoning from send-text-as-is source text when exclusion is enabled', async () => {
     const text =
       '<Thoughts data-private="true">draft secret <think>nested secret</think></Thoughts>\n' +

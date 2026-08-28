@@ -243,6 +243,7 @@ function getTranslateProfileCacheSignature(db = getDatabase()) {
         (profile.providerCapability.routable ? profile.providerCapability.provider : null),
       keyIdentifier: profile.providerOptions.keyIdentifier ?? profile.modelInfo.keyIdentifier,
     },
+    runtimeOptions: profile.runtimeOptions,
     customModel: customModel
       ? {
           id: customModel.id,

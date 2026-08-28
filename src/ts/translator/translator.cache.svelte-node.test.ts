@@ -154,6 +154,9 @@ function resetDatabase() {
     aiModel: 'openai',
     subModel: 'echo_model',
     modelRoles: {},
+    modelProfiles: [],
+    modelRoleProfiles: {},
+    modelRuntimeDefaults: undefined,
     seperateModelsForAxModels: false,
     seperateModels: {
       memory: '',
@@ -612,6 +615,27 @@ describe('auto-translate cache', () => {
     expect(separateOverride).toBe('<p>llm-profile-3</p>')
     expect(firstAgain).toBe(first)
     expect(testState.requestChatData).toHaveBeenCalledTimes(3)
+  })
+
+  it('invalidates LLM translation cache identity when profile runtime options change', () => {
+    testState.db.translatorType = 'llm'
+    testState.db.modelProfiles = [
+      {
+        id: 'translate-profile',
+        name: 'Translate Profile',
+        modelId: 'echo_model',
+        runtimeOptions: { temperature: 20, topP: 0.8 },
+      },
+    ]
+    testState.db.modelRoleProfiles = {
+      translate: { mode: 'profile', profileId: 'translate-profile' },
+    }
+    const first = __translatorTestHooks.getCurrentLLMTranslationCacheKey('<p>same text</p>')
+
+    testState.db.modelProfiles[0].runtimeOptions = { temperature: 70, topP: 0.4 }
+    const changed = __translatorTestHooks.getCurrentLLMTranslationCacheKey('<p>same text</p>')
+
+    expect(changed).not.toBe(first)
   })
 
   it('omits obvious provider secrets from the translate profile cache signature', () => {

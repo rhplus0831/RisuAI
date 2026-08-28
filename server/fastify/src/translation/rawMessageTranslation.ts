@@ -17,6 +17,7 @@ import type { CompletionStreamFrame } from '../generation/frames.js'
 import { ValidationError } from '../repository.js'
 import { stripInternalReasoning } from '../../../../src/ts/process/internalReasoning.js'
 import { createHistorySlotResolver, type HistorySlotContext } from '../../../../src/ts/translator/historySlots.js'
+import { applyProfileBoundGenerationFields } from '../prompt/effectiveGenerationConfig.js'
 
 export type RawMessageTranslatorType = 'google' | 'deepl' | 'deeplX' | 'llm'
 
@@ -383,11 +384,14 @@ async function translateWithLlm(
         profile = resolveModelProfile({ database, role: 'translate', staticModel: 'echo_model' })
       }
       assertModelProfileGenerationReady(profile)
-      const dispatchDatabase = {
-        ...database,
-        aiModel: profile.modelId,
-        maxResponse,
-      } as Database
+      const dispatchDatabase = { ...database } as Database
+      applyProfileBoundGenerationFields(dispatchDatabase, profile)
+      // A translator step owns its response budget and always uses buffered
+      // dispatch, while the profile still owns output-affecting samplers.
+      dispatchDatabase.aiModel = profile.modelId
+      dispatchDatabase.maxResponse = maxResponse
+      dispatchDatabase.halfStreaming = false
+      dispatchDatabase.useStreaming = false
       return collectFrames(
         await dispatchChatProvider({
           database: dispatchDatabase,
