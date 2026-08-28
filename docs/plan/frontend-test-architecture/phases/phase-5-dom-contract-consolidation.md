@@ -1,6 +1,15 @@
 # Phase 5: DOM Contract Consolidation
 
-Status: Pending
+Status: In Progress
+
+## Progress
+
+- [Baseline and candidate profile](slices/phase-5/baseline-and-candidate-profile.md)
+  accounts for every current Happy-DOM owner, records the fresh ordinary-D
+  profile, selects three coherent consolidation families, and defines the
+  explicit static-source-policy follow-up.
+- Next: consolidate the two Toggles audit gates without changing their
+  independent setup or DOM-first assertions.
 
 ## Objective
 

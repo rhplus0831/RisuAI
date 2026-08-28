@@ -308,8 +308,9 @@ Each candidate requires a fresh profile and a slice-specific value hypothesis.
 
 ## Execution Cursor
 
-Phases 0-4 are complete. Begin Phase 5 with a current profile of repeated
-Happy-DOM mount/setup owners and visible-behavior contracts. Phase 4 stops after
-its ranked candidates because the remaining costs do not expose another
+Phases 0-4 are complete. Phase 5 is executing the Toggles audit, AlertComp, and
+Ooba/provider-control consolidation slices selected by its current profile,
+then one explicit static-source-policy gate and formal closeout. Phase 4 stopped
+after its ranked candidates because the remaining costs did not expose another
 cohesive production pure seam. Do not invert suffix defaults before the Phase 6
 completeness gate.

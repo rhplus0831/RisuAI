@@ -8,17 +8,15 @@ codebase remain authoritative until a phase lands.
 
 ## Current Snapshot
 
-- Plan state: Phases 0-4 complete; Phase 5 pending.
-- Current phase: Phase 5 — DOM Contract Consolidation (pending).
-- Active slice: None; Phase 4 is complete.
-- Implementation state: Chat-import request planning, Saved Toggles planning,
-  and router route planning now have 21 pure Node tests. Retained Happy-DOM
-  suites still own durable commands, mounted settings, browser history, store
-  application, and asynchronous route freshness.
-- Blockers: None. Ninety-three retained target-S candidates have recorded Phase
-  4/5 owners and revisit conditions.
-- Next action: Re-profile repeated Happy-DOM mount/setup owners and prepare the
-  first Phase 5 visible-behavior consolidation slice.
+- Plan state: Phases 0-4 complete; Phase 5 in progress.
+- Current phase: Phase 5 — DOM Contract Consolidation (in progress).
+- Active slice: Toggles audit-gate consolidation.
+- Implementation state: The fresh D profile selected the Toggles audit,
+  AlertComp, and Ooba/provider-control families. All 330 full-discovery D owners
+  have an explicit direct-D or probe-backed browser reason.
+- Blockers: None.
+- Next action: Consolidate the two Toggles DOM-first audit gates while retaining
+  independent setup, cleanup, and visible optimistic-paint assertions.
 
 ## Phase Router
 
@@ -29,7 +27,7 @@ codebase remain authoritative until a phase lands.
 | [2](phases/phase-2-pure-node-promotion.md) | Complete | Promoted already-pure tests to Node and recorded every retained N candidate. |
 | [3](phases/phase-3-svelte-node-promotion.md) | Complete | Promoted Svelte-compiled tests that do not require DOM behavior. |
 | [4](phases/phase-4-pure-logic-extraction.md) | Complete | Extracted measured pure-logic seams while retaining DOM contracts. |
-| [5](phases/phase-5-dom-contract-consolidation.md) | Pending | Consolidate repeated DOM setup and clarify visible-state ownership. |
+| [5](phases/phase-5-dom-contract-consolidation.md) | In progress | Consolidate repeated DOM setup and clarify visible-state ownership. |
 | [6](phases/phase-6-routing-and-ci-enforcement.md) | Pending | Enforce explicit routing and align affected tests, coverage, aggregate execution, and CI. |
 | [7](phases/phase-7-verification-and-closeout.md) | Pending | Prove final budgets and behavior, update current docs, and archive the workstream. |
 
@@ -380,14 +378,15 @@ promotion continues.
 
 ## Latest Completed Slice
 
-[Phase 4 closeout and re-profile](phases/slices/phase-4/closeout-and-reprofile.md)
-completed the full validation gate, formal benchmark, cumulative performance
-accounting, and stopping decision.
+[Phase 5 baseline and candidate profile](phases/slices/phase-5/baseline-and-candidate-profile.md)
+accounted for every current D owner, recorded the fresh ordinary-D profile, and
+selected three coherent repeated-import families plus one explicit static-gate
+follow-up.
 
 ## Latest Verification
 
-See [`latest-verification.md`](latest-verification.md) for current Phase 4 slice
-measurements and discovery totals, the Phase 3 formal benchmark, and preceding
+See [`latest-verification.md`](latest-verification.md) for the current Phase 5
+profile and candidate measurements, the Phase 4 formal benchmark, and preceding
 promotion and probe records.
 
 ## Maintenance Rules

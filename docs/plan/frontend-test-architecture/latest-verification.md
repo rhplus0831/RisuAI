@@ -4,10 +4,54 @@ Date: 2026-08-28
 
 ## State
 
-Phase 4 is complete after the chat-import, Saved Toggles, and router planning
-slices, the server-backed fixture-planning deferral, and the formal closeout.
-This record does not authorize repository-wide default inversion or migration
-outside the later phase rules.
+Phase 5 is in progress after its fresh Happy-DOM profile and ownership
+accounting selected three repeated-import families plus one explicit
+static-source-policy follow-up. This record does not authorize repository-wide
+default inversion or migration outside the later phase rules.
+
+## Phase 5 Baseline Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `32042205a`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Frontend test-all UI-map exclusion: `RISU_TEST_EXCLUDE_UI_MAP=true`
+- Isolation: enabled
+- Measurement tree: clean Phase 4 closeout source with no uncommitted changes.
+
+Inventory checking passed before measurement. Full discovery is 539 files at
+192 N / 17 S / 330 D, standalone ordinary is 537 at 192 N / 17 S / 328 D, and
+aggregate ordinary is 531 at 191 N / 17 S / 323 D.
+
+All 330 full-discovery D owners are accounted for: 234 carry direct mounted or
+DOM/browser evidence, 91 have exact eager-`window` Phase 3 probe failures, two
+exercise real `DOMParser`, and three retain real DOMPurify, directory-picker,
+or `HTMLInputElement` contracts after exact Phase 2 probes.
+
+## Phase 5 Current Happy-DOM Profile
+
+The ordinary D project excluding the six separately owned UI-map suites and two
+explicit performance gates passed 323 files / 4,976 tests in 61.46s Vitest and
+62.30s wall. CPU was 627% and peak RSS was 4,707,148 KiB. Worker-phase sums were
+94.23s transform, 17.06s setup, 387.39s import, 75.30s tests, and 41.79s
+environment.
+
+The focused selected families passed as follows:
+
+| Family | Files / tests | Vitest | Import | Environment | Wall | Peak RSS KiB |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Toggles audit gates | 2 / 3 | 12.14s | 23.28s | 349ms | 13.17s | 1,452,164 |
+| AlertComp contracts | 3 / 15 | 10.15s | 29.18s | 365ms | 11.10s | 1,812,376 |
+| Ooba/provider controls | 2 / 4 | 7.32s | 13.95s | 237ms | 8.03s | 1,142,032 |
+
+These families share the same production component, mocked graph, fixture, and
+lifecycle while retaining adjacent visible-behavior ownership. The current
+profile rejects merging the differing DefaultChatScreen, HypaV3, Chat parser,
+Bookmark/resource-guard, and broad settings/lifecycle owners. Seven D suites
+with embedded source-policy assertions are owned by one later explicit static
+Node architecture-gate slice; fixture reads and VM execution are not
+source-string assertions.
 
 ## Phase 4 Closeout Environment And Source State
 
