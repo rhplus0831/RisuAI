@@ -462,7 +462,7 @@ export function validateAgentPresetRecord(
   })
 
   const seenStepIds = new Set<string>()
-  const outputKeysByPhase = new Map<string, string>()
+  const outputKeyPaths = new Map<string, string>()
   resolvedSteps.forEach((step, index) => {
     const stepPath = `${path}.steps[${index}]`
     issues.push(...validateAgentPresetStepRecord(step, stepPath))
@@ -475,18 +475,17 @@ export function validateAgentPresetRecord(
     }
 
     if (step.enabled && isValidAgentPresetOutputKey(step.outputKey) && isAgentPresetStepPhase(step.phase)) {
-      const key = `${step.phase}:${step.outputKey}`
-      const previousPath = outputKeysByPhase.get(key)
+      const previousPath = outputKeyPaths.get(step.outputKey)
       if (previousPath) {
         issues.push(
           issue(
             'duplicate_output_key',
             `${stepPath}.outputKey`,
-            `Duplicate enabled Agent Preset output key for ${step.phase}: ${step.outputKey}`,
+            `Duplicate enabled Agent Preset output key: ${step.outputKey}`,
           ),
         )
       } else {
-        outputKeysByPhase.set(key, `${stepPath}.outputKey`)
+        outputKeyPaths.set(step.outputKey, `${stepPath}.outputKey`)
       }
     }
 

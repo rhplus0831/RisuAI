@@ -219,6 +219,27 @@ describe('agent preset resolver', () => {
     if (duplicateOutput.status !== 'invalid') throw new Error('expected invalid duplicate output result')
     expect(duplicateOutput.issues.map((issue) => issue.code)).toContain('duplicate_output_key')
 
+    const crossPhaseDuplicate = resolveAgentPresetForChat({
+      database: db({
+        agentPresets: [
+          preset({
+            steps: [
+              step({ id: 'aps_before', phase: 'beforeMain', outputKey: 'shared' }),
+              step({ id: 'aps_after', phase: 'afterMain', outputKey: 'shared' }),
+            ],
+          }),
+        ],
+      }),
+      generationSettings: { agentPresetId: 'ap_default' },
+    })
+    expect(crossPhaseDuplicate.status).toBe('invalid')
+    if (crossPhaseDuplicate.status !== 'invalid') throw new Error('expected invalid cross-phase duplicate result')
+    expect(crossPhaseDuplicate.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'duplicate_output_key', path: 'agentPreset.steps[1].outputKey' }),
+      ]),
+    )
+
     const modifierOrdering = resolveAgentPresetForChat({
       database: db({
         agentPresets: [
