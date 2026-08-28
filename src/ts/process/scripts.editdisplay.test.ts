@@ -204,6 +204,36 @@ describe('editdisplay render path logging', () => {
     await expect(processScriptFull(char, 'CHOICE', 'editdisplay', -1)).resolves.toMatchObject({ data: 'second' })
   })
 
+  it('does not reuse script output across delimiter-shaped definition identities', async () => {
+    const char = seedDb()
+    char.customscript = [
+      {
+        comment: 'whole delimiter pattern',
+        type: 'editprocess',
+        in: 'x|||y',
+        out: 'A',
+        flag: 'g',
+        ableFlag: true,
+      },
+    ] as any
+
+    const first = await processScriptFull(char, 'x|||y', 'editprocess')
+
+    char.customscript = [
+      {
+        comment: 'prefix pattern',
+        type: 'editprocess',
+        in: 'x',
+        out: 'y|||A',
+        flag: 'g',
+        ableFlag: true,
+      },
+    ] as any
+
+    expect(first.data).not.toBe('y|||A|||y')
+    await expect(processScriptFull(char, 'x|||y', 'editprocess')).resolves.toMatchObject({ data: 'y|||A|||y' })
+  })
+
   it('server-mode non-display @@inject optimistically updates and dispatches a message patch', async () => {
     const calls = stubCommandFetch()
     const char = seedDb()

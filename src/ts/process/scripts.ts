@@ -166,14 +166,21 @@ function generateScriptCacheKey(
   cbsConditions: CbsConditions = {},
   cacheScope = '',
 ) {
-  let hash = data + '|||' + mode + '|||' + cacheScope + '|||'
-  for (const script of scripts) {
-    if (script.type !== mode) {
-      continue
-    }
-    hash += `${script.flag?.includes('<cbs>') ? risuChatParser(script.in, { chatID: chatID, cbsConditions }) : script.in}|||${script.out}${chatID}|||${script.flag ?? ''}|||${script.ableFlag ? 1 : 0}`
-  }
-  return hash
+  return JSON.stringify([
+    'process-script-cache-v2',
+    data,
+    mode,
+    cacheScope,
+    chatID,
+    scripts
+      .filter((script) => script.type === mode)
+      .map((script) => [
+        script.flag?.includes('<cbs>') ? risuChatParser(script.in, { chatID, cbsConditions }) : script.in,
+        script.out,
+        script.flag ?? '',
+        script.ableFlag === true,
+      ]),
+  ])
 }
 
 function cacheScript(hash: string, result: string) {
