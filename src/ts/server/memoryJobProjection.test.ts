@@ -8,6 +8,7 @@ import {
   applyServerMemoryJobEvent,
   applyServerMemoryJobSnapshot,
   memoryJobProjectionStore,
+  replaceMemoryJobsForChat,
   resetMemoryJobProjectionForTests,
   selectMemoryJobs,
   selectMemoryProgress,
@@ -96,6 +97,28 @@ describe('memory job projection', () => {
 
     applyServerMemoryJobSnapshot(snapshot(0, [], 'stream-2'))
     expect(selectMemoryProgress(get(memoryJobProjectionStore), null, false).allActiveJobs).toEqual([])
+  })
+
+  it('rejects a lower-version snapshot from the current stream', () => {
+    const stale = job({ id: 'stale-job' })
+    applyServerMemoryJobSnapshot(snapshot(5, [stale]))
+    applyServerMemoryJobSnapshot(snapshot(10, []))
+
+    expect(applyServerMemoryJobSnapshot(snapshot(5, [stale]))).toBe(false)
+    expect(get(memoryJobProjectionStore).version).toBe(10)
+    expect(selectMemoryProgress(get(memoryJobProjectionStore), null, false).allActiveJobs).toEqual([])
+  })
+
+  it('adopts a replacement job lists version when the server stream changes', () => {
+    const replacement = job({ id: 'replacement-job' })
+    applyServerMemoryJobSnapshot(snapshot(100, [job({ id: 'old-job' })], 'old-stream'))
+
+    replaceMemoryJobsForChat('chat-1', [replacement], { streamId: 'new-stream', version: 1 })
+
+    expect(get(memoryJobProjectionStore)).toMatchObject({ streamId: 'new-stream', version: 1 })
+    expect(applyServerMemoryJobEvent(event(2, { ...replacement, status: 'completed' }, 'new-stream'))).toBe(true)
+    expect(selectMemoryProgress(get(memoryJobProjectionStore), null, false).allActiveJobs).toEqual([])
+    expect(selectMemoryJobs(get(memoryJobProjectionStore))).toContainEqual({ ...replacement, status: 'completed' })
   })
 
   it('keeps identified browser-local work separate from server snapshot replacement', () => {

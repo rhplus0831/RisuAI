@@ -105,6 +105,7 @@ export function applyServerMemoryJobSnapshot(snapshot: ServerMemoryJobSnapshot):
   let accepted = false
   memoryJobProjectionStore.update((current) => {
     const sameStream = current.streamId === snapshot.streamId
+    if (sameStream && snapshot.version < current.version) return current
     const jobsByInstance: Record<string, ProjectedMemoryJob> = {}
 
     for (const [key, job] of Object.entries(current.jobsByInstance)) {
@@ -147,7 +148,7 @@ export function replaceMemoryJobsForChat(
 ): void {
   memoryJobProjectionStore.update((current) => {
     const sameStream = snapshot !== undefined && current.streamId === snapshot.streamId
-    const snapshotVersion = sameStream ? snapshot.version : current.version
+    const snapshotVersion = snapshot?.version ?? current.version
     const jobsByInstance: Record<string, ProjectedMemoryJob> = {}
     for (const [key, job] of Object.entries(current.jobsByInstance)) {
       if (job.chatId !== chatId || job.source === 'local' || (sameStream && job.eventVersion > snapshotVersion)) {
@@ -173,7 +174,7 @@ export function replaceMemoryJobsForChat(
 
     return boundTerminalJobs({
       streamId: snapshot?.streamId ?? current.streamId,
-      version: sameStream ? Math.max(current.version, snapshotVersion) : current.version,
+      version: snapshot ? (sameStream ? Math.max(current.version, snapshotVersion) : snapshotVersion) : current.version,
       jobsByInstance,
       nextRetainedAt,
     })
