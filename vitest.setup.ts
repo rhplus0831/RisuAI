@@ -1,13 +1,11 @@
-import { beforeEach, vi } from 'vitest'
+import { beforeEach } from 'vitest'
 import { safeStructuredClone } from './src/ts/safeStructuredClone'
 import {
   recordStartupMilestone,
   resetStartupReadinessForTests,
   settleStartupChatReadiness,
+  settleStartupGenerationRecoveryReadiness,
 } from './src/ts/startupReadiness'
-
-// Suppress warning
-vi.mock(import('katex'), () => ({}))
 
 globalThis.safeStructuredClone = safeStructuredClone
 
@@ -28,4 +26,5 @@ beforeEach(() => {
     recordStartupMilestone(milestone)
   }
   settleStartupChatReadiness(true)
+  settleStartupGenerationRecoveryReadiness(true)
 })

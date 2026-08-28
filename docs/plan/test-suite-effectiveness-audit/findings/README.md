@@ -2,7 +2,7 @@
 
 Date: 2026-08-29
 
-Status: Active; nine findings are done and one remains confirmed.
+Status: Active; eleven findings are done and one remains confirmed.
 
 This directory owns durable finding and decision records for the audit. Phase 0
 will decide whether the working ledger remains in this index, splits into
@@ -360,3 +360,57 @@ Every finding records:
 - Count delta: none; this executes the existing sole skipped tracked case.
 - Revisit condition: reassess timeout/fixture size only with measured artifacts;
   do not fold it into concurrent ordinary execution without proving stability.
+
+### TSA-P01-009: Global KaTeX mock hides formula rendering
+
+- State: Done; the owning parser file remains partially reviewed for Phase 9.
+- Severity: Medium.
+- Category: A harness, with I product ownership.
+- Decision: Strengthen the selected case; complete-file decision remains Pending.
+- Tests/cases: the real-formula case in
+  `src/ts/parser/tests/renderFastPaths.test.ts`; the other nine cases retain
+  their Phase 9 owner.
+- Production owner: `src/ts/parser/parser.svelte.ts` formula rendering and the
+  KaTeX runtime dependency.
+- Protected contract or plausible defect: formula rendering can regress to raw
+  delimiters or the error fallback while every frontend test sees an empty
+  KaTeX module and therefore cannot exercise successful rendering.
+- Evidence: shared setup replaced `katex` globally. Removing that mock and
+  rendering an exponent now proves the DOM contains KaTeX MathML, including an
+  `msup`, and no raw formula delimiters.
+- Companion/overlap analysis: fallback parser cases remain useful failure-path
+  evidence but cannot replace successful integration with the behavior owner.
+- Action and rollback: removed the global mock and added one real-render case.
+  Tests needing isolation must use a scoped faithful mock. Revert is confined to
+  setup and the selected parser case.
+- Validation: the combined setup/parser focus passed 14/14; the complete
+  frontend lane passed 6,651/6,651 across 536 files in 71.88s.
+- Count delta: no file delta; one parser case added, taking the live total from
+  9,985 to 9,986.
+- Revisit condition: review the complete parser fast-path file in Phase 9.
+
+### TSA-P01-010: Fully ready setup leaves generation disabled
+
+- State: Done.
+- Severity: Medium.
+- Category: A.
+- Decision: Strengthen, then Keep.
+- Tests/cases: `vitest.setup.test.ts`, all four clone/readiness cases.
+- Production owner: `vitest.setup.ts` and production startup-readiness state.
+- Protected contract or plausible defect: shared setup advertises a fully ready
+  application while generation remains disabled, so tests inherit a misleading
+  capability state and may become order-dependent.
+- Evidence: the setup settled shell, routes, plugins, background work, and
+  mutation but omitted generation-recovery readiness. A direct oracle now pins
+  all six public capability/readiness selectors to `true` after setup.
+- Companion/overlap analysis: `startupReadiness.test.ts` owns narrow transition
+  and failure states; only the setup oracle owns the global default inherited by
+  every frontend test.
+- Action and rollback: settle generation recovery in the all-ready baseline and
+  retain the exact capability-vector assertion. Focused tests may still reset
+  narrower states explicitly.
+- Validation: 4/4 setup cases and the complete 6,651-case frontend lane passed.
+- Count delta: no file delta; one setup case added, taking the live total from
+  9,986 to 9,987.
+- Revisit condition: update the baseline and exact oracle together when a new
+  public readiness capability is introduced.

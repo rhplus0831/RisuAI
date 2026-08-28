@@ -2183,7 +2183,7 @@
       "parameterizedRows": 0
     },
     "src/ts/parser/tests/renderFastPaths.test.ts": {
-      "cases": 9,
+      "cases": 10,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -3493,7 +3493,7 @@
       "parameterizedRows": 0
     },
     "vitest.setup.test.ts": {
-      "cases": 3,
+      "cases": 4,
       "skipped": 0,
       "parameterizedRows": 0
     }

@@ -20,8 +20,8 @@ in [`latest-verification.md`](latest-verification.md).
 - Blockers: the full differential compatibility harness cannot run because its
   pinned external worktree is absent. The new current-only owner is green; the
   blocker applies only to historical baseline claims.
-- Next action: audit the exact frontend runner/config/routing/manifest owners in
-  P01-S01, including the live TSV under `.archived-docs`.
+- Next action: close the remaining shared-server helper/oracle dispositions and
+  run the complete Phase 1 aggregate proof.
 
 ## Planning Baseline
 
@@ -35,11 +35,11 @@ in [`latest-verification.md`](latest-verification.md).
 | Fastify Vitest                       | 154 files                                    |
 | Browser smoke                        | 7 files                                      |
 | Compatibility harness                | Current-only green; full differential blocked |
-| Collected cases                      | 9,985 total; 1 direct-only skip; 1,261 parameterized rows |
+| Collected cases                      | 9,987 total; 1 direct-only skip; 1,261 parameterized rows |
 | Support owners                       | 253 standalone; 64 mixed production seams   |
 | Primary-category assignments         | 699 of 699 ratified                          |
-| Complete file dispositions           | 8 Keep                                       |
-| Findings                             | 9 done / 1 confirmed                         |
+| Complete file dispositions           | 9 Keep                                       |
+| Findings                             | 11 done / 1 confirmed                        |
 
 The 698-file rows preserve the plan-creation anchor. The live counts, support
 owners, runtime evidence, and category totals are checked by the Phase 0
@@ -71,13 +71,13 @@ See [`phases/README.md`](phases/README.md) for links and shared slice rules.
 
 | Decision   | Count | Meaning                                                    |
 | ---------- | ----: | ---------------------------------------------------------- |
-| Keep       |     8 | Distinct contract and suitable evidence layer.             |
+| Keep       |     9 | Distinct contract and suitable evidence layer.             |
 | Strengthen |     0 | Valuable intent, but insufficient or self-fulfilling proof. |
 | Merge      |     0 | Equivalent failure mode can move into a stronger owner.    |
 | Reclassify |     0 | Valuable test belongs to another category, lane, or type.  |
 | Remove     |     0 | No meaningful unique value after mandatory removal proof.  |
 | Add        |     0 | Material uncovered contract requires new proof.            |
-| Pending    |   691 | Known test owners awaiting their owning phase review.       |
+| Pending    |   690 | Known test owners awaiting their owning phase review.       |
 
 ## Current Decisions
 

@@ -126,14 +126,16 @@ delegates to Vitest's Node setup while selecting Vite's client transform so
 `$effect` retains client semantics.
 
 All three projects retain browser resolve conditions, the `src` alias, and
-`vitest.setup.ts` to mock `katex`, install the shared production
-`safeStructuredClone` helper, and establish the default startup-readiness
-baseline. Only the two Svelte projects load the Svelte plugin, and only the DOM
-project loads `vitest.dom.setup.ts`. That DOM-only setup blocks unexpected
-fetches resolving to loopback port `3000` and reports the originating stack;
+`vitest.setup.ts` to install the shared production `safeStructuredClone` helper
+and establish an explicit all-ready startup baseline. Real KaTeX remains
+available to parser tests; behavior libraries require scoped, faithful mocks
+when a test needs isolation. Only the two Svelte projects load the Svelte plugin,
+and only the DOM project loads `vitest.dom.setup.ts`. That DOM-only setup blocks
+unexpected fetches resolving to loopback port `3000` and reports the originating stack;
 tests that perform network-shaped work must stub `fetch` explicitly and await
 fire-and-forget command drains before teardown. `vitest.setup.test.ts` protects
-the shared native, fallback, and global-restoration semantics, while
+the shared native, fallback, global-restoration, and exact post-startup
+capability semantics, while
 `vitest.fetchGuard.test.ts` protects the DOM fetch boundary. Root Vitest excludes
 explicit performance gate tests unless
 `RISU_TEST_INCLUDE_GATES=true` is set. `test:all` also sets

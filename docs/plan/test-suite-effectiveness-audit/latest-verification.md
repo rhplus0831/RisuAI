@@ -367,3 +367,19 @@ pnpm test:all --dry-run
 
 Results: 7/7 aggregate policy cases passed; the scale lane passed its one
 selected case with 26 filtered in 2.64s; the aggregate dry run reports ten lanes.
+
+### Global setup fidelity
+
+`TSA-P01-009` and `TSA-P01-010` are done. Shared setup no longer replaces KaTeX
+for every frontend test and now establishes the generation-recovery dependency
+promised by its all-ready baseline. The direct setup oracle pins the exact
+capability vector, while a parser case proves real KaTeX MathML output.
+
+```sh
+pnpm exec vitest run vitest.setup.test.ts src/ts/parser/tests/renderFastPaths.test.ts
+pnpm test:frontend:run
+```
+
+Results: the focused pair passed 14/14. The complete frontend lane passed all
+6,651 cases across 536 files in 71.88s. Two cases take the live total from 9,985
+to 9,987 without a file-count change.

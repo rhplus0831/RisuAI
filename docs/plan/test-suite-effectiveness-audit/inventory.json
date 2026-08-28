@@ -19265,28 +19265,28 @@
         "browser"
       ],
       "caseCounts": {
-        "cases": 9,
+        "cases": 10,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "real-KaTeX MathML case reviewed in Phase 1; remaining nine parser fast-path cases pending Phase 9",
         "valueClasses": [
-          "pending"
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
+        "productionOwnerOrContract": "parser.svelte.ts formula rendering plus other parsing fast paths",
+        "plausibleDefect": "Global setup replaces KaTeX so formula tests exercise only the error fallback and raw delimiters reach users.",
+        "risk": "Medium visible math-rendering regression hidden across the frontend suite.",
+        "companionEvidence": "Real KaTeX package behavior is now exercised at the DOM output; remaining parser cases have Phase 9 ownership.",
         "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "confidence": "high",
+        "rationale": "The selected case asserts sanitized MathML and exponent structure without mocking the behavior owner; the complete file still awaits its product-domain review.",
+        "findingId": "TSA-P01-009",
+        "severity": "Medium",
+        "action": "Retain the real formula case; review all other file cases in Phase 9.",
+        "validation": "focused 10-case file and complete 6,651-case frontend lane passed",
+        "state": "phase1-partial"
       }
     },
     {
@@ -30880,28 +30880,29 @@
         "globals"
       ],
       "caseCounts": {
-        "cases": 3,
+        "cases": 4,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "all four structured-clone and post-startup capability-baseline cases",
         "valueClasses": [
-          "pending"
+          "architecture policy",
+          "diagnostic oracle"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "vitest.setup.ts production structured clone and explicit post-startup readiness baseline",
+        "plausibleDefect": "Global setup promises fully ready state but leaves generation disabled or installs a divergent clone implementation.",
+        "risk": "Medium misleading test defaults and order-dependent capability behavior across the complete frontend lane.",
+        "companionEvidence": "startupReadiness.test.ts owns narrow and failure states; focused parser evidence owns real KaTeX behavior.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The setup uses the production clone, establishes every named readiness dependency, and the direct oracle pins the exact capability vector plus global restoration.",
+        "findingId": "TSA-P01-010",
+        "severity": "Medium",
+        "action": "Retain the explicit all-ready baseline; focused readiness suites must continue resetting narrower states.",
+        "validation": "4/4 setup cases and complete 6,651-case frontend lane passed",
+        "state": "remediated"
       }
     }
   ]

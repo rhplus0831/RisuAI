@@ -53,6 +53,16 @@ afterEach(() => {
 })
 
 describe('ParseMarkdown sentence paragraph mode gating', () => {
+  it('renders display-delimited formulas through real KaTeX MathML', async () => {
+    const output = await ParseMarkdown('before $$x^2 + y^2$$ after', null, 'notrim')
+    const root = document.createElement('div')
+    root.innerHTML = output
+
+    expect(root.querySelector('math[xmlns="http://www.w3.org/1998/Math/MathML"]')).not.toBeNull()
+    expect(root.querySelector('msup')).not.toBeNull()
+    expect(output).not.toContain('$$x^2 + y^2$$')
+  })
+
   it('applies paragraph breaks in notrim mode but not pretranslate or back mode', async () => {
     const input = 'First sentence. Second sentence. Third sentence.'
     mocks.db.paragraphBreakBySentences = true
