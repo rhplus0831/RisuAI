@@ -21,7 +21,11 @@ import {
   type Persisted,
   type StagedAssetLiveFileCopy,
 } from '../repository.js'
-import { listLegacySummaryTombstones, replaceLegacyHypaV3MemoryRowsInTransaction } from '../memoryLegacyImport.js'
+import {
+  listLegacySummaryTombstones,
+  replaceLegacyHypaV3MemoryRowsInTransaction,
+  type LegacyHypaV3BackfillResult,
+} from '../memoryLegacyImport.js'
 import {
   UnsupportedGroupCharactersError,
   UnsupportedStandaloneChatBlocksError,
@@ -105,14 +109,15 @@ export function registerSaveRoutes(
         const snapshot = decodeRisuSaveImportSnapshot(await readUploadedRisuSave(req), {
           maxExpandedBytes: options.maxExpandedImportBytes,
         })
-        const { revision, event, databaseLineage, writerEpoch, assetReport } = await applyImportedDatabase(
-          db,
-          dataDir,
-          snapshot.database,
-          snapshot.portableMetadata,
-          snapshot.greetingTranslations,
-          { automaticBackupRetention: options.automaticBackupRetention },
-        )
+        const { revision, event, databaseLineage, writerEpoch, assetReport, memoryLegacyReport } =
+          await applyImportedDatabase(
+            db,
+            dataDir,
+            snapshot.database,
+            snapshot.portableMetadata,
+            snapshot.greetingTranslations,
+            { automaticBackupRetention: options.automaticBackupRetention },
+          )
         eventSink.emit(event)
         return {
           revision,
@@ -125,6 +130,7 @@ export function registerSaveRoutes(
             ...(snapshot.skippedBlocks.length > 0 ? { skippedBlocks: snapshot.skippedBlocks } : {}),
           },
           assetReport,
+          ...(memoryLegacyReport ? { memoryLegacyReport } : {}),
         }
       }
 
@@ -133,19 +139,27 @@ export function registerSaveRoutes(
       // `normalizeRisuSaveJsonImportSnapshot` returns a request-body-isolated
       // throwaway object for JSON bodies, so the repository can split
       // message rows in place without a second full-corpus clone.
-      const { revision, event, databaseLineage, writerEpoch, assetReport } = await applyImportedDatabase(
-        db,
-        dataDir,
-        snapshot.database,
-        snapshot.portableMetadata,
-        snapshot.greetingTranslations,
-        {
-          automaticBackupRetention: options.automaticBackupRetention,
-          cloneBeforeMessageSplit: false,
-        },
-      )
+      const { revision, event, databaseLineage, writerEpoch, assetReport, memoryLegacyReport } =
+        await applyImportedDatabase(
+          db,
+          dataDir,
+          snapshot.database,
+          snapshot.portableMetadata,
+          snapshot.greetingTranslations,
+          {
+            automaticBackupRetention: options.automaticBackupRetention,
+            cloneBeforeMessageSplit: false,
+          },
+        )
       eventSink.emit(event)
-      return { revision, event, databaseLineage, writerEpoch, assetReport }
+      return {
+        revision,
+        event,
+        databaseLineage,
+        writerEpoch,
+        assetReport,
+        ...(memoryLegacyReport ? { memoryLegacyReport } : {}),
+      }
     } catch (err) {
       if (err instanceof UnsupportedStandaloneChatBlocksError) {
         reply.code(422)
@@ -194,40 +208,41 @@ export function registerSaveRoutes(
         decoded.format === 'legacy-local-backup'
           ? normalizeLegacyLocalBackupImportDatabase(snapshot.database, decoded.assetReferenceAliases)
           : snapshot.database
-      const { revision, event, databaseLineage, writerEpoch, assetReport } = await applyImportedDatabase(
-        db,
-        dataDir,
-        importedDatabase,
-        snapshot.portableMetadata,
-        snapshot.greetingTranslations,
-        {
-          automaticBackupRetention: options.automaticBackupRetention,
-          beforeRevision: () => {
-            const assetResults = persistStagedAssetsInTransaction(db, dataDir, decoded.stagedAssets, copiedAssetFiles)
-            assetsCreated = assetResults.some((result) => result.created)
+      const { revision, event, databaseLineage, writerEpoch, assetReport, memoryLegacyReport } =
+        await applyImportedDatabase(
+          db,
+          dataDir,
+          importedDatabase,
+          snapshot.portableMetadata,
+          snapshot.greetingTranslations,
+          {
+            automaticBackupRetention: options.automaticBackupRetention,
+            beforeRevision: () => {
+              const assetResults = persistStagedAssetsInTransaction(db, dataDir, decoded.stagedAssets, copiedAssetFiles)
+              assetsCreated = assetResults.some((result) => result.created)
+            },
+            onImportRollback: () => {
+              const cleanup = cleanupCopiedStagedAssetFiles(copiedAssetFiles)
+              if (cleanup.failures.length === 0) return
+              try {
+                req.log.warn(
+                  {
+                    err: new AggregateError(
+                      cleanup.failures.map((failure) => failure.error),
+                      BUNDLE_IMPORT_ROLLBACK_CLEANUP_WARNING,
+                    ),
+                    failureCount: cleanup.failures.length,
+                    attempted: cleanup.attempted,
+                    failedFiles: cleanup.failures.map((failure) => failure.file),
+                  },
+                  BUNDLE_IMPORT_ROLLBACK_CLEANUP_WARNING,
+                )
+              } catch {
+                // Logging is best-effort and must never replace the import error.
+              }
+            },
           },
-          onImportRollback: () => {
-            const cleanup = cleanupCopiedStagedAssetFiles(copiedAssetFiles)
-            if (cleanup.failures.length === 0) return
-            try {
-              req.log.warn(
-                {
-                  err: new AggregateError(
-                    cleanup.failures.map((failure) => failure.error),
-                    BUNDLE_IMPORT_ROLLBACK_CLEANUP_WARNING,
-                  ),
-                  failureCount: cleanup.failures.length,
-                  attempted: cleanup.attempted,
-                  failedFiles: cleanup.failures.map((failure) => failure.file),
-                },
-                BUNDLE_IMPORT_ROLLBACK_CLEANUP_WARNING,
-              )
-            } catch {
-              // Logging is best-effort and must never replace the import error.
-            }
-          },
-        },
-      )
+        )
       eventSink.emit(event)
       return {
         revision,
@@ -240,6 +255,7 @@ export function registerSaveRoutes(
           ...(snapshot.skippedBlocks.length > 0 ? { skippedBlocks: snapshot.skippedBlocks } : {}),
         },
         assetReport,
+        ...(memoryLegacyReport ? { memoryLegacyReport } : {}),
         bundleReport: {
           includedAssetCount: decoded.includedAssetCount,
           assetsCreated,
@@ -577,15 +593,22 @@ async function applyImportedDatabase(
   databaseLineage: string
   writerEpoch: number
   assetReport: ReturnType<typeof summarizeRisuSaveAssetReport>
+  memoryLegacyReport?: LegacyHypaV3BackfillResult
 }> {
   let result: Awaited<ReturnType<typeof applyImport>>
+  let memoryLegacyReport: LegacyHypaV3BackfillResult | undefined
   try {
     result = await applyImport(db, dataDir, database, {
       greetingTranslations,
       automaticBackupRetention: options.automaticBackupRetention,
       cloneBeforeMessageSplit: options.cloneBeforeMessageSplit,
       beforeRevision: () => {
-        replaceLegacyHypaV3MemoryRowsInTransaction(db, database, portableMetadata.memoryLegacySummaryTombstones)
+        const backfill = replaceLegacyHypaV3MemoryRowsInTransaction(
+          db,
+          database,
+          portableMetadata.memoryLegacySummaryTombstones,
+        )
+        if (backfill.skippedSummaries.length > 0) memoryLegacyReport = backfill
         options.beforeRevision?.(db)
       },
     })
@@ -596,6 +619,7 @@ async function applyImportedDatabase(
   return {
     ...result,
     assetReport: summarizeRisuSaveAssetReport(buildRepositoryRisuSaveAssetReport(dataDir, db)),
+    ...(memoryLegacyReport ? { memoryLegacyReport } : {}),
   }
 }
 

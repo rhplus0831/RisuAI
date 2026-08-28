@@ -99,10 +99,12 @@ describe('legacy Hypa V3 memory import', () => {
       expect(backfillLegacyHypaV3MemoryRows(db, legacyDatabase())).toEqual({
         chunksCreated: 2,
         summariesCreated: 2,
+        skippedSummaries: [],
       })
       expect(backfillLegacyHypaV3MemoryRows(db, legacyDatabase())).toEqual({
         chunksCreated: 0,
         summariesCreated: 0,
+        skippedSummaries: [],
       })
 
       const chunks = listMemoryChunks(db, { chatId: 'chat-1' })
@@ -158,6 +160,89 @@ describe('legacy Hypa V3 memory import', () => {
       expect(selected.importantSummaries.map((summary) => summary.text)).toEqual(['They greeted each other.'])
     } finally {
       db.close()
+    }
+  })
+
+  it('salvages valid summaries and reports every malformed legacy summary', () => {
+    const db = openDatabase(makeDataDir())
+    const database = legacyDatabase()
+    database.characters[0].chats[0].hypaV3Data.summaries.push(
+      null as never,
+      { text: '', chatMemos: [], isImportant: false },
+      { text: 'Still salvageable.', chatMemos: ['m-3'], isImportant: false },
+    )
+    try {
+      expect(backfillLegacyHypaV3MemoryRows(db, database)).toEqual({
+        chunksCreated: 3,
+        summariesCreated: 3,
+        skippedSummaries: [
+          {
+            path: 'characters[0].chats[0].hypaV3Data.summaries[2]',
+            reason: 'summary must be an object',
+          },
+          {
+            path: 'characters[0].chats[0].hypaV3Data.summaries[3]',
+            reason: 'summary.text must be a non-empty string',
+          },
+        ],
+      })
+      expect(
+        listMemorySummaries(db, { chatId: 'chat-1' })
+          .map((summary) => summary.text)
+          .sort(),
+      ).toEqual(['Still salvageable.', 'The garden matters.', 'They greeted each other.'])
+    } finally {
+      db.close()
+    }
+  })
+
+  it('returns the legacy-memory salvage report from JSON imports', async () => {
+    const dataDir = makeDataDir()
+    const database = legacyDatabase()
+    database.characters[0].chats[0].hypaV3Data.summaries.push(null as never, {
+      text: '',
+      chatMemos: [],
+      isImportant: false,
+    })
+    const { app } = await buildApp({
+      config: {
+        host: '127.0.0.1',
+        port: 0,
+        dataDir,
+        bodyLimit: 1024 * 1024,
+        importMaxBytes: Infinity,
+        trustProxy: false,
+        hubUrl: 'https://sv.risuai.xyz',
+      },
+      memoryWorker: false,
+      assetGc: false,
+    })
+    try {
+      const { assertion } = await setupAuthedClient(app)
+      const imported = await app.inject({
+        method: 'POST',
+        url: '/api/v1/import/risusave',
+        headers: { 'risu-auth': assertion },
+        payload: { database },
+      })
+
+      expect(imported.statusCode).toBe(200)
+      expect(imported.json().memoryLegacyReport).toEqual({
+        chunksCreated: 2,
+        summariesCreated: 2,
+        skippedSummaries: [
+          {
+            path: 'characters[0].chats[0].hypaV3Data.summaries[2]',
+            reason: 'summary must be an object',
+          },
+          {
+            path: 'characters[0].chats[0].hypaV3Data.summaries[3]',
+            reason: 'summary.text must be a non-empty string',
+          },
+        ],
+      })
+    } finally {
+      await app.close()
     }
   })
 

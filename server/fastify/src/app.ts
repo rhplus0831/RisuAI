@@ -195,7 +195,19 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   // Legacy memory backfill reads chat.message[]; hydrate from the table (or the
   // still-embedded legacy db.json before boot import retires it) so it sees the
   // real history.
-  backfillLegacyHypaV3MemoryRows(db, loadPersistedWithMessages(db, config.dataDir).database)
+  const legacyMemoryBackfill = backfillLegacyHypaV3MemoryRows(
+    db,
+    loadPersistedWithMessages(db, config.dataDir).database,
+  )
+  if (legacyMemoryBackfill.skippedSummaries.length > 0) {
+    app.log.warn(
+      {
+        skippedSummaryCount: legacyMemoryBackfill.skippedSummaries.length,
+        skippedSummaries: legacyMemoryBackfill.skippedSummaries,
+      },
+      'Skipped malformed legacy Hypa V3 summaries during startup backfill',
+    )
+  }
   // Proactively import any legacy db.json into SQLite and retire the file.
   // No-op once converged. Must run after the backfill above, which needs the
   // embedded messages before boot import retires a legacy db.json.
