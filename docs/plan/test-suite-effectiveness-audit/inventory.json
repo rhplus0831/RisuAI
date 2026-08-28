@@ -1027,22 +1027,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (60 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "collection command semantics plus exact permitted physical-table and row ranges",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -1072,22 +1073,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (7 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "narrow command read floors remain load-bearing and unblock only after correctness proof",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -1117,22 +1119,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (8 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "message-free command ceiling and documented broad-fallback boundaries",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -1162,22 +1165,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (1 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "runtime mutation metrics identify command families, timing sections, and physical writes",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -1195,28 +1199,29 @@
         "filesystem"
       ],
       "caseCounts": {
-        "cases": 8,
+        "cases": 9,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (9 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "AST-complete mutation-path registry and table-budget policy",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
+        "findingId": "TSA-P03-006",
+        "severity": "Medium",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -1246,22 +1251,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (21 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "scoped command reads avoid unrelated collections, characters, chats, and messages",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -1290,22 +1296,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (12 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "transactional receipt persistence, replay, lineage, acknowledgement, and collision rejection",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "High duplicate application, stale-target mutation, lost durable state, or overbroad rollback.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
+        "findingId": "TSA-P03-005",
+        "severity": "High",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -1382,22 +1389,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (21 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "single-row command writers preserve unrelated row identities and dependent rows",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -1421,28 +1429,29 @@
         "globals"
       ],
       "caseCounts": {
-        "cases": 220,
+        "cases": 222,
         "skipped": 0,
         "parameterizedRows": 2,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (222 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "revisioned command authentication, validation, concurrency, transaction, event, and domain semantics",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "High duplicate application, stale-target mutation, lost durable state, or overbroad rollback.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
+        "findingId": "TSA-P03-005",
+        "severity": "High",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -1505,22 +1514,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (22 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "legacy database normalization and canonical server-owned defaults",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -1539,28 +1549,29 @@
         "database"
       ],
       "caseCounts": {
-        "cases": 7,
+        "cases": 19,
         "skipped": 0,
-        "parameterizedRows": 5,
+        "parameterizedRows": 16,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (19 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "fail-closed first-run classification across all durable SQLite state",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Critical silent data loss or destructive initialization.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
+        "findingId": "TSA-P03-001",
+        "severity": "Critical",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -1585,22 +1596,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (19 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "schema creation, migration, constraints, physical preservation, and safe reopen",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
+        "findingId": "TSA-P03-007",
+        "severity": "Medium",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -1710,22 +1722,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (30 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "semantic delete idempotency and same-receipt replay across every DELETE family",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "High duplicate application, stale-target mutation, lost durable state, or overbroad rollback.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
+        "findingId": "TSA-P03-005",
+        "severity": "High",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -1887,22 +1900,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (25 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "persisted/live command event ordering, replay windows, authentication, and cleanup",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -1971,7 +1985,7 @@
         "browser"
       ],
       "caseCounts": {
-        "cases": 174,
+        "cases": 175,
         "skipped": 0,
         "parameterizedRows": 32,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
@@ -2802,22 +2816,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "transactional legacy db.json migration, rollback, checkpoint, quarantine, and retry",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -2847,22 +2862,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (13 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "authenticated legacy byte storage, atomic replacement, cleanup, listing, and removal",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -2929,22 +2945,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (5 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "command-input lorebook entry identity repair and activation-field validation",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -3821,28 +3838,29 @@
         "database"
       ],
       "caseCounts": {
-        "cases": 27,
+        "cases": 28,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (28 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "physical message/alternate/Hypa storage, surgical diffs, and safe append-only persistence",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "High duplicate application, stale-target mutation, lost durable state, or overbroad rollback.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
+        "findingId": "TSA-P03-002",
+        "severity": "High",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -3907,22 +3925,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (17 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "missing-database refusal when filesystem evidence indicates a prior installation",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -4994,9 +5013,9 @@
         "globals"
       ],
       "caseCounts": {
-        "cases": 27,
+        "cases": 26,
         "skipped": 1,
-        "parameterizedRows": 1,
+        "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
@@ -5041,22 +5060,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (11 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "targeted repository writers preserve unrelated tables, rows, fields, and caches",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -5251,22 +5271,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (20 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "authenticated authoritative resource projections, bounds, caching, and secret exclusion",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -6293,22 +6314,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (6 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "targeted mutation vehicles enforce scoped-read/write configuration invariants",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -15435,22 +15457,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (5 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "durable alternate-greeting selection commands and rollback by stable chat identity",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -15475,22 +15498,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (2 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "pure alternate-greeting index repair after greeting mutation",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -15709,22 +15733,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (80 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "optimistic character CRUD, selection, ordering, scoped patches, and narrow rollback",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -15990,22 +16015,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (183 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "optimistic chat/message/folder mutations, chunking, stable identity, and narrow rollback",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -19516,22 +19542,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (2 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "canonical persona mutation certificates and prototype-safe serialization",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -20458,22 +20485,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (22 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "legacy process mutations route through trusted resource writes and durable commands",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -21965,22 +21993,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "stable-ID cold-storage recovery and intentionally retired compatibility helpers",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -25672,28 +25701,29 @@
         "browser"
       ],
       "caseCounts": {
-        "cases": 2,
+        "cases": 3,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "aggregate lifecycle flush ownership, keepalive forwarding, and idempotent teardown",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
+        "findingId": "TSA-P03-004",
+        "severity": "Medium",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -25765,22 +25795,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (25 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "character draft merge, ownership, projection fencing, flush, and field-scoped rollback",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -26064,22 +26095,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (19 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "chat/folder draft merge, stable-target flush, projection fencing, and rollback",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -26323,22 +26355,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (163 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "browser command adapters, payload validation, receipts, projections, and rollback callbacks",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -26417,22 +26450,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (19 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "durable dispatch staging, transport outcomes, dependencies, and settlement",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -26464,22 +26498,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (10 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "terminal durable rejection rolls back only the failed attempted projection",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -26555,22 +26590,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (9 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "authenticated SSE parsing, replay cursors, writer/memory events, abort, and close",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -26903,28 +26939,29 @@
         "database"
       ],
       "caseCounts": {
-        "cases": 101,
+        "cases": 102,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (102 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "lorebook hydration, stable entries, owner-scoped drafts, projection fences, and narrow rollback",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "High duplicate application, stale-target mutation, lost durable state, or overbroad rollback.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
+        "findingId": "TSA-P03-003",
+        "severity": "High",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -26958,22 +26995,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (23 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "durable lorebook owner ordering, snapshots, replay, and scoped restoration",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -27420,22 +27458,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "lazy bridge flusher/resetter registration, replacement ownership, and targeted flush",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -27609,22 +27648,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (2 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "reactive visibility of pending persistence activity",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -28088,22 +28128,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (2 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "database replacement resets bridge ownership and old-lineage pending state",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -28268,22 +28309,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (18 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "browser resource-read adapters, authentication, encoding, payload validation, and failures",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -28403,22 +28445,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (8 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "resource facade rejects untrusted writes while allowing scoped optimistic/application writes",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -28495,22 +28538,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (2 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "lorebook mutation UI outcomes remain bound to operation token, chat, and entry ID",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -28542,22 +28586,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (72 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "script/trigger draft ownership, sparse mutation, watcher baselines, projection fencing, and rollback",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -28582,22 +28627,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (14 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "pure sparse/create/delete/reorder/full script-definition mutation planning",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -28720,22 +28766,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (6 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "settings durable lineage retention and discard across database replacement",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -28767,22 +28814,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (61 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "settings coalescing, sparse patches, owner reseed, projection fencing, and field rollback",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -29497,22 +29545,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (2 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "storage backend selection and server-backed persistence routing",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -29733,22 +29782,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (135 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "resource database compatibility facade, split preset hydration, replay, and rollback",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -29776,22 +29826,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "strict hydration, dataset serialization, download, and success ordering",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {
@@ -29823,22 +29874,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "authenticated legacy Fastify storage adapter request/response behavior",
+        "plausibleDefect": "A revision, stable-target, transaction, receipt, event, persistence, or scoped rollback contract can regress while a status-only or same-layer mock remains green.",
+        "risk": "Medium false confidence, physical-scope drift, or lifecycle persistence failure.",
+        "companionEvidence": "The Phase 3 defense-in-depth map links pure planners, client bridges, durable outbox state, Fastify command integration, direct SQLite rows, and built-browser recovery; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct protection at this evidence layer; linked findings record strengthening and bounded residuals.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its domain-specific evidence.",
+        "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase3-reviewed"
       }
     },
     {

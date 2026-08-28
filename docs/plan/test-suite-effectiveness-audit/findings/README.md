@@ -2,8 +2,8 @@
 
 Date: 2026-08-29
 
-Status: Active; twenty-six findings are done, one remains confirmed, and two
-are deferred with concrete revisit triggers.
+Status: Active; thirty-three findings are done, one remains confirmed, and
+three are deferred with concrete revisit triggers.
 
 This directory owns durable finding and decision records for the audit. Phase 0
 will decide whether the working ledger remains in this index, splits into
@@ -875,3 +875,199 @@ Every finding records:
 - Revisit condition: Phase 13 when cross-suite faithful-browser additions are
   consolidated, or Phase 14 before closeout if the browser harness gains
   multi-page persistent-context and IndexedDB failure injection sooner.
+
+## Phase 3 Findings
+
+### TSA-P03-001: First-run classification ignores durable table families
+
+- State: Done.
+- Severity: Critical.
+- Category: C.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all nineteen `databaseInitialization.test.ts` cases.
+- Production owner: `assessDatabaseInitialization()` before default seeding.
+- Protected contract or plausible defect: malformed/missing settings plus
+  collection, plugin, asset, memory, operation, or future user-state rows could
+  be classified as fresh and overwritten by initialization.
+- Evidence: the former query checked only characters, chats, messages, revision,
+  and events. Real-SQLite counterexamples now cover missing/malformed settings
+  with collection, plugin, storage, asset, and unknown future tables.
+- Companion/overlap analysis: the missing-database filesystem guard runs before
+  SQLite creation; it cannot replace row-level damaged-database classification.
+- Action and rollback: discover every nontechnical SQLite table and fail closed
+  on any row; separately fence positive revision/projection epochs.
+- Validation: classifier 19/19, initialize integration 3/3, and server typecheck
+  passed.
+- Count delta: twelve cases added; no file delta.
+- Revisit condition: update the explicit technical-row exemption only when a
+  fresh schema intentionally seeds another non-user table.
+
+### TSA-P03-002: Append-only generation accepts a stale same-length prefix
+
+- State: Done.
+- Severity: High.
+- Category: C, with an F generation companion.
+- Decision: Strengthen, then Keep.
+- Tests/cases: 28 message-store cases plus the generation concurrency companion.
+- Production owner: `appendActiveChatMessageTail()` and assembly persistence.
+- Protected contract or plausible defect: a concurrent same-length transcript
+  edit could receive a tail derived from stale initial messages because the fast
+  path checked only active-row count.
+- Evidence: the real-SQLite counterexample replaces the prefix without changing
+  its length. A route-level embedding pause permits a concurrent edit and proves
+  the stale tail is rejected while the newer transcript remains.
+- Companion/overlap analysis: generic diff protects edit/truncate paths; the
+  append fast path deliberately bypasses it and therefore needs its own prefix
+  identity proof.
+- Action and rollback: compare the live semantic transcript with the expected
+  assembly-start prefix before any tail INSERT, retaining prefix rowids,
+  alternates, and zero generic-diff work.
+- Validation: focused three-file suite passed 241/241 and server typecheck passed.
+- Count delta: one category-C case and one category-F companion added.
+- Revisit condition: replace the semantic read only with an equally strong
+  stored prefix certificate.
+
+### TSA-P03-003: Module lorebook drafts ignore authoritative projections
+
+- State: Done.
+- Severity: High.
+- Category: C.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 102 `lorebookBridge.svelte.test.ts` cases.
+- Production owner: module lorebook pending replacements and collection epochs.
+- Protected contract or plausible defect: a queued module draft could dispatch
+  after authoritative module hydration replaced its optimistic baseline.
+- Evidence: global, character, and chat scopes captured projection epochs;
+  module scopes returned a sentinel whose change check was always false. The
+  new case projects authoritative module content before debounce settlement and
+  requires no stale command.
+- Companion/overlap analysis: script definitions already fence module
+  projections; lorebook ownership and payloads require their own bridge proof.
+- Action and rollback: capture the modules collection epoch and apply the same
+  stale-projection dispatch guard used by other lorebook scopes.
+- Validation: 102/102 focused lorebook bridge cases passed.
+- Count delta: one case added; no file delta.
+- Revisit condition: move to a per-module row epoch if module hydration becomes
+  independently addressable.
+
+### TSA-P03-004: Bridge lifecycle teardown is not idempotent
+
+- State: Done.
+- Severity: Medium.
+- Category: C.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all three `bridgeFlush.test.ts` cases.
+- Production owner: shared pagehide/visibility keepalive flush listeners.
+- Protected contract or plausible defect: invoking one consumer's cleanup twice
+  could decrement the global reference count twice and detach listeners still
+  owned by another active consumer.
+- Evidence: the former returned closure had no per-handle stopped flag. A
+  two-owner counterexample double-stops the first handle, proves the second still
+  flushes, and then proves final teardown removes both listeners.
+- Companion/overlap analysis: individual bridge suites own payload/rollback;
+  this file uniquely owns physical listener sharing.
+- Action and rollback: make each teardown closure idempotent.
+- Validation: 3/3 focused lifecycle-flush cases passed.
+- Count delta: one case added; no file delta.
+- Revisit condition: none unless listener ownership moves to a shared lifecycle
+  registry.
+
+### TSA-P03-005: Ordinary transaction and DELETE replay claims omit races
+
+- State: Done.
+- Severity: High.
+- Category: C.
+- Decision: Strengthen, then Keep.
+- Tests/cases: 222 broad command cases, 12 receipt cases, and all 30 durable
+  DELETE matrix cases.
+- Production owner: `BEGIN IMMEDIATE` command mutations, persisted/live events,
+  transactional receipts, and replay pre-handler.
+- Protected contract or plausible defect: two ordinary same-base commands could
+  both apply, event persistence could fail after domain state advanced, or a
+  retried destructive request could execute again instead of replaying its
+  original receipt.
+- Evidence: the new race produces exactly one 200 and one 409 with one state,
+  revision, event, and receipt. A trigger-backed event failure returns 500 and
+  leaves none of those effects. Every DELETE family now reuses its first
+  mutation ID and requires an identical response with no second effect.
+- Companion/overlap analysis: initialization concurrency, receipt unit cases,
+  and semantic second-delete intents protect different transaction boundaries.
+- Action and rollback: retain the exact negative side-effect and physical
+  receipt/event assertions.
+- Validation: focused transaction rows, 30/30 DELETE cases, and the 580-case
+  Phase 3 Fastify batch passed.
+- Count delta: two command cases added; DELETE matrix count unchanged.
+- Revisit condition: extend the race template when a command bypasses the shared
+  mutation transaction.
+
+### TSA-P03-006: Mutation budget discovery is regex-shaped
+
+- State: Done.
+- Severity: Medium.
+- Category: C.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all nine `commandMutationBudget.test.ts` cases.
+- Production owner: runtime mutation-path to physical-table budget registry.
+- Protected contract or plausible defect: double quotes, templates, or
+  conditional shared-table references could evade the source regex and leave a
+  runtime path without a review gate.
+- Evidence: the AST counterexample covers literal, template, table, conditional,
+  and intentional pass-through forms; complete production discovery still
+  equals the gate map.
+- Companion/overlap analysis: runtime metric cases prove selected routes; the
+  static oracle uniquely proves registry completeness over all source owners.
+- Action and rollback: use TypeScript syntax nodes rather than substring forms.
+- Validation: 9/9 focused budget cases passed.
+- Count delta: one case added; no file delta.
+- Revisit condition: move the registry to production types if every emitter can
+  share a closed union without circular ownership.
+
+### TSA-P03-007: Receipt migration omits its replay payload oracle
+
+- State: Done.
+- Severity: Medium.
+- Category: C.
+- Decision: Strengthen, then Keep.
+- Tests/cases: the v24 receipt migration within all nineteen `db.test.ts` cases.
+- Production owner: receipt lineage migration and replay response preservation.
+- Protected contract or plausible defect: migration could retain the receipt key
+  and metadata while losing or changing the response required for replay.
+- Evidence: the fixture inserted `response_json` but the post-migration SELECT
+  omitted it. The test now asserts the exact persisted event/extra response.
+- Companion/overlap analysis: current-schema replay tests cannot prove upgrade
+  preservation from the v24 table shape.
+- Action and rollback: keep the physical payload assertion with the migration.
+- Validation: 19/19 focused schema/migration cases passed.
+- Count delta: no case or file delta.
+- Revisit condition: extend exact payload checks with any future receipt schema
+  migration.
+
+### TSA-P03-008: Historical and visible persistence fidelity remains bounded
+
+- State: Deferred with retained owners and explicit claim limits.
+- Severity: Medium.
+- Category: C, with Phase 13/14 horizontal ownership.
+- Decision: Keep current evidence; consolidate/add only at the revisit gate.
+- Tests/cases: migration schemas, repeated range/bridge matrices, stable-ID
+  editor paths, and visible multi-resource rollback companions.
+- Production owner: real historical database upgrades, transient duplicate/index
+  fail-closed behavior, mounted rollback paint, and multi-step browser replay.
+- Protected contract or plausible defect: synthetic schemas may miss production
+  era combinations; a transient reused editor row or duplicate owner remains
+  less faithful than stable-ID APIs; mocked bridge outcomes do not render every
+  optimistic/rollback state; repeated harnesses can drift.
+- Evidence: current server command paths repair module IDs and reject ambiguous
+  owners, so the exploration-only duplicate/index risks were not promoted to
+  demonstrated High defects. Existing bridge tests prove resource-state
+  ownership and rollback, and Phase 2 browser journeys prove generic durable
+  replay, but neither closes these narrower fidelity gaps.
+- Companion/overlap analysis: no same-layer owner is redundant; consolidation
+  must retain domain payload, target, and physical-row distinctions.
+- Action and rollback: add tracked historical SQLite fixtures when failures are
+  available, prefer stable-ID editor APIs/fail-closed lookup, add representative
+  mounted rollback and multi-step browser apply/replay, and consolidate only the
+  generic deferred/receipt harness layers.
+- Validation: all 52 Phase 3 owners pass 1,583/1,583 focused cases.
+- Count delta: none in the deferred item.
+- Revisit condition: Phase 13 cross-suite consolidation/addition review, then a
+  mandatory Phase 14 residual check before closeout.

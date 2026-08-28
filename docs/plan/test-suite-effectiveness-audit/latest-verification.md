@@ -500,3 +500,67 @@ All eight new actionable Phase 2 findings are done; `TSA-P02-009` records the
 bounded Medium browser-storage/cache residuals and their Phase 13/14 revisit
 condition. Full historical compatibility remains blocked only by the missing
 exact pinned worktree; no historical claim or golden was changed.
+
+## Phase 3 Closeout
+
+Phase 3 reviewed all 52 category-C owners and their 1,565 opening cases.
+Eighteen counterexamples and transaction/lifecycle cases were added without a
+file or category-count change, bringing category C to 1,583 cases and the live
+tracked total from 10,009 to 10,027. All 52 owners retain category C with
+`Keep` dispositions. The complete inventory therefore records 103 `Keep`, one
+`Reclassify`, and 595 pending file dispositions.
+
+The remediation fails closed when durable SQLite state survives without valid
+settings metadata, validates append-only message prefixes semantically, fences
+debounced module lorebook projections by epoch, makes shared bridge teardown
+idempotent, proves DELETE receipt replay across every route family, parses
+mutation budgets through the TypeScript AST, exercises ordinary command races
+and event-failure rollback, and preserves migrated receipt response payloads.
+
+```sh
+pnpm exec vitest run \
+  src/ts/character/characterBridge.lifecycle.test.ts \
+  src/ts/character/moduleLorebookProjection.test.ts \
+  src/ts/process/__tests__/generation.chat.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/commandMutationBudget.test.ts \
+  server/fastify/__tests__/commands.test.ts \
+  server/fastify/__tests__/dbMigrationV24.test.ts \
+  server/fastify/__tests__/deleteMutationRoutes.test.ts \
+  server/fastify/__tests__/databaseStateClassification.test.ts \
+  server/fastify/__tests__/initDatabase.test.ts \
+  server/fastify/__tests__/messageStore.test.ts
+pnpm exec vitest run --config server/fastify/vitest.load.config.ts \
+  server/fastify/__tests__/generation-load.test.ts
+pnpm test:frontend:run
+pnpm test:server
+pnpm build:smoke
+pnpm exec playwright test -c playwright.fastify-smoke.config.ts \
+  server/fastify/browser-smoke/rerollSwipePersistence.spec.ts \
+  server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts \
+  -g 'rerolled candidates|durable recovery'
+pnpm test:affected --dry-run
+pnpm check:test-inventories
+pnpm format:check
+git diff --check
+```
+
+The exact Phase 3 frontend slice passed 1,003/1,003 cases across 30 owners in
+11.18s, and its Fastify slice passed 580/580 across 22 owners in 14.67s. The
+complete frontend lane passed 6,677/6,677 across 538 files in 74.58s. The
+complete Fastify lane passed 3,316 cases across 154 files in 23.62s with the one
+intentional direct-only Realm scale skip, and the isolated generation load
+harness passed 38/38 under one worker in 6.78s.
+
+The production smoke build passed in 11.17s with the existing allowed CSS and
+bundle-size diagnostics. Both selected browser journeys passed in 4.1s. The
+affected dry run selected inventories, frontend, performance, and server lanes.
+The checked manifests pass at 699 test files, 253 standalone support owners,
+and 65 mixed production seams.
+
+Seven actionable Phase 3 findings are done. `TSA-P03-008` records the bounded
+Medium residuals for unavailable historical fixtures, stable-ID fail-close
+hardening, mounted-component rollback, multi-step browser journeys, and later
+cross-suite consolidation. Full historical compatibility remains blocked only
+by the missing exact pinned worktree; no historical claim or golden was
+changed.

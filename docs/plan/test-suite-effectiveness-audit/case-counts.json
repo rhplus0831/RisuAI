@@ -123,7 +123,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/commandMutationBudget.test.ts": {
-      "cases": 8,
+      "cases": 9,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -138,7 +138,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/commands.test.ts": {
-      "cases": 220,
+      "cases": 222,
       "skipped": 0,
       "parameterizedRows": 2
     },
@@ -163,9 +163,9 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/databaseInitialization.test.ts": {
-      "cases": 7,
+      "cases": 19,
       "skipped": 0,
-      "parameterizedRows": 5
+      "parameterizedRows": 16
     },
     "server/fastify/__tests__/db.test.ts": {
       "cases": 19,
@@ -213,7 +213,7 @@
       "parameterizedRows": 10
     },
     "server/fastify/__tests__/generation.chat.test.ts": {
-      "cases": 174,
+      "cases": 175,
       "skipped": 0,
       "parameterizedRows": 32
     },
@@ -438,7 +438,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/messageStore.test.ts": {
-      "cases": 27,
+      "cases": 28,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -583,9 +583,9 @@
       "parameterizedRows": 14
     },
     "server/fastify/__tests__/realmImport.test.ts": {
-      "cases": 27,
+      "cases": 26,
       "skipped": 1,
-      "parameterizedRows": 1
+      "parameterizedRows": 0
     },
     "server/fastify/__tests__/repositoryWriterKit.test.ts": {
       "cases": 11,
@@ -2898,7 +2898,7 @@
       "parameterizedRows": 0
     },
     "src/ts/server/bridgeFlush.test.ts": {
-      "cases": 2,
+      "cases": 3,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -3038,7 +3038,7 @@
       "parameterizedRows": 11
     },
     "src/ts/server/lorebookBridge.svelte.test.ts": {
-      "cases": 101,
+      "cases": 102,
       "skipped": 0,
       "parameterizedRows": 0
     },
