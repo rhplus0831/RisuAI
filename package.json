@@ -39,6 +39,7 @@
     "test:gates:perf": "cross-env RISU_TEST_INCLUDE_GATES=true vitest run src/ts/__tests__/renderCostHarness.test.ts src/ts/__tests__/sendCloneCountProbe.test.ts",
     "test:server": "vitest run --config server/fastify/vitest.config.ts",
     "test:compat-harness": "tsx test/compat-harness/run.ts",
+    "test:compat-current": "tsx test/compat-harness/run.ts --current-only",
     "test:smoke": "pnpm smoke:fastify-browser",
     "test:all": "tsx util/test-all.ts",
     "coverage:all": "sh -c 'pnpm coverage:frontend; frontend=$?; pnpm coverage:backend; backend=$?; exit $((frontend || backend))'",

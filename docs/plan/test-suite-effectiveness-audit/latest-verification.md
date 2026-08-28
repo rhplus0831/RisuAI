@@ -335,3 +335,19 @@ checks these paths.
 The Phase 0 aggregate's successful normal smoke execution produced both
 `fast-bootstrap-results/phase7-integration.json` and `.txt`, confirming the
 artifact path before workflow enforcement changed.
+
+### Baseline-independent compatibility
+
+`TSA-P01-007` is done. Current/cluster assurance no longer depends on the absent
+historical worktree, and golden mismatches preserve actual JSON under ignored
+`fast-bootstrap-results/compat-harness/` diagnostics.
+
+```sh
+pnpm exec vitest run util/affected-tests.test.ts
+pnpm test:compat-current
+```
+
+Results: affected policy passed 15/15; current compatibility passed 18/18 in
+5.56s and matched 16 matrix cells plus two healthy cluster regressions. The full
+differential remains blocked by the exact Phase 0 prerequisite; no golden was
+updated.

@@ -17,9 +17,9 @@ in [`latest-verification.md`](latest-verification.md).
   affected, aggregate, coverage, and CI checks are live. The protocol import
   policy now uses recursive AST evidence. No product behavior or existing
   product test has been removed.
-- Blockers: the opt-in compatibility harness cannot run because its pinned
-  external worktree is absent. This does not block Phase 1 slices that do not
-  claim compatibility evidence.
+- Blockers: the full differential compatibility harness cannot run because its
+  pinned external worktree is absent. The new current-only owner is green; the
+  blocker applies only to historical baseline claims.
 - Next action: audit the exact frontend runner/config/routing/manifest owners in
   P01-S01, including the live TSV under `.archived-docs`.
 
@@ -34,12 +34,12 @@ in [`latest-verification.md`](latest-verification.md).
 | `test:all` ordinary frontend         | 530: 194 N / 17 S / 319 D                    |
 | Fastify Vitest                       | 154 files                                    |
 | Browser smoke                        | 7 files                                      |
-| Compatibility harness                | Opt-in; outside `test:all` and file count     |
+| Compatibility harness                | Current-only green; full differential blocked |
 | Collected cases                      | 9,985 total; 1 direct-only skip; 1,261 parameterized rows |
 | Support owners                       | 253 standalone; 64 mixed production seams   |
 | Primary-category assignments         | 699 of 699 ratified                          |
 | Complete file dispositions           | 8 Keep                                       |
-| Findings                             | 7 done / 1 confirmed                         |
+| Findings                             | 8 done / 1 confirmed                         |
 
 The 698-file rows preserve the plan-creation anchor. The live counts, support
 owners, runtime evidence, and category totals are checked by the Phase 0

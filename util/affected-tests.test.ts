@@ -184,7 +184,10 @@ describe('affected test planning', () => {
   it('selects the opt-in compatibility harness independently', () => {
     const result = plan([{ path: 'test/compat-harness/current.runner.ts', status: 'M' }])
 
-    expect(result.commands).toEqual([{ label: 'compatibility harness', args: ['test:compat-harness'] }])
+    expect(result.commands).toEqual([{ label: 'current compatibility harness', args: ['test:compat-current'] }])
+    expect(result.notes).toContain(
+      'Run the full pinned compatibility harness when its external baseline worktree is available.',
+    )
   })
 
   it('widens aggregate and affected-runner changes to the full quality suite', () => {

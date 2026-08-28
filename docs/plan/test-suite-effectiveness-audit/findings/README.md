@@ -2,7 +2,7 @@
 
 Date: 2026-08-29
 
-Status: Active; seven findings are done and one remains confirmed.
+Status: Active; eight findings are done and one remains confirmed.
 
 This directory owns durable finding and decision records for the audit. Phase 0
 will decide whether the working ledger remains in this index, splits into
@@ -301,3 +301,33 @@ Every finding records:
 - Count delta: none.
 - Revisit condition: any browser artifact filename or smoke discovery change
   must update workflow ownership and the parity assertion together.
+
+### TSA-P01-007: Missing baseline masks current compatibility evidence
+
+- State: Done; full differential remains blocked by its pinned prerequisite.
+- Severity: Medium.
+- Category: A, with F seams.
+- Decision: Strengthen compatibility orchestration.
+- Tests/cases: 16 current matrix cells and 2 cluster regressions in
+  `test/compat-harness/current.runner.ts` and `cluster10.runner.ts`.
+- Production owner: current Fastify prompt/generation composition, cluster
+  replay/continue regressions, and compatibility golden diagnostics.
+- Protected contract or plausible defect: the missing external baseline stopped
+  the orchestrator before current-only evidence ran; golden mismatches then
+  deleted their only actual artifact during scratch cleanup.
+- Evidence: direct current-config execution passed 18/18 independently, while
+  `test:compat-harness` failed at `assertBaseline()` before either current
+  runner. The old mismatch path printed only the expected golden location.
+- Companion/overlap analysis: current goldens cannot prove the historical
+  differential, so the pinned full command and all four golden owners remain.
+  They do provide meaningful assurance when the external worktree is absent.
+- Action and rollback: add `test:compat-current`, make affected selection use
+  it with an explicit full-harness note, and preserve mismatch actuals under
+  ignored diagnostics. Golden updates still require the explicit update env.
+- Validation: `pnpm test:compat-current` passed 18/18 in 5.56s and matched 16
+  current cells plus both healthy cluster regressions; affected policy passed
+  15/15.
+- Count delta: none; compatibility cases remain outside the 699-file/9,985-case
+  tracked universe.
+- Revisit condition: run the full differential when the exact pinned worktree
+  and dependencies exist; never substitute a different baseline.

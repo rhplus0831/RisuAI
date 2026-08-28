@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import type {
@@ -14,7 +14,13 @@ const ROOT = resolve(import.meta.dirname, '../..')
 const BASELINE_ROOT = '/home/codex/risu-baseline-71c476e9c'
 const BASELINE_COMMIT = '71c476e9c86263fe907105b011ca4dde0a619d66'
 const GOLDEN_DIR = resolve(import.meta.dirname, 'golden')
+const DIAGNOSTIC_DIR = resolve(ROOT, 'fast-bootstrap-results/compat-harness')
 const UPDATE = process.env.UPDATE_COMPAT_HARNESS === '1'
+const args = process.argv.slice(2)
+if (args.some((arg) => arg !== '--current-only')) {
+  throw new Error(`Unknown compatibility harness option: ${args.find((arg) => arg !== '--current-only')}`)
+}
+const CURRENT_ONLY = args.includes('--current-only')
 
 function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(path, 'utf8')) as T
@@ -105,42 +111,60 @@ function compareOrUpdate(name: string, actual: unknown): boolean {
   if (!existsSync(path)) throw new Error(`Missing golden ${path}; run with UPDATE_COMPAT_HARNESS=1`)
   const expected = readJson<unknown>(path)
   if (equal(expected, actual)) return true
-  console.error(`Golden mismatch: ${path}`)
+  mkdirSync(DIAGNOSTIC_DIR, { recursive: true })
+  const actualPath = resolve(DIAGNOSTIC_DIR, `actual-${name}`)
+  writeFileSync(actualPath, pretty(actual), 'utf8')
+  console.error(`Golden mismatch: ${path}\nActual artifact: ${actualPath}`)
   return false
 }
 
-assertBaseline()
+if (!CURRENT_ONLY) assertBaseline()
 const scratch = mkdtempSync(resolve(tmpdir(), 'risu-compat-harness-'))
 try {
   const baselinePath = resolve(scratch, 'baseline.json')
   const currentPath = resolve(scratch, 'current.json')
   const cluster10Path = resolve(scratch, 'cluster10.json')
-  runVitest(['exec', 'vitest', 'run', '--config', 'test/compat-harness/baseline.vitest.config.ts', '--reporter=dot'], {
-    COMPAT_HARNESS_BASELINE_OUTPUT: baselinePath,
-  })
+  if (!CURRENT_ONLY) {
+    runVitest(
+      ['exec', 'vitest', 'run', '--config', 'test/compat-harness/baseline.vitest.config.ts', '--reporter=dot'],
+      { COMPAT_HARNESS_BASELINE_OUTPUT: baselinePath },
+    )
+  }
   runVitest(['exec', 'vitest', 'run', '--config', 'test/compat-harness/current.vitest.config.ts', '--reporter=dot'], {
     COMPAT_HARNESS_CURRENT_OUTPUT: currentPath,
     COMPAT_HARNESS_CLUSTER10_OUTPUT: cluster10Path,
   })
 
-  const baseline = readJson<CompatSideArtifact>(baselinePath)
   const current = readJson<CompatSideArtifact>(currentPath)
   const cluster10 = readJson<Cluster10Artifact>(cluster10Path)
-  const diff = buildDiff(baseline, current)
-  const results = [
-    compareOrUpdate('baseline.json', baseline),
-    compareOrUpdate('current.json', current),
-    compareOrUpdate('diff.json', diff),
-    compareOrUpdate('cluster10.json', cluster10),
-  ]
-  if (results.some((result) => !result)) {
-    throw new Error(
-      'Compatibility golden mismatch. Inspect the runners or update intentionally with UPDATE_COMPAT_HARNESS=1.',
+  if (CURRENT_ONLY) {
+    const results = [compareOrUpdate('current.json', current), compareOrUpdate('cluster10.json', cluster10)]
+    if (results.some((result) => !result)) {
+      throw new Error(
+        'Current compatibility golden mismatch. Inspect fast-bootstrap-results/compat-harness or update intentionally with UPDATE_COMPAT_HARNESS=1.',
+      )
+    }
+    console.log(
+      `Current compatibility harness ${UPDATE ? 'updated' : 'matched'}: ${current.cells.length} cells; cluster 10 regressions healthy=${cluster10.replayCapCanonicalTerminal.healthy && cluster10.retriedExtendContinueDuplicate.healthy}.`,
+    )
+  } else {
+    const baseline = readJson<CompatSideArtifact>(baselinePath)
+    const diff = buildDiff(baseline, current)
+    const results = [
+      compareOrUpdate('baseline.json', baseline),
+      compareOrUpdate('current.json', current),
+      compareOrUpdate('diff.json', diff),
+      compareOrUpdate('cluster10.json', cluster10),
+    ]
+    if (results.some((result) => !result)) {
+      throw new Error(
+        'Compatibility golden mismatch. Inspect fast-bootstrap-results/compat-harness or update intentionally with UPDATE_COMPAT_HARNESS=1.',
+      )
+    }
+    console.log(
+      `Compatibility harness ${UPDATE ? 'updated' : 'matched'}: ${diff.summary.totalCells} cells, ${diff.summary.divergentCells} baseline/current divergences; cluster 10 regressions healthy=${cluster10.replayCapCanonicalTerminal.healthy && cluster10.retriedExtendContinueDuplicate.healthy}.`,
     )
   }
-  console.log(
-    `Compatibility harness ${UPDATE ? 'updated' : 'matched'}: ${diff.summary.totalCells} cells, ${diff.summary.divergentCells} baseline/current divergences; cluster 10 regressions healthy=${cluster10.replayCapCanonicalTerminal.healthy && cluster10.retriedExtendContinueDuplicate.healthy}.`,
-  )
 } finally {
   rmSync(scratch, { recursive: true, force: true })
 }

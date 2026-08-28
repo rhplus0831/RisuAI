@@ -245,7 +245,8 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
   }
 
   if (compatHarnessChanged) {
-    commands.push({ label: 'compatibility harness', args: ['test:compat-harness'] })
+    commands.push({ label: 'current compatibility harness', args: ['test:compat-current'] })
+    notes.push('Run the full pinned compatibility harness when its external baseline worktree is available.')
   }
 
   if (commands.length === 0) {
