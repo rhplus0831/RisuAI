@@ -19,6 +19,38 @@ describe('Trigger V2 imports', () => {
     expect(parseTriggerV2Import(input)).toBeNull()
   })
 
+  it.each([
+    ['null condition', { conditions: [null] }],
+    ['array condition', { conditions: [[]] }],
+    ['condition missing type', { conditions: [{}] }],
+    ['condition with non-string type', { conditions: [{ type: 1 }] }],
+    ['null effect', { effect: [null] }],
+    ['array effect', { effect: [[]] }],
+    ['effect missing type', { effect: [{}] }],
+    ['effect with non-string type', { effect: [{ type: false }] }],
+    ['effect with non-number indent', { effect: [{ type: 'v2Future', indent: '0' }] }],
+  ])('rejects a malformed nested %s', (_label, overrides) => {
+    expect(
+      parseTriggerV2Import(
+        JSON.stringify([{ comment: 'Imported', type: 'manual', conditions: [], effect: [], ...overrides }]),
+      ),
+    ).toBeNull()
+  })
+
+  it('preserves forward-compatible nested types and fields', () => {
+    const input = [
+      {
+        comment: 'Future trigger',
+        type: 'future-mode',
+        conditions: [{ type: 'future-condition', futureFlag: true }],
+        effect: [{ type: 'v2FutureEffect', indent: 2, futurePayload: { enabled: true } }],
+        futureTriggerField: 'preserved',
+      },
+    ]
+
+    expect(parseTriggerV2Import(JSON.stringify(input))).toEqual(input)
+  })
+
   it('surfaces malformed JSON to the caller', () => {
     expect(() => parseTriggerV2Import('{')).toThrow()
   })
