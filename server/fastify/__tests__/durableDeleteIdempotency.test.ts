@@ -309,13 +309,21 @@ const DURABLE_DELETE_CASES: DeleteCase[] = [
 
 describe('durable DELETE idempotency', () => {
   it.each(DURABLE_DELETE_CASES)('$name accepts a second intent after the target was removed', async (testCase) => {
-    const first = await deleteCommand(testCase, revision, `${testCase.name.replaceAll(' ', '-')}-first`)
+    const firstMutationId = `${testCase.name.replaceAll(' ', '-')}-first`
+    const first = await deleteCommand(testCase, revision, firstMutationId)
     expect(first.statusCode, first.body).toBe(200)
     expect(first.json()).toMatchObject({
       revision: revision + 1,
       event: { ...testCase.event, revision: revision + 1 },
       ...testCase.extra,
     })
+
+    const replay = await deleteCommand(testCase, first.json().revision, firstMutationId)
+    expect(replay.statusCode, replay.body).toBe(200)
+    expect(replay.json()).toEqual(first.json())
+    expect(readRevision()).toBe(revision + 1)
+    expect(receiptCount()).toBe(1)
+    expect(harness.commandEvents.list()).toHaveLength(1)
 
     const second = await deleteCommand(testCase, first.json().revision, `${testCase.name.replaceAll(' ', '-')}-second`)
     expect(second.statusCode, second.body).toBe(200)
