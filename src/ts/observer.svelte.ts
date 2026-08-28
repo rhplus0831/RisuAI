@@ -247,13 +247,13 @@ export function stopObserveDom(): void {
     clearTimeout(bodyRetryTimer)
     bodyRetryTimer = null
   }
+  stopCurrentBgm()
+  observedControlNodes = new WeakSet()
 }
 
 export function _resetDomObserverForTesting() {
   stopObserveDom()
   observedCodeBlocks = new WeakSet()
-  observedControlNodes = new WeakSet()
-  stopCurrentBgm()
 }
 
 export function _getBgmElementForTesting() {

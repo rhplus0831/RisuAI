@@ -304,6 +304,67 @@ describe('startObserveDom', () => {
     expect(_getBgmElementForTesting()).toBeNull()
   })
 
+  it('stops active BGM when the optional DOM runtime is torn down', () => {
+    const play = vi.fn()
+    const pause = vi.fn()
+    const remove = vi.fn()
+    const AudioMock = vi.fn(function (this: {
+      volume: number
+      addEventListener: () => void
+      play: () => void
+      pause: () => void
+      remove: () => void
+    }) {
+      this.volume = 0
+      this.addEventListener = () => {}
+      this.play = play
+      this.pause = pause
+      this.remove = remove
+    })
+    vi.stubGlobal('Audio', AudioMock)
+
+    const ctrl = document.createElement('div')
+    ctrl.setAttribute('risu-ctrl', 'bgm___auto___/teardown-bgm.mp3')
+    document.body.appendChild(ctrl)
+    startObserveDom()
+
+    stopObserveDom()
+
+    expect(pause).toHaveBeenCalledOnce()
+    expect(remove).toHaveBeenCalledOnce()
+    expect(_getBgmElementForTesting()).toBeNull()
+  })
+
+  it('cancels a pending autoplay retry when the optional DOM runtime is torn down', async () => {
+    const play = vi.fn().mockRejectedValueOnce(new DOMException('Autoplay blocked', 'NotAllowedError'))
+    const AudioMock = vi.fn(function (this: {
+      volume: number
+      addEventListener: () => void
+      play: () => Promise<void>
+      pause: () => void
+      remove: () => void
+    }) {
+      this.volume = 0
+      this.addEventListener = () => {}
+      this.play = play
+      this.pause = vi.fn()
+      this.remove = vi.fn()
+    })
+    vi.stubGlobal('Audio', AudioMock)
+
+    const ctrl = document.createElement('div')
+    ctrl.setAttribute('risu-ctrl', 'bgm___auto___/blocked-teardown-bgm.mp3')
+    document.body.appendChild(ctrl)
+    startObserveDom()
+    await Promise.resolve()
+
+    stopObserveDom()
+    document.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+
+    expect(AudioMock).toHaveBeenCalledOnce()
+    expect(_getBgmElementForTesting()).toBeNull()
+  })
+
   it('chat switch cleanup pauses current BGM and lets the next control attach', async () => {
     const play = vi.fn()
     const pause = vi.fn()
