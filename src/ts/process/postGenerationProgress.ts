@@ -22,6 +22,10 @@ const MAX_ACTIVE_POST_GENERATION_PROGRESS = 16
 export const postGenerationProgress = writable<ActivePostGenerationProgress[]>([])
 
 const activeSessions = new Map<string, PostGenerationProgressSession>()
+let phaseRunsBySession = new WeakMap<
+  PostGenerationProgressSession,
+  Map<PostGenerationProgressEvent['phase'], { runSeq: number; terminal: boolean }>
+>()
 
 function targetKey(target: PostGenerationProgressTarget): string {
   return JSON.stringify([target.characterId, target.chatId])
@@ -58,6 +62,7 @@ export function beginPostGenerationProgress(target: PostGenerationProgressTarget
   const key = targetKey(target)
   activeSessions.delete(key)
   activeSessions.set(key, session)
+  phaseRunsBySession.set(session, new Map())
   removeProgressForTarget(target)
   trimActiveSessions()
   return session
@@ -66,12 +71,14 @@ export function beginPostGenerationProgress(target: PostGenerationProgressTarget
 export function clearPostGenerationProgress(session?: PostGenerationProgressSession): void {
   if (!session) {
     activeSessions.clear()
+    phaseRunsBySession = new WeakMap()
     postGenerationProgress.set([])
     return
   }
   const key = targetKey(session.target)
   if (activeSessions.get(key) !== session) return
   activeSessions.delete(key)
+  phaseRunsBySession.delete(session)
   removeProgressForTarget(session.target)
 }
 
@@ -79,9 +86,29 @@ export function updatePostGenerationProgress(
   session: PostGenerationProgressSession,
   event: PostGenerationProgressEvent,
 ): void {
-  if (!touchSession(session)) return
+  const key = targetKey(session.target)
+  if (activeSessions.get(key) !== session) return
+  const phaseRuns = phaseRunsBySession.get(session) ?? new Map()
+  phaseRunsBySession.set(session, phaseRuns)
+  const currentRun = phaseRuns.get(event.phase)
+  if (currentRun && (event.runSeq < currentRun.runSeq || (event.runSeq === currentRun.runSeq && currentRun.terminal))) {
+    return
+  }
+  phaseRuns.set(event.phase, {
+    runSeq: event.runSeq,
+    terminal: TERMINAL_PROGRESS_STATUSES.has(event.status),
+  })
+  touchSession(session)
   if (TERMINAL_PROGRESS_STATUSES.has(event.status)) {
-    clearPostGenerationProgress(session)
+    postGenerationProgress.update((entries) =>
+      entries.filter(
+        (entry) =>
+          entry.target.characterId !== session.target.characterId ||
+          entry.target.chatId !== session.target.chatId ||
+          entry.phase !== event.phase ||
+          entry.runSeq !== event.runSeq,
+      ),
+    )
     return
   }
 

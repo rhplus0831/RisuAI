@@ -17,12 +17,13 @@ function updateProgress(
   session: PostGenerationProgressSession,
   ownerName: string,
   status: 'started' | 'running' | 'finished' | 'error' = 'running',
+  runSeq = 1,
 ): void {
   updatePostGenerationProgress(session, {
     type: 'post_generation_progress',
     phase: 'onOutput',
     status,
-    runSeq: 1,
+    runSeq,
     ownerType: 'module',
     ownerName,
     llmCallCount: status === 'running' ? 1 : 0,
@@ -51,7 +52,7 @@ describe('post-generation progress state', () => {
     )
   })
 
-  it('keeps simultaneous chats independent and rejects events after one finishes', () => {
+  it('keeps simultaneous chats independent and fences terminal and stale run events', () => {
     const first = beginPostGenerationProgress({ characterId: 'char-1', chatId: 'chat-1' })
     const second = beginPostGenerationProgress({ characterId: 'char-2', chatId: 'chat-2' })
     updateProgress(first, 'First Script')
@@ -77,6 +78,24 @@ describe('post-generation progress state', () => {
         ownerName: 'Second Script',
       }),
     ])
+
+    updateProgress(first, 'Second First-Chat Script', 'started', 2)
+    updateProgress(first, 'Late First Script', 'running', 1)
+    expect(get(postGenerationProgress)).toEqual([
+      expect.objectContaining({
+        target: { characterId: 'char-2', chatId: 'chat-2' },
+        ownerName: 'Second Script',
+      }),
+      expect.objectContaining({
+        target: { characterId: 'char-1', chatId: 'chat-1' },
+        ownerName: 'Second First-Chat Script',
+        runSeq: 2,
+      }),
+    ])
+
+    clearPostGenerationProgress(first)
+    updateProgress(first, 'After Session Clear', 'running', 3)
+    expect(get(postGenerationProgress).some((entry) => entry.target.chatId === 'chat-1')).toBe(false)
   })
 
   it('bounds retained live targets and invalidates the least-recently-active session', () => {
