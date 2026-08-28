@@ -12,6 +12,7 @@ describe('affected test planning', () => {
     expect(parseNameStatus('M\0src/a.ts\0D\0src/old.ts\0R100\0src/before.ts\0src/after.ts\0')).toEqual([
       { path: 'src/a.ts', status: 'M' },
       { path: 'src/old.ts', status: 'D' },
+      { path: 'src/before.ts', status: 'D' },
       { path: 'src/after.ts', status: 'R' },
     ])
   })
@@ -89,6 +90,65 @@ describe('affected test planning', () => {
     const result = plan([{ path: 'package.json', status: 'M' }])
 
     expect(result.commands).toEqual([{ label: 'full quality suite', args: ['test:all'] }])
+  })
+
+  it('routes protocol sources through typecheck and both dependency-aware test lanes', () => {
+    const result = plan([{ path: 'packages/protocol/src/generationSse.ts', status: 'M' }])
+
+    expect(result.commands.map((command) => command.label)).toEqual([
+      'test inventory and routing',
+      'protocol typecheck',
+      'affected frontend tests',
+      'affected server tests',
+    ])
+    expect(
+      result.commands
+        .filter((command) => command.label.startsWith('affected'))
+        .every((command) => command.args.includes('--changed')),
+    ).toBe(true)
+  })
+
+  it('widens protocol configuration changes to the full quality suite', () => {
+    for (const file of ['packages/protocol/package.json', 'packages/protocol/tsconfig.json']) {
+      expect(plan([{ path: file, status: 'M' }]).commands).toEqual([
+        { label: 'full quality suite', args: ['test:all'] },
+      ])
+    }
+  })
+
+  it('selects shared Fastify test support and widens its deletion', () => {
+    const helper = 'server/fastify/__tests__/helpers/terminalFrameAssertions.ts'
+    const fixture = 'server/fastify/__fixtures__/risuSave/fixtures.ts'
+
+    for (const file of [helper, fixture]) {
+      expect(plan([{ path: file, status: 'M' }]).commands).toEqual([
+        {
+          label: 'affected server tests',
+          args: [
+            'exec',
+            'vitest',
+            'run',
+            '--config',
+            'server/fastify/vitest.config.ts',
+            '--changed',
+            'HEAD~1',
+            '--passWithNoTests',
+            '--bail=1',
+          ],
+        },
+      ])
+      expect(plan([{ path: file, status: 'D' }]).commands).toEqual([{ label: 'server tests', args: ['test:server'] }])
+    }
+  })
+
+  it('treats a rename away from a test path as a deletion', () => {
+    const changes = parseNameStatus('R100\0src/removed.test.ts\0docs/removed.md\0')
+
+    expect(plan(changes).commands).toEqual([
+      { label: 'test inventory and routing', args: ['check:test-inventories'] },
+      { label: 'frontend tests', args: ['test:frontend:run'] },
+      { label: 'server tests', args: ['test:server'] },
+    ])
   })
 
   it('runs a complete lane when source or tests were deleted', () => {

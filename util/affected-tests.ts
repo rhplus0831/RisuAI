@@ -71,6 +71,14 @@ function isExplicitGate(file: string): boolean {
   return performanceTestFileSet.has(file)
 }
 
+function isProtocolSource(file: string): boolean {
+  return /^packages\/protocol\/src\/.+\.ts$/.test(file) && !isFrontendTest(file)
+}
+
+function isServerTestSupport(file: string): boolean {
+  return /^server\/fastify\/(?:__tests__|__fixtures__)\/.+\.[cm]?[jt]sx?$/.test(file) && !isServerTest(file)
+}
+
 function isRootRunnerFile(file: string): boolean {
   return rootRunnerFiles.has(file) || /^vitest(?:\.[^/]+)?\.ts$/.test(file) || /^tsconfig(?:\.[^/]+)?\.json$/.test(file)
 }
@@ -109,6 +117,8 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
       file === '.npmrc' ||
       file === 'index.html' ||
       file === 'vite.config.ts' ||
+      file === 'packages/protocol/package.json' ||
+      file === 'packages/protocol/tsconfig.json' ||
       fullQualityRunnerFiles.has(file) ||
       file.startsWith('.github/'),
   )
@@ -130,20 +140,34 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
       file.startsWith('public/'),
   )
   const compatHarnessChanged = changedFiles.some((file) => file.startsWith('test/compat-harness/'))
+  const protocolSourceChanged = existing.some(({ path: file }) => isProtocolSource(file))
+  const deletedProtocolSource = deleted.some(({ path: file }) => isProtocolSource(file))
   const frontendSourceChanged = existing.some(
     ({ path: file }) =>
-      /^(?:src|util|server\/fastify\/src)\//.test(file) && !isFrontendTest(file) && !isServerTest(file),
+      (/^(?:src|util|server\/fastify\/src)\//.test(file) || isProtocolSource(file)) &&
+      !isFrontendTest(file) &&
+      !isServerTest(file),
   )
   const serverSourceChanged = existing.some(
-    ({ path: file }) => /^(?:server\/fastify\/src|src)\//.test(file) && !isFrontendTest(file) && !isServerTest(file),
+    ({ path: file }) =>
+      (/^(?:server\/fastify\/src|src)\//.test(file) || isProtocolSource(file) || isServerTestSupport(file)) &&
+      !isFrontendTest(file) &&
+      !isServerTest(file),
   )
   const deletedFrontendSource = deleted.some(({ path: file }) => /^(?:src|util|server\/fastify\/src)\//.test(file))
   const deletedServerSource = deleted.some(({ path: file }) => /^(?:server\/fastify\/src|src)\//.test(file))
+  const deletedServerTestSupport = deleted.some(({ path: file }) => isServerTestSupport(file))
   const deletedFrontendTest = deleted.some(({ path: file }) => isFrontendTest(file))
   const deletedServerTest = deleted.some(({ path: file }) => isServerTest(file))
 
-  const runFullFrontend = rootRunnerChanged || deletedFrontendSource || deletedFrontendTest
-  const runFullServer = rootRunnerChanged || serverRunnerChanged || deletedServerSource || deletedServerTest
+  const runFullFrontend = rootRunnerChanged || deletedFrontendSource || deletedProtocolSource || deletedFrontendTest
+  const runFullServer =
+    rootRunnerChanged ||
+    serverRunnerChanged ||
+    deletedServerSource ||
+    deletedProtocolSource ||
+    deletedServerTestSupport ||
+    deletedServerTest
   const runFullGates = rootRunnerChanged
   const frontendRoutingRelevant =
     runFullFrontend ||
@@ -154,6 +178,10 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
 
   if (frontendRoutingRelevant) {
     commands.push({ label: 'test inventory and routing', args: ['check:test-inventories'] })
+  }
+
+  if (protocolSourceChanged || deletedProtocolSource) {
+    commands.push({ label: 'protocol typecheck', args: ['check:protocol'] })
   }
 
   if (runFullFrontend) {
@@ -243,8 +271,9 @@ export function parseNameStatus(output: string): ChangedPath[] {
     const rawStatus = fields[index++]
     const status = rawStatus[0] as ChangeStatus
     if (status === 'R') {
-      index += 1
+      const previousPath = fields[index++]
       const renamedPath = fields[index++]
+      changes.push({ path: previousPath, status: 'D' })
       changes.push({ path: renamedPath, status })
       continue
     }

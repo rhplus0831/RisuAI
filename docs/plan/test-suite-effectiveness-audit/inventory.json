@@ -30389,30 +30389,32 @@
         "client-fastify"
       ],
       "kind": "architecture policy",
-      "dependencySignals": [],
+      "dependencySignals": [
+        "fixtures"
+      ],
       "caseCounts": {
-        "cases": 11,
+        "cases": 15,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "all 15 affected-selection planning and name-status cases",
         "valueClasses": [
-          "pending"
+          "architecture policy"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "util/affected-tests.ts changed/deleted owner routing and conservative lane widening",
+        "plausibleDefect": "Protocol sources, shared Fastify test support, or rename-away deletions select no validation lane.",
+        "risk": "Medium local false confidence until full CI catches a broken shared contract or stale inventory.",
+        "companionEvidence": "CI always runs complete lanes, while test:all remains the explicit full local fallback.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Direct counterexamples cover additions/modifications/deletions and prove protocol, helper, fixture, and rename source paths now select their owning checks.",
+        "findingId": "TSA-P01-001",
+        "severity": "Medium",
+        "action": "Retain the widened predicates and rename source-path deletion record.",
+        "validation": "15/15 focused cases passed; representative dry-run matrix and phase aggregate",
+        "state": "remediated"
       }
     },
     {

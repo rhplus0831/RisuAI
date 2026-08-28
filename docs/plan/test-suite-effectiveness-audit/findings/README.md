@@ -2,7 +2,7 @@
 
 Date: 2026-08-29
 
-Status: Active; one Phase 0 finding is done and one remains confirmed.
+Status: Active; two findings are done and one remains confirmed.
 
 This directory owns durable finding and decision records for the audit. Phase 0
 will decide whether the working ledger remains in this index, splits into
@@ -126,3 +126,37 @@ Every finding records:
 - Count delta: None.
 - Revisit condition: Phase 5 translator preset slice, or earlier if Phase 1
   identifies the responsible global/setup leak.
+
+## Phase 1 Findings
+
+### TSA-P01-001: Affected selection omits shared and deleted owners
+
+- State: Done.
+- Severity: Medium.
+- Category: A.
+- Decision: Strengthen, then Keep.
+- Tests/cases: `util/affected-tests.test.ts`, all 15 planning and parser cases.
+- Production owner: `util/affected-tests.ts` local changed/deleted-file routing.
+- Protected contract or plausible defect: protocol runtime changes, shared
+  Fastify helpers/fixtures, and the source side of a rename could select no
+  validation, allowing local handoff with a broken shared contract or stale
+  inventory.
+- Evidence: controlled plans for `packages/protocol/src/generationSse.ts`,
+  `server/fastify/__tests__/helpers/terminalFrameAssertions.ts`,
+  `server/fastify/__fixtures__/risuSave/fixtures.ts`, and a test renamed into
+  documentation all returned zero commands before remediation. Protocol package
+  and TypeScript configuration were also not conservative full-suite owners.
+- Companion/overlap analysis: CI complete lanes limit merge risk but do not make
+  a falsely empty local affected plan acceptable. `test:all` remains the manual
+  conservative fallback.
+- Action and rollback: protocol sources now select protocol typecheck plus both
+  dependency-aware lanes; protocol configuration widens to `test:all`; existing
+  Fastify support selects dependency-aware server tests and deletions select the
+  full server lane; rename parsing records the source as deleted. Revert is
+  isolated to affected-selection policy and its tests.
+- Validation: 15/15 focused cases passed. The P01-S01 representative dry-run
+  matrix and full aggregate own final phase proof.
+- Count delta: no file delta; four focused policy cases added, taking the live
+  collected total from 9,976 to 9,980.
+- Revisit condition: reopen when a new workspace package or test-support root is
+  added, or when affected routing becomes graph-generated.

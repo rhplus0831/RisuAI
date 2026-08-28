@@ -3438,7 +3438,7 @@
       "parameterizedRows": 0
     },
     "util/affected-tests.test.ts": {
-      "cases": 11,
+      "cases": 15,
       "skipped": 0,
       "parameterizedRows": 0
     },

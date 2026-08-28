@@ -248,3 +248,19 @@ passed. Affected execution passed 6,640/6,640 ordinary frontend cases, 6/6
 isolated performance cases, and 3,295 passed plus one intentional skip in the
 server lane. The file count remains 699; the added counterexample changes the
 live case total from 9,975 to 9,976.
+
+### Affected-selection remediation
+
+`TSA-P01-001` is done. Four counterexample cases now cover protocol runtime and
+configuration, shared Fastify helper/fixture changes and deletions, and the
+source side of a rename. Protocol sources select typecheck plus dependency-aware
+frontend/server execution; protocol config selects `test:all`; deleted shared
+support and rename sources conservatively widen.
+
+```sh
+pnpm exec vitest run util/affected-tests.test.ts
+```
+
+Result: 15/15 passed. The file count is unchanged; four cases take the live
+total from 9,976 to 9,980. Representative CLI dry runs and the complete
+aggregate are recorded when P01-S01 closes.
