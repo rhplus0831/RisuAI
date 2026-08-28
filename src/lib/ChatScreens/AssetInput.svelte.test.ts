@@ -46,6 +46,48 @@ afterEach(() => {
 })
 
 describe('AssetInput', () => {
+  it('classifies persisted media extensions case-insensitively without changing asset identity', async () => {
+    const videoAsset: [string, string, string] = ['Trailer.MP4', 'video-asset-id', 'MP4']
+    const audioAsset: [string, string, string] = ['Theme.Mp3', 'audio-asset-id', 'Mp3']
+    const currentCharacter = {
+      type: 'character',
+      chaId: 'character-a',
+      additionalAssets: [videoAsset, audioAsset],
+    }
+    const onSelect = vi.fn()
+    assetInputMocks.database.characters = [currentCharacter]
+    target = document.createElement('div')
+    document.body.appendChild(target)
+
+    component = mount(AssetInput, {
+      target,
+      props: {
+        currentCharacter: currentCharacter as any,
+        onSelect,
+      },
+    })
+    await tick()
+    await Promise.resolve()
+    await tick()
+
+    const videoButton = target.querySelector<HTMLButtonElement>('button[aria-label="Trailer.MP4"]')
+    const audioButton = target.querySelector<HTMLButtonElement>('button[aria-label="Theme.Mp3"]')
+    expect(videoButton?.querySelector('source')?.getAttribute('src')).toBe('/api/v1/assets/video-asset-id')
+    expect(videoButton?.querySelector('source')?.getAttribute('type')).toBe('video/mp4')
+    expect(videoButton?.querySelector('img')).toBeNull()
+    expect(audioButton?.querySelector('svg')).not.toBeNull()
+    expect(audioButton?.querySelector('img, video')).toBeNull()
+
+    videoButton?.click()
+    audioButton?.click()
+    expect(onSelect).toHaveBeenNthCalledWith(1, videoAsset)
+    expect(onSelect).toHaveBeenNthCalledWith(2, audioAsset)
+    expect(currentCharacter.additionalAssets).toEqual([
+      ['Trailer.MP4', 'video-asset-id', 'MP4'],
+      ['Theme.Mp3', 'audio-asset-id', 'Mp3'],
+    ])
+  })
+
   it('renders separate entries that share a content-addressed asset id', async () => {
     const sharedAssetId = 'a'.repeat(64)
     const currentCharacter = {

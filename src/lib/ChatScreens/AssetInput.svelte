@@ -152,9 +152,9 @@
         for (const additionalAsset of currentCharacter.additionalAssets) {
           const assetPath = additionalAsset[1]
           if (additionalAsset.length > 2 && additionalAsset[2]) {
-            nextExtensions[assetPath] = additionalAsset[2]
+            nextExtensions[assetPath] = additionalAsset[2].toLowerCase()
           } else {
-            nextExtensions[assetPath] = assetPath.split('.').pop()
+            nextExtensions[assetPath] = assetPath.split('.').pop()?.toLowerCase()
           }
           getFileSrc(assetPath).then((filePath) => {
             if (run !== assetPreviewRun) return
