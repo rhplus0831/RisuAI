@@ -169,7 +169,16 @@
     const operation = ++selectionOperation
     selectionPendingIndex = index
     selectionError = ''
-    const outcome = await selectModelPreset(index)
+    let outcome: PresetMutationOutcome
+    try {
+      outcome = await selectModelPreset(index)
+    } catch {
+      if (operation !== selectionOperation) return
+      selectionPendingIndex = null
+      selectionError = language.presetSelectionFailed
+      alertError(selectionError)
+      return
+    }
     if (operation !== selectionOperation) return
     selectionPendingIndex = null
 

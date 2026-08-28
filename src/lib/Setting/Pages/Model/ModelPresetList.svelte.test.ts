@@ -14,6 +14,7 @@ const mutationSpies = vi.hoisted(() => ({
   createModelPreset: vi.fn(),
   deleteModelPreset: vi.fn(),
   reorderModelPresets: vi.fn(),
+  selectModelPreset: vi.fn(),
   updateModelPreset: vi.fn(),
 }))
 
@@ -192,6 +193,31 @@ describe('ModelPresetList', () => {
       language.presetMutationFailed,
     )
     expect(alertSpies.alertError).toHaveBeenCalledWith(language.presetMutationFailed)
+  })
+
+  it('recovers from a rejected selection and permits a retry', async () => {
+    mutationSpies.selectModelPreset.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({
+      status: 'accepted',
+    })
+    const afterApply = vi.fn()
+    component = mount(ModelPresetList, { target, props: { embedded: true, afterApply } })
+    await tick()
+
+    const modelB = target.querySelectorAll<HTMLElement>('[role="button"]')[1]
+    if (!modelB) throw new Error('Model B preset row was not rendered')
+    modelB.click()
+    await settle()
+
+    expect(modelB.getAttribute('aria-busy')).toBe('false')
+    expect(target.textContent).toContain(language.presetSelectionFailed)
+    expect(alertSpies.alertError).toHaveBeenCalledWith(language.presetSelectionFailed)
+    expect(afterApply).not.toHaveBeenCalled()
+
+    modelB.click()
+    await settle()
+
+    expect(mutationSpies.selectModelPreset).toHaveBeenCalledTimes(2)
+    expect(afterApply).toHaveBeenCalledTimes(1)
   })
 
   it('reports a queued create and a later replay discard', async () => {
