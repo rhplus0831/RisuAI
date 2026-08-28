@@ -9,12 +9,11 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Snapshot
 
-- Plan state: Active; Phases 0-8 complete and Phase 9 in progress.
-- Current phase: Phase 9 — Scripting, Parsing, Triggers, And Automation.
-- Active slice: Phase 9 opens with 43 category-I owners and 544 scripting,
-  parsing, trigger, Lua, automation, and display cases, including 31
-  parameterized rows: 36 frontend owners / 305 cases and seven Fastify owners /
-  239 cases.
+- Plan state: Active; Phases 0-9 complete and Phase 10 in progress.
+- Current phase: Phase 10 — Plugins, Modules, MCP, And Specialized Tools.
+- Active slice: Phase 10 opens with 47 category-J owners and 601 plugin, module,
+  MCP, Playground, and specialized-tool cases, including 47 parameterized rows:
+  42 frontend owners / 528 cases and five Fastify owners / 73 cases.
 - Implementation state: exhaustive test/case/support manifests and their local,
   affected, aggregate, coverage, and CI checks are live. The protocol import
   policy uses recursive AST evidence and the Realm scale case has isolated local
@@ -28,13 +27,16 @@ in [`latest-verification.md`](latest-verification.md).
   boundaries. Phase 8 fixed stale memory snapshots and transcript-derived
   chunks, credential diagnostics, Float32 overflow, legacy salvage, embedding
   cache identities, subscriber/cancellation isolation, and bounded terminal
-  history while correcting 17 category boundaries.
+  history while correcting 17 category boundaries. Phase 9 fixed CBS recursion,
+  server/client regex execution and output bounds, Lua/Python recovery and
+  deadlines, UTF-8 response limits, nested Trigger V2 validation, and script
+  cache identity while correcting four category boundaries.
 - Blockers: the full differential compatibility harness cannot run because its
   pinned external worktree is absent. The new current-only owner is green; the
   blocker applies only to historical baseline claims.
-- Next action: audit CBS recursion state, bounded regex execution, Lua/Pyodide
-  budgets, trigger validation, display/cache semantics, and client/server
-  scripting parity, then complete every Phase 9 disposition.
+- Next action: audit plugin permissions and egress, module lifecycle and stable
+  identity, MCP OAuth/transports/tool schemas, Playground execution, and
+  specialized-tool cleanup, then complete every Phase 10 disposition.
 
 ## Planning Baseline
 
@@ -48,11 +50,11 @@ in [`latest-verification.md`](latest-verification.md).
 | Fastify Vitest                       | 154 files                                    |
 | Browser smoke                        | 7 files                                      |
 | Compatibility harness                | Current-only green; full differential blocked |
-| Collected cases                      | 10,102 total; 1 direct-only skip; 1,294 parameterized rows |
+| Collected cases                      | 10,133 total; 1 direct-only skip; 1,308 parameterized rows |
 | Support owners                       | 252 standalone; 65 mixed production seams   |
 | Primary-category assignments         | 700 of 700 ratified                          |
-| Complete file dispositions           | 483 Keep / 58 Reclassify; 1 removed historical owner |
-| Findings                             | 100 done / 8 deferred                        |
+| Complete file dispositions           | 521 Keep / 62 Reclassify; 1 removed historical owner |
+| Findings                             | 110 done / 9 deferred                        |
 
 The 698-file rows preserve the plan-creation anchor. The live counts, support
 owners, runtime evidence, and category totals are checked by the Phase 0
@@ -71,8 +73,8 @@ manifests and verification record.
 | [6](phases/phase-6-prompting-generation-and-streaming.md) | Complete | Audited prompting, generation, streaming, and durable finalization. |
 | [7](phases/phase-7-providers-models-credentials-translation-and-media.md) | Complete | Audited providers, models, credentials, translation, and media. |
 | [8](phases/phase-8-memory-embeddings-jobs-and-workers.md) | Complete | Audited memory, embeddings, summaries, jobs, and workers. |
-| [9](phases/phase-9-scripting-parsing-triggers-and-automation.md) | In progress | Audit scripting, parsing, triggers, Lua, and automation. |
-| [10](phases/phase-10-plugins-modules-mcp-and-specialized-tools.md) | Pending | Audit plugins, modules, MCP, Playground, and specialized tools. |
+| [9](phases/phase-9-scripting-parsing-triggers-and-automation.md) | Complete | Audited scripting, parsing, triggers, Lua, and automation. |
+| [10](phases/phase-10-plugins-modules-mcp-and-specialized-tools.md) | In progress | Audit plugins, modules, MCP, Playground, and specialized tools. |
 | [11](phases/phase-11-assets-import-export-and-backups.md) | Pending | Audit assets, imports, exports, saves, and backups. |
 | [12](phases/phase-12-api-security-runtime-and-observability.md) | Pending | Audit API security, runtime, limits, tracing, and operations. |
 | [13](phases/phase-13-cross-suite-consolidation-and-remediation.md) | Pending | Resolve cross-suite duplication, removals, replacements, and gaps. |
@@ -84,13 +86,13 @@ See [`phases/README.md`](phases/README.md) for links and shared slice rules.
 
 | Decision   | Count | Meaning                                                    |
 | ---------- | ----: | ---------------------------------------------------------- |
-| Keep       |   483 | Distinct contract and suitable evidence layer.             |
+| Keep       |   521 | Distinct contract and suitable evidence layer.             |
 | Strengthen |     0 | Valuable intent, but insufficient or self-fulfilling proof. |
 | Merge      |     0 | Equivalent failure mode can move into a stronger owner.    |
-| Reclassify |    58 | Valuable test belongs to another category, lane, or type.  |
+| Reclassify |    62 | Valuable test belongs to another category, lane, or type.  |
 | Remove     |     1 | Historical owner removed after mandatory replacement proof. |
 | Add        |     2 | Historical owner added for a material uncovered contract.  |
-| Pending    |   159 | Known live test owners awaiting their owning phase review.  |
+| Pending    |   117 | Known live test owners awaiting their owning phase review.  |
 
 Keep, Reclassify, and Pending partition the 700 live rows. Remove and Add are
 durable action-ledger counts; the added Button and PersonaSettings owners are
@@ -159,6 +161,10 @@ already included in Keep and the removed Mobile owner is no longer a live row.
   observability to Phase 12, live browser/provider/restart composition and the
   summarized-memory invalidation policy to Phase 13, and historical
   compatibility plus the final residual decision to Phase 14.
+- Deferred scripting/runtime fidelity: `TSA-P09-011` routes queued runtime and
+  timeout observability to Phase 12, CBS/trigger parity and saved-definition
+  browser composition to Phase 13, and historical compatibility plus the final
+  residual decision to Phase 14.
 
 ## Maintenance Rules
 

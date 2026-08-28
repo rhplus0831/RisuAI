@@ -14,10 +14,10 @@ slice rules. [`../status.md`](../status.md) is the live execution cursor.
 | [4](phase-4-app-navigation-chat-and-shared-ui.md) | Complete | Navigation, chat, shared UI, feedback, accessibility, responsive behavior. |
 | [5](phase-5-settings-profiles-authoring-and-catalogs.md) | Complete | Settings, profiles, personas, characters, lorebooks, Realm, catalogs. |
 | [6](phase-6-prompting-generation-and-streaming.md) | Complete | Prompt assembly, generation, SSE, cancellation, durability, Agent Presets. |
-| [7](phase-7-providers-models-credentials-translation-and-media.md) | In progress | Providers, models, secrets, translation, image/audio/transcription. |
-| [8](phase-8-memory-embeddings-jobs-and-workers.md) | Pending | Hypa memory, embeddings, summaries, jobs, ranking, workers, UI reconciliation. |
-| [9](phase-9-scripting-parsing-triggers-and-automation.md) | Pending | CBS, regex, triggers, Lua, parsing, display transforms, automation. |
-| [10](phase-10-plugins-modules-mcp-and-specialized-tools.md) | Pending | Plugins, modules, MCP, RisuAccess, Playground, developer tools. |
+| [7](phase-7-providers-models-credentials-translation-and-media.md) | Complete | Providers, models, secrets, translation, image/audio/transcription. |
+| [8](phase-8-memory-embeddings-jobs-and-workers.md) | Complete | Hypa memory, embeddings, summaries, jobs, ranking, workers, UI reconciliation. |
+| [9](phase-9-scripting-parsing-triggers-and-automation.md) | Complete | CBS, regex, triggers, Lua, parsing, display transforms, automation. |
+| [10](phase-10-plugins-modules-mcp-and-specialized-tools.md) | In progress | Plugins, modules, MCP, RisuAccess, Playground, developer tools. |
 | [11](phase-11-assets-import-export-and-backups.md) | Pending | Assets, saves, imports, exports, Realm/CharX, backup and restore. |
 | [12](phase-12-api-security-runtime-and-observability.md) | Pending | Auth, route protection, network limits, tracing, startup, operations. |
 | [13](phase-13-cross-suite-consolidation-and-remediation.md) | Pending | Cross-category duplication, replacements, shared harnesses, parity, gaps. |
