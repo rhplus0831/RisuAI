@@ -60,4 +60,33 @@ describe('Title seasonal controls', () => {
     const santa = target.querySelector<HTMLImageElement>('button img[alt="santa"]')
     expect(santa?.closest('button')).toBeTruthy()
   })
+
+  it('cleans up an active Christmas game timer when unmounted', async () => {
+    vi.setSystemTime(new Date(2026, 11, 20, 12))
+    const { default: Title } = await import('./Title.svelte')
+    component = mount(Title, { target })
+    await tick()
+
+    const santa = target.querySelector<HTMLButtonElement>('button:has(img[alt="santa"])')
+    expect(santa).toBeTruthy()
+    for (let click = 0; click < 5; click++) {
+      santa!.click()
+    }
+    await tick()
+
+    const game = target.querySelector<HTMLButtonElement>('#minigame-div button')
+    expect(game).toBeTruthy()
+    game!.click()
+    await tick()
+    expect(vi.getTimerCount()).toBe(1)
+
+    vi.advanceTimersByTime(700)
+    await tick()
+    expect(target.querySelector('#minigame-div')?.textContent).toContain('Time: 19')
+
+    unmount(component)
+    component = undefined
+
+    expect(vi.getTimerCount()).toBe(0)
+  })
 })

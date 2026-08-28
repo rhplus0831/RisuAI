@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import { openURL } from 'src/ts/globalApi.svelte'
 
@@ -31,6 +32,15 @@
   let score = $state(0)
   let time = $state(20)
   let miniGameStart = $state(false)
+  let miniGameTimer: ReturnType<typeof setInterval> | undefined
+
+  function clearMiniGameTimer() {
+    if (miniGameTimer === undefined) return
+    clearInterval(miniGameTimer)
+    miniGameTimer = undefined
+  }
+
+  onDestroy(clearMiniGameTimer)
 
   function getNumberPostfix(num: number): string {
     const lastDigit = num % 10
@@ -134,11 +144,11 @@
           time = 20
           score = 1
           miniGameStart = true
-          const timer = setInterval(() => {
+          miniGameTimer = setInterval(() => {
             time -= 1
             if (time <= 0) {
               miniGameStart = false
-              clearInterval(timer)
+              clearMiniGameTimer()
             }
           }, 700)
         } else {
