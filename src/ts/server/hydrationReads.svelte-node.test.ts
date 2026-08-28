@@ -445,7 +445,7 @@ describe('server hydration read clients', () => {
     const responses = [
       {
         revision: 13,
-        characterId: 'char/server',
+        characterId: 'char/request one',
         globalLore: [{ key: 'server' }],
       },
       {
@@ -459,7 +459,7 @@ describe('server hydration read clients', () => {
     await expect(fetchServerCharacterLorebook('char/request one')).resolves.toEqual({
       status: 'ok',
       revision: 13,
-      characterId: 'char/server',
+      characterId: 'char/request one',
       globalLore: [{ key: 'server' }],
     })
     await expect(fetchServerCharacterLorebook('char/request two')).resolves.toEqual({
@@ -471,6 +471,20 @@ describe('server hydration read clients', () => {
 
     expect(resourceFetch.calls[0].url).toBe('/api/v1/characters/char%2Frequest%20one/lorebook')
     expect(resourceFetch.calls[1].url).toBe('/api/v1/characters/char%2Frequest%20two/lorebook')
+  })
+
+  it('rejects a single-character lorebook response for a different character', async () => {
+    const resourceFetch = makeResourceFetch(() => ({
+      revision: 15,
+      characterId: 'char-b',
+      globalLore: [{ key: 'wrong resident character' }],
+    }))
+    vi.stubGlobal('fetch', resourceFetch.fetch)
+
+    await expect(fetchServerCharacterLorebook('char-a')).resolves.toEqual({
+      status: 'error',
+      error: 'Invalid character-lorebook identity',
+    })
   })
 
   it('posts bulk character lorebook hydration with JSON body and filters malformed missing ids', async () => {

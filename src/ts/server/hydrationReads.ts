@@ -454,10 +454,14 @@ export async function fetchServerCharacterLorebook(
   if (!Array.isArray(record.globalLore)) {
     return { status: 'error', error: 'Invalid character-lorebook response' }
   }
+  const responseCharacterId = typeof record.characterId === 'string' ? record.characterId : characterId
+  if (responseCharacterId !== characterId) {
+    return { status: 'error', error: 'Invalid character-lorebook identity' }
+  }
   return {
     status: 'ok',
     revision: revision as number,
-    characterId: typeof record.characterId === 'string' ? record.characterId : characterId,
+    characterId: responseCharacterId,
     globalLore: record.globalLore as unknown[],
   }
 }

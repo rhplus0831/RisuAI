@@ -1531,7 +1531,8 @@ function applyTargetedRead(
     case 'lorebook':
       return (
         entry.result.status !== 'ok' ||
-        applyCharacterLorebook(entry.result, supersessions.characterLorebookIds.has(entry.characterId), hooks)
+        (entry.result.characterId === entry.characterId &&
+          applyCharacterLorebook(entry.result, supersessions.characterLorebookIds.has(entry.characterId), hooks))
       )
     case 'lorebooks': {
       const result = entry.result

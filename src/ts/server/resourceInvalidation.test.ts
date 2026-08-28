@@ -1804,6 +1804,24 @@ describe('API-backed resource invalidation', () => {
     expect(sideEffects.applyLorebook).not.toHaveBeenCalled()
   })
 
+  it('rejects a single-character lorebook response for a different resident character', async () => {
+    seedResources(1)
+    api.lorebook.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      characterId: 'char-b',
+      globalLore: [{ key: 'wrong resident character' }],
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(event(2, 'characterLorebook', { id: 'char-a' }), {
+        appliedRevision: 1,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'error', error: 'Failed to apply server character char-a lorebook response' })
+    expect(sideEffects.applyLorebook).not.toHaveBeenCalled()
+  })
+
   it('checks each captured character-lorebook epoch from a bulk invalidation independently', async () => {
     seedResources(1)
     const response = deferred<{
