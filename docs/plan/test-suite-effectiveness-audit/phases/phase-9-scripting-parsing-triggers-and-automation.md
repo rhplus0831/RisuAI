@@ -1,6 +1,6 @@
 # Phase 9: Scripting, Parsing, Triggers, And Automation
 
-Status: Pending; depends on Phases 0-1 and Phase 6 prompt/display contracts.
+Status: In progress; Phases 0-1 and Phase 6 prompt/display contracts satisfied.
 
 ## Objective
 

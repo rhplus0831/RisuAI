@@ -886,3 +886,75 @@ Phase 13, and the Ollama support policy, compatibility, and final residual
 decision to Phase 14. `pnpm test:compat-harness` remains prerequisite-blocked
 by the absent exact `/home/codex/risu-baseline-71c476e9c` worktree; no
 substitute checkout or golden refresh was used.
+
+## Phase 8 Evidence
+
+### Opening set and remediation validation
+
+Phase 8 opened with 43 category-H owners and 454 cases: 20 frontend files / 127
+cases and 23 Fastify files / 327 cases. Both opening sets passed before
+remediation in 16.14s and 2.89s. Sixteen regressions were added inside the
+opening owners.
+
+Seventeen unchanged owners / 199 cases moved to B/D/F/G/L after complete
+review, leaving current category H at 26 owners / 270 cases. The exact original
+owners then passed 132/132 frontend cases in 12.59s and 338/338 Fastify cases
+in 3.52s.
+
+Focused remediation commands passed throughout:
+
+- browser projection, refresh, events, and mounted modal: 27/27;
+- embedding adapter/cache validation: 17/17;
+- memory event presentation: 13/13;
+- legacy-memory import plus save/import routes: 72/72;
+- memory jobs route/repository bounds: 31/31;
+- message-store and command invalidation: 251/251;
+- executable category boundaries: 10/10.
+
+### Complete gates
+
+Commands:
+
+```sh
+pnpm exec vitest run --config vitest.config.ts \
+  --reporter=json --outputFile=/tmp/phase8-frontend-results.json
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  --reporter=json --outputFile=/tmp/phase8-server-results.json
+pnpm test:gates:perf
+pnpm check
+pnpm check:server
+pnpm test:smoke
+pnpm test:affected --dry-run --include-smoke --base 9e3e32199
+pnpm check:test-inventories
+pnpm format:check
+git diff --check
+```
+
+The complete ordinary frontend universe passed 6,719/6,719 across 537 files;
+the two isolated performance owners passed 6/6 in 14.74s. Complete Fastify
+passed 3,341 cases with one intentional direct-only Realm scale skip across 154
+files. Client and server typechecks passed with zero diagnostics.
+
+The production smoke build passed in 11.38s with the existing allowed
+diagnostics and all 35/35 Chromium journeys passed in 1.0 minutes. Smoke
+disables the memory worker and there is no category-H browser owner, so this is
+application regression evidence rather than an end-to-end memory lifecycle
+claim.
+
+The terminal-history SQL bound initially exposed an overly narrow repository
+tuple annotation; the explicit filter type was corrected, after which the 31
+route/repository cases and server typecheck passed. Affected selection chose
+inventory, frontend, performance, Fastify, and smoke lanes. Inventory,
+formatting, and diff gates passed.
+
+Fresh Vitest/Playwright listings and measured results produce 700 live
+test/spec owners and 10,102 collected cases, with one direct-only skip and
+1,294 parameterized rows. Primary categories are A=21, B=35, C=56, D=109,
+E=97, F=83, G=104, H=26, I=43, J=47, K=41, and L=38. Live decisions are 483
+Keep, 58 Reclassify, and 159 Pending.
+
+Eleven Phase 8 findings are done. `TSA-P08-012` routes worker/query
+observability to Phase 12, live browser/provider/restart composition and the
+summarized-memory invalidation policy to Phase 13, and historical compatibility
+plus the final residual decision to Phase 14. The exact pinned compatibility
+worktree remains absent; no substitute checkout or golden refresh was used.
