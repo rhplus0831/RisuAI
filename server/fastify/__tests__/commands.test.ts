@@ -12,6 +12,7 @@ import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { applyJsonCommandMutation, applyMessageFreeJsonCommandMutation } from '../src/commands/mutations.js'
 import { getSchemaState, openDatabase } from '../src/db.js'
+import { getDatabaseLineage } from '../src/databaseLineage.js'
 import { addAlternateMessage } from '../src/messageStore.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { loadPersisted, writePersistedWithMessages, insertAssetMetadataBatch } from '../src/repository.js'
@@ -120,6 +121,15 @@ function loadPersistedFromDir(dataDir: string) {
   const db = openDatabase(dataDir)
   try {
     return loadPersisted(db, dataDir)
+  } finally {
+    db.close()
+  }
+}
+
+function databaseLineageFromDir(dataDir: string): string {
+  const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+  try {
+    return getDatabaseLineage(db)
   } finally {
     db.close()
   }
@@ -683,6 +693,187 @@ describe('command foundation', () => {
       streamGeminiThoughts: true,
       greeting: 'hi',
     })
+  })
+
+  it('serializes same-base ordinary command transactions to one winner', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      theme: 'dark',
+      zoomsize: 100,
+    })
+    const databaseLineage = databaseLineageFromDir(harness.dataDir)
+    harness.commandEvents.clear()
+    const attempts = [
+      {
+        field: 'theme',
+        initial: 'dark',
+        next: 'light',
+        mutationId: 'same-base-theme',
+        patch: { theme: 'light' },
+      },
+      {
+        field: 'zoomsize',
+        initial: 100,
+        next: 88,
+        mutationId: 'same-base-zoom',
+        patch: { zoomsize: 88 },
+      },
+    ] as const
+
+    const responses = await Promise.all(
+      attempts.map((attempt) =>
+        harness.app.inject({
+          method: 'PATCH',
+          url: '/api/v1/commands/settings/display',
+          headers: {
+            'risu-auth': assertion,
+            'risu-writer-session': 'writer-concurrency',
+            'risu-mutation-id': attempt.mutationId,
+            'risu-database-lineage': databaseLineage,
+          },
+          payload: { baseRevision: revision, patch: attempt.patch },
+        }),
+      ),
+    )
+
+    expect(responses.map((response) => response.statusCode).sort((left, right) => left - right)).toEqual([200, 409])
+    const winnerIndex = responses.findIndex((response) => response.statusCode === 200)
+    const loserIndex = responses.findIndex((response) => response.statusCode === 409)
+    expect(winnerIndex).toBeGreaterThanOrEqual(0)
+    expect(loserIndex).toBeGreaterThanOrEqual(0)
+    const winner = attempts[winnerIndex]!
+    const loser = attempts[loserIndex]!
+    const winnerBody = responses[winnerIndex]!.json()
+    expect(winnerBody).toEqual({
+      revision: revision + 1,
+      event: {
+        type: 'settings.updated',
+        revision: revision + 1,
+        resource: 'settings',
+        id: 'display',
+      },
+      acknowledgedKeys: [winner.field],
+      settings: {},
+    })
+    expect(responses[loserIndex]!.json()).toEqual({
+      error: 'revision_conflict',
+      currentRevision: revision + 1,
+    })
+    expect(harness.commandEvents.list()).toEqual([
+      {
+        ...winnerBody.event,
+        origin: { writerSessionId: 'writer-concurrency' },
+      },
+    ])
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().revision).toBe(revision + 1)
+    const persistedDatabase = bootstrap.json().database as Record<string, unknown>
+    expect(persistedDatabase[winner.field]).toBe(winner.next)
+    expect(persistedDatabase[loser.field]).toBe(loser.initial)
+
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      expect(getSchemaState(db).revision).toBe(revision + 1)
+      expect(
+        db
+          .prepare(
+            `
+              SELECT revision, type, resource, id
+              FROM command_events
+              WHERE revision > ?
+              ORDER BY revision
+            `,
+          )
+          .all(revision),
+      ).toEqual([
+        {
+          revision: revision + 1,
+          type: 'settings.updated',
+          resource: 'settings',
+          id: 'display',
+        },
+      ])
+      const receipts = db
+        .prepare(
+          `
+            SELECT mutation_id AS mutationId, response_json AS responseJson
+            FROM command_mutation_receipts
+            ORDER BY mutation_id
+          `,
+        )
+        .all() as unknown as Array<{ mutationId: string; responseJson: string }>
+      expect(receipts).toHaveLength(1)
+      expect(receipts[0]!.mutationId).toBe(winner.mutationId)
+      expect(JSON.parse(receipts[0]!.responseJson)).toEqual({
+        revision: winnerBody.revision,
+        event: winnerBody.event,
+        extra: {
+          acknowledgedKeys: [winner.field],
+          settings: {},
+        },
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('rolls back an ordinary command transaction when event persistence fails', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      streamGeminiThoughts: false,
+    })
+    const databaseLineage = databaseLineageFromDir(harness.dataDir)
+    const before = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    let eventCountBeforeFailure: number
+    try {
+      eventCountBeforeFailure = (
+        before.prepare('SELECT COUNT(*) AS count FROM command_events').get() as { count: number }
+      ).count
+    } finally {
+      before.close()
+    }
+    harness.commandEvents.clear()
+    failCommandEventPersistence(harness.dataDir)
+
+    const failed = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/runtime',
+      headers: {
+        'risu-auth': assertion,
+        'risu-writer-session': 'writer-event-failure',
+        'risu-mutation-id': 'event-persistence-failure',
+        'risu-database-lineage': databaseLineage,
+      },
+      payload: { baseRevision: revision, patch: { streamGeminiThoughts: true } },
+    })
+
+    expect(failed.statusCode).toBe(500)
+    expect(harness.commandEvents.list()).toEqual([])
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().revision).toBe(revision)
+    expect(bootstrap.json().database).toMatchObject({ streamGeminiThoughts: false })
+
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      expect(getSchemaState(db).revision).toBe(revision)
+      expect(db.prepare('SELECT COUNT(*) AS count FROM command_events').get()).toEqual({
+        count: eventCountBeforeFailure,
+      })
+      expect(db.prepare('SELECT COUNT(*) AS count FROM command_mutation_receipts').get()).toEqual({ count: 0 })
+    } finally {
+      db.close()
+    }
   })
 
   it('persists chain-of-thought exclusion as a boolean language setting', async () => {
