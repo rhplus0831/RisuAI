@@ -534,6 +534,7 @@ export async function executeAgentPresetStep(
   if (input.dependencySkippedReason) {
     return skippedResult(input.step, 'dependency_skipped', startedAt, emptyCollection(input.step))
   }
+  throwIfAgentPresetAborted(input.signal)
 
   await ensureTokenizerLoadedForDb(input.database)
 
@@ -592,8 +593,9 @@ export async function executeAgentPresetStep(
 
   const controller = new AbortController()
   const timeoutMs = timeoutMsForStep(input.step)
-  const parentAbort = (): void => controller.abort()
-  input.signal?.addEventListener('abort', parentAbort, { once: true })
+  const parentAbort = (): void => controller.abort(input.signal?.reason)
+  if (input.signal?.aborted) parentAbort()
+  else input.signal?.addEventListener('abort', parentAbort, { once: true })
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
@@ -682,6 +684,7 @@ export async function executeAgentPresetStep(
       parseStatus: 'not_applicable',
     })
   } catch (err) {
+    throwIfAgentPresetAborted(input.signal)
     const timeoutFailure = err instanceof AgentPresetTimeoutError || controller.signal.aborted
     return failureResult({
       step: input.step,
@@ -695,6 +698,14 @@ export async function executeAgentPresetStep(
     clearTimeout(timeout)
     input.signal?.removeEventListener('abort', parentAbort)
   }
+}
+
+function throwIfAgentPresetAborted(signal: AbortSignal | undefined): void {
+  if (!signal?.aborted) return
+  if (signal.reason instanceof Error) throw signal.reason
+  const error = new Error('Agent Preset step aborted.')
+  error.name = 'AbortError'
+  throw error
 }
 
 export async function executeAgentPresetPhase(

@@ -1058,4 +1058,30 @@ describe('Agent Preset step execution', () => {
       failureKind: 'timeout',
     })
   })
+
+  it('propagates caller cancellation instead of reporting an Agent Preset timeout', async () => {
+    const database = db()
+    const parent = new AbortController()
+    let dispatchStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      dispatchStarted = resolve
+    })
+    const execution = executeAgentPresetStep({
+      database,
+      currentChar: database.characters[0],
+      currentChat: database.characters[0].chats[0],
+      step: step({ runtime: { timeoutMs: 30_000 } }),
+      signal: parent.signal,
+      dispatchProvider: async ({ signal }) => {
+        dispatchStarted()
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+        })
+      },
+    })
+
+    await started
+    parent.abort(new Error('user cancelled generation'))
+    await expect(execution).rejects.toThrow('user cancelled generation')
+  })
 })
