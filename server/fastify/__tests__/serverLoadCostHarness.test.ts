@@ -657,7 +657,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
       replaceChatMessages(db, 'l14-chat', base)
 
       resetChatMessageDiffInstrumentation()
-      expect(appendActiveChatMessageTail(db, 'l14-chat', next, base.length)).toBe(true)
+      expect(appendActiveChatMessageTail(db, 'l14-chat', next, base)).toBe(true)
       expect(getChatMessageDiffInstrumentation()).toMatchObject({
         stableEqualCalls: 0,
         stableEqualStringifies: 0,

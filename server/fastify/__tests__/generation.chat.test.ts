@@ -3004,6 +3004,86 @@ describe('POST /api/v1/generate/chat', () => {
     ])
   })
 
+  it('rejects an append-only assembly after a concurrent same-length prefix edit', async () => {
+    let releaseEmbedding!: () => void
+    let markEmbeddingStarted!: () => void
+    const embeddingStarted = new Promise<void>((resolve) => {
+      markEmbeddingStarted = resolve
+    })
+    const embeddingGate = new Promise<void>((resolve) => {
+      releaseEmbedding = resolve
+    })
+    await restartHarness({
+      embedPromptMemoryQueryTexts: async ({ input }) => {
+        markEmbeddingStarted()
+        await embeddingGate
+        return {
+          model: 'custom',
+          vectors: input.map(() => new Float32Array([1, 0])),
+          dim: 2,
+        }
+      },
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    const database = structuredClone(similarityMemoryDatabase()) as JsonRecord
+    const character = (database.characters as Array<JsonRecord>)[0]!
+    const chat = (character.chats as Array<JsonRecord>)[0]!
+    chat.message = [{ role: 'user', data: 'original row', chatId: 'existing-row' }]
+    character.triggerscript = [
+      {
+        comment: '',
+        type: 'input',
+        conditions: [],
+        effect: [
+          {
+            type: 'triggerlua',
+            code: `
+              function onInput(triggerId)
+                addChat(triggerId, 'char', 'INPUT-LUA-ROW')
+              end
+            `,
+          },
+        ],
+      },
+    ]
+    await seedDatabase(harness.app, assertion, database)
+    seedSimilarMemoryRows()
+
+    const generation = harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    await embeddingStarted
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const edit = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/messages/existing-row',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: bootstrap.json().revision,
+        patch: { data: 'concurrent edit' },
+      },
+    })
+    expect(edit.statusCode).toBe(200)
+    releaseEmbedding()
+
+    const response = await generation
+    const events = parseEvents(response.body)
+    expect(events.find((event) => event.type === 'error')?.data.error).toContain(
+      'Generation assembly transcript is stale for chat chat-1',
+    )
+    expect(await persistedMessages(assertion)).toEqual([
+      expect.objectContaining({ data: 'concurrent edit', chatId: 'existing-row' }),
+    ])
+  })
+
   it.each(['append', 'edit'] as const)(
     'rejects a stale full-transcript replacement after a concurrent %s and preserves it',
     async (concurrentMutation) => {

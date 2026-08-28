@@ -1664,7 +1664,7 @@ function persistAssemblyMutations(args: {
           const persistedLength = countChatMessages(targetDb, args.input.chatId)
           const appended =
             canAppendAssemblyReplacement(args.mutations, replacement.length, persistedLength) &&
-            appendActiveChatMessageTail(targetDb, args.input.chatId, replacement, persistedLength)
+            appendActiveChatMessageTail(targetDb, args.input.chatId, replacement, args.initialMessages)
           if (!appended) {
             if (!isDeepStrictEqual(getChatMessages(targetDb, args.input.chatId), args.initialMessages)) {
               throw new ValidationError(`Generation assembly transcript is stale for chat ${args.input.chatId}`)

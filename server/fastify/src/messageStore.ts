@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
+import { isDeepStrictEqual } from 'node:util'
 import { recordTableWrite } from './protocolMetrics.js'
 
 // Chat messages live in their own SQLite table, one row per message, instead of
@@ -442,20 +443,19 @@ function insertChatMessages(db: DatabaseSync, chatId: string, messages: readonly
 
 /**
  * Persist a caller-proven append-only replacement by inserting only the desired
- * tail. Returns false when the current active transcript no longer has the
- * expected prefix length, so callers can fall back to the generic diff path.
+ * tail. Returns false when the current active transcript no longer matches the
+ * expected prefix, so callers can reject stale state or fall back to the generic
+ * diff path.
  */
 export function appendActiveChatMessageTail(
   db: DatabaseSync,
   chatId: string,
   messages: readonly unknown[],
-  prefixLength: number,
+  expectedPrefix: readonly unknown[],
 ): boolean {
-  if (!Number.isInteger(prefixLength) || prefixLength < 0) {
-    throw new Error('append prefix length must be a non-negative integer')
-  }
+  const prefixLength = expectedPrefix.length
   if (messages.length <= prefixLength) return false
-  if (countChatMessages(db, chatId) !== prefixLength) return false
+  if (!isDeepStrictEqual(getChatMessages(db, chatId), expectedPrefix)) return false
 
   const tail = messages.slice(prefixLength)
   chatMessageDiffInstrumentation.appendFastPathRows += tail.length
