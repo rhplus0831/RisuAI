@@ -53,9 +53,52 @@ export type SseEventDetail = {
 
 export const MCP_SSE_DEDUP_ID_LIMIT = 1024
 export const MCP_SSE_BUFFER_LIMIT_BYTES = 8 * 1024 * 1024
+export const MCP_LIST_PAGE_LIMIT = 100
+export const MCP_LIST_ITEM_LIMIT = 10_000
 const MCP_SSE_BUFFER_LIMIT_ERROR_CODE = -32002
+const MCP_SSE_PARSE_ERROR_CODE = -32700
 const MCP_SSE_STREAM_ERROR_ID = '__risu_mcp_sse_stream_error__'
 const sseBufferByteCounter = new TextEncoder()
+
+function extractSseEventParts(buffer: string, final: boolean) {
+  const parts: string[] = []
+
+  while (buffer) {
+    let lineStart = 0
+    let previousLineEndingStart: number | null = null
+    let delimiter: { end: number; start: number } | null = null
+
+    for (let index = 0; index < buffer.length; ) {
+      const character = buffer[index]
+      if (character !== '\r' && character !== '\n') {
+        index += 1
+        continue
+      }
+
+      if (character === '\r' && index === buffer.length - 1 && !final) {
+        break
+      }
+      const lineEndingLength = character === '\r' && buffer[index + 1] === '\n' ? 2 : 1
+      if (index === lineStart) {
+        delimiter = {
+          start: previousLineEndingStart ?? index,
+          end: index + lineEndingLength,
+        }
+        break
+      }
+
+      previousLineEndingStart = index
+      lineStart = index + lineEndingLength
+      index = lineStart
+    }
+
+    if (!delimiter) break
+    parts.push(buffer.slice(0, delimiter.start))
+    buffer = buffer.slice(delimiter.end)
+  }
+
+  return { parts, remainder: buffer }
+}
 
 export class WindowedSseIdDedup {
   private readonly ids = new Set<string | number>()
@@ -111,6 +154,13 @@ class MCPSseBufferLimitError extends Error {
   ) {
     super(`MCP SSE stream exceeded ${limitBytes} bytes without an event delimiter (${bufferedBytes} bytes buffered)`)
     this.name = 'MCPSseBufferLimitError'
+  }
+}
+
+class MCPSseParseError extends Error {
+  constructor(public readonly dataBytes: number) {
+    super(`MCP SSE event contained malformed JSON (${dataBytes} data bytes)`)
+    this.name = 'MCPSseParseError'
   }
 }
 
@@ -448,19 +498,31 @@ export class MCPClient {
     })
   }
 
-  private dispatchSseStreamError(error: MCPSseBufferLimitError) {
+  private dispatchSseStreamError(error: MCPSseBufferLimitError | MCPSseParseError) {
+    const errorDetail =
+      error instanceof MCPSseBufferLimitError
+        ? {
+            code: MCP_SSE_BUFFER_LIMIT_ERROR_CODE,
+            data: {
+              limitBytes: error.limitBytes,
+              bufferedBytes: error.bufferedBytes,
+            },
+          }
+        : {
+            code: MCP_SSE_PARSE_ERROR_CODE,
+            data: {
+              dataBytes: error.dataBytes,
+            },
+          }
     const detail: SseEventDetail = {
       mcpClientObjectId: this.mcpClientObjectId,
       data: {
         jsonrpc: '2.0',
         id: MCP_SSE_STREAM_ERROR_ID,
         error: {
-          code: MCP_SSE_BUFFER_LIMIT_ERROR_CODE,
+          code: errorDetail.code,
           message: error.message,
-          data: {
-            limitBytes: error.limitBytes,
-            bufferedBytes: error.bufferedBytes,
-          },
+          data: errorDetail.data,
         },
       },
     }
@@ -628,30 +690,40 @@ export class MCPClient {
     try {
       while (true) {
         const { done, value } = await reader.read()
-        if (done) break
+        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true })
 
-        buffer += decoder.decode(value, { stream: true })
-
-        let parts = buffer.split('\n\n')
-        buffer = parts.pop() || ''
+        // EventSource accepts CRLF, LF, and CR line endings. Keep a trailing CR
+        // pending across chunks so a split CRLF cannot become a false blank line.
+        const extracted = extractSseEventParts(buffer, done)
+        const parts = extracted.parts
+        buffer = extracted.remainder
         const bufferedBytes = sseBufferByteCounter.encode(buffer).byteLength
         if (bufferedBytes > this.sseBufferLimitBytes) {
           throw new MCPSseBufferLimitError(this.sseBufferLimitBytes, bufferedBytes)
         }
 
         for (const part of parts) {
-          let lines = part.split('\n')
-          let data = ''
+          const lines = part.split(/\r\n|\r|\n/)
+          const dataLines: string[] = []
           let eventName = ''
           for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              data += line.slice(6) + '\n'
-            } else if (line.startsWith('event: ')) {
-              eventName = line.slice(7).trim()
+            if (line.startsWith(':')) continue
+
+            const colonIndex = line.indexOf(':')
+            const field = colonIndex === -1 ? line : line.slice(0, colonIndex)
+            let value = colonIndex === -1 ? '' : line.slice(colonIndex + 1)
+            if (value.startsWith(' ')) {
+              value = value.slice(1)
+            }
+
+            if (field === 'data') {
+              dataLines.push(value)
+            } else if (field === 'event') {
+              eventName = value
             }
           }
 
-          data = data.trim()
+          const data = dataLines.join('\n')
           if (data) {
             if (this.debug) {
               console.log('MCP SSE Data', {
@@ -677,44 +749,49 @@ export class MCPClient {
                 }),
               )
             } else {
+              let jsonData: JsonRPC | JsonPing
               try {
-                const jsonData = JSON.parse(data) as JsonRPC | JsonPing
-                if (this.sseIdDone.has(jsonData.id)) {
-                  continue
-                }
+                jsonData = JSON.parse(data) as JsonRPC | JsonPing
+              } catch {
+                throw new MCPSseParseError(sseBufferByteCounter.encode(data).byteLength)
+              }
+              if (this.sseIdDone.has(jsonData.id)) {
+                continue
+              }
 
-                //@ts-expect-error JsonRPC type doesn't have method property, but JsonPing does
-                if (jsonData.method === 'ping') {
-                  await this.request(
-                    'response',
-                    {},
-                    {
-                      notifications: true,
-                      initMethod: 'none',
-                      id: jsonData.id,
-                    },
-                  )
-                  this.sseIdDone.add(jsonData.id)
-                  continue
-                }
-
-                const sseEventDetail: SseEventDetail = {
-                  mcpClientObjectId: this.mcpClientObjectId,
-                  data: jsonData,
-                }
-                document.dispatchEvent(
-                  new CustomEvent('mcp-sse', {
-                    detail: sseEventDetail,
-                  }),
+              //@ts-expect-error JsonRPC type doesn't have method property, but JsonPing does
+              if (jsonData.method === 'ping') {
+                await this.request(
+                  'response',
+                  {},
+                  {
+                    notifications: true,
+                    initMethod: 'none',
+                    id: jsonData.id,
+                  },
                 )
                 this.sseIdDone.add(jsonData.id)
-              } catch (error) {}
+                continue
+              }
+
+              const sseEventDetail: SseEventDetail = {
+                mcpClientObjectId: this.mcpClientObjectId,
+                data: jsonData,
+              }
+              document.dispatchEvent(
+                new CustomEvent('mcp-sse', {
+                  detail: sseEventDetail,
+                }),
+              )
+              this.sseIdDone.add(jsonData.id)
             }
           }
         }
+
+        if (done) break
       }
     } catch (error) {
-      if (error instanceof MCPSseBufferLimitError) {
+      if (error instanceof MCPSseBufferLimitError || error instanceof MCPSseParseError) {
         this.dispatchSseStreamError(error)
         if (!abortController?.signal.aborted) {
           abortController?.abort()
@@ -726,7 +803,7 @@ export class MCPClient {
         }
         this.destroy()
         if (this.debug) {
-          console.warn('MCP SSE stream buffer limit exceeded', error)
+          console.warn('MCP SSE stream rejected', error)
         }
       } else if (this.debug && !abortController?.signal.aborted) {
         console.warn('MCP SSE stream failed', error)
@@ -1436,6 +1513,45 @@ export class MCPClient {
       : null
   }
 
+  private async readPaginatedList<T>(
+    method: 'prompts/list' | 'tools/list',
+    resultKey: 'prompts' | 'tools',
+  ): Promise<T[]> {
+    const items: T[] = []
+    const seenCursors = new Set<string>()
+    let cursor: string | undefined
+
+    for (let page = 0; page < MCP_LIST_PAGE_LIMIT; page += 1) {
+      const response = await this.request(method, cursor ? { cursor } : {})
+      if (this.debug && method === 'tools/list') {
+        console.log('MCP Tools List Response', response)
+      }
+
+      const pageItems = response.rpc.result?.[resultKey]
+      if (pageItems === undefined || pageItems === null) return items
+      if (!Array.isArray(pageItems)) {
+        throw new Error(`MCP ${method} response did not contain an item array`)
+      }
+      if (pageItems.length > MCP_LIST_ITEM_LIMIT - items.length) {
+        throw new Error(`MCP ${method} exceeded the ${MCP_LIST_ITEM_LIMIT} item limit`)
+      }
+      items.push(...pageItems)
+
+      const nextCursor = response.rpc.result?.nextCursor
+      if (!nextCursor) return items
+      if (typeof nextCursor !== 'string') {
+        throw new Error(`MCP ${method} returned a non-string cursor`)
+      }
+      if (seenCursors.has(nextCursor)) {
+        throw new Error(`MCP ${method} repeated pagination cursor ${JSON.stringify(nextCursor)}`)
+      }
+      seenCursors.add(nextCursor)
+      cursor = nextCursor
+    }
+
+    throw new Error(`MCP ${method} exceeded the ${MCP_LIST_PAGE_LIMIT} page limit`)
+  }
+
   async getPromptList(): Promise<MCPPrompt[]> {
     await this.checkHandshake()
     if (!this.serverInfo.capabilities?.prompts) {
@@ -1444,29 +1560,7 @@ export class MCPClient {
     if (this.cached.prompts.length > 0) {
       return this.cached.prompts
     }
-    let prompts: MCPPrompt[] = []
-    let cursor: string | null = null
-    while (true) {
-      const args = {
-        cursor: cursor,
-      } as Record<string, any>
-
-      if (!args.cursor) {
-        delete args.cursor
-      }
-
-      const response = await this.request('prompts/list', args)
-      if (response.rpc.result?.prompts) {
-        prompts.push(...response.rpc.result.prompts)
-        if (response.rpc.result.nextCursor) {
-          cursor = response.rpc.result.nextCursor
-        } else {
-          break
-        }
-      } else {
-        break
-      }
-    }
+    const prompts = await this.readPaginatedList<MCPPrompt>('prompts/list', 'prompts')
 
     this.cached.prompts = prompts
 
@@ -1481,32 +1575,7 @@ export class MCPClient {
     if (this.cached.tools.length > 0) {
       return this.cached.tools
     }
-    let tools: MCPTool[] = []
-    let cursor: string | null = null
-    while (true) {
-      const args = {
-        cursor: cursor,
-      } as Record<string, any>
-
-      if (!args.cursor) {
-        delete args.cursor
-      }
-
-      const response = await this.request('tools/list', args)
-      if (this.debug) {
-        console.log('MCP Tools List Response', response)
-      }
-      if (response.rpc.result?.tools) {
-        tools.push(...response.rpc.result.tools)
-        if (response.rpc.result.nextCursor) {
-          cursor = response.rpc.result.nextCursor
-        } else {
-          break
-        }
-      } else {
-        break
-      }
-    }
+    const tools = await this.readPaginatedList<MCPTool>('tools/list', 'tools')
 
     this.cached.tools = tools
 

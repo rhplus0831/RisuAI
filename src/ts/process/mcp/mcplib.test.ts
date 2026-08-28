@@ -17,10 +17,13 @@ vi.mock('../../alert', () => ({
 
 import {
   MCPClient,
+  MCP_LIST_ITEM_LIMIT,
+  MCP_LIST_PAGE_LIMIT,
   MCP_SSE_BUFFER_LIMIT_BYTES,
   MCP_SSE_DEDUP_ID_LIMIT,
   type JsonRPC,
   type MCPCustomTransport,
+  type RPCRequestResult,
   type SseEventDetail,
   WindowedSseIdDedup,
 } from './mcplib'
@@ -128,6 +131,24 @@ function dispatchMcpSse(client: MCPClient, data: JsonRPC) {
       },
     }),
   )
+}
+
+function initializedListClient(capability: 'prompts' | 'tools'): MCPClient {
+  const client = new MCPClient('https://mcp.example/messages')
+  client.initialized = true
+  client.serverInfo = {
+    protocolVersion: '2025-03-26',
+    capabilities: { [capability]: {} },
+    serverInfo: { name: 'test-server', version: '1.0.0' },
+  }
+  return client
+}
+
+function rpcListResult(result: Record<string, unknown>): RPCRequestResult {
+  return {
+    rpc: { jsonrpc: '2.0', id: 'list-response', result },
+    http: { status: 200, headers: {} },
+  }
 }
 
 async function flushPromises(times = 4) {
@@ -724,6 +745,35 @@ describe('MCPClient deadlines and SSE listener cleanup', () => {
     expect(listeners.size).toBe(0)
   })
 
+  it('returns a parse error immediately when an SSE response contains malformed JSON', async () => {
+    let capturedOptions: any
+    fetchNativeMock.mockImplementation((_url: string, options: any) => {
+      capturedOptions = options
+      return Promise.resolve(sseResponse(frameStream(['data:not-json\r\n\r\n'])))
+    })
+
+    const client = new MCPClient('https://mcp.example/messages')
+    const result = await client.request(
+      'tools/list',
+      {},
+      {
+        id: 'malformed-sse-response',
+        requestTimeoutMs: 1000,
+      },
+    )
+
+    expect(result.http.status).toBe(502)
+    expect(result.rpc.id).toBe('malformed-sse-response')
+    expect(result.rpc.error).toEqual({
+      code: -32700,
+      message: 'MCP SSE event contained malformed JSON (8 data bytes)',
+      data: {
+        dataBytes: 8,
+      },
+    })
+    expect(capturedOptions.signal.aborted).toBe(true)
+  })
+
   it('times out the fallback SSE handshake endpoint wait and removes its listener', async () => {
     vi.useFakeTimers()
     vi.spyOn(console, 'warn').mockImplementation(() => {
@@ -931,7 +981,92 @@ describe('MCPClient custom transport request lifecycle', () => {
   })
 })
 
+describe('MCPClient list pagination bounds', () => {
+  it('preserves ordinary cursor pagination and item order', async () => {
+    const client = initializedListClient('prompts')
+    const request = vi
+      .spyOn(client, 'request')
+      .mockResolvedValueOnce(rpcListResult({ prompts: [{ name: 'first' }], nextCursor: 'second-page' }))
+      .mockResolvedValueOnce(rpcListResult({ prompts: [{ name: 'second' }] }))
+
+    await expect(client.getPromptList()).resolves.toEqual([{ name: 'first' }, { name: 'second' }])
+    expect(request).toHaveBeenNthCalledWith(1, 'prompts/list', {})
+    expect(request).toHaveBeenNthCalledWith(2, 'prompts/list', { cursor: 'second-page' })
+  })
+
+  it('rejects a repeated cursor without issuing another request or caching a partial list', async () => {
+    const client = initializedListClient('prompts')
+    const request = vi
+      .spyOn(client, 'request')
+      .mockResolvedValueOnce(rpcListResult({ prompts: [{ name: 'first' }], nextCursor: 'repeated' }))
+      .mockResolvedValueOnce(rpcListResult({ prompts: [{ name: 'second' }], nextCursor: 'repeated' }))
+
+    await expect(client.getPromptList()).rejects.toThrow('repeated pagination cursor "repeated"')
+    expect(request).toHaveBeenCalledTimes(2)
+    expect(client.cached.prompts).toEqual([])
+  })
+
+  it('stops after the fixed page limit when every page supplies a unique cursor', async () => {
+    const client = initializedListClient('tools')
+    let page = 0
+    const request = vi.spyOn(client, 'request').mockImplementation(async () => {
+      page += 1
+      return rpcListResult({ tools: [], nextCursor: `page-${page}` })
+    })
+
+    await expect(client.getToolList()).rejects.toThrow(`exceeded the ${MCP_LIST_PAGE_LIMIT} page limit`)
+    expect(request).toHaveBeenCalledTimes(MCP_LIST_PAGE_LIMIT)
+    expect(client.cached.tools).toEqual([])
+  })
+
+  it('rejects a page that would exceed the aggregate item limit', async () => {
+    const client = initializedListClient('tools')
+    const request = vi.spyOn(client, 'request').mockResolvedValue(
+      rpcListResult({
+        tools: Array.from({ length: MCP_LIST_ITEM_LIMIT + 1 }, (_, index) => ({
+          name: `tool-${index}`,
+          description: '',
+          inputSchema: {},
+        })),
+      }),
+    )
+
+    await expect(client.getToolList()).rejects.toThrow(`exceeded the ${MCP_LIST_ITEM_LIMIT} item limit`)
+    expect(request).toHaveBeenCalledOnce()
+    expect(client.cached.tools).toEqual([])
+  })
+})
+
 describe('MCPClient debug logging', () => {
+  it('parses CRLF frames, no-space fields, and multi-line SSE data', async () => {
+    const client = new MCPClient('https://mcp.example/sse')
+    const collector = collectClientEvents(client)
+
+    try {
+      await client.connectSSE(
+        frameStream([
+          'event:message\r',
+          '\ndata:{"jsonrpc":"2.0",\r\n',
+          'data:"id":"crlf-frame","result":{"ok":true}}\r\n\r',
+          '\n',
+        ]),
+      )
+
+      expect(collector.events.map((event) => event.data)).toEqual([
+        {
+          jsonrpc: '2.0',
+          id: 'crlf-frame',
+          result: {
+            ok: true,
+          },
+        },
+      ])
+    } finally {
+      collector.stop()
+      client.destroy()
+    }
+  })
+
   it('keeps MCP frame and tools-list payload logs silent by default', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
       /* test spy */
