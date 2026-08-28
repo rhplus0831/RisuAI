@@ -2,7 +2,7 @@
 
 Date: 2026-08-29
 
-Status: Active; two findings are done and one remains confirmed.
+Status: Active; three findings are done and one remains confirmed.
 
 This directory owns durable finding and decision records for the audit. Phase 0
 will decide whether the working ledger remains in this index, splits into
@@ -160,3 +160,32 @@ Every finding records:
   collected total from 9,976 to 9,980.
 - Revisit condition: reopen when a new workspace package or test-support root is
   added, or when affected routing becomes graph-generated.
+
+### TSA-P01-002: Server and browser inventories do not prove runner discovery
+
+- State: Done.
+- Severity: Medium.
+- Category: A.
+- Decision: Strengthen, then Keep.
+- Tests/cases: `util/frontend-test-inventory.test.ts`, all nine oracle cases.
+- Production owner: Fastify Vitest and Playwright discovery, alongside the three
+  frontend Vitest projects and checked capability manifest.
+- Protected contract or plausible defect: a tracked Fastify test or browser
+  spec can fall outside its runner configuration while filesystem-derived
+  effectiveness and support manifests remain green.
+- Evidence: the frontend inventory compared independent files with three
+  resolved Vitest projects, but browser rows were filesystem-only and no
+  resolved Fastify comparison existed. Current runners happened to match 154
+  and 7 files; no check made that durable.
+- Companion/overlap analysis: case-count collection reflects a prior resolved
+  run but is a checked artifact, not a live discovery assertion. CI executes
+  what the config selects and cannot report an omitted owner.
+- Action and rollback: the live manifest check now parses resolved Fastify
+  `--filesOnly` and Playwright JSON listing, comparing each to independent
+  filesystem ownership. Parser and mismatch counterexamples are retained.
+- Validation: 9/9 focused cases passed; the live check resolved 538 frontend,
+  154 Fastify, and 7 browser files with no omission or unexpected owner.
+- Count delta: no file delta; two oracle cases added, taking the live total from
+  9,980 to 9,982.
+- Revisit condition: reopen if a second Fastify/Playwright project or non-TS
+  test suffix is introduced.

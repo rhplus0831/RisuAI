@@ -21,14 +21,15 @@ P01-S02.
   and updated every checker, affected owner, support manifest, and link.
 - Closed `TSA-P01-001`: affected routing now covers protocol source/config,
   shared Fastify test support, support deletion, and rename-away deletion.
+- Closed `TSA-P01-002`: independent filesystem owners now match resolved
+  Fastify Vitest and Playwright discovery, alongside the three existing
+  frontend project comparisons.
 
 No product behavior or existing test was removed. The affected policy gained
-four cases; live totals are 699 files and 9,980 cases.
+six cases; live totals are 699 files and 9,982 cases.
 
 ## Remaining Slice Gates
 
-- Check resolved Fastify and Playwright discovery against independent tracked
-  filesystem owners, matching the existing frontend proof.
 - Validate the complete aggregate graph and local/CI owner parity.
 - Ratify dispositions for every in-scope Category A test and runner/config
   support owner.

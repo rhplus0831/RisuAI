@@ -69,6 +69,7 @@ const independentVitestRoots = ['packages', 'src', 'util'] as const
 const ignoredDirectoryNames = new Set(['.git', 'coverage', 'dist', 'node_modules'])
 const frontendTestPattern = /\.(?:test|spec)\.[cm]?[jt]sx?$/
 const browserSmokePattern = /\.spec\.[cm]?[jt]sx?$/
+const fastifyTestPattern = /^server\/fastify\/__tests__\/.+\.test\.[cm]?[jt]sx?$/
 
 const performanceGateFiles = new Set<string>(performanceTestFiles)
 const uiCoverageFileSet = new Set<string>(uiCoverageTestFiles)
@@ -277,6 +278,54 @@ export function discoverBrowserSmokeSpecs(rootDir: string): string[] {
     .sort()
 }
 
+export function discoverFastifyVitestFiles(rootDir: string): string[] {
+  return walkFiles(path.join(rootDir, 'server/fastify/__tests__'))
+    .map((file) => normalizeRepoPath(path.relative(rootDir, file)))
+    .filter((file) => fastifyTestPattern.test(file))
+    .sort()
+}
+
+export function parseFastifyFilesOnlyOutput(output: string): Set<string> {
+  return new Set(
+    output
+      .split(/\r?\n/)
+      .map((line) => normalizeRepoPath(line.trim()))
+      .filter((line) => fastifyTestPattern.test(line)),
+  )
+}
+
+export function parsePlaywrightListFiles(output: string): Set<string> {
+  const value = JSON.parse(output) as unknown
+  const files = new Set<string>()
+  const visit = (candidate: unknown): void => {
+    if (!candidate || typeof candidate !== 'object') return
+    const record = candidate as Record<string, unknown>
+    if (Array.isArray(record.specs)) {
+      for (const spec of record.specs) {
+        if (!spec || typeof spec !== 'object') continue
+        const file = (spec as Record<string, unknown>).file
+        if (typeof file === 'string') {
+          files.add(normalizeRepoPath(`server/fastify/browser-smoke/${file}`))
+        }
+      }
+    }
+    if (Array.isArray(record.suites)) for (const suite of record.suites) visit(suite)
+  }
+  visit(value)
+  return files
+}
+
+export function validateResolvedLaneDiscovery(
+  expectedFiles: readonly string[],
+  discoveredFiles: ReadonlySet<string>,
+): Pick<DiscoveryProblem, 'missing' | 'unexpected'> {
+  const expected = new Set(expectedFiles)
+  return {
+    missing: expectedFiles.filter((file) => !discoveredFiles.has(file)).sort(),
+    unexpected: [...discoveredFiles].filter((file) => !expected.has(file)).sort(),
+  }
+}
+
 export function parseVitestFilesOnlyOutput(output: string): Map<string, Set<string>> {
   const projects = new Map<string, Set<string>>()
   for (const line of output.split(/\r?\n/)) {
@@ -428,6 +477,53 @@ function collectConfiguredVitestProjects(rootDir: string, mode: VitestDiscoveryM
   return projects
 }
 
+function collectConfiguredFastifyFiles(rootDir: string): Set<string> {
+  const command = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
+  const result = spawnSync(
+    command,
+    ['exec', 'vitest', 'list', '--config', 'server/fastify/vitest.config.ts', '--filesOnly', '--no-color'],
+    { cwd: rootDir, encoding: 'utf8', env: { ...process.env, NO_COLOR: '1' } },
+  )
+  if (result.error) throw result.error
+  if (result.status !== 0) {
+    throw new Error(result.stderr.trim() || result.stdout.trim() || 'Fastify Vitest discovery failed')
+  }
+  return parseFastifyFilesOnlyOutput(result.stdout)
+}
+
+function collectConfiguredBrowserSpecFiles(rootDir: string): Set<string> {
+  const command = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
+  const result = spawnSync(
+    command,
+    ['exec', 'playwright', 'test', '-c', 'playwright.fastify-smoke.config.ts', '--list', '--reporter=json'],
+    { cwd: rootDir, encoding: 'utf8', env: { ...process.env, NO_COLOR: '1' } },
+  )
+  if (result.error) throw result.error
+  if (result.status !== 0) {
+    throw new Error(result.stderr.trim() || result.stdout.trim() || 'Playwright discovery failed')
+  }
+  return parsePlaywrightListFiles(result.stdout)
+}
+
+function assertResolvedLaneDiscovery(
+  label: string,
+  expectedFiles: readonly string[],
+  discoveredFiles: ReadonlySet<string>,
+): void {
+  const problem = validateResolvedLaneDiscovery(expectedFiles, discoveredFiles)
+  if (problem.missing.length || problem.unexpected.length) {
+    throw new Error(
+      [
+        `${label} resolved discovery does not match filesystem ownership`,
+        problem.missing.length ? `missing: ${problem.missing.join(', ')}` : '',
+        problem.unexpected.length ? `unexpected: ${problem.unexpected.join(', ')}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    )
+  }
+}
+
 function assertDiscoveryVariant(
   label: string,
   expectedFiles: readonly string[],
@@ -453,6 +549,8 @@ interface InventoryResult {
   fullProjects: Map<string, Set<string>>
   ordinaryProjects: Map<string, Set<string>>
   aggregateOrdinaryProjects: Map<string, Set<string>>
+  fastifyFileCount: number
+  browserFileCount: number
 }
 
 function inventoryRows(rootDir: string): InventoryResult {
@@ -485,6 +583,10 @@ function inventoryRows(rootDir: string): InventoryResult {
     independentFiles.filter((file) => !performanceGateFiles.has(file) && !uiCoverageFileSet.has(file)),
     aggregateOrdinaryProjects,
   )
+  const fastifyFiles = discoverFastifyVitestFiles(rootDir)
+  assertResolvedLaneDiscovery('Fastify Vitest', fastifyFiles, collectConfiguredFastifyFiles(rootDir))
+  const browserFiles = discoverBrowserSmokeSpecs(rootDir)
+  assertResolvedLaneDiscovery('Playwright browser smoke', browserFiles, collectConfiguredBrowserSpecFiles(rootDir))
 
   const rows: FrontendTestInventoryRow[] = []
   for (const [project, files] of fullProjects) {
@@ -492,11 +594,18 @@ function inventoryRows(rootDir: string): InventoryResult {
       rows.push(createFrontendTestInventoryRow(file, project as FrontendTestProject, frontendSources.get(file) ?? ''))
     }
   }
-  for (const file of discoverBrowserSmokeSpecs(rootDir)) {
+  for (const file of browserFiles) {
     rows.push(createFrontendTestInventoryRow(file, 'browser-smoke', fs.readFileSync(path.join(rootDir, file), 'utf8')))
   }
   rows.sort((left, right) => left.file.localeCompare(right.file))
-  return { rows, fullProjects, ordinaryProjects, aggregateOrdinaryProjects }
+  return {
+    rows,
+    fullProjects,
+    ordinaryProjects,
+    aggregateOrdinaryProjects,
+    fastifyFileCount: fastifyFiles.length,
+    browserFileCount: browserFiles.length,
+  }
 }
 
 const inventoryColumns = [
@@ -533,6 +642,8 @@ function inventorySummary(
   fullProjects: ReadonlyMap<string, ReadonlySet<string>>,
   ordinaryProjects: ReadonlyMap<string, ReadonlySet<string>>,
   aggregateOrdinaryProjects: ReadonlyMap<string, ReadonlySet<string>>,
+  fastifyFileCount: number,
+  browserFileCount: number,
 ): string {
   const targetCounts = new Map<FrontendCapability, number>([
     ['N', 0],
@@ -549,7 +660,8 @@ function inventorySummary(
     `Full Vitest discovery: ${projectSummary(fullProjects)}`,
     `Standalone ordinary discovery: ${projectSummary(ordinaryProjects)}`,
     `test:all ordinary discovery: ${projectSummary(aggregateOrdinaryProjects)}`,
-    `Browser smoke discovery: ${rows.filter((row) => row.currentProject === 'browser-smoke').length} files`,
+    `Fastify resolved discovery: ${fastifyFileCount} files`,
+    `Browser smoke resolved discovery: ${browserFileCount} files`,
     `Explicit capability ownership: ${[...targetCounts].map(([target, count]) => `${target}=${count}`).join(', ')}`,
   ].join('\n')
 }
@@ -568,7 +680,8 @@ function parseCliOptions(argv: readonly string[]): CliOptions {
 
 export function runFrontendTestInventoryCli(argv: readonly string[], rootDir = process.cwd()): number {
   const options = parseCliOptions(argv)
-  const { rows, fullProjects, ordinaryProjects, aggregateOrdinaryProjects } = inventoryRows(rootDir)
+  const { rows, fullProjects, ordinaryProjects, aggregateOrdinaryProjects, fastifyFileCount, browserFileCount } =
+    inventoryRows(rootDir)
   const output = formatFrontendTestInventory(rows)
   const outputFile = path.resolve(rootDir, options.file)
 
@@ -582,7 +695,16 @@ export function runFrontendTestInventoryCli(argv: readonly string[], rootDir = p
     }
   }
 
-  console.log(inventorySummary(rows, fullProjects, ordinaryProjects, aggregateOrdinaryProjects))
+  console.log(
+    inventorySummary(
+      rows,
+      fullProjects,
+      ordinaryProjects,
+      aggregateOrdinaryProjects,
+      fastifyFileCount,
+      browserFileCount,
+    ),
+  )
   console.log(`${options.mode === 'write' ? 'Wrote' : 'Verified'} ${options.file}`)
   return 0
 }

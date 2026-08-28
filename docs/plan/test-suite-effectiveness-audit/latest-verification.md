@@ -264,3 +264,18 @@ pnpm exec vitest run util/affected-tests.test.ts
 Result: 15/15 passed. The file count is unchanged; four cases take the live
 total from 9,976 to 9,980. Representative CLI dry runs and the complete
 aggregate are recorded when P01-S01 closes.
+
+### Resolved Fastify and Playwright discovery
+
+`TSA-P01-002` is done. The live capability checker now compares independent
+filesystem owners with resolved Fastify Vitest and Playwright discovery, in
+addition to its existing three frontend project views.
+
+```sh
+pnpm exec vitest run util/frontend-test-inventory.test.ts
+pnpm check:frontend-test-inventory
+```
+
+Results: 9/9 oracle cases passed; live discovery matched 538 frontend files,
+154 Fastify files, and 7 browser specs. Two cases take the live collected total
+from 9,980 to 9,982 without a file-count change.

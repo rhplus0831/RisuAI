@@ -3458,7 +3458,7 @@
       "parameterizedRows": 2
     },
     "util/frontend-test-inventory.test.ts": {
-      "cases": 7,
+      "cases": 9,
       "skipped": 0,
       "parameterizedRows": 0
     },

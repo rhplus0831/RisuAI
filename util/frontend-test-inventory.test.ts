@@ -5,9 +5,12 @@ import {
   createFrontendTestInventoryRow,
   frontendCapabilityOverrideReason,
   formatFrontendTestInventory,
+  parseFastifyFilesOnlyOutput,
+  parsePlaywrightListFiles,
   parseVitestFilesOnlyOutput,
   validateFrontendCapabilityRouting,
   validateFrontendVitestDiscovery,
+  validateResolvedLaneDiscovery,
 } from './frontend-test-inventory.js'
 
 describe('frontend test inventory', () => {
@@ -39,6 +42,40 @@ Svelte warning
       duplicates: ['src/shared.test.ts (frontend-node, frontend-svelte-node)'],
       missing: ['src/missing.test.ts'],
       unexpected: ['src/unexpected.test.ts'],
+    })
+  })
+
+  it('parses resolved Fastify and Playwright file ownership', () => {
+    expect(
+      parseFastifyFilesOnlyOutput(`
+warning
+server/fastify/__tests__/auth.test.ts
+server/fastify/__tests__/commands.test.ts
+`),
+    ).toEqual(new Set(['server/fastify/__tests__/auth.test.ts', 'server/fastify/__tests__/commands.test.ts']))
+    expect(
+      parsePlaywrightListFiles(
+        JSON.stringify({
+          suites: [
+            {
+              specs: [{ file: 'first.spec.ts' }],
+              suites: [{ specs: [{ file: 'nested.spec.ts' }] }],
+            },
+          ],
+        }),
+      ),
+    ).toEqual(new Set(['server/fastify/browser-smoke/first.spec.ts', 'server/fastify/browser-smoke/nested.spec.ts']))
+  })
+
+  it('reports missing and unexpected resolved lane owners', () => {
+    expect(
+      validateResolvedLaneDiscovery(
+        ['expected.test.ts', 'missing.test.ts'],
+        new Set(['expected.test.ts', 'extra.test.ts']),
+      ),
+    ).toEqual({
+      missing: ['missing.test.ts'],
+      unexpected: ['extra.test.ts'],
     })
   })
 

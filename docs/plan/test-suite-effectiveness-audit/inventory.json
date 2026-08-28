@@ -30559,7 +30559,9 @@
       ],
       "primaryCategory": "A",
       "categoryRule": "assurance-tooling",
-      "seamTags": [],
+      "seamTags": [
+        "client-fastify"
+      ],
       "kind": "architecture policy",
       "dependencySignals": [
         "timers",
@@ -30568,28 +30570,29 @@
         "browser"
       ],
       "caseCounts": {
-        "cases": 7,
+        "cases": 9,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "all nine discovery, capability, signal, and manifest-oracle cases",
         "valueClasses": [
-          "pending"
+          "architecture policy",
+          "diagnostic oracle"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "resolved frontend/Fastify/Playwright discovery and checked N/S/D/B capability ownership",
+        "plausibleDefect": "A Fastify test or browser spec remains tracked in manifests but silently falls outside its runner configuration.",
+        "risk": "Medium false confidence from an exhaustive filesystem inventory that does not reflect actual execution.",
+        "companionEvidence": "The effectiveness inventory independently owns tracked files and metadata; runner resolution now proves execution ownership.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Independent filesystem sets are compared with all three resolved frontend projects, Fastify Vitest, and Playwright; parser and mismatch counterexamples prove the oracle.",
+        "findingId": "TSA-P01-002",
+        "severity": "Medium",
+        "action": "Retain all five resolved discovery comparisons in the checked manifest command.",
+        "validation": "9/9 focused cases and live 538 frontend / 154 Fastify / 7 browser resolved checks passed",
+        "state": "remediated"
       }
     },
     {

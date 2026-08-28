@@ -35,11 +35,11 @@ in [`latest-verification.md`](latest-verification.md).
 | Fastify Vitest                       | 154 files                                    |
 | Browser smoke                        | 7 files                                      |
 | Compatibility harness                | Opt-in; outside `test:all` and file count     |
-| Collected cases                      | 9,980 total; 1 direct-only skip; 1,261 parameterized rows |
+| Collected cases                      | 9,982 total; 1 direct-only skip; 1,261 parameterized rows |
 | Support owners                       | 253 standalone; 64 mixed production seams   |
 | Primary-category assignments         | 699 of 699 ratified                          |
-| Complete file dispositions           | 6 Keep                                       |
-| Findings                             | 2 done / 1 confirmed                         |
+| Complete file dispositions           | 7 Keep                                       |
+| Findings                             | 3 done / 1 confirmed                         |
 
 The 698-file rows preserve the plan-creation anchor. The live counts, support
 owners, runtime evidence, and category totals are checked by the Phase 0
@@ -71,13 +71,13 @@ See [`phases/README.md`](phases/README.md) for links and shared slice rules.
 
 | Decision   | Count | Meaning                                                    |
 | ---------- | ----: | ---------------------------------------------------------- |
-| Keep       |     6 | Distinct contract and suitable evidence layer.             |
+| Keep       |     7 | Distinct contract and suitable evidence layer.             |
 | Strengthen |     0 | Valuable intent, but insufficient or self-fulfilling proof. |
 | Merge      |     0 | Equivalent failure mode can move into a stronger owner.    |
 | Reclassify |     0 | Valuable test belongs to another category, lane, or type.  |
 | Remove     |     0 | No meaningful unique value after mandatory removal proof.  |
 | Add        |     0 | Material uncovered contract requires new proof.            |
-| Pending    |   693 | Known test owners awaiting their owning phase review.       |
+| Pending    |   692 | Known test owners awaiting their owning phase review.       |
 
 ## Current Decisions
 
