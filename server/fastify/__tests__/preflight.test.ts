@@ -129,6 +129,18 @@ describe('preflightTemplateTokens — null template fallback', () => {
     expect(result.memoryCardUsed).toBe(false)
     expect(result.hasCachePoint).toBe(false)
   })
+
+  it('budgets the character depth prompt that final rendering inserts', () => {
+    const db = makeDatabase()
+    const result = preflightTemplateTokens({
+      ctx: ctxFor(db),
+      currentChar: makeCharacter({ depth_prompt: { depth: 1, prompt: 'hello' } }),
+      unformated: makeSlots(),
+      promptTemplate: null,
+      usingPromptTemplate: false,
+    })
+    expect(result.addedTokens).toBe(6)
+  })
 })
 
 describe('preflightTemplateTokens — flag cards', () => {

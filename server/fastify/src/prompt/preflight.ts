@@ -1,7 +1,7 @@
 import type { character } from '../../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { PromptItem } from '../../../../src/ts/process/prompt'
-import type { ExpandContext } from './variables.js'
+import { expandVariables, type ExpandContext } from './variables.js'
 import { createPositionParser, type LorebookActivationReport } from './lorebook.js'
 import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
@@ -89,12 +89,24 @@ export function preflightTemplateTokens(input: PreflightInput): PreflightResult 
     }
   }
 
+  const tokenizeCharacterDepthPrompt = (): void => {
+    const depthPrompt = currentChar.depth_prompt
+    if (!depthPrompt?.prompt) return
+    tokenizeAll([
+      {
+        role: 'system',
+        content: expandVariables(depthPrompt.prompt, { ...ctx, chara: currentChar }).text,
+      },
+    ])
+  }
+
   // Match the SPA's `preflightTemplateTokens` null-template fallback:
   // tokenize every slot once and return.
   if (!promptTemplate) {
     for (const key of Object.keys(unformated) as Array<keyof PromptUnformatedSlots>) {
       tokenizeAll(unformated[key])
     }
+    tokenizeCharacterDepthPrompt()
     return { addedTokens, memoryCardUsed, hasCachePoint }
   }
 
@@ -127,6 +139,8 @@ export function preflightTemplateTokens(input: PreflightInput): PreflightResult 
       hasCachePoint = true
     }
   }
+
+  tokenizeCharacterDepthPrompt()
 
   return { addedTokens, memoryCardUsed, hasCachePoint }
 }

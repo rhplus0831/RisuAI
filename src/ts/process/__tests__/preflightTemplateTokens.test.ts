@@ -103,6 +103,18 @@ describe('preflightTemplateTokens - no template path', () => {
     )
     expect(result.addedTokens).toBe(0)
   })
+
+  it('budgets the character depth prompt that final rendering inserts', async () => {
+    const result = await preflightTemplateTokens(
+      null,
+      false,
+      emptyUnformated(),
+      new FakeTokenizer() as never,
+      makeChar({ depth_prompt: { depth: 1, prompt: 'Depth {{char}}' } }),
+      passThroughPositionParser,
+    )
+    expect(result.addedTokens).toBe('Depth Test'.length)
+  })
 })
 
 describe('preflightTemplateTokens - flag setters', () => {

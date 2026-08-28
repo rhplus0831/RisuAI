@@ -46,6 +46,17 @@ export async function preflightTemplateTokens(
     }
   }
 
+  const tokenizeCharacterDepthPrompt = async () => {
+    const depthPrompt = currentChar.depth_prompt
+    if (!depthPrompt?.prompt) return
+    await tokenizeChatArray([
+      {
+        role: 'system',
+        content: risuChatParser(depthPrompt.prompt, { chara: currentChar }),
+      },
+    ])
+  }
+
   if (!promptTemplate) {
     for (const key in unformated) {
       const chats = unformated[key as keyof PromptUnformatedSlots]
@@ -53,6 +64,7 @@ export async function preflightTemplateTokens(
         addedTokens += await tokenizer.tokenizeChat(chat)
       }
     }
+    await tokenizeCharacterDepthPrompt()
     return { addedTokens, memoryCardUsed, hasCachePoint }
   }
 
@@ -202,6 +214,8 @@ export async function preflightTemplateTokens(
       }
     }
   }
+
+  await tokenizeCharacterDepthPrompt()
 
   return { addedTokens, memoryCardUsed, hasCachePoint }
 }
