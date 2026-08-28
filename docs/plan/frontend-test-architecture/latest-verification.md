@@ -4,11 +4,44 @@ Date: 2026-08-28
 
 ## State
 
-Phase 5 is in progress after its fresh Happy-DOM profile and ownership
-accounting completed three repeated-import consolidations and one explicit
-static-source-policy gate. Formal closeout is next. This record does not
-authorize repository-wide default inversion or migration outside the later
-phase rules.
+Phase 5 is complete. Three repeated-import families have coherent owners, the
+exceptional source-policy style has one explicit Node gate, every remaining D
+owner is accounted for, and the complete eight-lane validation passed. Phase 6
+is next; this record does not authorize repository-wide default inversion
+before its rollout gate.
+
+## Phase 5 Closeout And Re-Profile
+
+The final full universe is 536 files at 193 N / 17 S / 326 D. Standalone
+ordinary is 534 files at 193 N / 17 S / 324 D, and aggregate ordinary is 528
+files / 6,423 tests at 192 N / 17 S / 319 D. Relative to Phase 5 start, four D
+boundaries were removed and one explicit N gate was added, for a net reduction
+of three files without removing a test.
+
+The transform-cache-cleared cold run passed in 69.56s wall / 68.60s Vitest with
+4,902,684 KiB peak RSS. Three warm runs passed at 69.62s, 68.55s, and 66.61s
+wall; median wall is 68.55s, median Vitest is 67.68s, and median peak RSS is
+4,769,088 KiB. Against Phase 4, wall improves 2.2% and peak RSS 2.5%. Against
+Phase 0, wall improves 5.2% and peak RSS 0.3%. The primary and stretch targets
+remain open.
+
+Median worker phases are 102.11s transform, 28.16s setup, 396.89s import,
+79.75s tests, and 41.06s environment. Across the three selected consolidation
+families, focused import sum falls 59.3%, environment sum 60.4%, and sequential
+wall 4.4%; this is the direct repeated-graph mechanism.
+
+Independent Node passed 193 files / 1,314 tests, Svelte+Node 17 / 167, and
+standalone Happy-DOM 324 / 5,145. UI coverage passed 6 / 203 with all thresholds.
+The complete `pnpm test:all` passed in 3m22.2s: 528 frontend files / 6,423
+tests, 154 server files / 3,295 passes with one skip, all 34 browser-smoke
+cases, UI coverage, both type-check lanes, formatting, and 2 performance files /
+6 tests.
+
+The remaining large chat-command, bootstrap, plugin, translator/settings,
+picker, fixture, Hypa, DefaultChatScreen, custom-HTML/parser, and
+Bookmark/resource-guard owners have distinct cohesive behavior or lifecycle
+boundaries. Phase 5 stops; revisit only with new scheduling evidence or a
+shared production seam.
 
 ## Phase 5 Static Architecture Gate
 

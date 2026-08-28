@@ -8,16 +8,15 @@ codebase remain authoritative until a phase lands.
 
 ## Current Snapshot
 
-- Plan state: Phases 0-4 complete; Phase 5 in progress.
-- Current phase: Phase 5 — DOM Contract Consolidation (in progress).
-- Active slice: Formal Phase 5 closeout and reprofile.
+- Plan state: Phases 0-5 complete; Phase 6 pending.
+- Current phase: Phase 6 — Routing And CI Enforcement (pending).
+- Active slice: None; Phase 5 is closed.
 - Implementation state: Toggles, AlertComp, and provider controls now have one
   coherent DOM owner apiece. Four original D file boundaries were removed with
   all 22 selected visible-behavior cases retained; 29 source policies now have
   one explicit zero-DOM Node architecture owner.
 - Blockers: None.
-- Next action: Run the complete validation lanes and cold/three-warm ordinary
-  profile, then record the Phase 5 stopping decision.
+- Next action: Begin the Phase 6 routing and CI enforcement rollout gate.
 
 ## Phase Router
 
@@ -28,7 +27,7 @@ codebase remain authoritative until a phase lands.
 | [2](phases/phase-2-pure-node-promotion.md) | Complete | Promoted already-pure tests to Node and recorded every retained N candidate. |
 | [3](phases/phase-3-svelte-node-promotion.md) | Complete | Promoted Svelte-compiled tests that do not require DOM behavior. |
 | [4](phases/phase-4-pure-logic-extraction.md) | Complete | Extracted measured pure-logic seams while retaining DOM contracts. |
-| [5](phases/phase-5-dom-contract-consolidation.md) | In progress | Consolidate repeated DOM setup and clarify visible-state ownership. |
+| [5](phases/phase-5-dom-contract-consolidation.md) | Complete | Consolidated repeated DOM setup and clarified visible-state ownership. |
 | [6](phases/phase-6-routing-and-ci-enforcement.md) | Pending | Enforce explicit routing and align affected tests, coverage, aggregate execution, and CI. |
 | [7](phases/phase-7-verification-and-closeout.md) | Pending | Prove final budgets and behavior, update current docs, and archive the workstream. |
 
@@ -165,6 +164,40 @@ whole-lane warm median is statistically unchanged from Phase 3 under parallel
 scheduling. The primary target remains open. Further Phase 4 extraction stops:
 remaining measured costs lack a cohesive production pure seam, and repeated
 DOM setup now belongs to Phase 5.
+
+## Phase 5 Cumulative Result
+
+| Measurement | Result |
+| --- | ---: |
+| Completed implementation slices | 4 |
+| Consolidated DOM boundaries | 7 -> 3 files / 22 retained tests |
+| Explicit static gate | 1 N file / 29 transferred tests |
+| Full three-project universe | 536 files: 193 N / 17 S / 326 D |
+| Standalone ordinary frontend | 534 files: 193 N / 17 S / 324 D |
+| `test:all` ordinary frontend | 528 files / 6,423 tests: 192 N / 17 S / 319 D |
+| Cold ordinary frontend | 69.56s wall / 68.60s Vitest |
+| Warm ordinary wall median | 68.55s (66.61-69.62s) |
+| Warm Vitest duration median | 67.68s |
+| Warm peak RSS median | 4,769,088 KiB |
+| Wall delta from Phase 4 | -2.2% (inside 5% noise) |
+| Wall delta from Phase 0 | -5.2% |
+| Focused family import sum | 66.41s -> 27.05s (-59.3%) |
+| Focused family environment sum | 951ms -> 377ms (-60.4%) |
+| Focused UI coverage | 6 files / 203 tests / 18.81s Vitest |
+| Full `test:all` | 3m22.2s wall |
+
+All 326 remaining D owners are explicit: 230 direct behavior owners, 91 exact
+eager-window retainers, two real-DOMParser contracts, and three exact target-N
+browser retainers. Selected consolidations passed three shuffled seeds and
+retained independent setup and deterministic cleanup. Residual chat-command,
+bootstrap, plugin, settings, picker, fixture, Hypa, DefaultChatScreen,
+custom-HTML/parser, and Bookmark/resource-guard owners retain distinct cohesive
+graphs; merging them lacks a measured lifecycle seam.
+
+The formal median improves 2.2% from Phase 4 and 5.2% from Phase 0 while the
+primary target remains unmet. Phase 5 stops because every selected family and
+ownership exception is resolved; suffix defaults and CI enforcement now belong
+to Phase 6.
 
 ## Current Decisions
 
@@ -355,6 +388,11 @@ DOM setup now belongs to Phase 5.
     focused contracts passed, the gate has 0ms DOM-environment setup, and three
     shuffled seeds passed. The seven D owners now contain only their behavioral
     contracts; the exceptional assertion style has one discoverable owner.
+45. Phase 5 closed with all 326 remaining D owners explicitly accounted for
+    and the complete eight-lane gate green. Its 68.55s warm wall median is 2.2%
+    below Phase 4 and 5.2% below Phase 0; the focused families cut import sum
+    59.3% and environment sum 60.4%. Residual large/repeated owners stay
+    separate because their production graphs or lifecycle seams differ.
 
 ## Accepted Observations
 
@@ -397,15 +435,14 @@ promotion continues.
 
 ## Latest Completed Slice
 
-[Phase 5 static architecture gate](phases/slices/phase-5/static-architecture-gate.md)
-moved all 29 embedded source-policy assertions to one zero-DOM Node owner while
-retaining the seven original behavioral owners in Happy-DOM.
+[Phase 5 closeout and re-profile](phases/slices/phase-5/closeout-and-reprofile.md)
+records the final ownership proof, cold/three-warm profile, residual-owner
+stopping decision, and complete eight-lane validation.
 
 ## Latest Verification
 
-See [`latest-verification.md`](latest-verification.md) for the current Phase 5
-profile and candidate measurements, the Phase 4 formal benchmark, and preceding
-promotion and probe records.
+See [`latest-verification.md`](latest-verification.md) for the Phase 5 closeout,
+candidate measurements, and preceding promotion and probe records.
 
 ## Maintenance Rules
 

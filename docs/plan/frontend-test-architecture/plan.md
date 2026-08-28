@@ -308,9 +308,9 @@ Each candidate requires a fresh profile and a slice-specific value hypothesis.
 
 ## Execution Cursor
 
-Phases 0-4 are complete. Phase 5 has completed the Toggles audit, AlertComp,
-Ooba/provider-control, and explicit static-source-policy slices selected by its
-current profile; formal closeout is executing. Phase 4 stopped after its ranked
+Phases 0-5 are complete. Phase 5 consolidated the selected Toggles audit,
+AlertComp, and Ooba/provider-control families, centralized source-policy checks,
+and passed formal closeout. Phase 6 is next. Phase 4 stopped after its ranked
 candidates because the remaining costs did not expose another cohesive
 production pure seam. Do not invert suffix defaults before the Phase 6
 completeness gate.

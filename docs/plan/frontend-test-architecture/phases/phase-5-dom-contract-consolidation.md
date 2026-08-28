@@ -1,6 +1,6 @@
 # Phase 5: DOM Contract Consolidation
 
-Status: In Progress
+Status: Complete
 
 ## Progress
 
@@ -20,7 +20,9 @@ Status: In Progress
 - [Static architecture gate](slices/phase-5/static-architecture-gate.md) moves
   all 29 embedded source-policy checks out of seven mixed D suites and into one
   explicitly labeled zero-DOM Node owner.
-- Next: run the formal Phase 5 closeout lanes and record the cold/warm profile.
+- [Closeout and re-profile](slices/phase-5/closeout-and-reprofile.md) proves
+  final D ownership, records the cold/three-warm profile and residual owners,
+  and passes the complete eight-lane gate.
 
 ## Objective
 

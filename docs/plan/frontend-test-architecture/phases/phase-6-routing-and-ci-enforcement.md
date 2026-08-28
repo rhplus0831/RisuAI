@@ -1,6 +1,6 @@
 # Phase 6: Routing And CI Enforcement
 
-Status: Pending Phase 5
+Status: Pending
 
 ## Objective
 
