@@ -167,6 +167,7 @@ export const categoryRules: readonly CategoryRule[] = [
       /^packages\/protocol\/src\/importBoundary\.test\.ts$/,
       /^src\/lib\/_audit\/frontendArchitecture\.static\.test\.ts$/,
       /^src\/ts\/alert\.importSafety\.test\.ts$/,
+      /^src\/ts\/process\/rawGenerationCallerAllowlist\.test\.ts$/,
       /^src\/ts\/__tests__\/(?:renderCostHarness|sendCloneCountProbe)\.test\.ts$/,
       /^src\/ts\/stores\.importSafety\.svelte\.test\.ts$/,
       /^server\/fastify\/__tests__\/(?:protocolPackage|serverLoadCostHarness|terminalFrameAssertions)\.test\.ts$/,
@@ -183,6 +184,7 @@ export const categoryRules: readonly CategoryRule[] = [
       /^src\/lib\/ChatScreens\//,
       /^src\/lang\/index\.test\.ts$/,
       /^src\/ts\/observer\.svelte\.test\.ts$/,
+      /^src\/lib\/Others\/alertPromptInfo\.test\.ts$/,
     ],
   },
   {
@@ -193,6 +195,8 @@ export const categoryRules: readonly CategoryRule[] = [
     patterns: [
       /^src\/lib\/Setting\//,
       /^src\/lib\/UI\/(?:ModelList|NanoGPTDashboard|Realm\/|ScriptModelOverrideSelectors)/,
+      /^src\/lib\/UI\/PromptDataItem\.svelte\.test\.ts$/,
+      /^src\/ts\/chatGenerationTogglePresets\.test\.ts$/,
       /^src\/ts\/(?:moduleEditor|presetFieldMirror)/,
     ],
   },
@@ -203,6 +207,7 @@ export const categoryRules: readonly CategoryRule[] = [
       'Authentication, authorization, egress and body limits, tracing, startup/shutdown, service workers, and platform routes.',
     patterns: [
       /^server\/fastify\/__tests__\/hub\.test\.ts$/,
+      /^server\/fastify\/__tests__\/(?:requestAbort|streamBackpressure)\.test\.ts$/,
       /^src\/ts\/gui\/loginMessageOrigin\.test\.ts$/,
       /(?:^|\/)(?:auth|config|echo|http|index|apiStatus|requestLimits|requestPolicy|ssrf|webPush|pushNotifications|serviceWorker|startupShutdown|shutdown|traceRedaction|tracing|agentDataSandbox)(?:\.|\/)/i,
       /(?:bodyCap|decompression|prototypePollution|routeProtection|security|TraceSidecar|startupTelemetry|runtimeLimits|payloadBudgets|requestTrace|sourcemap|browserLocalSurface|pushNotification|globalApi\.proxy|globalApi\.fetchNative|localNetwork|proxyJobWs|polyfill|\/proxy\.test|\/smoke\.test|\/static\.test|notification\.test)/i,
@@ -215,6 +220,7 @@ export const categoryRules: readonly CategoryRule[] = [
       'Asset bytes and ownership, imports/exports, saves, backups, archive codecs, Realm staging, and historical formats.',
     patterns: [
       /^src\/ts\/characterCards\.pngImport\.svelte-node\.test\.ts$/,
+      /^src\/ts\/server\/promptPresetIconUpload\.test\.ts$/,
       /^src\/ts\/chatImportPlanning\.test\.ts$/,
       /(?:^|\/)(?:assets?|assetGc|assetMetadataIndex|backups?|saveCodec|saveFiles?|browserFileService|inlayCatalog)(?:\.|\/)/i,
       /(?:realmImport|charx|risuSave|processzip|importChat|exportChat|importPreset|downloadPreset|backupRestore|bundleImport|bundleExport|historicalFormat|compatibilityAdapters|filePicker|globalApi\.(?:downloadFile|getFileSrc|saveAssets)|dynamicutils\/pdf|files\/multisend|files\/tests\/inlays|biasImport|moduleAssetUpload|naiVibeImport|sha256Fallback)/i,
@@ -235,6 +241,7 @@ export const categoryRules: readonly CategoryRule[] = [
     category: 'I',
     description: 'CBS, parsing, regex/display scripts, triggers, Lua, automation, and bounded execution.',
     patterns: [
+      /^server\/fastify\/__tests__\/promptVariables\.test\.ts$/,
       /(?:^|\/)(?:parser|scripts?|triggers?|lua|cbs)(?:\.|\/)/i,
       /(?:boundedRegex|regex|editdisplay|displaySource|scriptings?|additionalHtml|htmlParser|automation|trigger|luaRuntime|inputHooks?)/i,
     ],
@@ -253,9 +260,25 @@ export const categoryRules: readonly CategoryRule[] = [
     category: 'G',
     description: 'Provider adapters, models and credentials, translation, image/audio/transcription, and media codecs.',
     patterns: [
-      /^server\/fastify\/__tests__\/(?:chatDispatchLogitBias|chatDispatchProfileOptions|openrouterFreeModel)\.test\.ts$/,
+      /^server\/fastify\/__tests__\/(?:chatDispatchLogitBias|chatDispatchProfileOptions|generation\.completion|openrouterFreeModel|tokenizerConfig|tokenizerGoldenCounts|tokens)\.test\.ts$/,
+      /^src\/ts\/tokenizer\.test\.ts$/,
       /(?:^|\/)(?:providers?|models?|credentials?|translator|translation|media|audio|speech|transcription|imageGeneration|compressImage)(?:\.|\/)/i,
       /(?:anthropic|bedrock|cohere|gemini|google|horde|kobold|ollama|openai|ooba|mistral|vertex|sigv4|stableDiff|novelAi|elevenLabs|whisper|provider|modelProfile|credential|translation|translator|imggen|imageEmotion|completionSound|stripCoT|tts|jsonControls|additionalParams|seperateParameters|requestHistory|dispatchRequest|emotionFallback|emotionFromResponse|clientContext|modelRoleRouting|transformers)/i,
+    ],
+  },
+  {
+    id: 'reviewed-browser-state-boundaries',
+    category: 'B',
+    description: 'Reviewed prompt-named owners whose dominant contract is browser hydration and recovery.',
+    patterns: [/^src\/ts\/server\/promptTemplateHydration\.test\.ts$/],
+  },
+  {
+    id: 'reviewed-persistence-bridge-boundaries',
+    category: 'C',
+    description: 'Reviewed generation-settings and prompt-template owners whose dominant contract is durable mutation.',
+    patterns: [
+      /^src\/ts\/(?:activeChatGenerationSettings|agentPresets|chatGenerationSettings)\.test\.ts$/,
+      /^src\/ts\/server\/promptTemplateBridge\.svelte\.test\.ts$/,
     ],
   },
   {
