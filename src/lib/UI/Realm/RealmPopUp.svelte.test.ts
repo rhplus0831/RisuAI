@@ -109,6 +109,7 @@ beforeEach(() => {
   popupMocks.clipboardWrite.mockReset()
   popupMocks.downloadRisuHub.mockReset()
   popupMocks.getRealmInfo.mockReset()
+  popupMocks.database.account.id = 'realm-owner'
   popupMocks.authenticatedHubFetch.mockResolvedValue(new Response('removed'))
   popupMocks.clipboardWrite.mockResolvedValue(undefined)
   Object.defineProperty(navigator, 'clipboard', {
@@ -151,6 +152,14 @@ describe('RealmPopUp removal ownership', () => {
     component = mount(RealmPopUp, { target, props: { openedData } })
 
     expect(target.querySelector('svg.lucide-trash')).toBeNull()
+  })
+
+  it('does not offer removal when the signed-in account does not own the card', () => {
+    popupMocks.database.account.id = 'different-account'
+    component = mount(RealmPopUp, { target, props: { openedData: card() } })
+
+    expect(target.querySelector('svg.lucide-trash')).toBeNull()
+    expect(target.querySelector(`button[aria-label="${language.realm.reportCharacter}"]`)).not.toBeNull()
   })
 
   it('allows only one removal request and removes the accepted card from its owner', async () => {
