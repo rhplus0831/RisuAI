@@ -1,12 +1,15 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { isDeepStrictEqual } from 'node:util'
+import { invalidateUnsummarizedMemoryForChat, invalidatesPromptMemorySource } from './memoryInvalidation.js'
 import { recordTableWrite } from './protocolMetrics.js'
 
 // Chat messages live in their own SQLite table, one row per message, instead of
-// being embedded in the domain projection. This module is the pure CRUD layer
-// over that table. Chat metadata stays in the `chats` table; the `messages`
-// table keeps the unbounded, high-churn `message[]`.
+// being embedded in the domain projection. This module is the CRUD boundary
+// over that table. Content-changing rewrites also invalidate derived,
+// unsummarized memory rows in the same transaction. Chat metadata stays in the
+// `chats` table; the `messages` table keeps the unbounded, high-churn
+// `message[]`.
 //
 // Messages table columns:
 //   - `chat_id` — the chat's id (`Chat.id`).
@@ -305,6 +308,7 @@ export function updateActiveMessageById(
   const resolved = resolveActiveMessageLocationById(db, messageId)
   if (resolved.ok === false) return { ok: false, reason: resolved.reason }
   const { location } = resolved
+  const before = getChatMessages(db, location.chatId)
 
   const next = { ...location.message, ...patch, chatId: messageId }
   const row = toRow(next)
@@ -312,6 +316,7 @@ export function updateActiveMessageById(
   db.prepare(
     'UPDATE messages SET uid = ?, role = ?, data = ?, disabled = ?, json = ? WHERE chat_id = ? AND seq = ? AND alternate = 0',
   ).run(row.uid, row.role, row.data, row.disabled, row.json, location.chatId, location.seq)
+  invalidatePromptMemoryIfNeeded(db, location.chatId, before, getChatMessages(db, location.chatId))
   return { ok: true, chatId: location.chatId }
 }
 
@@ -420,10 +425,12 @@ export function writeGenerationChatMessage(
     return { ok: true, messageId: row.uid }
   }
 
+  const before = getChatMessages(db, chatId)
   recordTableWrite('messages')
   db.prepare(
     'UPDATE messages SET uid = ?, role = ?, data = ?, disabled = ?, json = ? WHERE chat_id = ? AND seq = ? AND alternate = 0',
   ).run(row.uid, row.role, row.data, row.disabled, row.json, chatId, existing.seq)
+  invalidatePromptMemoryIfNeeded(db, chatId, before, getChatMessages(db, chatId))
   return { ok: true, messageId: row.uid, displaced: JSON.parse(existing.json) as JsonRecord }
 }
 
@@ -513,6 +520,7 @@ export function applyChatMessageDiff(
   next: readonly unknown[],
 ): void {
   chatMessageDiffInstrumentation.genericDiffRuns += 1
+  const invalidatesPromptMemory = invalidatesPromptMemorySource(base, next)
   let prefix = 0
   const shared = Math.min(base.length, next.length)
   while (prefix < shared && stableEqual(base[prefix], next[prefix])) prefix++
@@ -534,6 +542,18 @@ export function applyChatMessageDiff(
       const row = toRow(message)
       insert.run(chatId, seq, row.uid, row.role, row.data, row.disabled, row.json)
     }
+  }
+  if (invalidatesPromptMemory) invalidateUnsummarizedMemoryForChat(db, chatId)
+}
+
+function invalidatePromptMemoryIfNeeded(
+  db: DatabaseSync,
+  chatId: string,
+  before: readonly unknown[],
+  after: readonly unknown[],
+): void {
+  if (invalidatesPromptMemorySource(before, after)) {
+    invalidateUnsummarizedMemoryForChat(db, chatId)
   }
 }
 

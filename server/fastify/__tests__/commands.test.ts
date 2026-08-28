@@ -14,6 +14,13 @@ import { applyJsonCommandMutation, applyMessageFreeJsonCommandMutation } from '.
 import { getSchemaState, openDatabase } from '../src/db.js'
 import { getDatabaseLineage } from '../src/databaseLineage.js'
 import { addAlternateMessage } from '../src/messageStore.js'
+import {
+  createMemoryChunk,
+  createMemoryJob,
+  createMemorySummary,
+  listMemoryChunks,
+  listMemoryJobs,
+} from '../src/memoryRepository.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { loadPersisted, writePersistedWithMessages, insertAssetMetadataBatch } from '../src/repository.js'
 import { activeMessageRowids, assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
@@ -11222,6 +11229,109 @@ describe('message history commands', () => {
     expect(await persistedChatMessages(harness.app, assertion, 'chat-a')).toEqual([
       { role: 'user', data: 'one', chatId: 'msg-1' },
     ])
+  })
+
+  it('invalidates unsummarized chunks and their jobs when persisted message content changes', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [{ role: 'user', data: 'stale source', chatId: 'msg-a' }],
+              localLore: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+    const db = openDatabase(harness.dataDir)
+    try {
+      createMemoryChunk(db, {
+        id: 'chunk-stale',
+        chatId: 'chat-a',
+        messageId: 'msg-a',
+        rangeStartSeq: 0,
+        rangeEndSeq: 0,
+        text: 'user: stale source',
+      })
+      createMemoryJob(db, {
+        id: 'job-stale',
+        chatId: 'chat-a',
+        kind: 'summarize',
+        status: 'failed',
+        payload: { chunkId: 'chunk-stale', model: 'memory' },
+      })
+      createMemoryChunk(db, {
+        id: 'chunk-summarized',
+        chatId: 'chat-a',
+        messageId: 'msg-a',
+        rangeStartSeq: 0,
+        rangeEndSeq: 0,
+        text: 'user: summarized source',
+        status: 'summarized',
+      })
+      createMemorySummary(db, {
+        id: 'summary-keep',
+        chatId: 'chat-a',
+        chunkId: 'chunk-summarized',
+        model: 'memory',
+        text: 'retained summary',
+        tokens: 2,
+      })
+      createMemoryJob(db, {
+        id: 'job-summarized',
+        chatId: 'chat-a',
+        kind: 'summarize',
+        status: 'completed',
+        payload: { chunkId: 'chunk-summarized', model: 'memory' },
+      })
+      createMemoryChunk(db, {
+        id: 'chunk-other-chat',
+        chatId: 'chat-other',
+        messageId: 'msg-other',
+        rangeStartSeq: 0,
+        rangeEndSeq: 0,
+        text: 'user: other chat',
+      })
+      createMemoryJob(db, {
+        id: 'job-other-chat',
+        chatId: 'chat-other',
+        kind: 'summarize',
+        status: 'failed',
+        payload: { chunkId: 'chunk-other-chat', model: 'memory' },
+      })
+    } finally {
+      db.close()
+    }
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/messages/msg-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { data: 'fresh source' } },
+    })
+    expect(updated.statusCode).toBe(200)
+
+    const updatedDb = openDatabase(harness.dataDir)
+    try {
+      expect(listMemoryChunks(updatedDb, { chatId: 'chat-a' }).map((chunk) => chunk.id)).toEqual(['chunk-summarized'])
+      expect(listMemoryJobs(updatedDb, { chatId: 'chat-a' }).map((job) => job.id)).toEqual(['job-summarized'])
+      expect(listMemoryChunks(updatedDb, { chatId: 'chat-other' }).map((chunk) => chunk.id)).toEqual([
+        'chunk-other-chat',
+      ])
+      expect(listMemoryJobs(updatedDb, { chatId: 'chat-other' }).map((job) => job.id)).toEqual(['job-other-chat'])
+    } finally {
+      updatedDb.close()
+    }
   })
 
   it('requires truncate and tail anchors to be present while accepting explicit null', async () => {
