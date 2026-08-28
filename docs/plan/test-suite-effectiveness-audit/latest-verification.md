@@ -206,3 +206,22 @@ The affected dry-run correctly widened package/CI/runner/manifest changes to
 the complete `pnpm test:all` aggregate. The full aggregate result is recorded
 after the Phase 0 documentation commit rather than conflated with the frozen
 pre-tooling measurements.
+
+### Post-Phase 0 aggregate
+
+`pnpm test:all` passed after the Phase 0 documentation commit in 3m 23.7s:
+
+| Lane                              | Result | Duration |
+| --------------------------------- | ------ | -------: |
+| Test inventory and routing        | Pass   |    5.8 s |
+| Server and browser-smoke typecheck | Pass   |   17.8 s |
+| Frontend tests                    | Pass   | 1m 16.5s |
+| Server tests                      | Pass   |   16.9 s |
+| Browser smoke tests               | Pass   | 1m 12.6s |
+| Frontend check                    | Pass   |   28.6 s |
+| UI coverage gate                  | Pass   |   19.9 s |
+| Format check                      | Pass   |   29.6 s |
+| Frontend performance gates        | Pass   |   11.9 s |
+
+The browser lane passed 34/34 journeys and the UI map passed 203/203 cases.
+This is the clean aggregate checkpoint for beginning Phase 1.
