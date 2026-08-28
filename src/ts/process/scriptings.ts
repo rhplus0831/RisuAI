@@ -60,6 +60,8 @@ let lastRequestResetTime = 0
 let lastRequestsCount = 0
 
 export const DEFAULT_CLIENT_LUA_EXEC_TIMEOUT_MS = 3_000
+export const DEFAULT_CLIENT_PYTHON_EXEC_TIMEOUT_MS = 3_000
+export const DEFAULT_CLIENT_PYTHON_INIT_TIMEOUT_MS = 60_000
 export const CLIENT_LUA_ENGINE_CACHE_PER_MODE = 4
 const CLIENT_LUA_CODE_HASH_MEMO_LIMIT = 128
 
@@ -87,6 +89,8 @@ interface LuaScriptingEngineState extends BasicScriptingEngineState {
 
 interface PythonScriptingEngineState extends BasicScriptingEngineState {
   pyodide?: PyodideContext
+  execTimeoutMs?: number
+  initTimeoutMs?: number
   type: 'py'
 }
 
@@ -111,6 +115,8 @@ export async function runScripted(
     mode?: string
     type?: 'lua' | 'py'
     luaExecTimeoutMs?: number
+    pythonExecTimeoutMs?: number
+    pythonInitTimeoutMs?: number
     /** Explicit script owner selection. Pass `{}` for a module with no override
      * so it does not inherit the active character's local selection. */
     scriptModelOverrides?: ScriptModelOverrides
@@ -124,6 +130,8 @@ export async function runScripted(
   const meta = arg.meta ?? {}
   const mode = arg.mode ?? 'manual'
   const luaExecTimeoutMs = arg.luaExecTimeoutMs ?? DEFAULT_CLIENT_LUA_EXEC_TIMEOUT_MS
+  const pythonExecTimeoutMs = arg.pythonExecTimeoutMs ?? DEFAULT_CLIENT_PYTHON_EXEC_TIMEOUT_MS
+  const pythonInitTimeoutMs = arg.pythonInitTimeoutMs ?? DEFAULT_CLIENT_PYTHON_INIT_TIMEOUT_MS
   const scriptModelOverrides = normalizeScriptModelOverrides(
     Object.prototype.hasOwnProperty.call(arg, 'scriptModelOverrides')
       ? arg.scriptModelOverrides
@@ -151,9 +159,16 @@ export async function runScripted(
     const shouldRecreateLuaEngine =
       ScriptingEngineState.type === 'lua' &&
       (code !== ScriptingEngineState.code || ScriptingEngineState.execTimeoutMs !== luaExecTimeoutMs)
+    const shouldRecreatePythonContext =
+      ScriptingEngineState.type === 'py' &&
+      (code !== ScriptingEngineState.code ||
+        ScriptingEngineState.execTimeoutMs !== pythonExecTimeoutMs ||
+        ScriptingEngineState.initTimeoutMs !== pythonInitTimeoutMs ||
+        ScriptingEngineState.pyodide?.isClosed === true)
     if (
       code !== ScriptingEngineState.code ||
       shouldRecreateLuaEngine ||
+      shouldRecreatePythonContext ||
       (ScriptingEngineState.type === 'py' && !ScriptingEngineState.pyodide)
     ) {
       let declareAPI: (name: string, func: Function) => void
@@ -161,12 +176,18 @@ export async function runScripted(
       if (ScriptingEngineState.type === 'lua') {
         console.log('Creating new Lua engine for mode:', mode)
         ScriptingEngineState.engine?.global.close()
-        ScriptingEngineState.code = code
+        ScriptingEngineState.engine = undefined
+        ScriptingEngineState.code = undefined
         ScriptingEngineState.execTimeoutMs = luaExecTimeoutMs
-        ScriptingEngineState.engine = await luaFactory.createEngine({
-          injectObjects: true,
-          functionTimeout: luaExecTimeoutMs,
-        })
+        try {
+          ScriptingEngineState.engine = await luaFactory.createEngine({
+            injectObjects: true,
+            functionTimeout: luaExecTimeoutMs,
+          })
+        } catch (error) {
+          evictScriptingEngineState(ScriptingEngineState)
+          throw error
+        }
         const luaEngine = ScriptingEngineState.engine
         declareAPI = (name: string, func: Function) => {
           luaEngine.global.set(name, func)
@@ -175,7 +196,9 @@ export async function runScripted(
       if (ScriptingEngineState.type === 'py') {
         console.log('Creating new Pyodide context for mode:', mode)
         ScriptingEngineState.pyodide?.close()
-        ScriptingEngineState.pyodide = new PyodideContext()
+        ScriptingEngineState.pyodide = new PyodideContext(pythonExecTimeoutMs, pythonInitTimeoutMs)
+        ScriptingEngineState.execTimeoutMs = pythonExecTimeoutMs
+        ScriptingEngineState.initTimeoutMs = pythonInitTimeoutMs
         declareAPI = (name: string, func: Function) => {
           ScriptingEngineState.pyodide?.declareAPI(name, func as any)
         }
@@ -1175,10 +1198,20 @@ export async function runScripted(
         return ''
       })
       if (ScriptingEngineState.type === 'lua') {
-        await runLuaStringWithTimeout(ScriptingEngineState.engine, luaCodeWrapper(code), luaExecTimeoutMs)
+        try {
+          await runLuaStringWithTimeout(ScriptingEngineState.engine, luaCodeWrapper(code), luaExecTimeoutMs)
+        } catch (error) {
+          evictScriptingEngineState(ScriptingEngineState)
+          throw error
+        }
       }
       if (ScriptingEngineState.type === 'py') {
-        await ScriptingEngineState.pyodide?.init(code)
+        try {
+          await ScriptingEngineState.pyodide?.init(code)
+        } catch (error) {
+          evictScriptingEngineState(ScriptingEngineState)
+          throw error
+        }
       }
       ScriptingEngineState.code = code
     }
@@ -1256,6 +1289,9 @@ export async function runScripted(
           }
         } catch (error) {
           console.error('Lua dispatch failed:', error)
+          if (isLuaTimeoutError(error)) {
+            evictScriptingEngineState(ScriptingEngineState)
+          }
           throw error
         }
       }
@@ -1413,6 +1449,38 @@ function deleteScriptingEngineCacheKey(cacheKey: string): void {
   }
   ScriptingEngines.delete(cacheKey)
   pendingEngineCreations.delete(cacheKey)
+}
+
+function evictScriptingEngineState(engineState: ScriptingEngineState): void {
+  const cacheKey = engineState.cacheKey
+  if (!cacheKey || ScriptingEngines.get(cacheKey) !== engineState) {
+    closeScriptingEngineState(engineState)
+    return
+  }
+  if ((engineState.activeRuns ?? 0) > 1) {
+    closeScriptingEngineState(engineState)
+    engineState.code = undefined
+    if (engineState.type === 'lua') {
+      engineState.engine = undefined
+    } else {
+      engineState.pyodide = undefined
+    }
+    return
+  }
+  deleteScriptingEngineCacheKey(cacheKey)
+  if (engineState.cacheBucket) {
+    const keys = ScriptingEngineLru.get(engineState.cacheBucket)
+    if (keys) {
+      ScriptingEngineLru.set(
+        engineState.cacheBucket,
+        keys.filter((key) => key !== cacheKey),
+      )
+    }
+  }
+}
+
+function isLuaTimeoutError(error: unknown): boolean {
+  return error instanceof Error && /timeout/i.test(error.message)
 }
 
 function enforceScriptingEngineCacheLimit(bucket?: string): void {
@@ -2013,7 +2081,10 @@ class PyodideContext {
     }
   >()
 
-  constructor() {
+  constructor(
+    private readonly execTimeoutMs: number,
+    private readonly initTimeoutMs: number,
+  ) {
     this.worker = new Worker(new URL('./pyworker.ts', import.meta.url), {
       type: 'module',
     })
@@ -2086,15 +2157,24 @@ class PyodideContext {
     }
   }
 
-  private request<T>(message: Extract<PyWorkerRequest, { id: string }>): Promise<T> {
+  private request<T>(message: Extract<PyWorkerRequest, { id: string }>, timeoutMs = this.execTimeoutMs): Promise<T> {
     if (this.closed) {
       return Promise.reject(new Error('Python scripting worker is terminated.'))
     }
 
     return new Promise<T>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.terminate(new Error(`Python scripting worker timed out after ${timeoutMs}ms.`))
+      }, timeoutMs)
       this.pending.set(message.id, {
-        resolve: (result) => resolve(result as T),
-        reject,
+        resolve: (result) => {
+          clearTimeout(timeout)
+          resolve(result as T)
+        },
+        reject: (error) => {
+          clearTimeout(timeout)
+          reject(error)
+        },
       })
       try {
         this.worker.postMessage(message)
@@ -2108,16 +2188,23 @@ class PyodideContext {
     this.apis[name] = func
   }
 
+  get isClosed(): boolean {
+    return this.closed
+  }
+
   async init(code: string) {
     if (this.inited) {
       return
     }
-    this.initPromise ??= this.request({
-      type: 'init',
-      code,
-      id: createNonSecurityUuid(),
-      moduleFunctions: Object.keys(this.apis),
-    }).then(() => {
+    this.initPromise ??= this.request(
+      {
+        type: 'init',
+        code,
+        id: createNonSecurityUuid(),
+        moduleFunctions: Object.keys(this.apis),
+      },
+      this.initTimeoutMs,
+    ).then(() => {
       this.inited = true
     })
     try {

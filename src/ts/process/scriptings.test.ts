@@ -12,6 +12,7 @@ const luaMock = vi.hoisted(() => {
     closedEngineIds: [] as number[],
     lastAccessKey: '',
     rejectDispatch: false,
+    nextRunError: null as Error | null,
     dispatchArgs: new Map<string, unknown[]>(),
     callListenAction: null as null | ((engine: any, accessKey: string) => void | Promise<void>),
   }
@@ -54,6 +55,11 @@ const luaMock = vi.hoisted(() => {
             }),
             run: vi.fn(async (_argCount: number, options?: { timeout?: number }) => {
               state.runTimeouts.push(options?.timeout ?? 0)
+              if (state.nextRunError) {
+                const error = state.nextRunError
+                state.nextRunError = null
+                throw error
+              }
               if (loadedCode.includes('while true do end')) {
                 throw new Error('thread timeout exceeded')
               }
@@ -98,6 +104,7 @@ const luaMock = vi.hoisted(() => {
       state.closedEngineIds.length = 0
       state.lastAccessKey = ''
       state.rejectDispatch = false
+      state.nextRunError = null
       state.dispatchArgs.clear()
       state.callListenAction = null
       state.createEngine.mockClear()
@@ -105,6 +112,9 @@ const luaMock = vi.hoisted(() => {
     },
     setRejectDispatch(value: boolean) {
       state.rejectDispatch = value
+    },
+    failNextRun(error: Error) {
+      state.nextRunError = error
     },
     setDispatchArgs(name: string, args: unknown[]) {
       state.dispatchArgs.set(name, args)
@@ -432,6 +442,7 @@ beforeEach(() => {
 
 afterEach(() => {
   resetScriptingEngineCacheForTests()
+  vi.useRealTimers()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -646,6 +657,54 @@ describe('client scripting Lua budgets and cache', () => {
       expect.objectContaining({ injectObjects: true, functionTimeout: 25 }),
     )
     expect(luaMock.runTimeouts).toContain(25)
+  })
+
+  it('evicts a Lua engine whose wrapper load times out before retrying identical code', async () => {
+    const chat = makeChat()
+    const char = makeCharacter(chat)
+    const code = '-- retry after timeout'
+    luaMock.failNextRun(new Error('thread timeout exceeded'))
+
+    await expect(
+      runScripted(code, {
+        char,
+        chat,
+        mode: 'editDisplay',
+        data: 'first',
+        luaExecTimeoutMs: 25,
+      }),
+    ).rejects.toThrow(/timeout/)
+
+    expect(luaMock.closedEngineIds).toEqual([0])
+    expect(getScriptingEngineCacheSnapshotForTests().keys).not.toContainEqual(
+      expect.stringMatching(/^lua:editDisplay:/),
+    )
+
+    await expect(
+      runScripted(code, {
+        char,
+        chat,
+        mode: 'editDisplay',
+        data: 'second',
+        luaExecTimeoutMs: 25,
+      }),
+    ).resolves.toEqual(expect.objectContaining({ res: 'second' }))
+
+    expect(luaMock.createEngine).toHaveBeenCalledTimes(2)
+    expect(luaMock.engines[1].closed).toBe(false)
+  })
+
+  it('does not cache a Lua state whose engine creation fails', async () => {
+    const chat = makeChat()
+    const char = makeCharacter(chat)
+    const code = '-- retry engine creation'
+    luaMock.createEngine.mockRejectedValueOnce(new Error('engine init failed'))
+
+    await expect(runScripted(code, { char, chat, mode: 'start' })).rejects.toThrow('engine init failed')
+    expect(getScriptingEngineCacheSnapshotForTests().keys).not.toContainEqual(expect.stringMatching(/^lua:start:/))
+
+    await expect(runScripted(code, { char, chat, mode: 'start' })).resolves.toBeDefined()
+    expect(luaMock.createEngine).toHaveBeenCalledTimes(2)
   })
 
   it('same-mode Lua code hash cache reuses alternating bodies and evicts by LRU', async () => {
@@ -1084,5 +1143,97 @@ describe('client Python worker protocol', () => {
 
     await rejection
     expect(worker.terminate).toHaveBeenCalledOnce()
+  })
+
+  it('times out Python initialization and recreates a clean context for identical code', async () => {
+    vi.useFakeTimers()
+    const chat = makeChat()
+    const char = makeCharacter(chat)
+    const code = 'def start(*args): return "ready"'
+    const firstRun = runScripted(code, {
+      char,
+      chat,
+      mode: 'start',
+      type: 'py',
+      pythonExecTimeoutMs: 25,
+      pythonInitTimeoutMs: 25,
+    })
+    const firstRejection = expect(firstRun).rejects.toThrow('Python scripting worker timed out after 25ms.')
+    const firstWorker = await waitForFakePythonWorker()
+    await waitForPythonRequest(firstWorker, 'init')
+
+    await vi.advanceTimersByTimeAsync(25)
+    await firstRejection
+
+    expect(firstWorker.terminate).toHaveBeenCalledOnce()
+    expect(getScriptingEngineCacheSnapshotForTests().accessSetSizes.safe).toBe(0)
+
+    FakePythonWorker.onPostMessage = (worker, message) => {
+      if (message.type === 'init') {
+        worker.respond({ type: 'result', id: message.id, result: null })
+      } else if (message.type === 'python') {
+        worker.respond({ type: 'result', id: message.id, result: 'ready' })
+      }
+    }
+    await expect(
+      runScripted(code, {
+        char,
+        chat,
+        mode: 'start',
+        type: 'py',
+        pythonExecTimeoutMs: 25,
+        pythonInitTimeoutMs: 25,
+      }),
+    ).resolves.toEqual(expect.objectContaining({ res: 'ready' }))
+
+    expect(FakePythonWorker.instances).toHaveLength(2)
+  })
+
+  it('times out a Python call, terminates its worker, and cleans the run access key', async () => {
+    vi.useFakeTimers()
+    FakePythonWorker.onPostMessage = (worker, message) => {
+      if (message.type === 'init') {
+        worker.respond({ type: 'result', id: message.id, result: null })
+      }
+    }
+    const chat = makeChat()
+    const run = runScripted('def pendingCall(*args): return None', {
+      char: makeCharacter(chat),
+      chat,
+      mode: 'pendingCall',
+      type: 'py',
+      pythonExecTimeoutMs: 40,
+    })
+    const rejection = expect(run).rejects.toThrow('Python scripting worker timed out after 40ms.')
+    const worker = await waitForFakePythonWorker()
+    await waitForPythonRequest(worker, 'python')
+
+    await vi.advanceTimersByTimeAsync(40)
+    await rejection
+
+    expect(worker.terminate).toHaveBeenCalledOnce()
+    expect(getScriptingEngineCacheSnapshotForTests().accessSetSizes).toEqual({
+      safe: 0,
+      editDisplay: 0,
+      lowLevel: 0,
+    })
+
+    FakePythonWorker.onPostMessage = (retryWorker, message) => {
+      if (message.type === 'init') {
+        retryWorker.respond({ type: 'result', id: message.id, result: null })
+      } else if (message.type === 'python') {
+        retryWorker.respond({ type: 'result', id: message.id, result: 'recovered' })
+      }
+    }
+    await expect(
+      runScripted('def pendingCall(*args): return None', {
+        char: makeCharacter(chat),
+        chat,
+        mode: 'pendingCall',
+        type: 'py',
+        pythonExecTimeoutMs: 40,
+      }),
+    ).resolves.toEqual(expect.objectContaining({ res: 'recovered' }))
+    expect(FakePythonWorker.instances).toHaveLength(2)
   })
 })
