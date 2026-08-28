@@ -18,15 +18,9 @@ describe('encodePathSegment', () => {
   })
 })
 
-describe('signSigV4 — published test vector', () => {
-  // AWS publishes a canonical "get-vanilla" example at
-  // https://docs.aws.amazon.com/general/latest/gr/sigv4-signed-request-examples.html.
-  // The expected signature for the GET-vanilla case is:
-  //   5fa00fa31553b73ebf1942676e86291e8372ff2a2260956d9b8aae1d763fbf31
-  // We exercise a POST + JSON body in production, but pinning a known input
-  // against AWS's published reference gives us confidence the canonical-
-  // request + signing-key chain is correct. The example below is a
-  // minimal POST adaptation: secret/date/region/service per AWS docs.
+describe('signSigV4 — independent fixed vector', () => {
+  // This POST vector was independently cross-checked against
+  // @smithy/signature-v4 with the same request, credentials, and clock.
   it('produces a stable canonical request + signature for a fixed input', () => {
     const result = signSigV4(
       {
@@ -55,10 +49,7 @@ describe('signSigV4 — published test vector', () => {
     )
     expect(result.canonicalRequest).toContain('x-amz-date:20110909T233600Z')
     expect(result.canonicalRequest).toContain('host:host.foo.com')
-    // The signature itself is deterministic given the canonical-request
-    // chain; we pin the hex string so any change to canonicalization gets
-    // caught by this test.
-    expect(result.signature).toMatch(/^[0-9a-f]{64}$/)
+    expect(result.signature).toBe('9d4bf94fa856bfe9ba940a3e9b0c38223199565419bb5d417d97be16490d2b2e')
     expect(result.headers['Authorization']).toContain(
       'AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20110909/us-east-1/host/aws4_request',
     )
@@ -136,6 +127,25 @@ describe('signSigV4 — published test vector', () => {
     expect(idxA).toBeGreaterThanOrEqual(0)
     expect(idxB).toBeGreaterThan(idxA)
     expect(idxA).toBeGreaterThan(idxContent)
+  })
+
+  it('compresses internal header whitespace in the canonical request', () => {
+    const result = signSigV4(
+      { accessKeyId: 'AKIA', secretAccessKey: 'secret' },
+      {
+        method: 'POST',
+        host: 'h.example.com',
+        path: '/p',
+        headers: { 'X-Meta': '  alpha   beta\t gamma  ' },
+        body: '{}',
+        region: 'us-east-1',
+        service: 'svc',
+        date: new Date(Date.UTC(2024, 0, 1, 0, 0, 0)),
+      },
+    )
+
+    expect(result.canonicalRequest).toContain('x-meta:alpha beta gamma\n')
+    expect(result.canonicalRequest).not.toContain('alpha   beta')
   })
 
   it('produces deterministic signatures across two calls with the same input', () => {

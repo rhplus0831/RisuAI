@@ -7,9 +7,8 @@ import { createHash, createHmac } from 'node:crypto'
  * documented at
  * https://docs.aws.amazon.com/general/latest/gr/sigv4-create-canonical-request.html
  *
- * AWS publishes test vectors for the "GET vanilla" example
- * (https://docs.aws.amazon.com/general/latest/gr/sigv4-signed-request-examples.html);
- * see `sigv4.test.ts` for a pinned signature against the published values.
+ * See `sigv4.test.ts` for an exact signature independently cross-checked
+ * against Smithy's SigV4 implementation.
  */
 
 export interface SigV4Credentials {
@@ -123,7 +122,8 @@ export function signSigV4(credentials: SigV4Credentials, input: SigV4SignInput):
 
   // Canonical headers: sorted by lowercase key, each line `key:trimmed-value\n`.
   const sortedKeys = Object.keys(sourceHeaders).sort()
-  const canonicalHeaders = sortedKeys.map((k) => `${k}:${sourceHeaders[k].trim()}`).join('\n') + '\n'
+  const canonicalHeaders =
+    sortedKeys.map((k) => `${k}:${sourceHeaders[k].trim().replace(/\s+/gu, ' ')}`).join('\n') + '\n'
   const signedHeaders = sortedKeys.join(';')
 
   const canonicalRequest = [
