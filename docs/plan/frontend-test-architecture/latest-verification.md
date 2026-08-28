@@ -4,9 +4,101 @@ Date: 2026-08-28
 
 ## State
 
-Phase 2 alert-import-safety closeout. Phase 2 remains in progress; this record
+Phase 2 character-card PNG-import Node-probe closeout. Phase 2 remains in progress; this record
 does not authorize repository-wide default inversion, S promotion, or bulk
 migration outside the active phase rules.
+
+## Phase 2 Character-Card PNG-Import Probe Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `a97c4ee5bbdf74cd2ef216f3ccf67e5648c8bc16`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Available CPUs: 10
+- Frontend test-all UI-map exclusion: `RISU_TEST_EXCLUDE_UI_MAP=true`
+- Isolation: enabled
+- Measurement tree: the clean alert-import-safety commit. The Node and
+  Svelte+Node allowlist additions existed only for their focused probes and
+  were removed before documentation changes; no unrelated working-tree
+  changes were present.
+
+GNU `time` console observations remained uncommitted. Coverage output remained
+under ignored `coverage/`.
+
+## Phase 2 Character-Card PNG-Import Capability And Ownership Proof
+
+The proposed one-file Phase 2 slice evaluated:
+
+- `src/ts/characterCards.pngImport.test.ts`
+
+The suite contains 21 tests covering PNG embedded-asset decoding, progress and
+durable creation outcomes, v2/v3 and CharX normalization, bounded salvage,
+PNG/JSON/CharX export, and source immutability. It explicitly replaces its UI,
+storage, command, asset, hydration, bridge, parser, and Fastify-auth boundaries.
+It mounts no component and performs no DOM operation, browser-storage access,
+or real network request.
+
+The production subject imports `resourceWriteGuard.svelte.ts`, which imports
+`resourceState.svelte.ts` and initializes `$state` at module evaluation. The
+test does not replace that real durable-write boundary, and adding a mock only
+to pass Node would weaken the production import contract.
+
+Current-owner command:
+
+```sh
+RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v pnpm exec vitest run \
+  src/ts/characterCards.pngImport.test.ts
+```
+
+Result: 1 file / 21 tests passed in 1.80s wall and 1.02s Vitest duration,
+with 409,568 KiB peak RSS and 182ms aggregate environment time.
+
+After temporarily adding the file to `vitest.node-tests.ts`, the target command
+was:
+
+```sh
+RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v pnpm exec vitest run \
+  --project frontend-node src/ts/characterCards.pngImport.test.ts
+```
+
+Result: the suite failed before collection with
+`ReferenceError: $state is not defined` at
+`src/ts/server/resourceState.svelte.ts:658`, reached through
+`resourceWriteGuard.svelte.ts:1` and `characterCards.ts:72`. The failed probe
+took 0.94s wall and 300ms Vitest duration, with 285,980 KiB peak RSS and no
+aggregate environment time.
+
+After removing the Node entry and temporarily adding the file to
+`vitest.svelte-node-tests.ts`, the classification command was:
+
+```sh
+RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v pnpm exec vitest run \
+  --project frontend-svelte-node src/ts/characterCards.pngImport.test.ts
+```
+
+Result: 1 file / 21 tests passed in 1.31s wall and 708ms Vitest duration,
+with 379,636 KiB peak RSS and 18ms aggregate environment time. This proves S is
+the smallest current runtime capable of executing the suite without DOM setup.
+The temporary S entry was then removed. The suite remains D-owned pending Phase
+3; no test, mock, production dependency, setup, or permanent runtime inventory
+changed.
+
+## Phase 2 Character-Card PNG-Import Discovery And Validation
+
+`pnpm check:frontend-test-inventory` passed after both temporary entries were
+removed. The inventory remained byte-for-byte current, exhaustive, and
+disjoint: full 537 files at 158 N / 2 S / 377 D, standalone ordinary 535 files
+at 158 N / 2 S / 375 D, and aggregate ordinary 529 files at 157 N / 2 S /
+370 D. Target distribution and generated mismatch counts remain 174 N, 129 S,
+234 D, 7 B, and 143 mismatches.
+
+The current-owner suite and the exact Svelte+Node classification probe passed
+all 21 tests. The exact Node target probe failed for the recorded Svelte-rune
+reason. Formatting of changed files and `git diff --check` passed. No runtime
+inventory or production file changed, so no affected execution lane,
+before/after ordinary measurement, or new `test:all` checkpoint was required
+for this proof-only batch.
 
 ## Phase 2 Alert-Import-Safety Environment And Source State
 

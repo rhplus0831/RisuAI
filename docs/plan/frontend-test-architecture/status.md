@@ -10,16 +10,14 @@ codebase remain authoritative until a phase lands.
 
 - Plan state: Phases 0-1 complete; Phase 2 in progress.
 - Current phase: Phase 2 — Pure Node Promotion.
-- Active slice: No implementation slice is active; the alert-import-safety
-  promotion slice is complete.
+- Active slice: No implementation slice is active; the character-card PNG
+  import Node proof is complete without promotion.
 - Implementation state: Thirty-two files and 156 tests have moved from the
   Happy-DOM fallback to Node across eleven bounded slices with no production
   changes.
 - Blockers: None.
-- Next action: Prepare the bounded Phase 2 character-card PNG-import
-  N-promotion slice. Retain the hydration-reads and two generation-effect
-  suites in D pending S-target promotion, and retain the device-backup suite as
-  a D-owned file-picker contract.
+- Next action: Prepare the bounded Phase 2 prompt-toggle durability Node probe.
+  Retain the five completed Node-probe deferrals under their recorded owners.
 
 ## Phase Router
 
@@ -78,7 +76,7 @@ aggregate ordinary views; 175 unpromoted N/S candidates still require probes.
 
 | Measurement | Result |
 | --- | ---: |
-| Completed slices and proof batches | 12 |
+| Completed slices and proof batches | 13 |
 | Promoted suites | 32 files / 156 tests |
 | Full three-project universe | 537 files: 158 N / 2 S / 377 D |
 | Standalone ordinary frontend | 535 files: 158 N / 2 S / 375 D |
@@ -89,10 +87,10 @@ aggregate ordinary views; 175 unpromoted N/S candidates still require probes.
 
 The paired timing is slice evidence, not a phase-level median. The -0.8% wall
 movement remains inside ordinary run-to-run variability; it is not a
-phase-level performance claim. Phase 2 remains open for 12 unprobed N
-candidates. The generated inventory also counts the probed hydration-read and
-two generation-effect suites plus the probed device-backup suite retained in
-D.
+phase-level performance claim. Phase 2 remains open for 11 unprobed N
+candidates. The generated inventory also counts the probed character-card,
+hydration-read, and two generation-effect suites plus the probed device-backup
+suite retained in D.
 
 ## Current Decisions
 
@@ -167,6 +165,12 @@ D.
     initialization; the aligned dependency replacement restored the test's
     original import-isolation boundary without changing production alert
     behavior or moving the full alert service out of D.
+21. The character-card PNG import Node proof failed before collection because
+    `characterCards.ts` reaches `$state` initialization in
+    `resourceState.svelte.ts` through `resourceWriteGuard.svelte.ts`. The
+    unchanged 21-test suite passed in `frontend-svelte-node`, so it remains in
+    D pending deliberate Phase 3 S promotion; no mock or production boundary
+    was weakened to force an N promotion.
 
 ## Accepted Observations
 
@@ -199,17 +203,18 @@ occurrence reopens the display-source batching owner before another promotion.
 
 ## Latest Completed Slice
 
-[Phase 2 alert import safety](phases/slices/phase-2/alert-import-safety.md)
-corrected the one-test suite's stale UI-store mock to its actual dependency and
-promoted it from Happy-DOM to Node. The full alert service and rendered/browser
-contracts remain under their existing D and B owners.
+[Phase 2 character-card PNG import Node probe](phases/slices/phase-2/character-card-png-import-node-probe.md)
+retained the 21-test import/export suite in Happy-DOM after proving its
+transitive Svelte rune requirement in Node and its no-DOM compatibility in
+Svelte+Node. No production, test-body, setup, or permanent ownership change
+landed.
 
 ## Latest Verification
 
 See [`latest-verification.md`](latest-verification.md) for the latest Phase 2
-current-owner and Node probe evidence, paired discovery and performance
-observations, and complete affected validation, followed by the preceding
-proof, promotion, and retained Phase 1 closeout records.
+current-owner, Node, and Svelte+Node probe evidence plus unchanged discovery
+and validation, followed by the preceding promotion, proof, and retained Phase
+1 closeout records.
 
 ## Maintenance Rules
 
