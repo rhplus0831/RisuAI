@@ -17,6 +17,9 @@ Status: In Progress
 - [Server resource projections](slices/phase-3/server-resource-projections.md):
   promoted four rune-backed suites / 46 tests to Svelte+Node and six Node-safe
   server projection suites / 70 tests to Node.
+- [Generation effect state](slices/phase-3/generation-effect-state.md): promoted
+  two suites / 10 tests whose Phase 2 Node probes reached real persistence or
+  core-store runes and whose Phase 3 Svelte+Node probes passed unchanged.
 
 ## Objective
 

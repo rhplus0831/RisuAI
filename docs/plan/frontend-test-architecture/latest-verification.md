@@ -8,6 +8,38 @@ Phase 3 in progress after its first proof-backed Svelte+Node promotion slice.
 This record does not authorize repository-wide default inversion or migration
 outside the active phase rules.
 
+## Phase 3 Generation Effect State Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `091bf0c91ab85c01af0213fe9a53e51080213df1`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Isolation: enabled
+- Measurement tree: the clean server-resource-projection commit plus the
+  two-file Svelte+Node ownership change and regenerated inventory. No
+  production or test-body file changed.
+
+## Phase 3 Generation Effect State Measurements And Validation
+
+The current-owner Happy-DOM scope passed 2 files / 10 tests in 1.52s wall and
+862ms Vitest duration, with 506,072 KiB peak RSS. Aggregate transform, setup,
+import, test, and environment times were 840ms, 158ms, 1.11s, 16ms, and 251ms.
+
+The exact Svelte+Node scope passed 2 files / 10 tests in 1.40s wall and 787ms
+Vitest duration, with 499,836 KiB peak RSS. Aggregate transform, setup, import,
+test, and environment times were 942ms, 127ms, 1.23s, 32ms, and 35ms. The exact
+scope passed again in 750ms Vitest duration. Phase 2's exact Node failures at
+the persistence-activity and core-store `$state` boundaries remain the
+smallest-runtime evidence.
+
+Inventory update and check commands passed. Full discovery is 537 files at 189
+N / 17 S / 331 D, standalone ordinary is 535 files at 189 N / 17 S / 329 D,
+and aggregate ordinary is 529 files at 188 N / 17 S / 324 D. The generated
+target distribution is 193 N / 110 S / 234 D / 7 B, with 97 still-unpromoted
+static candidates. Formatting and `git diff --check` passed. Complete project
+and root validation remain Phase 3 exit work.
+
 ## Phase 3 Server Resource Projections Environment And Source State
 
 - Repository: `/home/codex/risuai-fastify`

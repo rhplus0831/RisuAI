@@ -10,14 +10,14 @@ codebase remain authoritative until a phase lands.
 
 - Plan state: Phases 0-2 complete; Phase 3 in progress.
 - Current phase: Phase 3 — Svelte+Node Promotion (in progress).
-- Active slice: Record the complete 93-file Svelte+Node blocker ledger and
-  resolve the remaining Phase 3-owned static-N rune candidates.
-- Implementation state: Phase 3 has moved 13 files / 149 tests to Svelte+Node
+- Active slice: Record the complete 93-file Svelte+Node blocker ledger.
+- Implementation state: Phase 3 has moved 15 files / 159 tests to Svelte+Node
   and 28 files / 312 tests to Node without production or test-body changes.
-  Phases 2-3 have promoted 76 files and 637 tests in total.
+  Phases 2-3 have promoted 78 files and 647 tests in total.
 - Blockers: None.
 - Next action: Record exact owners and revisit conditions for the 93 blocked
-  target-S candidates, then probe the remaining rune-only Phase 3 candidates.
+  target-S candidates, then run Phase 3 exit validation and the stopping-gate
+  benchmark.
 
 ## Phase Router
 
@@ -102,12 +102,12 @@ retainers under recorded Phase 3, Phase 4, or DOM-contract owners.
 
 | Measurement | Result |
 | --- | ---: |
-| Completed slices | 4 |
-| Promoted to Svelte+Node | 13 files / 149 tests |
+| Completed slices | 5 |
+| Promoted to Svelte+Node | 15 files / 159 tests |
 | Promoted to Node after cross-check | 28 files / 312 tests |
-| Full three-project universe | 537 files: 189 N / 15 S / 333 D |
-| Standalone ordinary frontend | 535 files: 189 N / 15 S / 331 D |
-| `test:all` ordinary frontend | 529 files: 188 N / 15 S / 326 D |
+| Full three-project universe | 537 files: 189 N / 17 S / 331 D |
+| Standalone ordinary frontend | 535 files: 189 N / 17 S / 329 D |
+| `test:all` ordinary frontend | 529 files: 188 N / 17 S / 324 D |
 | Broad target-S probe result | 34 passed / 93 blocked |
 | Remaining proven promotions | 0 files |
 
@@ -243,6 +243,9 @@ result; the stopping-gate benchmark remains pending.
     and four suites / 46 tests to Svelte+Node. The S owners initialize real
     persistence, resource, or core-store `$state`; the N owners do not require
     client transformation despite their static S signals.
+33. The generation-effect slice moved two suites / 10 tests to Svelte+Node.
+    Phase 2 had proved their real persistence and core-store rune dependencies
+    reject plain Node; Phase 3 proved the unchanged tests require no DOM.
 
 ## Accepted Observations
 
