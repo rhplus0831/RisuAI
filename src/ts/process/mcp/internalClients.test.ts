@@ -72,9 +72,10 @@ describe('internal MCP tool schemas', () => {
     const secondFsTools = await fsClient.getToolList()
     const recreatedFsTools = await new FileSystemClient().getToolList()
 
-    expect(firstFsTools).toHaveLength(12)
-    expect(secondFsTools).toHaveLength(12)
-    expect(recreatedFsTools).toHaveLength(12)
+    expect(firstFsTools).toHaveLength(11)
+    expect(secondFsTools).toHaveLength(11)
+    expect(recreatedFsTools).toHaveLength(11)
+    expect(firstFsTools.map((tool) => tool.name)).not.toContain('fs_watch_directory')
     expect(firstFsTools).not.toBe(secondFsTools)
     expect(firstFsTools[0]).not.toBe(secondFsTools[0])
     firstFsTools[0].inputSchema.properties.path.description = 'mutated by caller'
