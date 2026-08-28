@@ -59,8 +59,11 @@
     return () => window.clearInterval(timer)
   })
 
-  function openCharacterRoute(index: number) {
-    const character = getDatabase().characters?.[index]
+  function openCharacterRoute(row: { chaId?: string; index: number }) {
+    const characters = getDatabase().characters ?? []
+    const index = row.chaId ? characters.findIndex((character) => character.chaId === row.chaId) : row.index
+    if (index < 0) return
+    const character = characters[index]
     if (!character?.chaId) {
       changeChar(index)
       endGrid()
@@ -86,7 +89,7 @@
       onfocus={() => char.chaId && prefetchCharacterRouteResource(char.chaId)}
       aria-current={char.index === $selectedCharID ? 'true' : undefined}
       onclick={() => {
-        openCharacterRoute(char.index)
+        openCharacterRoute(char)
       }}>
       <BarIcon additionalStyle={getCharImage(char.image, 'css')} interactive={false}></BarIcon>
       <div class="flex flex-1 w-full flex-col justify-start items-start text-start">
