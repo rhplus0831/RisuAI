@@ -1848,7 +1848,7 @@
       "parameterizedRows": 0
     },
     "src/ts/entryStartup.test.ts": {
-      "cases": 2,
+      "cases": 4,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -2103,7 +2103,7 @@
       "parameterizedRows": 0
     },
     "src/ts/observer.svelte.test.ts": {
-      "cases": 9,
+      "cases": 11,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -2118,7 +2118,7 @@
       "parameterizedRows": 0
     },
     "src/ts/observerShellFlag.test.ts": {
-      "cases": 3,
+      "cases": 4,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -3013,7 +3013,7 @@
       "parameterizedRows": 0
     },
     "src/ts/server/hydrationReads.svelte-node.test.ts": {
-      "cases": 12,
+      "cases": 13,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -3028,7 +3028,7 @@
       "parameterizedRows": 0
     },
     "src/ts/server/lifecycleRecovery.test.ts": {
-      "cases": 1,
+      "cases": 4,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -3113,7 +3113,7 @@
       "parameterizedRows": 181
     },
     "src/ts/server/pendingMutationReplay.test.ts": {
-      "cases": 9,
+      "cases": 10,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -3178,12 +3178,12 @@
       "parameterizedRows": 0
     },
     "src/ts/server/resourceCache.test.ts": {
-      "cases": 8,
+      "cases": 11,
       "skipped": 0,
       "parameterizedRows": 0
     },
     "src/ts/server/resourceInvalidation.test.ts": {
-      "cases": 98,
+      "cases": 99,
       "skipped": 0,
       "parameterizedRows": 46
     },
@@ -3278,7 +3278,7 @@
       "parameterizedRows": 0
     },
     "src/ts/server/staleStateGuards.test.ts": {
-      "cases": 12,
+      "cases": 14,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -3328,7 +3328,7 @@
       "parameterizedRows": 0
     },
     "src/ts/startupReadiness.test.ts": {
-      "cases": 10,
+      "cases": 12,
       "skipped": 0,
       "parameterizedRows": 0
     },

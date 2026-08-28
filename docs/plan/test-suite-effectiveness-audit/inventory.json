@@ -272,22 +272,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (8 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Fastify active-writer guard, persisted writer epoch, and pre-side-effect mutation fencing",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium false confidence, stale state, or incomplete recovery behavior.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
+        "findingId": "TSA-P02-008",
+        "severity": "Medium",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -776,22 +777,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (6 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Fastify authenticated bootstrap metadata, observer filtering, and response compression",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium false confidence, stale state, or incomplete recovery behavior.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
+        "findingId": "TSA-P02-008",
+        "severity": "Medium",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -6845,22 +6847,24 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (1 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "built-SPA cold/warm startup cache and readiness population matrix",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium false confidence, stale state, or incomplete recovery behavior.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
+        "findingId": "TSA-P02-006",
+        "severity": "Medium",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -6893,22 +6897,24 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (7 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "built-SPA direct-link, durable replay, event-gap, writer-takeover, and optional-runtime recovery journeys",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium false confidence, stale state, or incomplete recovery behavior.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
+        "findingId": "TSA-P02-006",
+        "severity": "Medium",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -6939,22 +6945,24 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "built-SPA visible picker, accepted local settlement, and old-lineage reload recovery",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium false confidence, stale state, or incomplete recovery behavior.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
+        "findingId": "TSA-P02-009",
+        "severity": "Medium",
+        "action": "Retain the suite and carry the explicitly bounded browser-storage or oracle residual to the recorded revisit gate.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -8634,22 +8642,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "mounted read-only observer shell, local navigation, retry, focus, and promotion controls",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium loss of distinct state, recovery, or visible-behavior protection.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -15516,22 +15525,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (177 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "browser startup, writer/observer coordination, resource events, replay, reconnect, and reconciliation",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium loss of distinct state, recovery, or visible-behavior protection.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -16315,28 +16325,29 @@
         "browser"
       ],
       "caseCounts": {
-        "cases": 2,
+        "cases": 4,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "actual main entry environment ordering, dynamic application load, and recoverable entry error surface",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium false confidence, stale state, or incomplete recovery behavior.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
+        "findingId": "TSA-P02-004",
+        "severity": "Medium",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -18559,28 +18570,29 @@
         "browser"
       ],
       "caseCounts": {
-        "cases": 9,
+        "cases": 11,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (11 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "DOM code-control and BGM MutationObserver lifecycle; reassigned to visible UI with a media seam",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium false confidence, stale state, or incomplete recovery behavior.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "The cases protect DOM and media MutationObserver behavior, not writer/observer projection state; they remain valuable under visible UI with a media seam.",
+        "findingId": "TSA-P02-003",
+        "severity": "Medium",
+        "action": "Retain the strengthened cases under Phase 4 visible UI ownership and preserve the Phase 7 media seam.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reclassified"
       }
     },
     {
@@ -18612,22 +18624,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "observer projection discard across database replacement, lineage change, and authentication loss",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium false confidence, stale state, or incomplete recovery behavior.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
+        "findingId": "TSA-P02-004",
+        "severity": "Medium",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -18652,22 +18665,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "latest-wins observer route intent recording, deduplication, consumption, and stale reconciliation",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium loss of distinct state, recovery, or visible-behavior protection.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -18687,31 +18701,34 @@
       ],
       "kind": "component/DOM",
       "dependencySignals": [
+        "mocks",
+        "globals",
         "browser"
       ],
       "caseCounts": {
-        "cases": 3,
+        "cases": 4,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "observer-shell build, test, smoke-session, and blocked-storage rollout selection",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium false confidence, stale state, or incomplete recovery behavior.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
+        "findingId": "TSA-P02-004",
+        "severity": "Medium",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -25443,22 +25460,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (11 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "client writer-session persistence, stale-writer latch, takeover, cleanup, and forced reload",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium false confidence, stale state, or incomplete recovery behavior.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
+        "findingId": "TSA-P02-009",
+        "severity": "Medium",
+        "action": "Retain the suite and carry the explicitly bounded browser-storage or oracle residual to the recorded revisit gate.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -25614,22 +25632,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (6 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "client bootstrap transport, writer/observer identity headers, envelope parsing, and revision caching",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium false confidence, stale state, or incomplete recovery behavior.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
+        "findingId": "TSA-P02-008",
+        "severity": "Medium",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -25913,22 +25932,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (11 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "selected-character shell hydration, stable-target fencing, retry, abort, timeout, and deduplication",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium loss of distinct state, recovery, or visible-behavior protection.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -26660,28 +26680,29 @@
         "browser"
       ],
       "caseCounts": {
-        "cases": 12,
+        "cases": 13,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (13 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "authenticated negotiated chat, prompt, preset, and character-lorebook hydration transport",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "High durable ordering or cross-entity state corruption.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
+        "findingId": "TSA-P02-002",
+        "severity": "High",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -26794,28 +26815,29 @@
         "browser"
       ],
       "caseCounts": {
-        "cases": 1,
+        "cases": 4,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "shared browser visibility, pageshow, online, and focus recovery listener lifecycle",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium false confidence, stale state, or incomplete recovery behavior.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
+        "findingId": "TSA-P02-004",
+        "severity": "Medium",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -27447,23 +27469,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "all six cross-tab lock, publication, CAS, order, and fresh-IV cases",
+        "caseOrMatrixOwner": "complete collected file (6 cases)",
         "valueClasses": [
           "data integrity and recovery",
-          "security and safety"
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "src/ts/server/pendingMutationOutbox.ts locked publication, compare-and-swap, ordering, and AES-GCM IV ownership",
-        "plausibleDefect": "Concurrent tabs publish duplicate order values or reuse an IV after losing a compare-and-swap race.",
-        "risk": "Critical encrypted intent corruption or replay ambiguity across tabs.",
-        "companionEvidence": "pendingMutationOutbox.test.ts transaction injection and Chromium startup recovery replay",
+        "productionOwnerOrContract": "cross-tab pending-mutation locks, atomic order publication, CAS recovery, and cold-module ownership",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium false confidence, stale state, or incomplete recovery behavior.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
         "decision": "Keep",
         "confidence": "high",
-        "rationale": "Controlled lock and CAS races fail for distinct concurrency/encryption defects not visible in browser replay alone.",
-        "findingId": "",
-        "severity": "Informational",
-        "action": "Retain as the Phase 2 cross-tab ordering and fresh-IV owner.",
-        "validation": "pnpm exec vitest run src/ts/server/pendingMutationOutbox.crossTab.test.ts; pnpm test:frontend:all",
-        "state": "pilot-reviewed"
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
+        "findingId": "TSA-P02-009",
+        "severity": "Medium",
+        "action": "Retain the suite and carry the explicitly bounded browser-storage or oracle residual to the recorded revisit gate.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -27497,23 +27519,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "atomic counter/row commit, rollback, legacy recovery, and corrupt/exhausted counter cases at L143-L248",
+        "caseOrMatrixOwner": "complete collected file (225 cases)",
         "valueClasses": [
           "data integrity and recovery",
-          "security and safety"
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "src/ts/server/pendingMutationOutbox.ts staging, locked persistence, counter ordering, key handling, AES-GCM, and IndexedDB lifecycle",
-        "plausibleDefect": "An outbox row and its order counter commit separately, corrupt recovery drops retained intent, or encryption state is reused unsafely.",
-        "risk": "Critical retained-mutation loss, duplicate ordering, or encrypted-outbox integrity failure.",
-        "companionEvidence": "pendingMutationOutbox.crossTab.test.ts and startupRecoveryIntegrationMatrix.spec.ts reload/replay journeys",
-        "decision": "pending",
+        "productionOwnerOrContract": "encrypted IndexedDB outbox staging, ordering, ownership, dependencies, receipts, and projection fences",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium false confidence, stale state, or incomplete recovery behavior.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
         "confidence": "high",
-        "rationale": "The pilot selected defect-sensitive atomicity/recovery cases; the remainder of this mega-suite stays pending Phase 2 review.",
-        "findingId": "",
-        "severity": "Critical",
-        "action": "Review the remaining case families in Phase 2 slice P02-S01 and later outbox slices.",
-        "validation": "focused outbox files; pnpm test:frontend:all; exact recovery browser spec; pnpm test:smoke",
-        "state": "pilot-partial"
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
+        "findingId": "TSA-P02-009",
+        "severity": "Medium",
+        "action": "Retain the suite and carry the explicitly bounded browser-storage or oracle residual to the recorded revisit gate.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -27537,28 +27559,29 @@
         "database"
       ],
       "caseCounts": {
-        "cases": 9,
+        "cases": 10,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (10 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "serial pending-mutation replay routing, committed order, dependency blocking, and outcome accounting",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "High durable ordering or cross-entity state corruption.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
+        "findingId": "TSA-P02-001",
+        "severity": "High",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -28102,28 +28125,29 @@
         "browser"
       ],
       "caseCounts": {
-        "cases": 8,
+        "cases": 11,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (11 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "disposable content-addressed IndexedDB resource cache integrity, budgets, pruning, and reconstruction",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium false confidence, stale state, or incomplete recovery behavior.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
+        "findingId": "TSA-P02-005",
+        "severity": "Medium",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -28148,28 +28172,29 @@
         "browser"
       ],
       "caseCounts": {
-        "cases": 98,
+        "cases": 99,
         "skipped": 0,
         "parameterizedRows": 46,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (99 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "resource-event planning, targeted/full convergence, identity validation, stale fencing, and side-effect coordination",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "High durable ordering or cross-entity state corruption.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
+        "findingId": "TSA-P02-002",
+        "severity": "High",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -28198,22 +28223,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (45 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "audited route, settings, playground, overlay, and runtime resource requirement manifest",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium false confidence, stale state, or incomplete recovery behavior.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
+        "findingId": "TSA-P02-009",
+        "severity": "Medium",
+        "action": "Retain the suite and carry the explicitly bounded browser-storage or oracle residual to the recorded revisit gate.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -28287,22 +28313,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (10 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "targeted resource refresh, revision-gap fallback, replacement ownership, failure ordering, and coalescing",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium loss of distinct state, recovery, or visible-behavior protection.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -28331,22 +28358,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (65 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "authoritative settings, collections, character, chat, prompt, lorebook, and epoch resource-state primitives",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium loss of distinct state, recovery, or visible-behavior protection.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -28422,22 +28450,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (12 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "route/runtime resource loading, supersession, retry, deduplication, intent prefetch, and localized failure",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium loss of distinct state, recovery, or visible-behavior protection.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -28901,22 +28930,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "atomic shell projection apply, stale rejection, detail replacement, and settings-group revision floors",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium loss of distinct state, recovery, or visible-behavior protection.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -28941,22 +28971,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "versioned thin-shell response validation, coherence, and summary/detail separation",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium loss of distinct state, recovery, or visible-behavior protection.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -28977,28 +29008,29 @@
         "mocks"
       ],
       "caseCounts": {
-        "cases": 12,
+        "cases": 14,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (14 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "latest-operation tokens, semantic attempted-value rollback, dirty drafts, and destructive refresh epochs",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium false confidence, stale state, or incomplete recovery behavior.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
+        "findingId": "TSA-P02-007",
+        "severity": "Medium",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -29411,28 +29443,29 @@
         "timers"
       ],
       "caseCounts": {
-        "cases": 10,
+        "cases": 12,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (12 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "startup milestone, capability, retry, revocation, telemetry, and wait state machine",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium false confidence, stale state, or incomplete recovery behavior.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
+        "findingId": "TSA-P02-004",
+        "severity": "Medium",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -29651,22 +29684,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (5 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "legacy database compatibility facade over authoritative resource state and revision epochs",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium loss of distinct state, recovery, or visible-behavior protection.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {
@@ -29964,22 +29998,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (1 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "singleton reactive runtime-effect installation, execution, disposal, and reinstall",
+        "plausibleDefect": "The named synchronization or recovery contract can regress while same-layer mocks, status-only assertions, or incomplete cleanup evidence remain green.",
+        "risk": "Medium loss of distinct state, recovery, or visible-behavior protection.",
+        "companionEvidence": "The Phase 2 defense-in-depth map links pure state, IndexedDB, client coordination, Fastify integration, mounted DOM, and built-browser companions; no same-layer removal or merge was accepted.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct contract value at this evidence layer; linked findings record strengthening and residual evidence bounds.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its strengthened counterexamples.",
+        "validation": "Focused owning tests and the Phase 2 startup/recovery browser matrix passed; aggregate commands and exact counts are recorded in latest-verification.md.",
+        "state": "phase2-reviewed"
       }
     },
     {

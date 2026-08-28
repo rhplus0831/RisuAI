@@ -425,3 +425,78 @@ ten-lane aggregate passed in 3m32.2s:
 
 Full historical compatibility remains blocked only by the exact missing pinned
 worktree. Current/cluster assurance remains green under `test:compat-current`.
+
+## Phase 2 Closeout
+
+Phase 2 reviewed all 32 category-B owners and their 782 opening cases. Eighteen
+counterexamples and lifecycle cases were added without adding or removing a
+file, bringing the live tracked total from 9,991 to 10,009 cases. Thirty-one
+owners remain category B with `Keep` dispositions; the DOM/media observer owner
+was retained and reclassified to category D. The complete inventory therefore
+records 51 `Keep`, one `Reclassify`, and 647 pending file dispositions.
+
+The remediation preserves committed replay order, rejects mismatched lorebook
+identities, cleans up DOM audio observation, exercises actual entry wiring and
+lifecycle teardown, verifies bootstrap ownership and stale-writer side-effect
+fencing, compares rollback snapshots semantically, adds cache budget/pruning
+oracles, and replaces browser false-success signals with protocol outcomes.
+
+```sh
+pnpm exec vitest run \
+  src/ts/bootstrap.test.ts \
+  src/ts/entryStartup.test.ts \
+  src/ts/observerProjectionLifecycle.test.ts \
+  src/ts/observerRouteIntent.test.ts \
+  src/ts/observerShellFlag.test.ts \
+  src/ts/server/activeWriterSession.test.ts \
+  src/ts/server/bootstrap.svelte-node.test.ts \
+  src/ts/server/hydrationReads.svelte-node.test.ts \
+  src/ts/server/lifecycleRecovery.test.ts \
+  src/ts/server/pendingMutationOutbox.crossTab.test.ts \
+  src/ts/server/pendingMutationOutbox.test.ts \
+  src/ts/server/pendingMutationReplay.test.ts \
+  src/ts/server/resourceCache.test.ts \
+  src/ts/server/resourceInvalidation.test.ts \
+  src/ts/server/resourceManifest.test.ts \
+  src/ts/server/resourceRefresh.test.ts \
+  src/ts/server/resourceState.svelte.test.ts \
+  src/ts/server/routeResourceLoader.test.ts \
+  src/ts/server/shellHydration.svelte-node.test.ts \
+  src/ts/server/shellProtocol.test.ts \
+  src/ts/server/staleStateGuards.test.ts \
+  src/ts/startupReadiness.test.ts \
+  src/ts/storage/database.resourceState.test.ts \
+  src/ts/stores.runtimeEffects.svelte-node.test.ts \
+  src/lib/ObserverShell.svelte.test.ts \
+  src/ts/observer.svelte.test.ts \
+  src/ts/server/characterShellHydration.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/activeWriter.test.ts \
+  server/fastify/__tests__/bootstrap.test.ts
+pnpm exec playwright test \
+  server/fastify/browser-smoke/startupCachePopulationMatrix.spec.ts \
+  server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts \
+  server/fastify/browser-smoke/visibleStateRecovery.spec.ts
+pnpm test:frontend:all
+pnpm test:smoke
+pnpm test:affected --dry-run
+pnpm check:test-inventories
+pnpm build:smoke
+pnpm format:check
+git diff --check
+```
+
+Focused results: 27 frontend owners passed 775/775 cases; two Fastify owners
+passed 14/14; and three browser owners passed 11/11. The full frontend universe
+passed 6,675/6,675 across 538 files in 69.25s. Browser smoke passed all 34
+journeys in 1.1m. The built application completed with the existing allowed
+build warnings, and the affected dry run selected inventories, frontend,
+performance, and server lanes.
+
+The checked manifests pass at 699 test files, 253 standalone support owners,
+and 65 mixed production seams. Category B changes from 32 to 31 owners and
+category D from 112 to 113 solely because of the observer reclassification.
+All eight new actionable Phase 2 findings are done; `TSA-P02-009` records the
+bounded Medium browser-storage/cache residuals and their Phase 13/14 revisit
+condition. Full historical compatibility remains blocked only by the missing
+exact pinned worktree; no historical claim or golden was changed.

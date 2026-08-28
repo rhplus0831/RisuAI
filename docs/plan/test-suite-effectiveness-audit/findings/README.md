@@ -2,8 +2,8 @@
 
 Date: 2026-08-29
 
-Status: Active; eighteen findings are done, one remains confirmed, and one is
-deferred with a concrete migration trigger.
+Status: Active; twenty-six findings are done, one remains confirmed, and two
+are deferred with concrete revisit triggers.
 
 This directory owns durable finding and decision records for the audit. Phase 0
 will decide whether the working ledger remains in this index, splits into
@@ -628,3 +628,250 @@ Every finding records:
 - Count delta: none.
 - Revisit condition: update the claim boundary whenever smoke-mode behavior or a
   shared hook changes.
+
+## Phase 2 Findings
+
+### TSA-P02-001: Replay reorders committed cross-tab mutations by wall clock
+
+- State: Done.
+- Severity: High.
+- Category: B.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all ten `pendingMutationReplay.test.ts` cases, especially the
+  serial deferred-dispatch and divergent-sequence committed-order cases.
+- Production owner: `pendingMutationReplay.ts` over the durable order returned
+  by `listPendingMutations()`.
+- Protected contract or plausible defect: tab-local clocks and sequence offsets
+  can reverse mutations after IndexedDB has already committed their global
+  order, applying newer work before its predecessor.
+- Evidence: replay sorted non-cancel rows by `handle.sequence`; the outbox had
+  already sorted by committed `order`. Every former replay fixture used
+  sequence `1`, so the regression could stay green. The counterexample gives
+  the first committed row a larger sequence and now observes it dispatch first.
+- Companion/overlap analysis: the cross-tab outbox suite proves counter/order
+  publication but does not execute replay; the pure replay owner is the
+  necessary coordinator companion.
+- Action and rollback: retain stable cancellation priority while preserving
+  list order for all non-cancel rows. Reverting the change reopens the exact
+  counterexample.
+- Validation: 10/10 replay cases and the durable browser recovery journey pass.
+- Count delta: one case added; no file delta.
+- Revisit condition: reopen if durable ordering authority moves out of the
+  outbox `order` field.
+
+### TSA-P02-002: Lorebook refresh accepts a different character identity
+
+- State: Done.
+- Severity: High.
+- Category: B.
+- Decision: Strengthen, then Keep.
+- Tests/cases: negotiated single-lorebook hydration and targeted invalidation;
+  13 and 99 cases respectively.
+- Production owner: `hydrationReads.ts` response validation and
+  `resourceInvalidation.ts` targeted apply.
+- Protected contract or plausible defect: a response for another resident
+  character can overwrite that character while satisfying a refresh requested
+  for the selected target.
+- Evidence: character, selection, and chat branches checked returned identity;
+  the single lorebook branch did not, and its transport accepted any string ID.
+  New wrong-resident counterexamples fail closed at both boundaries.
+- Companion/overlap analysis: Fastify resource-read tests prove endpoint shape,
+  not client target ownership; both client validations remain defense in depth.
+- Action and rollback: require the response ID to equal the requested ID before
+  returning or applying it.
+- Validation: hydration 13/13 and invalidation 99/99 passed.
+- Count delta: two cases added; no file delta.
+- Revisit condition: none unless the protocol intentionally supports a
+  redirect with an authenticated target-mapping contract.
+
+### TSA-P02-003: DOM observer is misclassified and leaks audio on teardown
+
+- State: Done.
+- Severity: Medium.
+- Category: Reclassified from B to D, with a G media seam.
+- Decision: Reclassify, Strengthen, then Keep.
+- Tests/cases: all eleven `observer.svelte.test.ts` DOM/code/BGM cases.
+- Production owner: `observer.svelte.ts` optional DOM MutationObserver and BGM
+  lifecycle.
+- Protected contract or plausible defect: app/remount cleanup can disconnect
+  mutations while leaving current audio or an autoplay retry alive.
+- Evidence: public `stopObserveDom()` omitted the audio/retry cleanup used only
+  by the test reset. `bootstrap.ts` calls that public cleanup. Active-playback
+  and pending-retry teardown counterexamples now assert no survivor.
+- Companion/overlap analysis: writer/observer projection suites share only the
+  word "observer". These cases are visible DOM/media behavior and are not
+  replaceable by state-shell tests.
+- Action and rollback: stop audio, detach retry listeners, and reset control
+  ownership during public teardown; route the retained test to category D.
+- Validation: 11/11 focused cases and the regenerated category inventory pass.
+- Count delta: two cases added; category B changes from 32 to 31 files while D
+  changes from 112 to 113; no file delta.
+- Revisit condition: Phase 4 owns the visible DOM contract and Phase 7 preserves
+  the media seam.
+
+### TSA-P02-004: Startup and recovery cleanup claims omit failure paths
+
+- State: Done.
+- Severity: Medium.
+- Category: B.
+- Decision: Strengthen, then Keep.
+- Tests/cases: actual `main.ts` wiring, startup readiness, observer flag,
+  projection discard, and lifecycle recovery owners.
+- Production owner: entry loading, capability retry caches, observer projection
+  disposal, rollout storage fallback, and shared physical browser listeners.
+- Protected contract or plausible defect: rejected work can remain cached,
+  replacement can retain detail/cache identities, blocked storage can escape,
+  or final unsubscribe can still deliver queued recovery.
+- Evidence: prior tests covered successful helper calls, auth-loss cleanup, and
+  one visibility/pageshow burst, but not the actual entry module, rejected
+  retry cleanup, replacement cache/hydration state, storage exceptions, hidden
+  state, listener isolation, queued cancellation, or reinstall.
+- Companion/overlap analysis: bootstrap integration and browser journeys remain
+  cross-layer companions; these focused owners uniquely observe internal cache
+  and listener state.
+- Action and rollback: add failure-then-success and teardown counterexamples
+  without widening production semantics.
+- Validation: focused owners pass 4 entry, 12 readiness, 4 flag, 3 projection,
+  and 4 lifecycle cases.
+- Count delta: eight cases added; no file delta.
+- Revisit condition: reopen when entry, capability, or physical lifecycle
+  ownership changes.
+
+### TSA-P02-005: Resource cache budgets and unreadable manifests are unproved
+
+- State: Done with bounded residual in `TSA-P02-009`.
+- Severity: Medium.
+- Category: B.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all eleven `resourceCache.test.ts` cases.
+- Production owner: disposable content-addressed IndexedDB cache validation,
+  per-value budget, manifest population pruning, and corrupt-row fallback.
+- Protected contract or plausible defect: oversized values or excess manifests
+  can escape pruning, and malformed rows can be advertised as valid cache hits.
+- Evidence: only the 8,192-hash request cap was previously exercised. New cases
+  reject a value over 32 MiB, retain only 512 manifests, and treat a size/hash
+  mismatch as an empty disposable snapshot.
+- Companion/overlap analysis: negotiated hydration tests prove full-GET fallback
+  after cache misses; real quota, versionchange, and aggregate-pressure behavior
+  remains a browser-storage residual rather than a reason to remove unit proof.
+- Action and rollback: retain the new budget/pruning counterexamples.
+- Validation: 11/11 focused cache cases passed.
+- Count delta: three cases added; no file delta.
+- Revisit condition: `TSA-P02-009` owns real-browser quota/upgrade and complete
+  aggregate byte/entry pressure.
+
+### TSA-P02-006: Browser recovery journeys contain false-success oracles
+
+- State: Done.
+- Severity: Medium.
+- Category: B.
+- Decision: Strengthen, then Keep.
+- Tests/cases: the one startup-cache matrix case and all seven Phase 7 startup
+  recovery integration cases.
+- Production owner: compiled SPA startup/resource protocol, durable replay,
+  event reconnect, writer takeover, and optional runtime isolation.
+- Protected contract or plausible defect: equal small/large fixtures, unrelated
+  foreground fetches, failed receipt acknowledgements, reconnect-before-refresh,
+  vacuous denial/revocation, or capability booleans without a real mutation can
+  all satisfy the former assertions.
+- Evidence: the fixed 50 ms wait was replaced by protocol-metric polling;
+  fixture/cache cells and population differences are explicit; direct links
+  reject non-runtime route overfetch; acknowledgements require HTTP 200; event
+  order records every full refresh before the new event stream; observer and
+  revoked writer tabs attempt real denied mutations; optional runtime rows
+  execute a successful mutation.
+- Companion/overlap analysis: unit coordinators cannot replace compiled-browser
+  request order and visible ownership evidence. Smoke-mode exclusions remain
+  bounded by `TSA-P01-018`.
+- Action and rollback: retain the stronger request/response and protocol
+  settlement oracles; do not restore fixed sleeps.
+- Validation: startup cache 1/1 and recovery integration 7/7 passed in Chromium.
+- Count delta: no case or file delta.
+- Revisit condition: update the explicit startup-runtime allowlist whenever a
+  resource surface intentionally changes.
+
+### TSA-P02-007: Rollback equality depends on object insertion order
+
+- State: Done.
+- Severity: Medium.
+- Category: B.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all fourteen `staleStateGuards.test.ts` cases.
+- Production owner: attempted field and keyed-list rollback guards.
+- Protected contract or plausible defect: semantically equal JSON with reordered
+  keys compares unequal, so a failed optimistic value can survive instead of
+  rolling back.
+- Evidence: equality used ordinary `JSON.stringify`. Field and keyed-list
+  counterexamples construct the same nested JSON in different key order and
+  now roll back through a canonical-key snapshot.
+- Companion/overlap analysis: bridge suites consume the primitive but do not
+  independently exercise arbitrary insertion order.
+- Action and rollback: canonicalize object keys recursively while preserving
+  array order and JSON serialization semantics.
+- Validation: 14/14 focused guard cases passed.
+- Count delta: two cases added; no file delta.
+- Revisit condition: replace with a shared JSON comparator only if it preserves
+  the same array and serialization contract.
+
+### TSA-P02-008: Ownership tests accept late gates and missing headers
+
+- State: Done.
+- Severity: Medium.
+- Category: B.
+- Decision: Strengthen, then Keep.
+- Tests/cases: Fastify active-writer/bootstrap and client bootstrap transport.
+- Production owner: writer guard route hooks, observer bootstrap identity, and
+  authentication/observer response contracts.
+- Protected contract or plausible defect: a route can mutate before returning
+  423, read-only bootstrap can omit observer identity, or setup/observer checks
+  can pass on an unrelated status-shaped response.
+- Evidence: representative stale import/asset/backup/storage attempts now prove
+  no initialization, asset, legacy byte, or backup effect; stale generation
+  leaves no job/operation; client read-only calls require a stable non-empty
+  observer header; server setup and observer responses require success status.
+- Companion/overlap analysis: client and server owners observe opposite sides
+  of the header boundary; the browser takeover performs live denied/revoked
+  attempts.
+- Action and rollback: retain the durable postconditions and exact status/header
+  assertions.
+- Validation: Fastify active writer 8/8, Fastify bootstrap 6/6, and client
+  bootstrap 6/6 passed.
+- Count delta: none.
+- Revisit condition: add representative postconditions when another mutation
+  family bypasses the shared pre-handler.
+
+### TSA-P02-009: Browser storage and several oracle limits remain bounded
+
+- State: Deferred with retained owners and explicit claim limits.
+- Severity: Medium.
+- Category: B, with Phase 13/14 horizontal ownership.
+- Decision: Keep current evidence; add faithful proof at the revisit gate.
+- Tests/cases: outbox/cross-tab suites, active-writer session cleanup,
+  resource-manifest completeness, resource-cache aggregate pressure, and the
+  visible local-settlement browser row.
+- Production owner: real IndexedDB/Web Locks scheduling and failures, complete
+  resource declaration/pressure, writer cleanup hooks, and authoritative
+  visible settlement.
+- Protected contract or plausible defect: fake IndexedDB and deterministic
+  locks do not expose quota, blocked upgrades, versionchange, process death, or
+  real multi-tab scheduling; three 30 ms negative waits are load-sensitive;
+  manifest and loader can share a missing requirement; one visible toggle proves
+  accepted local settlement rather than an authoritative reread; several
+  cleanup spies and aggregate cache limits remain incomplete.
+- Evidence: current unit tests retain exact transaction, encryption, CAS,
+  ordering, projection, and coordinator evidence, and browser recovery covers
+  real reload/response loss. Those companions do not justify broader claims.
+- Companion/overlap analysis: no existing same-layer test replaces the retained
+  cases. The residual is an addition/faithfulness need, not removal evidence.
+- Action and rollback: keep current suites and their bounded wording. Add a real
+  Chromium multi-page storage case with injectable open/write/upgrade failure,
+  replace fixed negative waits with lock/transaction entry signals, add an
+  independent consumer-read manifest oracle, finish cleanup spies and total
+  cache pressure, and force an authoritative reread for the visible settlement
+  claim.
+- Validation: all current owning focused tests and the complete Phase 2 browser
+  matrix pass; the inventory links every bounded owner to this finding.
+- Count delta: none in the deferred item.
+- Revisit condition: Phase 13 when cross-suite faithful-browser additions are
+  consolidated, or Phase 14 before closeout if the browser harness gains
+  multi-page persistent-context and IndexedDB failure injection sooner.
