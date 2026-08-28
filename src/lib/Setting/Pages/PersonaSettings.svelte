@@ -246,7 +246,7 @@
       {#if getDatabase().userIcon === ''}
         <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"></div>
       {:else}
-        {#await getCharImage(getDatabase().userIcon, getDatabase().personas[getDatabase().selectedPersona].largePortrait ? 'lgcss' : 'css')}
+        {#await getCharImage(getDatabase().userIcon, getDatabase().personas[getDatabase().selectedPersona]?.largePortrait ? 'lgcss' : 'css')}
           <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"></div>
         {:then im}
           <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500" style={im}>
@@ -330,7 +330,7 @@
         }}>{language.remove}</Button>
       <Check
         bind:check={
-          () => getDatabase().personas[getDatabase().selectedPersona].largePortrait,
+          () => getDatabase().personas[getDatabase().selectedPersona]?.largePortrait ?? false,
           (value) => updateSelectedPersonaLargePortrait(value)
         }>{language.largePortrait}</Check>
     </div>
