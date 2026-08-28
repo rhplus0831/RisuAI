@@ -2367,3 +2367,278 @@ Every finding records:
 - Count delta: none.
 - Revisit condition: Phase 12 runtime audit, Phase 13 remediation, and
   mandatory Phase 14 closeout decision.
+
+## Phase 8 Findings
+
+### TSA-P08-001: Memory snapshots could resurrect jobs or reject a new stream
+
+- State: Done.
+- Severity: High.
+- Category: H/B.
+- Decision: Strengthen, then Keep.
+- Tests/cases: eight projection cases and 19 refresh/event/modal companions.
+- Production owner: browser memory job stream/version projection.
+- Protected contract or plausible defect: a lower-version snapshot from the
+  same stream could resurrect removed work; a new stream could inherit the old
+  stream's higher version and reject its valid terminal event.
+- Evidence: same-stream lower versions are rejected, while replacement across
+  stream identity adopts the new snapshot version before later events.
+- Companion/overlap analysis: refresh request fences did not cover direct
+  snapshot application or server-stream replacement.
+- Action and rollback: retain per-stream monotonicity and reset version on a
+  stream handoff.
+- Validation: 27/27 focused projection/refresh/event/modal cases and complete
+  frontend passed.
+- Count delta: two cases added.
+- Revisit condition: none unless multiple simultaneous server streams become
+  supported.
+
+### TSA-P08-002: Transcript edits left stale unsummarized durable memory
+
+- State: Done.
+- Severity: Critical.
+- Category: H/C.
+- Decision: Strengthen, then Keep.
+- Tests/cases: the message-store and command owners, 251 focused cases.
+- Production owner: message mutation transaction and transcript-derived memory
+  invalidation.
+- Protected contract or plausible defect: editing or replacing a persisted
+  message could leave an unsummarized chunk and durable job that later appears
+  current and summarizes obsolete content.
+- Evidence: the message-store boundary compares the effective prompt-memory
+  source and deletes only unsummarized chunks and jobs naming them in the same
+  transaction. Pure appends, summarized memory, and other chats remain intact.
+- Companion/overlap analysis: planners prove creation/idempotency but did not
+  own edits through every message mutation path.
+- Action and rollback: invalidate derived, unfinished memory at the shared
+  mutation boundary.
+- Validation: 251/251 focused cases, server typecheck, and complete Fastify
+  passed.
+- Count delta: one case added.
+- Revisit condition: summarized-memory behavior remains the explicit policy
+  residual in `TSA-P08-012`.
+
+### TSA-P08-003: Memory job errors leaked common credential forms
+
+- State: Done.
+- Severity: Critical.
+- Category: H/L.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 13 memory-event presentation cases plus job-route
+  companions.
+- Production owner: terminal job error event and API presentation.
+- Protected contract or plausible defect: quoted JSON credentials, URL
+  userinfo, generic query keys, access tokens, bearer/basic values, or
+  provider-shaped secrets could survive the narrow sanitizer.
+- Evidence: the bounded sanitizer now covers structured keys, auth schemes,
+  URL credentials, query values, and common provider/AWS/Google/GitHub token
+  forms.
+- Companion/overlap analysis: provider request-history and trace redaction do
+  not own independently persisted memory job errors.
+- Action and rollback: sanitize at terminal event/route presentation while
+  keeping durable diagnostic length bounded.
+- Validation: 13/13 focused cases and complete Fastify passed.
+- Count delta: seven parameterized cases added.
+- Revisit condition: add newly supported provider token forms to the shared
+  counterexample matrix.
+
+### TSA-P08-004: Finite numbers could overflow when stored as Float32
+
+- State: Done.
+- Severity: High.
+- Category: H/G.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 14 memory embedding-adapter cases.
+- Production owner: provider embedding response normalization.
+- Protected contract or plausible defect: a finite JavaScript number such as
+  `1e39` becomes `Infinity` in Float32 and could corrupt ranking/storage after
+  passing the original finite check.
+- Evidence: every value must remain finite under `Math.fround` before
+  conversion.
+- Companion/overlap analysis: repository blob validation occurs after the
+  adapter and cannot make corrupt provider output valid.
+- Action and rollback: reject Float32 overflow as an invalid provider response.
+- Validation: 14/14 focused cases and complete Fastify passed.
+- Count delta: one case added.
+- Revisit condition: none while embeddings remain Float32.
+
+### TSA-P08-005: Legacy memory salvage silently omitted malformed summaries
+
+- State: Done.
+- Severity: High.
+- Category: H/K.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all seven legacy-memory import cases and 65 save/import route
+  companions.
+- Production owner: legacy Hypa V3 backfill and import reporting.
+- Protected contract or plausible defect: malformed summary rows could vanish
+  while valid neighbors import, leaving users with unexplained partial memory
+  loss.
+- Evidence: valid rows are salvaged; every malformed row returns an exact
+  structural path/reason. Import responses expose the report conditionally and
+  startup backfill logs it.
+- Companion/overlap analysis: generic skipped-block reporting did not include
+  memory summaries.
+- Action and rollback: retain salvage with explicit diagnostics; do not reject
+  an otherwise readable save.
+- Validation: focused memory cases, save/import route owners, server typecheck,
+  and complete Fastify passed.
+- Count delta: two cases added.
+- Revisit condition: expand reasons only when another malformed legacy shape
+  is deliberately salvageable.
+
+### TSA-P08-006: Embedding cache keys had delimiter collisions
+
+- State: Done.
+- Severity: Medium.
+- Category: H/G.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all three embedding cache-identity cases.
+- Production owner: client embedding result cache identity.
+- Protected contract or plausible defect: content containing the hand-built
+  delimiter could collide with custom model/endpoint identity and reuse the
+  wrong vector.
+- Evidence: keys are versioned JSON tuples over input, model, custom model,
+  normalized endpoint, and context suffix.
+- Companion/overlap analysis: provider operation keys and stored embeddings do
+  not own this client cache.
+- Action and rollback: keep the unambiguous versioned tuple.
+- Validation: 3/3 focused and complete frontend cases passed.
+- Count delta: one case added.
+- Revisit condition: bump the version when key semantics change.
+
+### TSA-P08-007: One throwing memory-event listener blocked later consumers
+
+- State: Done.
+- Severity: Medium.
+- Category: H/B.
+- Decision: Strengthen, then Keep.
+- Tests/cases: both browser memory-event fanout cases.
+- Production owner: client memory job event subscriber fanout.
+- Protected contract or plausible defect: a broken projection listener could
+  throw out of publication and starve the mounted UI or another controller.
+- Evidence: listeners are isolated independently and publication remains
+  non-throwing.
+- Companion/overlap analysis: server event fanout already had isolation; it
+  could not protect client-local subscribers.
+- Action and rollback: retain best-effort per-listener isolation.
+- Validation: 2/2 focused and complete frontend cases passed.
+- Count delta: one case added.
+- Revisit condition: none.
+
+### TSA-P08-008: Delayed cancellation could replace a recreated job instance
+
+- State: Done.
+- Severity: Medium.
+- Category: H/D.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all five mounted server-memory-job component cases.
+- Production owner: Hypa modal cancellation and concrete job-instance owner.
+- Protected contract or plausible defect: cancel instance A, leave/return or
+  recreate the logical ID as instance B, then accept A's delayed terminal
+  response into B's current projection.
+- Evidence: cancellation captures chat, owner epoch, and instance; only a
+  still-displayed matching instance may accept the result. Busy state is also
+  instance-keyed.
+- Companion/overlap analysis: refresh/projection instance fences cannot know
+  which mounted owner initiated the request.
+- Action and rollback: fence the async response at the component owner.
+- Validation: 5/5 focused, typecheck, and complete frontend passed.
+- Count delta: one case added.
+- Revisit condition: none unless cancel becomes a server-pushed-only action.
+
+### TSA-P08-009: Terminal memory-job listings were unbounded
+
+- State: Done.
+- Severity: Medium.
+- Category: H/L.
+- Decision: Strengthen, then Keep.
+- Tests/cases: ten memory-job route cases and 21 repository companions.
+- Production owner: authenticated memory-job history query and response.
+- Protected contract or plausible defect: explicit terminal-status filters and
+  default history could materialize, hash, and serialize all retained terminal
+  rows.
+- Evidence: terminal queries select the newest 50 at SQLite and presentation;
+  active jobs remain complete and existing ETag/version behavior is preserved.
+- Companion/overlap analysis: startup retention bounds age, not the number of
+  rows created inside that window.
+- Action and rollback: retain the documented bounded history; add a cursor only
+  with an explicit API product requirement.
+- Validation: 31/31 focused route/repository cases and server typecheck passed.
+- Count delta: one route case added.
+- Revisit condition: add pagination if callers need older terminal history.
+
+### TSA-P08-010: Memory-shaped names hid five product-risk categories
+
+- State: Done.
+- Severity: Medium.
+- Category: H to B/D/F/G/L.
+- Decision: Reclassify.
+- Tests/cases: 17 complete owners / 199 cases listed by
+  `phase8-reclassified` state in `inventory.json`.
+- Production owner: prompt generation, provider adapters/models, shared stream
+  runtime, visible worker feedback, and browser summary projection.
+- Protected contract or plausible defect: reviewing these only as memory
+  lifecycle owners hides their dominant generation, provider, platform,
+  visible UI, or browser-state companions.
+- Evidence: exact-path rules and a 17-owner counterexample matrix route every
+  owner.
+- Companion/overlap analysis: lane and specialized ownership do not change.
+- Action and rollback: retain every owner under B/D/F/G/L.
+- Validation: routing policy passed 10/10 and generated inventory has exact
+  assignments.
+- Count delta: one policy case; no owner removed.
+- Revisit condition: only if a complete owner's dominant contract changes.
+
+### TSA-P08-011: Memory lifecycle evidence layers remain distinct
+
+- State: Done.
+- Severity: Informational.
+- Category: H with B/C/D/F/G/L seams.
+- Decision: Keep.
+- Tests/cases: the complete 43-file, 470-case reviewed opening set after
+  remediation.
+- Production owner: planning through SQLite state, provider execution,
+  handler/worker transitions, routes/events, browser projection, and mounted UI.
+- Protected contract or plausible defect: merging by memory terminology would
+  erase distinct semantic, transaction, scheduler, API, race, and visible
+  owner failures.
+- Evidence: every owner has a complete contract in `inventory.json`; no owner
+  met replacement/removal proof.
+- Companion/overlap analysis: Node/DOM/Fastify layers and outgoing category
+  companions fail at different boundaries. No H browser owner exists.
+- Action and rollback: retain reviewed owners; consolidate only with full
+  semantic and failure-layer replacement evidence.
+- Validation: 470/470 exact opening-owner cases and complete lanes passed.
+- Count delta: sixteen opening-owner cases and one policy case.
+- Revisit condition: Phase 13 may consolidate only under the plan's proof
+  package.
+
+### TSA-P08-012: Browser, provider, summarized-memory, and restart claims are bounded
+
+- State: Deferred with retained owners and explicit phase ownership.
+- Severity: High.
+- Category: H, with G/L and Phase 12/13/14 ownership.
+- Decision: Keep current evidence; add or gate only at named owners.
+- Tests/cases: memory worker/handlers, provider doubles, summarized repository,
+  browser projection/modal, smoke suite, and compatibility harness.
+- Production owner: real job progress/reconnect/reload, provider parity,
+  summarized-memory policy after transcript edits, provider in-flight restart,
+  and historical memory formats.
+- Protected contract or plausible defect: smoke disables the memory worker and
+  no browser H owner connects planning, jobs, editing, cancellation, reload,
+  and prompt use. Controlled upstreams cannot prove provider drift. The product
+  has not chosen whether a transcript edit invalidates user-curated summaries.
+- Evidence: exact boundary review found strong isolated layers but no live
+  journey. The exact pinned compatibility worktree is absent.
+- Companion/overlap analysis: Phase 12 owns worker/query observability; Phase
+  13 owns bounded browser composition and summarized-memory policy; Phase 14
+  owns final residual and compatibility decisions.
+- Action and rollback: retain bounded evidence. Do not delete curated summaries,
+  enable paid provider calls, substitute a baseline, or refresh goldens without
+  explicit product/evidence ownership.
+- Validation: exact, complete, smoke, static, and inventory lanes pass; this
+  finding deliberately limits broader claims.
+- Count delta: none.
+- Revisit condition: Phase 12 runtime audit, Phase 13 remediation, and mandatory
+  Phase 14 closeout decision.
