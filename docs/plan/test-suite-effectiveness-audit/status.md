@@ -9,19 +9,21 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Snapshot
 
-- Plan state: Active; Phases 0-3 complete and Phase 4 in progress.
-- Current phase: Phase 4 — App Navigation, Chat, And Shared UI.
-- Active slice: Phase 4 exact inventory review covers the 113 category-D owners
-  and their navigation, chat, shared UI, feedback, and accessibility seams.
+- Plan state: Active; Phases 0-4 complete and Phase 5 in progress.
+- Current phase: Phase 5 — Settings, Profiles, Authoring, And Catalogs.
+- Active slice: Phase 5 exact inventory review covers the 96 category-E owners
+  and their 1,011 settings, profile, persona, character, lorebook, Realm, and
+  catalog cases.
 - Implementation state: exhaustive test/case/support manifests and their local,
   affected, aggregate, coverage, and CI checks are live. The protocol import
   policy uses recursive AST evidence and the Realm scale case has isolated local
-  and CI owners. No product behavior or existing product test has been removed.
+  and CI owners. Phase 4 removed one unreachable legacy mobile-shell test only
+  after mounted App and compiled-browser replacement proof.
 - Blockers: the full differential compatibility harness cannot run because its
   pinned external worktree is absent. The new current-only owner is green; the
   blocker applies only to historical baseline claims.
-- Next action: audit the first cohesive Phase 4 navigation/chat batch and
-  record case-level contracts, overlap, and dispositions.
+- Next action: freeze and execute the Phase 5 opening set, then audit the first
+  cohesive settings/profile batch with Phase 3 durable-bridge companions.
 
 ## Planning Baseline
 
@@ -35,11 +37,11 @@ in [`latest-verification.md`](latest-verification.md).
 | Fastify Vitest                       | 154 files                                    |
 | Browser smoke                        | 7 files                                      |
 | Compatibility harness                | Current-only green; full differential blocked |
-| Collected cases                      | 10,027 total; 1 direct-only skip; 1,271 parameterized rows |
-| Support owners                       | 253 standalone; 65 mixed production seams   |
+| Collected cases                      | 10,043 total; 1 direct-only skip; 1,278 parameterized rows |
+| Support owners                       | 252 standalone; 65 mixed production seams   |
 | Primary-category assignments         | 699 of 699 ratified                          |
-| Complete file dispositions           | 103 Keep / 1 Reclassify                      |
-| Findings                             | 33 done / 1 confirmed / 3 deferred           |
+| Complete file dispositions           | 206 Keep / 11 Reclassify; 1 removed historical owner |
+| Findings                             | 51 done / 1 confirmed / 4 deferred           |
 
 The 698-file rows preserve the plan-creation anchor. The live counts, support
 owners, runtime evidence, and category totals are checked by the Phase 0
@@ -53,8 +55,8 @@ manifests and verification record.
 | [1](phases/phase-1-assurance-architecture-and-special-lanes.md) | Complete | Audited runners, setup, discovery, CI, fixtures, helpers, and special gates. |
 | [2](phases/phase-2-browser-state-sync-and-recovery.md) | Complete | Audited browser state synchronization, durable intent, and recovery. |
 | [3](phases/phase-3-persistence-commands-events-and-bridges.md) | Complete | Audited persistence, commands, events, and editing bridges. |
-| [4](phases/phase-4-app-navigation-chat-and-shared-ui.md) | In progress | Audit app navigation, chat, shared UI, feedback, and accessibility. |
-| [5](phases/phase-5-settings-profiles-authoring-and-catalogs.md) | Pending | Audit settings, profiles, character authoring, and catalogs. |
+| [4](phases/phase-4-app-navigation-chat-and-shared-ui.md) | Complete | Audited app navigation, chat, shared UI, feedback, and accessibility. |
+| [5](phases/phase-5-settings-profiles-authoring-and-catalogs.md) | In progress | Audit settings, profiles, character authoring, and catalogs. |
 | [6](phases/phase-6-prompting-generation-and-streaming.md) | Pending | Audit prompting, generation, streaming, and durable finalization. |
 | [7](phases/phase-7-providers-models-credentials-translation-and-media.md) | Pending | Audit providers, models, credentials, translation, and media. |
 | [8](phases/phase-8-memory-embeddings-jobs-and-workers.md) | Pending | Audit memory, embeddings, summaries, jobs, and workers. |
@@ -71,13 +73,17 @@ See [`phases/README.md`](phases/README.md) for links and shared slice rules.
 
 | Decision   | Count | Meaning                                                    |
 | ---------- | ----: | ---------------------------------------------------------- |
-| Keep       |   103 | Distinct contract and suitable evidence layer.             |
+| Keep       |   206 | Distinct contract and suitable evidence layer.             |
 | Strengthen |     0 | Valuable intent, but insufficient or self-fulfilling proof. |
 | Merge      |     0 | Equivalent failure mode can move into a stronger owner.    |
-| Reclassify |     1 | Valuable test belongs to another category, lane, or type.  |
-| Remove     |     0 | No meaningful unique value after mandatory removal proof.  |
-| Add        |     0 | Material uncovered contract requires new proof.            |
-| Pending    |   595 | Known test owners awaiting their owning phase review.       |
+| Reclassify |    11 | Valuable test belongs to another category, lane, or type.  |
+| Remove     |     1 | Historical owner removed after mandatory replacement proof. |
+| Add        |     1 | Historical owner added for a material uncovered contract.  |
+| Pending    |   482 | Known live test owners awaiting their owning phase review.  |
+
+Keep, Reclassify, and Pending partition the 699 live rows. Remove and Add are
+durable Phase 4 action-ledger counts; the added Button owner is already included
+in Keep and the removed Mobile owner is no longer a live row.
 
 ## Current Decisions
 
@@ -121,6 +127,11 @@ See [`phases/README.md`](phases/README.md) for links and shared slice rules.
   multi-step browser mutation claims. Revisit during Phase 13 consolidation or
   Phase 14 verification when the exact baseline or stronger browser fault
   injection is available.
+- Deferred visible UI fidelity: `TSA-P04-019` bounds real visible
+  send/attach/stream/abort/reload, true mobile/touch and Firefox/WebKit,
+  stacked-alert/onboarding/full-screen accessibility, and broader UI-map
+  claims. Phase 13 owns additions; Phase 14 must make the final residual
+  decision.
 
 ## Maintenance Rules
 

@@ -8,11 +8,11 @@ slice rules. [`../status.md`](../status.md) is the live execution cursor.
 | Phase | State   | Scope |
 | ----: | ------- | ----- |
 | [0](phase-0-baseline-inventory-and-rubric.md) | Complete | Baseline, exhaustive inventory, effectiveness rubric, and pilot. |
-| [1](phase-1-assurance-architecture-and-special-lanes.md) | In progress | Runners, setup, discovery, CI, fixtures, helpers, gates, compatibility. |
-| [2](phase-2-browser-state-sync-and-recovery.md) | Pending | Browser state synchronization, durable intent, and recovery. |
-| [3](phase-3-persistence-commands-events-and-bridges.md) | Pending | Persistence, revisioned commands, events, and editing bridges. |
-| [4](phase-4-app-navigation-chat-and-shared-ui.md) | Pending | Navigation, chat, shared UI, feedback, accessibility, responsive behavior. |
-| [5](phase-5-settings-profiles-authoring-and-catalogs.md) | Pending | Settings, profiles, personas, characters, lorebooks, Realm, catalogs. |
+| [1](phase-1-assurance-architecture-and-special-lanes.md) | Complete | Runners, setup, discovery, CI, fixtures, helpers, gates, compatibility. |
+| [2](phase-2-browser-state-sync-and-recovery.md) | Complete | Browser state synchronization, durable intent, and recovery. |
+| [3](phase-3-persistence-commands-events-and-bridges.md) | Complete | Persistence, revisioned commands, events, and editing bridges. |
+| [4](phase-4-app-navigation-chat-and-shared-ui.md) | Complete | Navigation, chat, shared UI, feedback, accessibility, responsive behavior. |
+| [5](phase-5-settings-profiles-authoring-and-catalogs.md) | In progress | Settings, profiles, personas, characters, lorebooks, Realm, catalogs. |
 | [6](phase-6-prompting-generation-and-streaming.md) | Pending | Prompt assembly, generation, SSE, cancellation, durability, Agent Presets. |
 | [7](phase-7-providers-models-credentials-translation-and-media.md) | Pending | Providers, models, secrets, translation, image/audio/transcription. |
 | [8](phase-8-memory-embeddings-jobs-and-workers.md) | Pending | Hypa memory, embeddings, summaries, jobs, ranking, workers, UI reconciliation. |

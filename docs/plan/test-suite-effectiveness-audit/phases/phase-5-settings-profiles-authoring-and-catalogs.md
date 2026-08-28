@@ -1,6 +1,6 @@
 # Phase 5: Settings, Profiles, Authoring, And Catalogs
 
-Status: Pending; depends on Phases 0-4.
+Status: In progress; Phases 0-4 satisfied.
 
 ## Objective
 

@@ -564,3 +564,89 @@ hardening, mounted-component rollback, multi-step browser journeys, and later
 cross-suite consolidation. Full historical compatibility remains blocked only
 by the missing exact pinned worktree; no historical claim or golden was
 changed.
+
+## Phase 4 App Navigation, Chat, And Shared UI
+
+### Opening evidence and inventory correction
+
+The phase opened with 113 category-D owners and 1,235 cases. The exact opening
+frontend set passed 1,116/1,116 across 108 files in 26.59s, the three Fastify
+owners passed 106/106 in 1.83s, and the two browser specs passed 13/13 in 14.3s.
+The production smoke build passed in 11.17s.
+
+Product-risk rules then moved nine owners with 279 cases from D to A, B, F, G,
+K, or L and moved the 11-case language owner from L to D. Phase 4 also removed
+the unreachable two-case legacy mobile-shell owner, added a one-case shared
+Button owner, and strengthened existing owners. The final completed review set
+is 114 live files and 1,261 cases. The 105 current category-D rows contain 982
+cases and 62 parameterized rows; the nine outgoing rows remain part of the
+completed Phase 4 evidence record.
+
+### Commands
+
+```sh
+# Exact final frontend set: current D plus the six outgoing frontend owners.
+mapfile -t phase4_frontend < <(jq -r '
+  .rows[] | .file as $file |
+  select(
+    (.primaryCategory == "D" or
+      (["src/ts/alert.importSafety.test.ts",
+        "src/ts/gui/loginMessageOrigin.test.ts",
+        "src/ts/chatImportPlanning.test.ts",
+        "src/ts/server/chatMessageHydration.test.ts",
+        "src/ts/server/chatMessageHydration.reactivity.svelte.test.ts",
+        "src/ts/process/request/tests/serverChat.test.ts"] | index($file))) and
+    (.lane == "frontend-node" or .lane == "frontend-dom")) |
+  .file' docs/plan/test-suite-effectiveness-audit/inventory.json)
+pnpm exec cross-env RISU_TEST_INCLUDE_GATES=true vitest run "${phase4_frontend[@]}"
+
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/chatDispatchLogitBias.test.ts \
+  server/fastify/__tests__/chatDispatchProfileOptions.test.ts \
+  server/fastify/__tests__/openrouterFreeModel.test.ts
+
+pnpm test:frontend:all
+pnpm test:server
+pnpm test:gates:perf
+pnpm coverage:ui-map
+pnpm check
+pnpm build:smoke
+pnpm test:smoke
+pnpm test:affected --dry-run
+pnpm check:test-inventories
+pnpm format:check
+git diff --check
+```
+
+The exact final frontend set passed 1,142/1,142 across 109 files in 27.31s,
+and the reclassified Fastify set passed 106/106 across three files in 2.12s.
+The complete frontend lane passed 6,693/6,693 across 538 files in 94.72s. The
+complete Fastify lane passed 3,316 cases across 154 files in 19.61s with the one
+intentional direct-only Realm scale skip. The two isolated performance owners
+passed 6/6 in 22.76s.
+
+`coverage:ui-map` passed 205/205 across its six deliberate owners in 21.65s:
+14.82% statements, 9.45% branches, 18.1% functions, and 14.42% lines. These
+figures clear the bounded sentinel thresholds but are not represented as broad
+UI coverage. `svelte-check` reported zero errors and zero warnings.
+
+The standalone production smoke build passed in 11.72s with the existing CSS,
+externalization, and chunk-size diagnostics. `test:smoke` rebuilt in 11.65s and
+passed all 34 Chromium cases in 1.5 minutes, including the strengthened
+first-open route sweeps, responsive controls, send/reload recovery, startup
+matrices, and multi-tab takeover.
+
+The affected dry run selected inventory checks, frontend, performance, and
+server lanes; every selected lane above passed. The checked manifests now prove
+699 test/spec files, 252 standalone support artifacts, 65 mixed production
+seams, 10,043 collected cases, one direct-only skip, and 1,278 parameterized
+rows. Primary categories are A=20, B=33, C=52, D=105, E=96, F=91, G=98, H=43,
+I=42, J=47, K=39, and L=33. Live decisions are 206 Keep, 11 Reclassify, and 482
+Pending; the durable action ledger additionally records one removed legacy
+owner and one added shared-control owner.
+
+Eighteen Phase 4 findings are done. `TSA-P04-019` bounds visible browser,
+mobile/touch, cross-browser, full-screen accessibility, and broader UI-map
+fidelity until Phase 13, with a mandatory Phase 14 decision. Full historical
+compatibility remains blocked only by the absent exact pinned worktree; no
+substitute checkout or golden was used.

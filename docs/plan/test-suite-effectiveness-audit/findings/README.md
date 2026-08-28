@@ -2,8 +2,8 @@
 
 Date: 2026-08-29
 
-Status: Active; thirty-three findings are done, one remains confirmed, and
-three are deferred with concrete revisit triggers.
+Status: Active; fifty-one findings are done, one remains confirmed, and four
+are deferred with concrete revisit triggers.
 
 This directory owns durable finding and decision records for the audit. Phase 0
 will decide whether the working ledger remains in this index, splits into
@@ -1071,3 +1071,411 @@ Every finding records:
 - Count delta: none in the deferred item.
 - Revisit condition: Phase 13 cross-suite consolidation/addition review, then a
   mandatory Phase 14 residual check before closeout.
+
+## Phase 4 Findings
+
+### TSA-P04-001: Older overlapping hydration can replace newer transcript rows
+
+- State: Done.
+- Severity: High.
+- Category: B after Phase 4 reclassification, with a D transcript seam.
+- Decision: Strengthen, then Keep.
+- Tests/cases: 71 `chatMessageHydration.test.ts` cases plus six reactive, six
+  range-merge, and two retained-projection companions.
+- Production owner: ranged transcript hydration and reactive retained messages.
+- Protected contract or plausible defect: an older overlapping response could
+  overwrite rows already supplied by a newer response.
+- Evidence: deferred overlapping ranges reproduced the overwrite; response
+  ownership now rejects stale overlap while still permitting disjoint
+  placeholder fills.
+- Companion/overlap analysis: pure range merge and reactive projection tests
+  cover different layers and cannot replace request-generation ownership.
+- Action and rollback: fence response ranges with generation ownership and
+  retain the explicit stale-overlap/disjoint-fill counterexamples.
+- Validation: focused hydration/reactivity/range tests passed 83/83; retained
+  projection, the exact Phase 4 frontend set, and the complete frontend lane
+  passed.
+- Count delta: one case added; no file delta.
+- Revisit condition: extend the range certificate if partial hydration becomes
+  independently cancellable per message.
+
+### TSA-P04-002: Original-layer edits retain an obsolete translation
+
+- State: Done.
+- Severity: High.
+- Category: D.
+- Decision: Strengthen, then Keep.
+- Tests/cases: `Chat.parserDependencies.test.ts` and the partial-edit layer and
+  freshness companions.
+- Production owner: partial message editing and raw/translated render layers.
+- Protected contract or plausible defect: editing original text could leave a
+  translation for the previous source displayed as if it were current.
+- Evidence: the original-layer branch changed raw text but retained the
+  translation; the counterexample now requires translation invalidation.
+- Companion/overlap analysis: generic edit freshness protects target identity,
+  not the semantic dependency between source and translation.
+- Action and rollback: clear the derived translation with the source edit.
+- Validation: focused parser/partial-edit owners and the full frontend lane
+  passed.
+- Count delta: no collected-case or file delta.
+- Revisit condition: replace clearing only if translations gain a verifiable
+  source-version certificate.
+
+### TSA-P04-003: A failed final branch can leave an optimistic URL selected
+
+- State: Done.
+- Severity: High.
+- Category: D.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 54 `Chat.customHtml.test.ts` cases.
+- Production owner: branch/fork creation, route selection, and rollback.
+- Protected contract or plausible defect: after one fork succeeds and a later
+  fork fails, the URL could remain on the failed optimistic target.
+- Evidence: the new deferred sequence proves the final successful fork remains
+  selected after the later failure.
+- Companion/overlap analysis: pure chat-fork graph tests do not observe route
+  history or the rendered branch action.
+- Action and rollback: restore the last settled route target on fork failure.
+- Validation: 54/54 owner cases and the complete frontend lane passed.
+- Count delta: one case added; no file delta.
+- Revisit condition: none unless branch routing becomes transaction-owned.
+
+### TSA-P04-004: Lazy first-open accounting can pass on an earlier request
+
+- State: Done.
+- Severity: Medium.
+- Category: D.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all eight `lazyFirstOpen.spec.ts` browser cases.
+- Production owner: emitted lazy chunks and route/modal first-open transitions.
+- Protected contract or plausible defect: a cumulative requested-path set could
+  let a transition pass without issuing its own required request.
+- Evidence: each transition now captures a fresh request checkpoint and proves
+  its own required emitted assets and final visible state.
+- Companion/overlap analysis: the structural manifest proves completeness;
+  only the browser transition proves real request timing and presentation.
+- Action and rollback: use per-transition request evidence throughout the route
+  and modal sweeps.
+- Validation: exact Phase 4 browser owners passed 13/13 and the complete smoke
+  lane passed 34/34.
+- Count delta: none.
+- Revisit condition: keep the checkpoint helper aligned if Playwright request
+  tracing moves to a shared fixture.
+
+### TSA-P04-005: Hotkey resource guards are not proved through installation
+
+- State: Done.
+- Severity: Medium.
+- Category: D.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 12 `hotkey.resourceGuard.test.ts` cases.
+- Production owner: installed document hotkey listener and guarded mutations.
+- Protected contract or plausible defect: direct handler tests could pass while
+  the document listener failed to compose the guard or event ownership.
+- Evidence: a real document-dispatch counterexample now crosses the installed
+  listener and asserts the guarded resource command.
+- Companion/overlap analysis: navigation cases own key policy; this owner
+  uniquely proves mutation-resource composition.
+- Action and rollback: retain the installed-listener row with the direct matrix.
+- Validation: 12/12 focused cases and the complete frontend lane passed.
+- Count delta: one case added; no file delta.
+- Revisit condition: migrate the row with any future hotkey event hub.
+
+### TSA-P04-006: Global chat navigation accepts invalid numeric indices
+
+- State: Done.
+- Severity: Medium.
+- Category: D.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all eight `globalApi.changeChatTo.test.ts` cases.
+- Production owner: public global API chat selection.
+- Protected contract or plausible defect: negative, oversized, fractional,
+  `NaN`, or infinite input could project an invalid chat selection.
+- Evidence: the earlier bounds check did not require a finite integer; the new
+  table rejects all invalid numeric classes without mutation.
+- Companion/overlap analysis: route parsing validates URL shapes, not direct
+  global API calls.
+- Action and rollback: require a finite integer in the live index range.
+- Validation: 8/8 focused cases and the complete frontend lane passed.
+- Count delta: five cases added; no file delta.
+- Revisit condition: none unless the public API adopts stable chat IDs.
+
+### TSA-P04-007: Highlight ranges omit intermediate text nodes
+
+- State: Done.
+- Severity: Medium.
+- Category: D.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all three `highlight.test.ts` cases.
+- Production owner: CSS Highlight range construction.
+- Protected contract or plausible defect: a match spanning more than two text
+  nodes could leave its middle content unhighlighted.
+- Evidence: the multi-node counterexample fails the former start/end-only walk;
+  the implementation now visits every intersecting text node.
+- Companion/overlap analysis: parser token tests do not own DOM node ranges.
+- Action and rollback: retain the compact all-node traversal and counterexample.
+- Validation: 3/3 focused cases and the complete frontend lane passed.
+- Count delta: one case added; no file delta.
+- Revisit condition: sample actual painted ranges under the browser fidelity
+  work in `TSA-P04-019`.
+
+### TSA-P04-008: Removed active BGM remains attached
+
+- State: Done.
+- Severity: Medium.
+- Category: D, with a Phase 7 media seam.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 12 `observer.svelte.test.ts` cases.
+- Production owner: MutationObserver-owned BGM controls and active media.
+- Protected contract or plausible defect: removing the active audio node could
+  leave it playing and retain stale control ownership.
+- Evidence: the new removal row requires pause and ownership cleanup before a
+  later node can attach.
+- Companion/overlap analysis: mocked media is appropriate for deterministic
+  lifecycle calls; autoplay fidelity remains browser-owned.
+- Action and rollback: stop and clear active media when its observed node leaves.
+- Validation: 12/12 focused cases and the complete frontend lane passed.
+- Count delta: one case added; no file delta.
+- Revisit condition: real autoplay/removal sampling is routed to
+  `TSA-P04-019`/Phase 7.
+
+### TSA-P04-009: Bookmark navigation reports completion before queued routing
+
+- State: Done.
+- Severity: Medium.
+- Category: D.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all seven `BookmarkList.svelte.test.ts` cases.
+- Production owner: hydrated bookmark selection and queued message navigation.
+- Protected contract or plausible defect: callers could observe success and
+  close the dialog while the queued route had not settled or later failed.
+- Evidence: the mounted deferred counterexample observes the returned promise
+  before and after the queued route settles.
+- Companion/overlap analysis: resource-guard bookmark edits protect optimistic
+  list state, not route settlement.
+- Action and rollback: return and await the queued navigation operation.
+- Validation: 7/7 focused cases and the complete frontend lane passed.
+- Count delta: one case added; no file delta.
+- Revisit condition: none unless bookmark routing gains a durable receipt.
+
+### TSA-P04-010: Shared Button implicitly submits ancestor forms
+
+- State: Done.
+- Severity: Medium.
+- Category: D.
+- Decision: Add, then Keep.
+- Tests/cases: the new one-case `Button.svelte.test.ts` owner.
+- Production owner: generic shared GUI Button native semantics.
+- Protected contract or plausible defect: a non-submit action inside a form
+  defaults to submit and triggers an unrelated save or destructive action.
+- Evidence: the mounted ancestor-form counterexample observes an unintended
+  submit before the component declares `type="button"`.
+- Companion/overlap analysis: caller tests cannot exhaustively prove the safe
+  default of a widely reused primitive.
+- Action and rollback: set the native safe default in the shared component.
+- Validation: focused owner and the complete frontend lane passed.
+- Count delta: one file and one case added.
+- Revisit condition: add an explicit submit variant only when intentionally
+  required by a caller.
+
+### TSA-P04-011: Seasonal Title interval survives unmount
+
+- State: Done.
+- Severity: Medium.
+- Category: D.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all three `Title.svelte.test.ts` cases.
+- Production owner: seasonal global title lifecycle.
+- Protected contract or plausible defect: remounts could accumulate intervals
+  and continue updating detached UI.
+- Evidence: fake timers now prove the interval is cleared at teardown.
+- Companion/overlap analysis: native-link/button semantics do not prove cleanup.
+- Action and rollback: register interval disposal with component teardown.
+- Validation: 3/3 focused cases and the complete frontend lane passed.
+- Count delta: one case added; no file delta.
+- Revisit condition: none.
+
+### TSA-P04-012: Persisted attachment preview extensions are case-sensitive
+
+- State: Done.
+- Severity: Medium.
+- Category: D.
+- Decision: Strengthen, then Keep.
+- Tests/cases: both `AssetInput.svelte.test.ts` cases.
+- Production owner: persisted attachment preview classification.
+- Protected contract or plausible defect: an image with an uppercase or mixed
+  extension could lose its preview after persistence/reload.
+- Evidence: the new mounted row supplies a mixed-case persisted name and
+  requires the image preview path.
+- Companion/overlap analysis: upload MIME handling does not cover later
+  filename-only rendering.
+- Action and rollback: normalize the extracted extension before classification.
+- Validation: 2/2 focused cases and the complete frontend lane passed.
+- Count delta: one case added; no file delta.
+- Revisit condition: prefer stored MIME metadata if the asset schema adds it.
+
+### TSA-P04-013: Unread state is incorrectly coupled to auto-scroll
+
+- State: Done.
+- Severity: Medium.
+- Category: D.
+- Decision: Strengthen, then Keep.
+- Tests/cases: 97 `DefaultChatScreen.loadPages.test.ts` cases plus four pure
+  unread cases.
+- Production owner: visible generated-message arrival and unread bookkeeping.
+- Protected contract or plausible defect: a reply arriving outside the visible
+  transcript could remain marked read merely because auto-scroll was disabled.
+- Evidence: mounted rows now separate visibility/unread intent from scroll
+  policy and require unseen generated replies to become unread.
+- Companion/overlap analysis: the pure helper owns state transitions; the broad
+  mounted coordinator proves the actual arrival path.
+- Action and rollback: compute unread from visibility/ownership independently
+  of auto-scroll.
+- Validation: focused owners and the complete frontend lane passed.
+- Count delta: two cases added; no file delta.
+- Revisit condition: add intersection-observer fidelity with the real send
+  journey in `TSA-P04-019`.
+
+### TSA-P04-014: Saving feedback omits its idle transition
+
+- State: Done.
+- Severity: Medium.
+- Category: D.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all three `SavePopupIcon.svelte.test.ts` cases.
+- Production owner: global persistence activity feedback.
+- Protected contract or plausible defect: a stale success icon could remain
+  visible after neither saving nor saved state applies.
+- Evidence: the missing idle row now requires no stale indicator.
+- Companion/overlap analysis: persistence-activity state tests do not render the
+  shared icon.
+- Action and rollback: retain the explicit saving/saved/idle state matrix.
+- Validation: 3/3 focused cases and the complete frontend lane passed.
+- Count delta: one case added; no file delta.
+- Revisit condition: extend the matrix if failure gains a separate visible state.
+
+### TSA-P04-015: Icon accessibility policy depends on raw source strings
+
+- State: Done.
+- Severity: Medium.
+- Category: D.
+- Decision: Strengthen, then Keep.
+- Tests/cases: four `AccessibleIconActions.test.ts` policy cases covering nine
+  controls, plus mounted editor action companions.
+- Production owner: shared icon native-interaction and accessible-name policy.
+- Protected contract or plausible defect: raw string checks could pass on a
+  comment/noninteractive node or fail after an equivalent Svelte refactor.
+- Evidence: the replacement parses the modern Svelte AST and requires each icon
+  to have a native interactive ancestor and accessible-name source.
+- Companion/overlap analysis: mounted owners prove selected computed names and
+  activation; the AST owner cheaply enforces breadth without claiming a browser
+  accessibility tree.
+- Action and rollback: retain the AST policy and its nine-control inventory.
+- Validation: accessible/editor owners passed 15/15; the complete frontend lane
+  passed.
+- Count delta: none.
+- Revisit condition: add mounted proof when a listed control lacks any rendered
+  companion or adopts non-native interaction.
+
+### TSA-P04-016: MobileControls tests an unmounted legacy shell
+
+- State: Done.
+- Severity: Medium.
+- Category: D.
+- Decision: Remove after complete replacement proof.
+- Tests/cases: removed two-case `MobileControls.svelte.test.ts` and orphaned
+  `MobileControls.testState.ts`.
+- Production owner: none; `App.svelte` explicitly does not mount the tested
+  `MobileHeader`/`MobileBody` shell.
+- Protected contract or plausible defect: the test could not fail for a live
+  responsive-navigation regression because its component tree is unreachable.
+- Evidence: import/mount tracing proved the obsolete tree; mounted App route and
+  focus, Sidebar keyboard, live `MobileCharacters`, and compiled responsive
+  browser tests retain the current behavior.
+- Companion/overlap analysis: `MobileControls.testStub.svelte` remains because
+  the live MobileCharacters owner consumes it.
+- Action and rollback: delete only the obsolete test and its orphaned state;
+  preserve all reachable replacement owners and documentation.
+- Validation: replacement frontend owners passed 35/35, full frontend passed
+  6,693/6,693, and browser smoke passed 34/34.
+- Count delta: one file and two cases removed; one standalone support artifact
+  removed.
+- Revisit condition: add coverage for a future mobile shell only where App
+  actually mounts it.
+
+### TSA-P04-017: Runtime directories obscure dominant product risk
+
+- State: Done.
+- Severity: Medium.
+- Category: A/B/D/F/G/K/L.
+- Decision: Reclassify.
+- Tests/cases: nine outgoing D owners with 279 cases and incoming
+  `src/lang/index.test.ts` with 11 cases; the observer B-to-D correction from
+  Phase 2 is finalized here.
+- Production owner: assurance import policy, hydration, generation requests,
+  provider dispatch, import planning, login-origin security, localization, and
+  DOM/media lifecycle respectively.
+- Protected contract or plausible defect: directory-shaped routing would audit
+  provider, security, generation, and recovery evidence under shared UI and
+  could miss its real companions.
+- Evidence: explicit product-risk rules and unit counterexamples now route all
+  named owners to their dominant category while preserving seam tags.
+- Companion/overlap analysis: reclassification changes review ownership only;
+  no runtime lane, discovery, or test is removed.
+- Action and rollback: retain all owners under the corrected A/B/D/F/G/K/L map.
+- Validation: inventory rule tests, exact Phase 4 frontend 1,142/1,142, and
+  reclassified Fastify 106/106 passed; inventories check at 699/699.
+- Count delta: none.
+- Revisit condition: update explicit rules only when dominant production risk
+  changes, not when a file moves directories.
+
+### TSA-P04-018: Regeneration retains metadata for deleted test owners
+
+- State: Done.
+- Severity: Medium.
+- Category: A assurance infrastructure.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all eight `test-effectiveness-inventory.test.ts` cases.
+- Production owner: exhaustive effectiveness-inventory regeneration.
+- Protected contract or plausible defect: deleting a tracked test could leave
+  preserved case/audit metadata attached to a nonexistent owner or a later file.
+- Evidence: a temporary Git repository now deletes one tracked test and proves
+  regeneration emits only the surviving row.
+- Companion/overlap analysis: discovery checks catch file-set drift but did not
+  prove preserved metadata pruning.
+- Action and rollback: seed preserved metadata only for currently tracked rows.
+- Validation: focused utility owner and `check:test-inventories` passed.
+- Count delta: one case added; no file delta.
+- Revisit condition: extend the deletion row if inventory keys ever cease to be
+  repository-relative paths.
+
+### TSA-P04-019: Visible UI fidelity remains intentionally bounded
+
+- State: Deferred with retained owners and explicit claim limits.
+- Severity: Medium.
+- Category: D, with F/G/L and Phase 13/14 horizontal ownership.
+- Decision: Keep current evidence; add faithful proof at the revisit gate.
+- Tests/cases: composer/send/attachment owners, alert/onboarding/focus owners,
+  responsive/viewport tests, browser specs, and the six-owner UI coverage map.
+- Production owner: visible send/attach/stream/abort/reload, true mobile input,
+  cross-browser focus/file behavior, stacked dialogs, onboarding, full-screen
+  accessibility, and representative coverage mapping.
+- Protected contract or plausible defect: Happy DOM and resized Chromium do not
+  prove a real typed attachment send through streaming, touch keyboard/selection,
+  Firefox/WebKit focus/file behavior, complete alert stacks, or broad screen
+  accessibility; the low-threshold map is a sentinel rather than full UI proof.
+- Evidence: the phase retained strong pure, mounted, AST, and compiled-Chromium
+  layers and removed only unreachable legacy coverage. Those layers do not
+  justify the broader fidelity claims.
+- Companion/overlap analysis: current browser send recovery uses API/helper
+  setup, and current responsive smoke uses Desktop Chromium plus deterministic
+  viewport emulation; neither makes the requested additions redundant.
+- Action and rollback: in Phase 13 add a visible composer attach/send/stream/
+  abort/reload journey, true mobile/touch and targeted Firefox/WebKit projects,
+  stacked alert/onboarding/accessibility scans, and a deliberately expanded UI
+  map without replacing focused owners.
+- Validation: current exact and full frontend/browser/UI-map gates pass; this
+  finding deliberately bounds what they prove.
+- Count delta: none in the deferred item.
+- Revisit condition: Phase 13 consolidation/addition review, followed by a
+  mandatory Phase 14 residual decision before closeout.
