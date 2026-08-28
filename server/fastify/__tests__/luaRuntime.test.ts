@@ -405,6 +405,20 @@ describe('server Lua runtime — request() egress guard (SSRF)', () => {
     expect(rate.count).toBe(1)
   })
 
+  it('enforces the response cap using UTF-8 bytes instead of decoded code units', async () => {
+    const rate: RequestRateState = { count: 0, resetAt: 0 }
+    const deps: EgressDeps = {
+      lookup: async () => [{ address: '93.184.216.34', family: 4 }],
+      // 1,000,001 two-byte characters are under the 2,000,000 code-unit cap
+      // but exceed its UTF-8 byte boundary.
+      fetchImpl: async () => ({ status: 200, data: 'é'.repeat(1_000_001) }),
+    }
+
+    const raw = await serverLuaRequest('https://example.test/multibyte', deps, rate)
+
+    expect(JSON.parse(raw)).toEqual({ status: 400, data: 'internal error' })
+  })
+
   it('an abort mid-fetch rejects through serverLuaRequest instead of returning a synthetic 400', async () => {
     const controller = new AbortController()
     const rate: RequestRateState = { count: 0, resetAt: 0 }

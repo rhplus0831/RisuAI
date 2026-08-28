@@ -414,7 +414,7 @@ function pinnedHttpsFetch(
         let size = 0
         res.setEncoding('utf8')
         res.on('data', (chunk: string) => {
-          size += chunk.length
+          size += Buffer.byteLength(chunk, 'utf8')
           if (size > MAX_RESPONSE_BYTES) {
             req.destroy(new Error('response too large'))
             return
@@ -479,6 +479,9 @@ export async function serverLuaRequest(
   try {
     const fetchImpl = deps.fetchImpl ?? pinnedHttpsFetch
     const result = await fetchImpl(url, verdict.addresses, signal)
+    if (Buffer.byteLength(result.data, 'utf8') > MAX_RESPONSE_BYTES) {
+      throw new Error('response too large')
+    }
     return JSON.stringify({ status: result.status, data: result.data })
   } catch (error) {
     // Abort is a cancellation, not a fetch failure: rethrow so the
