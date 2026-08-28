@@ -10,14 +10,14 @@ codebase remain authoritative until a phase lands.
 
 - Plan state: Phases 0-2 complete; Phase 3 in progress.
 - Current phase: Phase 3 — Svelte+Node Promotion (in progress).
-- Active slice: Route the final ten target-S successes in the server/resource
-  projection batch.
-- Implementation state: Phase 3 has moved nine files / 103 tests to
-  Svelte+Node and 22 files / 242 tests to Node without production or test-body
-  changes. Phases 2-3 have promoted 66 files and 521 tests in total.
+- Active slice: Record the complete 93-file Svelte+Node blocker ledger and
+  resolve the remaining Phase 3-owned static-N rune candidates.
+- Implementation state: Phase 3 has moved 13 files / 149 tests to Svelte+Node
+  and 28 files / 312 tests to Node without production or test-body changes.
+  Phases 2-3 have promoted 76 files and 637 tests in total.
 - Blockers: None.
-- Next action: Promote the final ten successful candidates, then record the 93
-  exact Svelte+Node blockers.
+- Next action: Record exact owners and revisit conditions for the 93 blocked
+  target-S candidates, then probe the remaining rune-only Phase 3 candidates.
 
 ## Phase Router
 
@@ -102,14 +102,14 @@ retainers under recorded Phase 3, Phase 4, or DOM-contract owners.
 
 | Measurement | Result |
 | --- | ---: |
-| Completed slices | 3 |
-| Promoted to Svelte+Node | 9 files / 103 tests |
-| Promoted to Node after cross-check | 22 files / 242 tests |
-| Full three-project universe | 537 files: 183 N / 11 S / 343 D |
-| Standalone ordinary frontend | 535 files: 183 N / 11 S / 341 D |
-| `test:all` ordinary frontend | 529 files: 182 N / 11 S / 336 D |
+| Completed slices | 4 |
+| Promoted to Svelte+Node | 13 files / 149 tests |
+| Promoted to Node after cross-check | 28 files / 312 tests |
+| Full three-project universe | 537 files: 189 N / 15 S / 333 D |
+| Standalone ordinary frontend | 535 files: 189 N / 15 S / 331 D |
+| `test:all` ordinary frontend | 529 files: 188 N / 15 S / 326 D |
 | Broad target-S probe result | 34 passed / 93 blocked |
-| Remaining proven promotions | 10 files |
+| Remaining proven promotions | 0 files |
 
 The first slice promoted only suites with exact Phase 2 Svelte+Node evidence.
 The complete 127-file target-S probe then passed 34 candidates and failed 93 at
@@ -239,6 +239,10 @@ result; the stopping-gate benchmark remains pending.
 31. The process-state slice moved eleven suites / 119 tests to Node after both
     Svelte+Node and Node passed unchanged. Their store-runtime and type-only
     imports do not require a client transform, and no rendered consumer moved.
+32. The server resource-projection slice moved six suites / 70 tests to Node
+    and four suites / 46 tests to Svelte+Node. The S owners initialize real
+    persistence, resource, or core-store `$state`; the N owners do not require
+    client transformation despite their static S signals.
 
 ## Accepted Observations
 

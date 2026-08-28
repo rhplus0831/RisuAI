@@ -8,6 +8,40 @@ Phase 3 in progress after its first proof-backed Svelte+Node promotion slice.
 This record does not authorize repository-wide default inversion or migration
 outside the active phase rules.
 
+## Phase 3 Server Resource Projections Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `67ab909d8ff4c0a655897a2b7915f23788f12621`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Isolation: enabled
+- Measurement tree: the clean process-state-helper commit plus the ten-file
+  split Node/Svelte+Node ownership change and regenerated inventory. No
+  production or test-body file changed.
+
+## Phase 3 Server Resource Projections Measurements And Validation
+
+The combined current-owner Happy-DOM scope passed 10 files / 116 tests in 2.35s
+wall and 1.64s Vitest duration, with 985,920 KiB peak RSS. Aggregate transform,
+setup, import, test, and environment times were 5.42s, 1.22s, 6.69s, 542ms, and
+2.33s.
+
+The exact Node promotion scope passed 6 files / 70 tests in 1.02s wall and
+372ms Vitest duration, with 442,440 KiB peak RSS. Aggregate transform, setup,
+import, test, and environment times were 483ms, 456ms, 465ms, 291ms, and 0ms.
+The exact Svelte+Node scope passed 4 files / 46 tests in 1.78s wall and 1.15s
+Vitest duration, with 684,352 KiB peak RSS. Aggregate transform, setup, import,
+test, and environment times were 2.45s, 280ms, 3.21s, 228ms, and 55ms. Both
+scopes passed again in 373ms and 1.13s Vitest duration.
+
+Inventory update and check commands passed. Full discovery is 537 files at 189
+N / 15 S / 333 D, standalone ordinary is 535 files at 189 N / 15 S / 331 D,
+and aggregate ordinary is 529 files at 188 N / 15 S / 326 D. The generated
+target distribution is 195 N / 108 S / 234 D / 7 B, with 99 still-unpromoted
+static candidates. Formatting and `git diff --check` passed. Complete project
+and root validation remain Phase 3 exit work.
+
 ## Phase 3 Process State Helpers Environment And Source State
 
 - Repository: `/home/codex/risuai-fastify`

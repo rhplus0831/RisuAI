@@ -12,4 +12,8 @@ export const svelteNodeTestFiles = [
   'src/ts/server/hydrationReads.test.ts',
   'src/ts/server/replacementDatabaseOwnership.test.ts',
   'src/ts/stores.runtimeEffects.svelte.test.ts',
+  'src/ts/server/persistenceActivity.svelte.test.ts',
+  'src/ts/server/resourceReads.test.ts',
+  'src/ts/server/shellHydration.test.ts',
+  'src/ts/translator/translator.cache.test.ts',
 ] as const

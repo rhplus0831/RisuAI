@@ -14,6 +14,9 @@ Status: In Progress
 - [Process state helpers](slices/phase-3/process-state-helpers.md): promoted
   eleven suites and 119 tests to Node after the smaller-runtime cross-check
   proved their Svelte store and type imports need no client transformation.
+- [Server resource projections](slices/phase-3/server-resource-projections.md):
+  promoted four rune-backed suites / 46 tests to Svelte+Node and six Node-safe
+  server projection suites / 70 tests to Node.
 
 ## Objective
 

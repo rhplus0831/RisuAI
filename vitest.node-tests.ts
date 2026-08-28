@@ -184,4 +184,10 @@ export const nodeTestFiles = [
   'src/ts/process/request/tests/serverMessagePatch.test.ts',
   'src/ts/process/stableDiff.test.ts',
   'src/ts/process/tts.test.ts',
+  'src/ts/server/generationOperations.test.ts',
+  'src/ts/server/greetingTranslations.test.ts',
+  'src/ts/server/memoryJobProjection.test.ts',
+  'src/ts/server/pushNotificationSetting.test.ts',
+  'src/ts/server/scopedLorebookMutationUiState.test.ts',
+  'src/ts/server/seperateParametersImport.test.ts',
 ] as const
