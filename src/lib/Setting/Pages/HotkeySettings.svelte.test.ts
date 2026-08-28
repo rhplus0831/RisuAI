@@ -87,6 +87,27 @@ describe('HotkeySettings recorder keyboard behavior', () => {
     ])
   })
 
+  it.each([
+    ['Ctrl', { ctrl: false, shift: false, alt: true }],
+    ['Shift', { ctrl: true, shift: true, alt: true }],
+    ['Alt', { ctrl: true, shift: false, alt: false }],
+  ])('persists the toggled %s modifier without changing its siblings', (name, expectedModifiers) => {
+    const button = Array.from(target.querySelectorAll('button')).find(
+      (candidate) => candidate.textContent?.trim() === name,
+    )
+    if (!button) throw new Error(`${name} modifier button was not rendered`)
+
+    button.click()
+
+    expect(hotkeyMocks.applyServerBackedSetting).toHaveBeenCalledWith('hotkeys', [
+      {
+        action: 'send',
+        key: 'Enter',
+        ...expectedModifiers,
+      },
+    ])
+  })
+
   it('updates the layout when the viewport crosses the mobile breakpoint', async () => {
     expect(target.querySelector('table')).toBeTruthy()
 
