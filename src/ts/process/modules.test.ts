@@ -1125,6 +1125,32 @@ describe('module imports', () => {
     })
   })
 
+  it('refreshes active modules when a module id or namespace is mutated in place', () => {
+    const module = {
+      id: 'inactive-id',
+      name: 'Mutable Module',
+      namespace: 'inactive-space',
+      regex: [{ comment: 'mutable regex', in: 'MUTABLE', out: 'mutable', type: 'editdisplay' }],
+    }
+    const db = {
+      enabledModules: ['active-id'],
+      moduleIntergration: 'active-space',
+      modules: [module],
+    }
+    getDatabase.mockReturnValue(db)
+
+    expect(getModuleRegexScripts()).toEqual([])
+
+    module.namespace = 'active-space'
+    expect(getModuleRegexScripts().map((script) => script.comment)).toEqual(['mutable regex'])
+
+    module.namespace = 'inactive-space'
+    expect(getModuleRegexScripts()).toEqual([])
+
+    module.id = 'active-id'
+    expect(getModuleRegexScripts().map((script) => script.comment)).toEqual(['mutable regex'])
+  })
+
   it('refreshes module background embedding when an active module row is replaced in place', () => {
     const db = {
       enabledModules: ['module-a'],

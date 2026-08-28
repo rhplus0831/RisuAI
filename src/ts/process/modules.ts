@@ -643,17 +643,24 @@ function getModuleById(id: string) {
 let lastModules = ''
 let lastModuleData: RisuModule[] = []
 let lastModuleSource: RisuModule[] | undefined
+let lastModuleSourceRows: Array<{
+  module: RisuModule
+  id: string
+  namespace: string | undefined
+}> = []
 
 export interface ActiveModuleContext {
   character: character | undefined
   chat: Chat | undefined
 }
 
-function activeModuleCacheRowsStillPresent(moduleSource: RisuModule[]): boolean {
-  if (lastModuleData.length === 0) return true
+function activeModuleCacheRowsUnchanged(moduleSource: RisuModule[]): boolean {
+  if (lastModuleSourceRows.length !== moduleSource.length) return false
 
-  const sourceRows = new Set(moduleSource)
-  return lastModuleData.every((module) => sourceRows.has(module))
+  return lastModuleSourceRows.every((cached, index) => {
+    const current = moduleSource[index]
+    return cached.module === current && cached.id === current.id && cached.namespace === current.namespace
+  })
 }
 
 export function getModules(context?: ActiveModuleContext) {
@@ -663,11 +670,7 @@ export function getModules(context?: ActiveModuleContext) {
   const moduleSource = getDatabaseModules(db)
   const activationIdentifiers = resolveActiveModuleIdentifiers(db, character, currentChat)
   const idsJoined = moduleActivationIdentifiersKey(activationIdentifiers)
-  if (
-    lastModules === idsJoined &&
-    lastModuleSource === moduleSource &&
-    activeModuleCacheRowsStillPresent(moduleSource)
-  ) {
+  if (lastModules === idsJoined && lastModuleSource === moduleSource && activeModuleCacheRowsUnchanged(moduleSource)) {
     return lastModuleData
   }
 
@@ -677,6 +680,11 @@ export function getModules(context?: ActiveModuleContext) {
   }).map((state) => state.module)
   lastModules = idsJoined
   lastModuleSource = moduleSource
+  lastModuleSourceRows = moduleSource.map((module) => ({
+    module,
+    id: module.id,
+    namespace: module.namespace,
+  }))
   lastModuleData = resolvedModules
   return resolvedModules
 }
