@@ -1,6 +1,5 @@
 import {
   RisuSaveBlockType,
-  encodeLegacyFixtureEnvelope,
   encodeRisuSaveBlockFixtureEnvelope,
   type RisuSaveEnvelopeKind,
   type RisuSaveBlockFixture,
@@ -35,6 +34,24 @@ const legacyDatabase = {
   plugins: [],
   pluginCustomStorage: {},
 }
+
+// Frozen with the pre-Fastify encoder in /home/codex/Risuai at its pinned
+// msgpackr 1.10.1 boundary. These bytes must not be regenerated through the
+// decoder/codec under test: they are the independent historical vectors.
+const legacyFixtureBytes = {
+  raw: Buffer.from(
+    'AFJJU1VTQVZFAAfeAAendmVyc2lvbgGqY2hhcmFjdGVyc5HeAAOlY2hhSWSsZml4dHVyZS1jaGFypG5hbWWxRml4dHVyZSBDaGFyYWN0ZXKlY2hhdHOR3gADpmNoYXRJZKxmaXh0dXJlLWNoYXSkbmFtZapGaXJzdCBDaGF0p21lc3NhZ2WQqmJvdFByZXNldHOR3gAComlkqHByZXNldC1hpG5hbWWoUHJlc2V0IEGnbW9kdWxlc5CobG9hZG91dHOQp3BsdWdpbnOQs3BsdWdpbkN1c3RvbVN0b3JhZ2XeAAA=',
+    'base64',
+  ),
+  compressed: Buffer.from(
+    'AFJJU1VTQVZFAAgfiwgA9MeRagADVYxBCsIwEEWjLrxGL9BDSKHgTvAEsRlroOmUzEQ8RryCqCnFjXifnsUmxYW7/+b/N6NYhzNY0tguhuokrax4wusoVo8Jt+p11Bd2FvJY3ltp4F3Ol6z4zeOSk/OM6V/iJA2ltsRR4WCASNbghwPyzgJBcpc3rfouYS6T089ltgkGlWuAfN+gVOiYfOgaV+uW/GcOhSNGs2e00+dRiC+etBzl2AAAAA==',
+    'base64',
+  ),
+  stream: Buffer.from(
+    'AFJJU1VTQVZFAAkfiwgA9MeRagADVYxBCsIwEEWjLrxGL9BDSKHgTvAEsRlroOmUzEQ8RryCqCnFjXifnsUmxYW7/+b/N6NYhzNY0tguhuokrax4wusoVo8Jt+p11Bd2FvJY3ltp4F3Ol6z4zeOSk/OM6V/iJA2ltsRR4WCASNbghwPyzgJBcpc3rfouYS6T089ltgkGlWuAfN+gVOiYfOgaV+uW/GcOhSNGs2e00+dRiC+etBzl2AAAAA==',
+    'base64',
+  ),
+} as const
 
 const blockRoot = {
   version: 1,
@@ -120,21 +137,21 @@ export const risuSaveFixtureCases: RisuSaveFixtureCase[] = [
   {
     name: 'legacy-raw-basic',
     description: 'Legacy raw msgpack .risu envelope.',
-    bytes: encodeLegacyFixtureEnvelope(legacyDatabase, 'legacy-raw'),
+    bytes: legacyFixtureBytes.raw,
     expectedEnvelope: 'legacy-raw',
     expectedDecodedShape: legacyDatabase,
   },
   {
     name: 'legacy-compressed-basic',
     description: 'Legacy fflate-compressed msgpack .risu envelope.',
-    bytes: encodeLegacyFixtureEnvelope(legacyDatabase, 'legacy-compressed'),
+    bytes: legacyFixtureBytes.compressed,
     expectedEnvelope: 'legacy-compressed',
     expectedDecodedShape: legacyDatabase,
   },
   {
     name: 'legacy-stream-basic',
     description: 'Legacy gzip stream-compressed msgpack .risu envelope.',
-    bytes: encodeLegacyFixtureEnvelope(legacyDatabase, 'legacy-stream'),
+    bytes: legacyFixtureBytes.stream,
     expectedEnvelope: 'legacy-stream',
     expectedDecodedShape: legacyDatabase,
   },
