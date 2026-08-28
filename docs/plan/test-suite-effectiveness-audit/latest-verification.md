@@ -650,3 +650,87 @@ mobile/touch, cross-browser, full-screen accessibility, and broader UI-map
 fidelity until Phase 13, with a mandatory Phase 14 decision. Full historical
 compatibility remains blocked only by the absent exact pinned worktree; no
 substitute checkout or golden was used.
+
+## Phase 5 Settings, Profiles, Authoring, And Catalogs
+
+### Opening, routing, and final inventory
+
+The phase opened with 96 category-E owners and 1,011 cases. The exact opening
+frontend set passed 886/886 across 92 files in 28.41s and the four Fastify
+owners passed 125/125 in 3.10s.
+
+Product-risk review moved `hub.test.ts` to L, `lorebook.test.ts` and
+`agentLorebookInputs.test.ts` to F, and the PNG/CharX import owner to K. The new
+mounted PersonaSettings owner and twelve added cases produce a final reviewed
+record of 97 files and 1,023 cases. Current category E is 93 files / 891 cases;
+the four outgoing owners remain in the completed Phase 5 evidence record.
+
+### Commands
+
+```sh
+# Exact completed frontend set: all Phase 5-reviewed frontend rows plus the
+# previously reviewed persona display-name owner.
+phase5_frontend_files=$(jq -r '
+  .rows[] |
+  select(
+    ((.audit.state | startswith("phase5")) or
+      .file == "src/ts/personaDisplayName.test.ts") and
+    (.lane | startswith("frontend"))
+  ) | .file' docs/plan/test-suite-effectiveness-audit/inventory.json)
+pnpm exec vitest run $phase5_frontend_files --config vitest.config.ts
+
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/hub.test.ts \
+  server/fastify/__tests__/lorebook.test.ts \
+  server/fastify/__tests__/settingsGroupParity.test.ts \
+  server/fastify/__tests__/splitPresets.test.ts
+
+pnpm test:frontend:all
+pnpm test:server
+pnpm test:gates:perf
+pnpm coverage:ui-map
+pnpm check
+pnpm build:smoke
+pnpm test:affected --dry-run --base f46ad3e1e
+pnpm check:test-inventories
+pnpm format:check
+git diff --check
+```
+
+The exact completed frontend set passed 898/898 across 93 files in 28.15s;
+the exact Fastify set passed 125/125 across four files in 3.50s. The complete
+frontend lane passed 6,705/6,705 across 539 files in 72.38s. The complete
+Fastify lane passed 3,316 cases across 154 files in 18.39s with the one
+intentional direct-only Realm scale skip. The performance owners passed 6/6 in
+10.79s.
+
+The first complete frontend command stopped before execution because the new
+PersonaSettings test made the checked routing TSV stale. Regenerating all three
+linked manifests produced 539 resolved frontend files, 154 Fastify files, seven
+browser specs, 252 standalone support artifacts, and 65 mixed production
+seams; the rerun then passed. This red attempt is an expected live-manifest
+guard, not a test failure.
+
+`coverage:ui-map` passed 206/206 across six owners in 25.23s: 14.83% statements,
+9.46% branches, 18.11% functions, and 14.43% lines. `svelte-check` initially
+reported one explicit fixture typing mismatch in the new persona replacement
+case; the fixture boundary was typed and the rerun reported zero errors and
+zero warnings. Formatting and diff checks passed.
+
+The production smoke build passed in 10.41s with the existing allowed CSS,
+externalization, plugin-timing, and chunk-size diagnostics. No browser test
+owner changed in Phase 5; the absent representative settings/restore journey is
+recorded as `TSA-P05-013` for Phase 13 rather than inferred from unrelated
+smoke cases.
+
+The checked universe now records 700 test/spec files and 10,055 cases with one
+direct-only skip and 1,283 parameterized rows. Primary categories are A=20,
+B=33, C=52, D=105, E=93, F=93, G=98, H=43, I=42, J=47, K=40, and L=34. Live
+decisions are 298 Keep, 15 Reclassify, and 387 Pending; the durable action
+ledger additionally records one removal and two additions.
+
+Twelve Phase 5 findings are done and `TSA-P00-002` is closed. `TSA-P05-013`
+routes stale saved-asset cleanup to Phase 11, browser composition to Phase 13,
+and the mandatory residual decision to Phase 14. Full historical compatibility
+remains blocked only by the absent exact pinned worktree; no substitute checkout
+or golden was used.
