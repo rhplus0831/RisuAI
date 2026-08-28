@@ -188,6 +188,19 @@ export function applyAdditionalParameters(
 }
 
 /**
+ * Replace every casing variant of a Fetch header with one canonical entry.
+ * Plain objects can hold both `authorization` and `Authorization`; Fetch then
+ * combines them into a comma-separated credential value.
+ */
+export function setCanonicalHeader(headers: Record<string, string>, name: string, value: string): void {
+  const normalizedName = name.toLowerCase()
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === normalizedName) delete headers[key]
+  }
+  headers[normalizedName] = value
+}
+
+/**
  * Validates a payload-side `additionalParams` field. The route hands us
  * `unknown`; we want a strict `Array<[string, string]>` to apply, or null
  * for "absent / malformed" (the caller decides whether to 400 or proceed).

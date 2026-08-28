@@ -1,4 +1,4 @@
-import { applyAdditionalParameters } from './additionalParams.js'
+import { applyAdditionalParameters, setCanonicalHeader } from './additionalParams.js'
 import type { CompletionResult } from './frames.js'
 import { extractApiResponseMetadata } from './apiMetadata.js'
 import { readBoundedBodyJson } from './body.js'
@@ -130,6 +130,7 @@ function buildRequestInit(req: OpenAILegacyInstructRequest): { body: string; hea
   if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
     applyAdditionalParameters(body, headers, req.additionalParams)
   }
+  setCanonicalHeader(headers, 'authorization', `Bearer ${req.apiKey}`)
   return { body: JSON.stringify(body), headers }
 }
 

@@ -5,6 +5,7 @@ import {
   getAdditionalParameters,
   getProfileAdditionalParameters,
   parseAdditionalParamJsonValue,
+  setCanonicalHeader,
 } from '../src/generation/additionalParams.js'
 
 describe('getAdditionalParameters sources', () => {
@@ -257,6 +258,22 @@ describe('applyAdditionalParameters DSL', () => {
     // The guard drops the entry whole — no partial intermediate objects.
     expect(body.a).toBeUndefined()
     expect(Object.keys(body).sort()).toEqual(['messages', 'model', 'temperature'])
+  })
+})
+
+describe('setCanonicalHeader', () => {
+  it('replaces every casing variant before Fetch can combine credential values', () => {
+    const headers = {
+      authorization: 'Bearer stored',
+      Authorization: 'Bearer overridden',
+      AUTHORIZATION: 'Bearer parameter',
+      'x-trace': 'keep',
+    }
+
+    setCanonicalHeader(headers, 'Authorization', 'Bearer canonical')
+
+    expect(headers).toEqual({ authorization: 'Bearer canonical', 'x-trace': 'keep' })
+    expect(new Headers(headers).get('authorization')).toBe('Bearer canonical')
   })
 })
 

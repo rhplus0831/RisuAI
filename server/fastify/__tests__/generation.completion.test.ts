@@ -667,6 +667,8 @@ describe('POST /api/v1/generate/completion', () => {
           ...(protocol === 'openai-responses' ? {} : { stream: false }),
         },
       })
+      expect(new Headers(calls[0].headers).get('authorization')).toBe('Bearer sk-server-profile-ollama')
+      expect(Object.keys(calls[0].headers).filter((key) => key.toLowerCase() === 'authorization')).toHaveLength(1)
     },
   )
 

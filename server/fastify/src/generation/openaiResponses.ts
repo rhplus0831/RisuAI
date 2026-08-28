@@ -1,4 +1,4 @@
-import { applyAdditionalParameters } from './additionalParams.js'
+import { applyAdditionalParameters, setCanonicalHeader } from './additionalParams.js'
 import type { CompletionResult } from './frames.js'
 import { extractApiResponseMetadata } from './apiMetadata.js'
 import { readBoundedBodyText } from './body.js'
@@ -245,6 +245,7 @@ function buildRequestInit(req: OpenAIResponsesRequest): { body: string; headers:
   if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
     applyAdditionalParameters(body, headers, req.additionalParams)
   }
+  setCanonicalHeader(headers, 'authorization', `Bearer ${req.apiKey}`)
   return { body: JSON.stringify(body), headers }
 }
 

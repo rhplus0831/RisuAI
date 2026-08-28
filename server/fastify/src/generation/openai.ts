@@ -1,4 +1,4 @@
-import { applyAdditionalParameters } from './additionalParams.js'
+import { applyAdditionalParameters, setCanonicalHeader } from './additionalParams.js'
 import { emitProtocolMetric } from '../protocolMetrics.js'
 import type { CompletionResult, CompletionStreamFrame } from './frames.js'
 import { providerBodyMetricFields, summarizeOpenAIProviderBody } from './providerBodySummary.js'
@@ -308,6 +308,7 @@ function buildRequestInit(
   if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
     applyAdditionalParameters(body, headers, req.additionalParams)
   }
+  if (req.apiKey) setCanonicalHeader(headers, 'authorization', `Bearer ${req.apiKey}`)
   // Streaming is selected by dispatch and determines the response parser.
   // Custom parameters must not change the upstream wire format underneath it.
   body.stream = stream
