@@ -1,9 +1,9 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { defineProject } from 'vitest/config'
 import { explicitDomTestFileGlobs, legacyDomTestFiles } from './vitest.frontend-routing'
+import { performanceTestFiles } from './vitest.performance-tests'
 import { excludeUiCoverageTests, uiCoverageTestFiles } from './vitest.ui-coverage-tests'
 
-const explicitPerformanceTests = ['src/ts/__tests__/**/*.test.ts']
 const includeExplicitPerformanceTests = process.env.RISU_TEST_INCLUDE_GATES === 'true'
 
 export default defineProject({
@@ -24,7 +24,7 @@ export default defineProject({
     exclude: [
       '**/node_modules/**',
       'server/**',
-      ...(includeExplicitPerformanceTests ? [] : explicitPerformanceTests),
+      ...(includeExplicitPerformanceTests ? [] : performanceTestFiles),
       ...(excludeUiCoverageTests ? uiCoverageTestFiles : []),
     ],
   },

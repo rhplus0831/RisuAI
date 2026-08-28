@@ -30,6 +30,12 @@ const defaultJobs = 2
 
 export const qualityLanes: readonly QualityLane[] = [
   {
+    id: 'frontend-routing',
+    label: 'frontend test routing',
+    args: ['check:frontend-test-inventory'],
+    priority: 0,
+  },
+  {
     id: 'server-check',
     label: 'server and browser-smoke typecheck',
     args: ['check:server'],
@@ -38,7 +44,7 @@ export const qualityLanes: readonly QualityLane[] = [
   {
     id: 'frontend-tests',
     label: 'frontend tests',
-    args: ['test:frontend'],
+    args: ['test:frontend:run'],
     // The coverage lane below executes these six files with its thresholds.
     env: { RISU_TEST_EXCLUDE_UI_MAP: 'true' },
     priority: 1,

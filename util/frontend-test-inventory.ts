@@ -9,6 +9,7 @@ import {
   legacyDomTestFiles,
   type FrontendVitestProject,
 } from '../vitest.frontend-routing.js'
+import { performanceTestFiles } from '../vitest.performance-tests.js'
 import { uiCoverageTestFiles } from '../vitest.ui-coverage-tests.js'
 
 export type FrontendCapability = 'N' | 'S' | 'D' | 'B'
@@ -69,10 +70,7 @@ const ignoredDirectoryNames = new Set(['.git', 'coverage', 'dist', 'node_modules
 const frontendTestPattern = /\.(?:test|spec)\.[cm]?[jt]sx?$/
 const browserSmokePattern = /\.spec\.[cm]?[jt]sx?$/
 
-const performanceGateFiles = new Set([
-  'src/ts/__tests__/renderCostHarness.test.ts',
-  'src/ts/__tests__/sendCloneCountProbe.test.ts',
-])
+const performanceGateFiles = new Set<string>(performanceTestFiles)
 const uiCoverageFileSet = new Set<string>(uiCoverageTestFiles)
 
 const signalPatterns: Record<keyof FrontendTestSignals, readonly RegExp[]> = {

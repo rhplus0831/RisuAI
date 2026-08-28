@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { performanceTestFiles } from '../vitest.performance-tests.js'
 
 export type ChangeStatus = 'A' | 'M' | 'D' | 'R'
 
@@ -34,8 +35,9 @@ interface CliOptions extends AffectedTestOptions {
 
 const frontendTestPattern = /(?:^|\/).+\.test\.[cm]?[jt]sx?$/
 const browserSmokePattern = /^server\/fastify\/browser-smoke\/.+\.spec\.ts$/
-const explicitGatePrefixes = ['src/ts/__tests__/']
+const performanceTestFileSet = new Set<string>(performanceTestFiles)
 const rootRunnerFiles = new Set([
+  'docs/plan/frontend-test-architecture/phase-0-inventory.tsv',
   'package.json',
   'pnpm-lock.yaml',
   'pnpm-workspace.yaml',
@@ -43,7 +45,9 @@ const rootRunnerFiles = new Set([
   'vitest.config.ts',
   'vitest.setup.ts',
   'vitest.setup.test.ts',
+  'util/frontend-test-inventory.ts',
 ])
+const fullQualityRunnerFiles = new Set(['util/affected-tests.ts', 'util/test-all.ts'])
 
 function normalizeRepoPath(file: string): string {
   return file.replaceAll('\\', '/').replace(/^\.\//, '')
@@ -58,7 +62,7 @@ function isFrontendTest(file: string): boolean {
 }
 
 function isExplicitGate(file: string): boolean {
-  return explicitGatePrefixes.some((prefix) => file.startsWith(prefix))
+  return performanceTestFileSet.has(file)
 }
 
 function isRootRunnerFile(file: string): boolean {
@@ -99,6 +103,7 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
       file === '.npmrc' ||
       file === 'index.html' ||
       file === 'vite.config.ts' ||
+      fullQualityRunnerFiles.has(file) ||
       file.startsWith('.github/'),
   )
   if (fullQualityChanged) {
@@ -134,9 +139,19 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
   const runFullFrontend = rootRunnerChanged || deletedFrontendSource || deletedFrontendTest
   const runFullServer = rootRunnerChanged || serverRunnerChanged || deletedServerSource || deletedServerTest
   const runFullGates = rootRunnerChanged
+  const frontendRoutingRelevant =
+    runFullFrontend ||
+    frontendSourceChanged ||
+    directFrontendTests.length > 0 ||
+    runFullGates ||
+    directGateTests.length > 0
+
+  if (frontendRoutingRelevant) {
+    commands.push({ label: 'frontend test routing', args: ['check:frontend-test-inventory'] })
+  }
 
   if (runFullFrontend) {
-    commands.push({ label: 'frontend tests', args: ['test:frontend'] })
+    commands.push({ label: 'frontend tests', args: ['test:frontend:run'] })
   } else if (frontendSourceChanged) {
     commands.push({
       label: 'affected frontend tests',

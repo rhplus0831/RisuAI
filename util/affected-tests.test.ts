@@ -24,6 +24,10 @@ describe('affected test planning', () => {
 
     expect(result.commands).toEqual([
       {
+        label: 'frontend test routing',
+        args: ['check:frontend-test-inventory'],
+      },
+      {
         label: 'changed frontend tests',
         args: ['exec', 'vitest', 'run', 'src/ts/model/modelProfileResolver.test.ts', '--bail=1'],
       },
@@ -47,6 +51,10 @@ describe('affected test planning', () => {
 
     expect(result.commands).toEqual([
       {
+        label: 'frontend test routing',
+        args: ['check:frontend-test-inventory'],
+      },
+      {
         label: 'changed frontend tests',
         args: ['exec', 'vitest', 'run', 'src/lib/_audit/optimisticTogglePaint.dom.test.ts', '--bail=1'],
       },
@@ -57,18 +65,21 @@ describe('affected test planning', () => {
     const result = plan([{ path: 'src/ts/model/modelProfileResolver.ts', status: 'M' }])
 
     expect(result.commands.map((command) => command.label)).toEqual([
+      'frontend test routing',
       'affected frontend tests',
       'affected server tests',
     ])
-    expect(result.commands.every((command) => command.args.includes('--changed'))).toBe(true)
-    expect(result.commands.every((command) => command.args.includes('HEAD~1'))).toBe(true)
+    const affectedCommands = result.commands.filter((command) => command.label.startsWith('affected'))
+    expect(affectedCommands.every((command) => command.args.includes('--changed'))).toBe(true)
+    expect(affectedCommands.every((command) => command.args.includes('HEAD~1'))).toBe(true)
   })
 
   it('runs the complete Vitest lanes when runner configuration changes', () => {
     const result = plan([{ path: 'vitest.svelte-node.config.ts', status: 'M' }])
 
     expect(result.commands).toEqual([
-      { label: 'frontend tests', args: ['test:frontend'] },
+      { label: 'frontend test routing', args: ['check:frontend-test-inventory'] },
+      { label: 'frontend tests', args: ['test:frontend:run'] },
       { label: 'frontend performance gates', args: ['test:gates:perf'] },
       { label: 'server tests', args: ['test:server'] },
     ])
@@ -87,7 +98,8 @@ describe('affected test planning', () => {
     ])
 
     expect(result.commands).toEqual([
-      { label: 'frontend tests', args: ['test:frontend'] },
+      { label: 'frontend test routing', args: ['check:frontend-test-inventory'] },
+      { label: 'frontend tests', args: ['test:frontend:run'] },
       { label: 'server tests', args: ['test:server'] },
     ])
   })
@@ -113,5 +125,14 @@ describe('affected test planning', () => {
     const result = plan([{ path: 'test/compat-harness/current.runner.ts', status: 'M' }])
 
     expect(result.commands).toEqual([{ label: 'compatibility harness', args: ['test:compat-harness'] }])
+  })
+
+  it('widens aggregate and affected-runner changes to the full quality suite', () => {
+    expect(plan([{ path: 'util/test-all.ts', status: 'M' }]).commands).toEqual([
+      { label: 'full quality suite', args: ['test:all'] },
+    ])
+    expect(plan([{ path: 'util/affected-tests.ts', status: 'M' }]).commands).toEqual([
+      { label: 'full quality suite', args: ['test:all'] },
+    ])
   })
 })
