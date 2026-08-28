@@ -28,17 +28,40 @@ describe('pending mutation replay', () => {
     const entries = [entry('settings:runtime', 'mutation-a'), entry('chat:chat-a', 'mutation-b')]
     outboxApi.list.mockResolvedValue(entries)
     const order: string[] = []
+    let releaseFirst!: () => void
+    const firstDispatch = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
     durableApi.replay.mockImplementation(async (handle) => {
       order.push(handle.mutationId)
+      if (handle.mutationId === 'mutation-a') await firstDispatch
       return handle.mutationId === 'mutation-a'
         ? { disposition: 'succeeded', result: { status: 'ok' } }
         : { disposition: 'retained', result: { status: 'error', error: 'offline' } }
     })
 
-    const summary = await replayPendingMutations()
+    const replay = replayPendingMutations()
+    await vi.waitFor(() => expect(order).toEqual(['mutation-a']))
+    releaseFirst()
+    const summary = await replay
 
     expect(order).toEqual(['mutation-a', 'mutation-b'])
     expect(summary).toEqual({ attempted: 2, discarded: 0, retained: 1, succeeded: 1 })
+  })
+
+  it('preserves committed outbox order when cross-tab wall-clock sequences disagree', async () => {
+    const committedFirst = entry('settings:runtime', 'committed-first')
+    committedFirst.handle.sequence = 9_000
+    const committedSecond = entry('chat:chat-a', 'committed-second')
+    committedSecond.handle.sequence = 1
+    outboxApi.list.mockResolvedValue([committedFirst, committedSecond])
+
+    await replayPendingMutations()
+
+    expect(durableApi.replay.mock.calls.map(([handle]) => handle.mutationId)).toEqual([
+      'committed-first',
+      'committed-second',
+    ])
   })
 
   it('routes atomic submit intents back to the generation-operation endpoint', async () => {
@@ -145,7 +168,7 @@ describe('pending mutation replay', () => {
     expect(durableApi.replay.mock.calls.map(([handle]) => handle.mutationId)).toEqual(['mutation-a', 'mutation-c'])
   })
 
-  it('keeps a prompt row blocked across reload until its owner repair succeeds', async () => {
+  it('keeps a prompt successor blocked until a later replay drains its owner repair', async () => {
     const entries = [
       entry('prompt-template-owner:preset-a', 'id-repair', '/prompt-presets/preset-a'),
       entry('prompt-template-owner:preset-a', 'row-successor', '/prompt-items/row-a'),

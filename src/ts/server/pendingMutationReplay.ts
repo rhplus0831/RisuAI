@@ -24,11 +24,14 @@ export async function replayPendingMutations(): Promise<PendingMutationReplaySum
   const entries = await listPendingMutations()
   // A Stop and its submit may both survive a crash. Deliver the cancellation
   // first for latency; the server tombstone/state machine makes either order
-  // equivalent, while the remaining entries retain their durable order.
+  // equivalent. listPendingMutations() already returns the remaining entries
+  // in their committed IndexedDB order. Do not re-sort them by sequence: that
+  // value is generated from each tab's wall clock and is not a cross-tab
+  // ordering authority.
   entries.sort((left, right) => {
     const leftCancel = left.intent.kind === 'generation-operation-cancel' ? 0 : 1
     const rightCancel = right.intent.kind === 'generation-operation-cancel' ? 0 : 1
-    return leftCancel - rightCancel || left.handle.sequence - right.handle.sequence
+    return leftCancel - rightCancel
   })
   const blockedKeys = new Set<string>()
   const summary: PendingMutationReplaySummary = {
