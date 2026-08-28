@@ -2,7 +2,7 @@
 
 Date: 2026-08-29
 
-Status: Active; four findings are done and one remains confirmed.
+Status: Active; five findings are done and one remains confirmed.
 
 This directory owns durable finding and decision records for the audit. Phase 0
 will decide whether the working ledger remains in this index, splits into
@@ -218,3 +218,28 @@ Every finding records:
   9,982 to 9,984.
 - Revisit condition: reopen when aggregate phase semantics or quality workflow
   job ownership changes.
+
+### TSA-P01-004: Local and CI package-manager majors differ
+
+- State: Done.
+- Severity: Low.
+- Category: A.
+- Decision: Strengthen configuration.
+- Tests/cases: package installation and all quality workflow jobs; no tracked
+  test-file owner.
+- Production owner: `package.json`, `pnpm-lock.yaml`, and
+  `.github/workflows/quality.yml` toolchain reproducibility.
+- Protected contract or plausible defect: local pnpm 11 and CI pnpm 10 can
+  resolve or execute workspace/lockfile semantics differently, weakening parity
+  claims and making failures environment-specific.
+- Evidence: the Phase 0 environment reported local pnpm 11.23.0 while all ten
+  quality jobs installed major 10 and `package.json` declared no package manager.
+- Companion/overlap analysis: the v9 lockfile happened to install with both
+  majors, but lockfile compatibility is not proof of identical CLI semantics.
+- Action and rollback: declare `pnpm@11.23.0` and install that exact version in
+  every quality job. Revert changes only toolchain selection.
+- Validation: `pnpm install --frozen-lockfile` was already up to date, reported
+  pnpm 11.23.0, and left the lockfile unchanged.
+- Count delta: none.
+- Revisit condition: update declaration and workflow together when intentionally
+  upgrading pnpm, with a frozen install and full aggregate.

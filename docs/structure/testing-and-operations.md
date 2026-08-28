@@ -291,7 +291,8 @@ flags include `--project`, `--absolute`, `--compact`, and `--timeout-ms`. Set
 ## CI And Deployment
 
 `.github/workflows/quality.yml` is the only current workflow. Pull requests and
-pushes to `main` use Node 24 and pnpm 10. Formatting, both typecheck lanes,
+pushes to `main` use Node 24 and the exact pnpm version declared by
+`packageManager` in `package.json`. Formatting, both typecheck lanes,
 frontend routing, frontend tests (including UI audit probes), focused UI
 coverage, isolated performance gates, server tests, and serial browser smoke run
 as independent jobs; only the smoke job installs Chromium. The ordinary

@@ -27,6 +27,8 @@ P01-S02.
 - Closed `TSA-P01-003`: the complete regular/isolated aggregate graph is
   validated, and every local lane has a checked CI command and required verify
   dependency. Initial preload remains the documented CI-only superset.
+- Closed `TSA-P01-004`: local and CI now use the exact declared pnpm 11.23.0;
+  the frozen lockfile installs unchanged.
 
 No product behavior or existing test was removed. The affected policy gained
 eight cases; live totals are 699 files and 9,984 cases.

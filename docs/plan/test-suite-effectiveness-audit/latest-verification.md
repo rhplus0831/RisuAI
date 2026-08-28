@@ -81,7 +81,8 @@ format check, and isolated frontend performance gates.
 - Chrome for Testing `151.0.7922.34` from Playwright `chromium-1234`.
 - Linux `7.0.0-30-generic` x86_64 under KVM, 10 available AMD Ryzen 9 9950X
   virtual CPUs.
-- CI uses pnpm 10; Phase 1 owns the local/CI package-manager skew verdict.
+- At the frozen baseline, CI used pnpm 10 while local evidence used pnpm
+  11.23.0; Phase 1 subsequently aligned both to the exact package declaration.
 
 Commands:
 
@@ -294,3 +295,17 @@ pnpm test:all --dry-run
 
 Results: 6/6 policy cases and the nine-lane dry run passed. Two cases take the
 live total from 9,982 to 9,984 without a file-count change.
+
+### Package-manager parity
+
+`TSA-P01-004` is done. `package.json` now declares `pnpm@11.23.0`, matching the
+Phase 0 local evidence, and every quality job installs that exact version rather
+than the prior pnpm 10 major.
+
+```sh
+pnpm install --frozen-lockfile
+pnpm --version
+```
+
+Results: the frozen install was already up to date and reported pnpm `11.23.0`;
+the lockfile did not change.

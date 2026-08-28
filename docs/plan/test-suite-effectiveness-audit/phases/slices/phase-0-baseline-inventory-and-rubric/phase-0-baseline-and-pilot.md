@@ -119,8 +119,9 @@ records are all required in the same remediation slice.
   `chromium-1234`.
 - Linux `7.0.0-30-generic`, x86_64, KVM; 10 available AMD Ryzen 9 9950X
   virtual CPUs.
-- CI intentionally installs pnpm 10; local/CI package-manager skew is recorded
-  for Phase 1 rather than treated as equivalent timing evidence.
+- At the baseline, CI installed pnpm 10; local/CI package-manager skew was
+  recorded for Phase 1 rather than treated as equivalent timing evidence.
+  P01-S01 later aligned both to declared pnpm 11.23.0.
 
 ## Command Evidence And Residuals
 
