@@ -2,7 +2,8 @@
 
 Date: 2026-08-29
 
-Status: Active; eleven findings are done and one remains confirmed.
+Status: Active; eighteen findings are done, one remains confirmed, and one is
+deferred with a concrete migration trigger.
 
 This directory owns durable finding and decision records for the audit. Phase 0
 will decide whether the working ledger remains in this index, splits into
@@ -414,3 +415,216 @@ Every finding records:
   9,986 to 9,987.
 - Revisit condition: update the baseline and exact oracle together when a new
   public readiness capability is introduced.
+
+### TSA-P01-011: Row-stability oracle ignores unexpected inserts
+
+- State: Done.
+- Severity: High.
+- Category: A harness, with C product ownership.
+- Decision: Strengthen the shared oracle.
+- Tests/cases: two direct oracle cases in
+  `server/fastify/__tests__/commandMutationBudget.test.ts` and all consumers of
+  `helpers/rowStability.ts`.
+- Production owner: narrow command-write scope and stable unrelated SQLite rows.
+- Protected contract or plausible defect: a targeted command can insert or
+  delete an unrelated row while the oracle checks only before-existing IDs and
+  remains green.
+- Evidence: the prior loop visited only `before`; a controlled after-only row
+  passed. The symmetric union now rejects undeclared inserts, deletes, and rowid
+  replacement while permitting explicit target IDs. It exposed the legitimate
+  `fork-1` insert, which is now declared at its call site.
+- Companion/overlap analysis: table-budget metrics name written tables but not
+  affected row identities. The two oracles protect distinct scope levels.
+- Action and rollback: strengthened the helper and retained direct negative and
+  allowed-target cases. Roll back only with an equally symmetric row oracle.
+- Validation: direct oracle 8/8, single-row paths 21/21, four dependent range
+  suites 81/81, and the focused commands consumer passed.
+- Count delta: two cases added, taking the live total from 9,987 to 9,989.
+- Revisit condition: every new row-stability consumer must declare legitimate
+  inserts/deletes explicitly.
+
+### TSA-P01-012: Table budgets accept missing written-table evidence
+
+- State: Done.
+- Severity: High.
+- Category: A harness, with C product ownership.
+- Decision: Strengthen the shared oracle.
+- Tests/cases: two direct cases in
+  `server/fastify/__tests__/commandMutationBudget.test.ts` and every
+  `assertCommandMetricGate` consumer.
+- Production owner: command mutation table-scope metrics.
+- Protected contract or plausible defect: instrumentation can omit
+  `writtenTables`, causing exact/subset/disjoint table constraints to be skipped
+  while the budget gate reports success.
+- Evidence: the previous helper entered table checks only when the optional
+  field existed. It now requires an array whenever any table budget is declared;
+  direct absent/present counterexamples pin the behavior.
+- Companion/overlap analysis: row stability detects identity churn in selected
+  fixtures; table budgets cover every instrumented command path and forbidden
+  table class.
+- Action and rollback: require evidence at the oracle boundary without changing
+  production metric semantics.
+- Validation: the focused mutation-budget owner passed 6/6 before the row cases
+  joined it and 8/8 as the combined oracle suite.
+- Count delta: two cases added, taking the live total from 9,989 to 9,991.
+- Revisit condition: a metric may make table evidence optional only after its
+  gate removes every table constraint explicitly.
+
+### TSA-P01-013: Memory embedding test seam is absent from support ownership
+
+- State: Done.
+- Severity: Medium.
+- Category: A, with H ownership.
+- Decision: Strengthen the exhaustive support manifest.
+- Tests/cases: the existing seven-case effectiveness-inventory oracle; no new
+  case registration.
+- Production owner: `server/fastify/src/memoryEmbedJobHandler.ts` provider
+  deadline and contextual subbatch-budget test controls.
+- Protected contract or plausible defect: mixed production/test seams can evade
+  the horizontal harness review and later become stale or behavior-defining
+  without an accountable owner.
+- Evidence: both controls are consumed by tests but the file was absent from the
+  64-row mixed seam list. It is now an explicit 65th row and a focused assertion
+  prevents removal from the linked manifests.
+- Companion/overlap analysis: ordinary test discovery cannot find test seams in
+  production files; the support manifest is the unique exhaustive owner.
+- Action and rollback: add the exact seam and rationale to generated support
+  discovery and its checked artifact.
+- Validation: 7/7 inventory cases and all three inventory checks passed at 253
+  standalone artifacts and 65 mixed seams.
+- Count delta: none.
+- Revisit condition: remove the manifest row only when the controls and every
+  test consumer are removed together.
+
+### TSA-P01-014: Server-backed send fixtures wait by event-loop guess
+
+- State: Done.
+- Severity: Medium.
+- Category: A harness, with F ownership.
+- Decision: Strengthen synchronization.
+- Tests/cases: all 27 cases in
+  `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`.
+- Production owner: queued server commands and reconciliation after a
+  server-backed send.
+- Protected contract or plausible defect: three microtasks and two
+  `setImmediate` turns can finish before or long after route-backed command work,
+  creating load/order sensitivity and assertions against intermediate state.
+- Evidence: production already exports
+  `drainServerCommandExecutionForTests`, which observes the queue tail and active
+  reconciliation batch. The fixture now waits on that seam directly.
+- Companion/overlap analysis: server command tests own queue mechanics; this
+  fixture needs the drain to make its send outcomes trustworthy.
+- Action and rollback: replace the fixed scheduling sequence with the observable
+  barrier; no product behavior or expected fixture changed.
+- Validation: the complete server-backed fixture passed 27/27.
+- Count delta: none.
+- Revisit condition: preserve an observable completion seam if command
+  scheduling is redesigned.
+
+### TSA-P01-015: Legacy RisuSave fixtures are generated by the current codec
+
+- State: Done.
+- Severity: High.
+- Category: A harness, with K ownership.
+- Decision: Strengthen compatibility evidence.
+- Tests/cases: legacy raw, compressed, and stream rows in
+  `server/fastify/__fixtures__/risuSave/fixtures.ts` and their codec consumers.
+- Production owner: historical `.risu` envelope decoding.
+- Protected contract or plausible defect: encoder and decoder can drift in the
+  same way while module-load-generated fixtures preserve a false round-trip
+  green result.
+- Evidence: the three rows called the current encoder. They now contain frozen
+  bytes produced through the pre-Fastify `/home/codex/Risuai` encoder algorithm
+  at its pinned `msgpackr` 1.10.1 boundary; the bytes differ from the current
+  custom encoder's output and cannot be regenerated by the subject under test.
+- Companion/overlap analysis: current-codec round trips remain valuable for
+  writer/reader consistency but no longer stand in for historical compatibility.
+- Action and rollback: freeze the independent vectors and remove their obsolete
+  fixture wrapper; keep expected decoded shapes unchanged.
+- Validation: codec and bounded-inflate owners passed 39/39.
+- Count delta: none.
+- Revisit condition: add a newly sourced historical vector rather than
+  regenerating these bytes when an older supported envelope variant is found.
+
+### TSA-P01-016: Harness surfaces retain proven orphan exports
+
+- State: Done.
+- Severity: Low.
+- Category: A.
+- Decision: Remove after repository-wide consumer proof.
+- Tests/cases: no test case removed; support owners are `domStateOracle.ts`,
+  `browserSmoke.ts`, and `risuSave/fixtureHarness.ts`.
+- Production owner: test-only DOM readers, browser smoke hook, and save-fixture
+  facade.
+- Protected contract or plausible defect: unused helper surfaces imply evidence
+  sharing that does not exist and increase migration/maintenance cost.
+- Evidence: repository-wide symbol searches found no consumer for the removed
+  differential formatter, generation-picker/chat-row readers, browser refresh
+  and forward-swipe hook entries, or save wrapper exports. Used toggle readers,
+  reroll-back behavior, and codec helpers remain.
+- Companion/overlap analysis: no stronger test replaces these symbols because
+  no test invoked them; their comments and types were the only apparent owners.
+- Action and rollback: removed 48 lines after consumer proof. Restore a smaller
+  helper only with its first real consumer.
+- Validation: DOM oracle 3/3, RisuSave codec 34/34, client-library typecheck, and
+  the complete browser-smoke lane passed.
+- Count delta: no file or case delta.
+- Revisit condition: none; new shared behavior must land with a direct consumer.
+
+### TSA-P01-017: Resource database adapter changes the bootstrap test surface
+
+- State: Deferred with bounded evidence claims.
+- Severity: Medium.
+- Category: A harness, with C/F/K product ownership.
+- Decision: Reclassify adapter-backed assertions, then migrate consumers.
+- Tests/cases: adapter consumers in `generation.chat.test.ts`,
+  `commandSettingsAndPluginStorageRange.test.ts`, `commands.test.ts`,
+  `risuSaveImportRoute.test.ts`, `backups.test.ts`, and
+  `risuSaveBundleImportRoute.test.ts`; `durableGeneration.test.ts` already uses
+  the direct composed-resource reader.
+- Production owner: public settings, collections, and character aggregate reads;
+  production `/api/v1/bootstrap` is runtime-only.
+- Protected contract or plausible defect: an assertion written as
+  `bootstrap.json().database` can be misreported as bootstrap wire evidence even
+  though a test-local `app.inject` adapter synthesizes it from three public
+  resources.
+- Evidence: the adapter is local to each Fastify instance, checks one converged
+  revision, and does not change production. Its six consumers are therefore
+  valid read-after-write resource evidence but not bootstrap response evidence.
+- Companion/overlap analysis: direct bootstrap contract tests remain unadapted;
+  persistence loaders and direct resource routes provide independent storage/API
+  layers.
+- Action and rollback: keep the adapter as an explicit migration boundary and
+  exclude its consumers from bootstrap wire claims. Migrate each consumer to a
+  named composed-resource read during its owning product phase, then delete the
+  monkeypatch when the last import disappears.
+- Validation: all adapter consumers pass in the complete Fastify lane.
+- Count delta: none.
+- Revisit condition: Phases 3, 6, and 11 must migrate their respective consumers;
+  Phase 13 removes the helper after `rg` finds no installer import.
+
+### TSA-P01-018: Browser smoke intentionally changes production semantics
+
+- State: Done as an evidence-boundary record.
+- Severity: Informational.
+- Category: A horizontal owner.
+- Decision: Keep the harness with bounded claims.
+- Tests/cases: all seven browser specs / 34 cases and their shared smoke hook.
+- Production owner: built SPA, Fastify, SQLite, startup, recovery, navigation,
+  and durable command/generation integration under deterministic smoke mode.
+- Protected contract or plausible defect: smoke-only auth, shortened refresh,
+  observer rollout control, and disabled worker/GC activity can be mistaken for
+  proof of live provider/auth UI, production timing, worker, or asset-GC behavior.
+- Evidence: smoke mode uses a fixed auth path and deterministic hook, shortens a
+  finalization refresh, and disables unrelated background work. The built chunks,
+  real browser, resource protocol, command paths, and SQLite durability remain
+  live.
+- Companion/overlap analysis: provider/auth/security, workers, GC, and production
+  timing retain their Fastify/unit owners in later categories. Smoke uniquely
+  proves the named cross-layer journeys.
+- Action and rollback: document the exclusion boundary while retaining all
+  seven specs, serial per-file execution, required artifacts, and screenshots.
+- Validation: Playwright passed 34/34 in the Phase 1 aggregate attempt.
+- Count delta: none.
+- Revisit condition: update the claim boundary whenever smoke-mode behavior or a
+  shared hook changes.

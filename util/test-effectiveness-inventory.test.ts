@@ -282,7 +282,8 @@ describe('test effectiveness inventory', () => {
 
     const document = createTestSupportInventoryDocument(root)
     expect(document.standaloneCount).toBeGreaterThan(30)
-    expect(document.mixedProductionCount).toBe(64)
+    expect(document.mixedProductionCount).toBe(65)
+    expect(document.mixedProductionTestSeams).toContain('server/fastify/src/memoryEmbedJobHandler.ts')
     expect(document.groups.flatMap((group) => group.files)).not.toContain('src/example.test.ts')
 
     writeTestSupportInventory(root, 'docs/plan/test-suite-effectiveness-audit/support-artifacts.json')

@@ -156,7 +156,7 @@
   "supportArtifacts": {
     "manifest": "docs/plan/test-suite-effectiveness-audit/support-artifacts.json",
     "standaloneArtifactCount": 253,
-    "mixedProductionSeamCount": 64,
+    "mixedProductionSeamCount": 65,
     "state": "linked"
   },
   "rows": [
@@ -1192,7 +1192,7 @@
         "filesystem"
       ],
       "caseCounts": {
-        "cases": 4,
+        "cases": 8,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
@@ -4624,22 +4624,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "both shared-validator loading and Fastify SSE boundary cases",
         "valueClasses": [
-          "pending"
+          "protocol and integration",
+          "architecture policy"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "Fastify consumption of the browser-safe shared protocol runtime and server-owned SSE encoding",
+        "plausibleDefect": "The server can stop loading shared validators or accidentally move Fastify-specific framing into the shared package.",
+        "risk": "Medium client/server protocol drift or a package boundary regression.",
+        "companionEvidence": "The recursive import-boundary test owns dependency safety; TypeScript checks own types, while these cases execute the server integration.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The two cases protect distinct runtime and ownership boundaries at the smallest faithful Fastify layer.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain both cases and update them with any intentional shared-protocol ownership change.",
+        "validation": "2/2 focused Fastify cases passed in the Phase 1 category-A review",
+        "state": "phase1-reviewed"
       }
     },
     {
@@ -5719,22 +5720,24 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "all 38 SQL classification, scoped-read, clone, asset, metrics, and restoration budget cases",
         "valueClasses": [
-          "pending"
+          "performance and capacity",
+          "diagnostic oracle",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "Fastify scoped persistence reads, transcript/asset cloning, metric serialization, and load-cost instrumentation cleanup",
+        "plausibleDefect": "A hot path can silently resume whole-corpus reads, repeated clones, synchronous asset reads, or leaked statement instrumentation.",
+        "risk": "High latency and memory regressions on large libraries, plus contaminated later measurements.",
+        "companionEvidence": "Domain suites own result semantics; the isolated load harness owns communication-cost ceilings and has positive/negative SQL classifier evidence.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Each matrix family names a separate cost regression, and single-worker server isolation keeps the measurements meaningful.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the full matrix; require measured evidence before changing a ceiling or fallback case.",
+        "validation": "38/38 focused single-worker Fastify cases passed in the Phase 1 category-A review",
+        "state": "phase1-reviewed"
       }
     },
     {
@@ -14886,22 +14889,22 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "all 29 responsive-layout, token-timing, and owner-aware bridge policy cases",
         "valueClasses": [
-          "pending"
+          "architecture policy"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "reviewed frontend source boundaries for mobile dialogs, async asset tokens, and dirty-field/receipt bridge ownership",
+        "plausibleDefect": "A component can bypass its bridge, apply a stale async upload, overwrite dirty projections, or restore a mobile minimum-width regression.",
+        "risk": "Medium visible stale-state, lost-edit, and narrow-viewport regressions across broad component surfaces.",
+        "companionEvidence": "Mounted product suites own visible behavior; these static cases uniquely enforce absence and call-site ownership across every enumerated source owner.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Source-aware assertions are intentional architecture policies rather than substitutes for behavior; later product phases must preserve their mounted companions.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain the policies and revisit individual cases if a typed/lint rule or equally exhaustive behavior oracle replaces the source boundary.",
+        "validation": "29/29 focused cases passed in the Phase 1 category-A review",
+        "state": "phase1-reviewed"
       }
     },
     {
@@ -15026,22 +15029,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "the plain-send append and field-scoped rollback clone-count matrix",
         "valueClasses": [
-          "pending"
+          "performance and capacity",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "sendChat append fast path and rollback cloning scope on large transcripts",
+        "plausibleDefect": "A send or rollback can resume full-transcript or database cloning while preserving functional output.",
+        "risk": "Medium latency and memory growth on long chats.",
+        "companionEvidence": "Generation suites own visible/durable results; render gates and server load gates measure different client render and server I/O costs.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The isolated probe detects a cost failure that semantic send tests cannot observe.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain as an isolated performance gate and change the expected shape only with measured product evidence.",
+        "validation": "owned by the single-worker performance gate; complete Phase 1 gate proof recorded separately",
+        "state": "phase1-reviewed"
       }
     },
     {
@@ -29873,22 +29877,22 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "the shell-safe store import isolation case",
         "valueClasses": [
-          "pending"
+          "architecture policy"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "top-level store module import boundary before feature and persistence startup",
+        "plausibleDefect": "Importing shell stores can eagerly evaluate feature or database implementations and break lazy startup.",
+        "risk": "Medium startup failure or preload regression before the application owns persistence readiness.",
+        "companionEvidence": "Bundle/preload gates measure emitted closure size; this case detects source-module evaluation with explicit sentinel mocks.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The case guards execution safety, a distinct contract from bundle membership and type checking.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain and extend the sentinel set when a new persistence/feature implementation becomes reachable from shell stores.",
+        "validation": "1/1 focused case passed in the Phase 1 category-A review",
+        "state": "phase1-reviewed"
       }
     },
     {
@@ -30489,22 +30493,24 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "all nine closure, preload, artifact, lazy-inventory, and deterministic-format cases",
         "valueClasses": [
-          "pending"
+          "architecture policy",
+          "performance and capacity",
+          "diagnostic oracle"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "initial bundle closure, generated HTML preload parity, lazy-boundary inventory, and failure artifact reporting",
+        "plausibleDefect": "A heavy optional surface can enter startup, an emitted preload can drift from the static closure, or a failed gate can lose diagnostics.",
+        "risk": "Medium startup-cost regression or misleading CI bundle evidence.",
+        "companionEvidence": "The real build gate measures emitted artifacts; these oracle cases independently validate graph classification, failure semantics, and deterministic reports.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The unit oracle makes the CI-only build budget explainable and mutation-sensitive without duplicating the real build measurement.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain all cases and update fixtures only with an intentional lazy-boundary or report-schema change.",
+        "validation": "9/9 focused cases passed in the Phase 1 category-A review",
+        "state": "phase1-reviewed"
       }
     },
     {
@@ -30529,22 +30535,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "all four prerequisite ordering, consumer concurrency, and failure propagation cases",
         "valueClasses": [
-          "pending"
+          "architecture policy",
+          "diagnostic oracle"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "check:server prerequisite/parallel-consumer process orchestration and exit-code propagation",
+        "plausibleDefect": "Server checks can start before generated prerequisites, serialize independent work, or hide one consumer's failure.",
+        "risk": "Medium false-green server validation or unnecessary local/CI latency.",
+        "companionEvidence": "Individual typecheck/test commands own their content; the aggregate runner and these cases own orchestration semantics.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Controlled process doubles prove ordering, concurrency, completion, and failure behavior without executing expensive child commands.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain and extend the matrix when prerequisite or consumer topology changes.",
+        "validation": "4/4 focused cases passed in the Phase 1 category-A review",
+        "state": "phase1-reviewed"
       }
     },
     {
@@ -30622,22 +30629,24 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "all four size accounting, safe path resolution, failure, and ratified-budget cases",
         "valueClasses": [
-          "pending"
+          "performance and capacity",
+          "security and safety",
+          "diagnostic oracle"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "generated initial-preload byte accounting, dist-root containment, and milestone/regression budget enforcement",
+        "plausibleDefect": "Encoded or nested assets can be miscounted, paths can escape dist, or historical ceilings can be mistaken for current ratified gates.",
+        "risk": "Medium misleading startup-cost evidence or unsafe artifact traversal.",
+        "companionEvidence": "The CI build gate supplies real assets; the bundle-boundary oracle owns closure membership rather than byte/path calculations.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The cases independently prove the report math, containment, deterministic errors, and two distinct budget concepts.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain; update budgets only from reviewed build evidence, never by refreshing a failing fixture.",
+        "validation": "4/4 focused cases passed in the Phase 1 category-A review",
+        "state": "phase1-reviewed"
       }
     },
     {
@@ -30716,22 +30725,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "all seven category, lane, discovery, deterministic-update, shape, support-link, and case-count cases",
         "valueClasses": [
-          "pending"
+          "architecture policy",
+          "diagnostic oracle"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "exhaustive machine-readable audit inventory and linked standalone/mixed support ownership",
+        "plausibleDefect": "A tracked test, category, specialized lane, support seam, reviewed disposition, or parameterized case count can disappear or drift silently.",
+        "risk": "High incomplete audit accounting and false closeout claims.",
+        "companionEvidence": "Routing and support checks own their live manifests; this owner links them to stable audit metadata and frozen case counts.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Positive and malformed counterexamples protect exhaustiveness, determinism, schema strictness, and reviewed-field preservation.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain and extend exact manifest assertions whenever a new support or audit dimension is introduced.",
+        "validation": "7/7 focused cases and the complete inventory check passed in Phase 1",
+        "state": "phase1-reviewed"
       }
     },
     {
@@ -30759,22 +30769,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "all five unexplained-warning, forwarding, exact-exception, broadened-importer, and stale-exception cases",
         "valueClasses": [
-          "pending"
+          "architecture policy",
+          "diagnostic oracle"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "Vite static-plus-dynamic import warning governance and exact documented exception set",
+        "plausibleDefect": "A broad exception can hide a new eager importer, or a stale exception can normalize an obsolete boundary.",
+        "risk": "Medium lazy-loading regression hidden as accepted build noise.",
+        "companionEvidence": "Real builds emit the warning stream and bundle gates measure output; this policy owns normalization and exact exception semantics.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Negative cases prove the allowlist cannot broaden or become stale while unrelated diagnostics remain intact.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain; require exact importer evidence and documentation for every exception change.",
+        "validation": "5/5 focused cases passed in the Phase 1 category-A review",
+        "state": "phase1-reviewed"
       }
     },
     {
@@ -30803,22 +30814,24 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "all 11 loopback host/input, stack, forwarding, and restoration cases",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "diagnostic oracle",
+          "architecture policy"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "Happy-DOM guard against accidental HTTP(S) access to loopback Fastify port 3000",
+        "plausibleDefect": "A DOM test can silently contact a developer server, become environment-dependent, or lose the originating diagnostic after fetch stubbing.",
+        "risk": "Medium nondeterminism and accidental mutation of local application state.",
+        "companionEvidence": "Individual tests still own explicit request stubs; the guard intentionally does not claim a general outbound-network sandbox.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The host/input matrix, pre-network rejection, allowed forwarding, and restoration checks exactly match the documented narrow boundary.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain and revisit deny-all-unmocked egress only if required tests can adopt an explicit network allowlist.",
+        "validation": "11/11 focused cases passed in the Phase 1 category-A review",
+        "state": "phase1-reviewed"
       }
     },
     {
@@ -30843,22 +30856,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "both filename-disjointness and reviewed pre-suffix DOM registration cases",
         "valueClasses": [
-          "pending"
+          "architecture policy",
+          "diagnostic oracle"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
+        "productionOwnerOrContract": "N/S/D frontend filename routing and explicit legacy DOM owner registration",
+        "plausibleDefect": "A test can execute under two projects, default to the wrong runtime, or lose a reviewed DOM dependency during routing edits.",
+        "risk": "High omitted, duplicated, or misleading frontend evidence.",
+        "companionEvidence": "The live inventory compares resolved discovery exhaustively; these unit cases protect the routing predicates and registration contract directly.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The predicate oracle and resolved manifest fail at different layers and form intentional defense in depth.",
         "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "severity": "Informational",
+        "action": "Retain and update the checked manifest with every intentional capability move.",
+        "validation": "2/2 focused cases and resolved frontend discovery passed in Phase 1",
+        "state": "phase1-reviewed"
       }
     },
     {

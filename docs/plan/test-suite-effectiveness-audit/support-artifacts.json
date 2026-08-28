@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "standaloneCount": 253,
-  "mixedProductionCount": 64,
+  "mixedProductionCount": 65,
   "groups": [
     {
       "role": "runner-config-ci",
@@ -291,6 +291,7 @@
     "server/fastify/src/generation/bedrock.ts",
     "server/fastify/src/generation/openrouterFreeModel.ts",
     "server/fastify/src/generation/vertexAuth.ts",
+    "server/fastify/src/memoryEmbedJobHandler.ts",
     "server/fastify/src/prompt/luaRuntime.ts",
     "server/fastify/src/prompt/prefixTokenMemo.ts",
     "src/appStartup.ts",

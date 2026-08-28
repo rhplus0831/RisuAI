@@ -2,7 +2,7 @@
 
 Date: 2026-08-29
 
-Status: In progress.
+Status: Complete.
 
 ## Exact Scope
 
@@ -38,12 +38,15 @@ P01-S02.
 - Closed `TSA-P01-008`: the 7,000-asset Realm case now has named isolated local
   aggregate and CI owners rather than an undocumented direct-only invocation.
 
-No product behavior or existing test was removed. The affected policy gained
-eight cases; live totals are 699 files and 9,984 cases.
+No product behavior or existing test was removed. The runner/policy work gained
+nine cases; live totals at slice close are 699 files and 9,985 cases.
 
-## Remaining Slice Gates
+## Closeout
 
-- Ratify dispositions for every in-scope Category A test and runner/config
-  support owner.
-- Run representative changed/deleted dry-run cases, checked inventories, focused
-  utility tests, and `pnpm test:all` before closing the slice.
+- All 19 Category A files have complete Keep dispositions. Specialized product
+  owners retain their later category review.
+- Resolved discovery remains 538 frontend, 154 Fastify, and 7 browser files.
+- The ten-lane aggregate graph and required CI jobs are checked for parity.
+- Focused utility cases, changed/deleted planning counterexamples, live
+  inventories, and aggregate lanes passed; final aggregate evidence is recorded
+  in the Phase 1 verification section.

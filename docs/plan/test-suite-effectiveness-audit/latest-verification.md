@@ -383,3 +383,45 @@ pnpm test:frontend:run
 Results: the focused pair passed 14/14. The complete frontend lane passed all
 6,651 cases across 536 files in 71.88s. Two cases take the live total from 9,985
 to 9,987 without a file-count change.
+
+## Phase 1 Closeout
+
+The shared row/table oracles, support seam manifest, observable send drain,
+frozen historical save vectors, and orphan-export cleanup were validated before
+the phase aggregate. Four direct oracle cases take the live tracked total from
+9,987 to 9,991; no file was added or removed.
+
+```sh
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/commandMutationBudget.test.ts \
+  server/fastify/__tests__/commandSingleRowPaths.test.ts
+pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/risuSaveCodec.test.ts \
+  server/fastify/__tests__/risuSaveBoundedInflate.test.ts
+pnpm check:test-inventories
+pnpm test:affected --dry-run
+pnpm test:all
+```
+
+Focused results: mutation oracles 8/8 and single-row consumers 21/21;
+server-backed send fixtures 27/27; save codec/bounded-inflate 39/39. Inventories
+passed at 699 tests, 253 standalone support owners, and 65 mixed seams. The
+affected dry run selected inventories, frontend, performance, and server lanes.
+
+The first aggregate attempt is retained as red evidence: the send-drain import
+changed a checked routing row, so the inventory lane failed stale while the
+other nine lanes passed. After the intentional manifest refresh, the complete
+ten-lane aggregate passed in 3m32.2s:
+
+- inventory/routing, strict server/browser typecheck, Svelte check, and format;
+- ordinary frontend 6,448/6,448 across 530 files;
+- UI coverage 203/203 at 14.43% lines, 14.83% statements, 18.12% functions, and
+  9.45% branches;
+- Fastify 3,299 passed with the one direct-only scale case skipped in ordinary
+  discovery, then that Realm scale case passed in its isolated lane;
+- browser smoke 34/34 with required artifacts;
+- frontend performance gates 6/6 under one worker.
+
+Full historical compatibility remains blocked only by the exact missing pinned
+worktree. Current/cluster assurance remains green under `test:compat-current`.

@@ -123,7 +123,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/commandMutationBudget.test.ts": {
-      "cases": 4,
+      "cases": 8,
       "skipped": 0,
       "parameterizedRows": 0
     },

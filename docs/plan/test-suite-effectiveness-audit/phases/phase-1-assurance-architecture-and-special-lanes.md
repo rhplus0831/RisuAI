@@ -1,7 +1,6 @@
 # Phase 1: Assurance Architecture And Special Lanes
 
-Status: In progress; protocol import-boundary remediation complete and P01-S01
-is active.
+Status: Complete.
 
 ## Objective
 
@@ -73,3 +72,14 @@ or self-invalidating harnesses.
 - `pnpm test:all`
 - `pnpm format:check`
 - `git diff --check`
+
+## Closeout
+
+- All 19 assurance-category files have complete Keep dispositions.
+- All 253 standalone support artifacts and 65 mixed production test seams have
+  exact group/row ownership and a disposition; one bounded migration adapter is
+  deferred under `TSA-P01-017`.
+- Eighteen findings are done. The pinned historical compatibility worktree is
+  the sole external blocker and does not suppress current/cluster assurance.
+- After an intentionally preserved stale-manifest failure, the refreshed
+  ten-lane aggregate passed completely in 3m32.2s.

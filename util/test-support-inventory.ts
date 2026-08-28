@@ -84,6 +84,9 @@ export const mixedProductionTestSeams = [
   'server/fastify/src/generation/bedrock.ts',
   'server/fastify/src/generation/openrouterFreeModel.ts',
   'server/fastify/src/generation/vertexAuth.ts',
+  // providerFetchDeadlineMs and contextualSubBatchTokenBudget are deliberate
+  // test controls on the otherwise production-owned embed handler.
+  'server/fastify/src/memoryEmbedJobHandler.ts',
   'server/fastify/src/prompt/luaRuntime.ts',
   'server/fastify/src/prompt/prefixTokenMemo.ts',
   'src/appStartup.ts',
