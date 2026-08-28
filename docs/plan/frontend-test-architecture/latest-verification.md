@@ -4,10 +4,72 @@ Date: 2026-08-28
 
 ## State
 
-Phase 4 closeout in progress after the chat-import, Saved Toggles, and router
-planning slices and the server-backed fixture-planning deferral.
+Phase 4 is complete after the chat-import, Saved Toggles, and router planning
+slices, the server-backed fixture-planning deferral, and the formal closeout.
 This record does not authorize repository-wide default inversion or migration
 outside the later phase rules.
+
+## Phase 4 Closeout Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `a5b80e0ea`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Frontend test-all UI-map exclusion: `RISU_TEST_EXCLUDE_UI_MAP=true`
+- Isolation: enabled
+- Measurement tree: the four committed Phase 4 implementation/proof batches
+  with no uncommitted source changes. Vitest's `--clearCache` command prepared
+  the cold run.
+
+## Phase 4 Formal Performance Result
+
+The cache-cleared cold run passed 531 files / 6,423 tests in 69.10s wall and
+68.00s Vitest duration, with 4,512,992 KiB peak RSS.
+
+Three consecutive unchanged warm runs passed the same 531 files / 6,423 tests:
+
+| Run | Wall | Vitest | CPU | Peak RSS KiB |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 68.49s | 67.57s | 644% | 4,893,640 |
+| 2 | 70.32s | 69.28s | 628% | 4,759,324 |
+| 3 | 70.10s | 69.22s | 650% | 4,905,256 |
+| Median | 70.10s | 69.22s | 644% | 4,893,640 |
+
+The warm range is 68.49-70.32s. Wall median is +2.4% from Phase 3, inside the
+5% ordinary-run noise band, and 3.0% below Phase 0. Peak-RSS median improves
+2.5% from Phase 3 and remains 2.3% above Phase 0, inside the 10% guard. The
+57.84s primary and 50.61s stretch targets remain open.
+
+The selected focused candidate observations sum to 12.93s before Phase 4 and
+9.35s after it, a 27.7% reduction while expanding pure boundary coverage. Chat
+import and Saved Toggles produce the focused gain; the router's retained D
+owner is unchanged within noise and is justified by planner correctness and
+maintainability. Parallel whole-lane scheduling masks the focused reduction at
+the formal median.
+
+## Phase 4 Closeout Validation And Stopping Decision
+
+Independent projects passed 192 Node files / 1,285 tests in 4.84s Vitest, 17
+Svelte+Node files / 167 tests in 1.86s, and 328 standalone Happy-DOM files /
+5,174 tests in 62.71s. Full discovery is 539 files at 192 N / 17 S / 330 D;
+standalone ordinary is 537 at 192 N / 17 S / 328 D; aggregate ordinary is 531
+at 191 N / 17 S / 323 D.
+
+`pnpm test:affected --dry-run` selected frontend, isolated performance, and
+server lanes. `pnpm test:all --dry-run` showed the expected eight-lane graph,
+and `pnpm test:all` passed every lane in 3m18.8s. The aggregate included 531
+frontend files / 6,423 tests, 154 server files / 3,295 passing tests with 1
+skip, 34 browser-smoke cases, 6 UI coverage files / 203 tests, and 2 performance
+files / 6 tests. Client, server, and browser-smoke type checks, UI coverage
+thresholds, formatting, inventory completeness, and `git diff --check` passed.
+
+Every approved Phase 4 candidate now has an implementation, retained
+integration proof, or reason and revisit condition. Further extraction stops
+because the remaining settings, fixture, bootstrap, and plugin costs cross
+browser/persistence/lifecycle boundaries without another demonstrated
+production pure seam. Phase 5 owns the next profile of repeated Happy-DOM setup
+and visible-behavior consolidation.
 
 ## Phase 4 Router Route Planning
 

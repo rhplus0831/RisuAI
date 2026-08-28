@@ -8,17 +8,17 @@ codebase remain authoritative until a phase lands.
 
 ## Current Snapshot
 
-- Plan state: Phases 0-3 complete; Phase 4 in progress.
-- Current phase: Phase 4 — Pure Logic Extraction (in progress).
-- Active slice: Phase 4 closeout and formal re-profile.
+- Plan state: Phases 0-4 complete; Phase 5 pending.
+- Current phase: Phase 5 — DOM Contract Consolidation (pending).
+- Active slice: None; Phase 4 is complete.
 - Implementation state: Chat-import request planning, Saved Toggles planning,
   and router route planning now have 21 pure Node tests. Retained Happy-DOM
   suites still own durable commands, mounted settings, browser history, store
   application, and asynchronous route freshness.
 - Blockers: None. Ninety-three retained target-S candidates have recorded Phase
   4/5 owners and revisit conditions.
-- Next action: Run the complete validation gate and formal cold plus three-run
-  warm ordinary benchmark, then record the Phase 4 stopping decision.
+- Next action: Re-profile repeated Happy-DOM mount/setup owners and prepare the
+  first Phase 5 visible-behavior consolidation slice.
 
 ## Phase Router
 
@@ -28,7 +28,7 @@ codebase remain authoritative until a phase lands.
 | [1](phases/phase-1-runtime-topology.md) | Complete | Added and piloted the Node, Svelte+Node, and Happy-DOM topology. |
 | [2](phases/phase-2-pure-node-promotion.md) | Complete | Promoted already-pure tests to Node and recorded every retained N candidate. |
 | [3](phases/phase-3-svelte-node-promotion.md) | Complete | Promoted Svelte-compiled tests that do not require DOM behavior. |
-| [4](phases/phase-4-pure-logic-extraction.md) | In progress | Extract measured pure-logic seams while retaining DOM contracts. |
+| [4](phases/phase-4-pure-logic-extraction.md) | Complete | Extracted measured pure-logic seams while retaining DOM contracts. |
 | [5](phases/phase-5-dom-contract-consolidation.md) | Pending | Consolidate repeated DOM setup and clarify visible-state ownership. |
 | [6](phases/phase-6-routing-and-ci-enforcement.md) | Pending | Enforce explicit routing and align affected tests, coverage, aggregate execution, and CI. |
 | [7](phases/phase-7-verification-and-closeout.md) | Pending | Prove final budgets and behavior, update current docs, and archive the workstream. |
@@ -135,6 +135,37 @@ Phase 4 proceeds with the current profile ranking. Svelte+Node remains a durable
 layer at 17 aggregate ordinary files / 167 tests and 341ms environment time.
 The approved Phase 4 order is chat-command boundaries, settings projection,
 server-backed fixture planning, then router state.
+
+## Phase 4 Cumulative Result
+
+| Measurement | Result |
+| --- | ---: |
+| Completed slices and proof batches | 4 |
+| Pure Node owners | 3 files / 21 tests |
+| Full three-project universe | 539 files: 192 N / 17 S / 330 D |
+| Standalone ordinary frontend | 537 files: 192 N / 17 S / 328 D |
+| `test:all` ordinary frontend | 531 files / 6,423 tests: 191 N / 17 S / 323 D |
+| Cold ordinary frontend | 69.10s wall / 68.00s Vitest |
+| Warm ordinary wall median | 70.10s (68.49-70.32s) |
+| Warm Vitest duration median | 69.22s |
+| Warm peak RSS median | 4,893,640 KiB |
+| Wall delta from Phase 3 | +2.4% (inside 5% noise) |
+| Wall delta from Phase 0 | -3.0% |
+| Focused candidate Vitest sum | 12.93s -> 9.35s (-27.7%) |
+| Focused UI coverage | 6 files / 203 tests / 19.48s Vitest |
+| Full `test:all` | 3m18.8s wall |
+
+Chat-import and Saved Toggles planners moved into plain TypeScript leaves;
+router route planning gained an environment-independent Node matrix. Durable
+command, mounted settings, history/store/freshness, and both fixture corpora
+remain integration-owned. Fixture planning was rejected because its available
+helpers are test-only and cannot reduce the real `sendChat`/Fastify graph.
+
+The selected focused scopes improve 27.7%, beyond focused noise, while the
+whole-lane warm median is statistically unchanged from Phase 3 under parallel
+scheduling. The primary target remains open. Further Phase 4 extraction stops:
+remaining measured costs lack a cohesive production pure seam, and repeated
+DOM setup now belongs to Phase 5.
 
 ## Current Decisions
 
@@ -301,6 +332,12 @@ server-backed fixture planning, then router state.
     runtime was unchanged within noise, so the slice is retained for broader
     planner correctness and maintainable capability ownership, not claimed as
     a performance improvement.
+40. Phase 4 closed after all four ranked candidate families received an
+    implementation or explicit deferral and the complete eight-lane gate
+    passed. The focused candidate sum improved 27.7%; the 70.10s ordinary warm
+    median is +2.4% from Phase 3, inside run noise, and remains 3.0% below Phase
+    0. Further extraction is stopped until fresh evidence demonstrates another
+    production planner/reducer; repeated DOM harness cost transfers to Phase 5.
 
 ## Accepted Observations
 
@@ -343,9 +380,9 @@ promotion continues.
 
 ## Latest Completed Slice
 
-[Phase 4 router route planning](phases/slices/phase-4/router-route-planning.md)
-moved the expanded pure route matrix to Node and retained browser history,
-store application, navigation guards, and freshness behavior in Happy-DOM.
+[Phase 4 closeout and re-profile](phases/slices/phase-4/closeout-and-reprofile.md)
+completed the full validation gate, formal benchmark, cumulative performance
+accounting, and stopping decision.
 
 ## Latest Verification
 

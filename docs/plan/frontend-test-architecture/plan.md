@@ -308,8 +308,8 @@ Each candidate requires a fresh profile and a slice-specific value hypothesis.
 
 ## Execution Cursor
 
-Phases 0-3 are complete. Begin Phase 4 with the measured chat-command boundary,
-then settings projection, server-backed fixture planning, and router-state
-slices as ranked by the Phase 3 re-profile. Each slice still requires a fresh
-value hypothesis and retained DOM/browser companion. Do not invert suffix
-defaults before the Phase 6 completeness gate.
+Phases 0-4 are complete. Begin Phase 5 with a current profile of repeated
+Happy-DOM mount/setup owners and visible-behavior contracts. Phase 4 stops after
+its ranked candidates because the remaining costs do not expose another
+cohesive production pure seam. Do not invert suffix defaults before the Phase 6
+completeness gate.

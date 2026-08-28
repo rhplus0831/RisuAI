@@ -1,6 +1,6 @@
 # Phase 4: Pure Logic Extraction
 
-Status: In Progress
+Status: Complete
 
 ## Progress
 
@@ -20,7 +20,10 @@ Status: In Progress
   deterministic route vocabulary and state-to-path matrix to Node while
   retaining all history, location, store, guard, and freshness contracts in
   Happy-DOM.
-- Next: Phase 4 closeout and formal re-profile.
+- [Closeout and re-profile](slices/phase-4/closeout-and-reprofile.md) completes
+  the validation gate, formal benchmark, selected-scope performance proof, and
+  stopping decision. Further extraction is deferred to fresh evidence; Phase 5
+  owns the remaining repeated DOM setup.
 
 ## Objective
 
