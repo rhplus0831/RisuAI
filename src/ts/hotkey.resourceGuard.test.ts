@@ -45,7 +45,7 @@ vi.mock('./process/modules', async (importActual) => {
   return { ...actual, getModuleTriggers: () => [], moduleUpdate: () => {} }
 })
 
-import { adjacentCharacterIndex, changeToAdjacentCharacter, changeToPreset, hotkeyMatches } from './hotkey'
+import { adjacentCharacterIndex, changeToAdjacentCharacter, changeToPreset, hotkeyMatches, initHotkey } from './hotkey'
 import { applyServerBackedSetting } from './server/settingsBridge.svelte'
 import { settingsGroupForKey, clearCachedServerCommandRevision } from './server/commands'
 import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
@@ -370,5 +370,41 @@ describe('hotkey handling under the resource guard', () => {
     expect(patch.body.patch.hotkeys).toBeDefined()
     expect(patch.body.patch.hotkeys[0].ctrl).toBe(true)
     expect(patch.body.patch.hotkeys[0].action).toBe('home')
+  })
+
+  it('dispatches a configured document hotkey without mutating the guarded projection', async () => {
+    testDatabaseState.db.hotkeys = [{ key: 'a', action: 'send' }] as any
+    const configuredHotkey = testDatabaseState.db.hotkeys[0]
+    const sendButton = document.createElement('button')
+    sendButton.className = 'button-icon-send'
+    const sendSpy = vi.fn()
+    const bubbledToWindow = vi.fn()
+    sendButton.addEventListener('click', sendSpy)
+    document.body.appendChild(sendButton)
+    window.addEventListener('keydown', bubbledToWindow)
+    initHotkey()
+    setResourceWriteGuardEnabled(true)
+
+    try {
+      expect(() => {
+        ;(configuredHotkey as any).ctrl = true
+      }).toThrow()
+
+      const event = new KeyboardEvent('keydown', {
+        bubbles: true,
+        cancelable: true,
+        key: 'a',
+      })
+      expect(() => document.dispatchEvent(event)).not.toThrow()
+      await Promise.resolve()
+
+      expect(sendSpy).toHaveBeenCalledOnce()
+      expect(event.defaultPrevented).toBe(true)
+      expect(bubbledToWindow).not.toHaveBeenCalled()
+      expect(configuredHotkey).toEqual({ key: 'a', action: 'send' })
+    } finally {
+      window.removeEventListener('keydown', bubbledToWindow)
+      sendButton.remove()
+    }
   })
 })
