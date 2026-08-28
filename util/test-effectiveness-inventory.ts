@@ -202,6 +202,7 @@ export const categoryRules: readonly CategoryRule[] = [
     description:
       'Authentication, authorization, egress and body limits, tracing, startup/shutdown, service workers, and platform routes.',
     patterns: [
+      /^server\/fastify\/__tests__\/hub\.test\.ts$/,
       /^src\/ts\/gui\/loginMessageOrigin\.test\.ts$/,
       /(?:^|\/)(?:auth|config|echo|http|index|apiStatus|requestLimits|requestPolicy|ssrf|webPush|pushNotifications|serviceWorker|startupShutdown|shutdown|traceRedaction|tracing|agentDataSandbox)(?:\.|\/)/i,
       /(?:bodyCap|decompression|prototypePollution|routeProtection|security|TraceSidecar|startupTelemetry|runtimeLimits|payloadBudgets|requestTrace|sourcemap|browserLocalSurface|pushNotification|globalApi\.proxy|globalApi\.fetchNative|localNetwork|proxyJobWs|polyfill|\/proxy\.test|\/smoke\.test|\/static\.test|notification\.test)/i,
@@ -213,6 +214,7 @@ export const categoryRules: readonly CategoryRule[] = [
     description:
       'Asset bytes and ownership, imports/exports, saves, backups, archive codecs, Realm staging, and historical formats.',
     patterns: [
+      /^src\/ts\/characterCards\.pngImport\.svelte-node\.test\.ts$/,
       /^src\/ts\/chatImportPlanning\.test\.ts$/,
       /(?:^|\/)(?:assets?|assetGc|assetMetadataIndex|backups?|saveCodec|saveFiles?|browserFileService|inlayCatalog)(?:\.|\/)/i,
       /(?:realmImport|charx|risuSave|processzip|importChat|exportChat|importPreset|downloadPreset|backupRestore|bundleImport|bundleExport|historicalFormat|compatibilityAdapters|filePicker|globalApi\.(?:downloadFile|getFileSrc|saveAssets)|dynamicutils\/pdf|files\/multisend|files\/tests\/inlays|biasImport|moduleAssetUpload|naiVibeImport|sha256Fallback)/i,
@@ -262,6 +264,8 @@ export const categoryRules: readonly CategoryRule[] = [
     description:
       'Prompt assembly, generation operations and effects, streaming, finalization, reroll, and Agent Presets.',
     patterns: [
+      /^server\/fastify\/__tests__\/lorebook\.test\.ts$/,
+      /^src\/ts\/agentLorebookInputs\.test\.ts$/,
       /^src\/ts\/process\/request\/tests\/serverChat\.test\.ts$/,
       /(?:^|\/)(?:generation|prompting|prompts?|streaming|agentPresets?)(?:\.|\/)/i,
       /(?:assemble|generation|sendChat|prompt|streamResponse|nonStreamResponse|orchestrateResponse|durableGeneration|reroll|preflight|runStage|stage4|agentPreset|budgetFinalize|formatHistory|lorebookContext|acceptedSend|plainSections|staticSections|streamBackpressure|templates|tokens?(?:\.test)|tokenizer|buildDescription|buildHistoryWindow|charEmotionStore|normalizeTemplate|reattach|finalizeRequestBudget|streamCoalescer|halfStreamingProgress|inlayFinalization|serverMessagePatch|sseParse|serverCompletion|requestAbort|history\.test|\/igp\.test)/i,

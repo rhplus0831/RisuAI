@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "trackedFileCount": 699,
+  "trackedFileCount": 700,
   "categoryRules": [
     {
       "id": "assurance-tooling",
@@ -43,6 +43,7 @@
       "category": "L",
       "description": "First matching rule wins. Authentication, authorization, egress and body limits, tracing, startup/shutdown, service workers, and platform routes.",
       "pathPatterns": [
+        "/^server\\/fastify\\/__tests__\\/hub\\.test\\.ts$/",
         "/^src\\/ts\\/gui\\/loginMessageOrigin\\.test\\.ts$/",
         "/(?:^|\\/)(?:auth|config|echo|http|index|apiStatus|requestLimits|requestPolicy|ssrf|webPush|pushNotifications|serviceWorker|startupShutdown|shutdown|traceRedaction|tracing|agentDataSandbox)(?:\\.|\\/)/i",
         "/(?:bodyCap|decompression|prototypePollution|routeProtection|security|TraceSidecar|startupTelemetry|runtimeLimits|payloadBudgets|requestTrace|sourcemap|browserLocalSurface|pushNotification|globalApi\\.proxy|globalApi\\.fetchNative|localNetwork|proxyJobWs|polyfill|\\/proxy\\.test|\\/smoke\\.test|\\/static\\.test|notification\\.test)/i"
@@ -53,6 +54,7 @@
       "category": "K",
       "description": "First matching rule wins. Asset bytes and ownership, imports/exports, saves, backups, archive codecs, Realm staging, and historical formats.",
       "pathPatterns": [
+        "/^src\\/ts\\/characterCards\\.pngImport\\.svelte-node\\.test\\.ts$/",
         "/^src\\/ts\\/chatImportPlanning\\.test\\.ts$/",
         "/(?:^|\\/)(?:assets?|assetGc|assetMetadataIndex|backups?|saveCodec|saveFiles?|browserFileService|inlayCatalog)(?:\\.|\\/)/i",
         "/(?:realmImport|charx|risuSave|processzip|importChat|exportChat|importPreset|downloadPreset|backupRestore|bundleImport|bundleExport|historicalFormat|compatibilityAdapters|filePicker|globalApi\\.(?:downloadFile|getFileSrc|saveAssets)|dynamicutils\\/pdf|files\\/multisend|files\\/tests\\/inlays|biasImport|moduleAssetUpload|naiVibeImport|sha256Fallback)/i"
@@ -100,6 +102,8 @@
       "category": "F",
       "description": "First matching rule wins. Prompt assembly, generation operations and effects, streaming, finalization, reroll, and Agent Presets.",
       "pathPatterns": [
+        "/^server\\/fastify\\/__tests__\\/lorebook\\.test\\.ts$/",
+        "/^src\\/ts\\/agentLorebookInputs\\.test\\.ts$/",
         "/^src\\/ts\\/process\\/request\\/tests\\/serverChat\\.test\\.ts$/",
         "/(?:^|\\/)(?:generation|prompting|prompts?|streaming|agentPresets?)(?:\\.|\\/)/i",
         "/(?:assemble|generation|sendChat|prompt|streamResponse|nonStreamResponse|orchestrateResponse|durableGeneration|reroll|preflight|runStage|stage4|agentPreset|budgetFinalize|formatHistory|lorebookContext|acceptedSend|plainSections|staticSections|streamBackpressure|templates|tokens?(?:\\.test)|tokenizer|buildDescription|buildHistoryWindow|charEmotionStore|normalizeTemplate|reattach|finalizeRequestBudget|streamCoalescer|halfStreamingProgress|inlayFinalization|serverMessagePatch|sseParse|serverCompletion|requestAbort|history\\.test|\\/igp\\.test)/i"
@@ -2565,10 +2569,11 @@
       "specializedOwnership": [
         "server"
       ],
-      "primaryCategory": "E",
-      "categoryRule": "settings-authoring-catalog",
+      "primaryCategory": "L",
+      "categoryRule": "api-security-runtime",
       "seamTags": [
-        "api-persistence"
+        "api-persistence",
+        "category-E"
       ],
       "kind": "storage integration",
       "dependencySignals": [
@@ -2901,9 +2906,11 @@
       "specializedOwnership": [
         "server"
       ],
-      "primaryCategory": "E",
-      "categoryRule": "settings-authoring-catalog",
-      "seamTags": [],
+      "primaryCategory": "F",
+      "categoryRule": "prompt-generation-streaming",
+      "seamTags": [
+        "category-E"
+      ],
       "kind": "storage integration",
       "dependencySignals": [
         "database",
@@ -11634,7 +11641,8 @@
       "kind": "component/DOM",
       "dependencySignals": [
         "mocks",
-        "database"
+        "database",
+        "browser"
       ],
       "caseCounts": {
         "cases": 5,
@@ -11779,6 +11787,52 @@
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
+      },
+      "audit": {
+        "caseOrMatrixOwner": "pending",
+        "valueClasses": [
+          "pending"
+        ],
+        "productionOwnerOrContract": "pending",
+        "plausibleDefect": "pending",
+        "risk": "pending",
+        "companionEvidence": "pending",
+        "decision": "pending",
+        "confidence": "pending",
+        "rationale": "pending",
+        "findingId": "",
+        "severity": "pending",
+        "action": "pending",
+        "validation": "pending",
+        "state": "pending"
+      }
+    },
+    {
+      "file": "src/lib/Setting/Pages/PersonaSettings.svelte.test.ts",
+      "lane": "frontend-dom",
+      "capability": "D",
+      "specializedOwnership": [
+        "full-frontend",
+        "broad-frontend-coverage",
+        "ordinary-frontend",
+        "test-all-ordinary-frontend"
+      ],
+      "primaryCategory": "E",
+      "categoryRule": "settings-authoring-ui",
+      "seamTags": [
+        "dom-component"
+      ],
+      "kind": "component/DOM",
+      "dependencySignals": [
+        "mocks",
+        "database",
+        "browser"
+      ],
+      "caseCounts": {
+        "cases": null,
+        "skipped": null,
+        "parameterizedRows": null,
+        "source": "pending"
       },
       "audit": {
         "caseOrMatrixOwner": "pending",
@@ -15237,9 +15291,11 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "E",
-      "categoryRule": "settings-authoring-catalog",
-      "seamTags": [],
+      "primaryCategory": "F",
+      "categoryRule": "prompt-generation-streaming",
+      "seamTags": [
+        "category-E"
+      ],
       "kind": "storage integration",
       "dependencySignals": [
         "database"
@@ -15721,9 +15777,11 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "E",
-      "categoryRule": "settings-authoring-catalog",
-      "seamTags": [],
+      "primaryCategory": "K",
+      "categoryRule": "asset-save-boundary",
+      "seamTags": [
+        "category-E"
+      ],
       "kind": "storage integration",
       "dependencySignals": [
         "mocks",
