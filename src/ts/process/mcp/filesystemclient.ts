@@ -161,20 +161,6 @@ const FILE_SYSTEM_TOOLS: MCPTool[] = [
     },
   },
   {
-    name: 'fs_watch_directory',
-    description: 'Watch a directory for changes',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        path: {
-          type: 'string',
-          description: 'Directory to watch (default: root)',
-        },
-      },
-      required: [],
-    },
-  },
-  {
     name: 'fs_find_duplicates',
     description: 'Find duplicate files by content or name',
     inputSchema: {

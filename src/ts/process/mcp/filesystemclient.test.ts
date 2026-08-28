@@ -107,6 +107,14 @@ afterEach(() => {
 })
 
 describe('FileSystem MCP read caps', () => {
+  it('does not advertise the unsupported directory-watch operation', async () => {
+    const client = new FileSystemClient()
+
+    const tools = await client.getToolList()
+
+    expect(tools.map((tool) => tool.name)).not.toContain('fs_watch_directory')
+  })
+
   it('encodes capped base64 reads in chunks instead of spreading the whole file', async () => {
     const payload = bytes(FILESYSTEM_BASE64_ENCODE_CHUNK_BYTES * 4 + 10)
     const readLimit = FILESYSTEM_BASE64_ENCODE_CHUNK_BYTES * 3 + 9
