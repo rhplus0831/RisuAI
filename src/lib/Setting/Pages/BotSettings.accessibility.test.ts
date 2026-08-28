@@ -1,22 +1,75 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { generate } from 'astring'
+import { parse } from 'svelte/compiler'
 import { describe, expect, it } from 'vitest'
 
 const source = readFileSync(resolve(process.cwd(), 'src/lib/Setting/Pages/BotSettings.svelte'), 'utf8')
+const ast = parse(source, { filename: 'src/lib/Setting/Pages/BotSettings.svelte', modern: true })
+
+type AstNode = {
+  attributes?: AstNode[]
+  data?: string
+  expression?: AstNode
+  fragment?: AstNode
+  name?: string
+  type?: string
+  value?: unknown
+  [key: string]: unknown
+}
+
+function walkAst(node: unknown, visit: (node: AstNode) => void): void {
+  if (!node || typeof node !== 'object') return
+  const astNode = node as AstNode
+  visit(astNode)
+  for (const [key, value] of Object.entries(astNode)) {
+    if (key === 'attributes' || key === 'metadata' || key === 'parent') continue
+    if (Array.isArray(value)) {
+      for (const child of value) walkAst(child, visit)
+    } else {
+      walkAst(value, visit)
+    }
+  }
+}
+
+function attributeExpression(node: AstNode, name: string): string | undefined {
+  const attribute = node.attributes?.find((candidate) => candidate.type === 'Attribute' && candidate.name === name)
+  if (!attribute) return undefined
+  const value = (Array.isArray(attribute.value) ? attribute.value[0] : attribute.value) as AstNode | undefined
+  if (!value) return undefined
+  if (value.type === 'Text') return value.data
+  if (value.type !== 'ExpressionTag' || !value.expression) return undefined
+  return generate(value.expression as Parameters<typeof generate>[0])
+}
+
+function containsVisualComponent(node: AstNode): boolean {
+  let found = false
+  walkAst(node.fragment, (candidate) => {
+    if (candidate.type === 'Component' && candidate.name?.endsWith('Icon')) found = true
+  })
+  return found
+}
+
+const iconButtons: AstNode[] = []
+walkAst(ast.fragment, (node) => {
+  if (node.type === 'RegularElement' && node.name === 'button' && containsVisualComponent(node)) {
+    iconButtons.push(node)
+  }
+})
 
 describe('BotSettings icon action names', () => {
   it.each([
-    'aria-label={`${language.add}: ${language.customStopWords}`}',
-    'aria-label={`${language.remove}: ${language.customStopWords} ${i + 1}`}',
-    'aria-label={`${language.add}: Bias`}',
-    'aria-label={`${language.remove}: Bias ${i + 1}`}',
-    'aria-label={`${language.export}: Bias`}',
-    'aria-label={`${language.import}: Bias`}',
-    'aria-label={`${language.add}: ${language.additionalParams}`}',
-    'aria-label={`${language.remove}: ${language.additionalParams} ${i + 1}`}',
-    'aria-label={`${language.import}: ${language.icon}`}',
+    '`${language.add}: ${language.customStopWords}`',
+    '`${language.remove}: ${language.customStopWords} ${i + 1}`',
+    '`${language.add}: Bias`',
+    '`${language.remove}: Bias ${i + 1}`',
+    '`${language.export}: Bias`',
+    '`${language.import}: Bias`',
+    '`${language.add}: ${language.additionalParams}`',
+    '`${language.remove}: ${language.additionalParams} ${i + 1}`',
+    '`${language.import}: ${language.icon}`',
   ])('keeps %s on its icon action', (label) => {
-    expect(source).toContain(label)
+    expect(iconButtons.filter((button) => attributeExpression(button, 'aria-label') === label)).toHaveLength(1)
   })
 })
 
