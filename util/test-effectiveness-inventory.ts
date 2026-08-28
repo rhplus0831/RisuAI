@@ -247,6 +247,47 @@ export const categoryRules: readonly CategoryRule[] = [
     ],
   },
   {
+    id: 'reviewed-memory-adjacent-generation-boundaries',
+    category: 'F',
+    description: 'Reviewed memory-named owners whose dominant contract is prompt and generation composition.',
+    patterns: [
+      /^server\/fastify\/__tests__\/(?:memory|memorySummaryPrompt|promptMemoryAdapter)\.test\.ts$/,
+      /^src\/ts\/process\/__tests__\/buildMemoryWindow\.test\.ts$/,
+    ],
+  },
+  {
+    id: 'reviewed-memory-adjacent-provider-boundaries',
+    category: 'G',
+    description:
+      'Reviewed embedding and summary adapter/model owners whose dominant contract is provider request behavior.',
+    patterns: [
+      /^server\/fastify\/__tests__\/(?:embeddingOperations|memoryEmbeddingAdapter|memoryEmbeddingModel|memorySummaryAdapter|memorySummaryModel)\.test\.ts$/,
+      /^src\/ts\/process\/__tests__\/emotionFallbackEmbedding\.test\.ts$/,
+      /^src\/ts\/process\/memory\/(?:contextualEmbedding|remoteEmbeddingPaths)\.test\.ts$/,
+      /^src\/ts\/server\/embeddingOperations\.test\.ts$/,
+    ],
+  },
+  {
+    id: 'reviewed-memory-adjacent-runtime-boundaries',
+    category: 'L',
+    description:
+      'Reviewed stream-job registry and route owners whose dominant contract is shared runtime infrastructure.',
+    patterns: [/^server\/fastify\/__tests__\/streamJobs(?:Routes)?\.test\.ts$/],
+  },
+  {
+    id: 'reviewed-memory-adjacent-visible-state-boundaries',
+    category: 'D',
+    description: 'Reviewed worker-error presentation whose dominant contract is visible application feedback.',
+    patterns: [/^src\/lib\/Others\/monacoWorkerErrors\.test\.ts$/],
+  },
+  {
+    id: 'reviewed-memory-adjacent-browser-state-boundaries',
+    category: 'B',
+    description:
+      'Reviewed character-summary protocol projection whose dominant contract is browser state synchronization.',
+    patterns: [/^src\/ts\/server\/characterSummaryProtocol\.test\.ts$/],
+  },
+  {
     id: 'memory-jobs-workers',
     category: 'H',
     description: 'Memory, embeddings, summaries, ranking, jobs, queues, and worker lifecycle.',

@@ -92,7 +92,7 @@ describe('test effectiveness inventory', () => {
       ['src/lib/Setting/CharacterSettings.svelte.test.ts', 'E'],
       ['server/fastify/__tests__/generation.chat.test.ts', 'F'],
       ['server/fastify/__tests__/generation.providerUnits.test.ts', 'G'],
-      ['server/fastify/__tests__/embeddingOperations.test.ts', 'H'],
+      ['server/fastify/__tests__/embeddingOperations.test.ts', 'G'],
       ['src/ts/process/scripts.regexCache.test.ts', 'I'],
       ['src/ts/process/mcp/mcp.test.ts', 'J'],
       ['server/fastify/__tests__/realmImport.test.ts', 'K'],
@@ -121,6 +121,32 @@ describe('test effectiveness inventory', () => {
 
     for (const [file, category] of counterexamples) {
       expect(categoryForTestFile(file).category, `${file} must not fall through to provider-model-media`).toBe(category)
+    }
+  })
+
+  it('routes reviewed memory-adjacent owners by their dominant contract', () => {
+    const counterexamples = new Map<string, string>([
+      ['server/fastify/__tests__/memory.test.ts', 'F'],
+      ['server/fastify/__tests__/memorySummaryPrompt.test.ts', 'F'],
+      ['server/fastify/__tests__/promptMemoryAdapter.test.ts', 'F'],
+      ['src/ts/process/__tests__/buildMemoryWindow.test.ts', 'F'],
+      ['server/fastify/__tests__/embeddingOperations.test.ts', 'G'],
+      ['server/fastify/__tests__/memoryEmbeddingAdapter.test.ts', 'G'],
+      ['server/fastify/__tests__/memoryEmbeddingModel.test.ts', 'G'],
+      ['server/fastify/__tests__/memorySummaryAdapter.test.ts', 'G'],
+      ['server/fastify/__tests__/memorySummaryModel.test.ts', 'G'],
+      ['src/ts/process/__tests__/emotionFallbackEmbedding.test.ts', 'G'],
+      ['src/ts/process/memory/contextualEmbedding.test.ts', 'G'],
+      ['src/ts/process/memory/remoteEmbeddingPaths.test.ts', 'G'],
+      ['src/ts/server/embeddingOperations.test.ts', 'G'],
+      ['server/fastify/__tests__/streamJobs.test.ts', 'L'],
+      ['server/fastify/__tests__/streamJobsRoutes.test.ts', 'L'],
+      ['src/lib/Others/monacoWorkerErrors.test.ts', 'D'],
+      ['src/ts/server/characterSummaryProtocol.test.ts', 'B'],
+    ])
+
+    for (const [file, category] of counterexamples) {
+      expect(categoryForTestFile(file).category, `${file} must not fall through to memory-jobs-workers`).toBe(category)
     }
   })
 
