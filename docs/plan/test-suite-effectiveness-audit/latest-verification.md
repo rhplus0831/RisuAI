@@ -804,3 +804,85 @@ observability to Phase 12, browser/provider/effect/parity composition to Phase
 13, and the mandatory compatibility/residual decision to Phase 14. The exact
 pinned compatibility worktree remains absent; no substitute checkout or golden
 refresh was used.
+
+## Phase 7 Evidence
+
+### Opening set and remediation validation
+
+Phase 7 opened with 103 category-G owners and 1,395 cases: 60 frontend files /
+542 cases and 43 Fastify files / 853 cases. The opening sets passed before
+remediation in 14.37s and 6.31s. Fourteen regressions were added across
+provider, credential, translation, image, history, and TTS owners.
+
+Eight unchanged owners / 69 cases moved to D/E/F after complete review. Eight
+owners already entering G through Phase 4/6 reclassifications retained their
+earlier dispositions. The exact original owners then passed 544/544 frontend
+cases across 60 files in 13.38s and 864/864 Fastify cases across 43 files in
+5.46s.
+
+Focused remediation commands passed throughout:
+
+- OpenAI auth/endpoint adapters and dispatch: 210/210 and 119/119;
+- Ooba, Gemini, and Horde: 9/9, 56/56, and 19/19;
+- SigV4 plus Bedrock: 31/31;
+- raw/server translation and client cache: 28/28 and 23/23;
+- request-history unit/route/completion: 104/104;
+- image generation and TTS: 20/20 and 23/23;
+- executable category boundaries: 9/9.
+
+### Complete gates
+
+Commands:
+
+```sh
+pnpm exec vitest run --config vitest.config.ts \
+  --reporter=json --outputFile=/tmp/phase7-frontend-results.json
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  --reporter=json --outputFile=/tmp/phase7-server-results.json
+pnpm test:gates:perf
+pnpm check
+pnpm check:server
+pnpm test:smoke
+pnpm test:compat-harness
+pnpm test:affected --dry-run --include-smoke --base 5b88ffd47
+pnpm check:test-inventories
+pnpm format:check
+git diff --check
+```
+
+The complete ordinary frontend universe passed 6,713/6,713 across 537 files
+in 82.95s; the two isolated performance owners passed 6/6 in 16.14s. Complete
+Fastify passed 3,329 cases with one intentional direct-only Realm scale skip
+across 154 files in 24.21s. `svelte-check` reported zero errors and zero
+warnings. Protocol, client-library declaration, Fastify, and browser-smoke
+typechecks passed.
+
+The production smoke build passed in 10.51s with the existing allowed CSS,
+externalization, plugin-timing, and chunk-size diagnostics. All 35/35 Chromium
+journeys passed in 1.1 minutes. There is no category-G browser owner, so this is
+application regression evidence rather than a live provider or media-device
+claim.
+
+The first affected/inventory check correctly rejected two stale routing TSV
+line references after the TTS and routing-policy tests changed; regeneration
+updated only those evidence locations. The first exact-set command contained a
+bad jq context expression and therefore selected no file filters, causing full
+frontend/Fastify runs instead; both passed, and the corrected 60/43-file exact
+commands then produced the results above. The first server typecheck found an
+untyped NovelAI fetch spy; explicit request parameters fixed that test-only
+typing gap, after which its 20 cases and the complete server check passed.
+
+Affected selection chose inventory, frontend, performance, Fastify, and smoke
+lanes. Fresh Vitest/Playwright listings and measured results produce 700 live
+test/spec owners and 10,084 collected cases, with one direct-only skip and
+1,287 parameterized rows. Six cases belong to isolated performance owners and
+are intentionally preserved from their dedicated results. Primary categories
+are A=21, B=34, C=56, D=108, E=97, F=79, G=95, H=43, I=43, J=47, K=41, and
+L=36. Live decisions are 457 Keep, 41 Reclassify, and 202 Pending.
+
+Twelve Phase 7 findings are done. `TSA-P07-013` routes credential/runtime
+observability to Phase 12, recorded-provider/browser/media composition to
+Phase 13, and the Ollama support policy, compatibility, and final residual
+decision to Phase 14. `pnpm test:compat-harness` remains prerequisite-blocked
+by the absent exact `/home/codex/risu-baseline-71c476e9c` worktree; no
+substitute checkout or golden refresh was used.
