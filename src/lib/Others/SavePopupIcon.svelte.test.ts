@@ -44,4 +44,11 @@ describe('SavePopupIcon', () => {
 
     expect(target.querySelector('svg')).toBeNull()
   })
+
+  it('stays hidden while persistence is idle', () => {
+    saveIconState.saving.state = false
+    component = mount(SavePopupIcon, { target })
+
+    expect(target.querySelector('svg')).toBeNull()
+  })
 })
