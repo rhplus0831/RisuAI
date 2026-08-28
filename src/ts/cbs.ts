@@ -94,6 +94,7 @@ export type matcherArg = {
   funcName?: string
   text?: string
   recursiveCount?: number
+  callStack?: number
   lowLevelAccess?: boolean
   cbsConditions: CbsConditions
   triggerId?: string

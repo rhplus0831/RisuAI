@@ -90,6 +90,17 @@ describe('expandVariables — basic substitution', () => {
     expect(out).toBe('[A friendly assistant.|cheerful|In a cosy library.]')
   })
 
+  it.each([
+    ['description', 'desc'],
+    ['personality', 'personality'],
+  ] as const)('stops self-referential {{%s}} expansion at the parser call-stack limit', (directive, field) => {
+    const database = makeDatabase({
+      characters: [makeCharacter({ [field]: `{{${directive}}}` })],
+    })
+
+    expect(expandVariables(`{{${directive}}}`, { database }).text).toBe('ERROR: Call stack limit reached')
+  })
+
   it('substitutes {{persona}} with database.personaPrompt', () => {
     expect(expandVariables('persona={{persona}}', ctx()).text).toBe('persona=Alex is curious.')
   })

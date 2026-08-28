@@ -121,6 +121,7 @@ export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
         role: arg.role,
         runVar: arg.runVar,
         cbsConditions: arg.cbsConditions,
+        callStack: arg.callStack,
         callbackMemo: arg.callbackMemo,
       }),
     makeArray,
