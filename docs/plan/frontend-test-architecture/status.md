@@ -8,16 +8,15 @@ codebase remain authoritative until a phase lands.
 
 ## Current Snapshot
 
-- Plan state: Phases 0-1 complete; Phase 2 in progress.
-- Current phase: Phase 2 — Pure Node Promotion.
-- Active slice: No implementation slice is active; all Phase 2 candidate probes
-  are complete and exit verification is pending.
+- Plan state: Phases 0-2 complete; Phase 3 pending.
+- Current phase: Phase 3 — Svelte+Node Promotion (pending).
+- Active slice: None; Phase 2 exit verification is complete.
 - Implementation state: Thirty-five files and 176 tests have moved from the
   Happy-DOM fallback to Node across thirteen bounded slices with no production
   changes.
 - Blockers: None.
-- Next action: Run the Phase 2 three-run ordinary-frontend timing gate,
-  completeness checks, and final `test:all` checkpoint, then close the phase.
+- Next action: Prepare the first bounded Phase 3 Svelte+Node promotion slice,
+  beginning with the probe-backed rune suites retained by Phase 2.
 
 ## Phase Router
 
@@ -25,7 +24,7 @@ codebase remain authoritative until a phase lands.
 | --- | --- | --- |
 | [0](phases/phase-0-baseline-and-classification.md) | Complete | Ratified metrics, capability rules, and discovery/completeness proof. |
 | [1](phases/phase-1-runtime-topology.md) | Complete | Added and piloted the Node, Svelte+Node, and Happy-DOM topology. |
-| [2](phases/phase-2-pure-node-promotion.md) | In progress | Promote already-pure tests to Node in bounded domain slices. |
+| [2](phases/phase-2-pure-node-promotion.md) | Complete | Promoted already-pure tests to Node and recorded every retained N candidate. |
 | [3](phases/phase-3-svelte-node-promotion.md) | Pending | Promote Svelte-compiled tests that do not require DOM behavior. |
 | [4](phases/phase-4-pure-logic-extraction.md) | Pending | Extract measured pure-logic seams while retaining DOM contracts. |
 | [5](phases/phase-5-dom-contract-consolidation.md) | Pending | Consolidate repeated DOM setup and clarify visible-state ownership. |
@@ -84,12 +83,19 @@ aggregate ordinary views; 175 unpromoted N/S candidates still require probes.
 | Remaining target-runtime mismatches | 140: 13 N / 127 S |
 | Latest paired ordinary wall observation | 66.60s -> 68.24s (+2.5%) |
 | Latest paired ordinary peak RSS | 4,696,532 -> 5,128,488 KiB |
+| Phase 2 warm ordinary wall median | 69.50s (68.75-69.55s) |
+| Phase 2 warm Vitest duration median | 68.60s (67.84-68.65s) |
+| Phase 2 warm peak RSS median | 4,866,016 KiB |
+| Wall delta from Phase 0 | -3.9% |
+| Peak-RSS delta from Phase 0 | +1.7% |
 
 The paired timing is slice evidence, not a phase-level median. The +2.5% wall
 movement remains inside ordinary run-to-run variability; it is not a
-phase-level performance claim. No Phase 2 N candidate remains unprobed. The 13
-generated N mismatches are all probe-backed retainers under recorded Phase 3,
-Phase 4, or DOM-contract owners.
+phase-level performance claim. The three-run closeout median establishes a
+3.9% ordinary wall improvement from Phase 0 while staying inside the 10% RSS
+guard. The workstream-wide 20% target remains open for Phases 3-7. No Phase 2 N
+candidate remains unprobed. The 13 generated N mismatches are all probe-backed
+retainers under recorded Phase 3, Phase 4, or DOM-contract owners.
 
 ## Current Decisions
 
@@ -192,6 +198,11 @@ Phase 4, or DOM-contract owners.
     reached persistence-activity or core-store `$state` initializers. The
     unchanged batch passed in S and is owned by Phase 3 client-server
     promotion; Phase 2 has no remaining unprobed N candidate.
+27. Phase 2 closed after 35 files and 176 tests moved from D to N, all 13
+    remaining generated N mismatches received exact probe-backed owners, three
+    warm ordinary frontend runs passed with a 69.50s wall median, and the final
+    `test:all` rerun passed every lane. The 20% end-state wall target remains a
+    workstream goal rather than a Phase 2 exit requirement.
 
 ## Accepted Observations
 
@@ -222,6 +233,16 @@ preparations before scheduling the flush. Three focused 8-test reruns and the
 complete 386-file DOM project passed. The blocker is resolved; any further
 occurrence reopens the display-source batching owner before another promotion.
 
+The first Phase 2 exit `test:all` attempt saw the two-concurrent-chat browser
+journey receive a `revision_conflict` while preparing chat generation settings.
+Its exact isolated rerun passed, and the complete aggregate rerun passed all 34
+browser-smoke cases and every other required lane. Owner: accepted-send browser
+smoke. Reason for acceptance: Phase 2 changed only test ownership and
+documentation, the failure occurred in browser-fixture setup, and both focused
+and final aggregate evidence passed. Revisit condition: another occurrence
+requires a dedicated setup-revision stabilization decision before Phase 3
+promotion continues.
+
 ## Latest Completed Slice
 
 [Phase 2 server resource and bootstrap Node probe](phases/slices/phase-2/server-resource-and-bootstrap-node-probe.md)
@@ -231,10 +252,9 @@ Svelte+Node. All Phase 2 N candidates now have target-runtime evidence.
 
 ## Latest Verification
 
-See [`latest-verification.md`](latest-verification.md) for the latest Phase 2
-current-owner, Node, and Svelte+Node probe evidence plus unchanged discovery
-and validation, followed by the preceding promotion, proof, and retained Phase
-1 closeout records.
+See [`latest-verification.md`](latest-verification.md) for the Phase 2 three-run
+timing gate, final aggregate validation, accepted browser-smoke observation,
+and the preceding promotion and probe records.
 
 ## Maintenance Rules
 

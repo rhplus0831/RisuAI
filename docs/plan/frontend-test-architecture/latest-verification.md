@@ -4,10 +4,87 @@ Date: 2026-08-28
 
 ## State
 
-Phase 2 server-resource-and-bootstrap Node-probe closeout. Phase 2 remains in
-progress pending exit verification; this record does not authorize
-repository-wide default inversion, S promotion, or bulk migration outside the
-active phase rules.
+Phase 2 closeout complete. This record does not authorize repository-wide
+default inversion or migration outside the later phase rules.
+
+## Phase 2 Exit Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `2ca9e5bb4d6f5105ee864ea34e492cce96edd684`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Available CPUs: 10
+- Frontend test-all UI-map exclusion: `RISU_TEST_EXCLUDE_UI_MAP=true`
+- Isolation: enabled
+- Measurement tree: the clean final Phase 2 probe commit with all permanent
+  promotion slices already committed. No unrelated working-tree changes were
+  present.
+
+## Phase 2 Exit Ownership And Completeness
+
+Phase 2 promoted 35 files and 176 tests from Happy-DOM to Node across 13
+bounded implementation slices. Eighteen promotion or proof batches account for
+every candidate evaluated during the phase.
+
+Final discovery remains exhaustive and disjoint:
+
+| View | Files | Node | Svelte+Node | Happy-DOM |
+| --- | ---: | ---: | ---: | ---: |
+| Full, including explicit performance gates | 537 | 161 | 2 | 374 |
+| Standalone ordinary frontend | 535 | 161 | 2 | 372 |
+| `test:all` ordinary frontend | 529 | 160 | 2 | 367 |
+
+The ordinary test count remains 6,413. Generated target distribution remains
+174 N / 129 S / 234 D / 7 B. The 140 remaining generated mismatches are 13 N
+and 127 S. Every N mismatch now has target-project evidence and a recorded
+owner: rune-only cases move to Phase 3, the saved-toggle helper seam belongs to
+Phase 4 extraction, and real DOMPurify, filesystem-picker, and device-picker
+contracts remain D-owned.
+
+## Phase 2 Three-Run Timing Gate
+
+Three consecutive warm `RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v pnpm
+test:frontend` runs passed 529 files / 6,413 tests:
+
+| Run | Wall | Vitest | CPU | Peak RSS KiB |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 69.55s | 68.65s | 633% | 4,655,636 |
+| 2 | 69.50s | 68.60s | 643% | 4,866,016 |
+| 3 | 68.75s | 67.84s | 640% | 4,988,448 |
+| Median | 69.50s | 68.60s | 640% | 4,866,016 |
+
+Against the Phase 0 warm wall median of 72.30s, Phase 2 improves the ordinary
+frontend median by 2.80s (3.9%). Peak-RSS median moves from 4,785,288 KiB to
+4,866,016 KiB (+1.7%), inside the 10% guard. Phase 2 does not yet meet the
+57.84s workstream-wide 20% target; Phases 3-7 retain that objective. No Phase 2
+exit criterion requires the multi-phase end-state target to be met early.
+
+## Phase 2 Final Aggregate Validation
+
+The first `pnpm test:all` attempt passed typechecks, 529 frontend files / 6,413
+tests, 154 server files / 3,295 tests with 1 skipped, 6 UI coverage files / 203
+tests, formatting, and 2 performance files / 6 tests. One of 34 browser-smoke
+cases failed while preparing the two-concurrent-chat fixture: its settings
+request received a 409 `revision_conflict` instead of 200.
+
+The exact Playwright case at `acceptedSendProtocol.spec.ts:547` passed in
+isolation in 2.6s without a code change. The complete `pnpm test:all` rerun then
+passed in 3m19.2s:
+
+- server and browser-smoke typecheck: 17.3s;
+- frontend tests: 529 files / 6,413 tests in 1m19.1s;
+- server tests: 154 files / 3,295 tests with 1 skipped in 18.2s;
+- browser smoke: 34 tests in 1m12.3s;
+- frontend Svelte check: zero errors and warnings in 28.9s;
+- UI coverage: 6 files / 203 tests in 18.4s;
+- format check: 30.0s;
+- frontend performance gates: 2 files / 6 tests in 11.2s.
+
+`pnpm check:frontend-test-inventory` and `git diff --check` also passed. The
+accepted browser observation is recorded in `status.md` with an owner and
+revisit condition. Final aggregate evidence is green, and all Phase 2 exit
+criteria are satisfied.
 
 ## Phase 2 Server Resource And Bootstrap Probe Environment And Source State
 
