@@ -43,6 +43,7 @@ truth for the resulting commands, routing, setup, and lane behavior.
 | `pnpm test:gates:audit`            | Run only the UI-audit tests for focused debugging; they are already part of `test:frontend`.                                                                                  |
 | `pnpm test:gates:perf`             | Run render-cost and clone-count gates.                                                                                                                                        |
 | `pnpm test:server`                 | Run Fastify/server Vitest tests.                                                                                                                                              |
+| `pnpm test:server:realm-scale`     | Run the isolated 7,000-asset Realm import capacity case with one worker.                                                                                                      |
 | `pnpm test:compat-current`         | Check the 16 current-stack golden matrix cells and two cluster regressions without requiring the external baseline worktree.                                                  |
 | `pnpm test:compat-harness`         | Compare pinned local/Fastify generation matrices against a prepared pre-Fastify worktree; opt-in and not part of `test:all`.                                                 |
 | `pnpm test:smoke`                  | Alias for `pnpm smoke:fastify-browser`.                                                                                                                                       |
@@ -70,6 +71,7 @@ There is no ESLint config or `lint` script.
 | Frontend coverage           | `pnpm coverage:frontend`, `vitest.config.ts`                                            | Node + Svelte/Node + `happy-dom` | Broad coverage over `src/**/*.{ts,svelte}` and `util/**/*.ts`; reports under `coverage/frontend`.                 |
 | UI coverage map             | `pnpm coverage:ui-map`, `vitest.config.ts`                                              | Node + `happy-dom` | Six focused tests mapped over `src/lib/ChatScreens`, `src/lib/Others`, `src/lib/SideBars`, and `src/ts/server`.     |
 | Fastify/server tests        | `pnpm test:server` or `pnpm api:test`, `server/fastify/vitest.config.ts`                | Node        | `server/fastify/__tests__/**/*.test.ts`.                                                                                   |
+| Realm import scale gate     | `pnpm test:server:realm-scale`, `server/fastify/vitest.config.ts`                       | Node        | The direct-only 7,000-display-asset Realm/CharX import case; isolated in local aggregate and CI.                           |
 | Compatibility harness      | `pnpm test:compat-current`, `pnpm test:compat-harness`, `test/compat-harness/*.vitest.config.ts` | Node | Current-stack/cluster goldens always; pinned baseline differential when its worktree exists; outside `test:all`. |
 | Backend coverage            | `pnpm coverage:backend`, `server/fastify/vitest.config.ts`                              | Node        | Broad coverage over `server/fastify/src/**/*.ts`; reports under `coverage/backend`.                                        |
 | Browser smoke               | `pnpm smoke:fastify-browser` or `pnpm test:smoke`, `playwright.fastify-smoke.config.ts` | Chromium    | `server/fastify/browser-smoke/`; specs start an in-process Fastify app on a random port serving `dist`.                    |
@@ -148,7 +150,9 @@ selected. Playwright smoke keeps tests within each file serial; local runs use
 two file workers, while CI stays at one worker. It retains Chromium traces on
 failure and rejects focused tests when CI is truthy.
 The frontend and server Vitest configs set `allowOnly: false`. Directly selecting
-`realmImport.test.ts` also enables its otherwise skipped 7,000-asset stress case.
+`realmImport.test.ts` enables its otherwise skipped 7,000-asset stress case.
+`test:server:realm-scale`, `test:all`, and CI own that selection as an isolated
+single-worker gate.
 
 `pnpm check:frontend-test-inventory` compares independent filesystem discovery
 with resolved Vitest project discovery for the full, standalone ordinary, and

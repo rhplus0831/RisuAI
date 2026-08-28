@@ -2,7 +2,7 @@
 
 Date: 2026-08-29
 
-Status: Active; eight findings are done and one remains confirmed.
+Status: Active; nine findings are done and one remains confirmed.
 
 This directory owns durable finding and decision records for the audit. Phase 0
 will decide whether the working ledger remains in this index, splits into
@@ -331,3 +331,32 @@ Every finding records:
   tracked universe.
 - Revisit condition: run the full differential when the exact pinned worktree
   and dependencies exist; never substitute a different baseline.
+
+### TSA-P01-008: Realm scale contract has no required owner
+
+- State: Done.
+- Severity: Medium.
+- Category: A horizontal ownership; K product contract.
+- Decision: Add required isolated lane; Realm file disposition remains pending
+  Phase 11.
+- Tests/cases: the 7,000-display-asset case in
+  `server/fastify/__tests__/realmImport.test.ts`.
+- Production owner: bounded Realm/CharX staging and display-asset persistence at
+  large library scale.
+- Protected contract or plausible defect: the sole ordinary skip could silently
+  rot or regress in cost because it ran only when a developer knew the exact
+  direct-file invocation.
+- Evidence: ordinary server collection skips the case by design; its direct
+  Phase 0 run passed in 3.15s, demonstrating it is cheap enough for an isolated
+  required owner.
+- Companion/overlap analysis: smaller Realm cases protect semantics but do not
+  exercise thousands of display assets. Isolation prevents concurrent load from
+  distorting the capacity evidence.
+- Action and rollback: add `test:server:realm-scale`, an isolated aggregate lane
+  after server tests, a separate CI job, verify dependency, and checked local/CI
+  mapping. Ordinary server discovery retains the skip to avoid double execution.
+- Validation: focused lane passed its selected case (26 filtered) in 2.64s;
+  7/7 aggregate-policy cases and the ten-lane dry run passed.
+- Count delta: none; this executes the existing sole skipped tracked case.
+- Revisit condition: reassess timeout/fixture size only with measured artifacts;
+  do not fold it into concurrent ordinary execution without proving stability.

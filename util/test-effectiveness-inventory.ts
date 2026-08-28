@@ -475,7 +475,7 @@ export function dependencySignalsForSource(source: string): DependencyName[] {
 function specializedOwnership(file: string, lane: TestLane): string[] {
   if (lane === 'built-browser') return ['browser-smoke']
   if (lane === 'fastify-node') {
-    return file === 'server/fastify/__tests__/realmImport.test.ts' ? ['server', 'direct-only-realm-stress'] : ['server']
+    return file === 'server/fastify/__tests__/realmImport.test.ts' ? ['server', 'realm-scale-gate'] : ['server']
   }
 
   const owners = ['full-frontend', 'broad-frontend-coverage']

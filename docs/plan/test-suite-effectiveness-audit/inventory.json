@@ -4973,7 +4973,7 @@
       "capability": "Fastify Node",
       "specializedOwnership": [
         "server",
-        "direct-only-realm-stress"
+        "realm-scale-gate"
       ],
       "primaryCategory": "K",
       "categoryRule": "asset-save-boundary",

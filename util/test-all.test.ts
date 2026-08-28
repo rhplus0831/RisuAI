@@ -27,6 +27,11 @@ describe('test:all orchestration', () => {
     expect(byId.get('frontend-tests')?.env).toEqual({ RISU_TEST_EXCLUDE_UI_MAP: 'true' })
     expect(byId.get('ui-coverage')?.after).toContain('frontend-tests')
     expect(byId.get('server-tests')?.isolated).toBe(true)
+    expect(byId.get('realm-scale')).toMatchObject({
+      isolated: true,
+      after: ['server-tests'],
+      args: ['test:server:realm-scale'],
+    })
     expect(byId.has('audit-gates')).toBe(false)
     expect(byId.get('performance-gates')).toMatchObject({
       isolated: true,
@@ -97,6 +102,7 @@ describe('test:all orchestration', () => {
       ['server-check', ['check-server', 'pnpm check:server']],
       ['frontend-tests', ['frontend', 'pnpm test:frontend:run']],
       ['server-tests', ['server', 'pnpm test:server']],
+      ['realm-scale', ['realm-scale', 'pnpm test:server:realm-scale']],
       ['browser-smoke', ['smoke', 'pnpm test:smoke']],
       ['frontend-check', ['check', 'pnpm check']],
       ['ui-coverage', ['ui-coverage', 'pnpm coverage:ui-map']],

@@ -53,10 +53,11 @@ Command:
 pnpm test:all --dry-run
 ```
 
-Result: passed. The current aggregate reports nine lanes: frontend routing,
-server/browser typecheck, frontend tests, isolated server tests, isolated
-browser smoke after server check, frontend check, UI coverage after frontend,
-format check, and isolated frontend performance gates.
+Result: passed. At the plan-creation anchor the aggregate reported nine lanes:
+frontend routing, server/browser typecheck, frontend tests, isolated server
+tests, isolated browser smoke after server check, frontend check, UI coverage
+after frontend, format check, and isolated frontend performance gates. Phase 1
+subsequently added the Realm scale owner.
 
 ### Workstream documentation
 
@@ -293,7 +294,7 @@ pnpm exec vitest run util/test-all.test.ts
 pnpm test:all --dry-run
 ```
 
-Results: 6/6 policy cases and the nine-lane dry run passed. Two cases take the
+Results: 6/6 policy cases and the then-nine-lane dry run passed. Two cases take the
 live total from 9,982 to 9,984 without a file-count change.
 
 ### Package-manager parity
@@ -351,3 +352,18 @@ Results: affected policy passed 15/15; current compatibility passed 18/18 in
 5.56s and matched 16 matrix cells plus two healthy cluster regressions. The full
 differential remains blocked by the exact Phase 0 prerequisite; no golden was
 updated.
+
+### Realm scale ownership
+
+`TSA-P01-008` is done. The existing 7,000-asset case now has a named isolated
+local aggregate lane and a separate required CI job; ordinary server execution
+retains its skip to prevent duplicate/concurrent cost evidence.
+
+```sh
+pnpm exec vitest run util/test-all.test.ts
+pnpm test:server:realm-scale
+pnpm test:all --dry-run
+```
+
+Results: 7/7 aggregate policy cases passed; the scale lane passed its one
+selected case with 26 filtered in 2.64s; the aggregate dry run reports ten lanes.

@@ -167,6 +167,21 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:server
 
+  realm-scale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:server:realm-scale
+
   smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -204,6 +219,7 @@ jobs:
       - gates-perf
       - ui-coverage
       - server
+      - realm-scale
       - smoke
     runs-on: ubuntu-latest
     steps:
@@ -218,6 +234,7 @@ jobs:
           GATES_PERF_RESULT: ${{ needs['gates-perf'].result }}
           UI_COVERAGE_RESULT: ${{ needs['ui-coverage'].result }}
           SERVER_RESULT: ${{ needs.server.result }}
+          REALM_SCALE_RESULT: ${{ needs['realm-scale'].result }}
           SMOKE_RESULT: ${{ needs.smoke.result }}
         run: |
           test "$FORMAT_RESULT" = success
@@ -228,5 +245,6 @@ jobs:
           test "$INITIAL_PRELOAD_RESULT" = success
           test "$GATES_PERF_RESULT" = success
           test "$SERVER_RESULT" = success
+          test "$REALM_SCALE_RESULT" = success
           test "$SMOKE_RESULT" = success
           test "$UI_COVERAGE_RESULT" = success

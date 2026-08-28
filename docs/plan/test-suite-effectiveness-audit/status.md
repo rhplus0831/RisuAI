@@ -15,8 +15,8 @@ in [`latest-verification.md`](latest-verification.md).
   manifest` is open after the protocol-policy prerequisite remediation.
 - Implementation state: exhaustive test/case/support manifests and their local,
   affected, aggregate, coverage, and CI checks are live. The protocol import
-  policy now uses recursive AST evidence. No product behavior or existing
-  product test has been removed.
+  policy uses recursive AST evidence and the Realm scale case has isolated local
+  and CI owners. No product behavior or existing product test has been removed.
 - Blockers: the full differential compatibility harness cannot run because its
   pinned external worktree is absent. The new current-only owner is green; the
   blocker applies only to historical baseline claims.
@@ -39,7 +39,7 @@ in [`latest-verification.md`](latest-verification.md).
 | Support owners                       | 253 standalone; 64 mixed production seams   |
 | Primary-category assignments         | 699 of 699 ratified                          |
 | Complete file dispositions           | 8 Keep                                       |
-| Findings                             | 8 done / 1 confirmed                         |
+| Findings                             | 9 done / 1 confirmed                         |
 
 The 698-file rows preserve the plan-creation anchor. The live counts, support
 owners, runtime evidence, and category totals are checked by the Phase 0

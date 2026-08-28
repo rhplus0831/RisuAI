@@ -56,6 +56,13 @@ export const qualityLanes: readonly QualityLane[] = [
     isolated: true,
   },
   {
+    id: 'realm-scale',
+    label: 'Realm import scale gate',
+    args: ['test:server:realm-scale'],
+    after: ['server-tests'],
+    isolated: true,
+  },
+  {
     id: 'browser-smoke',
     label: 'browser smoke tests',
     args: ['test:smoke'],

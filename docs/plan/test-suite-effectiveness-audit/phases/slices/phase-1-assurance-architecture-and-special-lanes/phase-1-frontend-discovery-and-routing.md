@@ -35,6 +35,8 @@ P01-S02.
   normal smoke discovery and fails when expected smoke/UI artifacts are absent.
 - Closed `TSA-P01-007`: current/cluster compatibility now runs independently of
   the missing historical worktree and preserves mismatch actuals for diagnosis.
+- Closed `TSA-P01-008`: the 7,000-asset Realm case now has named isolated local
+  aggregate and CI owners rather than an undocumented direct-only invocation.
 
 No product behavior or existing test was removed. The affected policy gained
 eight cases; live totals are 699 files and 9,984 cases.
