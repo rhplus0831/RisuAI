@@ -159,9 +159,18 @@ export function resolveOobaLegacyRequest(input: ResolveInput): OobaLegacyRequest
 }
 
 function endpoint(req: OobaLegacyRequest): string {
-  // Local code normalizes a user-supplied base by replacing `/api...` with
-  // `/api/v1/generate`. Replicate that.
-  return req.baseUrl.replace(/\/api.*/, '') + '/api/v1/generate'
+  // Normalize only the path. Applying `/api...` to the whole URL corrupts
+  // hosts such as `api.example.com`.
+  try {
+    const url = new URL(req.baseUrl)
+    const basePath = url.pathname.replace(/\/api(?:\/.*)?$/u, '').replace(/\/+$/u, '')
+    url.pathname = `${basePath}/api/v1/generate`
+    return url.toString()
+  } catch {
+    const match = req.baseUrl.match(/^([^?#]*)(.*)$/u)
+    const base = (match?.[1] ?? req.baseUrl).replace(/\/api(?:\/.*)?$/u, '').replace(/\/+$/u, '')
+    return `${base}/api/v1/generate${match?.[2] ?? ''}`
+  }
 }
 
 function buildPayload(req: OobaLegacyRequest): Record<string, unknown> {

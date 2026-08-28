@@ -65,6 +65,23 @@ describe('runOobaLegacy', () => {
     expect(headers['X-API-KEY']).toBeUndefined()
   })
 
+  it('normalizes only the path when the hostname contains api', async () => {
+    let capturedUrl = ''
+    vi.stubGlobal('fetch', async (url: string) => {
+      capturedUrl = url
+      return ok({ results: [{ text: 'ooba ok' }] })
+    })
+    const resolved = resolveOobaLegacyRequest({
+      messages: [{ role: 'user', content: 'hi' }],
+      baseUrl: 'https://api.example.com/v1',
+      signal: new AbortController().signal,
+    })!
+
+    await runOobaLegacy(resolved)
+
+    expect(capturedUrl).toBe('https://api.example.com/v1/api/v1/generate')
+  })
+
   it('forwards X-API-KEY when apiKey is provided (Mancer-style)', async () => {
     let captured: { init: RequestInit } | null = null
     vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
