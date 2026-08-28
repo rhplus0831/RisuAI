@@ -324,6 +324,32 @@ describe('persona icon upload freshness', () => {
     expect(personaAlertState.current).toEqual({ type: 'error', msg: language.fileSelectionStale })
   })
 
+  it('drops stale completion when the selected persona owner is replaced during upload', async () => {
+    const upload = deferred<string>()
+    const calls = stubCommandFetch([upload.promise])
+    selectedFileState.queue.push(personaFile('stale-owner.png'))
+    seedPersonaState([makePersona({ id: 'persona-a', name: 'Persona A', icon: 'icon-a' })], 0)
+    const operation = selectUserImg()
+    await vi.waitFor(() => {
+      expect(calls.filter((call) => call.url === '/api/v1/assets')).toHaveLength(1)
+    })
+
+    getDatabase().personas = [makePersona({ id: 'persona-replacement', name: 'Replacement', icon: 'replacement-icon' })]
+    getDatabase().username = 'Replacement'
+    getDatabase().userIcon = 'replacement-icon'
+    upload.resolve('late-icon')
+    await operation
+    await tick()
+
+    expect(getDatabase().personas[0]).toMatchObject({
+      id: 'persona-replacement',
+      icon: 'replacement-icon',
+    })
+    expect(getDatabase().userIcon).toBe('replacement-icon')
+    expect(commandCalls(calls)).toHaveLength(0)
+    expect(personaAlertState.current).toEqual({ type: 'error', msg: language.fileSelectionStale })
+  })
+
   it('preserves same-persona text edits while applying a fresh icon', async () => {
     const upload = deferred<string>()
     const calls = stubCommandFetch([upload.promise])
