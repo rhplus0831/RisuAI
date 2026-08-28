@@ -1036,3 +1036,84 @@ Ten Phase 9 findings are done. `TSA-P09-011` routes runtime queue/timeout
 observability to Phase 12, CBS/trigger parity and saved-definition browser
 composition to Phase 13, and historical compatibility plus the final residual
 decision to Phase 14.
+
+## Phase 10 Evidence
+
+### Opening set and remediation validation
+
+Phase 10 opened with 47 category-J owners and 601 cases: 42 frontend files / 528
+cases and five Fastify files / 73 cases. Both opening sets passed before
+remediation. Eighteen regressions were added inside the opening owners.
+
+Five unchanged owners / 39 cases moved to B/C/G/K after complete review, leaving
+current category J at 42 owners / 580 cases. The exact original owners then
+passed 546/546 frontend cases in 15.01s and 73/73 Fastify cases in 2.71s.
+
+Focused remediation commands passed throughout:
+
+- Plugin V3 delayed-listener lifecycle: 67/67;
+- RisuAccess character/module stable-owner mutations: 34/34;
+- module activation aggregation and memoization: 40/40;
+- image translation request ownership and teardown: 18/18;
+- MCP deadline, SSE, custom transport, and pagination: 41/41;
+- filesystem/internal client catalogs and read caps: 9/9;
+- executable category boundaries and linked inventory: 12/12.
+
+A temporary Vite/Playwright Chromium 1.62.1 harness mounted the production
+`PluginDefinedIcon.svelte` path. A renderable host SVG blob containing script,
+event-handler, external image/use, CSS import, and CSS URL probes rendered 24×24
+with zero requests and zero execution signals. The same SVG created inside an
+opaque Plugin V3-style sandbox became `blob:null` and Chromium refused the host
+image load; base64 SVG is already rejected by production normalization. This
+closes the suspected High icon-egress path as not reproducible.
+
+### Complete gates
+
+Commands:
+
+```sh
+RISU_TEST_INCLUDE_GATES=true pnpm exec vitest run \
+  --reporter=json --outputFile=/tmp/phase10-frontend-results.json
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  --reporter=json --outputFile=/tmp/phase10-server-results.json
+pnpm test:gates:perf
+pnpm check
+pnpm check:server
+pnpm test:smoke
+pnpm test:compat-current
+pnpm test:compat-harness
+pnpm test:affected --dry-run --include-smoke --base 31bdaa81c
+pnpm check:test-inventories
+pnpm format:check
+git diff --check
+```
+
+The complete ordinary frontend universe passed 6,759/6,759 across 537 files;
+the two isolated performance owners passed 6/6. Complete Fastify passed 3,351
+cases with one intentional direct-only Realm scale skip across 154 files.
+Client and server typechecks passed with zero diagnostics.
+
+The production smoke build emitted the changed Playground image, filesystem,
+RisuAccess, and MCP chunks and passed with the existing allowed CSS,
+externalization, plugin-timing, and chunk-size diagnostics. All 35/35 Chromium
+journeys passed in 1.1 minutes. There is no category-J browser owner, so smoke
+is application and real-chunk evidence rather than a plugin iframe, MCP server,
+filesystem permission, or canvas/media interoperability claim.
+
+Affected selection chose inventories, frontend, performance, and Fastify lanes.
+Current-only compatibility passed 18/18 and matched 16 cells plus the healthy
+cluster-10 regressions. Full differential compatibility remains
+prerequisite-blocked by the absent exact
+`/home/codex/risu-baseline-71c476e9c` worktree; no substitute or golden refresh
+was used.
+
+Fresh Vitest/Playwright listings and measured results produce 700 live
+test/spec owners and 10,152 collected cases, with one direct-only skip and 1,314
+parameterized rows. Primary categories are A=21, B=36, C=57, D=110, E=97,
+F=84, G=107, H=26, I=39, J=42, K=42, and L=39. Live decisions are 563 Keep,
+67 Reclassify, and 70 Pending.
+
+Ten Phase 10 findings are done. `TSA-P10-011` routes uploaded-asset cleanup to
+Phase 11, proxy/threat-model and runtime ownership to Phase 12, bounded live
+browser/MCP composition plus support policy to Phase 13, and historical
+compatibility plus the final residual decision to Phase 14.

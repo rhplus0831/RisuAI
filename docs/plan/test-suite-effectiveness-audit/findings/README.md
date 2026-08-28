@@ -2914,3 +2914,303 @@ Every finding records:
 - Count delta: none.
 - Revisit condition: Phase 12 runtime audit, Phase 13 remediation, and mandatory
   Phase 14 closeout decision.
+
+## Phase 10 Findings
+
+### TSA-P10-001: Delayed plugin keyboard callbacks survived listener teardown
+
+- State: Done.
+- Severity: High.
+- Category: J.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 67 Plugin V3 lifecycle and API cases.
+- Production owner: `SafeElement` keyboard listeners and Plugin V3 lifecycle
+  cleanup.
+- Protected contract or plausible defect: keyboard events are deliberately
+  delayed before entering plugin code. Removing the listener or unloading the
+  plugin removed the document listener but did not cancel already queued
+  callbacks, so code could run after its authority and lifecycle ended.
+- Evidence: each delayed listener now owns its pending timeout handles;
+  explicit removal and lifecycle cleanup cancel and clear them.
+- Companion/overlap analysis: registration cleanup could prove no future DOM
+  event was accepted, but it could not observe a callback already transferred
+  to the timer queue.
+- Action and rollback: retain per-listener timeout ownership and cancellation
+  through both cleanup paths.
+- Validation: 67/67 focused cases, exact Phase 10 frontend, client typecheck,
+  and complete frontend passed.
+- Count delta: two lifecycle regressions added.
+- Revisit condition: apply the same ownership rule to any future delayed plugin
+  callback source.
+
+### TSA-P10-002: MCP bodies, frames, and list pagination could remain unresolved
+
+- State: Done.
+- Severity: High.
+- Category: J.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 41 MCP transport cases plus OAuth/registry companions.
+- Production owner: MCP HTTP JSON reads, SSE framing and errors, prompt/tool
+  pagination, request deadlines, and cleanup.
+- Protected contract or plausible defect: the request deadline ended after
+  response headers, leaving a stalled JSON body unbounded. Malformed SSE JSON
+  was swallowed until timeout; CRLF and no-space `data:` fields were not parsed;
+  repeated or endless cursors could issue unbounded requests and retain items.
+- Evidence: JSON consumption is deadline-raced and aborts its transport. The
+  SSE scanner handles CRLF/LF/CR across chunk boundaries, optional field space,
+  and multiline data; malformed JSON becomes a request-visible `-32700`/502
+  result and cancels the stream. Prompt/tool lists reject invalid or repeated
+  cursors, more than 100 pages, or more than 10,000 aggregate items without
+  caching partial data.
+- Companion/overlap analysis: `fetchNative` timeouts could not bound work after
+  headers; listener timers could not explain malformed frames; UI MCP tests
+  could not prove transport pagination termination.
+- Action and rollback: retain body deadlines, deterministic frame errors, and
+  exported page/item caps. Do not restore silent parse failure.
+- Validation: 41/41 focused transport cases, exact Phase 10 owners, client
+  typecheck, and complete frontend passed.
+- Count delta: seven transport regressions added.
+- Revisit condition: add runtime schema validation when MCP tool/result schema
+  compatibility policy is selected.
+
+### TSA-P10-003: Permission-delayed RisuAccess writes could target replacement owners
+
+- State: Done.
+- Severity: High.
+- Category: J/C.
+- Decision: Strengthen, then Keep.
+- Tests/cases: 34 character/module optimistic-projection cases plus eight
+  module-schema/read cases.
+- Production owner: character and module lorebook, regex, and Lua mutations
+  after access confirmation.
+- Protected contract or plausible defect: these mutation families captured a
+  live row, awaited permission, and then wrote through that reference without
+  proving it was still the database's current row. A same-ID replacement could
+  receive stale projection or command work.
+- Evidence: every affected set/delete family re-resolves the live ID and
+  requires exact row identity after confirmation. Same-ID replacements return
+  a retry error, remain byte-for-byte unchanged, and dispatch no command.
+- Companion/overlap analysis: `setCharacterInfo` already had its own stable
+  identity check; ordinary optimistic rollback did not cover the permission
+  window in the six collection/script families.
+- Action and rollback: retain the shared post-confirmation identity fences.
+- Validation: 34/34 focused mutation cases, exact Phase 10 owners, client
+  typecheck, and complete frontend passed.
+- Count delta: six parameterized family regressions added.
+- Revisit condition: require the same fence for each new permission-delayed
+  resource mutation.
+
+### TSA-P10-004: Module activation memo ignored in-place identity edits
+
+- State: Done.
+- Severity: High.
+- Category: J.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 40 client module aggregation cases and the server module/memo
+  companions.
+- Production owner: active-module selection and memo invalidation.
+- Protected contract or plausible defect: the memo compared activation keys
+  and source-array identity, but an in-place row edit could change `id` or
+  `namespace` and return the previously active set.
+- Evidence: cache hits now require index-stable row identity plus snapshotted
+  `id` and `namespace`; cache hits remain allocation-free and O(n). A regression
+  activates/deactivates the same row through namespace and ID edits.
+- Companion/overlap analysis: row replacement and activation-key tests did not
+  exercise mutation inside the same array and object.
+- Action and rollback: retain the identity-field snapshot or replace it only
+  with an equally sensitive versioned source owner.
+- Validation: 40/40 focused cases, exact Phase 10 owners, client typecheck, and
+  complete frontend/Fastify lanes passed.
+- Count delta: one regression added.
+- Revisit condition: extend the snapshot if another row field controls module
+  activation.
+
+### TSA-P10-005: Image translation work outlived its component
+
+- State: Done.
+- Severity: High.
+- Category: J/G.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 18 mounted image-translation cases.
+- Production owner: selected-image decoding, model request, canvas projection,
+  alerts, and component teardown.
+- Protected contract or plausible defect: input/mode epochs rejected several
+  stale results, but unmount did not abort the active request or fence late
+  render, loading, and error feedback.
+- Evidence: each translation owns an `AbortController`; teardown aborts it,
+  invalidates pending selection, and marks the component destroyed. Late
+  completions cannot mutate output, render, loading, or alert state.
+- Companion/overlap analysis: image-generation and subtitle components had
+  separate abort tests; their cleanup could not protect this component.
+- Action and rollback: retain abort plus destroyed-state fencing around every
+  asynchronous completion path.
+- Validation: 18/18 focused mounted cases, exact Phase 10 frontend, client
+  typecheck, and complete frontend passed.
+- Count delta: one unmount regression added.
+- Revisit condition: add real canvas/decoder proof under the bounded Phase 13
+  browser composition owner.
+
+### TSA-P10-006: The internal filesystem catalog advertised an impossible watch tool
+
+- State: Done.
+- Severity: Medium.
+- Category: J.
+- Decision: Correct supported surface, then Keep.
+- Tests/cases: six filesystem-adapter cases and three internal-schema cases.
+- Production owner: internal MCP filesystem tool catalog and dispatcher.
+- Protected contract or plausible defect: `fs_watch_directory` was returned to
+  models but had no dispatch branch or implementation, so every advertised call
+  failed as an unknown tool.
+- Evidence: the unsupported entry was removed; the catalog-copy owner now pins
+  the 11 supported operations and explicitly excludes watch. Historical plain
+  RisuAI contained the same advertisement/dispatcher mismatch and no hidden
+  implementation.
+- Companion/overlap analysis: per-operation tests could not detect a catalog
+  entry with no handler; schema cloning protects a different mutation boundary.
+- Action and rollback: do not advertise watch unless a bounded, cancellable
+  browser implementation and lifecycle contract are added.
+- Validation: focused filesystem/internal-client cases, exact Phase 10 owners,
+  client typecheck, and complete frontend passed.
+- Count delta: one catalog regression added; no test owner removed.
+- Revisit condition: an explicit supported directory-watch product design.
+
+### TSA-P10-007: Extension-shaped names hid five dominant product risks
+
+- State: Done.
+- Severity: Medium.
+- Category: J to B/C/G/K.
+- Decision: Reclassify.
+- Tests/cases: five complete unchanged owners / 39 cases listed by
+  `phase10-reclassified` state in `inventory.json`.
+- Production owner: encrypted browser draft recovery, targeted durable command
+  writes, provider response/dashboard freshness, and save/asset diagnostics.
+- Protected contract or plausible defect: plugin/module/tool vocabulary could
+  hide a browser-state, persistence, provider, or asset/export failure mode.
+- Evidence: executable exact-path rules move module-editor drafts to B,
+  settings/plugin-storage range to C, plugin-provider and NanoGPT dashboard to
+  G, and database analysis to K while retaining J seam tags.
+- Companion/overlap analysis: runtime lane and specialized ownership remain
+  unchanged.
+- Action and rollback: retain all five owners unchanged under their corrected
+  categories.
+- Validation: 12/12 routing-policy cases and the regenerated 700-owner
+  inventory passed.
+- Count delta: one policy case; no owner removed.
+- Revisit condition: only if a complete owner's dominant product contract
+  changes.
+
+### TSA-P10-008: Plugin security layers are intentional defense in depth
+
+- State: Done.
+- Severity: Informational.
+- Category: J/L.
+- Decision: Keep.
+- Tests/cases: plugin network, icon, update, import, command, sandbox, and
+  lifecycle owners in the reviewed set.
+- Production owner: client permission identity, sandbox capability surface,
+  authenticated proxy transport, authoritative DNS/redirect/cap checks, and
+  durable plugin state.
+- Protected contract or plausible defect: merging permissive client doubles
+  with server inject tests would hide denial side effects, redirects, DNS,
+  runtime cleanup, or stale plugin authority.
+- Evidence: complete review found distinct failure oracles. A real Chromium
+  probe mounted the production icon component: active/subresource SVG vectors
+  generated zero requests and script signals, and opaque guest `blob:null`
+  content was refused. Base64 SVG is already rejected.
+- Companion/overlap analysis: Happy-DOM cannot establish browser SVG image
+  restrictions, while browser rendering alone cannot prove authoritative SSRF
+  checks.
+- Action and rollback: retain layered owners; treat arbitrary blob acceptance
+  as optional Low defense-in-depth hardening, not a confirmed egress defect.
+- Validation: exact owners, Fastify plugin network cases, and Chromium 1.62.1
+  host/opaque-origin probes passed.
+- Count delta: none.
+- Revisit condition: a browser or standards change that permits active SVG
+  subresources in image mode.
+
+### TSA-P10-009: Specialized-tool UI and service owners remain distinct
+
+- State: Done.
+- Severity: Informational.
+- Category: J with D/G/K seams.
+- Decision: Keep.
+- Tests/cases: the complete Playground, Iris-adjacent, module, MCP UI, and
+  specialized-tool owners in the reviewed set.
+- Production owner: visible execution, stable target/input snapshots, partial
+  success, retry, cancellation, downloads/assets, and backing service protocol.
+- Protected contract or plausible defect: consolidating by tool name would
+  replace visible outcome/cleanup proof with service-call assertions or vice
+  versa, leaving wrong-target, stuck-busy, transport, or persistence defects
+  invisible.
+- Evidence: mounted components and pure/service owners were traced through
+  separate state, protocol, asset, and lifecycle seams; no pair met the
+  mandatory merge/removal proof.
+- Companion/overlap analysis: test doubles reduce browser/media realism but do
+  not make their stale-input and visible-retry oracles equivalent to adapters.
+- Action and rollback: retain the separate owners and address browser
+  composition only through a bounded gap owner.
+- Validation: 619/619 exact opening-owner cases after remediation and complete
+  frontend/Fastify lanes passed.
+- Count delta: none beyond the focused regressions above.
+- Revisit condition: Phase 13 may consolidate only with complete visible and
+  service-layer replacement proof.
+
+### TSA-P10-010: Extension and specialized-tool guidance needed the final audit state
+
+- State: Done.
+- Severity: Low.
+- Category: J/A.
+- Decision: Correct documentation.
+- Tests/cases: the two Phase 10 discovery guides and complete reviewed set.
+- Production owner: authoritative testing guidance for extension/tool support,
+  strengths, and residuals.
+- Protected contract or plausible defect: the guides predated body deadlines,
+  pagination/frame bounds, stable-owner fences, module identity invalidation,
+  delayed-listener cancellation, image teardown, and the supported filesystem
+  catalog.
+- Evidence: source, fresh collection, exact runs, and Chromium icon evidence
+  establish the current contracts and count deltas.
+- Companion/overlap analysis: stale guidance can turn intentional layers into
+  apparent duplication or overstate mock/browser confidence.
+- Action and rollback: update both guides with the landed contracts and bounded
+  residual owners.
+- Validation: documentation formatting, inventories, and linked commands pass.
+- Count delta: none.
+- Revisit condition: update the guides with future material support changes.
+
+### TSA-P10-011: Live extension/tool composition and support-policy claims are bounded
+
+- State: Deferred with retained owners and explicit phase ownership.
+- Severity: High.
+- Category: J, with K/L and Phase 11/12/13/14 ownership.
+- Decision: Keep current bounded evidence; add or change support only at the
+  named owners.
+- Tests/cases: sandbox/permission doubles, MCP transports and internal clients,
+  module/RisuAccess imports, Playground/media components, smoke, and
+  compatibility.
+- Production owner: imported-asset failure cleanup, plugin proxy authority
+  threat model, independently implemented MCP/OAuth interoperability, browser
+  iframe/File-System/canvas/codec behavior, signed update provenance, and
+  Google/AI internal-client product support.
+- Protected contract or plausible defect: controlled transports and mounted
+  DOM cannot establish all production-browser and external-server behavior.
+  Product policy has not selected signed plugin provenance, arbitrary internal
+  AI model support, or whether the Google client is a supported Fastify path.
+  Module/RisuAccess uploaded-asset cleanup belongs to the asset transaction
+  boundary rather than this phase.
+- Evidence: all confirmed High lifecycle, identity, and unbounded-request paths
+  found here are fixed. Chromium closes the suspected SVG egress path. The
+  remaining items require authoritative asset, platform threat-model, or
+  bounded live-composition evidence; the historical baseline is absent.
+- Companion/overlap analysis: Phase 11 owns upload/asset cleanup; Phase 12 owns
+  proxy authorization and runtime observability; Phase 13 owns bounded browser
+  and local MCP composition plus support decisions; Phase 14 owns final
+  residual and historical-compatibility verdict.
+- Action and rollback: retain current bounded layers. Do not infer live
+  interoperability from doubles, add paid/network calls, broaden plugin
+  authority, substitute a baseline, or refresh goldens.
+- Validation: exact, complete, type, build/smoke, inventory, and current-only
+  compatibility lanes bound current claims.
+- Count delta: none.
+- Revisit condition: Phase 11 asset audit, Phase 12 security/runtime audit,
+  Phase 13 bounded remediation, and mandatory Phase 14 closeout decision.
