@@ -120,6 +120,21 @@ describe('attempted field rollback', () => {
     })
     expect(Object.hasOwn(target, 'absentWithoutPrevious')).toBe(true)
   })
+
+  it('recognizes semantically equal attempted JSON regardless of object key insertion order', () => {
+    const target = {
+      config: { nested: { right: 2, left: 1 }, enabled: true },
+    }
+
+    const rolledBack = applyAttemptedFieldRollback({
+      target,
+      previous: { config: { enabled: false } },
+      attempted: { config: { enabled: true, nested: { left: 1, right: 2 } } },
+    })
+
+    expect(rolledBack).toEqual(['config'])
+    expect(target).toEqual({ config: { enabled: false } })
+  })
 })
 
 describe('attempted keyed list rollback', () => {
@@ -170,6 +185,25 @@ describe('attempted keyed list rollback', () => {
 
     expect(rolledBack).toEqual([])
     expect(list).toEqual([row('a', 'newer local edit'), row('b', 'sibling')])
+  })
+
+  it('recognizes a keyed attempted row with reordered JSON properties', () => {
+    const list = [{ label: 'attempted', id: 'a', meta: { right: 2, left: 1 } }]
+
+    const rolledBack = applyAttemptedKeyedListRollback({
+      list,
+      entries: [
+        {
+          key: 'a',
+          previous: { id: 'a', label: 'before', meta: { left: 0, right: 0 } },
+          attempted: { id: 'a', label: 'attempted', meta: { left: 1, right: 2 } },
+        },
+      ],
+      getKey: (item) => item.id,
+    })
+
+    expect(rolledBack).toEqual(['a'])
+    expect(list).toEqual([{ id: 'a', label: 'before', meta: { left: 0, right: 0 } }])
   })
 
   it('does not let sequential failures unwind newer successful or local state', () => {
