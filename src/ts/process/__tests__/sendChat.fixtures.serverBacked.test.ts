@@ -452,6 +452,17 @@ function messageTexts(snapshot: FixtureSnapshot): Array<{ role: string; data: st
   }))
 }
 
+function semanticPromptRows(rows: unknown): unknown {
+  if (!Array.isArray(rows)) return rows
+  return rows.map((row) => {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return row
+    const normalized = { ...(row as Record<string, unknown>) }
+    if (Array.isArray(normalized.attr) && normalized.attr.length === 0) delete normalized.attr
+    if (Array.isArray(normalized.thoughts) && normalized.thoughts.length === 0) delete normalized.thoughts
+    return normalized
+  })
+}
+
 function firstRerollText(snapshot: FixtureSnapshot): string | null {
   for (const sideEffect of snapshot.sideEffects) {
     if (sideEffect.fn !== 'addRerolls') continue
@@ -548,7 +559,9 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
         expect(harness.dispatchCalls).toHaveLength(1)
         expect(harness.dispatchCalls[0].inputMode).toBe(expectedMode)
         if (expectedProviderCall) {
-          expect(Array.isArray(harness.dispatchCalls[0].formated)).toBe(true)
+          expect(semanticPromptRows(harness.dispatchCalls[0].formated)).toEqual(
+            semanticPromptRows(expectedProviderCall.formated),
+          )
         }
         expect(harness.dispatchCalls[0].generationInfo.model).toBe('gpt-4o')
         expect(getServerCompletionCalls()).toEqual([])
