@@ -40,7 +40,10 @@ export function startBridgePatchLifecycleFlush(): () => void {
     }
   }
 
+  let stopped = false
   return () => {
+    if (stopped) return
+    stopped = true
     lifecycleListenerRefs -= 1
     if (lifecycleListenerRefs > 0) return
     lifecycleListenerRefs = 0

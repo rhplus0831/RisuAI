@@ -108,4 +108,29 @@ describe('flushAllPendingBridgePatches', () => {
       expect(bucket).toHaveLength(2)
     }
   })
+
+  it('keeps lifecycle listeners until every owner stops, even when one stop is called twice', () => {
+    const stopFirstOwner = startBridgePatchLifecycleFlush()
+    const stopSecondOwner = startBridgePatchLifecycleFlush()
+
+    stopFirstOwner()
+    stopFirstOwner()
+    window.dispatchEvent(new Event('pagehide'))
+
+    for (const bucket of allCallBuckets()) {
+      expect(bucket).toEqual([{ keepalive: true }])
+    }
+
+    stopSecondOwner()
+    window.dispatchEvent(new Event('pagehide'))
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'hidden',
+      configurable: true,
+    })
+    document.dispatchEvent(new Event('visibilitychange'))
+
+    for (const bucket of allCallBuckets()) {
+      expect(bucket).toHaveLength(1)
+    }
+  })
 })
