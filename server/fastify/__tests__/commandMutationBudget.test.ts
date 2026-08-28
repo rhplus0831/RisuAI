@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import ts from 'typescript'
 import { TARGETED_MUTATION_PATHS } from '../src/commands/mutations.js'
 import {
   BROAD_WRITE_TABLES,
@@ -35,25 +36,61 @@ function listSourceFiles(dir: string): string[] {
 
 /**
  * The set of `mutationPath` labels the runtime can actually emit, gathered from
- * the two emission shapes: a string literal (`mutationPath: 'targeted-message'`)
- * and a reference to the shared vehicle table
- * (`mutationPath: TARGETED_MUTATION_PATHS.collection`), resolved through the
- * imported object. The `mutationPath: args.mutationPath` pass-through and the
+ * literal/template expressions and references to the shared vehicle table
+ * (`mutationPath: TARGETED_MUTATION_PATHS.collection`), including conditional
+ * branches. The `mutationPath: args.mutationPath` pass-through and the
  * `mutationPath: string` type field are intentionally not matched.
  */
+function collectMutationPathExpression(expression: ts.Expression, labels: Set<string>): void {
+  if (ts.isStringLiteralLike(expression)) {
+    labels.add(expression.text)
+    return
+  }
+  if (
+    ts.isPropertyAccessExpression(expression) &&
+    ts.isIdentifier(expression.expression) &&
+    expression.expression.text === 'TARGETED_MUTATION_PATHS'
+  ) {
+    const key = expression.name.text as keyof typeof TARGETED_MUTATION_PATHS
+    const value = TARGETED_MUTATION_PATHS[key]
+    expect(value, `TARGETED_MUTATION_PATHS.${key} referenced by a route is not defined`).toBeTruthy()
+    labels.add(value)
+    return
+  }
+  if (ts.isConditionalExpression(expression)) {
+    collectMutationPathExpression(expression.whenTrue, labels)
+    collectMutationPathExpression(expression.whenFalse, labels)
+  } else if (
+    ts.isParenthesizedExpression(expression) ||
+    ts.isAsExpression(expression) ||
+    ts.isTypeAssertionExpression(expression) ||
+    ts.isNonNullExpression(expression)
+  ) {
+    collectMutationPathExpression(expression.expression, labels)
+  }
+}
+
+function collectEmittedMutationPathsFromText(text: string, fileName = 'mutation-path-probe.ts'): Set<string> {
+  const labels = new Set<string>()
+  const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isPropertyAssignment(node) &&
+      ((ts.isIdentifier(node.name) && node.name.text === 'mutationPath') ||
+        (ts.isStringLiteralLike(node.name) && node.name.text === 'mutationPath'))
+    ) {
+      collectMutationPathExpression(node.initializer, labels)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return labels
+}
+
 function collectEmittedMutationPaths(): Set<string> {
-  const literalRe = /mutationPath:\s*'([a-z-]+)'/g
-  const refRe = /mutationPath:\s*TARGETED_MUTATION_PATHS\.([A-Za-z]+)/g
   const labels = new Set<string>()
   for (const file of listSourceFiles(SRC_DIR)) {
-    const text = readFileSync(file, 'utf8')
-    for (const match of text.matchAll(literalRe)) labels.add(match[1])
-    for (const match of text.matchAll(refRe)) {
-      const key = match[1] as keyof typeof TARGETED_MUTATION_PATHS
-      const value = TARGETED_MUTATION_PATHS[key]
-      expect(value, `TARGETED_MUTATION_PATHS.${key} referenced by a route is not defined`).toBeTruthy()
-      labels.add(value)
-    }
+    for (const label of collectEmittedMutationPathsFromText(readFileSync(file, 'utf8'), file)) labels.add(label)
   }
   return labels
 }
@@ -84,6 +121,23 @@ function pluginStorageMetric(writtenTables?: string[]): CommandMutationMetric {
 }
 
 describe('command mutation-range budgets', () => {
+  it('discovers literal, template, and shared-table mutation path expressions through the AST', () => {
+    expect(
+      [
+        ...collectEmittedMutationPathsFromText(`
+          const literal = { mutationPath: "hydrated" }
+          const template = { 'mutationPath': \`targeted-message\` }
+          const shared = {
+            mutationPath: condition
+              ? TARGETED_MUTATION_PATHS.settings
+              : TARGETED_MUTATION_PATHS.collection,
+          }
+          const passThrough = { mutationPath: args.mutationPath }
+        `),
+      ].sort(),
+    ).toEqual(['hydrated', 'targeted-collection', 'targeted-message', 'targeted-settings'])
+  })
+
   it('rejects an unexpected row inserted after the stability snapshot', () => {
     expect(() =>
       assertOnlyRowsWritten(
