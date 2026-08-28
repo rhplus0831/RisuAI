@@ -339,6 +339,31 @@ function unloadedRangesForTail(
   return ranges
 }
 
+function rangedHydrationOverlapsResidentMessages(
+  chatId: string,
+  range: { start: number; total: number },
+  returnedCount: number,
+): boolean {
+  // A newer disjoint range may have advanced the chat-level resource revision
+  // while this request was in flight. Filling its remaining placeholders is
+  // safe; replacing any resident row would let the older response win a race.
+  const messages = getDatabase()
+    .characters?.flatMap((character) => character.chats ?? [])
+    .find((chat) => chat.id === chatId)?.message
+  if (
+    !messages ||
+    messages.length !== range.total ||
+    !Number.isInteger(range.start) ||
+    range.start < 0 ||
+    range.start + returnedCount > range.total
+  ) {
+    return true
+  }
+  return messages
+    .slice(range.start, range.start + returnedCount)
+    .some((message) => !isServerChatMessagePlaceholder(message))
+}
+
 async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): Promise<boolean> {
   if (!canUseServerResourceReads()) return false
   const force = request.force ?? false
@@ -399,7 +424,18 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
         typeof result.messageStart === 'number' && typeof result.messageTotal === 'number'
           ? { start: result.messageStart, total: result.messageTotal }
           : undefined
-      const applied = hydrateServerChatMessages(chatId, result.message, result.hypaV3Data, range)
+      const hasNewerResourceRevision = hasNewerChatBodyResourceRevision(chatId, result.revision)
+      if (
+        hasNewerResourceRevision &&
+        (!range || rangedHydrationOverlapsResidentMessages(chatId, range, result.message.length))
+      ) {
+        shouldMarkAttempted = false
+        recordHydrationStaleDrop('chat', 'newer-overlapping-range')
+        return false
+      }
+      const applied = hydrateServerChatMessages(chatId, result.message, result.hypaV3Data, range, {
+        hypaV3DataIncluded: !hasNewerResourceRevision,
+      })
       if (!applied) {
         failedChatIds.add(chatId)
         hydrationWarning(`chat ${chatId}`, 'response could not be applied')
@@ -414,7 +450,7 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
       }
       // Tail/full hydration owns this chat's durable reroll candidates even if
       // the user navigates before the response settles.
-      if (request.seedReroll !== false) {
+      if (request.seedReroll !== false && !hasNewerResourceRevision) {
         seedRerollBufferFromAlternates(result.message, result.alternates, rerollTargetForChatId(chatId))
       }
       refreshPendingFreshnessAfterHydration(chatId, freshness)

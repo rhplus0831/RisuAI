@@ -453,12 +453,13 @@ describe('chat message hydration bridge', () => {
   })
 
   it('fetches only newly visible unloaded ranges when the active window expands', async () => {
-    projectionState.fetchChat.mockResolvedValueOnce(
-      okWindowResult('chat-1', [{ role: 'char', data: 'tail', chatId: 'm4' }], 3, 4),
-    )
+    projectionState.fetchChat.mockResolvedValueOnce({
+      ...okWindowResult('chat-1', [{ role: 'char', data: 'tail', chatId: 'm4' }], 3, 4),
+      revision: 2,
+    })
     await hydrateActiveChat({ loadPages: 1 })
-    projectionState.fetchChat.mockResolvedValueOnce(
-      okWindowResult(
+    projectionState.fetchChat.mockResolvedValueOnce({
+      ...okWindowResult(
         'chat-1',
         [
           { role: 'user', data: 'older-1', chatId: 'm1' },
@@ -468,7 +469,8 @@ describe('chat message hydration bridge', () => {
         0,
         4,
       ),
-    )
+      revision: 1,
+    })
 
     await hydrateActiveChatWindow(4)
 
@@ -479,6 +481,7 @@ describe('chat message hydration bridge', () => {
     })
     const messages = db().characters[0].chats[0].message as Array<{ data: string }>
     expect(messages.map((message) => message.data)).toEqual(['older-1', 'older-2', 'older-3', 'tail'])
+    expect(hasNewerChatBodyResourceRevision('chat-1', 1)).toBe(true)
   })
 
   it('reports an older-window hydration failure without claiming the range is resident', async () => {
@@ -1017,6 +1020,69 @@ describe('chat message hydration bridge', () => {
     expect((db().characters[0].chats[0] as { hypaV3Data?: unknown }).hypaV3Data).toEqual({
       source: 'full hydration',
     })
+  })
+
+  it('drops an older deferred range before it overwrites a newer overlapping range', async () => {
+    const olderHydration = deferred<ReturnType<typeof okWindowResult>>()
+    const newerHydration = deferred<ReturnType<typeof okWindowResult>>()
+    projectionState.fetchChat.mockImplementation((_chatId: string, range: { tail?: number }) =>
+      range.tail === 3 ? olderHydration.promise : newerHydration.promise,
+    )
+    const staleDropsBefore = getProtocolDiagnosticsSnapshot().hydration.chat.staleResponseDrops
+
+    const pendingOlder = hydrateActiveChat({ loadPages: 3 })
+    const pendingNewer = hydrateActiveChat({ loadPages: 2 })
+
+    newerHydration.resolve({
+      ...okWindowResult(
+        'chat-1',
+        [
+          { role: 'user', data: 'newer overlap 2', chatId: 'm2-new' },
+          { role: 'char', data: 'newer overlap 3', chatId: 'm3-new' },
+        ],
+        2,
+        4,
+      ),
+      revision: 2,
+    })
+    await expect(pendingNewer).resolves.toBe(true)
+
+    olderHydration.resolve({
+      ...okWindowResult(
+        'chat-1',
+        [
+          { role: 'char', data: 'older non-overlap', chatId: 'm1-old' },
+          { role: 'user', data: 'older overlap 2', chatId: 'm2-old' },
+          { role: 'char', data: 'older overlap 3', chatId: 'm3-old' },
+        ],
+        1,
+        4,
+      ),
+      revision: 1,
+    })
+    await expect(pendingOlder).resolves.toBe(false)
+
+    const messages = db().characters[0].chats[0].message as Message[]
+    expect(isServerChatMessagePlaceholder(messages[1])).toBe(true)
+    expect(messages.slice(2)).toEqual([
+      { role: 'user', data: 'newer overlap 2', chatId: 'm2-new' },
+      { role: 'char', data: 'newer overlap 3', chatId: 'm3-new' },
+    ])
+    expect(hasNewerChatBodyResourceRevision('chat-1', 1)).toBe(true)
+    expect(getProtocolDiagnosticsSnapshot().hydration.chat.staleResponseDrops).toBe(staleDropsBefore + 1)
+
+    projectionState.fetchChat.mockReset()
+    projectionState.fetchChat.mockResolvedValueOnce({
+      ...okWindowResult('chat-1', [{ role: 'char', data: 'fresh retry', chatId: 'm1-fresh' }], 1, 4),
+      revision: 3,
+    })
+    await expect(hydrateActiveChatWindow(3)).resolves.toBe(true)
+    expect(projectionState.fetchChat).toHaveBeenCalledWith('chat-1', { start: 1, limit: 1 })
+    expect(db().characters[0].chats[0].message.slice(1)).toEqual([
+      { role: 'char', data: 'fresh retry', chatId: 'm1-fresh' },
+      { role: 'user', data: 'newer overlap 2', chatId: 'm2-new' },
+      { role: 'char', data: 'newer overlap 3', chatId: 'm3-new' },
+    ])
   })
 
   it('still drops a response older than the revision already applied at request start', async () => {
