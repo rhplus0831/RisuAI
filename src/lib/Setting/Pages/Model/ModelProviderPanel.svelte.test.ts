@@ -215,4 +215,26 @@ describe('ModelProviderPanel credential selection', () => {
     )
     expect(modelInput).toBeDefined()
   })
+
+  it.each([
+    ['LLM Gateway', 'llmgateway', llmGatewayCatalog.getModels],
+    ['Neuralwatt', 'neuralwatt', neuralwattCatalog.getModels],
+  ])('recovers when the %s catalog request rejects', async (_name, providerId, getModels) => {
+    getModels.mockRejectedValueOnce(new Error('offline'))
+    component = mount(ModelProviderPanel, { target, props: props(providerId) })
+
+    await vi.waitFor(() => {
+      expect(target.querySelector('.animate-spin')).toBeNull()
+      expect(target.textContent).toContain(language.modelGridCouldNotLoad)
+    })
+
+    const modelInput = Array.from(target.querySelectorAll<HTMLInputElement>('input')).find(
+      (input) => input.value === 'gpt-5',
+    )
+    if (!modelInput) throw new Error('Manual model input was not rendered')
+    modelInput.value = 'manual-recovery-model'
+    modelInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    expect(modelInput.value).toBe('manual-recovery-model')
+  })
 })

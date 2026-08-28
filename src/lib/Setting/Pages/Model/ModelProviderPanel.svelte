@@ -155,6 +155,7 @@
       .then((models) => {
         if (!cancelled) llmGatewayModels = models
       })
+      .catch(() => {})
       .finally(() => {
         if (!cancelled) llmGatewayModelsLoading = false
       })
@@ -171,6 +172,7 @@
       .then((models) => {
         if (!cancelled) neuralwattModels = models
       })
+      .catch(() => {})
       .finally(() => {
         if (!cancelled) neuralwattModelsLoading = false
       })
