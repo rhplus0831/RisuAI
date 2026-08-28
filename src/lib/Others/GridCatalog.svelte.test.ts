@@ -22,10 +22,19 @@ const characterDisplaySpies = vi.hoisted(() => ({
   getCharacterDisplayInfo: vi.fn(),
 }))
 
+const alertSpies = vi.hoisted(() => ({
+  alertError: vi.fn(),
+  alertNormal: vi.fn(),
+}))
+
 vi.mock('../../ts/characters', () => characterSpies)
 vi.mock('src/ts/characters', () => characterSpies)
 vi.mock('src/ts/characterCommands', () => characterCommandSpies)
 vi.mock('src/ts/globalApi.svelte', () => globalApiSpies)
+vi.mock('src/ts/alert', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('src/ts/alert')>()),
+  ...alertSpies,
+}))
 vi.mock('src/ts/characterDisplayName', async (importOriginal) => {
   const actual = await importOriginal<typeof import('src/ts/characterDisplayName')>()
   characterDisplaySpies.getCharacterDisplayInfo.mockImplementation(actual.getCharacterDisplayInfo)
@@ -389,6 +398,26 @@ describe('GridCatalog derived lists', () => {
     expect(target.querySelector('[data-risu-character-action-status="failed"]')?.textContent).toContain(
       language.characterRestoreFailed('Beta Backlog'),
     )
+  })
+
+  it('ignores a catalog action that settles after unmount', async () => {
+    const removal = deferred<any>()
+    characterSpies.removeChar.mockReturnValueOnce(removal.promise)
+    mountCatalog()
+    await clickCatalogTab('list')
+
+    gridAction('list', 'alpha-main', 'delete').click()
+    await tick()
+    if (!component) throw new Error('Grid catalog was not mounted')
+    unmount(component)
+    component = undefined
+
+    removal.resolve({ status: 'queued', result: { status: 'unavailable' } })
+    await tick()
+    await tick()
+
+    expect(alertSpies.alertNormal).not.toHaveBeenCalled()
+    expect(alertSpies.alertError).not.toHaveBeenCalled()
   })
 
   it('exposes named character controls and announces an empty search result', async () => {

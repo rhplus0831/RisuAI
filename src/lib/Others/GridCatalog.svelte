@@ -73,6 +73,7 @@
   import { characterRoutePath, navigate } from 'src/ts/router'
   import { prefetchCharacterRouteResource } from 'src/ts/server/routeResourceLoader'
   import { alertError, alertNormal } from 'src/ts/alert'
+  import { onDestroy } from 'svelte'
   interface Props {
     endGrid?: any
   }
@@ -96,6 +97,11 @@
     reason?: string
   }
   let characterCatalogActions = $state<Record<string, CharacterCatalogActionState>>({})
+  let mounted = true
+
+  onDestroy(() => {
+    mounted = false
+  })
 
   function characterCatalogActionMessage(state: CharacterCatalogActionState): string {
     if (state.kind === 'restore') {
@@ -124,6 +130,7 @@
     characterCatalogActions[actionId] = { kind, name: char.name, status: 'pending' }
     try {
       const outcome = await action()
+      if (!mounted) return
       if (!outcome) {
         delete characterCatalogActions[actionId]
         return
@@ -142,6 +149,7 @@
       if (outcome.status === 'queued') alertNormal(message)
       else alertError(message)
     } catch {
+      if (!mounted) return
       characterCatalogActions[actionId] = { kind, name: char.name, status: 'failed' }
       alertError(characterCatalogActionMessage(characterCatalogActions[actionId]))
     }
