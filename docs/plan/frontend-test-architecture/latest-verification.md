@@ -4,9 +4,156 @@ Date: 2026-08-28
 
 ## State
 
-Phase 2 hydration-reads Node proof closeout without promotion. Phase 2 remains
-in progress; this record does not authorize repository-wide default inversion,
-S promotion, or bulk migration outside the active phase rules.
+Phase 2 alert-import-safety closeout. Phase 2 remains in progress; this record
+does not authorize repository-wide default inversion, S promotion, or bulk
+migration outside the active phase rules.
+
+## Phase 2 Alert-Import-Safety Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `3f71f8ca1f80401edd6c03cc2ba4e113f1033835`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Available CPUs: 10
+- Frontend test-all UI-map exclusion: `RISU_TEST_EXCLUDE_UI_MAP=true`
+- Isolation: enabled
+- Measurement tree: the clean hydration-reads proof commit plus the one-file
+  Node ownership change, corrected import-isolation mock, regenerated
+  inventory, and Phase 2 documentation in this slice; no unrelated
+  working-tree changes were present.
+
+GNU `time` console observations remained uncommitted. Coverage output remained
+under ignored `coverage/`.
+
+## Phase 2 Alert-Import-Safety Probe And Ownership
+
+The eleventh bounded Phase 2 promotion slice promotes:
+
+- `src/ts/alert.importSafety.test.ts`
+
+The suite contains one test. It deliberately replaces the UI-store module with
+an empty partial mock, replaces language, and retains its historical
+database-module mock before dynamically importing `alert.ts`. A successful
+import proves that `alert.ts` does not subscribe to, read, or write those
+partial UI-store bindings until an alert helper is invoked.
+
+The test's UI-store mock still targeted `./stores.svelte` after `alert.ts` moved
+its runtime import to `./stores/coreStores.svelte`. The real core-store module
+initializes `$state`; Happy-DOM transformed and executed it accidentally, so the
+stale test no longer isolated the dependency named by its contract. Correcting
+the mock path to the actual core-store import restores the test's original
+boundary. No production code, alert helper, store behavior, assertion, or
+rendered contract changed.
+
+`alert.ts` still creates a plain Svelte writable at module evaluation, while its
+passive-alert and result-dialog subscriptions remain helper-triggered. Its
+database import is type-only, and the runtime `alertDatabase.ts` accessor is
+plain TypeScript. After the intended dependency replacement, the suite executes
+no rune, DOM API, browser storage, component mount, or network request.
+
+Pre-promotion Happy-DOM command:
+
+```sh
+RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v pnpm exec vitest run \
+  src/ts/alert.importSafety.test.ts
+```
+
+Result: 1 file / 1 test passed in 1.35s wall and 570ms Vitest duration,
+with 308,312 KiB peak RSS and 105ms aggregate environment time.
+
+After adding the file to `vitest.node-tests.ts` but before correcting its stale
+mock path, the target command was:
+
+```sh
+RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v pnpm exec vitest run \
+  --project frontend-node src/ts/alert.importSafety.test.ts
+```
+
+Result: the test failed with `ReferenceError: $state is not defined` at
+`src/ts/stores/coreStores.svelte.ts:5`, reached through `alert.ts:4`. The failed
+probe took 0.85s wall and 200ms Vitest duration, with 247,772 KiB peak RSS and no
+environment time. This proved the mock targeted an obsolete dependency.
+
+After changing only the mock path from `./stores.svelte` to
+`./stores/coreStores.svelte`, the same target command passed 1 file / 1 test in
+0.97s wall and 203ms Vitest duration, with 248,012 KiB peak RSS and no
+environment time. An immediate repeated target probe passed again in 198ms
+Vitest duration. The complete Node and frontend runs repeated the test
+successfully.
+
+The full `alert.test.ts` service contract remains in Happy-DOM. Rendered alert
+components and browser-smoke focus/accessibility cases retain their D and B
+ownership; the promotion changes only the dependency-isolated import oracle.
+
+## Phase 2 Alert-Import-Safety Discovery And Classification Proof
+
+Commands:
+
+```sh
+pnpm update:frontend-test-inventory
+pnpm check:frontend-test-inventory
+```
+
+Both passed. The generated inventory removed the promoted target-N probe marker,
+retained the 537-file universe, and remained exhaustive and disjoint.
+
+| View | Files | Node | Svelte+Node | Happy-DOM |
+| --- | ---: | ---: | ---: | ---: |
+| Full, including explicit performance gates | 537 | 158 | 2 | 377 |
+| Standalone ordinary frontend | 535 | 158 | 2 | 375 |
+| `test:all` ordinary frontend | 529 | 157 | 2 | 370 |
+
+The target distribution remains 174 N, 129 S, 234 D, and 7 B. Outstanding
+target-runtime mismatches fell from 144 to 143: 16 N and 127 S. Twelve N files
+remain unprobed; the other four N mismatches are the hydration-read and two
+generation-effect suites with recorded Svelte-rune probe results plus the
+device-backup suite with its recorded file-picker DOM contract.
+
+## Phase 2 Alert-Import-Safety Paired Measurements
+
+All paired commands ran on the same host with
+`RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v`. This is one paired slice
+observation, not the three-run phase-level timing gate.
+
+| Lane | State | Result | Wall | Vitest | CPU | Peak RSS KiB |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `frontend-node` | Before | 156 files / 926 tests | 4.63s | 3.85s | 674% | 920,432 |
+| `frontend-node` | After | 157 files / 927 tests | 4.88s | 4.08s | 695% | 966,364 |
+| `frontend-dom` | Before | 371 files / 5,479 tests | 71.46s | 70.52s | 641% | 5,036,776 |
+| `frontend-dom` | After | 370 files / 5,478 tests | 68.67s | 67.71s | 628% | 4,798,368 |
+| Ordinary frontend | Before | 529 files / 6,413 tests | 69.11s | 68.21s | 638% | 4,999,492 |
+| Ordinary frontend | After | 529 files / 6,413 tests | 68.57s | 67.71s | 640% | 4,751,748 |
+
+The paired ordinary wall observation decreased by 0.54s (0.8%) while peak RSS
+decreased by 247,744 KiB (5.0%). Both movements remain inside observed lane
+variability, so this is not a phase-level performance claim. The owning DOM
+project varied downward by 2.79s and 238,408 KiB while the Node project varied
+upward by 0.25s and 45,932 KiB after absorbing the file.
+
+The focused environment cost fell from 105ms to zero, focused wall fell by
+0.38s, and focused peak RSS fell by 60,300 KiB.
+
+## Phase 2 Alert-Import-Safety Command Validation
+
+The current-owner focused suite passed 1 file / 1 test. The exact uncorrected
+Node target probe failed for the stale-mock Svelte-rune reason, and two exact
+corrected target probes passed without Happy-DOM.
+
+Complete ordinary `frontend-node`, `frontend-dom`, and aggregate frontend runs
+passed 157 files / 927 tests, 370 files / 5,478 tests, and 529 files / 6,413
+tests respectively.
+
+`pnpm test:affected --dry-run` selected the complete frontend lane, isolated
+performance gates, and server lane because the explicit runtime inventory
+changed. Running the selected plan passed 535 frontend files / 6,616 tests, 2
+performance files / 6 tests, and 154 server files / 3,295 tests with 1 skipped.
+
+`pnpm format:check` and `git diff --check` passed.
+
+No production, setup, coverage-map, CI, rendered UI contract, or browser-smoke
+file changed in the promotion, so the preceding test-runtime-tooling `test:all`
+checkpoint remains the current periodic Phase 2 aggregate proof.
 
 ## Phase 2 Hydration-Reads Probe Environment And Source State
 

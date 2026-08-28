@@ -10,16 +10,16 @@ codebase remain authoritative until a phase lands.
 
 - Plan state: Phases 0-1 complete; Phase 2 in progress.
 - Current phase: Phase 2 — Pure Node Promotion.
-- Active slice: No implementation slice is active; the hydration-reads Node
-  proof is complete without promotion.
-- Implementation state: Thirty-one files and 155 tests have moved from the
-  Happy-DOM fallback to Node across ten bounded slices with no production
+- Active slice: No implementation slice is active; the alert-import-safety
+  promotion slice is complete.
+- Implementation state: Thirty-two files and 156 tests have moved from the
+  Happy-DOM fallback to Node across eleven bounded slices with no production
   changes.
 - Blockers: None.
-- Next action: Prepare the bounded Phase 2 alert-import-safety N-promotion
-  slice. Retain the hydration-reads and two generation-effect suites in D
-  pending S-target promotion, and retain the device-backup suite as a D-owned
-  file-picker contract.
+- Next action: Prepare the bounded Phase 2 character-card PNG-import
+  N-promotion slice. Retain the hydration-reads and two generation-effect
+  suites in D pending S-target promotion, and retain the device-backup suite as
+  a D-owned file-picker contract.
 
 ## Phase Router
 
@@ -78,18 +78,18 @@ aggregate ordinary views; 175 unpromoted N/S candidates still require probes.
 
 | Measurement | Result |
 | --- | ---: |
-| Completed slices and proof batches | 11 |
-| Promoted suites | 31 files / 155 tests |
-| Full three-project universe | 537 files: 157 N / 2 S / 378 D |
-| Standalone ordinary frontend | 535 files: 157 N / 2 S / 376 D |
-| `test:all` ordinary frontend | 529 files / 6,413 tests: 156 N / 2 S / 371 D |
-| Remaining target-runtime mismatches | 144: 17 N / 127 S |
-| Latest paired ordinary wall observation | 68.90s -> 70.10s (+1.7%) |
-| Latest paired ordinary peak RSS | 4,847,236 -> 5,064,564 KiB |
+| Completed slices and proof batches | 12 |
+| Promoted suites | 32 files / 156 tests |
+| Full three-project universe | 537 files: 158 N / 2 S / 377 D |
+| Standalone ordinary frontend | 535 files: 158 N / 2 S / 375 D |
+| `test:all` ordinary frontend | 529 files / 6,413 tests: 157 N / 2 S / 370 D |
+| Remaining target-runtime mismatches | 143: 16 N / 127 S |
+| Latest paired ordinary wall observation | 69.11s -> 68.57s (-0.8%) |
+| Latest paired ordinary peak RSS | 4,999,492 -> 4,751,748 KiB |
 
-The paired timing is slice evidence, not a phase-level median. The +1.7% wall
+The paired timing is slice evidence, not a phase-level median. The -0.8% wall
 movement remains inside ordinary run-to-run variability; it is not a
-phase-level performance claim. Phase 2 remains open for 13 unprobed N
+phase-level performance claim. Phase 2 remains open for 12 unprobed N
 candidates. The generated inventory also counts the probed hydration-read and
 two generation-effect suites plus the probed device-backup suite retained in
 D.
@@ -160,6 +160,13 @@ D.
     an N promotion. Owner: Phase 3 client-server S promotion. Revisit when
     Phase 3 begins, or earlier only if the production import graph removes the
     transitive rune dependency and a fresh Node probe passes.
+20. The eleventh Phase 2 promotion slice corrected
+    `alert.importSafety.test.ts`'s stale `stores.svelte` mock to the actual
+    `stores/coreStores.svelte.ts` dependency and promoted its one lazy-import
+    oracle to N. The uncorrected target probe failed at that module's `$state`
+    initialization; the aligned dependency replacement restored the test's
+    original import-isolation boundary without changing production alert
+    behavior or moving the full alert service out of D.
 
 ## Accepted Observations
 
@@ -192,18 +199,17 @@ occurrence reopens the display-source batching owner before another promotion.
 
 ## Latest Completed Slice
 
-[Phase 2 hydration reads Node probe](phases/slices/phase-2/hydration-reads-node-probe.md)
-retained the 12-test hydration-read suite in Happy-DOM after proving its
-transitive Svelte rune requirement in Node and its no-DOM compatibility in
-Svelte+Node. No production, test-body, setup, or permanent ownership change
-landed.
+[Phase 2 alert import safety](phases/slices/phase-2/alert-import-safety.md)
+corrected the one-test suite's stale UI-store mock to its actual dependency and
+promoted it from Happy-DOM to Node. The full alert service and rendered/browser
+contracts remain under their existing D and B owners.
 
 ## Latest Verification
 
 See [`latest-verification.md`](latest-verification.md) for the latest Phase 2
-current-owner, Node, and Svelte+Node probe evidence plus unchanged discovery
-and validation, followed by the preceding promotion and retained Phase 1
-closeout records.
+current-owner and Node probe evidence, paired discovery and performance
+observations, and complete affected validation, followed by the preceding
+proof, promotion, and retained Phase 1 closeout records.
 
 ## Maintenance Rules
 

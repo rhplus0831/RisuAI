@@ -36,6 +36,9 @@ Status: In progress
   retained the 12-test hydration-read suite in Happy-DOM after its Node probe
   reached a transitive Svelte rune module; a classification probe passed in
   Svelte+Node for later Phase 3 ownership.
+- [Alert import safety](slices/phase-2/alert-import-safety.md): corrected the
+  import-isolation suite's stale UI-store mock and promoted its one test from
+  Happy-DOM to Node without changing production behavior.
 
 ## Objective
 

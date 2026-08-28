@@ -35,6 +35,7 @@ export const nodeTestFiles = [
   'src/lib/UI/Realm/realmImportInput.test.ts',
   'src/ts/agentPresetDiagnostics.test.ts',
   'src/ts/agentPresetRecords.test.ts',
+  'src/ts/alert.importSafety.test.ts',
   'src/ts/alternateGreetingCommands.test.ts',
   'src/ts/alternateGreetingMutation.test.ts',
   'src/ts/browserLocalSurface.test.ts',
