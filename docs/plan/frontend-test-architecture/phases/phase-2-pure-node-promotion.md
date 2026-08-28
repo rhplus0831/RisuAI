@@ -32,6 +32,10 @@ Status: In progress
 - [Storage backup and export helpers](slices/phase-2/storage-backup-export-helpers.md):
   promoted three dependency-isolated backup, dataset-export, and RisuSave
   cache-gate suites and nine tests from Happy-DOM to Node.
+- [Hydration reads Node probe](slices/phase-2/hydration-reads-node-probe.md):
+  retained the 12-test hydration-read suite in Happy-DOM after its Node probe
+  reached a transitive Svelte rune module; a classification probe passed in
+  Svelte+Node for later Phase 3 ownership.
 
 ## Objective
 

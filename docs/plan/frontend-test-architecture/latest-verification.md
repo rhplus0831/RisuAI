@@ -4,9 +4,145 @@ Date: 2026-08-28
 
 ## State
 
-Phase 2 storage-backup-export-helpers slice closeout. Phase 2 remains in
-progress; this record does not authorize repository-wide default inversion, S
-promotion, or bulk migration outside the active phase rules.
+Phase 2 hydration-reads Node proof closeout without promotion. Phase 2 remains
+in progress; this record does not authorize repository-wide default inversion,
+S promotion, or bulk migration outside the active phase rules.
+
+## Phase 2 Hydration-Reads Probe Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `590f21ea9e104b7d6f9a29f43d68807419db7bf8`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Available CPUs: 10
+- Frontend test-all UI-map exclusion: `RISU_TEST_EXCLUDE_UI_MAP=true`
+- Isolation: enabled
+- Measurement tree: the clean storage-backup-export-helpers commit. The Node
+  and Svelte+Node allowlist additions existed only for their focused probes and
+  were reverted before documentation changes; no unrelated working-tree
+  changes were present.
+
+GNU `time` console observations remained uncommitted. Coverage output remained
+under ignored `coverage/`.
+
+## Phase 2 Hydration-Reads Capability And Ownership Proof
+
+The proposed one-file Phase 2 slice evaluated:
+
+- `src/ts/server/hydrationReads.test.ts`
+
+The suite contains 12 tests. It replaces the Fastify auth boundary, stubs every
+executed `fetch`, and supplies `fake-indexeddb` explicitly for cache-backed
+cases. Its assertions cover cache-negotiated legacy-preset, prompt-template,
+chat-message, generation-suffix, bulk-chat, and character-lorebook reads,
+including cache reconstruction, legacy fallback, query construction, malformed
+responses, and network errors. It mounts no component and uses no DOM API,
+browser storage, or real network.
+
+Its production subject imports `canUseServerResourceReads` from
+`resourceReads.ts`. That module imports runtime constants from
+`resourceState.svelte.ts`, which initializes state with `$state` during module
+evaluation. The test does not mock that boundary, and adding such a mock only
+to pass Node would weaken the transitive contract.
+
+Current-owner command:
+
+```sh
+/usr/bin/time -v pnpm exec vitest run \
+  src/ts/server/hydrationReads.test.ts
+```
+
+Result: 1 file / 12 tests passed in 1.68s wall and 977ms Vitest duration,
+with 440,468 KiB peak RSS and 115ms aggregate environment time.
+
+After temporarily adding the file to `vitest.node-tests.ts`, the target command
+was:
+
+```sh
+/usr/bin/time -v pnpm exec vitest run --project frontend-node \
+  src/ts/server/hydrationReads.test.ts
+```
+
+Result: the suite failed before collection with
+`ReferenceError: $state is not defined` at
+`src/ts/server/resourceState.svelte.ts:658`, reached through
+`resourceReads.ts:19` and `hydrationReads.ts:2`. The failed probe took 1.17s
+wall and 478ms Vitest duration, with 395,420 KiB peak RSS and no aggregate
+environment time.
+
+After removing the Node entry and temporarily adding the file to
+`vitest.svelte-node-tests.ts`, the classification command was:
+
+```sh
+/usr/bin/time -v pnpm exec vitest run --project frontend-svelte-node \
+  src/ts/server/hydrationReads.test.ts
+```
+
+Result: 1 file / 12 tests passed in 1.69s wall and 1.01s Vitest duration,
+with 441,684 KiB peak RSS and 19ms aggregate environment time. This proves S is
+the smallest current runtime capable of executing the suite without DOM setup.
+The temporary S entry was then removed. The suite remains D-owned pending Phase
+3; no test, mock, production dependency, setup, or permanent runtime inventory
+changed.
+
+## Phase 2 Hydration-Reads Discovery And Classification Proof
+
+Command:
+
+```sh
+pnpm check:frontend-test-inventory
+```
+
+The checked inventory remained byte-for-byte current after both temporary
+allowlist entries were removed. Ownership and target-distribution counters are
+unchanged:
+
+| View | Files | Node | Svelte+Node | Happy-DOM |
+| --- | ---: | ---: | ---: | ---: |
+| Full, including explicit performance gates | 537 | 157 | 2 | 378 |
+| Standalone ordinary frontend | 535 | 157 | 2 | 376 |
+| `test:all` ordinary frontend | 529 | 156 | 2 | 371 |
+
+The generated static inventory still reports 174 N, 129 S, 234 D, and 7 B
+because it records direct-file evidence and cannot see the transitive rune
+edge. Outstanding generated target-runtime mismatches remain 144: 17 N and 127
+S. Thirteen N candidates remain unprobed; the other four generated N
+mismatches are this hydration-read suite, the two generation-effect suites, and
+the device-backup suite with recorded target-runtime probe results.
+
+## Phase 2 Hydration-Reads Baseline Observations
+
+No ownership change landed, so there is no before/after performance claim and
+no after-migration measurement. The same-host pre-probe ordinary observations
+were:
+
+| Lane | Result | Wall | Vitest | CPU | Peak RSS KiB |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `frontend-node` | 156 files / 926 tests | 4.42s | 3.75s | 671% | 939,216 |
+| `frontend-dom` | 371 files / 5,479 tests | 72.16s | 71.25s | 625% | 4,765,916 |
+| Ordinary frontend | 529 files / 6,413 tests | 70.45s | 69.49s | 630% | 5,004,432 |
+
+These are reproducibility observations only, not a paired slice measurement or
+phase-level timing gate.
+
+## Phase 2 Hydration-Reads Command Validation
+
+The current-owner focused suite, ordinary Node project, ordinary DOM project,
+and ordinary aggregate frontend runs passed 1 file / 12 tests, 156 files / 926
+tests, 371 files / 5,479 tests, and 529 files / 6,413 tests respectively before
+the temporary probes. The exact Node target probe failed for the recorded Svelte
+rune reason, and the exact Svelte+Node classification probe passed all 12 tests.
+
+`pnpm check:frontend-test-inventory`, `pnpm test:affected --dry-run`, formatting
+of changed files, and `git diff --check` passed after the temporary ownership
+entries were removed.
+
+No runtime inventory, production, setup, coverage-map, CI, rendered UI, or
+browser-smoke file changed, so no affected execution lane or new `test:all`
+checkpoint was required for this proof-only batch.
+
+## Phase 2 Storage-Backup-Export-Helpers Closeout
 
 ## Phase 2 Storage-Backup-Export-Helpers Environment And Source State
 

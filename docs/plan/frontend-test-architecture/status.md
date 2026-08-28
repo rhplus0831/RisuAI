@@ -10,16 +10,16 @@ codebase remain authoritative until a phase lands.
 
 - Plan state: Phases 0-1 complete; Phase 2 in progress.
 - Current phase: Phase 2 — Pure Node Promotion.
-- Active slice: No implementation slice is active; the storage-backup-export-helpers
-  promotion slice is complete.
+- Active slice: No implementation slice is active; the hydration-reads Node
+  proof is complete without promotion.
 - Implementation state: Thirty-one files and 155 tests have moved from the
   Happy-DOM fallback to Node across ten bounded slices with no production
   changes.
 - Blockers: None.
-- Next action: Prepare the bounded Phase 2 hydration-reads N-promotion slice.
-  Retain the two failed generation-effect Node probes pending S-target
-  reclassification, and retain the device-backup suite as a D-owned file-picker
-  contract.
+- Next action: Prepare the bounded Phase 2 alert-import-safety N-promotion
+  slice. Retain the hydration-reads and two generation-effect suites in D
+  pending S-target promotion, and retain the device-backup suite as a D-owned
+  file-picker contract.
 
 ## Phase Router
 
@@ -78,7 +78,7 @@ aggregate ordinary views; 175 unpromoted N/S candidates still require probes.
 
 | Measurement | Result |
 | --- | ---: |
-| Completed slices | 10 |
+| Completed slices and proof batches | 11 |
 | Promoted suites | 31 files / 155 tests |
 | Full three-project universe | 537 files: 157 N / 2 S / 378 D |
 | Standalone ordinary frontend | 535 files: 157 N / 2 S / 376 D |
@@ -89,9 +89,10 @@ aggregate ordinary views; 175 unpromoted N/S candidates still require probes.
 
 The paired timing is slice evidence, not a phase-level median. The +1.7% wall
 movement remains inside ordinary run-to-run variability; it is not a
-phase-level performance claim. Phase 2 remains open for 14 unprobed N
-candidates. The generated inventory also counts the two probed generation
-suites and the probed device-backup suite retained in D.
+phase-level performance claim. Phase 2 remains open for 13 unprobed N
+candidates. The generated inventory also counts the probed hydration-read and
+two generation-effect suites plus the probed device-backup suite retained in
+D.
 
 ## Current Decisions
 
@@ -151,6 +152,14 @@ suites and the probed device-backup suite retained in D.
     probe retained `storage/backup.test.ts` in D because seven file-picker
     contracts require `HTMLInputElement`; the test and production DOM boundary
     were not weakened for promotion.
+19. The hydration-reads Node proof failed before collection because
+    `hydrationReads.ts` reaches `$state` initialization in
+    `resourceState.svelte.ts` through `resourceReads.ts`. The same 12-test suite
+    passed in `frontend-svelte-node`, so it remains in D pending deliberate
+    Phase 3 S promotion; no mock or production boundary was weakened to force
+    an N promotion. Owner: Phase 3 client-server S promotion. Revisit when
+    Phase 3 begins, or earlier only if the production import graph removes the
+    transitive rune dependency and a fresh Node probe passes.
 
 ## Accepted Observations
 
@@ -183,16 +192,18 @@ occurrence reopens the display-source batching owner before another promotion.
 
 ## Latest Completed Slice
 
-[Phase 2 storage backup and export helpers](phases/slices/phase-2/storage-backup-export-helpers.md)
-promoted three dependency-isolated Risu-Kei backup, dataset-export, and RisuSave
-cache-gate suites and nine tests from Happy-DOM to Node without changing their
-assertions or production subjects.
+[Phase 2 hydration reads Node probe](phases/slices/phase-2/hydration-reads-node-probe.md)
+retained the 12-test hydration-read suite in Happy-DOM after proving its
+transitive Svelte rune requirement in Node and its no-DOM compatibility in
+Svelte+Node. No production, test-body, setup, or permanent ownership change
+landed.
 
 ## Latest Verification
 
-See [`latest-verification.md`](latest-verification.md) for the Phase 2 focused
-probe, discovery, paired timing, complete-project, frontend, affected-test, and
-formatting evidence, followed by the retained Phase 1 closeout record.
+See [`latest-verification.md`](latest-verification.md) for the latest Phase 2
+current-owner, Node, and Svelte+Node probe evidence plus unchanged discovery
+and validation, followed by the preceding promotion and retained Phase 1
+closeout records.
 
 ## Maintenance Rules
 
