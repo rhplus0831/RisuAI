@@ -485,6 +485,48 @@ describe('MCPClient deadlines and SSE listener cleanup', () => {
     )
   })
 
+  it('aborts a hung MCP JSON response body at the configured deadline', async () => {
+    vi.useFakeTimers()
+    const { stream, close } = hangingStream()
+    let capturedOptions: any
+    fetchNativeMock.mockImplementation((_url: string, options: any) => {
+      capturedOptions = options
+      return Promise.resolve(
+        new Response(stream, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+    })
+
+    const client = new MCPClient('https://mcp.example/messages')
+    const request = client.request(
+      'tools/list',
+      {},
+      {
+        id: 'hung-json-body',
+        requestTimeoutMs: 5,
+      },
+    )
+
+    await flushPromises()
+    expect(capturedOptions.signal.aborted).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(5)
+    const result = await request
+    close()
+
+    expect(capturedOptions.signal.aborted).toBe(true)
+    expect(result.http.status).toBe(408)
+    expect(result.rpc.id).toBe('hung-json-body')
+    expect(result.rpc.error).toEqual(
+      expect.objectContaining({
+        code: -32001,
+        message: expect.stringContaining('timed out'),
+      }),
+    )
+  })
+
   it('times out unmatched MCP SSE responses and removes the document listener', async () => {
     vi.useFakeTimers()
     const { listeners, addSpy, removeSpy } = trackMcpSseListeners()

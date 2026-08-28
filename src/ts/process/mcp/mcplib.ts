@@ -501,6 +501,24 @@ export class MCPClient {
     }
   }
 
+  private async readJsonWithDeadline(response: Response, timeoutMs: number, abortController: AbortController) {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        abortController.abort()
+        reject(new MCPDeadlineError(timeoutMs))
+      }, timeoutMs)
+    })
+
+    try {
+      return await Promise.race([response.json(), timeoutPromise])
+    } finally {
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId)
+      }
+    }
+  }
+
   private waitForSseResponse(
     id: string | number | undefined,
     {
@@ -947,7 +965,7 @@ export class MCPClient {
         this.sessionId = response.headers.get('Mcp-Session-Id')
       }
       return {
-        rpc: await response.json(),
+        rpc: await this.readJsonWithDeadline(response, timeoutMs, abortController),
         http: {
           status: response.status,
           headers: Object.fromEntries(response.headers.entries()),
