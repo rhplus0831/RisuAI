@@ -20,6 +20,9 @@ Status: In Progress
 - [Generation effect state](slices/phase-3/generation-effect-state.md): promoted
   two suites / 10 tests whose Phase 2 Node probes reached real persistence or
   core-store runes and whose Phase 3 Svelte+Node probes passed unchanged.
+- [Target-S blocker ledger](slices/phase-3/target-s-blocker-ledger.md): retained
+  93 candidates and 1,503 tests after exact Svelte+Node probes reached eager
+  browser globals or real DOM parsing behavior.
 
 ## Objective
 

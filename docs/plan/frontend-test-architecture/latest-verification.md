@@ -8,6 +8,44 @@ Phase 3 in progress after its first proof-backed Svelte+Node promotion slice.
 This record does not authorize repository-wide default inversion or migration
 outside the active phase rules.
 
+## Phase 3 Target-S Blocker Ledger Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Target-S probe base: `f362a56156d29ceabfadf1e0f5c9301bb5e22cff`
+- Retained-owner validation base: `091bf0c91ab85c01af0213fe9a53e51080213df1`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Isolation: enabled
+- Measurement trees: temporary allowlist changes only for the exhaustive probe;
+  all temporary entries were removed. The retained-owner validation ran with
+  permanent successful promotions already landed and no production/test-body
+  changes.
+
+## Phase 3 Target-S Blocker Proof And Retained-Owner Validation
+
+The exhaustive target-S probe produced 93 exact blockers. Ninety-one files
+failed because their unchanged collection or execution graph reads `window`;
+the recurring anchors are `stores.svelte.ts:23` and
+`plugins/pluginSafeClass.ts:33`. Two files collected but exercised real
+`DOMParser`: `process/files/multisend.test.ts` through `multisend.ts:221`, and
+`translator/translator.html.test.ts` through `translator.ts:888`.
+
+The exact retained ordinary Happy-DOM scope passed 92 files / 1,502 tests in
+22.26s wall with 2,920,532 KiB peak RSS. The performance-gated
+`sendCloneCountProbe.test.ts` is intentionally excluded from ordinary discovery;
+with `RISU_TEST_INCLUDE_GATES=true`, it passed 1 file / 1 test in 3.73s wall and
+3.01s Vitest duration, with 723,292 KiB peak RSS and 116ms environment time.
+Together the retained owners pass all 93 files / 1,503 tests.
+
+Every retained candidate is listed in the blocker ledger with an owner, exact
+reason, and revisit condition. The 91 eager-browser graphs belong to the Phase
+4 stopping-gate triage and may be extracted only when current profiler evidence
+justifies the seam; otherwise Phase 5 records durable D ownership. The two real
+parser contracts belong to Phase 5. No project-wide browser fake or weaker mock
+was introduced. Formatting, inventory completeness, and `git diff --check`
+passed.
+
 ## Phase 3 Generation Effect State Environment And Source State
 
 - Repository: `/home/codex/risuai-fastify`

@@ -10,14 +10,14 @@ codebase remain authoritative until a phase lands.
 
 - Plan state: Phases 0-2 complete; Phase 3 in progress.
 - Current phase: Phase 3 — Svelte+Node Promotion (in progress).
-- Active slice: Record the complete 93-file Svelte+Node blocker ledger.
+- Active slice: Phase 3 exit validation and stopping-gate benchmark.
 - Implementation state: Phase 3 has moved 15 files / 159 tests to Svelte+Node
   and 28 files / 312 tests to Node without production or test-body changes.
   Phases 2-3 have promoted 78 files and 647 tests in total.
-- Blockers: None.
-- Next action: Record exact owners and revisit conditions for the 93 blocked
-  target-S candidates, then run Phase 3 exit validation and the stopping-gate
-  benchmark.
+- Blockers: 93 candidate-level Svelte+Node blockers are recorded with owners and
+  revisit conditions; none blocks Phase 3 closeout.
+- Next action: Run complete project, coverage, affected, aggregate, and formal
+  three-run timing validation; record the Phase 4 scope decision.
 
 ## Phase Router
 
@@ -102,14 +102,16 @@ retainers under recorded Phase 3, Phase 4, or DOM-contract owners.
 
 | Measurement | Result |
 | --- | ---: |
-| Completed slices | 5 |
+| Completed slices and proof batches | 6 |
 | Promoted to Svelte+Node | 15 files / 159 tests |
 | Promoted to Node after cross-check | 28 files / 312 tests |
 | Full three-project universe | 537 files: 189 N / 17 S / 331 D |
 | Standalone ordinary frontend | 535 files: 189 N / 17 S / 329 D |
 | `test:all` ordinary frontend | 529 files: 188 N / 17 S / 324 D |
 | Broad target-S probe result | 34 passed / 93 blocked |
-| Remaining proven promotions | 0 files |
+| Retained target-S blockers | 93 files / 1,503 tests |
+| Remaining static mismatches | 97: 4 N / 93 S, all probe-backed |
+| Unprobed Phase 3 candidates | 0 files |
 
 The first slice promoted only suites with exact Phase 2 Svelte+Node evidence.
 The complete 127-file target-S probe then passed 34 candidates and failed 93 at
@@ -246,6 +248,10 @@ result; the stopping-gate benchmark remains pending.
 33. The generation-effect slice moved two suites / 10 tests to Svelte+Node.
     Phase 2 had proved their real persistence and core-store rune dependencies
     reject plain Node; Phase 3 proved the unchanged tests require no DOM.
+34. The blocker ledger accounts for all 93 failed target-S probes: 91 unchanged
+    graphs read `window`, and two suites execute real `DOMParser` behavior. The
+    retained Happy-DOM scopes pass all 1,503 tests. Phase 4 stopping-gate triage
+    owns measured import-graph seams; Phase 5 owns durable parser contracts.
 
 ## Accepted Observations
 
