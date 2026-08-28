@@ -69,7 +69,11 @@ describe('request history routes', () => {
       completeRequestHistory(handle, {
         status: 'success',
         response: 'private response',
-        apiMetadata: { usage: { inputTokens: 4, outputTokens: 2 } },
+        apiMetadata: {
+          usage: { inputTokens: 4, outputTokens: 2 },
+          api_key: 'sk-route-secret',
+          upstream: { access_token: 'route-access-secret' },
+        },
         completedAt: 200,
       })
     } finally {
@@ -104,6 +108,11 @@ describe('request history routes', () => {
         apiMetadata: { usage: { inputTokens: 4, outputTokens: 2 } },
       },
     })
+    expect(detail.json().record.apiMetadata).toMatchObject({
+      api_key: '[redacted]',
+      upstream: { access_token: '[redacted]' },
+    })
+    expect(JSON.stringify(detail.json())).not.toMatch(/sk-route-secret|route-access-secret/u)
 
     const removed = await app.inject({
       method: 'DELETE',

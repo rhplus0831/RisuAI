@@ -49,6 +49,7 @@ import {
 import {
   completeRequestHistory,
   createRequestHistoryResponseCapture,
+  requestHistoryRedactionValues,
   tryBeginRequestHistory,
   type RequestHistoryHandle,
   type RequestHistoryProfileSnapshot,
@@ -414,6 +415,7 @@ function beginLegacyRequestHistory(input: {
   model: string
   prompt: unknown
   stream: boolean
+  options: unknown
 }): void {
   const settings = loadServerIntentCompletionSettings(input.db)
   const profile: RequestHistoryProfileSnapshot = {
@@ -434,6 +436,7 @@ function beginLegacyRequestHistory(input: {
       mode: 'legacy-client-request',
       streamingRequested: input.stream,
     },
+    redactionValues: requestHistoryRedactionValues(input.options),
   })
   if (!handle) return
   const tracker: LegacyRequestHistoryTracker = { handle, settled: false }
@@ -1532,6 +1535,7 @@ export function registerGenerationRoutes(
       model: body.model,
       prompt: legacyFinalizedPrompt(provider, messages, options),
       stream: body.stream,
+      options,
     })
 
     if (provider === 'echo') {

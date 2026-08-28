@@ -55,6 +55,7 @@ import {
 import { extractConfiguredJsonValue, parseConfiguredJsonSchemaText } from '../generation/jsonControls.js'
 import {
   completeRequestHistory,
+  requestHistoryRedactionValues,
   requestHistoryProfileSnapshot,
   tryBeginRequestHistory,
   wrapRequestHistoryFrames,
@@ -1133,6 +1134,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
           toolRoundCount: args.toolRounds?.length ?? 0,
           ...(args.history.metadata ?? {}),
         },
+        redactionValues: requestHistoryRedactionValues(profile.providerOptions),
       })
     : null
   try {

@@ -103,6 +103,50 @@ describe('request history repository', () => {
     expect(record?.metadata).not.toHaveProperty('response')
   })
 
+  it('redacts secret-shaped metadata, error text, and known credential values before persistence', () => {
+    const handle = beginRequestHistory({
+      db,
+      limit: 5,
+      id: 'redacted',
+      source: 'chat',
+      profile,
+      prompt: [{ role: 'user', content: 'do not persist opaque-credential-value' }],
+      metadata: { authorization: 'Bearer begin-secret' },
+      redactionValues: ['opaque-credential-value'],
+    })
+
+    completeRequestHistory(handle, {
+      status: 'error',
+      response: 'echoed opaque-credential-value',
+      error: 'Incorrect API key provided: sk-live-secret; password=hunter2; credential=opaque-credential-value',
+      metadata: { access_token: 'metadata-token-secret' },
+      apiMetadata: {
+        api_key: 'sk-json-secret',
+        nested: {
+          access_token: 'token-json-secret',
+          message: 'Authorization: Bearer upstream-secret',
+        },
+      },
+    })
+
+    const record = getRequestHistoryRecord(db, 'redacted')
+    const serialized = JSON.stringify(record)
+    expect(record).toMatchObject({
+      prompt: [{ content: 'do not persist [redacted]' }],
+      response: 'echoed [redacted]',
+      metadata: { authorization: '[redacted]', access_token: '[redacted]' },
+      apiMetadata: {
+        api_key: '[redacted]',
+        nested: { access_token: '[redacted]', message: 'Authorization: Bearer [redacted]' },
+      },
+    })
+    expect(record?.error).toContain('API key provided: [redacted]')
+    expect(record?.error).toContain('password=[redacted]')
+    expect(serialized).not.toMatch(
+      /opaque-credential-value|sk-live-secret|hunter2|metadata-token-secret|sk-json-secret|token-json-secret|upstream-secret/u,
+    )
+  })
+
   it('uses zero as disable-and-clear', () => {
     beginRequestHistory({
       db,

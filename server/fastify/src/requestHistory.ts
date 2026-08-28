@@ -93,6 +93,7 @@ export interface BeginRequestHistoryInput {
   context?: RequestHistoryContext
   toggles?: Record<string, string>
   metadata?: Record<string, unknown>
+  redactionValues?: readonly string[]
   id?: string
   startedAt?: number
 }
@@ -104,6 +105,7 @@ export interface RequestHistoryHandle {
   limit: number
   metadata: Record<string, unknown>
   truncation: RequestHistoryTruncation
+  redactionValues: string[]
 }
 
 export interface RequestHistoryCapturedResponse {
@@ -131,6 +133,101 @@ interface RequestHistoryRow {
   metadata_json: string
   api_metadata_json: string
   error_text: string | null
+}
+
+const REQUEST_HISTORY_REDACTED = '[redacted]'
+
+function isSensitiveHistoryKey(key: string): boolean {
+  const compact = key.toLowerCase().replace(/[^a-z0-9]/gu, '')
+  return (
+    compact === 'authorization' ||
+    compact === 'cookie' ||
+    compact === 'key' ||
+    compact === 'proxyauthorization' ||
+    compact === 'risuauth' ||
+    compact === 'setcookie' ||
+    compact.endsWith('apikey') ||
+    compact.endsWith('accesskey') ||
+    compact.endsWith('privatekey') ||
+    compact.endsWith('secretkey') ||
+    compact.endsWith('token') ||
+    compact.endsWith('password') ||
+    compact.endsWith('passwd') ||
+    compact.endsWith('secret')
+  )
+}
+
+function redactHistoryString(value: string, redactionValues: readonly string[]): string {
+  let redacted = value
+  for (const secret of redactionValues) {
+    if (!secret) continue
+    if (redacted === secret) return REQUEST_HISTORY_REDACTED
+    if (secret.length >= 8) redacted = redacted.split(secret).join(REQUEST_HISTORY_REDACTED)
+  }
+  redacted = redacted
+    .replace(/\bBearer\s+[^\s"',;&}]+/giu, 'Bearer [redacted]')
+    .replace(/\b(?:sk|rk|pk|api)[-_][A-Za-z0-9_-]{8,}\b/giu, REQUEST_HISTORY_REDACTED)
+    .replace(
+      /((?:["']?\b(?:access[_ -]?token|api[_ -]?key|authorization|id[_ -]?token|password|passwd|private[_ -]?key|refresh[_ -]?token|secret|session[_ -]?token|x-api-key|xi-api-key)\b["']?\s*[:=]\s*)(?:bearer\s+)?)(["']?)[^\s"',;&}]+/giu,
+      '$1$2[redacted]',
+    )
+  return redacted
+}
+
+function redactRequestHistoryValue(
+  value: unknown,
+  redactionValues: readonly string[],
+  seen = new WeakSet<object>(),
+): unknown {
+  if (typeof value === 'string') return redactHistoryString(value, redactionValues)
+  if (value === null || typeof value !== 'object') return value
+  if (seen.has(value)) return '[circular]'
+  seen.add(value)
+  if (Array.isArray(value)) {
+    const out = value.map((entry) => redactRequestHistoryValue(entry, redactionValues, seen))
+    seen.delete(value)
+    return out
+  }
+  const out: Record<string, unknown> = {}
+  for (const [key, entry] of Object.entries(value)) {
+    out[key] = isSensitiveHistoryKey(key)
+      ? REQUEST_HISTORY_REDACTED
+      : redactRequestHistoryValue(entry, redactionValues, seen)
+  }
+  seen.delete(value)
+  return out
+}
+
+export function requestHistoryRedactionValues(value: unknown): string[] {
+  const values = new Set<string>()
+  const seen = new WeakSet<object>()
+  const collectStrings = (entry: unknown): void => {
+    if (typeof entry === 'string' && entry.length > 0) values.add(entry)
+    else if (Array.isArray(entry)) entry.forEach(collectStrings)
+    else if (entry && typeof entry === 'object') Object.values(entry).forEach(collectStrings)
+  }
+  const visit = (entry: unknown): void => {
+    if (!entry || typeof entry !== 'object') return
+    if (seen.has(entry)) return
+    seen.add(entry)
+    if (Array.isArray(entry)) {
+      if (
+        entry.length === 2 &&
+        typeof entry[0] === 'string' &&
+        isSensitiveHistoryKey(entry[0].replace(/^header::/iu, ''))
+      ) {
+        collectStrings(entry[1])
+      }
+      entry.forEach(visit)
+      return
+    }
+    for (const [key, field] of Object.entries(entry)) {
+      if (isSensitiveHistoryKey(key)) collectStrings(field)
+      else visit(field)
+    }
+  }
+  visit(value)
+  return [...values]
 }
 
 export function createRequestHistoryTable(db: DatabaseSync): void {
@@ -188,18 +285,29 @@ export function beginRequestHistory(input: BeginRequestHistoryInput): RequestHis
 
   const id = input.id ?? randomUUID()
   const startedAt = input.startedAt ?? Date.now()
+  const redactionValues = [...new Set((input.redactionValues ?? []).filter((value) => value.length > 0))]
   const truncation: RequestHistoryTruncation = {}
-  const source = boundedText(input.source, REQUEST_HISTORY_SOURCE_MAX_BYTES)
+  const source = boundedText(redactHistoryString(input.source, redactionValues), REQUEST_HISTORY_SOURCE_MAX_BYTES)
   recordTruncation(truncation, 'source', source)
   const profile = boundedProfile(input.profile)
   recordTruncation(truncation, 'profile', profile)
-  const prompt = boundedJson(input.prompt, REQUEST_HISTORY_PROMPT_MAX_BYTES)
+  const prompt = boundedJson(redactRequestHistoryValue(input.prompt, redactionValues), REQUEST_HISTORY_PROMPT_MAX_BYTES)
   recordTruncation(truncation, 'prompt', prompt)
-  const context = input.context ? boundedContext(input.context) : null
+  const context = input.context
+    ? boundedContext(redactRequestHistoryValue(input.context, redactionValues) as RequestHistoryContext)
+    : null
   if (context) recordTruncation(truncation, 'context', context)
-  const toggles = input.toggles ? boundedJson(input.toggles, REQUEST_HISTORY_AUXILIARY_JSON_MAX_BYTES, true) : null
+  const toggles = input.toggles
+    ? boundedJson(
+        redactRequestHistoryValue(input.toggles, redactionValues),
+        REQUEST_HISTORY_AUXILIARY_JSON_MAX_BYTES,
+        true,
+      )
+    : null
   if (toggles) recordTruncation(truncation, 'toggles', toggles)
-  const metadata = boundedMetadata(input.metadata ?? {})
+  const metadata = boundedMetadata(
+    redactRequestHistoryValue(input.metadata ?? {}, redactionValues) as Record<string, unknown>,
+  )
   recordTruncation(truncation, 'metadata', metadata)
   input.db
     .prepare(
@@ -219,7 +327,7 @@ export function beginRequestHistory(input: BeginRequestHistoryInput): RequestHis
       metadataJson(metadata.value, truncation),
     )
   pruneRequestHistory(input.db, limit)
-  return { db: input.db, id, startedAt, limit, metadata: metadata.value, truncation }
+  return { db: input.db, id, startedAt, limit, metadata: metadata.value, truncation, redactionValues }
 }
 
 export function tryBeginRequestHistory(input: BeginRequestHistoryInput): RequestHistoryHandle | null {
@@ -247,15 +355,26 @@ export function completeRequestHistory(
 ): void {
   if (!handle) return
   const completedAt = input.completedAt ?? Date.now()
-  const response = boundedText(input.response ?? '', REQUEST_HISTORY_RESPONSE_MAX_BYTES)
+  const response = boundedText(
+    redactHistoryString(input.response ?? '', handle.redactionValues),
+    REQUEST_HISTORY_RESPONSE_MAX_BYTES,
+  )
   const responseTruncatedBytes = Math.max(0, Math.trunc(input.responseTruncatedBytes ?? 0))
   if (responseTruncatedBytes > 0) {
     response.originalBytes += responseTruncatedBytes
     response.truncatedBytes += responseTruncatedBytes
   }
-  const error = input.error === undefined ? null : boundedText(input.error, REQUEST_HISTORY_ERROR_MAX_BYTES)
-  const apiMetadata = boundedJson(input.apiMetadata ?? {}, REQUEST_HISTORY_API_METADATA_MAX_BYTES)
-  const completionMetadata = boundedMetadata(input.metadata ?? {})
+  const error =
+    input.error === undefined
+      ? null
+      : boundedText(redactHistoryString(input.error, handle.redactionValues), REQUEST_HISTORY_ERROR_MAX_BYTES)
+  const apiMetadata = boundedJson(
+    redactRequestHistoryValue(input.apiMetadata ?? {}, handle.redactionValues),
+    REQUEST_HISTORY_API_METADATA_MAX_BYTES,
+  )
+  const completionMetadata = boundedMetadata(
+    redactRequestHistoryValue(input.metadata ?? {}, handle.redactionValues) as Record<string, unknown>,
+  )
   const metadata = boundedMetadata({
     ...handle.metadata,
     ...completionMetadata.value,
