@@ -101,11 +101,12 @@ describe('bootstrap runtime metadata', () => {
   })
 
   it('rejects unauthenticated bootstrap once a password is set', async () => {
-    await harness.app.inject({
+    const setup = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/auth/setup',
       payload: { password: 'hunter2' },
     })
+    expect(setup.statusCode).toBe(200)
 
     const response = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
 
@@ -272,6 +273,7 @@ describe('bootstrap runtime metadata', () => {
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion, 'risu-writer-observer-session': 'different-writer' },
     })
+    expect(observer.statusCode).toBe(200)
     expect(observer.json().generationFinalizations).toBeUndefined()
   })
 

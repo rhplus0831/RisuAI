@@ -13,6 +13,7 @@ interface CapturedFetch {
   method: string
   authHeader: string | null
   writerSessionHeader: string | null
+  observerSessionHeader: string | null
   disconnectExistingWriterHeader: string | null
 }
 
@@ -34,6 +35,7 @@ function stubBootstrapFetch(body: unknown | (() => unknown)): CapturedFetch[] {
         method: init.method ?? 'GET',
         authHeader: headers?.['risu-auth'] ?? null,
         writerSessionHeader: headers?.[ACTIVE_WRITER_SESSION_HEADER] ?? null,
+        observerSessionHeader: headers?.['risu-writer-observer-session'] ?? null,
         disconnectExistingWriterHeader: headers?.[DISCONNECT_EXISTING_WRITER_HEADER] ?? null,
       })
       const value = typeof body === 'function' ? body() : body
@@ -225,6 +227,7 @@ describe('server runtime bootstrap helper', () => {
         method: 'GET',
         authHeader: 'bootstrap-auth-token',
         writerSessionHeader: expect.any(String),
+        observerSessionHeader: null,
         disconnectExistingWriterHeader: null,
       },
     ])
@@ -275,7 +278,7 @@ describe('server runtime bootstrap helper', () => {
       writerEpoch: 3,
     })
 
-    await expect(fetchServerBootstrapReadOnly(null, { cacheRevision: false })).resolves.toEqual({
+    const expected = {
       status: 'ok',
       bootstrap: {
         initialized: false,
@@ -292,9 +295,14 @@ describe('server runtime bootstrap helper', () => {
         activeGreetingTranslations: [],
         activeMessageTranslations: [],
       },
-    })
+    }
+    await expect(fetchServerBootstrapReadOnly(null, { cacheRevision: false })).resolves.toEqual(expected)
+    await expect(fetchServerBootstrapReadOnly(null, { cacheRevision: false })).resolves.toEqual(expected)
     expect(peekCachedServerCommandRevision()).toBeNull()
     expect(calls[0].writerSessionHeader).toBeNull()
+    expect(calls[0].observerSessionHeader).toEqual(expect.any(String))
+    expect(calls[0].observerSessionHeader).not.toBe('')
+    expect(calls[1].observerSessionHeader).toBe(calls[0].observerSessionHeader)
   })
 
   it('drops malformed runtime job entries', async () => {
