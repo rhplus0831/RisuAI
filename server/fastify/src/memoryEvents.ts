@@ -108,6 +108,12 @@ export function sanitizeMemoryJobError(error: string | null): string | null {
   if (!error) return null
   return error
     .slice(0, 1000)
-    .replace(/([?&](?:key|api[_-]?key|token|secret)=)[^&\s]+/giu, '$1[redacted]')
-    .replace(/((?:authorization|api[_ -]?key|token|secret)\s*[:=]\s*)(?:bearer\s+)?\S+/giu, '$1[redacted]')
+    .replace(/([a-z][a-z0-9+.-]*:\/\/)[^/\s:@]+:[^/\s@]+@/giu, '$1[redacted]@')
+    .replace(/\b(?:bearer|basic)\s+[^\s"',;&}]+/giu, (value) => `${value.split(/\s/gu, 1)[0]} [redacted]`)
+    .replace(
+      /((?:["']?(?:access[_ -]?key(?:[_ -]?id)?|access[_ -]?token|api[_ -]?key|authorization|client[_ -]?secret|cookie|id[_ -]?token|key|password|passwd|private[_ -]?key|proxy[_ -]?authorization|refresh[_ -]?token|secret|secret[_ -]?access[_ -]?key|session[_ -]?token|set-cookie|token|x[_ -]?api[_ -]?key|xi[_ -]?api[_ -]?key)["']?)\s*[:=]\s*)(?:bearer\s+)?(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;&}]+)/giu,
+      '$1[redacted]',
+    )
+    .replace(/\b(?:api|pk|rk|sk)[-_][A-Za-z0-9_-]{8,}\b/giu, '[redacted]')
+    .replace(/\b(?:AKIA[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{20,}|gh[opsu]_[A-Za-z0-9]{20,})\b/gu, '[redacted]')
 }
