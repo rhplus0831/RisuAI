@@ -9,23 +9,24 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Snapshot
 
-- Plan state: Active; Phases 0-5 complete and Phase 6 in progress.
-- Current phase: Phase 6 — Prompting, Generation, And Streaming.
-- Active slice: Phase 6 opens with 93 category-F owners and 1,922 prompt,
-  generation, streaming, finalization, lorebook-activation, and Agent Preset
-  runtime cases.
+- Plan state: Active; Phases 0-6 complete and Phase 7 in progress.
+- Current phase: Phase 7 — Providers, Models, Credentials, Translation, And
+  Media.
+- Active slice: Phase 7 opens with 103 category-G owners and 1,395 provider,
+  model, credential, translation, image/audio, tokenizer, and media cases. Three
+  owners already carry complete Phase 4 reclassifications; 100 await review.
 - Implementation state: exhaustive test/case/support manifests and their local,
   affected, aggregate, coverage, and CI checks are live. The protocol import
   policy uses recursive AST evidence and the Realm scale case has isolated local
   and CI owners. Phase 5 added a mounted PersonaSettings owner, strengthened
-  stable authoring targets and rejected-operation recovery, and reclassified
-  four security/prompt/asset owners by dominant product risk.
+  stable authoring targets and rejected-operation recovery. Phase 6 fixed
+  prompt budget, Agent cancellation/output/progress, and SSE lifecycle defects;
+  added browser response-loss proof; and corrected 18 product-risk owners.
 - Blockers: the full differential compatibility harness cannot run because its
   pinned external worktree is absent. The new current-only owner is green; the
   blocker applies only to historical baseline claims.
-- Next action: freeze and execute the Phase 6 opening set, then audit prompt
-  assembly and generation lifecycle owners with their Phase 3 durable-finalize
-  companions.
+- Next action: remediate the verified provider endpoint/header/error and secret-
+  redaction findings, then complete the Phase 7 provider/media contract map.
 
 ## Planning Baseline
 
@@ -39,11 +40,11 @@ in [`latest-verification.md`](latest-verification.md).
 | Fastify Vitest                       | 154 files                                    |
 | Browser smoke                        | 7 files                                      |
 | Compatibility harness                | Current-only green; full differential blocked |
-| Collected cases                      | 10,055 total; 1 direct-only skip; 1,283 parameterized rows |
+| Collected cases                      | 10,070 total; 1 direct-only skip; 1,287 parameterized rows |
 | Support owners                       | 252 standalone; 65 mixed production seams   |
 | Primary-category assignments         | 700 of 700 ratified                          |
-| Complete file dispositions           | 298 Keep / 15 Reclassify; 1 removed historical owner |
-| Findings                             | 64 done / 5 deferred                         |
+| Complete file dispositions           | 370 Keep / 33 Reclassify; 1 removed historical owner |
+| Findings                             | 76 done / 6 deferred                         |
 
 The 698-file rows preserve the plan-creation anchor. The live counts, support
 owners, runtime evidence, and category totals are checked by the Phase 0
@@ -59,8 +60,8 @@ manifests and verification record.
 | [3](phases/phase-3-persistence-commands-events-and-bridges.md) | Complete | Audited persistence, commands, events, and editing bridges. |
 | [4](phases/phase-4-app-navigation-chat-and-shared-ui.md) | Complete | Audited app navigation, chat, shared UI, feedback, and accessibility. |
 | [5](phases/phase-5-settings-profiles-authoring-and-catalogs.md) | Complete | Audited settings, profiles, character authoring, and catalogs. |
-| [6](phases/phase-6-prompting-generation-and-streaming.md) | In progress | Audit prompting, generation, streaming, and durable finalization. |
-| [7](phases/phase-7-providers-models-credentials-translation-and-media.md) | Pending | Audit providers, models, credentials, translation, and media. |
+| [6](phases/phase-6-prompting-generation-and-streaming.md) | Complete | Audited prompting, generation, streaming, and durable finalization. |
+| [7](phases/phase-7-providers-models-credentials-translation-and-media.md) | In progress | Audit providers, models, credentials, translation, and media. |
 | [8](phases/phase-8-memory-embeddings-jobs-and-workers.md) | Pending | Audit memory, embeddings, summaries, jobs, and workers. |
 | [9](phases/phase-9-scripting-parsing-triggers-and-automation.md) | Pending | Audit scripting, parsing, triggers, Lua, and automation. |
 | [10](phases/phase-10-plugins-modules-mcp-and-specialized-tools.md) | Pending | Audit plugins, modules, MCP, Playground, and specialized tools. |
@@ -75,13 +76,13 @@ See [`phases/README.md`](phases/README.md) for links and shared slice rules.
 
 | Decision   | Count | Meaning                                                    |
 | ---------- | ----: | ---------------------------------------------------------- |
-| Keep       |   298 | Distinct contract and suitable evidence layer.             |
+| Keep       |   370 | Distinct contract and suitable evidence layer.             |
 | Strengthen |     0 | Valuable intent, but insufficient or self-fulfilling proof. |
 | Merge      |     0 | Equivalent failure mode can move into a stronger owner.    |
-| Reclassify |    15 | Valuable test belongs to another category, lane, or type.  |
+| Reclassify |    33 | Valuable test belongs to another category, lane, or type.  |
 | Remove     |     1 | Historical owner removed after mandatory replacement proof. |
 | Add        |     2 | Historical owner added for a material uncovered contract.  |
-| Pending    |   387 | Known live test owners awaiting their owning phase review.  |
+| Pending    |   297 | Known live test owners awaiting their owning phase review.  |
 
 Keep, Reclassify, and Pending partition the 700 live rows. Remove and Add are
 durable action-ledger counts; the added Button and PersonaSettings owners are
@@ -138,6 +139,10 @@ already included in Keep and the removed Mobile owner is no longer a live row.
 - Deferred authoring composition and asset cleanup: `TSA-P05-013` routes
   save-then-stale asset cleanup to Phase 11, representative settings/restore
   composition to Phase 13, and the final residual decision to Phase 14.
+- Deferred generation fidelity and recovery: `TSA-P06-013` routes malformed
+  finalization-journal/runtime observability to Phase 12, response-loss/effect/
+  provider-browser/prompt-walker composition to Phase 13, and the historical
+  compatibility plus final residual decision to Phase 14.
 
 ## Maintenance Rules
 

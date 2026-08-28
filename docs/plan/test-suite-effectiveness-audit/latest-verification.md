@@ -734,3 +734,73 @@ routes stale saved-asset cleanup to Phase 11, browser composition to Phase 13,
 and the mandatory residual decision to Phase 14. Full historical compatibility
 remains blocked only by the absent exact pinned worktree; no substitute checkout
 or golden was used.
+
+## Phase 6 Evidence
+
+### Opening set and remediation validation
+
+Phase 6 opened with 93 category-F owners and 1,922 cases: 69 frontend files /
+990 cases, 22 Fastify files / 922 cases, and two browser files / ten cases. All
+three exact sets passed before remediation in 23.57s, 14.32s, and 27.2s,
+respectively.
+
+The opening owners gained fourteen regression cases. Product-risk routing moved
+18 unchanged owners / 430 cases to A/B/C/D/E/G/I/K/L, leaving current category
+F at 75 owners / 1,506 cases. The exact original owners then passed 1,001/1,001
+frontend cases in 17.68s, 924/924 Fastify cases in 9.21s, and 11/11 browser
+cases in 20.7s.
+
+Focused remediation commands passed throughout:
+
+- client/Fastify final budget owners: 6/6 and 9/9;
+- route-backed prompt semantics: 27/27;
+- client lore placement and retrieved descriptions: 16/16 and 9/9;
+- Agent execution: 25/25; records/resolver: 25/25;
+- post-generation progress plus durable server chat: 79/79;
+- client/Fastify preflight: 17/17 and 28/28;
+- SSE parsing plus server chat: 88/88;
+- executable routing policy: 8/8.
+
+### Complete gates
+
+Commands:
+
+```sh
+pnpm exec vitest run --config vitest.config.ts \
+  --reporter=json --outputFile=/tmp/phase6-frontend-results.json
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  --reporter=json --outputFile=/tmp/phase6-server-results.json
+pnpm test:smoke
+pnpm test:gates:perf
+pnpm check
+pnpm test:affected --dry-run --include-smoke --base 5d6b47398
+pnpm check:test-inventories
+pnpm format:check
+git diff --check
+```
+
+The complete frontend universe passed 6,710/6,710 across 539 files. Complete
+Fastify passed 3,318 cases with one intentional direct-only Realm scale skip
+across 154 files. The production smoke build passed in 10.71s with the existing
+allowed diagnostics, followed by all 35/35 Chromium journeys in 1.1 minutes;
+the new accepted-response-loss journey passed inside that complete run.
+
+The two isolated frontend performance owners passed 6/6 in 13.81s.
+`svelte-check` reported zero errors and zero warnings in 26.20s. Affected
+selection chose inventory, complete frontend, performance, complete Fastify,
+and browser smoke owners; every selected lane is represented above. Inventory,
+formatting, and diff gates passed.
+
+Fresh Vitest/Playwright listing and measured skip results produce 700 live
+test/spec owners and 10,070 collected cases, with one direct-only skip and 1,287
+parameterized rows. Six cases belong to the two isolated performance owners and
+therefore are intentionally outside ordinary frontend discovery results.
+Primary categories are A=21, B=34, C=56, D=106, E=95, F=75, G=103, H=43,
+I=43, J=47, K=41, and L=36. Live decisions are 370 Keep, 33 Reclassify, and
+297 Pending.
+
+Twelve Phase 6 findings are done. `TSA-P06-013` routes runtime/journal
+observability to Phase 12, browser/provider/effect/parity composition to Phase
+13, and the mandatory compatibility/residual decision to Phase 14. The exact
+pinned compatibility worktree remains absent; no substitute checkout or golden
+refresh was used.

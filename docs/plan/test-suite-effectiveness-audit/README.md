@@ -2,7 +2,7 @@
 
 Date: 2026-08-29
 
-Status: Active; Phases 0-5 are complete and Phase 6 is in progress.
+Status: Active; Phases 0-6 are complete and Phase 7 is in progress.
 
 This workstream audits the complete test system for effectiveness, not merely
 for presence or coverage percentage. It asks whether each test can catch a
