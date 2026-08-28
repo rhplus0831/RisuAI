@@ -6,8 +6,11 @@ import { TARGETED_MUTATION_PATHS } from '../src/commands/mutations.js'
 import {
   BROAD_WRITE_TABLES,
   COMMAND_METRIC_REVIEW_GATES,
+  assertCommandMetricGate,
   type CommandMetricGate,
+  type CommandMutationMetric,
 } from './helpers/commandMetricGates.js'
+import { assertOnlyRowsWritten } from './helpers/rowStability.js'
 
 // Verification budget: the gate map is the single budget surface for every
 // command write path, so it must stay in lock-step with the runtime and no narrow
@@ -67,7 +70,48 @@ function hasTableBudget(gate: CommandMetricGate): boolean {
   return Boolean(gate.expectedTables || gate.maxTables || gate.forbiddenTables)
 }
 
+function pluginStorageMetric(writtenTables?: string[]): CommandMutationMetric {
+  return {
+    type: 'plugin-storage-probe',
+    mutationPath: 'targeted-plugin-storage',
+    loadMs: 0,
+    cloneMutateMs: 0,
+    sqliteSyncMs: 0,
+    dbJsonWriteMs: 0,
+    totalMs: 0,
+    writtenTables,
+  }
+}
+
 describe('command mutation-range budgets', () => {
+  it('rejects an unexpected row inserted after the stability snapshot', () => {
+    expect(() =>
+      assertOnlyRowsWritten(
+        { stable: 1 },
+        {
+          stable: 1,
+          unexpected: 2,
+        },
+      ),
+    ).toThrow(/unrelated row "unexpected" was inserted/)
+  })
+
+  it('allows target row inserts and deletes while preserving unrelated rows', () => {
+    expect(() =>
+      assertOnlyRowsWritten(
+        {
+          stable: 1,
+          deletedTarget: 2,
+        },
+        {
+          stable: 1,
+          insertedTarget: 3,
+        },
+        ['deletedTarget', 'insertedTarget'],
+      ),
+    ).not.toThrow()
+  })
+
   it('the review gates exactly match the mutation paths emitted at runtime', () => {
     const emitted = [...collectEmittedMutationPaths()].sort()
     expect(emitted.length).toBeGreaterThanOrEqual(GATE_KEYS.length)
@@ -100,5 +144,17 @@ describe('command mutation-range budgets', () => {
         }
       }
     }
+  })
+
+  it('rejects a metric that omits writtenTables when its gate declares a table budget', () => {
+    expect(() => assertCommandMetricGate(pluginStorageMetric())).toThrow(
+      'targeted-plugin-storage.writtenTables is required by its table budget',
+    )
+  })
+
+  it('accepts writtenTables that satisfy the configured table budget', () => {
+    expect(assertCommandMetricGate(pluginStorageMetric(['plugin_custom_storage']))).toBe(
+      COMMAND_METRIC_REVIEW_GATES['targeted-plugin-storage'],
+    )
   })
 })

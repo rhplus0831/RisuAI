@@ -38,12 +38,13 @@ export function activeMessageRowids(dataDir: string, chatId: string): { seq: num
 /**
  * The shared normalization-scope assertion (Phase 0). Given a `tableRowidsById`
  * snapshot of one table before and after a command, fail if any row that was not
- * expected to change kept a *different* rowid — i.e. was DELETE+reINSERTed (the
- * over-broad rewrite a targeted write must avoid). `expectedChangedIds` are the
- * ids the command is allowed to create/delete/replace (default none, the
- * pure-`UPDATE` case where every row keeps its rowid). This is the codified form
- * of the reference fix's "unrelated rows not rewritten" check; every Tier write
- * slice asserts its narrow scope through it.
+ * expected to change was inserted, deleted, or kept a *different* rowid — i.e.
+ * was DELETE+reINSERTed (the over-broad rewrite a targeted write must avoid).
+ * `expectedChangedIds` are the ids the command is allowed to
+ * create/delete/replace (default none, the pure-`UPDATE` case where every row
+ * keeps its rowid). This is the codified form of the reference fix's "unrelated
+ * rows not rewritten" check; every Tier write slice asserts its narrow scope
+ * through it.
  */
 export function assertOnlyRowsWritten(
   before: Record<string, number>,
@@ -51,8 +52,11 @@ export function assertOnlyRowsWritten(
   expectedChangedIds: readonly string[] = [],
 ): void {
   const allowed = new Set(expectedChangedIds)
-  for (const [id, rowid] of Object.entries(before)) {
+  const observedIds = new Set([...Object.keys(before), ...Object.keys(after)])
+  for (const id of observedIds) {
     if (allowed.has(id)) continue
-    expect(after[id], `unrelated row "${id}" was rewritten (rowid changed)`).toBe(rowid)
+    expect(Object.hasOwn(before, id), `unrelated row "${id}" was inserted`).toBe(true)
+    expect(Object.hasOwn(after, id), `unrelated row "${id}" was deleted`).toBe(true)
+    expect(after[id], `unrelated row "${id}" was rewritten (rowid changed)`).toBe(before[id])
   }
 }

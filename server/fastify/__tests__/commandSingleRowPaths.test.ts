@@ -823,9 +823,9 @@ describe('fork (character row + chat rows + surgical messages)', () => {
     expect(metric.mutationPath).toBe('targeted-character-row')
     expect(metric.writtenTables).toEqual(['characters', 'chats', 'messages'])
     assertCommandMetricGate(metric)
-    // Existing character/chat rows are UPDATEd in place (rowids stable); the
-    // forked chat is a new row, ignored by the before-snapshot.
-    expectNoChurn(before)
+    // Existing character/chat rows are UPDATEd in place (rowids stable); only
+    // the explicitly targeted fork row may be inserted.
+    expectNoChurn(before, { chats: ['fork-1'] })
     expect(body.chatId).toBe('fork-1')
     // The forked chat lands at the head; the source chat shifts down.
     expect(readChatOrder('char-a')).toEqual(['fork-1', 'chat-a-1', 'chat-a-2'])

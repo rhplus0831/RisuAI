@@ -179,8 +179,8 @@ export function commandMetricReviewGate(metric: CommandMutationMetric): CommandM
 /**
  * Assert a `command_mutation` metric satisfies the review gate for its
  * `mutationPath`: every timing section is a non-negative number, `dbJsonWriteMs`
- * matches when the gate fixes it, and `writtenTables` (when captured) respects
- * the gate's exact / subset / disjoint table constraints.
+ * matches when the gate fixes it, and `writtenTables` is present whenever the
+ * gate declares an exact / subset / disjoint table constraint and respects it.
  */
 export function assertCommandMetricGate(metric: CommandMutationMetric): CommandMetricGate {
   const gate = commandMetricReviewGate(metric)
@@ -191,6 +191,10 @@ export function assertCommandMetricGate(metric: CommandMutationMetric): CommandM
     expect(metric.dbJsonWriteMs, `${metric.type}.dbJsonWriteMs`).toBe(gate.dbJsonWriteMs)
   }
   const written = metric.writtenTables
+  const hasTableBudget = Boolean(gate.expectedTables || gate.maxTables || gate.forbiddenTables)
+  if (hasTableBudget) {
+    expect(written, `${metric.mutationPath}.writtenTables is required by its table budget`).toEqual(expect.any(Array))
+  }
   if (written) {
     if (gate.expectedTables) {
       expect(written, `${metric.mutationPath}.writtenTables`).toEqual([...gate.expectedTables])
