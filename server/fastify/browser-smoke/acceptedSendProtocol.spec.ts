@@ -318,6 +318,7 @@ class LifecycleHarness {
 const CHARACTER_ID = 'char-lifecycle'
 const chats = {
   reloadDesktop: 'chat-reload-desktop',
+  responseLoss: 'chat-response-loss',
   reloadMobile: 'chat-reload-mobile',
   restart: 'chat-restart',
   stopDesktop: 'chat-stop-desktop',
@@ -362,6 +363,42 @@ test('send -> reload mid-generation reattaches and commits one reply', async ({ 
   harness.provider.release(chatId)
   await expectTerminalTruth(page, chatId, userText, reply, 'completed', operation.operationId)
   expect(harness.provider.calls(chatId)).toBe(1)
+})
+
+test('accepted send recovers when the operation response is lost before identity reaches the browser', async ({
+  page,
+}) => {
+  const chatId = chats.responseLoss
+  const userText = 'lost operation response request'
+  const partial = 'Recovered response'
+  const reply = `${partial} reply`
+  harness.provider.configure(chatId, { chunks: [partial, ' reply'], holdAfterChunk: 1 })
+
+  await bootChat(page, chatId)
+  let responseDropped = false
+  await page.route('**/api/v1/generation-operations', async (route) => {
+    if (responseDropped || route.request().method() !== 'POST') {
+      await route.continue()
+      return
+    }
+    responseDropped = true
+    await route.fetch()
+    await route.abort('connectionclosed')
+  })
+
+  try {
+    await sendMessage(page, userText)
+    await expect.poll(() => responseDropped).toBe(true)
+    await dispatchLifecycleRecoveryEvents(page)
+    const operation = await expectRunningTruth(page, chatId, userText, partial)
+
+    harness.provider.release(chatId)
+    await expectTerminalTruth(page, chatId, userText, reply, 'completed', operation.operationId)
+    expect(harness.provider.calls(chatId)).toBe(1)
+  } finally {
+    harness.provider.release(chatId)
+    await page.unroute('**/api/v1/generation-operations')
+  }
 })
 
 test('Pixel reload plus visibility/pageshow reattaches and commits one reply', async ({ browser }) => {
