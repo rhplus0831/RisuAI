@@ -10,7 +10,7 @@ environment variables live in
 [Development And Observability](development-and-observability.md).
 
 The
-[Frontend Test Architecture record](../plan/frontend-test-architecture/status.md)
+[Frontend Test Architecture record](../../.archived-docs/performance-and-stability/frontend-test-architecture/status.md)
 explains the rollout and benchmarks behind the settled frontend project
 ownership. This document and the current runner configuration are the source of
 truth for the resulting commands, routing, setup, and lane behavior.

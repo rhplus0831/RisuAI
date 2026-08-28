@@ -310,8 +310,10 @@ Each candidate requires a fresh profile and a slice-specific value hypothesis.
 
 ## Execution Cursor
 
-Phases 0-6 are complete. Phase 6 landed suffix-default routing, explicit legacy
-DOM registration, final ownership enforcement, and local/CI lane parity. Phase
-7 is next and owns the final repeated benchmark, budget decision, current-doc
-audit, and archive closeout. Phase 4 stopped after its ranked candidates because
-the remaining costs did not expose another cohesive production pure seam.
+Phases 0-7 are complete and the workstream is archived. The final 68.49s warm
+ordinary median improves 5.3% from Phase 0 but does not meet the 20% target; the
+shortfall is accepted under the recorded stopping evidence and revisit
+condition. Final routing is Node-default with explicit Svelte+Node, DOM, and
+built-browser ownership, and local/CI lane parity. Phase 4 stopped after its
+ranked candidates because the remaining costs did not expose another cohesive
+production pure seam.

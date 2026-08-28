@@ -1,13 +1,113 @@
 # Frontend Test Architecture Verification
 
-Date: 2026-08-28
+Date: 2026-08-29
 
 ## State
 
-Phase 6 is complete. Frontend capability routing is explicit, Node-default,
-exhaustive, and aligned across standalone, affected, aggregate, coverage, and
-CI commands. The transition allowlists and implicit Happy-DOM fallback are
-retired, no ownership gap remains, and Phase 7 is next.
+Phase 7 and the workstream are complete. Frontend capability routing is
+explicit, Node-default, exhaustive, and aligned across standalone, affected,
+aggregate, coverage, and CI commands. Final correctness, performance, memory,
+coverage, aggregate, documentation, and archive gates passed. The primary
+performance target has an explicit accepted shortfall and revisit condition.
+
+## Phase 7 Verification And Closeout
+
+### Environment And Final Ownership
+
+- Measurement tree: clean `c12da3a11` source before closeout-only documents.
+- Node 24.19.0, pnpm 11.23.0, Vitest 4.1.2, 10 CPUs.
+- Formal ordinary environment: `RISU_TEST_EXCLUDE_UI_MAP=true`; isolation
+  enabled.
+- Full discovery: 537 files at 194 N / 17 S / 326 D.
+- Standalone ordinary: 535 at 194 N / 17 S / 324 D.
+- Aggregate ordinary: 529 at 193 N / 17 S / 319 D.
+- Browser smoke: 7 B specs; explicit manifest N=194, S=17, D=326, B=7.
+
+The exhaustive/disjoint gate reported no missing, unexpected, duplicate,
+unclassified, mismatched, stale-registration, stale-manifest, or forbidden
+zero-DOM import finding in any discovery view. Aggregate ordinary contains
+6,429 tests: Phase 4 added 10 planner cases, Phase 6 added five routing/runner
+cases, and Phase 7 added one finalization-retry regression versus Phase 0's
+6,413.
+
+### Formal Ordinary Frontend Benchmark
+
+Command shape:
+
+```sh
+RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v \
+  pnpm exec vitest run \
+  --reporter=default --reporter=json \
+  --outputFile.json=/tmp/<run>.json
+```
+
+`pnpm exec vitest --clearCache` preceded the separately labeled cold transform
+cache run. It passed 529 files / 6,429 tests in 76.98s wall and 75.91s Vitest,
+with 438.20s user, 36.43s system, 616% CPU, and 4,606,780 KiB peak RSS. Worker
+sums were 118.98s transform, 33.68s setup, 458.36s import, 84.12s tests, and
+50.76s environment.
+
+Three consecutive unchanged warm runs passed:
+
+| Run    |   Wall | Vitest |    User | System |  CPU | Peak RSS KiB |
+| ------ | -----: | -----: | ------: | -----: | ---: | -----------: |
+| 1      | 68.49s | 67.43s | 394.13s | 30.66s | 620% |    4,902,032 |
+| 2      | 70.61s | 69.55s | 408.14s | 30.94s | 621% |    4,603,188 |
+| 3      | 67.75s | 66.69s | 399.02s | 28.37s | 630% |    4,953,804 |
+| Median | 68.49s | 67.43s | 399.02s | 30.66s | 621% |    4,902,032 |
+
+The wall range is 67.75-70.61s. Median worker sums are 107.44s transform,
+28.76s setup, 406.77s import, 80.51s tests, and 41.53s environment. Against
+Phase 0, wall improves 5.3% and peak RSS rises 2.4%, inside the 10% guard.
+
+The primary 57.84s and stretch 50.61s targets are not met. The shortfall is
+accepted: every N/S candidate has a probe-backed disposition, all retained DOM
+owners are explicit, every measured extraction/consolidation seam was
+completed, and the remaining costs cross real visible-state, browser,
+persistence, focus, rollback, or lifecycle contracts. Revisit only when a
+fresh profile identifies a cohesive production seam that moves multiple
+behavioral cases, or runner/runtime changes materially alter the cost profile.
+
+### Independent Projects, Coverage, And Correctness
+
+| Project/lane | Result                  | Vitest |   Wall |    User / system |  CPU | Peak RSS KiB |
+| ------------ | ----------------------- | -----: | -----: | ---------------: | ---: | -----------: |
+| Node         | 193 files / 1,314 tests |  5.05s |  5.85s |   36.61s / 4.09s | 695% |    1,078,200 |
+| Svelte+Node  | 17 / 167                |  1.74s |  2.42s |    7.68s / 1.00s | 358% |    1,150,388 |
+| Happy-DOM    | 319 / 4,948             | 66.44s | 67.43s | 362.47s / 29.73s | 581% |    4,787,800 |
+| UI coverage  | 6 / 203                 | 20.41s | 21.42s |   37.17s / 4.02s | 192% |    2,069,200 |
+
+UI coverage passed at 14.54% lines, 14.96% statements, 18.18% functions, and
+9.51% branches against 8/7/5/4 thresholds. Its timing remains inside the Phase
+5-6 observation range. Standalone frontend passed 535 / 6,632, full frontend
+passed 537 / 6,638, gates passed 4 / 38, and server passed 154 / 3,295 with one
+skip.
+
+Shuffled seeds 101, 202, and 303 passed the four reduced-sharing owners as 4
+files / 51 tests with retries disabled. No unexpected fetch, leaked-handle,
+focused-test, retry, or order-dependency finding remained. DOM-visible,
+accessibility, focus, optimistic-paint, rollback, recovery, and built-browser
+contracts remain represented in their owning lanes.
+
+Browser closeout found and resolved two timing-dependent proofs. Response-loss
+recovery now requires every potentially interrupted transport retry to preserve
+one mutation ID while retaining one-revision and one-receipt assertions.
+Finalization refresh now retains its queued projection until recovered effects
+reconcile, so a transient effect-runtime failure cannot remove the retry owner.
+The latter passed a fail-once unit contract, three exact browser repetitions,
+and the complete 34-case smoke lane.
+
+### Aggregate And Quality Closeout
+
+`pnpm test:all --dry-run` showed the expected nine lanes with explicit routing,
+six UI sentinels executed once under coverage, and isolated performance,
+server, and browser-smoke work. `pnpm test:all` passed all nine lanes in 3m23.5s:
+529 frontend files / 6,429 tests, 154 server files / 3,295 tests with one skip,
+34 browser cases, 6 UI-map files / 203 tests, and 2 performance files / 6 tests.
+The measured aggregate used 3m23.86s wall, 789.49s user, 98.16s system, 435%
+CPU, and 4,803,900 KiB peak RSS. Wall improves 2.4% from Phase 0 and remains
+within the ratified aggregate budget. Frontend and server/browser-smoke checks,
+inventory completeness, formatting, and `git diff --check` passed.
 
 ## Phase 6 Routing And CI Enforcement
 
@@ -212,11 +312,11 @@ environment.
 
 The focused selected families passed as follows:
 
-| Family | Files / tests | Vitest | Import | Environment | Wall | Peak RSS KiB |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Toggles audit gates | 2 / 3 | 12.14s | 23.28s | 349ms | 13.17s | 1,452,164 |
-| AlertComp contracts | 3 / 15 | 10.15s | 29.18s | 365ms | 11.10s | 1,812,376 |
-| Ooba/provider controls | 2 / 4 | 7.32s | 13.95s | 237ms | 8.03s | 1,142,032 |
+| Family                 | Files / tests | Vitest | Import | Environment |   Wall | Peak RSS KiB |
+| ---------------------- | ------------: | -----: | -----: | ----------: | -----: | -----------: |
+| Toggles audit gates    |         2 / 3 | 12.14s | 23.28s |       349ms | 13.17s |    1,452,164 |
+| AlertComp contracts    |        3 / 15 | 10.15s | 29.18s |       365ms | 11.10s |    1,812,376 |
+| Ooba/provider controls |         2 / 4 |  7.32s | 13.95s |       237ms |  8.03s |    1,142,032 |
 
 These families share the same production component, mocked graph, fixture, and
 lifecycle while retaining adjacent visible-behavior ownership. The current
@@ -246,12 +346,12 @@ The cache-cleared cold run passed 531 files / 6,423 tests in 69.10s wall and
 
 Three consecutive unchanged warm runs passed the same 531 files / 6,423 tests:
 
-| Run | Wall | Vitest | CPU | Peak RSS KiB |
-| --- | ---: | ---: | ---: | ---: |
-| 1 | 68.49s | 67.57s | 644% | 4,893,640 |
-| 2 | 70.32s | 69.28s | 628% | 4,759,324 |
-| 3 | 70.10s | 69.22s | 650% | 4,905,256 |
-| Median | 70.10s | 69.22s | 644% | 4,893,640 |
+| Run    |   Wall | Vitest |  CPU | Peak RSS KiB |
+| ------ | -----: | -----: | ---: | -----------: |
+| 1      | 68.49s | 67.57s | 644% |    4,893,640 |
+| 2      | 70.32s | 69.28s | 628% |    4,759,324 |
+| 3      | 70.10s | 69.22s | 650% |    4,905,256 |
+| Median | 70.10s | 69.22s | 644% |    4,893,640 |
 
 The warm range is 68.49-70.32s. Wall median is +2.4% from Phase 3, inside the
 5% ordinary-run noise band, and 3.0% below Phase 0. Peak-RSS median improves
@@ -431,11 +531,11 @@ Vitest duration with 5ms test-body time and no environment time.
 
 The complete aggregate-ordinary project and root observations passed:
 
-| Scope | Result | Vitest | Wall | Peak RSS KiB |
-| --- | --- | ---: | ---: | ---: |
-| Node | 189 files / 1,265 tests | 4.38s | 5.09s | 1,045,676 |
-| Happy-DOM | 324 files / 4,986 tests | 59.91s | 60.76s | 4,988,772 |
-| Ordinary frontend | 530 files / 6,418 tests | 68.94s | 69.80s | 4,842,688 |
+| Scope             | Result                  | Vitest |   Wall | Peak RSS KiB |
+| ----------------- | ----------------------- | -----: | -----: | -----------: |
+| Node              | 189 files / 1,265 tests |  4.38s |  5.09s |    1,045,676 |
+| Happy-DOM         | 324 files / 4,986 tests | 59.91s | 60.76s |    4,988,772 |
+| Ordinary frontend | 530 files / 6,418 tests | 68.94s | 69.80s |    4,842,688 |
 
 The focused D test-body observation improves by 1.05s (20.7%). The ordinary
 wall result is a single observation inside the Phase 3 66.76-70.70s warm range,
@@ -490,11 +590,11 @@ blockers.
 
 Final discovery remains exhaustive and disjoint:
 
-| View | Files | Node | Svelte+Node | Happy-DOM |
-| --- | ---: | ---: | ---: | ---: |
-| Full, including explicit performance gates | 537 | 189 | 17 | 331 |
-| Standalone ordinary frontend | 535 | 189 | 17 | 329 |
-| `test:all` ordinary frontend | 529 | 188 | 17 | 324 |
+| View                                       | Files | Node | Svelte+Node | Happy-DOM |
+| ------------------------------------------ | ----: | ---: | ----------: | --------: |
+| Full, including explicit performance gates |   537 |  189 |          17 |       331 |
+| Standalone ordinary frontend               |   535 |  189 |          17 |       329 |
+| `test:all` ordinary frontend               |   529 |  188 |          17 |       324 |
 
 The aggregate ordinary test count remains 6,413. The 97 remaining generated
 mismatches are 4 N and 93 S, all with target-project evidence and recorded
@@ -509,12 +609,12 @@ wall and 71.73s Vitest duration, with 435.88s user, 37.41s system, 651% CPU, and
 
 Three consecutive warm runs passed the same 529 files / 6,413 tests:
 
-| Run | Wall | Vitest | User | System | CPU | Peak RSS KiB |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 68.47s | 67.41s | 399.30s | 30.67s | 627% | 4,626,468 |
-| 2 | 70.70s | 69.77s | 420.77s | 32.06s | 640% | 5,068,472 |
-| 3 | 66.76s | 65.83s | 397.75s | 29.37s | 639% | 5,019,644 |
-| Median | 68.47s | 67.41s | 399.30s | 30.67s | 639% | 5,019,644 |
+| Run    |   Wall | Vitest |    User | System |  CPU | Peak RSS KiB |
+| ------ | -----: | -----: | ------: | -----: | ---: | -----------: |
+| 1      | 68.47s | 67.41s | 399.30s | 30.67s | 627% |    4,626,468 |
+| 2      | 70.70s | 69.77s | 420.77s | 32.06s | 640% |    5,068,472 |
+| 3      | 66.76s | 65.83s | 397.75s | 29.37s | 639% |    5,019,644 |
+| Median | 68.47s | 67.41s | 399.30s | 30.67s | 639% |    5,019,644 |
 
 The warm wall range is 66.76-70.70s. Against Phase 0, wall median improves by
 3.83s (5.3%) and peak-RSS median increases by 234,356 KiB (4.9%), inside the
@@ -529,11 +629,11 @@ across parallel workers and do not add to wall time.
 
 All independent aggregate ordinary projects passed:
 
-| Project | Result | Vitest | Wall | Peak RSS KiB |
-| --- | --- | ---: | ---: | ---: |
-| `frontend-node` | 188 files / 1,259 tests | 4.74s | 5.51s | 1,052,504 |
-| `frontend-svelte-node` | 17 files / 167 tests | 1.71s | 2.36s | 1,156,464 |
-| `frontend-dom` | 324 files / 4,987 tests | 60.97s | 61.86s | 4,811,348 |
+| Project                | Result                  | Vitest |   Wall | Peak RSS KiB |
+| ---------------------- | ----------------------- | -----: | -----: | -----------: |
+| `frontend-node`        | 188 files / 1,259 tests |  4.74s |  5.51s |    1,052,504 |
+| `frontend-svelte-node` | 17 files / 167 tests    |  1.71s |  2.36s |    1,156,464 |
+| `frontend-dom`         | 324 files / 4,987 tests | 60.97s | 61.86s |    4,811,348 |
 
 Svelte+Node reported 341ms aggregate environment time. It remains a durable
 useful layer for real rune-dependent contracts without DOM setup.
@@ -844,11 +944,11 @@ every candidate evaluated during the phase.
 
 Final discovery remains exhaustive and disjoint:
 
-| View | Files | Node | Svelte+Node | Happy-DOM |
-| --- | ---: | ---: | ---: | ---: |
-| Full, including explicit performance gates | 537 | 161 | 2 | 374 |
-| Standalone ordinary frontend | 535 | 161 | 2 | 372 |
-| `test:all` ordinary frontend | 529 | 160 | 2 | 367 |
+| View                                       | Files | Node | Svelte+Node | Happy-DOM |
+| ------------------------------------------ | ----: | ---: | ----------: | --------: |
+| Full, including explicit performance gates |   537 |  161 |           2 |       374 |
+| Standalone ordinary frontend               |   535 |  161 |           2 |       372 |
+| `test:all` ordinary frontend               |   529 |  160 |           2 |       367 |
 
 The ordinary test count remains 6,413. Generated target distribution remains
 174 N / 129 S / 234 D / 7 B. The 140 remaining generated mismatches are 13 N
@@ -862,12 +962,12 @@ contracts remain D-owned.
 Three consecutive warm `RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v pnpm
 test:frontend` runs passed 529 files / 6,413 tests:
 
-| Run | Wall | Vitest | CPU | Peak RSS KiB |
-| --- | ---: | ---: | ---: | ---: |
-| 1 | 69.55s | 68.65s | 633% | 4,655,636 |
-| 2 | 69.50s | 68.60s | 643% | 4,866,016 |
-| 3 | 68.75s | 67.84s | 640% | 4,988,448 |
-| Median | 69.50s | 68.60s | 640% | 4,866,016 |
+| Run    |   Wall | Vitest |  CPU | Peak RSS KiB |
+| ------ | -----: | -----: | ---: | -----------: |
+| 1      | 69.55s | 68.65s | 633% |    4,655,636 |
+| 2      | 69.50s | 68.60s | 643% |    4,866,016 |
+| 3      | 68.75s | 67.84s | 640% |    4,988,448 |
+| Median | 69.50s | 68.60s | 640% |    4,866,016 |
 
 Against the Phase 0 warm wall median of 72.30s, Phase 2 improves the ordinary
 frontend median by 2.80s (3.9%). Peak-RSS median moves from 4,785,288 KiB to
@@ -988,14 +1088,14 @@ N / 2 S / 374 D, standalone ordinary is 535 files at 161 N / 2 S / 372 D, and
 aggregate ordinary is 529 files at 160 N / 2 S / 367 D. Mismatches fell from
 142 to 140.
 
-| Lane | State | Result | Wall | Vitest | CPU | Peak RSS KiB |
-| --- | --- | --- | ---: | ---: | ---: | ---: |
-| `frontend-node` | Before | 158 files / 941 tests | 4.03s | 3.39s | 689% | 922,624 |
-| `frontend-node` | After | 160 files / 947 tests | 4.38s | 3.70s | 696% | 1,058,464 |
-| `frontend-dom` | Before | 369 files / 5,464 tests | 62.40s | 61.63s | 631% | 4,800,256 |
-| `frontend-dom` | After | 367 files / 5,458 tests | 63.54s | 62.74s | 633% | 4,761,868 |
-| Ordinary frontend | Before | 529 files / 6,413 tests | 66.60s | 65.76s | 635% | 4,696,532 |
-| Ordinary frontend | After | 529 files / 6,413 tests | 68.24s | 67.42s | 644% | 5,128,488 |
+| Lane              | State  | Result                  |   Wall | Vitest |  CPU | Peak RSS KiB |
+| ----------------- | ------ | ----------------------- | -----: | -----: | ---: | -----------: |
+| `frontend-node`   | Before | 158 files / 941 tests   |  4.03s |  3.39s | 689% |      922,624 |
+| `frontend-node`   | After  | 160 files / 947 tests   |  4.38s |  3.70s | 696% |    1,058,464 |
+| `frontend-dom`    | Before | 369 files / 5,464 tests | 62.40s | 61.63s | 631% |    4,800,256 |
+| `frontend-dom`    | After  | 367 files / 5,458 tests | 63.54s | 62.74s | 633% |    4,761,868 |
+| Ordinary frontend | Before | 529 files / 6,413 tests | 66.60s | 65.76s | 635% |    4,696,532 |
+| Ordinary frontend | After  | 529 files / 6,413 tests | 68.24s | 67.42s | 644% |    5,128,488 |
 
 The paired ordinary wall observation increased by 1.64s (2.5%) and peak RSS by
 431,956 KiB (9.2%). Both remain inside the slice acceptance guards; final
@@ -1047,14 +1147,14 @@ N / 2 S / 376 D, standalone ordinary is 535 files at 159 N / 2 S / 374 D, and
 aggregate ordinary is 529 files at 158 N / 2 S / 369 D. The 174 N / 129 S /
 234 D / 7 B target distribution is unchanged; mismatches fell to 142.
 
-| Lane | State | Result | Wall | Vitest | CPU | Peak RSS KiB |
-| --- | --- | --- | ---: | ---: | ---: | ---: |
-| `frontend-node` | Before | 157 files / 927 tests | 4.27s | 3.60s | 679% | 975,084 |
-| `frontend-node` | After | 158 files / 941 tests | 4.03s | 3.39s | 689% | 922,624 |
-| `frontend-dom` | Before | 370 files / 5,478 tests | 63.79s | 63.00s | 641% | 4,579,460 |
-| `frontend-dom` | After | 369 files / 5,464 tests | 62.40s | 61.63s | 631% | 4,800,256 |
-| Ordinary frontend | Before | 529 files / 6,413 tests | 66.02s | 65.15s | 640% | 5,063,636 |
-| Ordinary frontend | After | 529 files / 6,413 tests | 66.60s | 65.76s | 635% | 4,696,532 |
+| Lane              | State  | Result                  |   Wall | Vitest |  CPU | Peak RSS KiB |
+| ----------------- | ------ | ----------------------- | -----: | -----: | ---: | -----------: |
+| `frontend-node`   | Before | 157 files / 927 tests   |  4.27s |  3.60s | 679% |      975,084 |
+| `frontend-node`   | After  | 158 files / 941 tests   |  4.03s |  3.39s | 689% |      922,624 |
+| `frontend-dom`    | Before | 370 files / 5,478 tests | 63.79s | 63.00s | 641% |    4,579,460 |
+| `frontend-dom`    | After  | 369 files / 5,464 tests | 62.40s | 61.63s | 631% |    4,800,256 |
+| Ordinary frontend | Before | 529 files / 6,413 tests | 66.02s | 65.15s | 640% |    5,063,636 |
+| Ordinary frontend | After  | 529 files / 6,413 tests | 66.60s | 65.76s | 635% |    4,696,532 |
 
 The paired ordinary wall observation moved by +0.58s (+0.9%) while peak RSS
 decreased by 367,104 KiB (-7.2%). Both are inside observed variability; this is
@@ -1361,11 +1461,11 @@ pnpm check:frontend-test-inventory
 Both passed. The generated inventory removed the promoted target-N probe marker,
 retained the 537-file universe, and remained exhaustive and disjoint.
 
-| View | Files | Node | Svelte+Node | Happy-DOM |
-| --- | ---: | ---: | ---: | ---: |
-| Full, including explicit performance gates | 537 | 158 | 2 | 377 |
-| Standalone ordinary frontend | 535 | 158 | 2 | 375 |
-| `test:all` ordinary frontend | 529 | 157 | 2 | 370 |
+| View                                       | Files | Node | Svelte+Node | Happy-DOM |
+| ------------------------------------------ | ----: | ---: | ----------: | --------: |
+| Full, including explicit performance gates |   537 |  158 |           2 |       377 |
+| Standalone ordinary frontend               |   535 |  158 |           2 |       375 |
+| `test:all` ordinary frontend               |   529 |  157 |           2 |       370 |
 
 The target distribution remains 174 N, 129 S, 234 D, and 7 B. Outstanding
 target-runtime mismatches fell from 144 to 143: 16 N and 127 S. Twelve N files
@@ -1379,14 +1479,14 @@ All paired commands ran on the same host with
 `RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v`. This is one paired slice
 observation, not the three-run phase-level timing gate.
 
-| Lane | State | Result | Wall | Vitest | CPU | Peak RSS KiB |
-| --- | --- | --- | ---: | ---: | ---: | ---: |
-| `frontend-node` | Before | 156 files / 926 tests | 4.63s | 3.85s | 674% | 920,432 |
-| `frontend-node` | After | 157 files / 927 tests | 4.88s | 4.08s | 695% | 966,364 |
-| `frontend-dom` | Before | 371 files / 5,479 tests | 71.46s | 70.52s | 641% | 5,036,776 |
-| `frontend-dom` | After | 370 files / 5,478 tests | 68.67s | 67.71s | 628% | 4,798,368 |
-| Ordinary frontend | Before | 529 files / 6,413 tests | 69.11s | 68.21s | 638% | 4,999,492 |
-| Ordinary frontend | After | 529 files / 6,413 tests | 68.57s | 67.71s | 640% | 4,751,748 |
+| Lane              | State  | Result                  |   Wall | Vitest |  CPU | Peak RSS KiB |
+| ----------------- | ------ | ----------------------- | -----: | -----: | ---: | -----------: |
+| `frontend-node`   | Before | 156 files / 926 tests   |  4.63s |  3.85s | 674% |      920,432 |
+| `frontend-node`   | After  | 157 files / 927 tests   |  4.88s |  4.08s | 695% |      966,364 |
+| `frontend-dom`    | Before | 371 files / 5,479 tests | 71.46s | 70.52s | 641% |    5,036,776 |
+| `frontend-dom`    | After  | 370 files / 5,478 tests | 68.67s | 67.71s | 628% |    4,798,368 |
+| Ordinary frontend | Before | 529 files / 6,413 tests | 69.11s | 68.21s | 638% |    4,999,492 |
+| Ordinary frontend | After  | 529 files / 6,413 tests | 68.57s | 67.71s | 640% |    4,751,748 |
 
 The paired ordinary wall observation decreased by 0.54s (0.8%) while peak RSS
 decreased by 247,744 KiB (5.0%). Both movements remain inside observed lane
@@ -1508,11 +1608,11 @@ The checked inventory remained byte-for-byte current after both temporary
 allowlist entries were removed. Ownership and target-distribution counters are
 unchanged:
 
-| View | Files | Node | Svelte+Node | Happy-DOM |
-| --- | ---: | ---: | ---: | ---: |
-| Full, including explicit performance gates | 537 | 157 | 2 | 378 |
-| Standalone ordinary frontend | 535 | 157 | 2 | 376 |
-| `test:all` ordinary frontend | 529 | 156 | 2 | 371 |
+| View                                       | Files | Node | Svelte+Node | Happy-DOM |
+| ------------------------------------------ | ----: | ---: | ----------: | --------: |
+| Full, including explicit performance gates |   537 |  157 |           2 |       378 |
+| Standalone ordinary frontend               |   535 |  157 |           2 |       376 |
+| `test:all` ordinary frontend               |   529 |  156 |           2 |       371 |
 
 The generated static inventory still reports 174 N, 129 S, 234 D, and 7 B
 because it records direct-file evidence and cannot see the transitive rune
@@ -1527,11 +1627,11 @@ No ownership change landed, so there is no before/after performance claim and
 no after-migration measurement. The same-host pre-probe ordinary observations
 were:
 
-| Lane | Result | Wall | Vitest | CPU | Peak RSS KiB |
-| --- | --- | ---: | ---: | ---: | ---: |
-| `frontend-node` | 156 files / 926 tests | 4.42s | 3.75s | 671% | 939,216 |
-| `frontend-dom` | 371 files / 5,479 tests | 72.16s | 71.25s | 625% | 4,765,916 |
-| Ordinary frontend | 529 files / 6,413 tests | 70.45s | 69.49s | 630% | 5,004,432 |
+| Lane              | Result                  |   Wall | Vitest |  CPU | Peak RSS KiB |
+| ----------------- | ----------------------- | -----: | -----: | ---: | -----------: |
+| `frontend-node`   | 156 files / 926 tests   |  4.42s |  3.75s | 671% |      939,216 |
+| `frontend-dom`    | 371 files / 5,479 tests | 72.16s | 71.25s | 625% |    4,765,916 |
+| Ordinary frontend | 529 files / 6,413 tests | 70.45s | 69.49s | 630% |    5,004,432 |
 
 These are reproducibility observations only, not a paired slice measurement or
 phase-level timing gate.
@@ -1626,11 +1726,11 @@ pnpm check:frontend-test-inventory
 Both passed. The generated inventory removed the three promoted target-N probe
 markers, retained the 537-file universe, and remained exhaustive and disjoint.
 
-| View | Files | Node | Svelte+Node | Happy-DOM |
-| --- | ---: | ---: | ---: | ---: |
-| Full, including explicit performance gates | 537 | 157 | 2 | 378 |
-| Standalone ordinary frontend | 535 | 157 | 2 | 376 |
-| `test:all` ordinary frontend | 529 | 156 | 2 | 371 |
+| View                                       | Files | Node | Svelte+Node | Happy-DOM |
+| ------------------------------------------ | ----: | ---: | ----------: | --------: |
+| Full, including explicit performance gates |   537 |  157 |           2 |       378 |
+| Standalone ordinary frontend               |   535 |  157 |           2 |       376 |
+| `test:all` ordinary frontend               |   529 |  156 |           2 |       371 |
 
 The target distribution remains 174 N, 129 S, 234 D, and 7 B. Outstanding
 target-runtime mismatches fell from 147 to 144: 17 N and 127 S. Fourteen N
@@ -1643,14 +1743,14 @@ All paired commands ran on the same host with
 `RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v`. This is one paired slice
 observation, not the three-run phase-level timing gate.
 
-| Lane | State | Result | Wall | Vitest | CPU | Peak RSS KiB |
-| --- | --- | --- | ---: | ---: | ---: | ---: |
-| `frontend-node` | Before | 153 files / 917 tests | 4.55s | 3.75s | 681% | 943,028 |
-| `frontend-node` | After | 156 files / 926 tests | 4.83s | 4.02s | 696% | 938,492 |
-| `frontend-dom` | Before | 374 files / 5,488 tests | 67.34s | 66.38s | 630% | 5,006,784 |
-| `frontend-dom` | After | 371 files / 5,479 tests | 69.15s | 68.25s | 636% | 4,853,776 |
-| Ordinary frontend | Before | 529 files / 6,413 tests | 68.90s | 68.04s | 642% | 4,847,236 |
-| Ordinary frontend | After | 529 files / 6,413 tests | 70.10s | 69.15s | 635% | 5,064,564 |
+| Lane              | State  | Result                  |   Wall | Vitest |  CPU | Peak RSS KiB |
+| ----------------- | ------ | ----------------------- | -----: | -----: | ---: | -----------: |
+| `frontend-node`   | Before | 153 files / 917 tests   |  4.55s |  3.75s | 681% |      943,028 |
+| `frontend-node`   | After  | 156 files / 926 tests   |  4.83s |  4.02s | 696% |      938,492 |
+| `frontend-dom`    | Before | 374 files / 5,488 tests | 67.34s | 66.38s | 630% |    5,006,784 |
+| `frontend-dom`    | After  | 371 files / 5,479 tests | 69.15s | 68.25s | 636% |    4,853,776 |
+| Ordinary frontend | Before | 529 files / 6,413 tests | 68.90s | 68.04s | 642% |    4,847,236 |
+| Ordinary frontend | After  | 529 files / 6,413 tests | 70.10s | 69.15s | 635% |    5,064,564 |
 
 The paired ordinary wall observation increased by 1.20s (1.7%) while peak RSS
 increased by 217,328 KiB (4.5%). Both movements remain within observed lane
@@ -1739,11 +1839,11 @@ pnpm check:frontend-test-inventory
 Both passed. The generated inventory removed the two promoted target-N probe
 markers, retained the 537-file universe, and remained exhaustive and disjoint.
 
-| View | Files | Node | Svelte+Node | Happy-DOM |
-| --- | ---: | ---: | ---: | ---: |
-| Full, including explicit performance gates | 537 | 154 | 2 | 381 |
-| Standalone ordinary frontend | 535 | 154 | 2 | 379 |
-| `test:all` ordinary frontend | 529 | 153 | 2 | 374 |
+| View                                       | Files | Node | Svelte+Node | Happy-DOM |
+| ------------------------------------------ | ----: | ---: | ----------: | --------: |
+| Full, including explicit performance gates |   537 |  154 |           2 |       381 |
+| Standalone ordinary frontend               |   535 |  154 |           2 |       379 |
+| `test:all` ordinary frontend               |   529 |  153 |           2 |       374 |
 
 The target distribution remains 174 N, 129 S, 234 D, and 7 B. Outstanding
 target-runtime mismatches fell from 149 to 147: 20 N and 127 S. Eighteen N
@@ -1756,14 +1856,14 @@ All paired commands ran on the same host with
 `RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v`. This is one paired slice
 observation, not the three-run phase-level timing gate.
 
-| Lane | State | Result | Wall | Vitest | CPU | Peak RSS KiB |
-| --- | --- | --- | ---: | ---: | ---: | ---: |
-| `frontend-node` | Before | 151 files / 909 tests | 4.34s | 3.56s | 679% | 953,552 |
-| `frontend-node` | After | 153 files / 917 tests | 4.71s | 3.99s | 631% | 952,752 |
-| `frontend-dom` | Before | 376 files / 5,496 tests | 67.58s | 66.73s | 636% | 4,842,932 |
-| `frontend-dom` | After | 374 files / 5,488 tests | 63.88s | 62.99s | 630% | 4,650,008 |
-| Ordinary frontend | Before | 529 files / 6,413 tests | 72.82s | 71.84s | 634% | 4,980,964 |
-| Ordinary frontend | After | 529 files / 6,413 tests | 74.21s | 73.26s | 638% | 4,898,600 |
+| Lane              | State  | Result                  |   Wall | Vitest |  CPU | Peak RSS KiB |
+| ----------------- | ------ | ----------------------- | -----: | -----: | ---: | -----------: |
+| `frontend-node`   | Before | 151 files / 909 tests   |  4.34s |  3.56s | 679% |      953,552 |
+| `frontend-node`   | After  | 153 files / 917 tests   |  4.71s |  3.99s | 631% |      952,752 |
+| `frontend-dom`    | Before | 376 files / 5,496 tests | 67.58s | 66.73s | 636% |    4,842,932 |
+| `frontend-dom`    | After  | 374 files / 5,488 tests | 63.88s | 62.99s | 630% |    4,650,008 |
+| Ordinary frontend | Before | 529 files / 6,413 tests | 72.82s | 71.84s | 634% |    4,980,964 |
+| Ordinary frontend | After  | 529 files / 6,413 tests | 74.21s | 73.26s | 638% |    4,898,600 |
 
 The paired ordinary wall observation increased by 1.39s (1.9%) while peak RSS
 decreased by 82,364 KiB (1.7%). Both movements remain within observed lane
@@ -1859,11 +1959,11 @@ pnpm check:frontend-test-inventory
 Both passed. The generated inventory removed the three promoted target-N probe
 markers, retained the 537-file universe, and remained exhaustive and disjoint.
 
-| View | Files | Node | Svelte+Node | Happy-DOM |
-| --- | ---: | ---: | ---: | ---: |
-| Full, including explicit performance gates | 537 | 152 | 2 | 383 |
-| Standalone ordinary frontend | 535 | 152 | 2 | 381 |
-| `test:all` ordinary frontend | 529 | 151 | 2 | 376 |
+| View                                       | Files | Node | Svelte+Node | Happy-DOM |
+| ------------------------------------------ | ----: | ---: | ----------: | --------: |
+| Full, including explicit performance gates |   537 |  152 |           2 |       383 |
+| Standalone ordinary frontend               |   535 |  152 |           2 |       381 |
+| `test:all` ordinary frontend               |   529 |  151 |           2 |       376 |
 
 The target distribution remains 174 N, 129 S, 234 D, and 7 B. Outstanding
 target-runtime mismatches fell from 152 to 149: 22 N and 127 S. Twenty N files
@@ -1876,14 +1976,14 @@ All paired commands ran on the same host with
 `RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v`. This is one paired slice
 observation, not the three-run phase-level timing gate.
 
-| Lane | State | Result | Wall | Vitest | CPU | Peak RSS KiB |
-| --- | --- | --- | ---: | ---: | ---: | ---: |
-| `frontend-node` | Before | 148 files / 903 tests | 4.23s | 3.48s | 680% | 912,104 |
-| `frontend-node` | After | 151 files / 909 tests | 4.24s | 3.50s | 676% | 925,640 |
-| `frontend-dom` | Before | 379 files / 5,502 tests | 65.49s | 64.62s | 636% | 4,720,332 |
-| `frontend-dom` | After | 376 files / 5,496 tests | 66.88s | 65.99s | 641% | 4,644,884 |
-| Ordinary frontend | Before | 529 files / 6,413 tests | 74.45s | 73.60s | 642% | 4,909,928 |
-| Ordinary frontend | After | 529 files / 6,413 tests | 73.67s | 72.66s | 642% | 4,782,104 |
+| Lane              | State  | Result                  |   Wall | Vitest |  CPU | Peak RSS KiB |
+| ----------------- | ------ | ----------------------- | -----: | -----: | ---: | -----------: |
+| `frontend-node`   | Before | 148 files / 903 tests   |  4.23s |  3.48s | 680% |      912,104 |
+| `frontend-node`   | After  | 151 files / 909 tests   |  4.24s |  3.50s | 676% |      925,640 |
+| `frontend-dom`    | Before | 379 files / 5,502 tests | 65.49s | 64.62s | 636% |    4,720,332 |
+| `frontend-dom`    | After  | 376 files / 5,496 tests | 66.88s | 65.99s | 641% |    4,644,884 |
+| Ordinary frontend | Before | 529 files / 6,413 tests | 74.45s | 73.60s | 642% |    4,909,928 |
+| Ordinary frontend | After  | 529 files / 6,413 tests | 73.67s | 72.66s | 642% |    4,782,104 |
 
 The paired ordinary wall observation improved by 0.78s (1.0%) while peak RSS
 decreased by 127,824 KiB (2.6%). Both movements remain within observed lane
@@ -1973,11 +2073,11 @@ pnpm check:frontend-test-inventory
 Both passed. The generated inventory removed the three target-N probe markers,
 retained the 537-file universe, and remained exhaustive and disjoint.
 
-| View | Files | Node | Svelte+Node | Happy-DOM |
-| --- | ---: | ---: | ---: | ---: |
-| Full, including explicit performance gates | 537 | 149 | 2 | 386 |
-| Standalone ordinary frontend | 535 | 149 | 2 | 384 |
-| `test:all` ordinary frontend | 529 | 148 | 2 | 379 |
+| View                                       | Files | Node | Svelte+Node | Happy-DOM |
+| ------------------------------------------ | ----: | ---: | ----------: | --------: |
+| Full, including explicit performance gates |   537 |  149 |           2 |       386 |
+| Standalone ordinary frontend               |   535 |  149 |           2 |       384 |
+| `test:all` ordinary frontend               |   529 |  148 |           2 |       379 |
 
 The target distribution remains 174 N, 129 S, 234 D, and 7 B. Outstanding
 target-runtime probes fell from 155 to 152: 25 N and 127 S.
@@ -1988,14 +2088,14 @@ All paired commands ran on the same host with
 `RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v`. This is one paired slice
 observation, not the three-run phase-level timing gate.
 
-| Lane | State | Result | Wall | Vitest | CPU | Peak RSS KiB |
-| --- | --- | --- | ---: | ---: | ---: | ---: |
-| `frontend-node` | Before | 145 files / 887 tests | 4.39s | 3.63s | 672% | 945,704 |
-| `frontend-node` | After | 148 files / 903 tests | 4.27s | 3.53s | 689% | 937,580 |
-| `frontend-dom` | Before | 382 files / 5,518 tests | 68.19s | 67.24s | 625% | 4,550,372 |
-| `frontend-dom` | After | 379 files / 5,502 tests | 68.61s | 67.69s | 631% | 4,803,428 |
-| Ordinary frontend | Before | 529 files / 6,413 tests | 69.32s | 68.44s | 636% | 5,009,748 |
-| Ordinary frontend | After | 529 files / 6,413 tests | 70.17s | 69.27s | 634% | 4,957,828 |
+| Lane              | State  | Result                  |   Wall | Vitest |  CPU | Peak RSS KiB |
+| ----------------- | ------ | ----------------------- | -----: | -----: | ---: | -----------: |
+| `frontend-node`   | Before | 145 files / 887 tests   |  4.39s |  3.63s | 672% |      945,704 |
+| `frontend-node`   | After  | 148 files / 903 tests   |  4.27s |  3.53s | 689% |      937,580 |
+| `frontend-dom`    | Before | 382 files / 5,518 tests | 68.19s | 67.24s | 625% |    4,550,372 |
+| `frontend-dom`    | After  | 379 files / 5,502 tests | 68.61s | 67.69s | 631% |    4,803,428 |
+| Ordinary frontend | Before | 529 files / 6,413 tests | 69.32s | 68.44s | 636% |    5,009,748 |
+| Ordinary frontend | After  | 529 files / 6,413 tests | 70.17s | 69.27s | 634% |    4,957,828 |
 
 The paired ordinary wall observation increased by 0.85s (1.2%) while peak RSS
 decreased by 51,920 KiB (1.0%). Both movements remain within observed lane
@@ -2085,11 +2185,11 @@ pnpm check:frontend-test-inventory
 Both passed. The generated inventory removed the four target-N probe markers,
 retained the 537-file universe, and remained exhaustive and disjoint.
 
-| View | Files | Node | Svelte+Node | Happy-DOM |
-| --- | ---: | ---: | ---: | ---: |
-| Full, including explicit performance gates | 537 | 146 | 2 | 389 |
-| Standalone ordinary frontend | 535 | 146 | 2 | 387 |
-| `test:all` ordinary frontend | 529 | 145 | 2 | 382 |
+| View                                       | Files | Node | Svelte+Node | Happy-DOM |
+| ------------------------------------------ | ----: | ---: | ----------: | --------: |
+| Full, including explicit performance gates |   537 |  146 |           2 |       389 |
+| Standalone ordinary frontend               |   535 |  146 |           2 |       387 |
+| `test:all` ordinary frontend               |   529 |  145 |           2 |       382 |
 
 The target distribution remains 174 N, 129 S, 234 D, and 7 B. Outstanding
 target-runtime probes fell from 159 to 155: 28 N and 127 S.
@@ -2100,14 +2200,14 @@ All paired commands ran on the same host with
 `RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v`. This is one paired slice
 observation, not the three-run phase-level timing gate.
 
-| Lane | State | Result | Wall | Vitest | CPU | Peak RSS KiB |
-| --- | --- | --- | ---: | ---: | ---: | ---: |
-| `frontend-node` | Before | 141 files / 862 tests | 4.54s | 3.74s | 679% | 897,628 |
-| `frontend-node` | After | 145 files / 887 tests | 4.72s | 4.01s | 607% | 919,508 |
-| `frontend-dom` | Before | 386 files / 5,543 tests | 70.45s | 69.53s | 637% | 4,933,796 |
-| `frontend-dom` | After | 382 files / 5,518 tests | 67.69s | 66.80s | 644% | 4,974,240 |
-| Ordinary frontend | Before | 529 files / 6,413 tests | 70.52s | 69.54s | 635% | 4,768,944 |
-| Ordinary frontend | After | 529 files / 6,413 tests | 73.19s | 72.11s | 628% | 4,784,356 |
+| Lane              | State  | Result                  |   Wall | Vitest |  CPU | Peak RSS KiB |
+| ----------------- | ------ | ----------------------- | -----: | -----: | ---: | -----------: |
+| `frontend-node`   | Before | 141 files / 862 tests   |  4.54s |  3.74s | 679% |      897,628 |
+| `frontend-node`   | After  | 145 files / 887 tests   |  4.72s |  4.01s | 607% |      919,508 |
+| `frontend-dom`    | Before | 386 files / 5,543 tests | 70.45s | 69.53s | 637% |    4,933,796 |
+| `frontend-dom`    | After  | 382 files / 5,518 tests | 67.69s | 66.80s | 644% |    4,974,240 |
+| Ordinary frontend | Before | 529 files / 6,413 tests | 70.52s | 69.54s | 635% |    4,768,944 |
+| Ordinary frontend | After  | 529 files / 6,413 tests | 73.19s | 72.11s | 628% |    4,784,356 |
 
 The paired ordinary wall observation increased by 2.67s (3.8%) while peak RSS
 increased by 15,412 KiB (0.3%). Both remain within observed lane variability,
@@ -2222,11 +2322,11 @@ pnpm check:frontend-test-inventory
 Both passed. The generated inventory removed the two target-N probe markers,
 retained the 537-file universe, and remained exhaustive and disjoint.
 
-| View | Files | Node | Svelte+Node | Happy-DOM |
-| --- | ---: | ---: | ---: | ---: |
-| Full, including explicit performance gates | 537 | 142 | 2 | 393 |
-| Standalone ordinary frontend | 535 | 142 | 2 | 391 |
-| `test:all` ordinary frontend | 529 | 141 | 2 | 386 |
+| View                                       | Files | Node | Svelte+Node | Happy-DOM |
+| ------------------------------------------ | ----: | ---: | ----------: | --------: |
+| Full, including explicit performance gates |   537 |  142 |           2 |       393 |
+| Standalone ordinary frontend               |   535 |  142 |           2 |       391 |
+| `test:all` ordinary frontend               |   529 |  141 |           2 |       386 |
 
 The target distribution remains 174 N, 129 S, 234 D, and 7 B. Outstanding
 target-runtime probes fell from 161 to 159: 32 N and 127 S.
@@ -2237,14 +2337,14 @@ All paired commands ran on the same host with
 `RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v`. This is one paired slice
 observation, not the three-run phase-level timing gate.
 
-| Lane | State | Result | Wall | Vitest | CPU | Peak RSS KiB |
-| --- | --- | --- | ---: | ---: | ---: | ---: |
-| `frontend-node` | Before | 139 files / 855 tests | 4.08s | 3.36s | 676% | 990,892 |
-| `frontend-node` | After | 141 files / 862 tests | 4.60s | 3.83s | 593% | 955,244 |
-| `frontend-dom` | Before | 388 files / 5,550 tests | 70.25s | 69.36s | 639% | 4,831,920 |
-| `frontend-dom` | After | 386 files / 5,543 tests | 68.06s | 67.15s | 639% | 4,906,616 |
-| Ordinary frontend | Before | 529 files / 6,413 tests | 70.45s | 69.39s | 634% | 5,025,708 |
-| Ordinary frontend | After | 529 files / 6,413 tests | 72.14s | 71.13s | 630% | 5,018,288 |
+| Lane              | State  | Result                  |   Wall | Vitest |  CPU | Peak RSS KiB |
+| ----------------- | ------ | ----------------------- | -----: | -----: | ---: | -----------: |
+| `frontend-node`   | Before | 139 files / 855 tests   |  4.08s |  3.36s | 676% |      990,892 |
+| `frontend-node`   | After  | 141 files / 862 tests   |  4.60s |  3.83s | 593% |      955,244 |
+| `frontend-dom`    | Before | 388 files / 5,550 tests | 70.25s | 69.36s | 639% |    4,831,920 |
+| `frontend-dom`    | After  | 386 files / 5,543 tests | 68.06s | 67.15s | 639% |    4,906,616 |
+| Ordinary frontend | Before | 529 files / 6,413 tests | 70.45s | 69.39s | 634% |    5,025,708 |
+| Ordinary frontend | After  | 529 files / 6,413 tests | 72.14s | 71.13s | 630% |    5,018,288 |
 
 The paired ordinary wall observation increased by 1.69s (2.4%) while peak RSS
 decreased by 7,420 KiB (0.1%). The wall movement remains inside the Phase 0
@@ -2335,11 +2435,11 @@ pnpm check:frontend-test-inventory
 Both passed. The generated inventory removed the five target-N probe markers,
 retained the 537-file universe, and remained exhaustive and disjoint.
 
-| View | Files | Node | Svelte+Node | Happy-DOM |
-| --- | ---: | ---: | ---: | ---: |
-| Full, including explicit performance gates | 537 | 140 | 2 | 395 |
-| Standalone ordinary frontend | 535 | 140 | 2 | 393 |
-| `test:all` ordinary frontend | 529 | 139 | 2 | 388 |
+| View                                       | Files | Node | Svelte+Node | Happy-DOM |
+| ------------------------------------------ | ----: | ---: | ----------: | --------: |
+| Full, including explicit performance gates |   537 |  140 |           2 |       395 |
+| Standalone ordinary frontend               |   535 |  140 |           2 |       393 |
+| `test:all` ordinary frontend               |   529 |  139 |           2 |       388 |
 
 The target distribution remains 174 N, 129 S, 234 D, and 7 B. Outstanding
 target-runtime probes fell from 166 to 161: 34 N and 127 S.
@@ -2350,14 +2450,14 @@ All paired commands ran on the same host with
 `RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v`. This is one paired slice
 observation, not the three-run phase-level timing gate.
 
-| Lane | State | Result | Wall | Vitest | CPU | Peak RSS KiB |
-| --- | --- | --- | ---: | ---: | ---: | ---: |
-| `frontend-node` | Before | 134 files / 833 tests | 4.35s | 3.63s | 633% | 987,448 |
-| `frontend-node` | After | 139 files / 855 tests | 4.09s | 3.27s | 657% | 982,296 |
-| `frontend-dom` | Before | 393 files / 5,572 tests | 66.61s | 65.73s | 635% | 4,788,528 |
-| `frontend-dom` | After | 388 files / 5,550 tests | 65.36s | 64.47s | 635% | 5,080,288 |
-| Ordinary frontend | Before | 529 files / 6,413 tests | 76.01s | 74.73s | 639% | 5,009,076 |
-| Ordinary frontend | After | 529 files / 6,413 tests | 74.79s | 73.61s | 646% | 4,842,704 |
+| Lane              | State  | Result                  |   Wall | Vitest |  CPU | Peak RSS KiB |
+| ----------------- | ------ | ----------------------- | -----: | -----: | ---: | -----------: |
+| `frontend-node`   | Before | 134 files / 833 tests   |  4.35s |  3.63s | 633% |      987,448 |
+| `frontend-node`   | After  | 139 files / 855 tests   |  4.09s |  3.27s | 657% |      982,296 |
+| `frontend-dom`    | Before | 393 files / 5,572 tests | 66.61s | 65.73s | 635% |    4,788,528 |
+| `frontend-dom`    | After  | 388 files / 5,550 tests | 65.36s | 64.47s | 635% |    5,080,288 |
+| Ordinary frontend | Before | 529 files / 6,413 tests | 76.01s | 74.73s | 639% |    5,009,076 |
+| Ordinary frontend | After  | 529 files / 6,413 tests | 74.79s | 73.61s | 646% |    4,842,704 |
 
 The paired ordinary wall observation improved by 1.22s (1.6%) and peak RSS by
 166,372 KiB (3.3%). The owning DOM project improved by 1.25s while its peak RSS
@@ -2441,11 +2541,11 @@ pnpm check:frontend-test-inventory
 Both passed. The generated inventory removed the three target-N probe markers,
 retained the 537-file universe, and remained exhaustive and disjoint.
 
-| View | Files | Node | Svelte+Node | Happy-DOM |
-| --- | ---: | ---: | ---: | ---: |
-| Full, including explicit performance gates | 537 | 135 | 2 | 400 |
-| Standalone ordinary frontend | 535 | 135 | 2 | 398 |
-| `test:all` ordinary frontend | 529 | 134 | 2 | 393 |
+| View                                       | Files | Node | Svelte+Node | Happy-DOM |
+| ------------------------------------------ | ----: | ---: | ----------: | --------: |
+| Full, including explicit performance gates |   537 |  135 |           2 |       400 |
+| Standalone ordinary frontend               |   535 |  135 |           2 |       398 |
+| `test:all` ordinary frontend               |   529 |  134 |           2 |       393 |
 
 The target distribution remains 174 N, 129 S, 234 D, and 7 B. Outstanding
 target-runtime probes fell from 169 to 166: 39 N and 127 S.
@@ -2456,14 +2556,14 @@ All paired commands ran on the same host with
 `RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v`. This is one paired slice
 observation, not the three-run phase-level timing gate.
 
-| Lane | State | Result | Wall | Vitest | CPU | Peak RSS KiB |
-| --- | --- | --- | ---: | ---: | ---: | ---: |
-| `frontend-node` | Before | 131 files / 808 tests | 4.56s | 3.84s | 614% | 960,344 |
-| `frontend-node` | After | 134 files / 833 tests | 4.53s | 3.60s | 657% | 966,608 |
-| `frontend-dom` | Before | 396 files / 5,597 tests | 67.74s | 66.87s | 631% | 5,031,412 |
-| `frontend-dom` | After | 393 files / 5,572 tests | 66.68s | 65.77s | 638% | 4,727,132 |
-| Ordinary frontend | Before | 529 files / 6,413 tests | 72.99s | 72.15s | 644% | 4,784,700 |
-| Ordinary frontend | After | 529 files / 6,413 tests | 72.03s | 71.19s | 641% | 4,919,184 |
+| Lane              | State  | Result                  |   Wall | Vitest |  CPU | Peak RSS KiB |
+| ----------------- | ------ | ----------------------- | -----: | -----: | ---: | -----------: |
+| `frontend-node`   | Before | 131 files / 808 tests   |  4.56s |  3.84s | 614% |      960,344 |
+| `frontend-node`   | After  | 134 files / 833 tests   |  4.53s |  3.60s | 657% |      966,608 |
+| `frontend-dom`    | Before | 396 files / 5,597 tests | 67.74s | 66.87s | 631% |    5,031,412 |
+| `frontend-dom`    | After  | 393 files / 5,572 tests | 66.68s | 65.77s | 638% |    4,727,132 |
+| Ordinary frontend | Before | 529 files / 6,413 tests | 72.99s | 72.15s | 644% |    4,784,700 |
+| Ordinary frontend | After  | 529 files / 6,413 tests | 72.03s | 71.19s | 641% |    4,919,184 |
 
 The paired ordinary wall observation improved by 0.96s (1.3%) while peak RSS
 increased by 134,484 KiB (2.8%). The RSS movement is within observed ordinary
@@ -2554,11 +2654,11 @@ pnpm check:frontend-test-inventory
 Both passed. The generated inventory removed the three target-N probe markers,
 retained the 537-file universe, and remained exhaustive and disjoint.
 
-| View | Files | Node | Svelte+Node | Happy-DOM |
-| --- | ---: | ---: | ---: | ---: |
-| Full, including explicit performance gates | 537 | 132 | 2 | 403 |
-| Standalone ordinary frontend | 535 | 132 | 2 | 401 |
-| `test:all` ordinary frontend | 529 | 131 | 2 | 396 |
+| View                                       | Files | Node | Svelte+Node | Happy-DOM |
+| ------------------------------------------ | ----: | ---: | ----------: | --------: |
+| Full, including explicit performance gates |   537 |  132 |           2 |       403 |
+| Standalone ordinary frontend               |   535 |  132 |           2 |       401 |
+| `test:all` ordinary frontend               |   529 |  131 |           2 |       396 |
 
 The target distribution remains 174 N, 129 S, 234 D, and 7 B. Outstanding
 target-runtime probes fell from 172 to 169: 42 N and 127 S.
@@ -2569,14 +2669,14 @@ All paired commands ran on the same host with
 `RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v`. This is one paired slice
 observation, not the three-run phase-level timing gate.
 
-| Lane | State | Result | Wall | Vitest | CPU | Peak RSS KiB |
-| --- | --- | --- | ---: | ---: | ---: | ---: |
-| `frontend-node` | Before | 128 files / 790 tests | 4.02s | 3.31s | 679% | 937,812 |
-| `frontend-node` | After | 131 files / 808 tests | 4.03s | 3.33s | 678% | 906,256 |
-| `frontend-dom` | Before | 399 files / 5,615 tests | 71.95s | 71.06s | 643% | 5,072,248 |
-| `frontend-dom` | After | 396 files / 5,597 tests | 69.52s | 68.67s | 638% | 4,941,504 |
-| Ordinary frontend | Before | 529 files / 6,413 tests | 68.90s | 68.05s | 640% | 4,734,372 |
-| Ordinary frontend | After | 529 files / 6,413 tests | 69.19s | 68.36s | 641% | 4,938,776 |
+| Lane              | State  | Result                  |   Wall | Vitest |  CPU | Peak RSS KiB |
+| ----------------- | ------ | ----------------------- | -----: | -----: | ---: | -----------: |
+| `frontend-node`   | Before | 128 files / 790 tests   |  4.02s |  3.31s | 679% |      937,812 |
+| `frontend-node`   | After  | 131 files / 808 tests   |  4.03s |  3.33s | 678% |      906,256 |
+| `frontend-dom`    | Before | 399 files / 5,615 tests | 71.95s | 71.06s | 643% |    5,072,248 |
+| `frontend-dom`    | After  | 396 files / 5,597 tests | 69.52s | 68.67s | 638% |    4,941,504 |
+| Ordinary frontend | Before | 529 files / 6,413 tests | 68.90s | 68.05s | 640% |    4,734,372 |
+| Ordinary frontend | After  | 529 files / 6,413 tests | 69.19s | 68.36s | 641% |    4,938,776 |
 
 The paired ordinary wall observation increased by 0.29s (0.4%) and peak RSS by
 204,404 KiB (4.3%). Both are within observed ordinary-lane variability and do
@@ -2663,11 +2763,11 @@ pnpm check:frontend-test-inventory
 Both passed. The generated inventory removed the three target-N probe markers,
 retained the 537-file universe, and remained exhaustive and disjoint.
 
-| View | Files | Node | Svelte+Node | Happy-DOM |
-| --- | ---: | ---: | ---: | ---: |
-| Full, including explicit performance gates | 537 | 129 | 2 | 406 |
-| Standalone ordinary frontend | 535 | 129 | 2 | 404 |
-| `test:all` ordinary frontend | 529 | 128 | 2 | 399 |
+| View                                       | Files | Node | Svelte+Node | Happy-DOM |
+| ------------------------------------------ | ----: | ---: | ----------: | --------: |
+| Full, including explicit performance gates |   537 |  129 |           2 |       406 |
+| Standalone ordinary frontend               |   535 |  129 |           2 |       404 |
+| `test:all` ordinary frontend               |   529 |  128 |           2 |       399 |
 
 The target distribution remains 174 N, 129 S, 234 D, and 7 B. Outstanding
 target-runtime probes fell from 175 to 172: 45 N and 127 S.
@@ -2678,14 +2778,14 @@ All paired commands ran on the same host with
 `RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v`. This is one paired slice
 observation, not the three-run phase-level timing gate.
 
-| Lane | State | Result | Wall | Vitest | CPU | Peak RSS KiB |
-| --- | --- | --- | ---: | ---: | ---: | ---: |
-| `frontend-node` | Before | 125 files / 771 tests | 3.74s | 3.02s | 661% | 990,304 |
-| `frontend-node` | After | 128 files / 790 tests | 4.24s | 3.54s | 588% | 950,836 |
-| `frontend-dom` | Before | 402 files / 5,634 tests | 72.18s | 71.23s | 646% | 5,021,316 |
-| `frontend-dom` | After | 399 files / 5,615 tests | 69.19s | 68.27s | 645% | 4,832,972 |
-| Ordinary frontend | Before | 529 files / 6,413 tests | 70.92s | 69.81s | 636% | 5,121,984 |
-| Ordinary frontend | After | 529 files / 6,413 tests | 70.34s | 69.30s | 635% | 4,741,508 |
+| Lane              | State  | Result                  |   Wall | Vitest |  CPU | Peak RSS KiB |
+| ----------------- | ------ | ----------------------- | -----: | -----: | ---: | -----------: |
+| `frontend-node`   | Before | 125 files / 771 tests   |  3.74s |  3.02s | 661% |      990,304 |
+| `frontend-node`   | After  | 128 files / 790 tests   |  4.24s |  3.54s | 588% |      950,836 |
+| `frontend-dom`    | Before | 402 files / 5,634 tests | 72.18s | 71.23s | 646% |    5,021,316 |
+| `frontend-dom`    | After  | 399 files / 5,615 tests | 69.19s | 68.27s | 645% |    4,832,972 |
+| Ordinary frontend | Before | 529 files / 6,413 tests | 70.92s | 69.81s | 636% |    5,121,984 |
+| Ordinary frontend | After  | 529 files / 6,413 tests | 70.34s | 69.30s | 635% |    4,741,508 |
 
 The paired ordinary wall observation improved by 0.58s (0.8%) and peak RSS by
 380,476 KiB. Aggregate worker phases changed from 104.12s transform / 27.74s
@@ -2766,11 +2866,11 @@ pnpm check:frontend-test-inventory
 Result: passed. The filesystem universe and resolved Vitest ownership remained
 exhaustive and disjoint in all supported views.
 
-| View | Files | Node | Svelte+Node | Happy-DOM |
-| --- | ---: | ---: | ---: | ---: |
-| Full, including explicit performance gates | 537 | 126 | 2 | 409 |
-| Standalone ordinary frontend | 535 | 126 | 2 | 407 |
-| `test:all` ordinary frontend | 529 | 125 | 2 | 402 |
+| View                                       | Files | Node | Svelte+Node | Happy-DOM |
+| ------------------------------------------ | ----: | ---: | ----------: | --------: |
+| Full, including explicit performance gates |   537 |  126 |           2 |       409 |
+| Standalone ordinary frontend               |   535 |  126 |           2 |       407 |
+| `test:all` ordinary frontend               |   529 |  125 |           2 |       402 |
 
 All views retain their Phase 0 total. The target candidate distribution remains
 174 N, 129 S, 234 D, and 7 B. The two validated S pilots no longer carry probe
@@ -2785,11 +2885,11 @@ RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v \
   pnpm exec vitest run --reporter=json --outputFile=/tmp/<run>.json
 ```
 
-| Run | Wall | Vitest | User | System | CPU | Peak RSS KiB |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 73.07s | 72.05s | 428.77s | 35.42s | 635% | 4,818,792 |
-| 2 | 70.44s | 69.59s | 419.50s | 31.00s | 639% | 4,800,148 |
-| 3 | 75.22s | 74.28s | 450.79s | 35.43s | 646% | 4,661,000 |
+| Run        |       Wall |     Vitest |        User |     System |      CPU |  Peak RSS KiB |
+| ---------- | ---------: | ---------: | ----------: | ---------: | -------: | ------------: |
+| 1          |     73.07s |     72.05s |     428.77s |     35.42s |     635% |     4,818,792 |
+| 2          |     70.44s |     69.59s |     419.50s |     31.00s |     639% |     4,800,148 |
+| 3          |     75.22s |     74.28s |     450.79s |     35.43s |     646% |     4,661,000 |
 | **Median** | **73.07s** | **72.05s** | **428.77s** | **35.42s** | **639%** | **4,800,148** |
 
 All three runs passed 529 files and 6,413 tests. Wall range was 70.44-75.22s.
@@ -2801,14 +2901,14 @@ aggregate worker time.
 
 ## Phase 1 Project And Command Validation
 
-| Command/project | Result | Vitest duration |
-| --- | --- | ---: |
-| `frontend-node` | 126 files / 776 tests passed | 3.11s |
-| `frontend-svelte-node` | 2 files / 8 tests passed | 1.18s |
-| `frontend-dom` final rerun | 407 files / 5,832 tests passed | 68.95s |
-| `pnpm test:frontend` | 535 files / 6,616 tests passed | 72.74s |
-| `pnpm test:frontend:all` | 537 files / 6,622 tests passed | 77.32s |
-| `pnpm test:gates` | 4 files / 9 tests passed | 10.76s |
+| Command/project            | Result                         | Vitest duration |
+| -------------------------- | ------------------------------ | --------------: |
+| `frontend-node`            | 126 files / 776 tests passed   |           3.11s |
+| `frontend-svelte-node`     | 2 files / 8 tests passed       |           1.18s |
+| `frontend-dom` final rerun | 407 files / 5,832 tests passed |          68.95s |
+| `pnpm test:frontend`       | 535 files / 6,616 tests passed |          72.74s |
+| `pnpm test:frontend:all`   | 537 files / 6,622 tests passed |          77.32s |
+| `pnpm test:gates`          | 4 files / 9 tests passed       |          10.76s |
 
 `pnpm coverage:ui-map` passed 6 files and 203 tests in 18.44s. Lines were
 14.56%, statements 14.97%, functions 18.22%, and branches 9.52%, all above the
@@ -2825,16 +2925,16 @@ gate inclusion, and the unchanged aggregate lane graph all passed.
 `pnpm test:all --dry-run` reported the expected eight-lane graph. The final
 `pnpm test:all` passed in 206.30s wall time with 5,029,460 KiB peak RSS.
 
-| Lane | Result | Lane time |
-| --- | --- | ---: |
-| Server and browser-smoke typecheck | Passed | 17.8s |
-| Frontend tests | 529 files / 6,413 tests passed | 85.0s |
-| Server tests | 154 files / 3,295 passed / 1 skipped | 17.6s |
-| Browser smoke | 34 passed | 70.6s |
-| Frontend check | Passed | 33.9s |
-| UI coverage | 6 files / 203 tests passed | 19.9s |
-| Format check | Passed | 30.4s |
-| Frontend performance gates | 2 files / 6 tests passed | 12.9s |
+| Lane                               | Result                               | Lane time |
+| ---------------------------------- | ------------------------------------ | --------: |
+| Server and browser-smoke typecheck | Passed                               |     17.8s |
+| Frontend tests                     | 529 files / 6,413 tests passed       |     85.0s |
+| Server tests                       | 154 files / 3,295 passed / 1 skipped |     17.6s |
+| Browser smoke                      | 34 passed                            |     70.6s |
+| Frontend check                     | Passed                               |     33.9s |
+| UI coverage                        | 6 files / 203 tests passed           |     19.9s |
+| Format check                       | Passed                               |     30.4s |
+| Frontend performance gates         | 2 files / 6 tests passed             |     12.9s |
 
 The aggregate wall result is 1.1% below the 208.53s Phase 0 observation and its
 peak RSS remains below the 5,263,817 KiB guard. The previously observed
@@ -2868,11 +2968,11 @@ pnpm check:frontend-test-inventory
 Result: passed. Resolved Vitest discovery and the independent filesystem
 universe were exhaustive and disjoint in every supported view.
 
-| View | Files | Node | Happy-DOM |
-| --- | ---: | ---: | ---: |
-| Full, including explicit performance gates | 537 | 126 | 411 |
-| Standalone ordinary frontend | 535 | 126 | 409 |
-| `test:all` ordinary frontend | 529 | 125 | 404 |
+| View                                       | Files | Node | Happy-DOM |
+| ------------------------------------------ | ----: | ---: | --------: |
+| Full, including explicit performance gates |   537 |  126 |       411 |
+| Standalone ordinary frontend               |   535 |  126 |       409 |
+| `test:all` ordinary frontend               |   529 |  125 |       404 |
 
 Seven Playwright spec files were separately inventoried as B. The committed
 candidate classification contains 174 N, 129 S, 234 D, and 7 B files. All 177
@@ -2908,24 +3008,24 @@ page-cache run.
 
 ### Warm Runs
 
-| Run | Wall | Vitest | User | System | CPU | Peak RSS KiB |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 72.34s | 71.45s | 436.90s | 32.96s | 649% | 4,990,336 |
-| 2 | 72.30s | 71.23s | 429.79s | 34.63s | 642% | 4,703,800 |
-| 3 | 69.71s | 68.80s | 419.51s | 31.24s | 646% | 4,785,288 |
+| Run        |       Wall |     Vitest |        User |     System |      CPU |  Peak RSS KiB |
+| ---------- | ---------: | ---------: | ----------: | ---------: | -------: | ------------: |
+| 1          |     72.34s |     71.45s |     436.90s |     32.96s |     649% |     4,990,336 |
+| 2          |     72.30s |     71.23s |     429.79s |     34.63s |     642% |     4,703,800 |
+| 3          |     69.71s |     68.80s |     419.51s |     31.24s |     646% |     4,785,288 |
 | **Median** | **72.30s** | **71.23s** | **429.79s** | **32.96s** | **646%** | **4,785,288** |
 
 Wall range: 69.71-72.34s. All runs passed 529 files and 6,413 tests.
 
 Median aggregate Vitest phases across the three warm runs:
 
-| Phase | Median |
-| --- | ---: |
-| Transform | 102.15s |
-| Setup | 29.48s |
-| Import | 421.29s |
-| Test bodies | 82.11s |
-| Environment | 55.05s |
+| Phase       |  Median |
+| ----------- | ------: |
+| Transform   | 102.15s |
+| Setup       |  29.48s |
+| Import      | 421.29s |
+| Test bodies |  82.11s |
+| Environment |  55.05s |
 
 These phase values accumulate across parallel workers and do not add to wall
 time.
@@ -2935,10 +3035,10 @@ time.
 Both commands used the aggregate ordinary exclusion so their union matches the
 529-file baseline.
 
-| Project | Result | Vitest | Wall | Peak RSS KiB |
-| --- | --- | ---: | ---: | ---: |
-| `frontend-node` | 125 files / 771 tests passed | 3.20s | 4.06s | 987,312 |
-| `frontend-dom` | 404 files / 5,642 tests passed | 69.76s | 70.67s | 4,930,972 |
+| Project         | Result                         | Vitest |   Wall | Peak RSS KiB |
+| --------------- | ------------------------------ | -----: | -----: | -----------: |
+| `frontend-node` | 125 files / 771 tests passed   |  3.20s |  4.06s |      987,312 |
+| `frontend-dom`  | 404 files / 5,642 tests passed | 69.76s | 70.67s |    4,930,972 |
 
 Node phases were 3.64s transform, 8.16s setup, 5.02s import, 3.20s test,
 and 0.01s environment. Happy-DOM phases were 101.45s transform, 22.43s setup,
@@ -2955,28 +3055,28 @@ pnpm coverage:ui-map
 Result: 6 files and 203 tests passed. Vitest duration was 19.20s; wall time was
 20.13s; peak RSS was 2,076,484 KiB.
 
-| Metric | Result | Threshold |
-| --- | ---: | ---: |
-| Lines | 13.05% | 8% |
-| Statements | 11.75% | 7% |
-| Functions | 10.16% | 5% |
-| Branches | 9.03% | 4% |
+| Metric     | Result | Threshold |
+| ---------- | -----: | --------: |
+| Lines      | 13.05% |        8% |
+| Statements | 11.75% |        7% |
+| Functions  | 10.16% |        5% |
+| Branches   |  9.03% |        4% |
 
 ## Phase 0 Aggregate Closeout
 
 `pnpm test:all --dry-run` reported the expected eight-lane graph. The final
 `pnpm test:all` rerun passed in 208.53s wall time with 4,870,692 KiB peak RSS.
 
-| Lane | Result | Lane time |
-| --- | --- | ---: |
-| Server and browser-smoke typecheck | Passed | 18.5s |
-| Frontend tests | 529 files / 6,413 tests passed | 84.4s |
-| Server tests | 154 files / 3,295 passed / 1 skipped | 17.8s |
-| Browser smoke | 34 passed | 73.1s |
-| Frontend check | Passed | 32.8s |
-| UI coverage | 6 files / 203 tests passed | 19.7s |
-| Format check | Passed | 30.9s |
-| Frontend performance gates | 2 files / 6 tests passed | 13.2s |
+| Lane                               | Result                               | Lane time |
+| ---------------------------------- | ------------------------------------ | --------: |
+| Server and browser-smoke typecheck | Passed                               |     18.5s |
+| Frontend tests                     | 529 files / 6,413 tests passed       |     84.4s |
+| Server tests                       | 154 files / 3,295 passed / 1 skipped |     17.8s |
+| Browser smoke                      | 34 passed                            |     73.1s |
+| Frontend check                     | Passed                               |     32.8s |
+| UI coverage                        | 6 files / 203 tests passed           |     19.7s |
+| Format check                       | Passed                               |     30.9s |
+| Frontend performance gates         | 2 files / 6 tests passed             |     13.2s |
 
 The first aggregate attempt passed every lane except one browser-smoke case:
 `queued finalization keeps a provisional row through reload and later settles`

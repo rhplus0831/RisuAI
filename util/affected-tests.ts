@@ -37,7 +37,7 @@ const frontendTestPattern = /(?:^|\/).+\.test\.[cm]?[jt]sx?$/
 const browserSmokePattern = /^server\/fastify\/browser-smoke\/.+\.spec\.ts$/
 const performanceTestFileSet = new Set<string>(performanceTestFiles)
 const rootRunnerFiles = new Set([
-  'docs/plan/frontend-test-architecture/phase-0-inventory.tsv',
+  '.archived-docs/performance-and-stability/frontend-test-architecture/phase-0-inventory.tsv',
   'package.json',
   'pnpm-lock.yaml',
   'pnpm-workspace.yaml',

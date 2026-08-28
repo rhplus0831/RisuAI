@@ -1,52 +1,84 @@
 # Frontend Test Architecture Status
 
-Date: 2026-08-28
+Date: 2026-08-29
 
-This is the live router for the frontend test runtime architecture workstream.
-Use it first, then open only the active phase or slice. The current runner and
-codebase remain authoritative until a phase lands.
+This is the closed router for the frontend test runtime architecture workstream.
+The current runner and architecture guides are authoritative; this record
+preserves the completed rollout, decisions, and evidence.
 
 ## Current Snapshot
 
-- Plan state: Phases 0-6 complete; Phase 7 pending.
-- Current phase: Phase 7 — Verification And Closeout (pending).
-- Active slice: None; Phase 6 is closed.
+- Plan state: Complete; Phases 0-7 closed.
+- Current phase: None; the workstream is archived.
+- Active slice: None.
 - Implementation state: Plain tests are Node-default; Svelte+Node and DOM
   suffixes are authoritative; 187 reviewed pre-suffix DOM owners are explicit
   registrations; routing, affected tests, aggregate execution, coverage, and CI
   share the same ownership model.
 - Blockers: None.
-- Next action: Begin the Phase 7 final benchmark, budget decision, and archive
-  closeout.
+- Accepted shortfall: Final warm ordinary wall improved 5.3%, not the targeted
+  20%; revisit only for a new cohesive production seam or materially changed
+  runner/runtime cost profile.
+- Next action: Use current testing documentation for live behavior; consult
+  this archive only for historical decisions and measurements.
 
 ## Phase Router
 
-| Phase | State | Purpose |
-| --- | --- | --- |
-| [0](phases/phase-0-baseline-and-classification.md) | Complete | Ratified metrics, capability rules, and discovery/completeness proof. |
-| [1](phases/phase-1-runtime-topology.md) | Complete | Added and piloted the Node, Svelte+Node, and Happy-DOM topology. |
-| [2](phases/phase-2-pure-node-promotion.md) | Complete | Promoted already-pure tests to Node and recorded every retained N candidate. |
-| [3](phases/phase-3-svelte-node-promotion.md) | Complete | Promoted Svelte-compiled tests that do not require DOM behavior. |
-| [4](phases/phase-4-pure-logic-extraction.md) | Complete | Extracted measured pure-logic seams while retaining DOM contracts. |
-| [5](phases/phase-5-dom-contract-consolidation.md) | Complete | Consolidated repeated DOM setup and clarified visible-state ownership. |
-| [6](phases/phase-6-routing-and-ci-enforcement.md) | Complete | Enforced explicit routing and aligned affected tests, coverage, aggregate execution, and CI. |
-| [7](phases/phase-7-verification-and-closeout.md) | Pending | Prove final budgets and behavior, update current docs, and archive the workstream. |
+| Phase                                              | State    | Purpose                                                                                      |
+| -------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------- |
+| [0](phases/phase-0-baseline-and-classification.md) | Complete | Ratified metrics, capability rules, and discovery/completeness proof.                        |
+| [1](phases/phase-1-runtime-topology.md)            | Complete | Added and piloted the Node, Svelte+Node, and Happy-DOM topology.                             |
+| [2](phases/phase-2-pure-node-promotion.md)         | Complete | Promoted already-pure tests to Node and recorded every retained N candidate.                 |
+| [3](phases/phase-3-svelte-node-promotion.md)       | Complete | Promoted Svelte-compiled tests that do not require DOM behavior.                             |
+| [4](phases/phase-4-pure-logic-extraction.md)       | Complete | Extracted measured pure-logic seams while retaining DOM contracts.                           |
+| [5](phases/phase-5-dom-contract-consolidation.md)  | Complete | Consolidated repeated DOM setup and clarified visible-state ownership.                       |
+| [6](phases/phase-6-routing-and-ci-enforcement.md)  | Complete | Enforced explicit routing and aligned affected tests, coverage, aggregate execution, and CI. |
+| [7](phases/phase-7-verification-and-closeout.md)   | Complete | Proved final budgets and behavior, updated current docs, and archived the workstream.        |
+
+## Phase 7 Final Result
+
+| Measurement                 |                                               Result |
+| --------------------------- | ---------------------------------------------------: |
+| Full three-project universe |                      537 files: 194 N / 17 S / 326 D |
+| Aggregate ordinary frontend |        529 files / 6,429 tests: 193 N / 17 S / 319 D |
+| Cold ordinary frontend      |                          76.98s wall / 75.91s Vitest |
+| Warm wall median            |                                68.49s (67.75-70.61s) |
+| Warm Vitest median          |                                               67.43s |
+| Warm peak RSS median        |                                        4,902,032 KiB |
+| Wall delta from Phase 0     |                                                -5.3% |
+| Peak-RSS delta from Phase 0 |                             +2.4% (inside 10% guard) |
+| Focused UI coverage         | 6 files / 203 tests / 21.42s wall; thresholds passed |
+| Full `test:all`             |                       3m23.5s; all nine lanes passed |
+
+The 57.84s primary and 50.61s stretch targets were not met. The shortfall is
+accepted because every candidate has a probe disposition, every retained DOM
+owner is explicit, all measured pure/consolidated seams landed, and the
+remaining costs protect mounted, browser, persistence, focus, rollback, or
+lifecycle behavior. The exact revisit condition is a fresh profile showing a
+cohesive production seam that moves multiple behavioral cases, or a material
+runner/runtime cost change.
+
+Phase 7 also resolved two browser correctness findings: interrupted replay now
+proves stable mutation identity rather than a brittle exact HTTP attempt count,
+and finalization refresh retains its retry-driving projection until recovered
+effects succeed. Focused repetitions and the complete 34-case browser lane
+passed after both fixes.
 
 ## Formal Phase 0 Baseline
 
-| Measurement | Result |
-| --- | ---: |
-| Full classified Vitest universe | 537 files |
-| `test:all` ordinary frontend | 529 files / 6,413 tests |
-| Warm standalone wall median | 72.30s (69.71-72.34s) |
-| Warm Vitest duration median | 71.23s |
-| Warm peak RSS median | 4,785,288 KiB |
-| Node ordinary project | 125 files / 771 tests / 4.06s wall |
-| Happy-DOM ordinary project | 404 files / 5,642 tests / 70.67s wall |
-| Focused UI coverage | 6 files / 203 tests / 20.13s wall |
-| Full `test:all` | 208.53s wall |
-| Primary target | 57.84s ordinary frontend wall median |
-| Stretch target | 50.61s ordinary frontend wall median |
+| Measurement                     |                                Result |
+| ------------------------------- | ------------------------------------: |
+| Full classified Vitest universe |                             537 files |
+| `test:all` ordinary frontend    |               529 files / 6,413 tests |
+| Warm standalone wall median     |                 72.30s (69.71-72.34s) |
+| Warm Vitest duration median     |                                71.23s |
+| Warm peak RSS median            |                         4,785,288 KiB |
+| Node ordinary project           |    125 files / 771 tests / 4.06s wall |
+| Happy-DOM ordinary project      | 404 files / 5,642 tests / 70.67s wall |
+| Focused UI coverage             |     6 files / 203 tests / 20.13s wall |
+| Full `test:all`                 |                          208.53s wall |
+| Primary target                  |  57.84s ordinary frontend wall median |
+| Stretch target                  |  50.61s ordinary frontend wall median |
 
 The candidate inventory contains 174 N, 129 S, 234 D, and 7 B files. See
 [`phase-0-classification.md`](phase-0-classification.md) for routing, setup, and
@@ -55,15 +87,15 @@ per-file record.
 
 ## Phase 1 Topology Result
 
-| Measurement | Result |
-| --- | ---: |
-| Full three-project universe | 537 files: 126 N / 2 S / 409 D |
+| Measurement                  |                                       Result |
+| ---------------------------- | -------------------------------------------: |
+| Full three-project universe  |               537 files: 126 N / 2 S / 409 D |
 | `test:all` ordinary frontend | 529 files / 6,413 tests: 125 N / 2 S / 402 D |
-| Warm wall median | 73.07s (70.44-75.22s) |
-| Warm Vitest duration median | 72.05s |
-| Warm peak RSS median | 4,800,148 KiB |
-| Wall delta from Phase 0 | +1.1% (within 5% topology budget) |
-| Peak-RSS delta from Phase 0 | +0.3% (within 10% guard) |
+| Warm wall median             |                        73.07s (70.44-75.22s) |
+| Warm Vitest duration median  |                                       72.05s |
+| Warm peak RSS median         |                                4,800,148 KiB |
+| Wall delta from Phase 0      |            +1.1% (within 5% topology budget) |
+| Peak-RSS delta from Phase 0  |                     +0.3% (within 10% guard) |
 
 `frontend-svelte-node` owns the two validated S pilots through an explicit
 transitional inventory. It uses Vitest's Node setup without DOM globals and
@@ -74,21 +106,21 @@ aggregate ordinary views; 175 unpromoted N/S candidates still require probes.
 
 ## Phase 2 Cumulative Result
 
-| Measurement | Result |
-| --- | ---: |
-| Completed slices and proof batches | 18 |
-| Promoted suites | 35 files / 176 tests |
-| Full three-project universe | 537 files: 161 N / 2 S / 374 D |
-| Standalone ordinary frontend | 535 files: 161 N / 2 S / 372 D |
-| `test:all` ordinary frontend | 529 files / 6,413 tests: 160 N / 2 S / 367 D |
-| Remaining target-runtime mismatches | 140: 13 N / 127 S |
-| Latest paired ordinary wall observation | 66.60s -> 68.24s (+2.5%) |
-| Latest paired ordinary peak RSS | 4,696,532 -> 5,128,488 KiB |
-| Phase 2 warm ordinary wall median | 69.50s (68.75-69.55s) |
-| Phase 2 warm Vitest duration median | 68.60s (67.84-68.65s) |
-| Phase 2 warm peak RSS median | 4,866,016 KiB |
-| Wall delta from Phase 0 | -3.9% |
-| Peak-RSS delta from Phase 0 | +1.7% |
+| Measurement                             |                                       Result |
+| --------------------------------------- | -------------------------------------------: |
+| Completed slices and proof batches      |                                           18 |
+| Promoted suites                         |                         35 files / 176 tests |
+| Full three-project universe             |               537 files: 161 N / 2 S / 374 D |
+| Standalone ordinary frontend            |               535 files: 161 N / 2 S / 372 D |
+| `test:all` ordinary frontend            | 529 files / 6,413 tests: 160 N / 2 S / 367 D |
+| Remaining target-runtime mismatches     |                            140: 13 N / 127 S |
+| Latest paired ordinary wall observation |                     66.60s -> 68.24s (+2.5%) |
+| Latest paired ordinary peak RSS         |                   4,696,532 -> 5,128,488 KiB |
+| Phase 2 warm ordinary wall median       |                        69.50s (68.75-69.55s) |
+| Phase 2 warm Vitest duration median     |                        68.60s (67.84-68.65s) |
+| Phase 2 warm peak RSS median            |                                4,866,016 KiB |
+| Wall delta from Phase 0                 |                                        -3.9% |
+| Peak-RSS delta from Phase 0             |                                        +1.7% |
 
 The paired timing is slice evidence, not a phase-level median. The +2.5% wall
 movement remains inside ordinary run-to-run variability; it is not a
@@ -100,26 +132,26 @@ retainers under recorded Phase 3, Phase 4, or DOM-contract owners.
 
 ## Phase 3 Cumulative Result
 
-| Measurement | Result |
-| --- | ---: |
-| Completed slices and proof batches | 7 |
-| Promoted to Svelte+Node | 15 files / 159 tests |
-| Promoted to Node after cross-check | 28 files / 312 tests |
-| Full three-project universe | 537 files: 189 N / 17 S / 331 D |
-| Standalone ordinary frontend | 535 files: 189 N / 17 S / 329 D |
-| `test:all` ordinary frontend | 529 files: 188 N / 17 S / 324 D |
-| Broad target-S probe result | 34 passed / 93 blocked |
-| Retained target-S blockers | 93 files / 1,503 tests |
-| Remaining static mismatches | 97: 4 N / 93 S, all probe-backed |
-| Unprobed Phase 3 candidates | 0 files |
-| Cold ordinary frontend | 72.59s wall / 71.73s Vitest |
-| Warm ordinary wall median | 68.47s (66.76-70.70s) |
-| Warm Vitest duration median | 67.41s |
-| Warm peak RSS median | 5,019,644 KiB |
-| Wall delta from Phase 0 | -5.3% |
-| Peak-RSS delta from Phase 0 | +4.9% |
-| Focused UI coverage | 6 files / 203 tests / 19.76s wall |
-| Full `test:all` | 204.98s wall |
+| Measurement                        |                            Result |
+| ---------------------------------- | --------------------------------: |
+| Completed slices and proof batches |                                 7 |
+| Promoted to Svelte+Node            |              15 files / 159 tests |
+| Promoted to Node after cross-check |              28 files / 312 tests |
+| Full three-project universe        |   537 files: 189 N / 17 S / 331 D |
+| Standalone ordinary frontend       |   535 files: 189 N / 17 S / 329 D |
+| `test:all` ordinary frontend       |   529 files: 188 N / 17 S / 324 D |
+| Broad target-S probe result        |            34 passed / 93 blocked |
+| Retained target-S blockers         |            93 files / 1,503 tests |
+| Remaining static mismatches        |  97: 4 N / 93 S, all probe-backed |
+| Unprobed Phase 3 candidates        |                           0 files |
+| Cold ordinary frontend             |       72.59s wall / 71.73s Vitest |
+| Warm ordinary wall median          |             68.47s (66.76-70.70s) |
+| Warm Vitest duration median        |                            67.41s |
+| Warm peak RSS median               |                     5,019,644 KiB |
+| Wall delta from Phase 0            |                             -5.3% |
+| Peak-RSS delta from Phase 0        |                             +4.9% |
+| Focused UI coverage                | 6 files / 203 tests / 19.76s wall |
+| Full `test:all`                    |                      204.98s wall |
 
 The first slice promoted only suites with exact Phase 2 Svelte+Node evidence.
 The complete 127-file target-S probe then passed 34 candidates and failed 93 at
@@ -137,22 +169,22 @@ server-backed fixture planning, then router state.
 
 ## Phase 4 Cumulative Result
 
-| Measurement | Result |
-| --- | ---: |
-| Completed slices and proof batches | 4 |
-| Pure Node owners | 3 files / 21 tests |
-| Full three-project universe | 539 files: 192 N / 17 S / 330 D |
-| Standalone ordinary frontend | 537 files: 192 N / 17 S / 328 D |
-| `test:all` ordinary frontend | 531 files / 6,423 tests: 191 N / 17 S / 323 D |
-| Cold ordinary frontend | 69.10s wall / 68.00s Vitest |
-| Warm ordinary wall median | 70.10s (68.49-70.32s) |
-| Warm Vitest duration median | 69.22s |
-| Warm peak RSS median | 4,893,640 KiB |
-| Wall delta from Phase 3 | +2.4% (inside 5% noise) |
-| Wall delta from Phase 0 | -3.0% |
-| Focused candidate Vitest sum | 12.93s -> 9.35s (-27.7%) |
-| Focused UI coverage | 6 files / 203 tests / 19.48s Vitest |
-| Full `test:all` | 3m18.8s wall |
+| Measurement                        |                                        Result |
+| ---------------------------------- | --------------------------------------------: |
+| Completed slices and proof batches |                                             4 |
+| Pure Node owners                   |                            3 files / 21 tests |
+| Full three-project universe        |               539 files: 192 N / 17 S / 330 D |
+| Standalone ordinary frontend       |               537 files: 192 N / 17 S / 328 D |
+| `test:all` ordinary frontend       | 531 files / 6,423 tests: 191 N / 17 S / 323 D |
+| Cold ordinary frontend             |                   69.10s wall / 68.00s Vitest |
+| Warm ordinary wall median          |                         70.10s (68.49-70.32s) |
+| Warm Vitest duration median        |                                        69.22s |
+| Warm peak RSS median               |                                 4,893,640 KiB |
+| Wall delta from Phase 3            |                       +2.4% (inside 5% noise) |
+| Wall delta from Phase 0            |                                         -3.0% |
+| Focused candidate Vitest sum       |                      12.93s -> 9.35s (-27.7%) |
+| Focused UI coverage                |           6 files / 203 tests / 19.48s Vitest |
+| Full `test:all`                    |                                  3m18.8s wall |
 
 Chat-import and Saved Toggles planners moved into plain TypeScript leaves;
 router route planning gained an environment-independent Node matrix. Durable
@@ -168,24 +200,24 @@ DOM setup now belongs to Phase 5.
 
 ## Phase 5 Cumulative Result
 
-| Measurement | Result |
-| --- | ---: |
-| Completed implementation slices | 4 |
-| Consolidated DOM boundaries | 7 -> 3 files / 22 retained tests |
-| Explicit static gate | 1 N file / 29 transferred tests |
-| Full three-project universe | 536 files: 193 N / 17 S / 326 D |
-| Standalone ordinary frontend | 534 files: 193 N / 17 S / 324 D |
-| `test:all` ordinary frontend | 528 files / 6,423 tests: 192 N / 17 S / 319 D |
-| Cold ordinary frontend | 69.56s wall / 68.60s Vitest |
-| Warm ordinary wall median | 68.55s (66.61-69.62s) |
-| Warm Vitest duration median | 67.68s |
-| Warm peak RSS median | 4,769,088 KiB |
-| Wall delta from Phase 4 | -2.2% (inside 5% noise) |
-| Wall delta from Phase 0 | -5.2% |
-| Focused family import sum | 66.41s -> 27.05s (-59.3%) |
-| Focused family environment sum | 951ms -> 377ms (-60.4%) |
-| Focused UI coverage | 6 files / 203 tests / 18.81s Vitest |
-| Full `test:all` | 3m22.2s wall |
+| Measurement                     |                                        Result |
+| ------------------------------- | --------------------------------------------: |
+| Completed implementation slices |                                             4 |
+| Consolidated DOM boundaries     |              7 -> 3 files / 22 retained tests |
+| Explicit static gate            |               1 N file / 29 transferred tests |
+| Full three-project universe     |               536 files: 193 N / 17 S / 326 D |
+| Standalone ordinary frontend    |               534 files: 193 N / 17 S / 324 D |
+| `test:all` ordinary frontend    | 528 files / 6,423 tests: 192 N / 17 S / 319 D |
+| Cold ordinary frontend          |                   69.56s wall / 68.60s Vitest |
+| Warm ordinary wall median       |                         68.55s (66.61-69.62s) |
+| Warm Vitest duration median     |                                        67.68s |
+| Warm peak RSS median            |                                 4,769,088 KiB |
+| Wall delta from Phase 4         |                       -2.2% (inside 5% noise) |
+| Wall delta from Phase 0         |                                         -5.2% |
+| Focused family import sum       |                     66.41s -> 27.05s (-59.3%) |
+| Focused family environment sum  |                       951ms -> 377ms (-60.4%) |
+| Focused UI coverage             |           6 files / 203 tests / 18.81s Vitest |
+| Full `test:all`                 |                                  3m22.2s wall |
 
 All 326 remaining D owners are explicit: 230 direct behavior owners, 91 exact
 eager-window retainers, two real-DOMParser contracts, and three exact target-N
@@ -202,18 +234,18 @@ to Phase 6.
 
 ## Phase 6 Cumulative Result
 
-| Measurement | Result |
-| --- | ---: |
-| Full explicit capability universe | 537 files: 194 N / 17 S / 326 D |
-| Standalone ordinary frontend | 535 files / 6,631 tests: 194 N / 17 S / 324 D |
-| `test:all` ordinary frontend | 529 files / 6,428 tests: 193 N / 17 S / 319 D |
-| Built-browser ownership | 7 specs / 34 cases |
-| Explicit Svelte+Node suffixes | 17 files / 167 tests |
-| Registered pre-suffix DOM retainers | 187 files |
-| Independent projects | 194 N / 1,318 tests; 17 S / 167; 324 D / 5,145 |
-| Full frontend including performance gates | 537 files / 6,637 tests / 68.23s |
-| Focused UI coverage | 6 files / 203 tests / thresholds passed |
-| Full `test:all` | 9 lanes / 3m24.2s |
+| Measurement                               |                                         Result |
+| ----------------------------------------- | ---------------------------------------------: |
+| Full explicit capability universe         |                537 files: 194 N / 17 S / 326 D |
+| Standalone ordinary frontend              |  535 files / 6,631 tests: 194 N / 17 S / 324 D |
+| `test:all` ordinary frontend              |  529 files / 6,428 tests: 193 N / 17 S / 319 D |
+| Built-browser ownership                   |                             7 specs / 34 cases |
+| Explicit Svelte+Node suffixes             |                           17 files / 167 tests |
+| Registered pre-suffix DOM retainers       |                                      187 files |
+| Independent projects                      | 194 N / 1,318 tests; 17 S / 167; 324 D / 5,145 |
+| Full frontend including performance gates |               537 files / 6,637 tests / 68.23s |
+| Focused UI coverage                       |        6 files / 203 tests / thresholds passed |
+| Full `test:all`                           |                              9 lanes / 3m24.2s |
 
 The Node and Svelte+Node transition allowlists and the implicit Happy-DOM
 complement are gone. `vitest.frontend-routing.ts` positively selects the final
@@ -280,7 +312,7 @@ remains; Phase 7 owns the final repeated benchmark and workstream closeout.
     N. `generationEffectLedger.svelte-node.test.ts` and
     `recoveredGenerationEffects.svelte-node.test.ts` remain in S because their target Node
     probes executed transitive Svelte rune modules and failed with `$state is
-    not defined`; no mocks or production boundaries were weakened to promote
+not defined`; no mocks or production boundaries were weakened to promote
     them.
 17. The ninth Phase 2 slice validated legacy-memory notice detection and
     dismissal state plus startup telemetry buffering, opt-in, transport, and
@@ -402,8 +434,7 @@ remains; Phase 7 owns the final repeated benchmark and workstream closeout.
 40. Phase 4 closed after all four ranked candidate families received an
     implementation or explicit deferral and the complete eight-lane gate
     passed. The focused candidate sum improved 27.7%; the 70.10s ordinary warm
-    median is +2.4% from Phase 3, inside run noise, and remains 3.0% below Phase
-    0. Further extraction is stopped until fresh evidence demonstrates another
+    median is +2.4% from Phase 3, inside run noise, and remains 3.0% below Phase 0. Further extraction is stopped until fresh evidence demonstrates another
     production planner/reducer; repeated DOM harness cost transfers to Phase 5.
 41. Phase 5 began with explicit accounting for all 330 D owners and a fresh
     ordinary-D profile. The first implementation consolidated two Toggles audit
@@ -470,14 +501,14 @@ promotion continues.
 
 ## Latest Completed Slice
 
-[Phase 5 closeout and re-profile](phases/slices/phase-5/closeout-and-reprofile.md)
-records the final ownership proof, cold/three-warm profile, residual-owner
-stopping decision, and complete eight-lane validation.
+[Phase 7 verification and closeout](phases/slices/phase-7/verification-and-closeout.md)
+records the final ownership proof, cold/three-warm profile, correctness fixes,
+budget decision, aggregate validation, and archive handoff.
 
 ## Latest Verification
 
-See [`latest-verification.md`](latest-verification.md) for the Phase 5 closeout,
-candidate measurements, and preceding promotion and probe records.
+See [`latest-verification.md`](latest-verification.md) for the Phase 7 closeout
+and all preceding promotion, probe, consolidation, and routing records.
 
 ## Maintenance Rules
 
