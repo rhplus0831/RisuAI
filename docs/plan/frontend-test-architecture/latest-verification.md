@@ -4,11 +4,62 @@ Date: 2026-08-28
 
 ## State
 
-Phase 5 is complete. Three repeated-import families have coherent owners, the
-exceptional source-policy style has one explicit Node gate, every remaining D
-owner is accounted for, and the complete eight-lane validation passed. Phase 6
-is next; this record does not authorize repository-wide default inversion
-before its rollout gate.
+Phase 6 is complete. Frontend capability routing is explicit, Node-default,
+exhaustive, and aligned across standalone, affected, aggregate, coverage, and
+CI commands. The transition allowlists and implicit Happy-DOM fallback are
+retired, no ownership gap remains, and Phase 7 is next.
+
+## Phase 6 Routing And CI Enforcement
+
+The final checked universe contains 537 Vitest files at 194 Node / 17
+Svelte+Node / 326 Happy-DOM plus 7 Playwright specs. Standalone ordinary
+discovery contains 535 files at 194 / 17 / 324; aggregate ordinary excludes the
+six UI sentinels and contains 529 files / 6,428 tests at 193 / 17 / 319. The
+manifest reports explicit N=194, S=17, D=326, B=7 ownership with no probe or
+routing blocker.
+
+All 17 validated Svelte+Node suites use `.svelte-node.test.ts`; the one
+Node-owned suite whose prior `.svelte.test.ts` name conflicted with the final
+convention is now plain. The former 193-file Node allowlist and 17-file
+Svelte+Node allowlist are gone. The DOM project positively includes
+`.svelte.test.ts`, `.dom.test.ts`, and 187 reviewed pre-suffix DOM registrations
+instead of owning an unclassified complement.
+
+The completeness gate now rejects unclassified filenames, omitted or multiply
+assigned discovery, filename/project mismatches, duplicate/stale/redundant DOM
+registrations, stale manifest rows, and statically reliable DOM-only imports in
+Node or Svelte+Node. A source-level override with a required reviewed reason is
+available for legitimate dependency-injected cases. Performance and UI-map
+files retain exact separately checked inventories.
+
+Affected frontend execution prepends the routing gate; deleted files and root
+runner changes widen to complete lanes, while aggregate/affected runner changes
+widen to `test:all`. Standalone `test:frontend`, `test:frontend:all`, and broad
+frontend coverage run the gate. Local `test:all` and CI each have an explicit
+routing lane, exclude the six UI sentinels from ordinary frontend execution,
+run those sentinels once under thresholds, and keep the exact two performance
+files isolated. CI UI coverage is unconditional, matching local aggregate
+ownership; the CI-only initial-preload lane remains an intentional superset.
+
+Project and direct-file proof passed:
+
+- Node: 194 files / 1,318 tests / 5.01s.
+- Svelte+Node: 17 files / 167 tests / 1.71s.
+- standalone ordinary Happy-DOM: 324 files / 5,145 tests / 65.75s.
+- direct mixed N/S/component-D/explicit-D/registered-D: 5 files / 60 tests.
+
+The standalone ordinary frontend passed 535 files / 6,631 tests in 73.67s.
+The full frontend including performance gates passed 537 / 6,637 in 68.23s.
+The combined audit/performance gate passed 4 / 38 in 10.94s. Focused UI
+coverage passed 6 / 203 in 21.58s with 14.55% lines, 14.96% statements, 18.2%
+functions, and 9.52% branches, above all configured thresholds.
+
+The complete nine-lane `pnpm test:all` passed in 3m24.2s. Its ordinary frontend
+lane passed 529 files / 6,428 tests; the server lane passed 154 files / 3,295
+tests with one skip; all 34 browser-smoke cases passed; UI coverage passed 6 /
+203; both typecheck lanes, formatting, routing, and 2 performance files / 6
+tests passed. The workflow YAML parse, aggregate/affected dry runs, inventory
+regeneration/check, `pnpm format:check`, and `git diff --check` passed.
 
 ## Phase 5 Closeout And Re-Profile
 

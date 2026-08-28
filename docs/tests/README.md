@@ -14,9 +14,9 @@ The main weakness is integration depth rather than raw case count. Most frontend
 
 The active
 [Frontend Test Architecture plan](../plan/frontend-test-architecture/status.md)
-tracks the phased migration from the current three-project pilot topology to
-explicit Node, Svelte+Node, and DOM capability ownership. The commands and
-routing documented below are authoritative for the landed phases.
+tracks final verification and closeout of the explicit Node, Svelte+Node, DOM,
+and built-browser capability topology. The commands and routing documented
+below are authoritative.
 
 ## Index
 
@@ -61,13 +61,17 @@ entrypoints are:
 | Full local quality aggregate | `pnpm test:all` |
 | Startup rollout evidence | `pnpm verify:fast-bootstrap:phase7` |
 
-All Vitest projects reject focused tests. The frontend runner composes a
-validated Node allowlist, a transitional explicit Svelte+Node allowlist, and the
-default Svelte/Happy-DOM fallback. Add a test to `vitest.node-tests.ts` only
-after it passes without Svelte transformation or DOM dependencies; add one to
-`vitest.svelte-node-tests.ts` only after it passes with client-mode Svelte
-transformation, Node globals, and no DOM setup. The exhaustive inventory check
-rejects omitted or multiply assigned files across all three projects.
+All Vitest projects reject focused tests. A new plain `*.test.ts` file runs in
+Node by default. Use `*.svelte-node.test.ts` only for client-mode Svelte
+transformation/runes with Node globals and no DOM setup, `*.svelte.test.ts` for
+mounted component behavior, and `*.dom.test.ts` for other DOM/browser-shaped
+Happy-DOM contracts. Playwright browser-smoke retains `*.spec.ts`. Pre-suffix
+DOM files that cannot be renamed without broad churn are explicitly registered
+in `vitest.frontend-routing.ts`; do not add an entry without execution evidence
+and a reviewed reason. The exhaustive gate rejects omitted, unclassified,
+multiply assigned, stale, or filename/project-mismatched files and reliable
+DOM-only imports in zero-DOM projects. Legitimate dependency-injected tests may
+use `// @frontend-test-capability-override: <reviewed reason>`.
 
 Playwright keeps each spec serial, uses two local file workers (one in CI),
 retains traces on failure, and sets `forbidOnly` in CI. The normally skipped

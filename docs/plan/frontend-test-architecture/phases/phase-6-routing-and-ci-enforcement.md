@@ -1,6 +1,6 @@
 # Phase 6: Routing And CI Enforcement
 
-Status: Pending
+Status: Complete
 
 ## Objective
 
@@ -70,3 +70,24 @@ Do not invert the default until:
 - Workflow YAML parse/check
 - `pnpm format:check`
 - `git diff --check`
+
+## Result
+
+The Node and Svelte+Node transition allowlists and the unclassified-to-DOM
+fallback were retired. Plain `*.test.ts` files now route to Node,
+`*.svelte-node.test.ts` routes to Svelte+Node, `.svelte.test.ts` and
+`.dom.test.ts` route to Happy-DOM, and 187 already-proven pre-suffix DOM owners
+remain in one stale-checked registration. Coverage, performance, and Playwright
+ownership remain exact overlays.
+
+The final manifest reports 537 frontend files at 194 N / 17 S / 326 D plus 7
+built-browser specs. Independent projects, direct-file probes, affected plans,
+standalone ordinary/full frontend, specialized gates, UI coverage, workflow
+parsing, formatting, and the complete nine-lane aggregate passed. `test:all`
+completed in 3m24.2s with 529 ordinary frontend files / 6,428 tests, 154 server
+files / 3,295 passing tests with one skip, 34 browser cases, UI thresholds, and
+2 isolated performance files / 6 tests. No routing or ownership gap remains.
+
+The implementation and exact proof are recorded in
+[`slices/phase-6/routing-and-ci-enforcement.md`](slices/phase-6/routing-and-ci-enforcement.md)
+and [`../latest-verification.md`](../latest-verification.md).

@@ -70,14 +70,16 @@ proof.
 ## Authority And Boundary Sources
 
 - `vitest.config.ts` owns root frontend project composition.
-- `vitest.node.config.ts` and `vitest.node-tests.ts` own the validated Node
-  route.
-- `vitest.svelte-node.config.ts`, `vitest.svelte-node.environment.ts`, and
-  `vitest.svelte-node-tests.ts` own the validated Svelte+Node route.
-- `vitest.dom.config.ts` and `vitest.dom.setup.ts` own the Svelte/Happy-DOM
-  fallback and unexpected-fetch guard.
+- `vitest.frontend-routing.ts` owns filename routing and reviewed pre-suffix DOM
+  registrations; the three project configs positively select their owners.
+- `vitest.node.config.ts` owns the Node-default route.
+- `vitest.svelte-node.config.ts` and `vitest.svelte-node.environment.ts` own the
+  explicit Svelte+Node route.
+- `vitest.dom.config.ts` and `vitest.dom.setup.ts` own explicit
+  Svelte/Happy-DOM routing and the unexpected-fetch guard.
 - `vitest.setup.ts` owns setup shared by frontend projects.
 - `vitest.ui-coverage-tests.ts` owns the six-file UI coverage inventory.
+- `vitest.performance-tests.ts` owns the isolated performance inventory.
 - `package.json` owns user-facing test and coverage commands.
 - `util/affected-tests.ts` owns changed-file routing and conservative widening.
 - `util/test-all.ts` owns aggregate lane ordering and isolation.
@@ -308,9 +310,8 @@ Each candidate requires a fresh profile and a slice-specific value hypothesis.
 
 ## Execution Cursor
 
-Phases 0-5 are complete. Phase 5 consolidated the selected Toggles audit,
-AlertComp, and Ooba/provider-control families, centralized source-policy checks,
-and passed formal closeout. Phase 6 is next. Phase 4 stopped after its ranked
-candidates because the remaining costs did not expose another cohesive
-production pure seam. Do not invert suffix defaults before the Phase 6
-completeness gate.
+Phases 0-6 are complete. Phase 6 landed suffix-default routing, explicit legacy
+DOM registration, final ownership enforcement, and local/CI lane parity. Phase
+7 is next and owns the final repeated benchmark, budget decision, current-doc
+audit, and archive closeout. Phase 4 stopped after its ranked candidates because
+the remaining costs did not expose another cohesive production pure seam.

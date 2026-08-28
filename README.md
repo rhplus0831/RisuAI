@@ -95,7 +95,9 @@ pnpm dev
 
 This serves the Vite dev server at `http://localhost:5174`, proxying `/api/*` requests to the Fastify server at `http://localhost:6002`.
 
-Run the complete quality lane (formatting, typechecks, frontend/server tests, browser smoke test) with bounded local concurrency:
+Run the complete quality lane (frontend routing, formatting, typechecks,
+frontend/server tests, UI coverage, isolated performance gates, and browser
+smoke) with bounded local concurrency:
 
 ```
 pnpm test:all

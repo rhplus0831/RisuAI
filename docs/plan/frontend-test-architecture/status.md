@@ -8,15 +8,16 @@ codebase remain authoritative until a phase lands.
 
 ## Current Snapshot
 
-- Plan state: Phases 0-5 complete; Phase 6 pending.
-- Current phase: Phase 6 — Routing And CI Enforcement (pending).
-- Active slice: None; Phase 5 is closed.
-- Implementation state: Toggles, AlertComp, and provider controls now have one
-  coherent DOM owner apiece. Four original D file boundaries were removed with
-  all 22 selected visible-behavior cases retained; 29 source policies now have
-  one explicit zero-DOM Node architecture owner.
+- Plan state: Phases 0-6 complete; Phase 7 pending.
+- Current phase: Phase 7 — Verification And Closeout (pending).
+- Active slice: None; Phase 6 is closed.
+- Implementation state: Plain tests are Node-default; Svelte+Node and DOM
+  suffixes are authoritative; 187 reviewed pre-suffix DOM owners are explicit
+  registrations; routing, affected tests, aggregate execution, coverage, and CI
+  share the same ownership model.
 - Blockers: None.
-- Next action: Begin the Phase 6 routing and CI enforcement rollout gate.
+- Next action: Begin the Phase 7 final benchmark, budget decision, and archive
+  closeout.
 
 ## Phase Router
 
@@ -28,7 +29,7 @@ codebase remain authoritative until a phase lands.
 | [3](phases/phase-3-svelte-node-promotion.md) | Complete | Promoted Svelte-compiled tests that do not require DOM behavior. |
 | [4](phases/phase-4-pure-logic-extraction.md) | Complete | Extracted measured pure-logic seams while retaining DOM contracts. |
 | [5](phases/phase-5-dom-contract-consolidation.md) | Complete | Consolidated repeated DOM setup and clarified visible-state ownership. |
-| [6](phases/phase-6-routing-and-ci-enforcement.md) | Pending | Enforce explicit routing and align affected tests, coverage, aggregate execution, and CI. |
+| [6](phases/phase-6-routing-and-ci-enforcement.md) | Complete | Enforced explicit routing and aligned affected tests, coverage, aggregate execution, and CI. |
 | [7](phases/phase-7-verification-and-closeout.md) | Pending | Prove final budgets and behavior, update current docs, and archive the workstream. |
 
 ## Formal Phase 0 Baseline
@@ -199,22 +200,56 @@ primary target remains unmet. Phase 5 stops because every selected family and
 ownership exception is resolved; suffix defaults and CI enforcement now belong
 to Phase 6.
 
+## Phase 6 Cumulative Result
+
+| Measurement | Result |
+| --- | ---: |
+| Full explicit capability universe | 537 files: 194 N / 17 S / 326 D |
+| Standalone ordinary frontend | 535 files / 6,631 tests: 194 N / 17 S / 324 D |
+| `test:all` ordinary frontend | 529 files / 6,428 tests: 193 N / 17 S / 319 D |
+| Built-browser ownership | 7 specs / 34 cases |
+| Explicit Svelte+Node suffixes | 17 files / 167 tests |
+| Registered pre-suffix DOM retainers | 187 files |
+| Independent projects | 194 N / 1,318 tests; 17 S / 167; 324 D / 5,145 |
+| Full frontend including performance gates | 537 files / 6,637 tests / 68.23s |
+| Focused UI coverage | 6 files / 203 tests / thresholds passed |
+| Full `test:all` | 9 lanes / 3m24.2s |
+
+The Node and Svelte+Node transition allowlists and the implicit Happy-DOM
+complement are gone. `vitest.frontend-routing.ts` positively selects the final
+suffix classes and collectively registers the 187 Phase 3-5 probe-backed DOM
+retainers, avoiding a rename-only diff while making every new plain test Node
+by default. The checked manifest rejects unclassified, missing, duplicate,
+multiply assigned, stale, or mismatched ownership and reliable DOM-only imports
+in zero-DOM projects; reviewed dependency-injected exceptions use an explicit
+source directive.
+
+Standalone and aggregate commands run the routing gate, affected tests prepend
+it before direct or dependency-aware frontend execution, and runner changes
+widen conservatively. Local and CI aggregates both exclude the six UI-map
+sentinels from ordinary frontend execution, run them once with coverage
+thresholds, and isolate the exact two-file performance inventory. Complete
+project, direct-file, frontend, gate, coverage, workflow-parse, affected-plan,
+and nine-lane CI-equivalent validation passed. No routing or ownership gap
+remains; Phase 7 owns the final repeated benchmark and workstream closeout.
+
 ## Current Decisions
 
 1. Use suffix routing as the end state: plain `*.test.ts` defaults to N,
    `*.svelte-node.test.ts` routes to S, Svelte/component and `*.dom.test.ts`
    files route to D, and Playwright specs remain B.
-2. Retain explicit legacy inventories during migration. The generated
-   classifier is evidence, not runtime routing authority.
-3. Every current Happy-DOM file proposed for N or S requires a target-project
-   probe before migration.
+2. Retain only the explicit 187-file pre-suffix DOM registration. The Node and
+   Svelte+Node transition allowlists and Happy-DOM fallback are retired.
+3. Treat the checked TSV as the final runtime-ownership manifest. Its static
+   source signals supplement execution evidence and never silently promote a
+   probe-backed DOM retainer.
 4. Keep `vitest.setup.ts` shared by N/S/D; load the Svelte plugin without DOM
    setup in S; keep Happy-DOM and the unexpected-fetch guard exclusive to D.
 5. Preserve per-file isolation. Global `--no-isolate` remains rejected.
 6. Use the checked exhaustive/disjoint proof for full, standalone ordinary, and
    aggregate ordinary discovery views.
 7. The Phase 1 pilots validated `sentenceBreaks.test.ts` in N,
-   `chatVar.svelte.test.ts` and `stores.runtimeEffects.svelte.test.ts` in S,
+   `chatVar.svelte-node.test.ts` and `stores.runtimeEffects.svelte-node.test.ts` in S,
    and `CheckInput.svelte.test.ts` in D.
 8. Reassess Phase 4 breadth after Phases 1-3. Meeting the primary target early
    narrows later extraction scope.
@@ -242,8 +277,8 @@ to Phase 6.
     the slice.
 16. The eighth Phase 2 slice validated generation runtime registration,
     server-backed inlay finalization planning, and raw-caller source policy in
-    N. `generationEffectLedger.test.ts` and
-    `recoveredGenerationEffects.test.ts` remain in D because their target Node
+    N. `generationEffectLedger.svelte-node.test.ts` and
+    `recoveredGenerationEffects.svelte-node.test.ts` remain in S because their target Node
     probes executed transitive Svelte rune modules and failed with `$state is
     not defined`; no mocks or production boundaries were weakened to promote
     them.
