@@ -1365,10 +1365,11 @@
       const nextData = freshness.detail.newData
       message = nextData
       const messageId = liveMessage.chatId
-      // Line-level original edits keep any persisted translation: the reader
-      // chose to edit the source while viewing the translation, so the
-      // translation is assistive and must not be dropped or re-fetched.
-      const patch: Pick<Message, 'data'> = { data: nextData }
+      // A raw translation is tied to the original source text. Keep partial
+      // edits consistent with the full-message editor and never display a
+      // translation whose source hash belongs to the pre-edit message.
+      const patch = sourceEditPatch(liveMessage, nextData)
+      invalidateTranslationUiForSourceEdit(patch)
       if (canUseServerCommands()) {
         if (messageId) {
           observeMessageMutation(dispatchUpdateMessageScoped(messageId, patch, previous))

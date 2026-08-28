@@ -933,7 +933,7 @@ describe('Chat parser dependencies', () => {
     expect(call?.[1]).not.toHaveProperty('data')
   })
 
-  it('keeps the persisted translation when an original-layer partial edit saves', async () => {
+  it('invalidates a stale translation when an original-layer partial edit saves', async () => {
     stubPartialEditEnvironment()
     chatParserMocks.canUseServerCommands.mockReturnValue(true)
 
@@ -960,13 +960,11 @@ describe('Chat parser dependencies', () => {
     document.querySelector<HTMLButtonElement>('.partial-edit-save-btn')?.click()
     await settle()
 
-    // The dispatched patch must touch only the original text: the persisted
-    // translation survives line-level original edits.
+    // A source edit must invalidate the raw translation just like the full
+    // message editor; otherwise the old translation remains visibly attached
+    // to content with a different source hash.
     const call = vi.mocked(dispatchUpdateMessageScoped).mock.calls.at(-1)
     expect(call?.[0]).toBe('row-0')
-    expect(call?.[1]).toEqual({ data: 'visible edited 0' })
-
-    const liveMessage = getResourceDatabase().characters[0].chats[0].message[0]
-    expect(liveMessage.translation?.text).toBe('translated body line')
+    expect(call?.[1]).toEqual({ data: 'visible edited 0', translation: null })
   })
 })
