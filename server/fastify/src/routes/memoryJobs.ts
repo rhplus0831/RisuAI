@@ -6,6 +6,7 @@ import { requireAuth } from '../http.js'
 import {
   MEMORY_JOB_KINDS,
   MEMORY_JOB_STATUSES,
+  MEMORY_JOB_TERMINAL_STATUSES,
   cancelMemoryJob,
   enqueueMemoryJob,
   getMemoryJob,
@@ -159,14 +160,31 @@ export function registerMemoryJobRoutes(
     }
 
     const memorySnapshot = options.snapshotVersion?.()
-    const jobs = presentMemoryJobs(
-      listMemoryJobItems(db, {
-        chatId: typeof query.chatId === 'string' ? query.chatId : undefined,
-        kind: isMemoryJobKind(query.kind) ? query.kind : undefined,
-        status: isMemoryJobStatus(query.status) ? query.status : undefined,
-      }),
-      isMemoryJobStatus(query.status) ? query.status : undefined,
-    )
+    const commonFilter = {
+      chatId: typeof query.chatId === 'string' ? query.chatId : undefined,
+      kind: isMemoryJobKind(query.kind) ? query.kind : undefined,
+    }
+    const explicitStatus = isMemoryJobStatus(query.status) ? query.status : undefined
+    const jobs = explicitStatus
+      ? presentMemoryJobs(
+          listMemoryJobItems(db, {
+            ...commonFilter,
+            status: explicitStatus,
+            ...((MEMORY_JOB_TERMINAL_STATUSES as readonly MemoryJobStatus[]).includes(explicitStatus)
+              ? { limit: TERMINAL_JOB_HISTORY_LIMIT, newestFirst: true }
+              : {}),
+          }),
+          explicitStatus,
+        )
+      : presentMemoryJobs([
+          ...listMemoryJobItems(db, { ...commonFilter, statuses: ['pending', 'running'] }),
+          ...listMemoryJobItems(db, {
+            ...commonFilter,
+            statuses: MEMORY_JOB_TERMINAL_STATUSES,
+            limit: TERMINAL_JOB_HISTORY_LIMIT,
+            newestFirst: true,
+          }),
+        ])
     const etag = memoryJobsEtag(jobs)
     reply.header('etag', etag)
     if (memorySnapshot) {

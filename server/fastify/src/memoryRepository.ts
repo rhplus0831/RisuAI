@@ -1229,6 +1229,8 @@ export function listMemoryJobItems(
     kind?: MemoryJobKind
     status?: MemoryJobStatus
     statuses?: readonly MemoryJobStatus[]
+    limit?: number
+    newestFirst?: boolean
   } = {},
 ): MemoryJobListItem[] {
   const conditions: string[] = []
@@ -1252,6 +1254,13 @@ export function listMemoryJobItems(
     values.push(...statuses)
   }
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+  const orderBy = filter.newestFirst ? 'ORDER BY updated_at DESC, id DESC' : 'ORDER BY created_at, id'
+  let limit = ''
+  if (filter.limit !== undefined) {
+    if (!Number.isSafeInteger(filter.limit) || filter.limit <= 0) throw new ValidationError('limit must be positive')
+    limit = 'LIMIT ?'
+    values.push(filter.limit)
+  }
   const rows = allRows<
     Pick<
       MemoryJobRow,
@@ -1262,7 +1271,8 @@ export function listMemoryJobItems(
         SELECT id, instance_id, chat_id, kind, status, attempt_count, max_attempts, error, updated_at
         FROM memory_jobs
         ${where}
-        ORDER BY created_at, id
+        ${orderBy}
+        ${limit}
       `),
     ...values,
   )
