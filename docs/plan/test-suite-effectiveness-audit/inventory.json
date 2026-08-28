@@ -22,7 +22,8 @@
       "description": "First matching rule wins. Mounted and browser-shaped ChatScreens behavior is visible chat/UI evidence, even when it invokes generation.",
       "pathPatterns": [
         "/^src\\/lib\\/SideBars\\/chatGenerationSettingsControls\\.test\\.ts$/",
-        "/^src\\/lib\\/ChatScreens\\//"
+        "/^src\\/lib\\/ChatScreens\\//",
+        "/^src\\/ts\\/observer\\.svelte\\.test\\.ts$/"
       ]
     },
     {
@@ -18544,9 +18545,10 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "B",
-      "categoryRule": "browser-state-recovery",
+      "primaryCategory": "D",
+      "categoryRule": "visible-chat-ui",
       "seamTags": [
+        "category-B",
         "dom-component"
       ],
       "kind": "component/DOM",
