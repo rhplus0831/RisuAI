@@ -1951,6 +1951,42 @@ describe('V3 plugin lifecycle cleanup', () => {
     expect(listener).toHaveBeenCalledTimes(1)
   })
 
+  it('removing a SafeElement keyboard listener cancels its delayed callback', async () => {
+    vi.useFakeTimers()
+    try {
+      const lifecycle = __v3PluginLifecycleTestHooks.createLifecycle()
+      const safeDocument = __v3PluginLifecycleTestHooks.createSafeDocument(lifecycle)
+      const listener = vi.fn()
+      const id = await safeDocument.addEventListener('keydown', listener)
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', code: 'KeyA' }))
+      safeDocument.removeEventListener('keydown', id)
+      vi.runAllTimers()
+
+      expect(listener).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('lifecycle cleanup cancels delayed SafeElement keyboard callbacks', async () => {
+    vi.useFakeTimers()
+    try {
+      const lifecycle = __v3PluginLifecycleTestHooks.createLifecycle()
+      const safeDocument = __v3PluginLifecycleTestHooks.createSafeDocument(lifecycle)
+      const listener = vi.fn()
+
+      await safeDocument.addEventListener('keyup', listener)
+      document.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', code: 'KeyA' }))
+      lifecycle.cleanupAll()
+      vi.runAllTimers()
+
+      expect(listener).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('keeps main-document HTML and CSS helpers network-dead', () => {
     const lifecycle = __v3PluginLifecycleTestHooks.createLifecycle()
     const safeDocument = __v3PluginLifecycleTestHooks.createSafeDocument(lifecycle)

@@ -399,6 +399,7 @@ class SafeElement {
       type: string
       listener: EventListenerOrEventListenerObject
       options: EventListenerOptions
+      cancelPending?: () => void
       cleanup: () => void
     }
   >()
@@ -486,17 +487,27 @@ class SafeElement {
       })
       return id
     } else if (allowedDelayedEventListeners.includes(type)) {
+      const pendingCallbacks = new Set<ReturnType<typeof setTimeout>>()
+      const cancelPending = () => {
+        for (const timeout of pendingCallbacks) {
+          clearTimeout(timeout)
+        }
+        pendingCallbacks.clear()
+      }
       const modifiedListener = (event: any) => {
         let delay = 0
         try {
           delay = (crypto.getRandomValues(new Uint32Array(1))[0] / 100) % 100 //0-99 ms
         } catch (error) {}
-        setTimeout(() => {
+        const timeout = setTimeout(() => {
+          pendingCallbacks.delete(timeout)
           listener(trimEvent(event))
         }, delay)
+        pendingCallbacks.add(timeout)
       }
       document.addEventListener(type, modifiedListener, realOptions)
       const cleanup = this.#lifecycle?.track(() => {
+        cancelPending()
         document.removeEventListener(type, modifiedListener, realOptions)
         this.#eventIdMap.delete(id)
       })
@@ -504,6 +515,7 @@ class SafeElement {
         type,
         listener: modifiedListener,
         options: realOptions,
+        cancelPending,
         cleanup: cleanup ?? (() => {}),
       })
       return id
@@ -516,6 +528,7 @@ class SafeElement {
     const record = this.#eventIdMap.get(id)
     if (record) {
       const realOptions = typeof options === 'boolean' ? { capture: options } : options || {}
+      record.cancelPending?.()
       document.removeEventListener(type, record.listener, realOptions)
       this.#eventIdMap.delete(id)
       record.cleanup()
