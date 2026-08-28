@@ -2,8 +2,8 @@
 
 Date: 2026-08-29
 
-Status: Active; fifty-one findings are done, one remains confirmed, and four
-are deferred with concrete revisit triggers.
+Status: Active; sixty-four findings are done and five are deferred with
+concrete revisit triggers.
 
 This directory owns durable finding and decision records for the audit. Phase 0
 will decide whether the working ledger remains in this index, splits into
@@ -101,12 +101,10 @@ Every finding records:
 
 ### TSA-P00-002: Translator preset retry case is load/order-sensitive
 
-- State: Confirmed evidence; root cause pending Phase 5 with Phase 1 harness
-  support if global cleanup is implicated.
+- State: Done in Phase 5; historical failure did not reproduce.
 - Severity: Medium.
 - Category: E, with B/C seams.
-- Decision: Pending file disposition; strengthen the failing case or its product
-  owner after fault isolation.
+- Decision: Keep the regression owner and close the suspected current defect.
 - Tests/cases:
   `TranslatorPresetSettings.svelte.test.ts > TranslatorPresetSettings server-backed edits > reasserts a retryable optimistic delete after an authoritative collection projection`.
 - Production owner: server-backed translator-preset optimistic delete and
@@ -119,14 +117,14 @@ Every finding records:
 - Companion/overlap analysis: isolated success rules out a stable deterministic
   failure but does not distinguish shared-state cleanup from a real scheduling
   race. No companion currently disposes of the visible reconciliation contract.
-- Action and rollback: reproduce with recorded seed/repetition/load, inspect
-  fixture cleanup and projection barriers, then land a focused test-harness or
-  product fix. No current test is removed or weakened.
-- Validation: named case, repeated owning file, complete frontend lane, and
-  affected inventory checks.
+- Action and rollback: retained the complete regression owner unchanged. The
+  production projection path explicitly reasserts pending structural mutations
+  before dirty-field reconciliation, so no speculative product change landed.
+- Validation: the named case passed in isolation, in the Phase 5 exact 898-case
+  frontend set, and in the preceding complete 6,693-case frontend run.
 - Count delta: None.
-- Revisit condition: Phase 5 translator preset slice, or earlier if Phase 1
-  identifies the responsible global/setup leak.
+- Revisit condition: reopen only on a reproducible failure with a captured seed
+  or ordering trace.
 
 ## Phase 1 Findings
 
@@ -1479,3 +1477,299 @@ Every finding records:
 - Count delta: none in the deferred item.
 - Revisit condition: Phase 13 consolidation/addition review, followed by a
   mandatory Phase 14 residual decision before closeout.
+
+## Phase 5 Findings
+
+### TSA-P05-001: Rejected model-preset selection locks its row
+
+- State: Done.
+- Severity: High.
+- Category: E, with a Phase 7 model seam.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all six `ModelPresetList.svelte.test.ts` cases.
+- Production owner: model-preset selection feedback and retry state.
+- Protected contract or plausible defect: an unexpected rejected adapter
+  promise could leave `selectionPendingIndex` set forever, preventing every
+  later preset selection.
+- Evidence: the mounted rejection counterexample now requires the busy state to
+  clear, the existing error to appear, and a second selection to succeed.
+- Companion/overlap analysis: explicit `{ status: 'failed' }` coverage did not
+  execute a rejected promise; storage command tests do not prove the row UI.
+- Action and rollback: catch the rejection at the component boundary and reuse
+  the existing localized failure path.
+- Validation: 6/6 focused and 898/898 exact Phase 5 frontend cases passed.
+- Count delta: one case added; no file delta.
+- Revisit condition: none unless selection gains cancellation semantics.
+
+### TSA-P05-002: Dynamic model catalog rejection escapes the settings effect
+
+- State: Done.
+- Severity: High.
+- Category: E/G.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all eight `ModelProviderPanel.svelte.test.ts` cases.
+- Production owner: LLM Gateway and Neuralwatt catalog loading in the profile
+  editor.
+- Protected contract or plausible defect: a network rejection could escape as
+  an unhandled promise and leave the provider panel without a settled recovery
+  contract.
+- Evidence: both providers now settle to the existing empty-catalog message,
+  clear the spinner, and retain an editable manual model field.
+- Companion/overlap analysis: provider helper retries do not prove the mounted
+  editor's loading and fallback state.
+- Action and rollback: consume the rejection before `finally`; do not invent a
+  second error surface where `ModelGrid` already owns unavailable feedback.
+- Validation: 8/8 focused and 898/898 exact Phase 5 frontend cases passed.
+- Count delta: two cases added; no file delta.
+- Revisit condition: add differentiated error text only if the product exposes
+  retry diagnostics to users.
+
+### TSA-P05-003: Imported module media extension is compared case-sensitively
+
+- State: Done.
+- Severity: High.
+- Category: E, with J/K seams.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all six `ModuleMenu.svelte.test.ts` cases.
+- Production owner: persisted module-asset preview dispatch.
+- Protected contract or plausible defect: imported `MP4` or `MP3` metadata
+  could render valid media as an image after reload.
+- Evidence: the mounted uppercase-MP4 fixture now requires a video source with
+  `video/mp4` and no image fallback.
+- Companion/overlap analysis: upload-time extension normalization does not
+  cover metadata preserved from imported modules.
+- Action and rollback: lowercase persisted extension metadata at preview
+  classification without rewriting the imported filename.
+- Validation: 6/6 focused and 898/898 exact Phase 5 frontend cases passed.
+- Count delta: one case added; no file delta.
+- Revisit condition: prefer stored content type if the asset schema adds it.
+
+### TSA-P05-004: Persona settings dereferences a disappeared selected owner
+
+- State: Done.
+- Severity: High.
+- Category: E.
+- Decision: Add, then Keep.
+- Tests/cases: the new one-case `PersonaSettings.svelte.test.ts` owner.
+- Production owner: selected-persona avatar and portrait controls during
+  authoritative projections.
+- Protected contract or plausible defect: removing or replacing the selected
+  row could throw while the settings page rendered its portrait mode.
+- Evidence: an empty authoritative persona collection now mounts safely while
+  retaining the page and its portrait control.
+- Companion/overlap analysis: pure persona projection tests normalize state but
+  did not render the unsafe expressions.
+- Action and rollback: use fail-closed optional portrait reads and add the
+  missing mounted page owner.
+- Validation: 1/1 focused and 898/898 exact Phase 5 frontend cases passed.
+- Count delta: one file and one case added.
+- Revisit condition: expand this owner when more PersonaSettings-only visual
+  behavior is changed.
+
+### TSA-P05-005: Catalog actions settle after their component is disposed
+
+- State: Done.
+- Severity: High.
+- Category: E/D.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 14 `GridCatalog.svelte.test.ts` cases.
+- Production owner: durable remove, restore, and permanent-delete feedback in
+  the character catalog.
+- Protected contract or plausible defect: a queued or failed action could
+  mutate disposed state and raise a stale notification after navigation.
+- Evidence: the deferred mounted action is resolved after unmount and now
+  produces neither state work nor alert.
+- Companion/overlap analysis: command outcomes prove persistence but not
+  component lifetime ownership.
+- Action and rollback: fence both success and rejection continuations with the
+  component lifecycle.
+- Validation: 14/14 focused and 898/898 exact Phase 5 frontend cases passed.
+- Count delta: one case added; no file delta.
+- Revisit condition: none unless actions become externally cancellable.
+
+### TSA-P05-006: Realm removal lacks an explicit non-owner counterexample
+
+- State: Done.
+- Severity: High.
+- Category: E/L.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 14 `RealmPopUp.svelte.test.ts` cases.
+- Production owner: projected Realm account/card ownership at the removal UI.
+- Protected contract or plausible defect: a truthy creator ID could expose a
+  destructive action to a different signed-in account.
+- Evidence: the mounted mismatch row with two distinct IDs hides removal while
+  retaining the report action.
+- Companion/overlap analysis: server authorization remains authoritative; the
+  client guard separately prevents misleading destructive affordances.
+- Action and rollback: retain production behavior and add the missing negative
+  authorization fixture.
+- Validation: 14/14 focused and 898/898 exact Phase 5 frontend cases passed.
+- Count delta: one case added; no file delta.
+- Revisit condition: update the fixture if Realm adopts delegated ownership.
+
+### TSA-P05-007: Mobile character rows resolve a recycled array index
+
+- State: Done.
+- Severity: High.
+- Category: E/D.
+- Decision: Strengthen, then Keep.
+- Tests/cases: both `MobileCharacters.svelte.test.ts` cases.
+- Production owner: mobile character open/create actions.
+- Protected contract or plausible defect: a rendered ID-backed row could open
+  the replacement occupant of its old index after a collection projection.
+- Evidence: normal navigation resolves the current chat by stable character ID;
+  replacing the collection before activation now fails closed, and creation is
+  exercised through its native button.
+- Companion/overlap analysis: pure row formatting and desktop catalog actions
+  do not prove the mobile handler's target resolution.
+- Action and rollback: re-resolve ID-backed rows against the current collection
+  and retain the legacy index fallback only for ID-less characters.
+- Validation: 2/2 focused and 898/898 exact Phase 5 frontend cases passed.
+- Count delta: one case added; no file delta.
+- Revisit condition: remove the legacy fallback when all characters have IDs.
+
+### TSA-P05-008: Authoring-shaped names hide security, prompting, and bytes
+
+- State: Done.
+- Severity: Medium.
+- Category: E/F/K/L.
+- Decision: Reclassify.
+- Tests/cases: `hub.test.ts` (28) to L, `lorebook.test.ts` (78) and
+  `agentLorebookInputs.test.ts` (5) to F, and
+  `characterCards.pngImport.svelte-node.test.ts` (21) to K.
+- Production owner: Realm authentication/limits, lorebook prompt activation,
+  Agent input resolution, and PNG/CharX byte formats.
+- Protected contract or plausible defect: reviewing these 132 cases as editor
+  UI could miss their dominant security, runtime prompt, or format companions.
+- Evidence: executable exact-path counterexamples now route each file by
+  product risk while seam tags preserve its authoring relationship.
+- Companion/overlap analysis: reclassification changes only audit ownership;
+  every test and runtime lane remains intact.
+- Action and rollback: retain the four owners under L/F/K and do not repeat
+  their complete file disposition later.
+- Validation: inventory rule tests and all 125 Phase 5 Fastify cases passed;
+  frontend reclassified owners passed in the 898-case exact set.
+- Count delta: none.
+- Revisit condition: only if the dominant protected contract changes.
+
+### TSA-P05-009: Hotkey modifier controls have presentation-only coverage
+
+- State: Done.
+- Severity: High.
+- Category: E.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all nine `HotkeySettings.svelte.test.ts` cases.
+- Production owner: hotkey modifier authoring and settings-bridge patches.
+- Protected contract or plausible defect: Ctrl, Shift, or Alt could toggle the
+  wrong field or erase sibling modifiers while accessible-state checks pass.
+- Evidence: a three-row mounted matrix activates each control and requires the
+  exact cloned setting patch.
+- Companion/overlap analysis: installed hotkey behavior from Phase 4 proves
+  consumption, not this authoring bridge.
+- Action and rollback: retain production behavior and add interaction proof.
+- Validation: 9/9 focused and 898/898 exact Phase 5 frontend cases passed.
+- Count delta: three parameterized cases added; no file delta.
+- Revisit condition: add Meta when it becomes a supported persisted modifier.
+
+### TSA-P05-010: Persona icon upload lacks owner-replacement proof
+
+- State: Done.
+- Severity: High.
+- Category: E, with a K seam.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all ten `persona.iconUpload.test.ts` cases.
+- Production owner: selected-persona icon freshness after asset persistence.
+- Protected contract or plausible defect: late icon bytes could patch a new
+  persona that occupied the selected index after owner replacement.
+- Evidence: replacing the row while upload is pending now leaves its icon and
+  legacy mirror unchanged, emits no persona command, and reports stale input.
+- Companion/overlap analysis: selection-change coverage left the original row
+  present; server freshness helpers do not prove the client application path.
+- Action and rollback: retain the existing stable-ID guard and add the missing
+  replacement counterexample.
+- Validation: 10/10 focused and 898/898 exact Phase 5 frontend cases passed.
+- Count delta: one case added; no file delta.
+- Revisit condition: immediate orphan cleanup remains in `TSA-P05-013`.
+
+### TSA-P05-011: BotSettings icon policy depends on source formatting
+
+- State: Done.
+- Severity: Medium.
+- Category: E/D.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 20 `BotSettings.accessibility.test.ts` cases, including nine
+  icon contracts.
+- Production owner: direct settings-control names and static persistence policy.
+- Protected contract or plausible defect: exact substrings could pass in a
+  comment or fail after equivalent formatting without proving an icon belongs
+  to the named native button.
+- Evidence: the modern Svelte AST now binds every intended expression to one
+  native icon button.
+- Companion/overlap analysis: mounted settings owners remain responsible for
+  computed names and activation; the AST cheaply retains broad policy.
+- Action and rollback: replace only the icon substring matrix; retain distinct
+  visibility and lifecycle policy checks until stronger owners replace them.
+- Validation: 20/20 focused and 898/898 exact Phase 5 frontend cases passed.
+- Count delta: none.
+- Revisit condition: Phase 13 may replace remaining source slices only with
+  mounted or structural counterexamples for the same contracts.
+
+### TSA-P05-012: Phase 5 evidence layers remain distinct
+
+- State: Done.
+- Severity: Informational.
+- Category: E with C/D/F/G/I/J/K/L seams.
+- Decision: Keep.
+- Tests/cases: the complete 97-file, 1,023-case reviewed set.
+- Production owner: settings shells and controls, profiles and presets, persona
+  and character authoring, lorebooks, modules/plugins, Realm/catalogs, and
+  their durable bridge companions.
+- Protected contract or plausible defect: merging by page name or file size
+  would erase distinct validation, stable-ID, reorder, settlement, rendered
+  feedback, server normalization, or authorization failures.
+- Evidence: every file has a named contract in `inventory.json`; focused pure,
+  mounted, Svelte+Node, and Fastify layers fail at different boundaries. No
+  complete-file removal proof was established.
+- Companion/overlap analysis: mega-suites contain cohesive state-machine owners
+  or share expensive fixtures; split proposals are not justified by size alone.
+- Action and rollback: retain all reviewed live owners, the new persona owner,
+  and all corrected-category owners. No test was merged or removed.
+- Validation: exact frontend passed 898/898 across 93 files; exact Fastify
+  passed 125/125 across four files.
+- Count delta: one owner and twelve cases added during Phase 5.
+- Revisit condition: use `TSA-P05-013` for additions; reconsider a retained
+  owner only with full replacement/removal proof.
+
+### TSA-P05-013: Authoring composition and stale asset cleanup remain bounded
+
+- State: Deferred with retained owners and explicit phase ownership.
+- Severity: High.
+- Category: E, with D/G/K/L and Phase 11/13/14 ownership.
+- Decision: Keep current evidence; add cleanup and composition proof at the
+  named gates.
+- Tests/cases: InputHook, DisplaySettings, UserSettings, RequestHistory,
+  ProviderCredential, module/settings/persona/character media upload owners,
+  Settings shell, and their durable bridge companions.
+- Production owner: immediate cleanup of successfully saved but stale media,
+  real settings-route/page composition, backup restore, request-history client
+  transport, and rendered accepted/queued/failed authoring feedback.
+- Protected contract or plausible defect: upload helpers save bytes before a
+  final freshness check, so module, settings-media, persona-icon, and character
+  notification operations can leave unreferenced assets until later GC. Broad
+  page tests can also stay green through self-fulfilling draft/renderer mocks.
+- Evidence: direct control-flow review identified the save-then-stale-return
+  windows; no safe client deletion primitive exists, and GC intentionally has a
+  one-hour grace period. Current mounted and bridge owners prove their bounded
+  contracts but not a real multi-page backup/input-hook/request-history journey.
+- Companion/overlap analysis: Phase 11 owns asset lifecycle and atomic import;
+  Phase 7 owns provider/request transport; Phase 13 owns browser composition.
+  None makes the current focused regression owners removable.
+- Action and rollback: Phase 11 must design immediate cleanup or transactional
+  asset adoption for the named upload paths. Phase 13 must add a representative
+  settings authoring/restore journey and replace only demonstrably redundant
+  source/mock assertions. Phase 14 makes the final residual decision.
+- Validation: all current exact Phase 5 owners pass; the finding deliberately
+  limits broader cleanup and composition claims.
+- Count delta: none in the deferred item.
+- Revisit condition: Phase 11 asset audit, Phase 13 consolidation, and mandatory
+  Phase 14 closeout decision.

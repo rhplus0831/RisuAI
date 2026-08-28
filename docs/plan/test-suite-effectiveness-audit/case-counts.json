@@ -1003,7 +1003,7 @@
       "parameterizedRows": 0
     },
     "src/lib/Mobile/MobileCharacters.svelte.test.ts": {
-      "cases": 1,
+      "cases": 2,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -1048,7 +1048,7 @@
       "parameterizedRows": 0
     },
     "src/lib/Others/GridCatalog.svelte.test.ts": {
-      "cases": 13,
+      "cases": 14,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -1263,9 +1263,9 @@
       "parameterizedRows": 0
     },
     "src/lib/Setting/Pages/HotkeySettings.svelte.test.ts": {
-      "cases": 6,
+      "cases": 9,
       "skipped": 0,
-      "parameterizedRows": 0
+      "parameterizedRows": 3
     },
     "src/lib/Setting/Pages/InputHookSettings.svelte.test.ts": {
       "cases": 3,
@@ -1283,7 +1283,7 @@
       "parameterizedRows": 0
     },
     "src/lib/Setting/Pages/Model/ModelPresetList.svelte.test.ts": {
-      "cases": 5,
+      "cases": 6,
       "skipped": 0,
       "parameterizedRows": 3
     },
@@ -1303,9 +1303,9 @@
       "parameterizedRows": 0
     },
     "src/lib/Setting/Pages/Model/ModelProviderPanel.svelte.test.ts": {
-      "cases": 6,
+      "cases": 8,
       "skipped": 0,
-      "parameterizedRows": 0
+      "parameterizedRows": 2
     },
     "src/lib/Setting/Pages/Model/ModelRoleEditor.svelte.test.ts": {
       "cases": 1,
@@ -1343,7 +1343,7 @@
       "parameterizedRows": 0
     },
     "src/lib/Setting/Pages/Module/ModuleMenu.svelte.test.ts": {
-      "cases": 5,
+      "cases": 6,
       "skipped": 0,
       "parameterizedRows": 2
     },
@@ -1359,6 +1359,11 @@
     },
     "src/lib/Setting/Pages/OtherBotSettings.svelte.test.ts": {
       "cases": 19,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/PersonaSettings.svelte.test.ts": {
+      "cases": 1,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -1683,7 +1688,7 @@
       "parameterizedRows": 0
     },
     "src/lib/UI/Realm/RealmPopUp.svelte.test.ts": {
-      "cases": 13,
+      "cases": 14,
       "skipped": 0,
       "parameterizedRows": 2
     },
@@ -2188,7 +2193,7 @@
       "parameterizedRows": 0
     },
     "src/ts/persona.iconUpload.test.ts": {
-      "cases": 9,
+      "cases": 10,
       "skipped": 0,
       "parameterizedRows": 0
     },
