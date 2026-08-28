@@ -101,7 +101,7 @@ type LorebookProjectionEpochs =
   | { kind: 'global'; collectionEpoch: number }
   | { kind: 'character'; characterId: string; rowEpoch: number; lorebookEpoch: number }
   | { kind: 'chat'; chatId: string; characterId: string | null; rowEpoch: number | null }
-  | { kind: 'module' }
+  | { kind: 'module'; moduleId: string; collectionEpoch: number }
 
 interface PendingCollectionReplacement {
   key: string
@@ -2772,7 +2772,11 @@ function captureLorebookProjectionEpochs(scope: DiscreteLorebookEditScope): Lore
       }
     }
     case 'module':
-      return { kind: 'module' }
+      return {
+        kind: 'module',
+        moduleId: scope.moduleId,
+        collectionEpoch: captureCollectionProjectionEpoch('modules'),
+      }
   }
 }
 
@@ -2792,7 +2796,7 @@ function hasLorebookProjectionEpochChanged(epochs: LorebookProjectionEpochs): bo
         hasCharacterRowProjectionEpochChanged(epochs.characterId, epochs.rowEpoch)
       )
     case 'module':
-      return false
+      return hasCollectionProjectionEpochChanged('modules', epochs.collectionEpoch)
   }
 }
 

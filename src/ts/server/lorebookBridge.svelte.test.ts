@@ -3204,6 +3204,45 @@ describe('lorebook editor entry draft scope', () => {
     expect(liveModule.lorebook.map((entry) => entry.id)).toContain('module-later-entry')
   })
 
+  it('does not dispatch a pending module draft after an authoritative module projection', async () => {
+    setupK4ModuleDb()
+    const scope = { kind: 'module', moduleId: 'module-k4' } as const
+    const attempted = {
+      ...(getDatabase().modules[0].lorebook as Entry[])[0],
+      content: 'stale pending module draft',
+    }
+
+    expect(applyLorebookEntryDraftEdit(scope, 0, attempted as any, DELAY)).toBe(true)
+    expect((getDatabase().modules[0].lorebook as Entry[])[0].content).toBe('stale pending module draft')
+
+    const projectedEntries = cloneEntries(getDatabase().modules[0].lorebook as Entry[])
+    projectedEntries[0].content = 'authoritative module projection'
+    expect(
+      applyCollectionsResource(
+        {
+          revision: 7,
+          collections: {
+            modules: [
+              {
+                id: 'module-k4',
+                name: 'Projected Module',
+                description: '',
+                lorebook: projectedEntries,
+              },
+            ] as never,
+          },
+        },
+        'modules',
+      ),
+    ).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(moduleEntryCommands()).toHaveLength(0)
+    expect(moduleReplaceCommands()).toHaveLength(0)
+    expect((getDatabase().modules[0].lorebook as Entry[])[0].content).toBe('authoritative module projection')
+  })
+
   it('full-replace fallback skips rollback after live collection diverges from the attempt', async () => {
     setupK4EditorDb()
     const scope = { kind: 'character', characterId: 'c-k4' } as const
