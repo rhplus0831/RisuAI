@@ -19,6 +19,10 @@ import {
 import { observerShellLifecycleStore, resetObserverShellLifecycleForTests } from './observerShellLifecycle.svelte'
 import { characterShellHydrationState } from './server/characterShellHydration.svelte'
 import {
+  acknowledgeCreatedChatTranscriptLocalEffect,
+  isChatMessageTranscriptHydrated,
+} from './server/chatMessageHydration.svelte'
+import {
   clearAppliedServerResourceRevision,
   clearCachedServerCommandRevision,
   peekAppliedServerResourceRevision,
@@ -32,6 +36,8 @@ import {
   readResourceCacheSnapshots,
   sha256JsonValue,
 } from './server/resourceCache'
+import { isCharacterLorebookHydrated, markCharacterLorebookHydrated } from './server/lorebookBridge.svelte'
+import { isPromptTemplateHydrated, markPromptTemplateProjectionApplied } from './server/promptTemplateHydration'
 import { getResourceDatabase, replaceResourceDatabase, resetServerResourceState } from './server/resourceState.svelte'
 import { setResourceWriteGuardEnabled, type Database } from './storage/database.svelte'
 import { selectedCharID } from './stores.svelte'
@@ -39,7 +45,15 @@ import { selectedCharID } from './stores.svelte'
 function seedObserverProjection(): void {
   replaceResourceDatabase({
     characterOrder: ['char-a'],
-    characters: [{ chaId: 'char-a', name: 'Ada', type: 'character' }],
+    characters: [
+      {
+        chaId: 'char-a',
+        name: 'Ada',
+        type: 'character',
+        chats: [{ id: 'chat-a', name: 'Chat', message: [] }],
+        chatPage: 0,
+      },
+    ],
     currentChar: 0,
     username: 'Observer',
   } as unknown as Database)
@@ -77,6 +91,12 @@ describe('observer projection lifecycle', () => {
     'keeps the authenticated shell visible but clears observer-era intent for %s',
     async (reason) => {
       seedObserverProjection()
+      expect(acknowledgeCreatedChatTranscriptLocalEffect('chat-a')).toBe(true)
+      markCharacterLorebookHydrated('char-a')
+      markPromptTemplateProjectionApplied('preset-a')
+      const value = { id: `cached-${reason}` }
+      const hash = await sha256JsonValue(value)
+      await persistResourceCache([{ key: 'collection:modules', hashes: [hash], values: [value] }])
 
       await discardObserverProjectionState(reason)
 
@@ -84,6 +104,10 @@ describe('observer projection lifecycle', () => {
       expect(get(selectedCharID)).toBe(0)
       expect(peekObserverRouteIntent()).toBeNull()
       expect(characterShellHydrationState.rows).toEqual({})
+      expect(isChatMessageTranscriptHydrated('chat-a')).toBe(false)
+      expect(isCharacterLorebookHydrated('char-a')).toBe(false)
+      expect(isPromptTemplateHydrated('preset-a')).toBe(false)
+      expect((await readResourceCacheSnapshots(['collection:modules']))?.get('collection:modules')?.hashes).toEqual([])
       expect(get(observerShellLifecycleStore)).toMatchObject({ mode: 'waiting', lastDiscardReason: reason })
     },
   )

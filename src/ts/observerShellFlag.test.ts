@@ -38,4 +38,20 @@ describe('pre-writer observer shell rollout flag', () => {
     sessionStorage.setItem(__observerShellFlagTestHooks.smokeOverrideStorageKey, 'enabled')
     expect(isPreWriterObserverShellEnabled()).toBe(false)
   })
+
+  it('falls back to the build flag when smoke storage is blocked or contains an unknown value', () => {
+    vi.stubEnv('VITE_FASTIFY_BROWSER_SMOKE', 'TRUE')
+    vi.stubEnv('VITE_FAST_BOOTSTRAP_OBSERVER', 'TRUE')
+    vi.stubGlobal('sessionStorage', {
+      clear: vi.fn(),
+      getItem: vi.fn(() => {
+        throw new DOMException('Blocked', 'SecurityError')
+      }),
+    })
+    expect(isPreWriterObserverShellEnabled()).toBe(true)
+
+    vi.stubGlobal('sessionStorage', { clear: vi.fn(), getItem: vi.fn(() => 'unexpected') })
+    vi.stubEnv('VITE_FAST_BOOTSTRAP_OBSERVER', '')
+    expect(isPreWriterObserverShellEnabled()).toBe(false)
+  })
 })

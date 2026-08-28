@@ -230,6 +230,28 @@ describe('startup readiness instrumentation', () => {
     await Promise.all([firstRetry, secondRetry])
   })
 
+  it('removes a failed startup step from the in-flight cache so a later attempt can succeed', async () => {
+    const step = vi.fn().mockRejectedValueOnce(new Error('plugin unavailable')).mockResolvedValueOnce('ready')
+
+    await expect(runStartupStep('plugin-runtime', step)).rejects.toThrow('plugin unavailable')
+    await expect(runStartupStep('plugin-runtime', step)).resolves.toBe('ready')
+    await expect(runStartupStep('plugin-runtime', step)).resolves.toBe('ready')
+
+    expect(step).toHaveBeenCalledTimes(2)
+  })
+
+  it('shares a rejected capability retry and permits a fresh retry after cleanup', async () => {
+    const retry = vi.fn().mockRejectedValueOnce(new Error('still offline')).mockResolvedValueOnce('recovered')
+
+    const first = retryStartupCapability('canGenerate', retry)
+    const concurrent = retryStartupCapability('canGenerate', retry)
+    expect(concurrent).toBe(first)
+    await expect(first).rejects.toThrow('still offline')
+
+    await expect(retryStartupCapability('canGenerate', retry)).resolves.toBe('recovered')
+    expect(retry).toHaveBeenCalledTimes(2)
+  })
+
   it('waits for a narrow milestone and rejects on timeout', async () => {
     vi.useFakeTimers()
     const waiting = waitForStartupMilestone('writer-ready', 100)
