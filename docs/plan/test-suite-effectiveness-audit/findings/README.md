@@ -2071,3 +2071,299 @@ Every finding records:
 - Count delta: none.
 - Revisit condition: Phase 12 runtime audit, Phase 13 cross-suite remediation,
   and mandatory Phase 14 closeout decision.
+
+## Phase 7 Findings
+
+### TSA-P07-001: Authorization header casing could combine credentials
+
+- State: Done.
+- Severity: Critical.
+- Category: G/L.
+- Decision: Strengthen, then Keep.
+- Tests/cases: the 31-case additional-parameter owner and effective request
+  companions in OpenAI chat, Responses, legacy instruct, and completion.
+- Production owner: canonical provider authorization after compatible-header
+  overlays.
+- Protected contract or plausible defect: casing variants such as
+  `authorization` and `Authorization` could coexist and send attacker-selected
+  credentials alongside the resolved server secret.
+- Evidence: provider adapters now replace all casing variants with one
+  canonical header after overlays; effective-request assertions cover the
+  counterexample.
+- Companion/overlap analysis: option parsing alone cannot prove the final
+  header sent by each adapter.
+- Action and rollback: retain canonical replacement at the last adapter
+  boundary.
+- Validation: 210/210 focused cases and complete Fastify passed.
+- Count delta: one case added.
+- Revisit condition: apply the same last-writer rule to any new credentialed
+  compatible adapter.
+
+### TSA-P07-002: Responses dispatch discarded an exact configured endpoint
+
+- State: Done.
+- Severity: High.
+- Category: G.
+- Decision: Strengthen, then Keep.
+- Tests/cases: 19 Responses cases, 100 profile-dispatch cases, and completion
+  route companions.
+- Production owner: OpenAI Responses endpoint identity from profile resolution
+  through dispatch and adapter execution.
+- Protected contract or plausible defect: a caller's exact query-bearing
+  endpoint could be replaced by an auto-appended `/responses` URL.
+- Evidence: `endpointUrl` now survives resolution and dispatch; direct and
+  route-backed counterexamples pin the exact URL.
+- Companion/overlap analysis: adapter-only URL tests did not prove the dispatch
+  handoff.
+- Action and rollback: preserve exact endpoint identity; only derive a default
+  when no endpoint is configured.
+- Validation: 119/119 focused cases and complete Fastify passed.
+- Count delta: two cases added.
+- Revisit condition: none unless endpoint policy changes explicitly.
+
+### TSA-P07-003: Ooba path normalization could corrupt an API hostname
+
+- State: Done.
+- Severity: High.
+- Category: G.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all nine Ooba legacy cases.
+- Production owner: local-compatible Ooba URL normalization.
+- Protected contract or plausible defect: string/regex removal of `/api`
+  could also alter an `api.*` hostname and send to the wrong host.
+- Evidence: normalization now edits only `URL.pathname`; an `api.example.com`
+  counterexample preserves the hostname.
+- Companion/overlap analysis: generic compatible-provider tests do not execute
+  this legacy URL rule.
+- Action and rollback: retain component-wise URL normalization.
+- Validation: 9/9 focused and complete Fastify passed.
+- Count delta: one case added.
+- Revisit condition: none.
+
+### TSA-P07-004: Gemini 200 SSE errors could terminate as success
+
+- State: Done.
+- Severity: High.
+- Category: G/F.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 56 Gemini cases and shared terminal-frame companions.
+- Production owner: Gemini streaming error and terminal disposition.
+- Protected contract or plausible defect: an HTTP-200 SSE error frame could be
+  ignored and followed by a successful done terminal.
+- Evidence: an error frame now emits one terminal error and stops stream
+  processing.
+- Companion/overlap analysis: HTTP status cases and successful SSE fixtures do
+  not prove provider-native error frames.
+- Action and rollback: terminate at the first provider error frame.
+- Validation: 56/56 focused and complete Fastify passed.
+- Count delta: one case added.
+- Revisit condition: extend the error parser only from recorded provider
+  contract evidence.
+
+### TSA-P07-005: Translation profile options and cache identity diverged
+
+- State: Done.
+- Severity: High.
+- Category: G.
+- Decision: Strengthen, then Keep.
+- Tests/cases: 28 raw server-translation cases and 23 Svelte+Node translation
+  cache cases.
+- Production owner: LLM translation profile/runtime option resolution and
+  cache identity.
+- Protected contract or plausible defect: profile sampler options could be
+  ignored, and cache hits could return output generated under different
+  runtime options.
+- Evidence: profile-bound generation fields now flow into raw translation;
+  runtime options participate in the client cache signature while translation
+  still forces its bounded output/transport fields.
+- Companion/overlap analysis: preset eligibility and ordinary chat dispatch do
+  not prove translation-specific override order or cache invalidation.
+- Action and rollback: retain resolved sampler propagation and complete cache
+  identity.
+- Validation: 28/28 server and 23/23 client focused cases passed.
+- Count delta: two cases added.
+- Revisit condition: add every newly supported output-affecting option to the
+  cache identity.
+
+### TSA-P07-006: Request-history metadata and errors could persist secrets
+
+- State: Done.
+- Severity: Critical.
+- Category: G/L.
+- Decision: Strengthen, then Keep.
+- Tests/cases: nine request-history unit cases, two route cases, and completion
+  dispatch companions.
+- Production owner: request-history persistence, route projection, and
+  provider-option credential handling.
+- Protected contract or plausible defect: nested metadata, response, or error
+  text could persist provider credentials in SQLite and return them through
+  history routes.
+- Evidence: sensitive keys and known credential values are recursively
+  sanitized before persistence across prompt/context/toggles/metadata,
+  response, error, and API metadata.
+- Companion/overlap analysis: trace redaction and masked configuration
+  projection do not own the independent history store.
+- Action and rollback: carry the operation redaction set into the history
+  writer and sanitize before SQLite.
+- Validation: 104/104 focused cases, server typecheck, and complete Fastify
+  passed.
+- Count delta: two cases added.
+- Revisit condition: new request-history fields must enter the recursive
+  sanitizer before exposure.
+
+### TSA-P07-007: Stored NovelAI credentials were not bound to NovelAI
+
+- State: Done.
+- Severity: Critical.
+- Category: G/L.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 20 image-generation cases.
+- Production owner: NovelAI image endpoint and credential resolution.
+- Protected contract or plausible defect: a persisted custom image endpoint
+  could receive the stored NovelAI credential.
+- Evidence: stored credentials are accepted only for the exact official HTTPS
+  origin; custom endpoints require an explicit draft credential.
+- Companion/overlap analysis: closed request parsing prevented caller-supplied
+  URLs but did not constrain a persisted endpoint paired with a stored secret.
+- Action and rollback: retain exact-origin binding at server execution.
+- Validation: 20/20 focused cases and complete Fastify passed; the fetch-spy
+  typing correction also passed server typecheck.
+- Count delta: two cases added.
+- Revisit condition: any additional official origin requires an explicit
+  allowlist and regression fixture.
+
+### TSA-P07-008: VOICEVOX playback interpolated raw query values
+
+- State: Done.
+- Severity: High.
+- Category: G/L.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 23 TTS cases.
+- Production owner: VOICEVOX audio-query and synthesis request construction.
+- Protected contract or plausible defect: translated text or speaker values
+  containing `&`, `=`, or `#` could inject or truncate query parameters.
+- Evidence: both URLs use `URL`/`searchParams`; the counterexample preserves a
+  configured base subpath and proves no injected parameter exists.
+- Companion/overlap analysis: speaker-catalog caching never executes playback
+  request construction.
+- Action and rollback: retain structured URL construction.
+- Validation: 23/23 focused and complete frontend passed.
+- Count delta: one case added.
+- Revisit condition: none.
+
+### TSA-P07-009: Horde ignored non-OK polling responses
+
+- State: Done.
+- Severity: High.
+- Category: G.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 19 Horde cases.
+- Production owner: asynchronous Horde polling and remote-job cleanup.
+- Protected contract or plausible defect: failed polls could be parsed or
+  retried as if successful, hiding an HTTP failure and leaving the job alive.
+- Evidence: non-OK polls now produce a bounded HTTP failure and issue the job
+  DELETE cleanup.
+- Companion/overlap analysis: submission and successful polling fixtures did
+  not prove failure cleanup.
+- Action and rollback: fail and cancel on the first non-OK poll.
+- Validation: 19/19 focused and complete Fastify passed.
+- Count delta: one case added.
+- Revisit condition: retry only after an explicit provider/status policy.
+
+### TSA-P07-010: SigV4 confidence lacked an independent signature vector
+
+- State: Done.
+- Severity: High.
+- Category: G/L.
+- Decision: Strengthen, then Keep.
+- Tests/cases: nine SigV4 cases and 22 Bedrock companion cases.
+- Production owner: AWS canonical request and signature generation.
+- Protected contract or plausible defect: production and test could agree on
+  the same incorrect canonicalization, particularly internal header spaces.
+- Evidence: a hard-coded signature was independently cross-checked with the
+  Smithy implementation; a whitespace counterexample fixes canonical header
+  normalization.
+- Companion/overlap analysis: round-trip or self-derived assertions are not an
+  independent signing oracle.
+- Action and rollback: retain the published-vector-style exact signature and
+  canonical whitespace rule.
+- Validation: 31/31 focused and complete Fastify cases passed.
+- Count delta: one case added.
+- Revisit condition: add a new independent vector for a materially different
+  AWS signing mode.
+
+### TSA-P07-011: Provider-adjacent names hid D/E/F owners
+
+- State: Done.
+- Severity: Medium.
+- Category: G to D/E/F.
+- Decision: Reclassify.
+- Tests/cases: eight complete owners / 69 cases listed by
+  `phase7-reclassified` state in `inventory.json`.
+- Production owner: provider-list and completion-sound UI, parameter and
+  character-emotion authoring, and generation dispatch/emotion/client-context
+  orchestration.
+- Protected contract or plausible defect: provider vocabulary could obscure
+  the dominant visible, authoring, or generation failure mode.
+- Evidence: three exact-path boundary rules and an eight-owner counterexample
+  matrix assign every owner to its product contract.
+- Companion/overlap analysis: lane and specialized ownership remain unchanged.
+- Action and rollback: retain all owners under D/E/F.
+- Validation: routing policy passed 9/9 and generated inventory has the exact
+  intended assignments.
+- Count delta: one routing-policy case; no owner removed.
+- Revisit condition: only if a complete owner's dominant contract changes.
+
+### TSA-P07-012: Provider and media evidence layers remain distinct
+
+- State: Done.
+- Severity: Informational.
+- Category: G with F/L and browser seams.
+- Decision: Keep.
+- Tests/cases: the complete 103-file, 1,408-case reviewed opening set after
+  remediation.
+- Production owner: provider/model inputs through credential resolution,
+  request/stream execution, translation/media consumption, and projection.
+- Protected contract or plausible defect: merging by provider name would erase
+  independent conversion, endpoint, dispatch, stream, credential, history,
+  cache, and playback failures.
+- Evidence: every owner has a complete contract in `inventory.json`; no owner
+  met the mandatory replacement/removal proof.
+- Companion/overlap analysis: frontend Node/Svelte/DOM and Fastify layers fail
+  at different boundaries. No G browser owner exists.
+- Action and rollback: retain the reviewed owners and corrected-category
+  companions; merge only with full failure-layer replacement proof.
+- Validation: 1,408/1,408 exact opening-owner cases and complete lanes passed.
+- Count delta: fourteen regression cases and one routing-policy case.
+- Revisit condition: Phase 13 consolidation may act only with the plan's full
+  proof package.
+
+### TSA-P07-013: Provider, credential, media, and compatibility claims are bounded
+
+- State: Deferred with retained owners and explicit phase ownership.
+- Severity: High.
+- Category: G, with L and Phase 12/13/14 ownership.
+- Decision: Keep current evidence; add or gate only at the named owners.
+- Tests/cases: provider adapters/operations, credential projections/history,
+  controlled upstream doubles, TTS/media owners, smoke suite, and compatibility
+  harness.
+- Production owner: live/recorded provider parity, full credential journey,
+  real browser media semantics, Ollama structured/multimodal support, and
+  historical transports.
+- Protected contract or plausible defect: controlled fetch fixtures cannot
+  prove third-party protocol drift; current smoke does not perform a complete
+  stored-secret provider journey or exercise actual media devices. Ollama
+  structured/multimodal behavior lacks a recorded product-support decision.
+- Evidence: direct boundary review found no G browser owner and no recorded or
+  live canary. The exact pinned compatibility worktree is absent.
+- Companion/overlap analysis: Phase 12 owns credential/runtime observability;
+  Phase 13 owns bounded provider/browser and media composition; Phase 14 owns
+  the final residual, product-policy, and compatibility verdict.
+- Action and rollback: retain current bounded evidence. Do not call live paid
+  providers, infer device fidelity from mocks, substitute a baseline, or
+  refresh goldens.
+- Validation: current exact, complete, smoke, and static lanes pass; this
+  finding deliberately limits broader claims.
+- Count delta: none.
+- Revisit condition: Phase 12 runtime audit, Phase 13 remediation, and
+  mandatory Phase 14 closeout decision.
