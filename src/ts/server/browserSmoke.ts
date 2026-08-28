@@ -1,13 +1,12 @@
 import { get } from 'svelte/store'
 import { selectedCharID } from '../stores/coreStores.svelte'
 import { getDatabase, type Database } from '../storage/database.svelte'
-import { getRerollBuffer, reroll, unReroll } from '../process/rerollNavigation.svelte'
+import { getRerollBuffer, unReroll } from '../process/rerollNavigation.svelte'
 import { acceptedSendRecoveries } from '../process/acceptedSendRecoveryState'
 import { activeChatGenerations } from '../process/generationActivity.svelte'
 import { generationFinalizationPersistences } from '../process/generationPersistenceState'
 import { activeGenerationJobs, generationJobLifecycles } from '../process/reattach'
 import { activeWriterSessionHeader } from './activeWriterSession'
-import { hydrateActiveChatFully } from './chatMessageHydration.svelte'
 import { peekAppliedServerResourceRevision, type ServerCommandResult } from './commands'
 import { dispatchDurableServerBackedSettingsPatch } from './settingsBridge.svelte'
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
@@ -70,9 +69,7 @@ export interface FastifyBrowserSmokeHook {
   // reconstructed reroll candidates, and drive the swipe controls.
   selectCharacter: (index: number) => void
   getRerollCandidates: () => string[]
-  refreshActiveChatMessages: () => Promise<void>
   swipeRerollBack: () => Promise<void>
-  swipeRerollForward: () => Promise<void>
   showAlert: (message: string) => void
   navigateTo: (path: string) => void
   setQuickSettingsOpen: (open: boolean) => void
@@ -140,9 +137,7 @@ export function installFastifyBrowserSmokeHook() {
         const last = entry.at(-1) as { data?: unknown } | undefined
         return typeof last?.data === 'string' ? last.data : ''
       }),
-    refreshActiveChatMessages: () => hydrateActiveChatFully({ force: true }),
     swipeRerollBack: () => unReroll(),
-    swipeRerollForward: () => reroll({ sendChatMain: async () => true, closeMenu: () => {} }),
     showAlert: (message) => alertNormal(message),
     navigateTo: (path) => navigate(path),
     setQuickSettingsOpen: (open) => {

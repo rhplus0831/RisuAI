@@ -37,14 +37,6 @@ export function encodeLegacyFixtureEnvelope(payload: unknown, kind: LegacyRisuSa
   return encodeLegacyRisuSaveEnvelope(payload, kind)
 }
 
-export function decodeLegacyFixtureEnvelope(data: Uint8Array): unknown {
-  return decodeLegacyRisuSaveEnvelope(data)
-}
-
-export function encodeRisuSaveBlockFixture(block: RisuSaveBlockFixture): Uint8Array {
-  return encodeRisuSaveBlock(block)
-}
-
 export function encodeRisuSaveBlockFixtureEnvelope(blocks: RisuSaveBlockFixture[]): Uint8Array {
   return encodeRisuSaveBlockEnvelope(blocks)
 }

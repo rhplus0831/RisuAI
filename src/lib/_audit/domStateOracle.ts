@@ -43,16 +43,6 @@ export function isInScopeFinding(verdict: DifferentialVerdict): boolean {
   return verdict === 'reactivity-binding-bug'
 }
 
-export function describeDifferential<T>(input: DifferentialInput<T>): string {
-  const verdict = classifyDifferential(input)
-  return [
-    `verdict=${verdict}`,
-    `dom=${stringify(input.dom)}`,
-    `store=${stringify(input.store)}`,
-    `expected=${stringify(input.expected)}`,
-  ].join(' ')
-}
-
 function defaultEquals<T>(a: T, b: T): boolean {
   if (a === b) return true
   return stringify(a) === stringify(b)
@@ -72,19 +62,6 @@ function stringify(value: unknown): string {
 // expose. Returning `null` for "not rendered" lets a test distinguish a missing
 // surface from an empty value.
 // ---------------------------------------------------------------------------
-
-export type PickerKind = 'preset' | 'persona'
-
-export function readGenerationPickerSelectedId(root: ParentNode, kind: PickerKind): string | null {
-  const control = root.querySelector(`[data-risu-generation-picker-control][data-risu-picker-kind="${kind}"]`)
-  if (!control) return null
-  return control.getAttribute('data-risu-picker-selected-id') ?? ''
-}
-
-export function readGenerationPickerName(root: ParentNode, kind: PickerKind): string | null {
-  const control = root.querySelector(`[data-risu-generation-picker-control][data-risu-picker-kind="${kind}"]`)
-  return control ? (control.textContent ?? '').trim() : null
-}
 
 export function readToggleGroupLabels(root: ParentNode): string[] {
   return Array.from(root.querySelectorAll('[data-risu-generation-toggle-group]')).map(
@@ -108,14 +85,3 @@ export function readJailbreakSelected(root: ParentNode): boolean | null {
 
 // Sidebar chat rows: the painted selected row and the rendered row order. Used
 // by the chat-lifecycle journeys.
-export function readSelectedChatRowId(root: ParentNode): string | null {
-  const rows = Array.from(root.querySelectorAll('[data-risu-chat-idx][data-risu-chat-id]'))
-  const selected = rows.find((row) => row.getAttribute('data-risu-chat-selected') === 'true')
-  return selected ? (selected.getAttribute('data-risu-chat-id') ?? '') : null
-}
-
-export function readChatRowIds(root: ParentNode): string[] {
-  return Array.from(root.querySelectorAll('[data-risu-chat-idx][data-risu-chat-id]')).map(
-    (row) => row.getAttribute('data-risu-chat-id') ?? '',
-  )
-}
