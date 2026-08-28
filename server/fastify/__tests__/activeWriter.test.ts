@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
@@ -244,6 +245,25 @@ describe('active writer session guard', () => {
         payload: Buffer.from('stale legacy bytes'),
       }),
     )
+
+    const activeBootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: authedHeaders('session-b'),
+    })
+    expect(activeBootstrap.statusCode).toBe(200)
+    expect(activeBootstrap.json()).toMatchObject({ initialized: false, revision: 0 })
+
+    const staleAssetId = createHash('sha256').update('stale-asset').digest('hex')
+    expect(existsSync(path.join(harness.dataDir, 'assets', `${staleAssetId}.png`))).toBe(false)
+    expect(existsSync(path.join(harness.dataDir, 'save', Buffer.from('legacy-key').toString('hex')))).toBe(false)
+    const backups = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/backups',
+      headers: authedHeaders('session-b'),
+    })
+    expect(backups.statusCode).toBe(200)
+    expect(backups.json()).toEqual({ backups: [] })
   })
 
   it('rejects stale restore/delete backup and legacy storage remove mutations', async () => {
@@ -371,6 +391,17 @@ describe('active writer session guard', () => {
         },
       }),
     )
+
+    const activeBootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: authedHeaders('session-b'),
+    })
+    expect(activeBootstrap.statusCode).toBe(200)
+    expect(activeBootstrap.json()).toMatchObject({
+      activeGenerationJobs: [],
+      generationOperations: [],
+    })
   })
 
   it('keeps streaming observe and public asset exceptions outside the writer gate', async () => {
