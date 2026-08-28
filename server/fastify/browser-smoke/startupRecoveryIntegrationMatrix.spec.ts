@@ -295,7 +295,12 @@ test('durable recovery replays offline work and committed work whose response wa
         () => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getAppliedServerResourceRevision()!,
       )
       expect(finalRevision).toBe(initialRevision + 1)
-      expect(commandMutationIds.filter((mutationId) => mutationId === retainedMutationId)).toHaveLength(2)
+      // A live heartbeat replay can begin after the deliberately lost
+      // response and then be interrupted by this test's reload. Startup must
+      // retry that retained intent, but every transport attempt must preserve
+      // the same idempotency key and still produce one committed revision.
+      expect(commandMutationIds.length).toBeGreaterThanOrEqual(2)
+      expect(new Set(commandMutationIds)).toEqual(new Set([retainedMutationId]))
       await expect.poll(() => receiptAcknowledgements.length).toBe(1)
       expect(JSON.parse(receiptAcknowledgements[0]!)).toMatchObject({
         mutationId: retainedMutationId,
