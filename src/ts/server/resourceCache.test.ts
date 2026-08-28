@@ -210,10 +210,9 @@ describe('IndexedDB resource cache', () => {
       request.onerror = () => reject(request.error)
     })
     const transaction = database.transaction('manifests', 'readwrite')
-    transaction.objectStore('manifests').put(
-      { version: 1, hashes: ['b'.repeat(64)], sizes: [], updatedAt: Date.now() },
-      'collection:corrupt',
-    )
+    transaction
+      .objectStore('manifests')
+      .put({ version: 1, hashes: ['b'.repeat(64)], sizes: [], updatedAt: Date.now() }, 'collection:corrupt')
     await new Promise<void>((resolve, reject) => {
       transaction.oncomplete = () => resolve()
       transaction.onerror = () => reject(transaction.error)
