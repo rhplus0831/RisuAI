@@ -28,7 +28,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/agentPresetExecution.test.ts": {
-      "cases": 24,
+      "cases": 25,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -523,7 +523,7 @@
       "parameterizedRows": 16
     },
     "server/fastify/__tests__/preflight.test.ts": {
-      "cases": 27,
+      "cases": 28,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -583,9 +583,9 @@
       "parameterizedRows": 14
     },
     "server/fastify/__tests__/realmImport.test.ts": {
-      "cases": 26,
-      "skipped": 0,
-      "parameterizedRows": 0
+      "cases": 27,
+      "skipped": 1,
+      "parameterizedRows": 1
     },
     "server/fastify/__tests__/repositoryWriterKit.test.ts": {
       "cases": 11,
@@ -783,7 +783,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/browser-smoke/acceptedSendProtocol.spec.ts": {
-      "cases": 9,
+      "cases": 10,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -1702,16 +1702,6 @@
       "skipped": 0,
       "parameterizedRows": 0
     },
-    "src/ts/__tests__/renderCostHarness.test.ts": {
-      "cases": 5,
-      "skipped": 0,
-      "parameterizedRows": 1
-    },
-    "src/ts/__tests__/sendCloneCountProbe.test.ts": {
-      "cases": 1,
-      "skipped": 0,
-      "parameterizedRows": 0
-    },
     "src/ts/activeChatGenerationSettings.test.ts": {
       "cases": 19,
       "skipped": 0,
@@ -2283,7 +2273,7 @@
       "parameterizedRows": 0
     },
     "src/ts/process/__tests__/buildDescription.test.ts": {
-      "cases": 8,
+      "cases": 9,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -2293,9 +2283,9 @@
       "parameterizedRows": 0
     },
     "src/ts/process/__tests__/buildLorebookContext.test.ts": {
-      "cases": 12,
+      "cases": 16,
       "skipped": 0,
-      "parameterizedRows": 0
+      "parameterizedRows": 3
     },
     "src/ts/process/__tests__/buildMemoryWindow.test.ts": {
       "cases": 14,
@@ -2343,7 +2333,7 @@
       "parameterizedRows": 0
     },
     "src/ts/process/__tests__/finalizeRequestBudget.test.ts": {
-      "cases": 5,
+      "cases": 6,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -2393,7 +2383,7 @@
       "parameterizedRows": 0
     },
     "src/ts/process/__tests__/preflightTemplateTokens.test.ts": {
-      "cases": 16,
+      "cases": 17,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -2773,7 +2763,7 @@
       "parameterizedRows": 4
     },
     "src/ts/process/request/tests/sseParse.test.ts": {
-      "cases": 8,
+      "cases": 12,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -3174,7 +3164,7 @@
     },
     "src/ts/server/realmImport.test.ts": {
       "cases": 5,
-      "skipped": 1,
+      "skipped": 0,
       "parameterizedRows": 0
     },
     "src/ts/server/replacementDatabaseOwnership.svelte-node.test.ts": {
