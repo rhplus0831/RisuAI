@@ -107,6 +107,23 @@ describe('test effectiveness inventory', () => {
     expect(documented.at(-3)?.id).toBe('fallback-browser-or-dom')
   })
 
+  it('routes reviewed provider-adjacent owners by their dominant contract', () => {
+    const counterexamples = new Map<string, string>([
+      ['src/lib/Others/AllSeperateParameters.svelte.test.ts', 'E'],
+      ['src/ts/characters.imageEmotion.test.ts', 'E'],
+      ['src/lib/UI/OpenrouterProviderList.svelte.test.ts', 'D'],
+      ['src/ts/process/messageCompletionSound.test.ts', 'D'],
+      ['src/ts/process/__tests__/dispatchRequest.test.ts', 'F'],
+      ['src/ts/process/__tests__/emotionFallbackLlm.test.ts', 'F'],
+      ['src/ts/process/__tests__/emotionFromResponse.test.ts', 'F'],
+      ['src/ts/process/request/clientContext.test.ts', 'F'],
+    ])
+
+    for (const [file, category] of counterexamples) {
+      expect(categoryForTestFile(file).category, `${file} must not fall through to provider-model-media`).toBe(category)
+    }
+  })
+
   it('reuses lane routing and captures special ownership, kind, seams, and static dependencies', () => {
     const frontend = createTestEffectivenessInventoryRow(
       'src/lib/Others/GridCatalog.svelte.test.ts',

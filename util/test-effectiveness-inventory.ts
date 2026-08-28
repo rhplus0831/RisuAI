@@ -256,6 +256,36 @@ export const categoryRules: readonly CategoryRule[] = [
     ],
   },
   {
+    id: 'reviewed-provider-adjacent-authoring-boundaries',
+    category: 'E',
+    description:
+      'Reviewed parameter and character-emotion controls whose dominant contract is settings or character authoring.',
+    patterns: [
+      /^src\/lib\/Others\/AllSeperateParameters\.svelte\.test\.ts$/,
+      /^src\/ts\/characters\.imageEmotion\.test\.ts$/,
+    ],
+  },
+  {
+    id: 'reviewed-provider-adjacent-chat-ui-boundaries',
+    category: 'D',
+    description:
+      'Reviewed provider-list and completion-sound owners whose observable contract is mounted or visible UI.',
+    patterns: [
+      /^src\/lib\/UI\/OpenrouterProviderList\.svelte\.test\.ts$/,
+      /^src\/ts\/process\/messageCompletionSound\.test\.ts$/,
+    ],
+  },
+  {
+    id: 'reviewed-provider-adjacent-generation-boundaries',
+    category: 'F',
+    description:
+      'Reviewed dispatch, emotion-processing, and client-context owners whose dominant contract is generation orchestration.',
+    patterns: [
+      /^src\/ts\/process\/__tests__\/(?:dispatchRequest|emotionFallbackLlm|emotionFromResponse)\.test\.ts$/,
+      /^src\/ts\/process\/request\/clientContext\.test\.ts$/,
+    ],
+  },
+  {
     id: 'provider-model-media',
     category: 'G',
     description: 'Provider adapters, models and credentials, translation, image/audio/transcription, and media codecs.',
