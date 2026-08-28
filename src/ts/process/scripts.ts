@@ -27,6 +27,15 @@ import { canUseServerCommands } from '../server/commands'
 import { currentChatScopedSnapshot, dispatchUpdateMessageScoped } from '../chatCommands'
 import { getActivePromptPresetRegexScripts } from './promptPresetRegex'
 import { registerScriptCacheResetter } from './scriptCacheInvalidation'
+import {
+  matchFirstClientRegex,
+  normalizeClientRegexTimeout,
+  replaceClientRegex,
+  testClientRegex,
+  testMoveClientRegex,
+  testReplaceClientRegex,
+} from './clientRegexWorker'
+import { assertClientRegexPatternSafe } from './regexSafety'
 
 const dreg = /{{data}}/g
 const randomness = /\|\|\|/g
@@ -311,6 +320,7 @@ export function getCompiledRegex(source: string, flag: string): RegExp {
   const key = `${flag}|||${source}`
   let reg = compiledRegexCache.get(key)
   if (!reg) {
+    assertClientRegexPatternSafe(source)
     reg = new RegExp(source, flag)
     compiledRegexCache.set(key, reg)
     if (compiledRegexCache.size > 1000) {
@@ -381,7 +391,15 @@ export async function processScriptFull(
     cacheScript(hash, data)
     return { data, emoChanged }
   }
-  function executeScript(pscript: pScript) {
+  const regexTimeout = normalizeClientRegexTimeout(
+    mode === 'editoutput'
+      ? db.complexRegexOutputTimeoutMs
+      : mode === 'editdisplay'
+        ? db.complexRegexDisplayTimeoutMs
+        : db.complexRegexInputTimeoutMs,
+  )
+
+  async function executeScript(pscript: pScript) {
     const script = pscript.script
 
     if (script.in === '') {
@@ -424,10 +442,11 @@ export async function processScriptFull(
         input = risuChatParser(input, { chatID: chatID, cbsConditions })
       }
 
-      const reg = getCompiledRegex(input, flag)
       if (outScript.startsWith('@@') || pscript.actions.length > 0) {
-        if (reg.test(data)) {
-          if (outScript.startsWith('@@emo ')) {
+        let matched = false
+        if (outScript.startsWith('@@emo ')) {
+          matched = await testClientRegex(input, flag, data, regexTimeout)
+          if (matched) {
             const emoName = script.out.substring(6).trim()
             let charemotions = get(CharEmotion)
             let tempEmotion = charemotions[char.chaId]
@@ -449,87 +468,77 @@ export async function processScriptFull(
                 }
               }
             }
-          } else if (outScript.startsWith('@@inject') || pscript.actions.includes('inject')) {
+          }
+        } else if (outScript.startsWith('@@inject') || pscript.actions.includes('inject')) {
+          const replaced = await testReplaceClientRegex(input, flag, data, '', regexTimeout)
+          matched = replaced.matched
+          if (matched) {
             applyInjectMutation(data, mode, chatID)
-            data = data.replace(reg, '')
-          } else if (
+            data = replaced.result
+          }
+        } else {
+          const isMove =
             outScript.startsWith('@@move_top') ||
             outScript.startsWith('@@move_bottom') ||
             pscript.actions.includes('move_top') ||
             pscript.actions.includes('move_bottom')
-          ) {
-            const isGlobal = flag.includes('g')
-            const matchAll = isGlobal ? data.matchAll(reg) : [data.match(reg)]
-            data = data.replace(reg, '')
-            for (const matched of matchAll) {
-              if (matched) {
-                const inData = matched[0]
-                let out = outScript
-                  .replace('@@move_top ', '')
-                  .replace('@@move_bottom ', '')
-                  .replace(/(?<!\$)\$[0-9]+/g, (v) => {
-                    const index = parseInt(v.substring(1))
-                    if (index < matched.length) {
-                      return matched[index]
-                    }
-                    return v
-                  })
-                  .replace(/\$\&/g, inData)
-                  .replace(/(?<!\$)\$<([^>]+)>/g, (v) => {
-                    const groupName = parseInt(v.substring(2, v.length - 1))
-                    if (matched.groups && matched.groups[groupName]) {
-                      return matched.groups[groupName]
-                    }
-                    return v
-                  })
-                if (outScript.startsWith('@@move_top') || pscript.actions.includes('move_top')) {
-                  data = out + '\n' + data
-                } else {
-                  data = data + '\n' + out
-                }
-              }
-            }
+          if (isMove) {
+            const moved = await testMoveClientRegex(
+              input,
+              flag,
+              data,
+              outScript,
+              outScript.startsWith('@@move_top') || pscript.actions.includes('move_top'),
+              regexTimeout,
+            )
+            matched = moved.matched
+            if (matched) data = moved.result
           } else {
-            data = risuChatParser(data.replace(reg, outScript), { chatID: chatID, cbsConditions })
-          }
-        } else {
-          if ((outScript.startsWith('@@repeat_back') || pscript.actions.includes('repeat_back')) && chatID !== -1) {
-            const v = outScript.split(' ', 2)[1]
-            const selchar = db.characters[get(selectedCharID)]
-            const chat = selchar.chats[selchar.chatPage]
-            let lastChat = chat.fmIndex === -1 ? selchar.firstMessage : selchar.alternateGreetings[chat.fmIndex]
-            let pointer = chatID - 1
-            while (pointer >= 0) {
-              if (chat.message[pointer].role === chat.message[chatID].role) {
-                lastChat = chat.message[pointer].data
-                break
-              }
-              pointer--
-            }
-
-            const r = lastChat.match(reg)
-            if (!v) {
-              data = data + r[0]
-            } else if (r[0]) {
-              switch (v) {
-                case 'end':
-                  data = data + r[0]
-                  break
-                case 'start':
-                  data = r[0] + data
-                  break
-                case 'end_nl':
-                  data = data + '\n' + r[0]
-                  break
-                case 'start_nl':
-                  data = r[0] + '\n' + data
-                  break
-              }
+            const replaced = await testReplaceClientRegex(input, flag, data, outScript, regexTimeout)
+            matched = replaced.matched
+            if (matched) {
+              data = risuChatParser(replaced.result, { chatID: chatID, cbsConditions })
             }
           }
         }
+
+        if (
+          !matched &&
+          (outScript.startsWith('@@repeat_back') || pscript.actions.includes('repeat_back')) &&
+          chatID !== -1
+        ) {
+          const v = outScript.split(' ', 2)[1]
+          const selchar = db.characters[get(selectedCharID)]
+          const chat = selchar.chats[selchar.chatPage]
+          let lastChat = chat.fmIndex === -1 ? selchar.firstMessage : selchar.alternateGreetings[chat.fmIndex]
+          let pointer = chatID - 1
+          while (pointer >= 0) {
+            if (chat.message[pointer].role === chat.message[chatID].role) {
+              lastChat = chat.message[pointer].data
+              break
+            }
+            pointer--
+          }
+
+          const repeatMatch = await matchFirstClientRegex(input, flag, lastChat, regexTimeout)
+          if (!repeatMatch) return
+          switch (v) {
+            case 'start':
+              data = repeatMatch + data
+              break
+            case 'end_nl':
+              data = data + '\n' + repeatMatch
+              break
+            case 'start_nl':
+              data = repeatMatch + '\n' + data
+              break
+            default:
+              data = data + repeatMatch
+          }
+        }
       } else {
-        data = risuChatParser(data.replace(reg, outScript), { chatID: chatID, cbsConditions })
+        const replaced = await replaceClientRegex(input, flag, data, outScript, regexTimeout)
+        data = risuChatParser(replaced, { chatID: chatID, cbsConditions })
       }
     }
   }
@@ -574,7 +583,7 @@ export async function processScriptFull(
   }
   for (const script of parsedScripts) {
     try {
-      executeScript(script)
+      await executeScript(script)
     } catch (error) {
       console.error(error)
     }

@@ -30,6 +30,8 @@ import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 import type { character } from '../storage/database.svelte'
 import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
 import { clearCachedServerCommandRevision } from '../server/commands'
+import { setClientRegexWorkerFactoryForTesting } from './clientRegexWorker'
+import { CLIENT_REGEX_LIMITS, executeRegexWorkerRequest, type RegexWorkerRequest } from './regexWorkerRuntime'
 
 interface CapturedFetch {
   url: string
@@ -136,16 +138,133 @@ beforeEach(() => {
   clearCachedServerCommandRevision()
   resetScriptCache()
   setResourceWriteGuardEnabled(false)
+  setClientRegexWorkerFactoryForTesting(null)
 })
 
 afterEach(() => {
   vi.unstubAllGlobals()
   clearCachedServerCommandRevision()
   setResourceWriteGuardEnabled(false)
+  setClientRegexWorkerFactoryForTesting(null)
   selectedCharID.set(-1)
 })
 
+class FakeRegexWorker {
+  readonly messageListeners: Array<(event: MessageEvent<unknown>) => void> = []
+  readonly errorListeners: Array<(event: ErrorEvent) => void> = []
+  terminated = false
+
+  addEventListener(type: 'message' | 'error', listener: (event: MessageEvent<unknown> & ErrorEvent) => void): void {
+    if (type === 'message') this.messageListeners.push(listener)
+    else this.errorListeners.push(listener)
+  }
+
+  postMessage(message: unknown): void {
+    const envelope = message as { id: number; request: RegexWorkerRequest }
+    queueMicrotask(() => {
+      if (this.terminated) return
+      try {
+        const result = executeRegexWorkerRequest(envelope.request)
+        for (const listener of this.messageListeners) {
+          listener({ data: { id: envelope.id, ok: true, result } } as MessageEvent<unknown>)
+        }
+      } catch (error) {
+        for (const listener of this.messageListeners) {
+          listener({
+            data: {
+              id: envelope.id,
+              ok: false,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          } as MessageEvent<unknown>)
+        }
+      }
+    })
+  }
+
+  terminate(): void {
+    this.terminated = true
+  }
+}
+
+class HangingRegexWorker extends FakeRegexWorker {
+  override postMessage(): void {}
+}
+
 describe('editdisplay render path logging', () => {
+  it('preserves native replacement semantics across the regex worker boundary', async () => {
+    const worker = new FakeRegexWorker()
+    setClientRegexWorkerFactoryForTesting(() => worker)
+    const char = seedDb()
+    char.customscript = [
+      {
+        comment: 'worker replacement parity',
+        type: 'editdisplay',
+        in: '(a)(b)',
+        out: '[$2$1][$&][$$]',
+        flag: 'g',
+        ableFlag: true,
+      },
+    ] as any
+
+    await expect(processScriptFull(char, 'ab ab', 'editdisplay', 0)).resolves.toMatchObject({
+      data: '[ba][ab][$] [ba][ab][$]',
+    })
+    expect(worker.terminated).toBe(false)
+  })
+
+  it('terminates a non-responsive regex worker at the configured display timeout', async () => {
+    const worker = new HangingRegexWorker()
+    setClientRegexWorkerFactoryForTesting(() => worker)
+    const char = seedDb()
+    ;(testDatabaseState.db as any).complexRegexDisplayTimeoutMs = 5
+    char.customscript = [
+      {
+        comment: 'catastrophic worker regex',
+        type: 'editdisplay',
+        in: '(a+)+$',
+        out: 'blocked',
+        flag: 'g',
+        ableFlag: true,
+      },
+    ] as any
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    try {
+      await expect(processScriptFull(char, `${'a'.repeat(256)}!`, 'editdisplay', 0)).resolves.toMatchObject({
+        data: `${'a'.repeat(256)}!`,
+      })
+      expect(worker.terminated).toBe(true)
+      expect(errorSpy).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('timed out') }))
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+
+  it('preflights replacement and move amplification inside the regex worker runtime', () => {
+    const replacement = 'x'.repeat(CLIENT_REGEX_LIMITS.replacement)
+    expect(() =>
+      executeRegexWorkerRequest({
+        operation: 'replace',
+        pattern: '(a)',
+        flags: 'g',
+        source: 'a a a a',
+        replacement,
+      }),
+    ).toThrow(/output length .* exceeds cap 131072/)
+
+    expect(() =>
+      executeRegexWorkerRequest({
+        operation: 'testMove',
+        pattern: '(a)',
+        flags: 'g',
+        source: 'a a a a',
+        replacement: `@@move_bottom ${'x'.repeat(CLIENT_REGEX_LIMITS.replacement - '@@move_bottom '.length)}`,
+        toTop: false,
+      }),
+    ).toThrow(/output length .* exceeds cap 131072/)
+  })
+
   it('a display-trigger render pass writes nothing to console.log', async () => {
     const char = seedDb()
     const logSpy = vi.spyOn(console, 'log')
