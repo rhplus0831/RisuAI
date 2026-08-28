@@ -1,0 +1,3501 @@
+{
+  "schemaVersion": 1,
+  "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations",
+  "files": {
+    "packages/protocol/src/generationSse.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "packages/protocol/src/importBoundary.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/activeWriter.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/additionalParams.test.ts": {
+      "cases": 30,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/agentDataSandbox.test.ts": {
+      "cases": 12,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/agentPresetExecution.test.ts": {
+      "cases": 24,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/anthropic.test.ts": {
+      "cases": 26,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/assemble.test.ts": {
+      "cases": 131,
+      "skipped": 0,
+      "parameterizedRows": 5
+    },
+    "server/fastify/__tests__/assetGc.test.ts": {
+      "cases": 19,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/assetMetadataIndex.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/assets.test.ts": {
+      "cases": 39,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/auth.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/backups.test.ts": {
+      "cases": 48,
+      "skipped": 0,
+      "parameterizedRows": 6
+    },
+    "server/fastify/__tests__/bedrock.test.ts": {
+      "cases": 22,
+      "skipped": 0,
+      "parameterizedRows": 2
+    },
+    "server/fastify/__tests__/bootstrap.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/boundedRegex.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/budgetFinalize.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/chatDispatchLogitBias.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/chatDispatchProfileOptions.test.ts": {
+      "cases": 99,
+      "skipped": 0,
+      "parameterizedRows": 47
+    },
+    "server/fastify/__tests__/cohere.test.ts": {
+      "cases": 19,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/commandCollectionRange.test.ts": {
+      "cases": 60,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/commandFloorUnblock.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/commandMessageFreeCeiling.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/commandMetrics.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/commandMutationBudget.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/commandMutationReadNarrowing.test.ts": {
+      "cases": 21,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/commandMutationReceipts.test.ts": {
+      "cases": 12,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/commands.test.ts": {
+      "cases": 220,
+      "skipped": 0,
+      "parameterizedRows": 2
+    },
+    "server/fastify/__tests__/commandSettingsAndPluginStorageRange.test.ts": {
+      "cases": 14,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/commandSingleRowPaths.test.ts": {
+      "cases": 21,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/config.test.ts": {
+      "cases": 19,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/databaseDefaults.test.ts": {
+      "cases": 22,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/databaseInitialization.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 5
+    },
+    "server/fastify/__tests__/db.test.ts": {
+      "cases": 19,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/displaySourceCache.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/displaySources.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/durableDeleteIdempotency.test.ts": {
+      "cases": 30,
+      "skipped": 0,
+      "parameterizedRows": 30
+    },
+    "server/fastify/__tests__/durableGeneration.test.ts": {
+      "cases": 64,
+      "skipped": 0,
+      "parameterizedRows": 10
+    },
+    "server/fastify/__tests__/echo.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/embeddingOperations.test.ts": {
+      "cases": 13,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/events.test.ts": {
+      "cases": 25,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/gemini.test.ts": {
+      "cases": 55,
+      "skipped": 0,
+      "parameterizedRows": 10
+    },
+    "server/fastify/__tests__/generation.chat.test.ts": {
+      "cases": 174,
+      "skipped": 0,
+      "parameterizedRows": 32
+    },
+    "server/fastify/__tests__/generation.completion.test.ts": {
+      "cases": 93,
+      "skipped": 0,
+      "parameterizedRows": 7
+    },
+    "server/fastify/__tests__/generation.providerUnits.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/generationBodyCap.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/generationChatCompletionTranslation.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/generationEffects.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/generationFinalizationRetry.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/generationOperations.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/generationOperationsStartup.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/generationTraceSidecar.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/greetingTranslationStore.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/history.test.ts": {
+      "cases": 68,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/horde.test.ts": {
+      "cases": 18,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/http.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/hub.test.ts": {
+      "cases": 28,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/imageGeneration.test.ts": {
+      "cases": 18,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/index.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 2
+    },
+    "server/fastify/__tests__/inlayCatalog.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/jsonControls.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/kobold.test.ts": {
+      "cases": 10,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/legacyDatabaseImport.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/legacyStorage.test.ts": {
+      "cases": 13,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/lorebook.test.ts": {
+      "cases": 78,
+      "skipped": 0,
+      "parameterizedRows": 3
+    },
+    "server/fastify/__tests__/lorebookIdentityRepair.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/luaRuntime.test.ts": {
+      "cases": 51,
+      "skipped": 0,
+      "parameterizedRows": 3
+    },
+    "server/fastify/__tests__/mcpOAuthRefresh.test.ts": {
+      "cases": 18,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/memory.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/memoryBudgetAllocator.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/memoryChunkPlanner.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/memoryEmbeddingAdapter.test.ts": {
+      "cases": 13,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/memoryEmbeddingModel.test.ts": {
+      "cases": 11,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/memoryEmbedJobHandler.test.ts": {
+      "cases": 29,
+      "skipped": 0,
+      "parameterizedRows": 2
+    },
+    "server/fastify/__tests__/memoryEvents.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 5
+    },
+    "server/fastify/__tests__/memoryJobsRoutes.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/memoryLegacyImport.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/memoryPlanner.test.ts": {
+      "cases": 14,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/memoryReadRoutes.test.ts": {
+      "cases": 13,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/memoryRepository.test.ts": {
+      "cases": 21,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/memorySelectionService.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/memorySimilarityRanking.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/memorySummarizeJobHandler.test.ts": {
+      "cases": 19,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/memorySummaryAdapter.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/memorySummaryModel.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/memorySummaryPrompt.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/memoryWorker.test.ts": {
+      "cases": 23,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/messageStore.test.ts": {
+      "cases": 27,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/messageTranslationJobs.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/missingDatabaseGuard.test.ts": {
+      "cases": 17,
+      "skipped": 0,
+      "parameterizedRows": 12
+    },
+    "server/fastify/__tests__/mistral.test.ts": {
+      "cases": 33,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/modelProfileResolver.server.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/modules.test.ts": {
+      "cases": 11,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/modulesMemo.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/ollama.test.ts": {
+      "cases": 38,
+      "skipped": 0,
+      "parameterizedRows": 5
+    },
+    "server/fastify/__tests__/oobaLegacy.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/openai.test.ts": {
+      "cases": 55,
+      "skipped": 0,
+      "parameterizedRows": 9
+    },
+    "server/fastify/__tests__/openaiLegacyInstruct.test.ts": {
+      "cases": 13,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/openaiResponses.test.ts": {
+      "cases": 18,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/openAITranscription.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/openrouterFreeModel.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/payloadBudgets.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/plainSections.test.ts": {
+      "cases": 12,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/pluginNetwork.test.ts": {
+      "cases": 24,
+      "skipped": 0,
+      "parameterizedRows": 16
+    },
+    "server/fastify/__tests__/preflight.test.ts": {
+      "cases": 27,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/promptMemoryAdapter.test.ts": {
+      "cases": 10,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/promptVariables.test.ts": {
+      "cases": 24,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/protocolPackage.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/providerCapabilityRoute.test.ts": {
+      "cases": 19,
+      "skipped": 0,
+      "parameterizedRows": 10
+    },
+    "server/fastify/__tests__/providerMessages.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/providerOperations.test.ts": {
+      "cases": 31,
+      "skipped": 0,
+      "parameterizedRows": 18
+    },
+    "server/fastify/__tests__/providerSecrets.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/providerTransport.test.ts": {
+      "cases": 14,
+      "skipped": 0,
+      "parameterizedRows": 2
+    },
+    "server/fastify/__tests__/proxy.test.ts": {
+      "cases": 32,
+      "skipped": 0,
+      "parameterizedRows": 10
+    },
+    "server/fastify/__tests__/pushNotifications.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/rawMessageTranslation.test.ts": {
+      "cases": 27,
+      "skipped": 0,
+      "parameterizedRows": 14
+    },
+    "server/fastify/__tests__/realmImport.test.ts": {
+      "cases": 27,
+      "skipped": 1,
+      "parameterizedRows": 1
+    },
+    "server/fastify/__tests__/repositoryWriterKit.test.ts": {
+      "cases": 11,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/requestAbort.test.ts": {
+      "cases": 13,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/requestHistory.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/requestHistoryRoutes.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/requestTrace.test.ts": {
+      "cases": 12,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/resourceReads.test.ts": {
+      "cases": 20,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/risuSaveAssetReferences.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/risuSaveBoundedInflate.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/risuSaveBundleExportRoute.test.ts": {
+      "cases": 10,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/risuSaveBundleImportRoute.test.ts": {
+      "cases": 25,
+      "skipped": 0,
+      "parameterizedRows": 2
+    },
+    "server/fastify/__tests__/risuSaveCodec.test.ts": {
+      "cases": 34,
+      "skipped": 0,
+      "parameterizedRows": 8
+    },
+    "server/fastify/__tests__/risuSaveExportRoute.test.ts": {
+      "cases": 12,
+      "skipped": 0,
+      "parameterizedRows": 2
+    },
+    "server/fastify/__tests__/risuSaveImportRoute.test.ts": {
+      "cases": 40,
+      "skipped": 0,
+      "parameterizedRows": 11
+    },
+    "server/fastify/__tests__/routeProtection.test.ts": {
+      "cases": 14,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/scripts.test.ts": {
+      "cases": 55,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/serverAutoTranslationEligibility.test.ts": {
+      "cases": 10,
+      "skipped": 0,
+      "parameterizedRows": 9
+    },
+    "server/fastify/__tests__/serverLoadCostHarness.test.ts": {
+      "cases": 38,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/serverMessageTranslation.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/settingsGroupParity.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/sigv4.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/smoke.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/splitPresets.test.ts": {
+      "cases": 13,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/staleInlineModelProfileSecrets.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/startupTelemetry.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/static.test.ts": {
+      "cases": 12,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/staticSections.test.ts": {
+      "cases": 22,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/streamBackpressure.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/streamJobs.test.ts": {
+      "cases": 65,
+      "skipped": 0,
+      "parameterizedRows": 28
+    },
+    "server/fastify/__tests__/streamJobsRoutes.test.ts": {
+      "cases": 15,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/stripCoTFrames.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/targetedMutationPaths.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 4
+    },
+    "server/fastify/__tests__/templates.test.ts": {
+      "cases": 70,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/terminalFrameAssertions.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/tokenizerConfig.test.ts": {
+      "cases": 58,
+      "skipped": 0,
+      "parameterizedRows": 49
+    },
+    "server/fastify/__tests__/tokenizerGoldenCounts.test.ts": {
+      "cases": 12,
+      "skipped": 0,
+      "parameterizedRows": 12
+    },
+    "server/fastify/__tests__/tokens.test.ts": {
+      "cases": 19,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/__tests__/triggers.test.ts": {
+      "cases": 94,
+      "skipped": 0,
+      "parameterizedRows": 10
+    },
+    "server/fastify/__tests__/tts.test.ts": {
+      "cases": 17,
+      "skipped": 0,
+      "parameterizedRows": 5
+    },
+    "server/fastify/__tests__/vertexAuth.test.ts": {
+      "cases": 12,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/browser-smoke/acceptedSendProtocol.spec.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/browser-smoke/fastifyBrowserSmoke.spec.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/browser-smoke/lazyFirstOpen.spec.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/browser-smoke/rerollSwipePersistence.spec.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/browser-smoke/startupCachePopulationMatrix.spec.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "server/fastify/browser-smoke/visibleStateRecovery.spec.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/App.routeEffect.dom.test.ts": {
+      "cases": 16,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lang/index.test.ts": {
+      "cases": 11,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lang/triggerDescriptions.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 7
+    },
+    "src/lib/_audit/frontendArchitecture.static.test.ts": {
+      "cases": 29,
+      "skipped": 0,
+      "parameterizedRows": 3
+    },
+    "src/lib/_audit/optimisticTogglePaint.dom.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/AgentPresetProgress.svelte.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/AssetInput.svelte.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/BackgroundDom.parserDependencies.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/branchComment.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/CharacterShellHydrationGate.svelte.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/Chat.customHtml.test.ts": {
+      "cases": 53,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/Chat.parserDependencies.test.ts": {
+      "cases": 18,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/ChatBody.parseMemo.test.ts": {
+      "cases": 14,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/ChatBody.svelte.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/chatButtonTriggerFreshness.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/chatGenerationLoading.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/ChatScreenBackground.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/chatScroll.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/ChatsUnread.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/CreatorQuote.svelte.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/DefaultChatScreen.composerDrafts.test.ts": {
+      "cases": 10,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts": {
+      "cases": 95,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/DefaultChatScreen.shellGreeting.dom.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/initialDisplayReadiness.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/memoryLimitMarker.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/messageEditPopup.test.ts": {
+      "cases": 11,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/newMessageTranslationEligibility.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/PartialEditController.sharedHover.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/partialEditFreshness.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/partialEditLayer.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/partialEditTouchTrigger.test.ts": {
+      "cases": 16,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/PostGenerationScriptProgress.svelte.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/RerollList.svelte.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/ResizeBox.svelte.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/ResizeBoxPointer.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/Suggestion.svelte.test.ts": {
+      "cases": 22,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ChatScreens/TransitionImage.svelte.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Mobile/MobileCharacters.svelte.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Mobile/MobileControls.svelte.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/ObserverShell.svelte.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Others/AccessibleIconActions.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Others/AlertComp.dom.test.ts": {
+      "cases": 15,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Others/alertPromptInfo.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Others/AllSeperateParameters.svelte.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Others/BookmarkList.svelte.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Others/ChatList.svelte.test.ts": {
+      "cases": 22,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Others/CustomSidebarConfig.svelte.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Others/GridCatalog.svelte.test.ts": {
+      "cases": 13,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Others/HypaV3Modal.resetRace.test.ts": {
+      "cases": 12,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Others/HypaV3Modal.serverReliability.test.ts": {
+      "cases": 14,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Others/HypaV3Modal/modal-header.svelte.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Others/HypaV3Modal/modal-summary-item.svelte.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Others/HypaV3Modal/server-memory-jobs.svelte.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Others/HypaV3Modal/server-summary-patch.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Others/HypaV3Modal/tag-manager-modal.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Others/IrisModal.svelte.test.ts": {
+      "cases": 23,
+      "skipped": 0,
+      "parameterizedRows": 3
+    },
+    "src/lib/Others/LoadoutModal.svelte.test.ts": {
+      "cases": 12,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Others/monacoWorkerErrors.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Others/PopupEditor.svelte.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Others/QuickSettingsGUI.svelte.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Others/resourceGuard.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Others/SavePopupIcon.svelte.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Others/WelcomeRisu.svelte.test.ts": {
+      "cases": 22,
+      "skipped": 0,
+      "parameterizedRows": 5
+    },
+    "src/lib/Playground/PlaygroundAccessibleControls.svelte.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Playground/PlaygroundAsyncOutput.svelte.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Playground/PlaygroundImageTrans.svelte.test.ts": {
+      "cases": 17,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Playground/PlaygroundInlayExplorer.svelte.test.ts": {
+      "cases": 12,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Playground/PlaygroundMCP.svelte.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Playground/PlaygroundNavigation.svelte.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Playground/PlaygroundRunState.svelte.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Playground/PlaygroundSubtitle.svelte.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Playground/PlaygroundSubtitle.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Playground/PlaygroundTranslation.svelte.test.ts": {
+      "cases": 10,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Playground/ToolConversion.svelte.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/listedPersona.svelte.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/lorepreset.svelte.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/Advanced/CustomModelsSettings.svelte.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/Advanced/SettingsExportButtons.svelte.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/AgentPresetSettings.svelte.test.ts": {
+      "cases": 14,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/agentPresetStepPatch.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/BotSettings.accessibility.test.ts": {
+      "cases": 20,
+      "skipped": 0,
+      "parameterizedRows": 14
+    },
+    "src/lib/Setting/Pages/BotSettings.pendingFlush.svelte.test.ts": {
+      "cases": 15,
+      "skipped": 0,
+      "parameterizedRows": 2
+    },
+    "src/lib/Setting/Pages/BotSettings.promptToggleDurable.svelte-node.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/CustomGUISettingMenu.svelte.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/Display/ColorSettingsAccessibility.svelte.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/Display/CustomBackgroundToggle.svelte.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/Display/FullscreenToggle.svelte.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/Display/NotificationToggle.svelte.test.ts": {
+      "cases": 16,
+      "skipped": 0,
+      "parameterizedRows": 11
+    },
+    "src/lib/Setting/Pages/DisplaySettings.svelte.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/GlobalRegex.svelte.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/HotkeySettings.svelte.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/InputHookSettings.svelte.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte.test.ts": {
+      "cases": 68,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/Model/ModelFallbackEditor.svelte.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/Model/ModelPresetList.svelte.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 3
+    },
+    "src/lib/Setting/Pages/Model/ModelProfileEditorDrawer.svelte.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/Model/ModelProfileList.svelte.test.ts": {
+      "cases": 20,
+      "skipped": 0,
+      "parameterizedRows": 2
+    },
+    "src/lib/Setting/Pages/Model/ModelProfileRoleList.svelte.test.ts": {
+      "cases": 12,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/Model/ModelProviderPanel.svelte.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/Model/ModelRoleEditor.svelte.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/Model/ModelRuntimeDefaultsEditor.svelte.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/Model/ModelRuntimeOptionsEditor.svelte.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/Model/ModelSettingsShell.svelte.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/Model/ProviderCredentialList.svelte.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/Model/SecretField.svelte.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/Module/ModuleMenu.svelte.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 2
+    },
+    "src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts": {
+      "cases": 37,
+      "skipped": 0,
+      "parameterizedRows": 2
+    },
+    "src/lib/Setting/Pages/OtherBotSettings.slider-accessibility.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/OtherBotSettings.svelte.test.ts": {
+      "cases": 19,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/PluginSettings.svelte.test.ts": {
+      "cases": 18,
+      "skipped": 0,
+      "parameterizedRows": 2
+    },
+    "src/lib/Setting/Pages/promptTokenCounter.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/ProviderListActions.svelte.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/RequestHistorySettings.svelte.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/SourceCode.svelte.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/supporters.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/ThanksPage.svelte.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Pages/UserSettings.svelte.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/pickerGenerationSettings.test.ts": {
+      "cases": 40,
+      "skipped": 0,
+      "parameterizedRows": 4
+    },
+    "src/lib/Setting/SettingRenderer.svelte.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Settings.svelte.test.ts": {
+      "cases": 17,
+      "skipped": 0,
+      "parameterizedRows": 4
+    },
+    "src/lib/Setting/Wrappers/SettingAccordion.svelte.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Wrappers/SettingInputAccessibility.svelte.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/Setting/Wrappers/SettingSegmented.svelte.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 2
+    },
+    "src/lib/Setting/Wrappers/SettingSelect.svelte.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 4
+    },
+    "src/lib/SideBars/AuthorNoteEditor.svelte.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/SideBars/CharConfig.svelte.test.ts": {
+      "cases": 34,
+      "skipped": 0,
+      "parameterizedRows": 5
+    },
+    "src/lib/SideBars/chatFolderGrouping.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/SideBars/chatGenerationSettingsControls.test.ts": {
+      "cases": 40,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/SideBars/CustomSidebar.svelte.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/SideBars/DevTool.svelte.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/SideBars/devToolAutopilotImport.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/SideBars/DropList.svelte.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/SideBars/dropList.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/SideBars/EditorIconActions.test.ts": {
+      "cases": 11,
+      "skipped": 0,
+      "parameterizedRows": 11
+    },
+    "src/lib/SideBars/LoreBook/LoreBookList.svelte.test.ts": {
+      "cases": 20,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/SideBars/LoreBook/LoreBookSetting.svelte.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/SideBars/PinnedChatsRail.svelte.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/SideBars/Scripts/DefinitionDeleteRace.svelte.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/SideBars/Scripts/RegexData.svelte.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/SideBars/Scripts/RegexList.svelte.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/SideBars/Scripts/TriggerList.svelte.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 3
+    },
+    "src/lib/SideBars/Scripts/TriggerV1Data.svelte.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/SideBars/Scripts/triggerV2Import.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 4
+    },
+    "src/lib/SideBars/Scripts/TriggerV2List.svelte.test.ts": {
+      "cases": 19,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/SideBars/Sidebar.charList.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/SideBars/Sidebar.keyboard.dom.test.ts": {
+      "cases": 18,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/SideBars/sidebarDrag.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/SideBars/sidebarMultitasking.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/SideBars/sidebarOrganizer.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/SideBars/SideChatList.svelte.test.ts": {
+      "cases": 63,
+      "skipped": 0,
+      "parameterizedRows": 5
+    },
+    "src/lib/UI/Accordion.svelte.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/UI/GUI/CheckInput.svelte.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/UI/GUI/ColorInput.svelte.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/UI/GUI/MultiLangInput.svelte.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/UI/GUI/OptionalInput.svelte.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/UI/GUI/SecretInput.svelte.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/UI/GUI/SegmentedControl.svelte.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/UI/GUI/SideBarArrow.svelte.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/UI/GUI/SliderInput.svelte.test.ts": {
+      "cases": 10,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/UI/GUI/TextAreaInput.svelte.test.ts": {
+      "cases": 14,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/UI/GUI/TextAreaResizable.svelte.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/UI/LazyComponent.svelte.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/UI/MainMenu.svelte.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/UI/mainMenuProjection.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/UI/ModelList.svelte.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/UI/NanoGPTDashboard.svelte.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/UI/OpenrouterProviderList.svelte.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/UI/PopupList.svelte.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/UI/PromptDataItem.svelte.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/UI/Realm/realmImportInput.test.ts": {
+      "cases": 18,
+      "skipped": 0,
+      "parameterizedRows": 18
+    },
+    "src/lib/UI/Realm/RealmLicense.svelte.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/UI/Realm/RealmMain.svelte.test.ts": {
+      "cases": 12,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/UI/Realm/RealmPopUp.svelte.test.ts": {
+      "cases": 13,
+      "skipped": 0,
+      "parameterizedRows": 2
+    },
+    "src/lib/UI/ScriptModelOverrideSelectors.svelte.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/lib/UI/Title.svelte.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/__tests__/renderCostHarness.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 1
+    },
+    "src/ts/__tests__/sendCloneCountProbe.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/activeChatGenerationSettings.test.ts": {
+      "cases": 19,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/agentLorebookInputs.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/agentPresetDiagnostics.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/agentPresetRecords.test.ts": {
+      "cases": 14,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/agentPresetResolver.test.ts": {
+      "cases": 11,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/agentPresets.test.ts": {
+      "cases": 32,
+      "skipped": 0,
+      "parameterizedRows": 5
+    },
+    "src/ts/alert.importSafety.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/alert.test.ts": {
+      "cases": 37,
+      "skipped": 0,
+      "parameterizedRows": 10
+    },
+    "src/ts/alternateGreetingCommands.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/alternateGreetingMutation.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/bootstrap.test.ts": {
+      "cases": 177,
+      "skipped": 0,
+      "parameterizedRows": 58
+    },
+    "src/ts/browserLocalSurface.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/characterCards.pngImport.svelte-node.test.ts": {
+      "cases": 21,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/characterCards.realmImport.test.ts": {
+      "cases": 16,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/characterCommands.test.ts": {
+      "cases": 80,
+      "skipped": 0,
+      "parameterizedRows": 5
+    },
+    "src/ts/characterFolderOpening.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/characters.changeChar.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/characters.exportChat.test.ts": {
+      "cases": 12,
+      "skipped": 0,
+      "parameterizedRows": 3
+    },
+    "src/ts/characters.imageEmotion.test.ts": {
+      "cases": 13,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/characters.importChat.test.ts": {
+      "cases": 19,
+      "skipped": 0,
+      "parameterizedRows": 4
+    },
+    "src/ts/chatCommands.test.ts": {
+      "cases": 183,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/chatFork.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/chatGenerationSettings.test.ts": {
+      "cases": 20,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/chatGenerationTogglePresets.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/chatImportPlanning.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/chatLoadPages.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/compatibilityAdapters.test.ts": {
+      "cases": 21,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/dragTypes.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/entryStartup.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/globalApi.changeChatTo.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/globalApi.downloadFile.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/globalApi.fetchNative.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/globalApi.getFileSrc.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/globalApi.proxy.test.ts": {
+      "cases": 18,
+      "skipped": 0,
+      "parameterizedRows": 7
+    },
+    "src/ts/globalApi.saveAssets.test.ts": {
+      "cases": 13,
+      "skipped": 0,
+      "parameterizedRows": 7
+    },
+    "src/ts/gui/animation.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/gui/colorscheme.test.ts": {
+      "cases": 29,
+      "skipped": 0,
+      "parameterizedRows": 21
+    },
+    "src/ts/gui/guisize.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/gui/heightMode.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 8
+    },
+    "src/ts/gui/highlight.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/gui/loginMessageOrigin.test.ts": {
+      "cases": 13,
+      "skipped": 0,
+      "parameterizedRows": 11
+    },
+    "src/ts/gui/longtouch.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/gui/modalBackdropDismiss.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/gui/modalFocusTrap.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/gui/viewportDebugOverlay.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/gui/viewportScrollGuard.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/gui/visualViewportCoordinator.test.ts": {
+      "cases": 18,
+      "skipped": 0,
+      "parameterizedRows": 8
+    },
+    "src/ts/horde/getModels.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/hotkey.navigation.test.ts": {
+      "cases": 13,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/hotkey.preview.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/hotkey.resourceGuard.test.ts": {
+      "cases": 11,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/hubAdditionalHtml.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/kei/backup.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/loadout.test.ts": {
+      "cases": 46,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/media/compressImage/tests/compressImage.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/media/compressImage/tests/lossyCompression.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/media/tests/imageType.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/model/llmgateway.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/model/modellist.dynamic.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/model/modelPresetSnapshots.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/model/modelProfileMutations.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/model/modelProfileRecords.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/model/modelProfileResolver.test.ts": {
+      "cases": 49,
+      "skipped": 0,
+      "parameterizedRows": 5
+    },
+    "src/ts/model/modelProfileSecrets.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/model/modelProfileUiState.test.ts": {
+      "cases": 14,
+      "skipped": 0,
+      "parameterizedRows": 4
+    },
+    "src/ts/model/modelRoles.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/model/nanogpt.test.ts": {
+      "cases": 10,
+      "skipped": 0,
+      "parameterizedRows": 3
+    },
+    "src/ts/model/neuralwatt.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/model/ollama.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/model/openrouter.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 3
+    },
+    "src/ts/model/providerCredentialRecords.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/model/scriptModelOverrides.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/moduleActivation.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/moduleCommands.test.ts": {
+      "cases": 42,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/moduleEditorLeaveGuard.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/moduleIntegration.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/network/localNetwork.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/network/proxyJobWs.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/nonSecurityUuid.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/observer.svelte.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/observerProjectionLifecycle.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 2
+    },
+    "src/ts/observerRouteIntent.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/observerShellFlag.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/parser/partialEdit.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/parser/sentenceBreaks.test.ts": {
+      "cases": 14,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/parser/tests/additionalAssetCache.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/parser/tests/cbs/conditionals.test.ts": {
+      "cases": 27,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/parser/tests/cbs/eachReinjection.test.ts": {
+      "cases": 10,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/parser/tests/cbs/escapes.test.ts": {
+      "cases": 12,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/parser/tests/cbs/history.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/parser/tests/cbs/loop.test.ts": {
+      "cases": 11,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/parser/tests/cbs/strings.test.ts": {
+      "cases": 15,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/parser/tests/chatML.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/parser/tests/chatVar.svelte-node.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/parser/tests/inlayBlobCache.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/parser/tests/renderFastPaths.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/persona.iconUpload.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/persona.test.ts": {
+      "cases": 46,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/personaDisplayName.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/personaModuleLinks.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/personaMutationCertificate.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/playground.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/pluginCommands.durable.svelte-node.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/pluginCommands.svelte-node.test.ts": {
+      "cases": 31,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/plugins/apiV3/developMode.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/plugins/apiV3/factory.test.ts": {
+      "cases": 10,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/plugins/apiV3/v3.svelte.test.ts": {
+      "cases": 65,
+      "skipped": 0,
+      "parameterizedRows": 2
+    },
+    "src/ts/plugins/pluginIconSafety.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/plugins/pluginNetworkAccess.test.ts": {
+      "cases": 14,
+      "skipped": 0,
+      "parameterizedRows": 10
+    },
+    "src/ts/plugins/plugins.test.ts": {
+      "cases": 58,
+      "skipped": 0,
+      "parameterizedRows": 4
+    },
+    "src/ts/plugins/pluginUpdates.test.ts": {
+      "cases": 14,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/polyfill.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/presetFieldMirror.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/presetSplit.test.ts": {
+      "cases": 17,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/buildDescription.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/buildHistoryWindow.test.ts": {
+      "cases": 10,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/buildLorebookContext.test.ts": {
+      "cases": 12,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/buildMemoryWindow.test.ts": {
+      "cases": 14,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/buildPlainPromptSections.test.ts": {
+      "cases": 11,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/buildStaticPromptSections.test.ts": {
+      "cases": 16,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/charEmotionStore.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/command.resourceGuard.test.ts": {
+      "cases": 22,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/dispatchRequest.test.ts": {
+      "cases": 12,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/emotionFallbackEmbedding.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/emotionFallbackLlm.test.ts": {
+      "cases": 14,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/emotionFromResponse.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/finalizeRequestBudget.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/formatHistoryMessage.test.ts": {
+      "cases": 15,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/igp.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/imggenStableDiff.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/lorebook.resourceGuard.test.ts": {
+      "cases": 10,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/nonStreamResponse.test.ts": {
+      "cases": 10,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/normalizeTemplate.test.ts": {
+      "cases": 13,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/notification.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/orchestrateResponse.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/outputTrigger.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/preflightTemplateTokens.test.ts": {
+      "cases": 16,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/reattach.test.ts": {
+      "cases": 40,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/renderFinalPrompt.test.ts": {
+      "cases": 23,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/runStage4.test.ts": {
+      "cases": 18,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts": {
+      "cases": 27,
+      "skipped": 0,
+      "parameterizedRows": 15
+    },
+    "src/ts/process/__tests__/sendChat.fixtures.test.ts": {
+      "cases": 39,
+      "skipped": 0,
+      "parameterizedRows": 39
+    },
+    "src/ts/process/__tests__/sendChat.serverPreview.test.ts": {
+      "cases": 38,
+      "skipped": 0,
+      "parameterizedRows": 7
+    },
+    "src/ts/process/__tests__/sendChatContext.test.ts": {
+      "cases": 22,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/sendChatErrors.test.ts": {
+      "cases": 11,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/sendChatPromptAssembly.lazyPromptTemplate.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/stage4Finalize.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/streamCoalescer.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/streamResponse.test.ts": {
+      "cases": 33,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/__tests__/triggers.resourceGuard.test.ts": {
+      "cases": 15,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/acceptedSendCoordinator.test.ts": {
+      "cases": 13,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/acceptedSendRecoveryState.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/agentPresetProgress.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/chatUnread.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/coldstorage.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/displaySourceProtocol.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/draftHookTranslation.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/dynamicutils/pdf.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/files/multisend.test.ts": {
+      "cases": 17,
+      "skipped": 0,
+      "parameterizedRows": 4
+    },
+    "src/ts/process/files/tests/inlays.test.ts": {
+      "cases": 33,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/generationActivity.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/generationDisplayProjection.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/generationEffectLedger.svelte-node.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/generationPersistenceState.test.ts": {
+      "cases": 10,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/generationRuntimeBridge.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/halfStreamingProgress.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/index.svelte.stop.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/inlayFinalization.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/inputHookActivity.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/inputHooks.test.ts": {
+      "cases": 12,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/legacyMemoryMigrationNotice.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/mcp/aiaccess.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/mcp/filesystemclient.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/mcp/googlesearchclient.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/mcp/internalClients.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/mcp/mcp.test.ts": {
+      "cases": 31,
+      "skipped": 0,
+      "parameterizedRows": 3
+    },
+    "src/ts/process/mcp/mcplib.test.ts": {
+      "cases": 34,
+      "skipped": 0,
+      "parameterizedRows": 4
+    },
+    "src/ts/process/mcp/risuaccess/tests/characters.setCharacterInfo.test.ts": {
+      "cases": 14,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/mcp/risuaccess/tests/modules.optimisticProjection.test.ts": {
+      "cases": 14,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/mcp/risuaccess/tests/modules.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/memory/contextualEmbedding.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/memory/embeddingCacheKey.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/memory/remoteEmbeddingPaths.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/messageCompletionSound.test.ts": {
+      "cases": 15,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/modules.test.ts": {
+      "cases": 39,
+      "skipped": 0,
+      "parameterizedRows": 6
+    },
+    "src/ts/process/postGenerationProgress.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/prereroll.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/processzip.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/prompt.conversionDurability.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 5
+    },
+    "src/ts/process/promptTemplateNormalization.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/promptTokenizeMemo.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/rawGenerationCallerAllowlist.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/recoveredGenerationEffects.svelte-node.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/regexDisplayReload.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 4
+    },
+    "src/ts/process/request/clientContext.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/request/tests/additionalParams.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/request/tests/anthropicProfileOptions.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/request/tests/cohereHordeOobaLegacyProfileOptions.test.ts": {
+      "cases": 11,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/request/tests/durableGeneration.test.ts": {
+      "cases": 17,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/request/tests/google.fastify.test.ts": {
+      "cases": 11,
+      "skipped": 0,
+      "parameterizedRows": 6
+    },
+    "src/ts/process/request/tests/koboldProfileOptions.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/request/tests/modelRoleRouting.test.ts": {
+      "cases": 17,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/request/tests/ollamaProfileOptions.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/request/tests/openaiProfileOptions.test.ts": {
+      "cases": 15,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/request/tests/openaiResponsesLegacyProfileOptions.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/request/tests/pluginProviderModelId.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 2
+    },
+    "src/ts/process/request/tests/providerCapability.test.ts": {
+      "cases": 50,
+      "skipped": 0,
+      "parameterizedRows": 29
+    },
+    "src/ts/process/request/tests/serverChat.test.ts": {
+      "cases": 76,
+      "skipped": 0,
+      "parameterizedRows": 6
+    },
+    "src/ts/process/request/tests/serverCompletion.test.ts": {
+      "cases": 11,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/request/tests/serverMemory.test.ts": {
+      "cases": 17,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/request/tests/serverMessagePatch.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/request/tests/serverPromptAssembly.test.ts": {
+      "cases": 37,
+      "skipped": 0,
+      "parameterizedRows": 4
+    },
+    "src/ts/process/request/tests/sseParse.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/rerollNavigation.guard.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/rerollNavigation.rollback.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/rerollNavigation.test.ts": {
+      "cases": 23,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/scriptings.test.ts": {
+      "cases": 24,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/scripts.editdisplay.test.ts": {
+      "cases": 11,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/scripts.importRegex.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/scripts.regexCache.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/sendChatCompletion.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/serverBackedSendChat.findMessage.test.ts": {
+      "cases": 33,
+      "skipped": 0,
+      "parameterizedRows": 2
+    },
+    "src/ts/process/serverGeneratedMessageTranslation.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/stableDiff.test.ts": {
+      "cases": 13,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/transformers.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/triggers.clientBudget.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/triggers.cloneCost.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/triggers.regexMemo.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/tts.test.ts": {
+      "cases": 22,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/process/ttsHooks.test.ts": {
+      "cases": 10,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/providerSecretMask.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/router.test.ts": {
+      "cases": 32,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/routerRoute.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/activeWriterSession.test.ts": {
+      "cases": 11,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/assets.svelte-node.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/backups.svelte-node.test.ts": {
+      "cases": 17,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/biasImport.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/bootstrap.svelte-node.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/bridgeFlush.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/characterAdditionalAssetUpload.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/characterBridge.svelte.test.ts": {
+      "cases": 25,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/characterEmotionUpload.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/characterFolderImageUpload.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/characterNotificationImageUpload.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/characterShellHydration.test.ts": {
+      "cases": 11,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/characterSummaryProtocol.test.ts": {
+      "cases": 11,
+      "skipped": 0,
+      "parameterizedRows": 7
+    },
+    "src/ts/server/characterTtsAssetUpload.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/chatBridge.svelte.test.ts": {
+      "cases": 19,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/chatMessageHydration.reactivity.svelte.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/chatMessageHydration.test.ts": {
+      "cases": 70,
+      "skipped": 0,
+      "parameterizedRows": 3
+    },
+    "src/ts/server/chatMessageRangeMerge.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/chatRetainedProjection.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/colorSchemeImport.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/commands.test.ts": {
+      "cases": 163,
+      "skipped": 0,
+      "parameterizedRows": 21
+    },
+    "src/ts/server/displaySources.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/durableMutationDispatch.test.ts": {
+      "cases": 19,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/durableMutationTerminalRejection.test.ts": {
+      "cases": 10,
+      "skipped": 0,
+      "parameterizedRows": 3
+    },
+    "src/ts/server/embeddingOperations.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/events.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/generationOperations.test.ts": {
+      "cases": 23,
+      "skipped": 0,
+      "parameterizedRows": 8
+    },
+    "src/ts/server/greetingTranslations.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/hydrationReads.svelte-node.test.ts": {
+      "cases": 12,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/imageGeneration.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/inlayCatalog.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/lifecycleRecovery.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/loadoutCanonical.test.ts": {
+      "cases": 14,
+      "skipped": 0,
+      "parameterizedRows": 11
+    },
+    "src/ts/server/lorebookBridge.svelte.test.ts": {
+      "cases": 101,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/lorebookBridge.test.ts": {
+      "cases": 23,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/mcpOAuthRefresh.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/memoryJobEvents.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/memoryJobProjection.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/memoryJobRefresh.test.ts": {
+      "cases": 14,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/messageTranslationJobs.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/moduleAssetUpload.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/moduleEditorDraftStore.test.ts": {
+      "cases": 10,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/naiVibeImport.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/nanoGPTDashboardFetch.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/openAITranscription.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/pendingBridgeFlushRegistry.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/pendingMutationOutbox.crossTab.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/pendingMutationOutbox.test.ts": {
+      "cases": 225,
+      "skipped": 0,
+      "parameterizedRows": 181
+    },
+    "src/ts/server/pendingMutationReplay.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/persistenceActivity.svelte-node.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/personaIconUpload.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/pluginImport.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/promptPresetIconUpload.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/promptTemplateBridge.svelte.test.ts": {
+      "cases": 86,
+      "skipped": 0,
+      "parameterizedRows": 15
+    },
+    "src/ts/server/promptTemplateHydration.test.ts": {
+      "cases": 22,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/providerOperations.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/pushNotificationRetryStorage.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/pushNotifications.test.ts": {
+      "cases": 26,
+      "skipped": 0,
+      "parameterizedRows": 10
+    },
+    "src/ts/server/pushNotificationSetting.test.ts": {
+      "cases": 27,
+      "skipped": 0,
+      "parameterizedRows": 13
+    },
+    "src/ts/server/realmImport.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/replacementDatabaseOwnership.svelte-node.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/resourceCache.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/resourceInvalidation.test.ts": {
+      "cases": 98,
+      "skipped": 0,
+      "parameterizedRows": 46
+    },
+    "src/ts/server/resourceManifest.test.ts": {
+      "cases": 45,
+      "skipped": 0,
+      "parameterizedRows": 37
+    },
+    "src/ts/server/resourceReads.svelte-node.test.ts": {
+      "cases": 18,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/resourceRefresh.test.ts": {
+      "cases": 10,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/resourceState.svelte.test.ts": {
+      "cases": 65,
+      "skipped": 0,
+      "parameterizedRows": 6
+    },
+    "src/ts/server/resourceWriteGuard.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/routeResourceLoader.test.ts": {
+      "cases": 12,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/scopedLorebookMutationUiState.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/scriptDefinitionBridge.svelte.test.ts": {
+      "cases": 72,
+      "skipped": 0,
+      "parameterizedRows": 4
+    },
+    "src/ts/server/scriptDefinitionMutations.test.ts": {
+      "cases": 14,
+      "skipped": 0,
+      "parameterizedRows": 9
+    },
+    "src/ts/server/seperateParametersImport.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/serviceWorker.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/settingsBridge.durable.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/settingsBridge.svelte.test.ts": {
+      "cases": 61,
+      "skipped": 0,
+      "parameterizedRows": 2
+    },
+    "src/ts/server/settingsDraftAcknowledgement.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/settingsGroups.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/settingsMediaAssetUpload.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 3
+    },
+    "src/ts/server/shellHydration.svelte-node.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/shellProtocol.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/staleStateGuards.test.ts": {
+      "cases": 12,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/startupTelemetry.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/startupTelemetryProtocol.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/server/tts.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/setting/advancedSettingsData.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/setting/displaySettingsData.svelte.test.ts": {
+      "cases": 10,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/setting/languageSettingsData.test.ts": {
+      "cases": 6,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/setting/utils.test.ts": {
+      "cases": 41,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/sha256Fallback.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 2
+    },
+    "src/ts/sourcemap.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/startupReadiness.test.ts": {
+      "cases": 10,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/storage/autoStorage.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/storage/backup.test.ts": {
+      "cases": 8,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/storage/database.downloadPreset.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/storage/database.importPreset.test.ts": {
+      "cases": 16,
+      "skipped": 0,
+      "parameterizedRows": 4
+    },
+    "src/ts/storage/database.resourceState.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/storage/database.svelte.test.ts": {
+      "cases": 135,
+      "skipped": 0,
+      "parameterizedRows": 20
+    },
+    "src/ts/storage/exportAsDataset.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/storage/fastifyStorage.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/storage/risuSave.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/stores.importSafety.svelte.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/stores.modulesEffect.svelte.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/stores.runtimeEffects.svelte-node.test.ts": {
+      "cases": 1,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/tokenizer.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/translator/bilingualInterleave.dom.test.ts": {
+      "cases": 11,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/translator/bilingualInterleave.test.ts": {
+      "cases": 11,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/translator/pipeline.test.ts": {
+      "cases": 15,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/translator/presets.test.ts": {
+      "cases": 10,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/translator/translator.cache.svelte-node.test.ts": {
+      "cases": 22,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/translator/translator.html.test.ts": {
+      "cases": 12,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/util.filePicker.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "src/ts/util.persona.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "util/affected-tests.test.ts": {
+      "cases": 11,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "util/analyze-database.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "util/bundle-boundary-report.test.ts": {
+      "cases": 9,
+      "skipped": 0,
+      "parameterizedRows": 4
+    },
+    "util/check-server.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 2
+    },
+    "util/frontend-test-inventory.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "util/initial-preload-report.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "util/test-all.test.ts": {
+      "cases": 4,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "util/test-effectiveness-inventory.test.ts": {
+      "cases": 7,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "util/vite-warning-policy.test.ts": {
+      "cases": 5,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "vitest.fetchGuard.test.ts": {
+      "cases": 11,
+      "skipped": 0,
+      "parameterizedRows": 7
+    },
+    "vitest.frontend-routing.test.ts": {
+      "cases": 2,
+      "skipped": 0,
+      "parameterizedRows": 0
+    },
+    "vitest.setup.test.ts": {
+      "cases": 3,
+      "skipped": 0,
+      "parameterizedRows": 0
+    }
+  }
+}

@@ -15,7 +15,7 @@ describe('test:all orchestration', () => {
     const byId = new Map(qualityLanes.map((lane) => [lane.id, lane]))
 
     expect(byId.get('browser-smoke')).toMatchObject({ after: ['server-check'], isolated: true })
-    expect(byId.get('frontend-routing')?.args).toEqual(['check:frontend-test-inventory'])
+    expect(byId.get('frontend-routing')?.args).toEqual(['check:test-inventories'])
     expect(byId.get('frontend-tests')?.args).toEqual(['test:frontend:run'])
     expect(byId.get('frontend-tests')?.env).toEqual({ RISU_TEST_EXCLUDE_UI_MAP: 'true' })
     expect(byId.get('ui-coverage')?.after).toContain('frontend-tests')

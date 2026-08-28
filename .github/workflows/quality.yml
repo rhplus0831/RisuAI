@@ -72,7 +72,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm check:frontend-test-inventory
+      - run: pnpm check:test-inventories
 
   frontend:
     runs-on: ubuntu-latest

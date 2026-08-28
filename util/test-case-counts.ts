@@ -84,6 +84,17 @@ function vitestSkippedCounts(rootDir: string, file: string | undefined): Map<str
   return skipped
 }
 
+function vitestResultCounts(rootDir: string, file: string | undefined): Map<string, number> {
+  const counts = new Map<string, number>()
+  if (!file) return counts
+  const value = readJson(file) as { testResults?: Array<Record<string, unknown>> }
+  for (const result of value.testResults ?? []) {
+    if (typeof result.name !== 'string' || !Array.isArray(result.assertionResults)) continue
+    counts.set(normalizeFile(rootDir, result.name), result.assertionResults.length)
+  }
+  return counts
+}
+
 function playwrightSkippedCounts(file: string | undefined): Map<string, number> {
   const skipped = new Map<string, number>()
   if (!file) return skipped
@@ -159,6 +170,12 @@ export function createCaseCountMetadata(rootDir: string, input: CaseCountInput):
   ]) {
     if (collected.has(file)) throw new Error(`Case collection assigned a file more than once: ${file}`)
     collected.set(file, count)
+  }
+  for (const [file, count] of [
+    ...vitestResultCounts(rootDir, input.frontendResults),
+    ...vitestResultCounts(rootDir, input.serverResults),
+  ]) {
+    collected.set(file, Math.max(collected.get(file) ?? 0, count))
   }
   const skipped = new Map<string, number>([
     ...vitestSkippedCounts(rootDir, input.frontendResults),

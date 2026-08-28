@@ -229,6 +229,7 @@ describe('test effectiveness inventory', () => {
           '.archived-docs/performance-and-stability/frontend-test-architecture/phase-0-inventory.tsv',
           '.github/workflows/quality.yml',
           'docs/plan/test-suite-effectiveness-audit/inventory.json',
+          'docs/plan/test-suite-effectiveness-audit/case-counts.json',
           'docs/plan/test-suite-effectiveness-audit/support-artifacts.json',
           'package.json',
           'playwright.fastify-smoke.config.ts',
