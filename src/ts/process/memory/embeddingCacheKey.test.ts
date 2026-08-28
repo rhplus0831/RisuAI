@@ -18,13 +18,33 @@ describe('embedding cache identity', () => {
     expect(first).not.toBe(second)
   })
 
-  it('normalizes surrounding endpoint whitespace while preserving existing non-custom keys', () => {
+  it('separates delimiters in content from delimiters in custom model identity', () => {
+    const endpoint = 'https://embed.example/v1'
+    const delimiterInModel = getEmbeddingCacheKey('a', {
+      model: 'custom',
+      customEmbeddingModel: 'x|custom-y',
+      customEmbeddingUrl: endpoint,
+    })
+    const delimiterInContent = getEmbeddingCacheKey('a|custom-x', {
+      model: 'custom',
+      customEmbeddingModel: 'y',
+      customEmbeddingUrl: endpoint,
+    })
+
+    expect(delimiterInModel).not.toBe(delimiterInContent)
+  })
+
+  it('normalizes surrounding endpoint whitespace and preserves model and input identity', () => {
     expect(
       getEmbeddingCacheKey('same text', {
         model: 'custom',
         customEmbeddingUrl: '  https://embed.example/v1  ',
       }),
     ).toBe(getEmbeddingCacheKey('same text', { model: 'custom', customEmbeddingUrl: 'https://embed.example/v1' }))
-    expect(getEmbeddingCacheKey('same text', { model: 'MiniLM' })).toBe('same text|MiniLM')
+
+    const key = getEmbeddingCacheKey('same text', { model: 'MiniLM' })
+    expect(key).toBe(getEmbeddingCacheKey('same text', { model: 'MiniLM' }))
+    expect(key).not.toBe(getEmbeddingCacheKey('different text', { model: 'MiniLM' }))
+    expect(key).not.toBe(getEmbeddingCacheKey('same text', { model: 'custom' }))
   })
 })
