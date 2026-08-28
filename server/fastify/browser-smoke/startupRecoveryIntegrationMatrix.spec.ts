@@ -161,6 +161,7 @@ test('direct-link matrix hydrates every route family from an empty browser and r
     })
 
     const cases = directLinkCases()
+    const knownRouteResourcePaths = new Set(cases.flatMap((entry) => requiredResourcePaths(entry.route)))
     expect(new Set(cases.map((entry) => routeKey(entry.route))).size).toBe(cases.length)
     expect(new Set(cases.flatMap((entry) => resourceSurfacesForRoute(entry.route)))).toEqual(
       new Set([
@@ -189,30 +190,43 @@ test('direct-link matrix hydrates every route family from an empty browser and r
 
       await page.goto(`${harness.baseUrl}${entry.path}`, { waitUntil: 'domcontentloaded' })
       await waitForSmokeHook(page)
-      await page.evaluate(() =>
-        window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForStartupMilestone('background-ready', 30_000),
-      )
       const finalRoute = entry.finalRoute ?? entry.route
       await expect
         .poll(() => page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getRouteResourceLoadState()), {
           message: `${entry.path} did not finish its route resource load`,
         })
         .toMatchObject({ routeKey: routeKey(entry.route), status: 'ready', error: null })
+      const foregroundRequestedPaths = new Set(requestedPaths)
+      await page.evaluate(() =>
+        window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForStartupMilestone('background-ready', 30_000),
+      )
       expect(await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getCurrentRoute())).toEqual(finalRoute)
       expect(pageErrors).toEqual([])
 
       const requiredPaths = requiredResourcePaths(entry.route)
-      expect(requestedPaths).toContain('/api/v1/resources/shell')
+      expect(foregroundRequestedPaths).toContain('/api/v1/resources/shell')
       for (const requiredPath of requiredPaths) {
-        expect(requestedPaths, `${entry.path} did not request ${requiredPath}`).toContain(requiredPath)
+        expect(foregroundRequestedPaths, `${entry.path} did not request ${requiredPath}`).toContain(requiredPath)
       }
+      const allowedRouteResourcePaths = new Set([
+        '/api/v1/resources/shell',
+        '/api/v1/characters/fast-bootstrap-small-character',
+        '/api/v1/chats/fast-bootstrap-small-chat/messages',
+        ...requiredPaths,
+        ...startupRuntimeResourcePaths(entry.route),
+      ])
+      const unexpectedRouteResourcePaths = [...foregroundRequestedPaths]
+        .filter((requestedPath) => knownRouteResourcePaths.has(requestedPath))
+        .filter((requestedPath) => !allowedRouteResourcePaths.has(requestedPath))
+        .sort()
+      expect(unexpectedRouteResourcePaths, `${entry.path} eagerly fetched unrelated route resources`).toEqual([])
       artifact.directLinks.push({
         path: entry.path,
         requestedRouteKey: routeKey(entry.route),
         finalRouteKey: routeKey(finalRoute),
         surfaces: resourceSurfacesForRoute(entry.route),
         requiredPaths,
-        requestedPaths: [...requestedPaths].sort(),
+        requestedPaths: [...foregroundRequestedPaths].sort(),
       })
     }
     await cdp.detach()
@@ -232,16 +246,17 @@ test('durable recovery replays offline work and committed work whose response wa
       await setObserverShellMode(context, 'disabled')
       const page = await context.newPage()
       const commandMutationIds: string[] = []
-      const receiptAcknowledgements: string[] = []
+      const receiptAcknowledgements: Array<{ body: string; status: number }> = []
       page.on('request', (request) => {
         const url = new URL(request.url())
         const headers = request.headers()
         if (url.pathname === '/api/v1/commands/settings/runtime') {
           commandMutationIds.push(headers['risu-mutation-id'] ?? '')
         }
-        if (url.pathname === '/api/v1/commands/mutation-receipts/ack') {
-          receiptAcknowledgements.push(request.postData() ?? '')
-        }
+      })
+      page.on('response', (response) => {
+        if (new URL(response.url()).pathname !== '/api/v1/commands/mutation-receipts/ack') return
+        receiptAcknowledgements.push({ body: response.request().postData() ?? '', status: response.status() })
       })
 
       await page.goto(harness.baseUrl, { waitUntil: 'domcontentloaded' })
@@ -302,7 +317,8 @@ test('durable recovery replays offline work and committed work whose response wa
       expect(commandMutationIds.length).toBeGreaterThanOrEqual(2)
       expect(new Set(commandMutationIds)).toEqual(new Set([retainedMutationId]))
       await expect.poll(() => receiptAcknowledgements.length).toBe(1)
-      expect(JSON.parse(receiptAcknowledgements[0]!)).toMatchObject({
+      expect(receiptAcknowledgements[0]!.status).toBe(200)
+      expect(JSON.parse(receiptAcknowledgements[0]!.body)).toMatchObject({
         mutationId: retainedMutationId,
         requestCount: 1,
       })
@@ -339,8 +355,21 @@ test('event-gap recovery performs an authoritative refresh before reconnecting',
       '/api/v1/inlay-assets',
     ])
     let fullRefreshRequests = 0
+    let gapSeen = false
+    const recoveryOrder: string[] = []
     page.on('request', (request) => {
       if (fullRefreshPaths.has(new URL(request.url()).pathname)) fullRefreshRequests += 1
+    })
+    page.on('response', (response) => {
+      const pathname = new URL(response.url()).pathname
+      if (pathname === '/api/v1/events' && response.status() === 409) {
+        gapSeen = true
+        recoveryOrder.push('events:gap')
+        return
+      }
+      if (!gapSeen) return
+      if (fullRefreshPaths.has(pathname)) recoveryOrder.push(`refresh:${pathname}`)
+      if (pathname === '/api/v1/events' && response.status() === 200) recoveryOrder.push('events:reconnected')
     })
 
     await page.goto(harness.baseUrl, { waitUntil: 'domcontentloaded' })
@@ -413,6 +442,16 @@ test('event-gap recovery performs an authoritative refresh before reconnecting',
         page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getStartupCoordinatorSnapshot().capabilities),
       )
       .toMatchObject({ canApplyRoutes: true, canMutate: true })
+    await expect.poll(() => recoveryOrder.includes('events:reconnected')).toBe(true)
+    const gapIndex = recoveryOrder.indexOf('events:gap')
+    const reconnectIndex = recoveryOrder.indexOf('events:reconnected')
+    expect(gapIndex).toBeGreaterThanOrEqual(0)
+    expect(reconnectIndex).toBeGreaterThan(gapIndex)
+    for (const refreshPath of fullRefreshPaths) {
+      const refreshIndex = recoveryOrder.indexOf(`refresh:${refreshPath}`)
+      expect(refreshIndex, `${refreshPath} did not complete before the event reconnect`).toBeGreaterThan(gapIndex)
+      expect(refreshIndex, `${refreshPath} completed after the event reconnect`).toBeLessThan(reconnectIndex)
+    }
 
     artifact.recoveryJourneys.push({
       scenario: 'event-gap',
@@ -455,6 +494,11 @@ test('multi-tab journey denies observer mutation, then safely promotes a takeove
     await observerPage.goto(harness.baseUrl, { waitUntil: 'domcontentloaded' })
     await waitForSmokeHook(observerPage)
     await expect(observerPage.locator('[data-observer-shell]')).toBeVisible()
+    const deniedMutation = await observerPage.evaluate(() =>
+      window.__RISU_FASTIFY_BROWSER_SMOKE__!.patchRuntimeSettings({ streamGeminiThoughts: true }),
+    )
+    expect(deniedMutation).toMatchObject({ status: 'unavailable' })
+    expect(observerCommands).toEqual([])
     await observerPage.getByRole('button', { name: 'Cancel', exact: true }).click()
     await expect(observerPage.locator('[data-observer-lifecycle-status]')).toContainText(
       'Another session still has write access',
@@ -485,6 +529,11 @@ test('multi-tab journey denies observer mutation, then safely promotes a takeove
     await expect(writerPage.locator('[data-observer-lifecycle-status]')).toContainText(
       'This tab is staying in read-only mode',
     )
+    const revokedMutation = await writerPage.evaluate(() =>
+      window.__RISU_FASTIFY_BROWSER_SMOKE__!.patchRuntimeSettings({ streamGeminiThoughts: true }),
+    )
+    expect(revokedMutation).toMatchObject({ status: 'unavailable' })
+    expect(writerCommands).toEqual([])
 
     const mutation = await observerPage.evaluate(() =>
       window.__RISU_FASTIFY_BROWSER_SMOKE__!.patchRuntimeSettings({ streamGeminiThoughts: true }),
@@ -543,6 +592,13 @@ test('background runtimes cannot delay or fail shell, mutation, and chat readine
           page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getStartupCoordinatorSnapshot().capabilities),
         )
         .toMatchObject({ canRenderShell: true, canMutate: true, pluginsReady: true, canGenerate: true })
+      const mutation = await page.evaluate(() =>
+        window.__RISU_FASTIFY_BROWSER_SMOKE__!.patchRuntimeSettings({ streamGeminiThoughts: true }),
+      )
+      expect(mutation).toMatchObject({ status: 'ok' })
+      expect(
+        await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot().streamGeminiThoughts),
+      ).toBe(true)
 
       if (mode === 'slow') {
         expect(await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getStartupSnapshot().phase)).not.toBe(
@@ -961,6 +1017,15 @@ function requiredResourcePaths(route: AppRoute): string[] {
   const requirements = resolveResourceRequirements(
     resourceSurfacesForRoute(route).filter((surface) => surface !== 'shared:app-shell'),
   )
+  return [...new Set(requirements.flatMap((requirement) => requirementResourcePaths(requirement, route)))].sort()
+}
+
+function startupRuntimeResourcePaths(route: AppRoute): string[] {
+  const requirements = resolveResourceRequirements([
+    'runtime:plugins',
+    'runtime:background-effects',
+    'runtime:chat-generation',
+  ])
   return [...new Set(requirements.flatMap((requirement) => requirementResourcePaths(requirement, route)))].sort()
 }
 
