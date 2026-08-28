@@ -2642,3 +2642,275 @@ Every finding records:
 - Count delta: none.
 - Revisit condition: Phase 12 runtime audit, Phase 13 remediation, and mandatory
   Phase 14 closeout decision.
+
+## Phase 9 Findings
+
+### TSA-P09-001: Nested server CBS expansion reset the recursion budget
+
+- State: Done.
+- Severity: Critical.
+- Category: I/F.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 26 server prompt-variable cases plus the CBS parser owners.
+- Production owner: server CBS adapter recursion and prompt-field expansion.
+- Protected contract or plausible defect: a self-referential description or
+  personality expansion could receive a fresh call stack on every nested CBS
+  pass and recurse without reaching the supported sentinel.
+- Evidence: matcher arguments now carry `callStack` through the adapter; both
+  self-referential fields stop at `ERROR: Call stack limit reached`.
+- Companion/overlap analysis: browser CBS recursion tests could not prove that
+  the Fastify adapter preserved the same budget.
+- Action and rollback: retain call-stack propagation at the adapter boundary.
+- Validation: 26/26 focused prompt-variable cases, the 43-owner exact set, and
+  complete Fastify passed.
+- Count delta: two parameterized cases added.
+- Revisit condition: none unless a new CBS adapter is introduced.
+
+### TSA-P09-002: Regex execution and output growth were not bounded end to end
+
+- State: Done.
+- Severity: Critical.
+- Category: I.
+- Decision: Strengthen, then Keep.
+- Tests/cases: 15 server bounded-regex cases, 15 client edit/display cases, and
+  nine client compile/cache cases.
+- Production owner: client and Fastify user-authored regex compilation,
+  execution, replacement, movement, and output construction.
+- Protected contract or plausible defect: prefix-overlapping quantified
+  alternatives could evade the complexity screen; browser scripts ran raw
+  regex on the main thread; replacement tokens and repeated matches could
+  construct oversized output before a result check.
+- Evidence: the server screen now rejects overlapping alternatives and all
+  server operations cap output. Client script operations execute in a real
+  Worker whose deadline terminates and recreates it; the worker incrementally
+  builds native-compatible output under caps. Main-thread trigger compilation
+  uses the same nested/overlapping complexity screen and fails closed.
+- Companion/overlap analysis: the server worker could not preempt browser
+  execution, while a timer around main-thread regex would not have preempted
+  anything. The trigger gate is deliberately conservative because those
+  legacy paths are still synchronous.
+- Action and rollback: retain the preemptive Worker, bounded protocol, and
+  cache-miss complexity gate. Do not replace them with `Promise.race`.
+- Validation: 75 focused script/trigger/editor cases, native-token parity
+  vectors, 6/6 performance gates, typechecks, production build, exact owners,
+  and complete frontend/Fastify lanes passed.
+- Count delta: seven server and five client cases added.
+- Revisit condition: Phase 13 may move synchronous trigger regex into the
+  Worker only with full directive/effect parity and browser evidence.
+
+### TSA-P09-003: Failed client interpreters remained reusable and Python had no deadline
+
+- State: Done.
+- Severity: High.
+- Category: I.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 28 client scripting cases.
+- Production owner: cached client Lua engines and Python worker request
+  lifecycle.
+- Protected contract or plausible defect: a Lua engine that failed creation,
+  load, or execution could poison later identical runs; Python initialization
+  or a call could remain pending indefinitely and retain its access key.
+- Evidence: failed Lua states are closed and evicted. Python initialization and
+  execution use separate normalized deadlines; timeout terminates the worker,
+  clears pending access, and permits a clean identical retry.
+- Companion/overlap analysis: server Lua budgets and a cached-worker
+  termination event did not own browser-side initialization or request stalls.
+- Action and rollback: retain failure eviction and separate cold-init/call
+  deadlines.
+- Validation: 28/28 focused scripting cases, client typecheck, and complete
+  frontend passed.
+- Count delta: four cases added.
+- Revisit condition: extend the matrix when another client interpreter is
+  cached.
+
+### TSA-P09-004: Server Lua response limits counted code units instead of bytes
+
+- State: Done.
+- Severity: High.
+- Category: I/L.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 52 server Lua runtime cases.
+- Production owner: Lua `request()` egress response limit.
+- Protected contract or plausible defect: a multibyte response could remain
+  below the JavaScript string-length cap while exceeding the intended byte
+  budget.
+- Evidence: streamed and injected fetch paths count UTF-8 bytes; a two-byte
+  character counterexample is rejected.
+- Companion/overlap analysis: request rate, SSRF, abort, and aggregate runtime
+  limits constrain different resources.
+- Action and rollback: retain byte accounting at both response seams.
+- Validation: 52/52 focused cases, server typecheck, and complete Fastify
+  passed.
+- Count delta: one case added.
+- Revisit condition: none while the API returns decoded text.
+
+### TSA-P09-005: Trigger V2 import trusted malformed nested rows
+
+- State: Done.
+- Severity: High.
+- Category: I/K.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 17 Trigger V2 import cases.
+- Production owner: imported trigger schema boundary.
+- Protected contract or plausible defect: valid outer arrays could contain
+  null, array, missing-type, wrong-type, or invalid-indent conditions/effects
+  that fail later inside the editor or executor.
+- Evidence: nested rows must be objects with string types and numeric indents
+  when present; unknown future types and fields remain preserved.
+- Companion/overlap analysis: editor controls and runtime trigger cases assume
+  a structurally usable imported definition.
+- Action and rollback: validate shape without turning the importer into a
+  closed enum that rejects forward-compatible definitions.
+- Validation: 17/17 focused import cases, client typecheck, and complete
+  frontend passed.
+- Count delta: ten cases added, including nine parameterized rows.
+- Revisit condition: add structural requirements only when the runtime requires
+  them for every future type.
+
+### TSA-P09-006: Script-result cache identities had delimiter collisions
+
+- State: Done.
+- Severity: Medium.
+- Category: I.
+- Decision: Strengthen, then Keep.
+- Tests/cases: all 15 edit/display script cases.
+- Production owner: processed regex-script result cache.
+- Protected contract or plausible defect: hand-concatenated definition fields
+  containing the delimiter could alias another script tuple and reuse the wrong
+  visible result.
+- Evidence: cache identity is a versioned JSON tuple over input, mode, scope,
+  chat, and normalized active definitions.
+- Companion/overlap analysis: compiled-regex and best-match caches have
+  different keys and values.
+- Action and rollback: retain the unambiguous tuple and bump its version when
+  semantics change.
+- Validation: 15/15 focused cases and complete frontend passed.
+- Count delta: one cache-identity case; the same owner later gained three
+  client-regex boundary cases under `TSA-P09-002`.
+- Revisit condition: none.
+
+### TSA-P09-007: Scripting-shaped names hid four product-risk categories
+
+- State: Done.
+- Severity: Medium.
+- Category: I to D/F/G/L.
+- Decision: Reclassify.
+- Tests/cases: four complete owners / 16 cases listed by
+  `phase9-reclassified` state in `inventory.json`.
+- Production owner: visible partial-edit projection, generation output-trigger
+  sequencing, provider input-hook activity, and hub HTML transport policy.
+- Protected contract or plausible defect: parser/hook/HTML vocabulary could
+  hide the dominant visible, generation, provider, or platform failure mode.
+- Evidence: exact-path routing rules and executable counterexamples assign all
+  four owners to D/F/G/L while retaining scripting seams.
+- Companion/overlap analysis: runtime lane and specialized ownership do not
+  change.
+- Action and rollback: retain all owners unchanged under their corrected
+  primary categories.
+- Validation: routing-policy tests and the regenerated 700-owner inventory
+  passed.
+- Count delta: one policy case; no owner removed.
+- Revisit condition: only if a complete owner's dominant contract changes.
+
+### TSA-P09-008: Display protocol and cache owners are intentionally separate
+
+- State: Done.
+- Severity: Informational.
+- Category: I with B/D seams.
+- Decision: Keep.
+- Tests/cases: server/client display-source, protocol, reload, and parser-cache
+  owners in the reviewed set.
+- Production owner: display-source request protocol, source/dependency cache
+  identity, ephemeral script state, and visible transformed output.
+- Protected contract or plausible defect: merging these owners would hide a
+  stale dependency fingerprint, protocol mismatch, reload failure, or
+  authoritative/ephemeral state leak behind the same final string.
+- Evidence: review traced source identity and dependency fingerprints through
+  server preparation, client protocol, reload, and render projection. Each
+  layer has a distinct failure oracle.
+- Companion/overlap analysis: exact output alone cannot prove cache ownership;
+  cache identity alone cannot prove protocol or visible projection.
+- Action and rollback: retain the separate owners; consolidate only with the
+  mandatory replacement proof.
+- Validation: exact opening set and both complete lanes passed.
+- Count delta: none.
+- Revisit condition: Phase 13 may consolidate only if one owner proves every
+  named failure mode.
+
+### TSA-P09-009: The scripting guide contained stale diagnostic claims
+
+- State: Done.
+- Severity: Low.
+- Category: I/A.
+- Decision: Correct documentation.
+- Tests/cases: CBS escape/loop owners and the Python worker group.
+- Production owner: authoritative testing guidance.
+- Protected contract or plausible defect: the guide claimed the colon case
+  repeated semicolon, omitted-`as` duplicated one assertion, two loop cases
+  shared a title, and Python had only four protocol cases after those facts had
+  changed.
+- Evidence: source and fresh collection show two colon aliases, literal and
+  variable omitted-`as` inputs, distinct 2-D titles, and six Python cases with
+  deadline/recovery coverage.
+- Companion/overlap analysis: stale guidance can misdirect later consolidation
+  even while executable tests remain correct.
+- Action and rollback: update `docs/tests/scripting-parsing-and-automation.md`
+  to match the reviewed suite.
+- Validation: documentation formatting and fresh list evidence passed.
+- Count delta: none.
+- Revisit condition: update the guide with future material contract changes.
+
+### TSA-P09-010: Interpreter and automation evidence layers remain distinct
+
+- State: Done.
+- Severity: Informational.
+- Category: I with D/F/G/K/L seams.
+- Decision: Keep.
+- Tests/cases: the complete 43-file, 574-case reviewed opening set after
+  remediation.
+- Production owner: CBS/parser semantics through definitions, caches, client
+  and server runtimes, triggers, display protocol, editors, and projection.
+- Protected contract or plausible defect: merging by scripting vocabulary
+  would erase distinct schema, parser, timeout, cache, durable-effect, editor,
+  protocol, and visible-output failures.
+- Evidence: every opening owner has a complete disposition in `inventory.json`;
+  no owner met the mandatory merge/removal proof.
+- Companion/overlap analysis: frontend Node/Svelte/DOM and Fastify layers fail
+  at different boundaries. No built-browser category-I owner exists.
+- Action and rollback: retain reviewed owners and corrected-category
+  companions; merge only with complete semantic and failure-layer proof.
+- Validation: 574/574 exact opening-owner cases and complete lanes passed.
+- Count delta: 30 opening-owner regressions and one routing-policy case.
+- Revisit condition: Phase 13 consolidation may act only with the full proof
+  package.
+
+### TSA-P09-011: Runtime parity and browser composition claims are bounded
+
+- State: Deferred with retained owners and explicit phase ownership.
+- Severity: High.
+- Category: I, with D/F/L and Phase 12/13/14 ownership.
+- Decision: Keep current bounded evidence; add only at the named owners.
+- Tests/cases: CBS adapters, client/server trigger and Lua owners, mocked Python
+  and regex worker protocols, definition editors, smoke, and compatibility.
+- Production owner: complete client/server CBS and trigger parity, real
+  Pyodide/browser-worker lifecycle, queued Lua cancellation, saved-definition
+  persistence/reload/runtime composition, and historical behavior.
+- Protected contract or plausible defect: current matrices do not cover every
+  host callback or Trigger V2 data arm. No category-I browser owner runs a saved
+  regex/trigger/Lua definition through edit, reload, execution, and visible
+  output. Pyodide tests use a protocol double, and a canceled request waiting
+  for the serialized server Lua engine has no prompt queue-removal proof.
+- Evidence: all active regex/script operations are now preempted, bounded, or
+  fail closed; active Lua/Python execution is deadline-bound. The remaining
+  gaps concern parity, queued cancellation, and real composition rather than an
+  accepted unbounded production path. The pinned historical worktree is absent.
+- Companion/overlap analysis: Phase 12 owns runtime queue/timeout
+  observability; Phase 13 owns parity matrices and a bounded browser journey;
+  Phase 14 owns the final residual and historical-compatibility verdict.
+- Action and rollback: retain current evidence. Do not infer real-worker or
+  browser composition from doubles, substitute a baseline, or refresh goldens.
+- Validation: exact, complete, performance, build, smoke, type, inventory, and
+  current-only compatibility lanes pass; this finding limits broader claims.
+- Count delta: none.
+- Revisit condition: Phase 12 runtime audit, Phase 13 remediation, and mandatory
+  Phase 14 closeout decision.

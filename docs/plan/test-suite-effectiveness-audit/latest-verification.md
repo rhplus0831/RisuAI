@@ -958,3 +958,81 @@ observability to Phase 12, live browser/provider/restart composition and the
 summarized-memory invalidation policy to Phase 13, and historical compatibility
 plus the final residual decision to Phase 14. The exact pinned compatibility
 worktree remains absent; no substitute checkout or golden refresh was used.
+
+## Phase 9 Evidence
+
+### Opening set and remediation validation
+
+Phase 9 opened with 43 category-I owners and 544 cases: 36 frontend files / 305
+cases and seven Fastify files / 239 cases. Both opening sets passed before
+remediation. Thirty regressions were added inside the opening owners.
+
+Four unchanged owners / 16 cases moved to D/F/G/L after complete review,
+leaving current category I at 39 owners / 558 cases. The exact original owners
+then passed 325/325 frontend cases in 13.44s and 249/249 Fastify cases in 2.85s.
+
+Focused remediation commands passed throughout:
+
+- prompt-variable recursion: 26/26;
+- Trigger V2 imports: 17/17;
+- client Lua/Python scripting: 28/28;
+- server Lua runtime: 52/52;
+- server bounded regex: 15/15;
+- client script, trigger, cache, and editor boundaries: 75 focused cases;
+- native replacement parity vectors and production Worker build;
+- executable category boundaries and linked inventory.
+
+### Complete gates
+
+Commands:
+
+```sh
+RISU_TEST_INCLUDE_GATES=true pnpm exec vitest run \
+  --reporter=json --outputFile=/tmp/phase9b-frontend-results.json
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  --reporter=json --outputFile=/tmp/phase9-server-results.json
+pnpm test:gates:perf
+pnpm check
+pnpm check:server
+pnpm test:smoke
+VITE_FASTIFY_BROWSER_SMOKE=TRUE pnpm exec playwright test \
+  -c playwright.fastify-smoke.config.ts
+pnpm test:compat-current
+pnpm test:compat-harness
+pnpm test:affected --dry-run --include-smoke --base 466fc7705
+pnpm check:test-inventories
+pnpm format:check
+git diff --check
+```
+
+The complete ordinary frontend universe passed 6,740/6,740 across 537 files;
+the two isolated performance owners passed 6/6. Complete Fastify passed 3,351
+cases with one intentional direct-only Realm scale skip across 154 files.
+Client and server typechecks passed with zero diagnostics.
+
+The production smoke build bundled the regex Worker and passed with the
+existing allowed CSS, externalization, plugin-timing, and chunk-size
+diagnostics. The first 35-journey run had one load-sensitive queued-finalization
+red: durable state reached `completed`, but six effect jobs had not drained
+inside the 20-second predicate. That unchanged journey passed alone in 5.4s
+and the complete no-rebuild rerun passed 35/35. There is no category-I browser
+owner, so smoke is application/Worker-bundle evidence rather than a saved
+definition edit/reload/runtime claim.
+
+Affected selection chose inventory, frontend, performance, and Fastify lanes;
+the complete smoke lane was run explicitly. Current-only compatibility passed
+18/18 and matched 16 cells plus the healthy cluster-10 regressions. Full
+differential compatibility remains prerequisite-blocked by the absent exact
+`/home/codex/risu-baseline-71c476e9c` worktree; no substitute or golden refresh
+was used.
+
+Fresh Vitest/Playwright listings and measured results produce 700 live
+test/spec owners and 10,133 collected cases, with one direct-only skip and
+1,308 parameterized rows. Primary categories are A=21, B=35, C=56, D=110,
+E=97, F=84, G=105, H=26, I=39, J=47, K=41, and L=39. Live decisions are 521
+Keep, 62 Reclassify, and 117 Pending.
+
+Ten Phase 9 findings are done. `TSA-P09-011` routes runtime queue/timeout
+observability to Phase 12, CBS/trigger parity and saved-definition browser
+composition to Phase 13, and historical compatibility plus the final residual
+decision to Phase 14.
