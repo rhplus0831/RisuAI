@@ -24,6 +24,7 @@ import {
   mixedProductionTestSeams,
   writeTestSupportInventory,
 } from './test-support-inventory.js'
+import { countParameterizedRows } from './test-case-counts.js'
 
 const temporaryDirectories: string[] = []
 
@@ -239,6 +240,7 @@ describe('test effectiveness inventory', () => {
           'util/check-server.ts',
           'util/frontend-test-inventory.ts',
           'util/test-all.ts',
+          'util/test-case-counts.ts',
           'util/test-effectiveness-inventory.ts',
           'util/test-support-inventory.ts',
           'vite.config.ts',
@@ -285,5 +287,14 @@ describe('test effectiveness inventory', () => {
     expect(checkTestSupportInventory(root, 'docs/plan/test-suite-effectiveness-audit/support-artifacts.json')).toEqual(
       document,
     )
+  })
+
+  it('separates collected parameterized rows from ordinary source registrations', () => {
+    const source = `
+      it('ordinary', () => {})
+      test.skip('skipped', () => {})
+      it.each([[1], [2], [3]])('matrix %s', () => {})
+    `
+    expect(countParameterizedRows(source, 5)).toBe(3)
   })
 })

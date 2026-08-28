@@ -43,6 +43,7 @@ const runnerConfigFiles = [
   'util/check-server.ts',
   'util/frontend-test-inventory.ts',
   'util/test-all.ts',
+  'util/test-case-counts.ts',
   'util/test-effectiveness-inventory.ts',
   'util/test-support-inventory.ts',
   'vite.config.ts',
