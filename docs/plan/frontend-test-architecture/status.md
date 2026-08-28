@@ -10,15 +10,15 @@ codebase remain authoritative until a phase lands.
 
 - Plan state: Phases 0-3 complete; Phase 4 in progress.
 - Current phase: Phase 4 — Pure Logic Extraction (in progress).
-- Active slice: Router route-to-state planning.
-- Implementation state: Two Phase 4 leaves now own chat-import request planning
-  and Saved Toggles comparison/selection planning. Thirteen pure tests run in
-  Node; retained Happy-DOM suites still own durable command and mounted settings
-  behavior.
+- Active slice: Phase 4 closeout and formal re-profile.
+- Implementation state: Chat-import request planning, Saved Toggles planning,
+  and router route planning now have 21 pure Node tests. Retained Happy-DOM
+  suites still own durable commands, mounted settings, browser history, store
+  application, and asynchronous route freshness.
 - Blockers: None. Ninety-three retained target-S candidates have recorded Phase
   4/5 owners and revisit conditions.
-- Next action: Extract and measure the router's pure route-planning matrix while
-  retaining history, location, store, and asynchronous application behavior.
+- Next action: Run the complete validation gate and formal cold plus three-run
+  warm ordinary benchmark, then record the Phase 4 stopping decision.
 
 ## Phase Router
 
@@ -294,6 +294,13 @@ server-backed fixture planning, then router state.
     production caller; moving them would add coverage without removing the
     expensive integration graph. Revisit only for a real shared production
     fixture protocol or a measured cross-suite Fastify lifecycle boundary.
+39. The router slice assigned its existing plain TypeScript production leaf an
+    eight-test Node matrix and removed five direct settings slug/path cases from
+    the browser owner. The retained 32 Happy-DOM cases still own history,
+    location, stores, guards, canonicalization, and freshness races. Focused D
+    runtime was unchanged within noise, so the slice is retained for broader
+    planner correctness and maintainable capability ownership, not claimed as
+    a performance improvement.
 
 ## Accepted Observations
 
@@ -336,9 +343,9 @@ promotion continues.
 
 ## Latest Completed Slice
 
-[Phase 4 server-backed fixture-planning triage](phases/slices/phase-4/server-backed-fixture-planning-triage.md)
-retained both measured fixture suites as integration owners after proving the
-available helpers are test-only and cannot reduce their browser/server graph.
+[Phase 4 router route planning](phases/slices/phase-4/router-route-planning.md)
+moved the expanded pure route matrix to Node and retained browser history,
+store application, navigation guards, and freshness behavior in Happy-DOM.
 
 ## Latest Verification
 

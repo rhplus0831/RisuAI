@@ -104,6 +104,7 @@ export const nodeTestFiles = [
   'src/ts/process/transformers.test.ts',
   'src/ts/process/ttsHooks.test.ts',
   'src/ts/providerSecretMask.test.ts',
+  'src/ts/routerRoute.test.ts',
   'src/ts/server/biasImport.test.ts',
   'src/ts/server/characterAdditionalAssetUpload.test.ts',
   'src/ts/server/characterEmotionUpload.test.ts',

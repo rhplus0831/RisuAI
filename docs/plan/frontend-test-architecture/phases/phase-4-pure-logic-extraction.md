@@ -16,7 +16,11 @@ Status: In Progress
   rejects a test-only extraction after focused profiling and source tracing:
   both measured suites are integration owners, and their helpers have no
   production call site or project-level performance mechanism.
-- Next: router route-to-state planning.
+- [Router route planning](slices/phase-4/router-route-planning.md) moves the
+  deterministic route vocabulary and state-to-path matrix to Node while
+  retaining all history, location, store, guard, and freshness contracts in
+  Happy-DOM.
+- Next: Phase 4 closeout and formal re-profile.
 
 ## Objective
 

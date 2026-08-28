@@ -4,10 +4,37 @@ Date: 2026-08-28
 
 ## State
 
-Phase 4 in progress after the chat-import and Saved Toggles planning slices and
-the server-backed fixture-planning deferral.
+Phase 4 closeout in progress after the chat-import, Saved Toggles, and router
+planning slices and the server-backed fixture-planning deferral.
 This record does not authorize repository-wide default inversion or migration
 outside the later phase rules.
+
+## Phase 4 Router Route Planning
+
+The pre-change 37-test Happy-DOM router owner passed in 1.86s Vitest duration
+and 2.58s measured wall. Its phases were 552ms transform, 74ms setup, 147ms
+import, 1.46s tests, and 110ms environment; peak RSS was 800,824 KiB.
+
+The new eight-test Node owner passed in 149ms Vitest duration and 0.80s wall,
+with 9ms import, 6ms tests, no environment time, and 235,012 KiB peak RSS. The
+retained 32-test Happy-DOM owner passed in 1.86s and 2.53s wall, with 142ms
+import, 1.47s tests, 110ms environment, and 775,232 KiB peak RSS. The D movement
+is inside focused noise; this slice is retained for the expanded
+environment-independent planner oracle and cleaner capability ownership, not
+counted as a performance improvement.
+
+Complete current-source observations passed 192 Node files / 1,285 tests in
+4.84s Vitest and 5.57s wall, 328 standalone Happy-DOM files / 5,174 tests in
+62.71s and 63.60s wall, and 531 ordinary frontend files / 6,423 tests in 69.72s
+and 70.63s wall. Peak RSS was 1,033,712, 4,946,704, and 4,909,096 KiB,
+respectively.
+
+Inventory regeneration and check passed. Full discovery is 539 files at 192 N
+/ 17 S / 330 D, standalone ordinary is 537 files at 192 N / 17 S / 328 D, and
+aggregate ordinary is 531 files at 191 N / 17 S / 323 D. Five D mapping cases
+became an eight-test Node matrix, for a net ordinary change of +1 file and +3
+tests. The complete Phase 4 validation and formal benchmark remain owned by
+closeout.
 
 ## Phase 4 Server-Backed Fixture-Planning Triage
 
