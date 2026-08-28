@@ -271,6 +271,14 @@ async function playAudio(
   startSource(source, [source])
 }
 
+function voicevoxRequestUrl(baseUrl: string, path: string, params: Record<string, string>): string {
+  const url = new URL(`${baseUrl.replace(/\/+$/, '')}/${path}`)
+  for (const [name, value] of Object.entries(params)) {
+    url.searchParams.set(name, value)
+  }
+  return url.toString()
+}
+
 export async function sayTTS(character: character, text: string) {
   const ttsRun = beginTtsRun()
   try {
@@ -355,7 +363,7 @@ export async function sayTTS(character: character, text: string) {
       case 'VOICEVOX': {
         const jpText = await awaitTtsRun(translateVox(text), ttsRun)
         const query = await awaitTtsRun(
-          fetch(`${db.voicevoxUrl}/audio_query?text=${jpText}&speaker=${character.ttsSpeech}`, {
+          fetch(voicevoxRequestUrl(db.voicevoxUrl, 'audio_query', { text: jpText, speaker: character.ttsSpeech }), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             signal: ttsRun.controller.signal,
@@ -377,7 +385,7 @@ export async function sayTTS(character: character, text: string) {
             kana: queryJson.kana,
           }
           const getVoice = await awaitTtsRun(
-            fetch(`${db.voicevoxUrl}/synthesis?speaker=${character.ttsSpeech}`, {
+            fetch(voicevoxRequestUrl(db.voicevoxUrl, 'synthesis', { speaker: character.ttsSpeech }), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(bodyData),

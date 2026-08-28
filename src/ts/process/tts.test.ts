@@ -405,6 +405,52 @@ describe('TTS provider catalog request caching', () => {
 })
 
 describe('sayTTS AudioContext lifecycle', () => {
+  it('encodes VOICEVOX playback text and speaker as query values', async () => {
+    testState.db.voicevoxUrl = 'https://voicevox.example.test/api/'
+    testState.translateVox.mockResolvedValueOnce('こんにちは & mood=happy#fragment')
+    const queryResponse = jsonResponse({
+      accent_phrases: [],
+      prePhonemeLength: 0.1,
+      postPhonemeLength: 0.1,
+      outputSamplingRate: 24_000,
+      outputStereo: false,
+      kana: 'コンニチハ',
+    })
+    const audioResponse = {
+      status: 200,
+      headers: new Headers({ 'content-type': 'audio/wav' }),
+      arrayBuffer: vi.fn(async () => new Uint8Array([1, 2, 3]).buffer),
+    } as unknown as Response
+    const fetchMock = vi.fn().mockResolvedValueOnce(queryResponse).mockResolvedValueOnce(audioResponse)
+    vi.stubGlobal('fetch', fetchMock)
+    const { sayTTS } = await importTTS()
+
+    await sayTTS(
+      makeCharacter({
+        ttsMode: 'VOICEVOX',
+        ttsSpeech: '7&admin=true#fragment',
+        voicevoxConfig: {
+          SPEED_SCALE: 1,
+          PITCH_SCALE: 0,
+          VOLUME_SCALE: 1,
+          INTONATION_SCALE: 1,
+        },
+      }),
+      'hello',
+    )
+
+    const queryUrl = new URL(fetchMock.mock.calls[0][0])
+    expect(queryUrl.pathname).toBe('/api/audio_query')
+    expect(queryUrl.searchParams.get('text')).toBe('こんにちは & mood=happy#fragment')
+    expect(queryUrl.searchParams.getAll('speaker')).toEqual(['7&admin=true#fragment'])
+    expect(queryUrl.searchParams.has('admin')).toBe(false)
+
+    const synthesisUrl = new URL(fetchMock.mock.calls[1][0])
+    expect(synthesisUrl.pathname).toBe('/api/synthesis')
+    expect(synthesisUrl.searchParams.getAll('speaker')).toEqual(['7&admin=true#fragment'])
+    expect(synthesisUrl.searchParams.has('admin')).toBe(false)
+  })
+
   it('repeated network TTS playbacks reuse one AudioContext and release ended sources', async () => {
     testState.requestTtsSynthesis
       .mockResolvedValueOnce(ttsAudio(new Uint8Array([1, 2, 3]), 'audio/mpeg'))
