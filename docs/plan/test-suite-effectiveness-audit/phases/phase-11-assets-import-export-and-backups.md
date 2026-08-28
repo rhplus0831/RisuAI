@@ -1,6 +1,7 @@
 # Phase 11: Assets, Import, Export, And Backups
 
-Status: Pending; depends on Phases 0-3 and consumes Phase 5 authoring findings.
+Status: In progress; depends on Phases 0-3 and consumes Phase 5/10 asset-cleanup
+findings.
 
 ## Objective
 
