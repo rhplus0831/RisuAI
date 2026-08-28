@@ -5,6 +5,12 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {} }
 })
 
+const additionalInformationMock = vi.hoisted(() => vi.fn(async () => ''))
+
+vi.mock('../embedding/addinfo', () => ({
+  additionalInformations: additionalInformationMock,
+}))
+
 import { setDatabase, type Chat, type Database, type character } from '../../storage/database.svelte'
 import { testDatabaseState } from '../../__tests__/resourceDatabaseState'
 import { buildDescription } from '../promptAssembly/buildDescription'
@@ -46,6 +52,7 @@ function seedDb(extra: Partial<Database> = {}) {
 
 describe('buildDescription', () => {
   beforeEach(() => {
+    additionalInformationMock.mockReset().mockResolvedValue('')
     seedDb()
   })
 
@@ -79,6 +86,15 @@ describe('buildDescription', () => {
         '\n\nDescription of Test: kind and curious' +
         '\n\nCircumstances and context of the dialogue: evening at the library',
     )
+  })
+
+  it('places retrieved additional information before personality and parses character variables', async () => {
+    additionalInformationMock.mockResolvedValue('Retrieved note for {{char}}')
+    const character = makeChar({ additionalText: 'indexed source', personality: 'kind' })
+    const chat = makeChat()
+    const result = await buildDescription(character, chat)
+    expect(additionalInformationMock).toHaveBeenCalledWith(character, chat)
+    expect(result.content).toBe('a quiet librarian\n\nRetrieved note for Test\n\nDescription of Test: kind')
   })
 
   it('applies descriptionPrefix when db.promptPreprocess is true', async () => {
