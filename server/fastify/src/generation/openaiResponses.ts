@@ -11,6 +11,7 @@ export interface OpenAIResponsesRequest {
   input: ResponseItem[]
   apiKey: string
   baseUrl: string
+  endpointUrl?: string
   maxOutputTokens?: number
   temperature?: number
   topP?: number
@@ -36,6 +37,7 @@ interface ResolveInput {
   messages?: unknown
   apiKey?: unknown
   baseUrl?: unknown
+  endpointUrl?: unknown
   maxOutputTokens?: unknown
   temperature?: unknown
   topP?: unknown
@@ -202,6 +204,7 @@ export function resolveOpenAIResponsesRequest(input: ResolveInput): OpenAIRespon
     ) as ResponseItem[],
     apiKey: input.apiKey,
     baseUrl,
+    endpointUrl: typeof input.endpointUrl === 'string' && input.endpointUrl.length > 0 ? input.endpointUrl : undefined,
     maxOutputTokens,
     temperature,
     topP,
@@ -218,6 +221,7 @@ export function resolveOpenAIResponsesRequest(input: ResolveInput): OpenAIRespon
 }
 
 function endpoint(req: OpenAIResponsesRequest): string {
+  if (req.endpointUrl !== undefined) return req.endpointUrl
   try {
     const url = new URL(req.baseUrl)
     const pathname = url.pathname.replace(/\/+$/u, '')

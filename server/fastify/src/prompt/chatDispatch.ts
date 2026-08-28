@@ -1535,6 +1535,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       messages,
       apiKey: variant.apiKey,
       baseUrl: variant.baseUrl,
+      endpointUrl: variant.endpointUrl,
       maxOutputTokens: maxTokens,
       temperature,
       topP: parameters.topP,

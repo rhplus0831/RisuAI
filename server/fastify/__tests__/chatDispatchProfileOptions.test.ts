@@ -1118,6 +1118,24 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].body.store).toBe(false)
   })
 
+  it('preserves an exact OpenAI Responses reverse-proxy endpoint when autofill is disabled', async () => {
+    const database = db({
+      aiModel: 'reverse_proxy',
+      customProxyRequestModel: 'exact-responses-model',
+      customAPIFormat: LLMFormat.OpenAIResponseAPI,
+      forceReplaceUrl: 'https://proxy.example.com/exact-response?api-version=2026-01-01',
+      proxyKey: 'sk-exact-responses',
+      autofillRequestUrl: false,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureDispatchRequests(okOpenAIResponsesResponse())
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe('https://proxy.example.com/exact-response?api-version=2026-01-01')
+  })
+
   it.each([
     ['gpt-5.1-response-api', -1, 'none'],
     ['gpt-5.4-pro-response-api', 0, 'medium'],
