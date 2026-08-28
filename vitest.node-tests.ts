@@ -166,7 +166,7 @@ export const nodeTestFiles = [
   'util/vite-warning-policy.test.ts',
   'vitest.fetchGuard.test.ts',
   'vitest.setup.test.ts',
-  'src/lib/SideBars/EditorIconActions.svelte.test.ts',
+  'src/lib/SideBars/EditorIconActions.test.ts',
   'src/lib/UI/mainMenuProjection.test.ts',
   'src/ts/agentLorebookInputs.test.ts',
   'src/ts/agentPresetResolver.test.ts',

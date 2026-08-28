@@ -96,9 +96,9 @@ configuration. This keeps static hints from silently moving a test.
 | Role | File | Expected project/setup |
 | --- | --- | --- |
 | Obvious N | `src/ts/parser/sentenceBreaks.test.ts` | Existing Node project and shared setup only. |
-| Representative S | `src/ts/parser/tests/chatVar.svelte.test.ts` | Svelte plugin + Node + shared setup; its stores and module fakes are explicit. |
+| Representative S | `src/ts/parser/tests/chatVar.svelte-node.test.ts` | Svelte plugin + Node + shared setup; its stores and module fakes are explicit. |
 | Retained D | `src/lib/UI/GUI/CheckInput.svelte.test.ts` | Svelte + Happy-DOM + DOM fetch guard; retains rendered, focus, and keyboard assertions. |
-| Classifier stress probe | `src/ts/stores.runtimeEffects.svelte.test.ts` | Probe S first; it uses `flushSync` and Svelte runtime modules without a DOM fixture. |
+| Classifier stress probe | `src/ts/stores.runtimeEffects.svelte-node.test.ts` | Probe S first; it uses `flushSync` and Svelte runtime modules without a DOM fixture. |
 
 These files are small and avoid persistence-heavy bridges, mega-suites, and
 production refactors. The stress probe must remain D if the S project reveals a

@@ -216,7 +216,7 @@ per-entry cap. The shared asset helper then applies its four-worker hashing,
 existence probing, deduplication, timeout, retry, and upload-chunk rules described
 above. `src/ts/process/processzip.test.ts` guards the entry cap,
 high-asset-count batching, queue backpressure, and representative valid output;
-`src/ts/characterCards.pngImport.test.ts` guards salvage and exact reporting.
+`src/ts/characterCards.pngImport.svelte-node.test.ts` guards salvage and exact reporting.
 
 CharX asset writes finish before the imported character is dispatched through
 the command path. They are content-addressed and deduplicated, but are not
@@ -229,7 +229,7 @@ Every browser card path passes through
 append. In addition to rekeying identities, it fills a missing starter-chat
 `fmIndex` from the character's `firstMsgIndex` or `-1`, so the imported greeting
 is available immediately after selection. This is guarded for spec and off-spec
-imports by `src/ts/characterCards.pngImport.test.ts` and
+imports by `src/ts/characterCards.pngImport.svelte-node.test.ts` and
 `src/ts/characters.changeChar.test.ts`.
 
 Packaged-card export rewrites prebuilt-asset exclusion references together with

@@ -1083,7 +1083,7 @@ affected execution was required.
 ## Phase 2 Prompt-Toggle Durability Capability And Ownership Proof
 
 The proposed one-file slice evaluated
-`src/lib/Setting/Pages/BotSettings.promptToggleDurable.test.ts`. Its two tests
+`src/lib/Setting/Pages/BotSettings.promptToggleDurable.svelte-node.test.ts`. Its two tests
 exercise ordered pending-mutation staging and failed-predecessor replay. The
 suite explicitly supplies IndexedDB and replaces authenticated command
 dispatch; it performs no component mount, DOM operation, implicit browser
@@ -1098,7 +1098,7 @@ Current-owner command:
 
 ```sh
 RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v pnpm exec vitest run \
-  src/lib/Setting/Pages/BotSettings.promptToggleDurable.test.ts
+  src/lib/Setting/Pages/BotSettings.promptToggleDurable.svelte-node.test.ts
 ```
 
 Result: 1 file / 2 tests passed in 1.44s wall and 696ms Vitest duration, with
@@ -1150,7 +1150,7 @@ under ignored `coverage/`.
 
 The proposed one-file Phase 2 slice evaluated:
 
-- `src/ts/characterCards.pngImport.test.ts`
+- `src/ts/characterCards.pngImport.svelte-node.test.ts`
 
 The suite contains 21 tests covering PNG embedded-asset decoding, progress and
 durable creation outcomes, v2/v3 and CharX normalization, bounded salvage,
@@ -1168,7 +1168,7 @@ Current-owner command:
 
 ```sh
 RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v pnpm exec vitest run \
-  src/ts/characterCards.pngImport.test.ts
+  src/ts/characterCards.pngImport.svelte-node.test.ts
 ```
 
 Result: 1 file / 21 tests passed in 1.80s wall and 1.02s Vitest duration,
@@ -1179,7 +1179,7 @@ was:
 
 ```sh
 RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v pnpm exec vitest run \
-  --project frontend-node src/ts/characterCards.pngImport.test.ts
+  --project frontend-node src/ts/characterCards.pngImport.svelte-node.test.ts
 ```
 
 Result: the suite failed before collection with
@@ -1194,7 +1194,7 @@ After removing the Node entry and temporarily adding the file to
 
 ```sh
 RISU_TEST_EXCLUDE_UI_MAP=true /usr/bin/time -v pnpm exec vitest run \
-  --project frontend-svelte-node src/ts/characterCards.pngImport.test.ts
+  --project frontend-svelte-node src/ts/characterCards.pngImport.svelte-node.test.ts
 ```
 
 Result: 1 file / 21 tests passed in 1.31s wall and 708ms Vitest duration,
@@ -1389,7 +1389,7 @@ under ignored `coverage/`.
 
 The proposed one-file Phase 2 slice evaluated:
 
-- `src/ts/server/hydrationReads.test.ts`
+- `src/ts/server/hydrationReads.svelte-node.test.ts`
 
 The suite contains 12 tests. It replaces the Fastify auth boundary, stubs every
 executed `fetch`, and supplies `fake-indexeddb` explicitly for cache-backed
@@ -1409,7 +1409,7 @@ Current-owner command:
 
 ```sh
 /usr/bin/time -v pnpm exec vitest run \
-  src/ts/server/hydrationReads.test.ts
+  src/ts/server/hydrationReads.svelte-node.test.ts
 ```
 
 Result: 1 file / 12 tests passed in 1.68s wall and 977ms Vitest duration,
@@ -1420,7 +1420,7 @@ was:
 
 ```sh
 /usr/bin/time -v pnpm exec vitest run --project frontend-node \
-  src/ts/server/hydrationReads.test.ts
+  src/ts/server/hydrationReads.svelte-node.test.ts
 ```
 
 Result: the suite failed before collection with
@@ -1435,7 +1435,7 @@ After removing the Node entry and temporarily adding the file to
 
 ```sh
 /usr/bin/time -v pnpm exec vitest run --project frontend-svelte-node \
-  src/ts/server/hydrationReads.test.ts
+  src/ts/server/hydrationReads.svelte-node.test.ts
 ```
 
 Result: 1 file / 12 tests passed in 1.69s wall and 1.01s Vitest duration,
@@ -2693,8 +2693,8 @@ Direct root selection command:
 ```sh
 pnpm exec vitest run \
   src/ts/parser/sentenceBreaks.test.ts \
-  src/ts/parser/tests/chatVar.svelte.test.ts \
-  src/ts/stores.runtimeEffects.svelte.test.ts \
+  src/ts/parser/tests/chatVar.svelte-node.test.ts \
+  src/ts/stores.runtimeEffects.svelte-node.test.ts \
   src/lib/UI/GUI/CheckInput.svelte.test.ts
 ```
 

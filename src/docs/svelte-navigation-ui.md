@@ -137,7 +137,7 @@ its captured navigation scope remains current. Import normalization in
 `src/ts/characterCards.ts` supplies a missing chat `fmIndex` from the
 character's `firstMsgIndex`, falling back to `-1`, so the first selected chat
 can render its greeting. Guards are
-`src/ts/characterCards.pngImport.test.ts` and
+`src/ts/characterCards.pngImport.svelte-node.test.ts` and
 `src/ts/characters.changeChar.test.ts`.
 
 `src/lib/SideBars/CharConfig.svelte` owns profile, icon/view/media, advanced,

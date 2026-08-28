@@ -116,7 +116,7 @@ guide. Shared browser/server slot behavior and bounded hydration are pinned by
 
 Pipeline edits, selected profile changes, and relevant runtime options therefore
 invalidate LLM hits; unrelated settings do not. Forward and reverse keys remain
-separate. `src/ts/translator/translator.cache.test.ts` pins signatures,
+separate. `src/ts/translator/translator.cache.svelte-node.test.ts` pins signatures,
 deterministic eviction, chat-scope clearing, quota fallback, and secret
 exclusion.
 
