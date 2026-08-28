@@ -9,13 +9,14 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Snapshot
 
-- Plan state: Active; Phase 0 complete.
+- Plan state: Active; Phase 1 in progress.
 - Current phase: Phase 1 — Assurance Architecture And Special Lanes.
-- Active slice: None; `P01-S01 — Frontend discovery, capability routing, and
-  live manifest` is ready to open.
+- Active slice: `P01-S01 — Frontend discovery, capability routing, and live
+  manifest` is open after the protocol-policy prerequisite remediation.
 - Implementation state: exhaustive test/case/support manifests and their local,
-  affected, aggregate, coverage, and CI checks are live. No product behavior or
-  existing product test has been removed.
+  affected, aggregate, coverage, and CI checks are live. The protocol import
+  policy now uses recursive AST evidence. No product behavior or existing
+  product test has been removed.
 - Blockers: the opt-in compatibility harness cannot run because its pinned
   external worktree is absent. This does not block Phase 1 slices that do not
   claim compatibility evidence.
@@ -34,11 +35,11 @@ in [`latest-verification.md`](latest-verification.md).
 | Fastify Vitest                       | 154 files                                    |
 | Browser smoke                        | 7 files                                      |
 | Compatibility harness                | Opt-in; outside `test:all` and file count     |
-| Collected cases                      | 9,975 total; 1 direct-only skip; 1,261 parameterized rows |
+| Collected cases                      | 9,976 total; 1 direct-only skip; 1,261 parameterized rows |
 | Support owners                       | 253 standalone; 64 mixed production seams   |
 | Primary-category assignments         | 699 of 699 ratified                          |
 | Complete file dispositions           | 5: 4 Keep / 1 Strengthen                     |
-| Findings                             | 2 confirmed                                  |
+| Findings                             | 1 done / 1 confirmed                         |
 
 The 698-file rows preserve the plan-creation anchor. The live counts, support
 owners, runtime evidence, and category totals are checked by the Phase 0
@@ -49,7 +50,7 @@ manifests and verification record.
 | Phase | State   | Purpose                                                                 |
 | ----: | ------- | ----------------------------------------------------------------------- |
 | [0](phases/phase-0-baseline-inventory-and-rubric.md) | Complete | Froze the baseline, exhaustive inventory, rubric, and evidence format. |
-| [1](phases/phase-1-assurance-architecture-and-special-lanes.md) | Ready | Audit runners, setup, discovery, CI, fixtures, helpers, and special gates. |
+| [1](phases/phase-1-assurance-architecture-and-special-lanes.md) | In progress | Audit runners, setup, discovery, CI, fixtures, helpers, and special gates. |
 | [2](phases/phase-2-browser-state-sync-and-recovery.md) | Pending | Audit browser state synchronization, durable intent, and recovery. |
 | [3](phases/phase-3-persistence-commands-events-and-bridges.md) | Pending | Audit persistence, commands, events, and editing bridges. |
 | [4](phases/phase-4-app-navigation-chat-and-shared-ui.md) | Pending | Audit app navigation, chat, shared UI, feedback, and accessibility. |
@@ -70,8 +71,8 @@ See [`phases/README.md`](phases/README.md) for links and shared slice rules.
 
 | Decision   | Count | Meaning                                                    |
 | ---------- | ----: | ---------------------------------------------------------- |
-| Keep       |     4 | Distinct contract and suitable evidence layer.             |
-| Strengthen |     1 | Valuable intent, but insufficient or self-fulfilling proof. |
+| Keep       |     5 | Distinct contract and suitable evidence layer.             |
+| Strengthen |     0 | Valuable intent, but insufficient or self-fulfilling proof. |
 | Merge      |     0 | Equivalent failure mode can move into a stronger owner.    |
 | Reclassify |     0 | Valuable test belongs to another category, lane, or type.  |
 | Remove     |     0 | No meaningful unique value after mandatory removal proof.  |
@@ -107,9 +108,8 @@ See [`phases/README.md`](phases/README.md) for links and shared slice rules.
 - Blocker: `/home/codex/risu-baseline-71c476e9c` is absent, so the compatibility
   harness cannot execute. Revisit when the exact pinned worktree and its
   dependencies exist; never substitute another checkout or refresh goldens.
-- Confirmed gaps: `TSA-P00-001` (protocol import-policy blind spots) and
-  `TSA-P00-002` (load/order-sensitive translator preset retry case). Both have
-  concrete owners and revisit conditions in the findings ledger.
+- Confirmed gap: `TSA-P00-002` (load/order-sensitive translator preset retry
+  case) has a concrete owner and revisit condition. `TSA-P00-001` is remediated.
 
 ## Maintenance Rules
 

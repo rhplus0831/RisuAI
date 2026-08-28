@@ -225,3 +225,26 @@ pre-tooling measurements.
 
 The browser lane passed 34/34 journeys and the UI map passed 203/203 cases.
 This is the clean aggregate checkpoint for beginning Phase 1.
+
+## Phase 1 Evidence
+
+### Protocol import-boundary remediation
+
+`TSA-P00-001` is done. The policy owner now recursively discovers runtime
+TypeScript modules and uses the TypeScript AST to inspect static imports and
+exports, dynamic imports, `require`, and import-equals declarations. A negative
+fixture covers nested Node dependencies and a relative package escape.
+
+```sh
+pnpm exec vitest run packages/protocol/src/importBoundary.test.ts \
+  --project frontend-node
+pnpm check:protocol
+pnpm check:test-inventories
+pnpm test:affected
+```
+
+Results: 2/2 focused cases passed; protocol typecheck and all checked inventories
+passed. Affected execution passed 6,640/6,640 ordinary frontend cases, 6/6
+isolated performance cases, and 3,295 passed plus one intentional skip in the
+server lane. The file count remains 699; the added counterexample changes the
+live case total from 9,975 to 9,976.

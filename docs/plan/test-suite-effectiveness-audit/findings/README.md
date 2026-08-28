@@ -2,7 +2,7 @@
 
 Date: 2026-08-29
 
-Status: Active; two Phase 0 findings are confirmed.
+Status: Active; one Phase 0 finding is done and one remains confirmed.
 
 This directory owns durable finding and decision records for the audit. Phase 0
 will decide whether the working ledger remains in this index, splits into
@@ -70,28 +70,33 @@ Every finding records:
 
 ### TSA-P00-001: Protocol import policy misses credible dependency shapes
 
-- State: Confirmed; routed to Phase 1.
+- State: Done in Phase 1.
 - Severity: Medium.
 - Category: A, with F/L seams.
 - Decision: Strengthen.
-- Tests/cases: `packages/protocol/src/importBoundary.test.ts`, complete case.
+- Tests/cases: `packages/protocol/src/importBoundary.test.ts`, complete two-case
+  policy and counterexample matrix.
 - Production owner: browser-safe `packages/protocol` runtime/export boundary.
 - Protected contract or plausible defect: nested runtime files, dynamic imports,
   or `require` can introduce Node-only or outside-package dependencies without
   failing the current non-recursive static-regex test.
-- Evidence: current discovery reads only top-level runtime files and its regex
-  recognizes static import/export syntax. Types and package exports do not
-  independently reject every credible dependency shape.
+- Evidence: the original discovery read only top-level runtime files and its
+  regex recognized static import/export syntax. The replacement recursively
+  discovers runtime TypeScript and walks the TypeScript syntax tree for static
+  imports/exports, dynamic imports, `require`, and import-equals declarations.
+  The negative fixture proves nested Node imports and a relative package escape
+  are rejected while import-looking text is ignored.
 - Companion/overlap analysis: `check:protocol` protects types and compilation,
   not the complete browser/dependency policy. The architecture test remains the
   right evidence owner after strengthening.
-- Action and rollback: Phase 1 must first demonstrate nested/dynamic negative
-  fixtures, then use recursive TypeScript-AST or import-graph enforcement. A
-  strengthening can be rolled back independently without changing runtime.
-- Validation: focused policy fixtures, `pnpm check:protocol`, frontend Node
-  lane, and the exhaustive inventory checks.
-- Count delta: None in Phase 0.
-- Revisit condition: Phase 1 assurance policy slice.
+- Action and rollback: strengthened the existing oracle without changing
+  production runtime. The test-only change can be reverted independently.
+- Validation: 2/2 focused policy cases passed; `pnpm check:protocol` and the
+  exhaustive inventory checks passed.
+- Count delta: no file delta; one counterexample case added, taking the live
+  collected total from 9,975 to 9,976.
+- Revisit condition: reopen only if the protocol adopts a non-TypeScript runtime
+  module or a supported dependency syntax not represented in the AST walk.
 
 ### TSA-P00-002: Translator preset retry case is load/order-sensitive
 

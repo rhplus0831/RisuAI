@@ -8,7 +8,7 @@
       "parameterizedRows": 0
     },
     "packages/protocol/src/importBoundary.test.ts": {
-      "cases": 1,
+      "cases": 2,
       "skipped": 0,
       "parameterizedRows": 0
     },

@@ -1,6 +1,7 @@
 # Phase 1: Assurance Architecture And Special Lanes
 
-Status: Ready; Phase 0 complete.
+Status: In progress; protocol import-boundary remediation complete and P01-S01
+is active.
 
 ## Objective
 

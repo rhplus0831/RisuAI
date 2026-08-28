@@ -217,31 +217,32 @@
       "seamTags": [],
       "kind": "architecture policy",
       "dependencySignals": [
+        "fixtures",
         "filesystem"
       ],
       "caseCounts": {
-        "cases": 1,
+        "cases": 2,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "complete protocol runtime import-boundary policy case",
+      "caseOrMatrixOwner": "complete positive policy case and negative syntax/discovery counterexample case",
         "valueClasses": [
           "architecture policy"
         ],
         "productionOwnerOrContract": "browser-safe packages/protocol runtime modules and package export boundary",
-        "plausibleDefect": "A nested runtime module, dynamic import, or require introduces Node-only or outside-package dependencies without failing the policy test.",
+      "plausibleDefect": "A nested runtime module, dynamic import, require, or relative escape introduces Node-only or outside-package dependencies without failing the policy test.",
         "risk": "High browser bundle breakage or an unenforced shared-protocol architecture boundary.",
-        "companionEvidence": "package exports and TypeScript protocol build constrain shape but do not cover recursive/dynamic imports.",
-        "decision": "Strengthen",
-        "confidence": "medium",
-        "rationale": "The policy is valuable, but non-recursive discovery and a static import/export regex have credible blind spots requiring counterfactual fixtures.",
+      "companionEvidence": "package exports and TypeScript protocol build constrain shape; recursive AST discovery now owns dependency syntax and package containment.",
+      "decision": "Keep",
+      "confidence": "high",
+      "rationale": "Recursive file discovery and TypeScript syntax traversal cover static imports/exports, dynamic imports, require forms, and per-file relative escapes; negative fixtures prove each blind spot fails.",
         "findingId": "TSA-P00-001",
         "severity": "Medium",
-        "action": "In Phase 1, prove nested/dynamic counterexamples and replace the scanner with recursive TypeScript-AST or import-graph enforcement.",
-        "validation": "focused importBoundary test plus negative nested and dynamic-import fixtures; pnpm check:protocol",
-        "state": "finding-confirmed"
+      "action": "Retain the strengthened architecture-policy oracle and its counterexample matrix.",
+      "validation": "2/2 focused importBoundary cases passed; pnpm check:protocol passed",
+      "state": "remediated"
       }
     },
     {

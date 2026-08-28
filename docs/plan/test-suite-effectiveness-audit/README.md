@@ -2,7 +2,7 @@
 
 Date: 2026-08-29
 
-Status: Active; Phase 0 is complete and Phase 1 is ready to begin.
+Status: Active; Phase 1 is in progress.
 
 This workstream audits the complete test system for effectiveness, not merely
 for presence or coverage percentage. It asks whether each test can catch a
