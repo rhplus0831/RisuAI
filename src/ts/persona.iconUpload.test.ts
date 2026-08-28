@@ -334,7 +334,9 @@ describe('persona icon upload freshness', () => {
       expect(calls.filter((call) => call.url === '/api/v1/assets')).toHaveLength(1)
     })
 
-    getDatabase().personas = [makePersona({ id: 'persona-replacement', name: 'Replacement', icon: 'replacement-icon' })]
+    getDatabase().personas = [
+      makePersona({ id: 'persona-replacement', name: 'Replacement', icon: 'replacement-icon' }) as any,
+    ]
     getDatabase().username = 'Replacement'
     getDatabase().userIcon = 'replacement-icon'
     upload.resolve('late-icon')
