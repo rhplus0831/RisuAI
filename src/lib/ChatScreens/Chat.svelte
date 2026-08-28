@@ -102,13 +102,14 @@
     cloneJsonValue,
     dispatchCompatibleChatUpdateScoped,
     dispatchDeleteMessageScoped,
-    dispatchForkChat,
+    dispatchForkChatWithOutcome,
     dispatchReplaceMessagesScoped,
     dispatchTruncateMessagesScoped,
     dispatchUpdateChatScopedWithOutcome,
     dispatchUpdateMessageScoped,
     ensureMessageId,
     type ActiveChatTarget,
+    type ChatMutationOutcome,
   } from 'src/ts/chatCommands'
   import { reportWriterAccessLostMutation } from 'src/ts/server/activeWriterSession'
   import {
@@ -150,7 +151,7 @@
   } from './chatButtonTriggerFreshness'
 
   import { createBranchComment, parseBranchComment } from './branchComment'
-  import { characterRoutePath, navigate } from 'src/ts/router'
+  import { characterRoutePath, navigate, parseRoute } from 'src/ts/router'
   import { hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
   import { rekeyClonedChat } from 'src/ts/chatFork'
   import { bilingualInterleave } from 'src/ts/translator/bilingualInterleave'
@@ -585,6 +586,41 @@
     }
   }
 
+  function recoverFailedChatBranchNavigation(
+    characterId: string,
+    sourceChatId: string,
+    provisionalChatId: string,
+  ): void {
+    const route = parseRoute(window.location.pathname)
+    if (route.kind !== 'character' || route.chaId !== characterId || route.chatId !== provisionalChatId) return
+
+    const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
+    if (!character || character.chats?.some((chat) => chat.id === provisionalChatId)) return
+    if (character.chats?.[character.chatPage]?.id !== sourceChatId) return
+
+    navigate(characterRoutePath(characterId, sourceChatId), { replace: true })
+  }
+
+  function observeChatBranchMutation(
+    outcome: Promise<ChatMutationOutcome>,
+    characterId: string,
+    sourceChatId: string,
+    provisionalChatId: string,
+  ): void {
+    const recover = () => recoverFailedChatBranchNavigation(characterId, sourceChatId, provisionalChatId)
+    void outcome.then((settled) => {
+      if (settled.status === 'failed') {
+        recover()
+        return
+      }
+      if (settled.status === 'queued') {
+        void settled.settlement.then((finalSettlement) => {
+          if (finalSettlement.status === 'failed') recover()
+        }, recover)
+      }
+    }, recover)
+  }
+
   async function branchFromCurrentMessage(target: MessageEditorTarget): Promise<void> {
     const sourceCharacterId = target.characterId
     const sourceChatId = target.chatId
@@ -671,11 +707,14 @@
         currentCharacter.chatFolders?.find(
           (item) => item.id === currentChat.folderId && item.name === `Branches of ${currentChat.name}`,
         )
-      dispatchForkChat(currentChat.id, previous, {
+      const outcome = dispatchForkChatWithOutcome(currentChat.id, previous, {
         chat: newChat,
         sourcePatch: Object.keys(sourcePatch).length > 0 ? sourcePatch : { folderId: currentChat.folderId ?? null },
         folder: existingFolder,
       })
+      if (currentCharacter.chaId && newChat.id) {
+        observeChatBranchMutation(outcome, currentCharacter.chaId, currentChat.id, newChat.id)
+      }
     }
     if (currentCharacter.chaId && newChat.id) {
       navigate(characterRoutePath(currentCharacter.chaId, newChat.id))

@@ -24,6 +24,7 @@ const customHtmlMocks = vi.hoisted(() => {
     alertWait: vi.fn(),
     canUseServerCommands: vi.fn(() => false),
     changeChatTo: vi.fn(),
+    dispatchForkChatWithOutcome: vi.fn(),
     foldChatToMessage: vi.fn(),
     getDatabase: vi.fn(),
     getServerCommandBaseRevision: vi.fn(async () => 1),
@@ -271,7 +272,7 @@ vi.mock('src/ts/chatCommands', () => ({
   currentChatStateSnapshot: vi.fn(() => ({})),
   dispatchCompatibleChatUpdateScoped: vi.fn(),
   dispatchDeleteMessageScoped: vi.fn(),
-  dispatchForkChat: vi.fn(),
+  dispatchForkChatWithOutcome: customHtmlMocks.dispatchForkChatWithOutcome,
   dispatchReplaceMessagesScoped: vi.fn(),
   dispatchTruncateMessagesScoped: vi.fn(),
   dispatchUpdateChatScopedWithOutcome: vi.fn(),
@@ -398,11 +399,13 @@ import { getCurrentCharacter, getCurrentChat } from '../../ts/storage/database.s
 import { getResourceDatabase, replaceResourceDatabase } from '../../ts/server/resourceState.svelte'
 import {
   dispatchCompatibleChatUpdateScoped,
-  dispatchForkChat,
+  dispatchForkChatWithOutcome,
   dispatchReplaceMessagesScoped,
   dispatchTruncateMessagesScoped,
   dispatchUpdateChatScopedWithOutcome,
   dispatchUpdateMessageScoped,
+  type ChatMutationFinalOutcome,
+  type ChatMutationOutcome,
 } from 'src/ts/chatCommands'
 import {
   activeMessageTranslations,
@@ -625,6 +628,10 @@ beforeEach(() => {
   customHtmlMocks.sleep.mockResolvedValue(undefined)
   customHtmlMocks.getFileSrc.mockResolvedValue('')
   customHtmlMocks.canUseServerCommands.mockReturnValue(false)
+  vi.mocked(dispatchForkChatWithOutcome).mockResolvedValue({
+    status: 'accepted',
+    result: { status: 'ok' },
+  } as never)
   vi.mocked(dispatchUpdateMessageScoped).mockReturnValue(null)
   customHtmlMocks.runServerCommand.mockImplementation(
     async (input: { command: (baseRevision: number) => Promise<unknown>; rollback?: () => void }) => {
@@ -1310,6 +1317,63 @@ describe('message action target freshness', () => {
     expect(customHtmlMocks.navigate).toHaveBeenCalledWith(`/character/custom-html-character/${branchedChat?.id}`)
   })
 
+  it('recovers the source route when a queued branch finally fails and rolls back', async () => {
+    const finalSettlement = deferred<ChatMutationFinalOutcome>()
+    seedDatabase(1, null as unknown as string)
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    window.history.replaceState(null, '', '/character/custom-html-character/custom-html-chat')
+    customHtmlMocks.navigate.mockImplementation((path: string, options?: { replace?: boolean }) => {
+      window.history[options?.replace ? 'replaceState' : 'pushState'](null, '', path)
+    })
+    vi.mocked(dispatchForkChatWithOutcome).mockImplementationOnce((_sourceChatId, _previous, input) => {
+      const character = testDatabaseState.db.characters[0]
+      const provisionalChat = JSON.parse(JSON.stringify(input.chat)) as (typeof character.chats)[number]
+      withTrustedResourceWrite(() => {
+        character.chats.unshift(provisionalChat)
+        character.chatPage = 0
+      })
+      const settlement = finalSettlement.promise.then((outcome) => {
+        if (outcome.status === 'failed') {
+          withTrustedResourceWrite(() => {
+            character.chats = character.chats.filter((chat) => chat.id !== provisionalChat.id)
+            character.chatPage = character.chats.findIndex((chat) => chat.id === 'custom-html-chat')
+          })
+        }
+        return outcome
+      })
+      return Promise.resolve({
+        status: 'queued',
+        result: { status: 'unavailable' },
+        mutationIds: ['queued-branch'],
+        settlement,
+      } satisfies ChatMutationOutcome)
+    })
+    mountPopupList()
+    mountCustomHtmlRows(1)
+    await settle()
+
+    await openMessageActions()
+    buttonByText('branch')?.click()
+    await settle()
+
+    const forkPayload = vi.mocked(dispatchForkChatWithOutcome).mock.calls.at(-1)?.[2]
+    const provisionalChatId = forkPayload?.chat.id
+    expect(provisionalChatId).toBeTruthy()
+    expect(testDatabaseState.db.characters[0].chats[0].id).toBe(provisionalChatId)
+    expect(window.location.pathname).toBe(`/character/custom-html-character/${provisionalChatId}`)
+
+    finalSettlement.resolve({ status: 'failed', result: { status: 'error', error: 'fork rejected' } })
+    await settle()
+
+    const character = testDatabaseState.db.characters[0]
+    expect(character.chats.some((chat) => chat.id === provisionalChatId)).toBe(false)
+    expect(character.chats[character.chatPage].id).toBe('custom-html-chat')
+    expect(window.location.pathname).toBe('/character/custom-html-character/custom-html-chat')
+    expect(customHtmlMocks.navigate).toHaveBeenLastCalledWith('/character/custom-html-character/custom-html-chat', {
+      replace: true,
+    })
+  })
+
   it('does not branch when the confirmation is declined', async () => {
     seedDatabase(1, null as unknown as string)
     customHtmlMocks.alertConfirm.mockResolvedValueOnce(false)
@@ -1327,7 +1391,7 @@ describe('message action target freshness', () => {
       chat.message.some((message) => message.data.includes('{{specialcomment::branchedfrom::')),
     )
     expect(branchedChat).toBeUndefined()
-    expect(dispatchForkChat).not.toHaveBeenCalled()
+    expect(dispatchForkChatWithOutcome).not.toHaveBeenCalled()
     expect(customHtmlMocks.changeChatTo).not.toHaveBeenCalled()
     expect(customHtmlMocks.navigate).not.toHaveBeenCalled()
   })
@@ -1358,8 +1422,8 @@ describe('message action target freshness', () => {
     await settle()
 
     expect(customHtmlMocks.hydrateChatMessages).toHaveBeenCalledWith('custom-html-chat', { strict: true })
-    const forkPayload = vi.mocked(dispatchForkChat).mock.calls.at(-1)?.[2] as
-      | Parameters<typeof dispatchForkChat>[2]
+    const forkPayload = vi.mocked(dispatchForkChatWithOutcome).mock.calls.at(-1)?.[2] as
+      | Parameters<typeof dispatchForkChatWithOutcome>[2]
       | undefined
     expect(forkPayload?.chat.message.slice(0, 3).map((item) => item.data)).toEqual([
       'loaded message 0',
@@ -1503,7 +1567,7 @@ describe('message action target freshness', () => {
       data: 'other chat message',
       role: 'char',
     })
-    expect(dispatchForkChat).toHaveBeenCalledWith(
+    expect(dispatchForkChatWithOutcome).toHaveBeenCalledWith(
       'custom-html-chat',
       expect.anything(),
       expect.objectContaining({
@@ -1512,7 +1576,7 @@ describe('message action target freshness', () => {
         }),
       }),
     )
-    const forkPayload = vi.mocked(dispatchForkChat).mock.calls.at(-1)?.[2] as
+    const forkPayload = vi.mocked(dispatchForkChatWithOutcome).mock.calls.at(-1)?.[2] as
       | {
           chat: {
             message: Array<{ chatId?: string; data: string; generationInfo?: { generationId?: string } }>
