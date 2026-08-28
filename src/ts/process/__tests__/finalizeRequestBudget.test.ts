@@ -10,10 +10,10 @@ function tokensFor(chat: OpenAIChat): number {
   return fromContent + fromMultimodal
 }
 
-function fakeTokenizer(): ChatTokenizer {
+function fakeTokenizer(rowOverhead = 0): ChatTokenizer {
   return {
     async tokenizeChat(chat: OpenAIChat) {
-      return tokensFor(chat)
+      return tokensFor(chat) + rowOverhead
     },
   } as unknown as ChatTokenizer
 }
@@ -80,6 +80,29 @@ describe('finalizeRequestBudget', () => {
     expect(result.inputTokens).toBe(109)
     expect(result.outputTokens).toBe(1)
     expect(result.inputTokens + result.outputTokens).toBeLessThanOrEqual(110)
+  })
+
+  it('retains row overhead for a trimmed multimodal entry', async () => {
+    const tokenizer = fakeTokenizer(5)
+    const formated: OpenAIChat[] = [
+      {
+        role: 'user',
+        content: 'caption-text',
+        removable: true,
+        multimodals: [{ type: 'image', base64: 'x' }],
+      },
+      { role: 'user', content: 'follow-up' },
+    ]
+    const result = await finalizeRequestBudget(formated, 120, 50, tokenizer)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const returnedTokens = (await Promise.all(result.formated.map((chat) => tokenizer.tokenizeChat(chat)))).reduce(
+      (total, tokens) => total + tokens,
+      0,
+    )
+    expect(result.inputTokens).toBe(returnedTokens)
+    expect(result.inputTokens).toBe(119)
+    expect(result.outputTokens).toBe(1)
   })
 
   it('returns ok=false when no removable entries can bring tokens under the budget', async () => {

@@ -70,8 +70,14 @@ export function finalizeRequestBudget(input: FinalizeRequestBudgetInput): Finali
         if (typeof candidate.memo === 'string' && historyMessageIds?.has(candidate.memo)) {
           historyTruncated = true
         }
-        inputTokens -= tokenizeChat(candidate, encoding, options)
+        const tokensBeforeTrim = tokenizeChat(candidate, encoding, options)
         candidate.content = ''
+        if (candidate.multimodals?.length) {
+          const tokensAfterTrim = tokenizeChat(candidate, encoding, options)
+          inputTokens -= tokensBeforeTrim - tokensAfterTrim
+        } else {
+          inputTokens -= tokensBeforeTrim
+        }
       }
       pointer++
     }

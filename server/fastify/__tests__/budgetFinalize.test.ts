@@ -100,19 +100,21 @@ describe('finalizeRequestBudget — trimming', () => {
     const result = finalizeRequestBudget({
       db: makeDb(),
       formated,
-      maxContextTokens: 10,
+      maxContextTokens: 17,
       maxResponse: 50,
     })
     expect(result.ok).toBe(true)
     if (!result.ok) return
     // GPT-4 has no image input, so the attachment adds one row-overhead charge:
-    // 'caption' (1+5+5) + 'final-question' (2+5) = 18 > 10.
-    // Trim row0 (-11 → 7 ≤ 10); its content blanks but multimodals keep it.
+    // 'caption' (1+5+5) + 'final-question' (2+5) = 18 > 17.
+    // Blanking only the caption removes one token; row overhead and the image
+    // remain, so the returned rows retokenize to 17.
     expect(result.formated).toHaveLength(2)
     expect(result.formated[0].content).toBe('')
     expect(result.formated[0].multimodals?.length).toBe(1)
     expect(result.formated[1].content).toBe('final-question')
-    expect(result.inputTokens).toBe(7)
+    expect(result.inputTokens).toBe(17)
+    expect(result.outputTokens).toBe(0)
   })
 
   it('uses low-quality image charges when deciding whether to trim history', () => {
@@ -136,7 +138,8 @@ describe('finalizeRequestBudget — trimming', () => {
     if (!result.ok) return
     // caption (1) + overhead (5) + image (87) + final row (7) = 100.
     // The image charge tips the request over the 99-token window.
-    expect(result.inputTokens).toBe(7)
+    expect(result.inputTokens).toBe(99)
+    expect(result.outputTokens).toBe(0)
     expect(result.formated[0]).toMatchObject({ content: '', removable: true })
     expect(result.formated[0].multimodals).toHaveLength(1)
   })

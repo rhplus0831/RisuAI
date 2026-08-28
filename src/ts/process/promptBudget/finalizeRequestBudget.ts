@@ -35,8 +35,12 @@ export async function finalizeRequestBudget(
       if (trimmed[pointer].removable) {
         const tokensBeforeTrim = await tokenizer.tokenizeChat(trimmed[pointer])
         trimmed[pointer].content = ''
-        const tokensAfterTrim = await tokenizer.tokenizeChat(trimmed[pointer])
-        inputTokens -= tokensBeforeTrim - tokensAfterTrim
+        if (trimmed[pointer].multimodals?.length) {
+          const tokensAfterTrim = await tokenizer.tokenizeChat(trimmed[pointer])
+          inputTokens -= tokensBeforeTrim - tokensAfterTrim
+        } else {
+          inputTokens -= tokensBeforeTrim
+        }
       }
       pointer++
     }
