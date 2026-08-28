@@ -14,8 +14,11 @@ Status: In Progress
 - [Alert component consolidation](slices/phase-5/alert-component-consolidation.md)
   retains all 15 visible dialog contracts under one real-component mount and
   cleanup harness while removing two file boundaries.
-- Next: consolidate the Ooba/provider-control pair without mixing their
-  provider-specific behavior groups.
+- [Provider control consolidation](slices/phase-5/provider-control-consolidation.md)
+  retains four Ooba/OpenRouter accessibility cases under one provider-control
+  lifecycle while keeping the real inputs under test.
+- Next: move the remaining source-string policies out of mixed D suites and
+  into one explicitly labeled static Node architecture gate.
 
 ## Objective
 

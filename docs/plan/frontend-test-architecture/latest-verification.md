@@ -9,6 +9,29 @@ accounting selected three repeated-import families plus one explicit
 static-source-policy follow-up. This record does not authorize repository-wide
 default inversion or migration outside the later phase rules.
 
+## Phase 5 Provider Control Consolidation
+
+The two pre-change provider-control owners passed 2 files / 4 tests in 7.32s
+Vitest and 8.03s wall. Their worker-phase sums were 11.36s transform, 122ms
+setup, 13.95s import, 126ms tests, and 237ms environment; peak RSS was 1,142,032
+KiB.
+
+The consolidated `ProviderListActions.svelte.test.ts` owner passed the same four
+tests in 7.43s Vitest and 8.20s wall. Its phases were 5.88s transform, 84ms
+setup, 7.05s import, 114ms tests, and 116ms environment; peak RSS was 846,820
+KiB. Vitest (+1.5%) and wall (+2.1%) are unchanged inside noise. Import sum
+improves 49.5%, environment sum 51.1%, transform sum 48.2%, and peak RSS 25.8%.
+
+The combined mock graph restores real `OptionalInput` and `TextInput` behavior
+for the Ooba naming contract while keeping unrelated provider controls stubbed.
+Shuffled test-order runs with seeds 101, 202, and 303 passed with retries
+disabled.
+
+Inventory regeneration passed. Full discovery is now 535 files at 192 N / 17 S
+/ 326 D, standalone ordinary is 533 at 192 N / 17 S / 324 D, and aggregate
+ordinary is 527 at 191 N / 17 S / 319 D. The change removes one D boundary
+without removing any test.
+
 ## Phase 5 Alert Component Consolidation
 
 The three pre-change AlertComp owners passed 3 files / 15 tests in 10.15s

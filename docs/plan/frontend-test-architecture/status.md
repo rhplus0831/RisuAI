@@ -10,13 +10,13 @@ codebase remain authoritative until a phase lands.
 
 - Plan state: Phases 0-4 complete; Phase 5 in progress.
 - Current phase: Phase 5 — DOM Contract Consolidation (in progress).
-- Active slice: Ooba/provider-control consolidation.
-- Implementation state: Toggles and AlertComp now have one DOM owner apiece;
-  all 18 grouped, optimistic-paint, accessibility, focus, race, input, selection,
-  queue, and request-data cases remain.
+- Active slice: Static source-policy consolidation.
+- Implementation state: Toggles, AlertComp, and provider controls now have one
+  coherent DOM owner apiece. Four original D file boundaries were removed with
+  all 22 selected visible-behavior cases retained.
 - Blockers: None.
-- Next action: Consolidate the Ooba/provider-control pair while keeping its
-  Ooba and OpenRouter behavior groups explicit.
+- Next action: Move embedded source-string policies into one explicit static
+  Node architecture gate while retaining mounted/durable D behavior in place.
 
 ## Phase Router
 
@@ -345,6 +345,10 @@ DOM setup now belongs to Phase 5.
     harness and all 15 cases retained. Focused wall was unchanged within noise,
     while import sum fell 66.6%, environment sum 62.2%, and peak RSS 36.0%; three
     shuffled seeds passed.
+43. The Ooba optional-input case joined the adjacent provider-control owner with
+    real OptionalInput/TextInput behavior retained. Focused wall was unchanged
+    inside noise, while import sum fell 49.5%, environment sum 51.1%, and peak
+    RSS 25.8%; three shuffled seeds passed.
 
 ## Accepted Observations
 
@@ -387,9 +391,9 @@ promotion continues.
 
 ## Latest Completed Slice
 
-[Phase 5 Alert component consolidation](phases/slices/phase-5/alert-component-consolidation.md)
-retained all 15 AlertComp behavior cases under one real-component mount and
-cleanup harness while removing two Happy-DOM file boundaries.
+[Phase 5 provider control consolidation](phases/slices/phase-5/provider-control-consolidation.md)
+retained all four Ooba/OpenRouter accessibility cases under one component
+lifecycle and removed one Happy-DOM file boundary.
 
 ## Latest Verification
 
