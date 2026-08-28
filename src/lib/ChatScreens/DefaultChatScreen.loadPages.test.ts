@@ -1654,6 +1654,40 @@ describe('DefaultChatScreen latest-message alignment', () => {
     expect(generation).toBeTruthy()
   })
 
+  it('marks an unseen assistant append unread without auto-scrolling when the preference is disabled', async () => {
+    seedDatabase([2])
+    getResourceDatabase().autoScrollToNewMessage = false
+    getResourceDatabase().floatingChatInput = false
+    mountScreen()
+    await waitFor(() => expect(target.querySelector('.chat-message-container')).toBeTruthy())
+
+    const transcript = target.querySelector<HTMLElement>('[data-default-chat-transcript]')!
+    const latestRow = target.querySelector<HTMLElement>('.chat-message-container')!
+    const spacer = target.querySelector<HTMLElement>('[data-latest-message-scroll-spacer]')!
+    stubLatestMessageGeometry({
+      transcript,
+      row: latestRow,
+      spacer,
+      clientHeight: () => 600,
+      rowHeight: () => 80,
+      trailingHeight: () => 100,
+    })
+    transcript.scrollTop = -300
+    transcript.dispatchEvent(new Event('scroll'))
+    await settle()
+
+    getResourceDatabase().characters[0].chats[0].message.push({
+      chatId: 'unseen-appended-message',
+      role: 'char',
+      data: 'Reply while reading history',
+    })
+    await waitFor(() => expect(target.querySelectorAll('.chat-message-container')).toHaveLength(3))
+
+    expect(transcript.scrollTop).toBe(-300)
+    expect(get(unreadChatIds).has('chat-0')).toBe(true)
+    expect(findButtonByText('newMessage')).toBeTruthy()
+  })
+
   it('shrinks a stale spacer after an unpinned row grows and the user returns to the latest position', async () => {
     const resizeObservers = installResizeObserverHarness()
     seedDatabase([2])
@@ -1765,51 +1799,54 @@ describe('DefaultChatScreen latest-message alignment', () => {
     expect(get(unreadChatIds).has('chat-0')).toBe(false)
   })
 
-  it('exits natural-end mode without scrolling and flags unread when generation completes away from latest', async () => {
-    const resizeObservers = installResizeObserverHarness()
-    seedDatabase([2])
-    getResourceDatabase().autoScrollToNewMessage = true
-    getResourceDatabase().floatingChatInput = false
-    const generation = beginChatGenerationActivity({ target: captureActiveChatTargetForTest()!, kind: 'message' })!
-    mountScreen()
-    await waitFor(() => expect(target.querySelector('.chat-message-container')).toBeTruthy())
+  it.each([true, false])(
+    'exits natural-end mode without scrolling and flags unread when generation completes away from latest (auto-scroll: %s)',
+    async (autoScrollToNewMessage) => {
+      const resizeObservers = installResizeObserverHarness()
+      seedDatabase([2])
+      getResourceDatabase().autoScrollToNewMessage = autoScrollToNewMessage
+      getResourceDatabase().floatingChatInput = false
+      const generation = beginChatGenerationActivity({ target: captureActiveChatTargetForTest()!, kind: 'message' })!
+      mountScreen()
+      await waitFor(() => expect(target.querySelector('.chat-message-container')).toBeTruthy())
 
-    getResourceDatabase().characters[0].chats[0].message.push({
-      chatId: 'unfollowed-placeholder-message',
-      role: 'char',
-      data: '',
-    })
-    await waitFor(() => expect(target.querySelectorAll('.chat-message-container')).toHaveLength(3))
+      getResourceDatabase().characters[0].chats[0].message.push({
+        chatId: 'unfollowed-placeholder-message',
+        role: 'char',
+        data: '',
+      })
+      await waitFor(() => expect(target.querySelectorAll('.chat-message-container')).toHaveLength(3))
 
-    const transcript = target.querySelector<HTMLElement>('[data-default-chat-transcript]')!
-    const latestRow = target.querySelector<HTMLElement>('.chat-message-container')!
-    const spacer = target.querySelector<HTMLElement>('[data-latest-message-scroll-spacer]')!
-    let latestRowHeight = 80
-    stubLatestMessageGeometry({
-      transcript,
-      row: latestRow,
-      spacer,
-      clientHeight: () => 600,
-      rowHeight: () => latestRowHeight,
-      trailingHeight: () => 100,
-    })
+      const transcript = target.querySelector<HTMLElement>('[data-default-chat-transcript]')!
+      const latestRow = target.querySelector<HTMLElement>('.chat-message-container')!
+      const spacer = target.querySelector<HTMLElement>('[data-latest-message-scroll-spacer]')!
+      let latestRowHeight = 80
+      stubLatestMessageGeometry({
+        transcript,
+        row: latestRow,
+        spacer,
+        clientHeight: () => 600,
+        rowHeight: () => latestRowHeight,
+        trailingHeight: () => 100,
+      })
 
-    getResourceDatabase().characters[0].chats[0].message[2].data = 'Finished while reading history'
-    latestRowHeight = 180
-    resizeObservers.notify(latestRow)
-    await settle()
+      getResourceDatabase().characters[0].chats[0].message[2].data = 'Finished while reading history'
+      latestRowHeight = 180
+      resizeObservers.notify(latestRow)
+      await settle()
 
-    transcript.scrollTop = -150
-    transcript.dispatchEvent(new Event('scroll'))
-    await settle()
-    finishChatGenerationActivity(generation.id)
-    await waitFor(() => expect(spacer.style.height).toBe('320px'))
+      transcript.scrollTop = -150
+      transcript.dispatchEvent(new Event('scroll'))
+      await settle()
+      finishChatGenerationActivity(generation.id)
+      await waitFor(() => expect(spacer.style.height).toBe('320px'))
 
-    expect(transcript.scrollTop).toBe(-150)
-    expect(latestRow.getBoundingClientRect().top).toBe(150)
-    expect(get(unreadChatIds).has('chat-0')).toBe(true)
-    expect(findButtonByText('newMessage')).toBeTruthy()
-  })
+      expect(transcript.scrollTop).toBe(-150)
+      expect(latestRow.getBoundingClientRect().top).toBe(150)
+      expect(get(unreadChatIds).has('chat-0')).toBe(true)
+      expect(findButtonByText('newMessage')).toBeTruthy()
+    },
+  )
 
   it('transitions from start to end anchoring when the newest row fills the scrollport', async () => {
     const resizeObservers = installResizeObserverHarness()

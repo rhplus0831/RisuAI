@@ -770,7 +770,7 @@
               void alignLatestMessageToStart(currentChatRoomId)
             }
           }, 700)
-        } else if (database.autoScrollToNewMessage) {
+        } else if (!wasAtBottomBeforeUpdate) {
           hasNewUnreadMessage = true
           markChatUnread(currentChatRoomId)
         }
@@ -802,7 +802,7 @@
         getLatestMessageAlignmentKey() === completedLatestMessageKey
       ) {
         void alignLatestMessageToStart(currentChatRoomId)
-      } else if (database.autoScrollToNewMessage) {
+      } else if (!wasAtLatestPosition) {
         hasNewUnreadMessage = true
         markChatUnread(currentChatRoomId)
       }
