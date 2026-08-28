@@ -214,6 +214,21 @@ describe('memory embedding provider adapter', () => {
     })
   })
 
+  it('rejects finite numbers that overflow during Float32 conversion', async () => {
+    vi.stubGlobal('fetch', async () => ok({ data: [{ embedding: [1e39] }] }))
+
+    await expect(
+      embedTexts({
+        request: request(),
+        input: ['first'],
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toEqual({
+      error: 'embedding vector values must be finite numbers',
+      code: 'invalid-response',
+    })
+  })
+
   it('calls Voyage contextual embeddings with grouped document inputs', async () => {
     let captured: { url: string; headers: Record<string, string>; body: unknown } | null = null
     vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
