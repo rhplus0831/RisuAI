@@ -91,14 +91,26 @@ test('startup matrix keeps cold and warm small/large populations separate', asyn
   await testInfo.attach('startup-matrix.json', { body: machineOutput, contentType: 'application/json' })
   await testInfo.attach('startup-matrix.txt', { body: humanOutput, contentType: 'text/plain' })
 
+  expect(cases.map(({ fixture, cacheState }) => `${fixture}:${cacheState}`).sort()).toEqual([
+    'large:cold',
+    'large:warm',
+    'small:cold',
+    'small:warm',
+  ])
+
   for (const fixture of ['small', 'large'] as const) {
     const cold = cases.find((entry) => entry.fixture === fixture && entry.cacheState === 'cold')!
     const warm = cases.find((entry) => entry.fixture === fixture && entry.cacheState === 'warm')!
     expect(cold.server.cacheHits).toBe(0)
     expect(cold.server.cacheMisses).toBeGreaterThan(0)
     expect(warm.server.cacheHits).toBeGreaterThan(0)
+    expect(warm.server.cacheMisses).toBe(0)
     expect(warm.server.resourcePayloadBytes).toBeLessThan(cold.server.resourcePayloadBytes)
   }
+  const smallCold = cases.find((entry) => entry.fixture === 'small' && entry.cacheState === 'cold')!
+  const largeCold = cases.find((entry) => entry.fixture === 'large' && entry.cacheState === 'cold')!
+  expect(largeCold.server.resourcePayloadBytes).toBeGreaterThan(smallCold.server.resourcePayloadBytes)
+  expect(largeCold.server.cacheMisses).toBeGreaterThan(smallCold.server.cacheMisses)
   for (const entry of cases) {
     expect(entry.startup.phase).toBe('background-ready')
     expect(entry.earlyRequests).toEqual({
@@ -182,7 +194,8 @@ async function measureNavigation(
     )
     throw new Error(`Background readiness failed: ${JSON.stringify(coordinator)}`, { cause: error })
   }
-  await page.waitForTimeout(50)
+  await expect.poll(() => metrics.some((metric) => metric.metric === 'bootstrap_projection')).toBe(true)
+  await expect.poll(() => metrics.some((metric) => metric.metric === 'resource_response')).toBe(true)
 
   const browserSnapshot = await page.evaluate(() => {
     const startup = window.__RISU_FASTIFY_BROWSER_SMOKE__!.getStartupSnapshot()
