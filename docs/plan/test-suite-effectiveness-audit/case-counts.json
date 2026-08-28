@@ -18,7 +18,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/additionalParams.test.ts": {
-      "cases": 30,
+      "cases": 31,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -93,7 +93,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/chatDispatchProfileOptions.test.ts": {
-      "cases": 99,
+      "cases": 100,
       "skipped": 0,
       "parameterizedRows": 47
     },
@@ -208,7 +208,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/gemini.test.ts": {
-      "cases": 55,
+      "cases": 56,
       "skipped": 0,
       "parameterizedRows": 10
     },
@@ -273,7 +273,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/horde.test.ts": {
-      "cases": 18,
+      "cases": 19,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -288,7 +288,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/imageGeneration.test.ts": {
-      "cases": 18,
+      "cases": 20,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -478,7 +478,7 @@
       "parameterizedRows": 5
     },
     "server/fastify/__tests__/oobaLegacy.test.ts": {
-      "cases": 8,
+      "cases": 9,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -493,7 +493,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/openaiResponses.test.ts": {
-      "cases": 18,
+      "cases": 19,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -578,7 +578,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/rawMessageTranslation.test.ts": {
-      "cases": 27,
+      "cases": 28,
       "skipped": 0,
       "parameterizedRows": 14
     },
@@ -598,7 +598,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/requestHistory.test.ts": {
-      "cases": 8,
+      "cases": 9,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -683,7 +683,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/sigv4.test.ts": {
-      "cases": 8,
+      "cases": 9,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -2843,7 +2843,7 @@
       "parameterizedRows": 0
     },
     "src/ts/process/tts.test.ts": {
-      "cases": 22,
+      "cases": 23,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -3413,7 +3413,7 @@
       "parameterizedRows": 0
     },
     "src/ts/translator/translator.cache.svelte-node.test.ts": {
-      "cases": 22,
+      "cases": 23,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -3468,7 +3468,7 @@
       "parameterizedRows": 0
     },
     "util/test-effectiveness-inventory.test.ts": {
-      "cases": 8,
+      "cases": 9,
       "skipped": 0,
       "parameterizedRows": 0
     },
