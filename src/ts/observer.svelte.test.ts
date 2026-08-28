@@ -304,6 +304,58 @@ describe('startObserveDom', () => {
     expect(_getBgmElementForTesting()).toBeNull()
   })
 
+  it('stops active BGM only when its owned control node is removed', async () => {
+    const play = vi.fn().mockResolvedValue(undefined)
+    const pause = vi.fn()
+    const remove = vi.fn()
+    const audioInstances: Array<{ src: string; volume: number }> = []
+    const AudioMock = vi.fn(function (
+      this: {
+        src: string
+        volume: number
+        addEventListener: () => void
+        play: () => Promise<void>
+        pause: () => void
+        remove: () => void
+      },
+      src: string,
+    ) {
+      this.src = src
+      this.volume = 0
+      this.addEventListener = () => {}
+      this.play = play
+      this.pause = pause
+      this.remove = remove
+      audioInstances.push(this)
+    })
+    vi.stubGlobal('Audio', AudioMock)
+
+    const unrelated = document.createElement('section')
+    unrelated.appendChild(document.createElement('div'))
+    const ctrl = document.createElement('div')
+    ctrl.setAttribute('risu-ctrl', 'bgm___auto___/active-bgm.mp3')
+    document.body.append(unrelated, ctrl)
+    startObserveDom()
+    await Promise.resolve()
+
+    expect(audioInstances).toHaveLength(1)
+    expect(_getBgmElementForTesting()).toBe(audioInstances[0])
+
+    unrelated.remove()
+    await flushMutationObserver()
+
+    expect(pause).not.toHaveBeenCalled()
+    expect(remove).not.toHaveBeenCalled()
+    expect(_getBgmElementForTesting()).toBe(audioInstances[0])
+
+    ctrl.remove()
+    await flushMutationObserver()
+
+    expect(pause).toHaveBeenCalledOnce()
+    expect(remove).toHaveBeenCalledOnce()
+    expect(_getBgmElementForTesting()).toBeNull()
+  })
+
   it('stops active BGM when the optional DOM runtime is torn down', () => {
     const play = vi.fn()
     const pause = vi.fn()

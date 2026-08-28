@@ -9,6 +9,7 @@ let observedBody: HTMLElement | null = null
 let bodyRetryTimer: ReturnType<typeof setTimeout> | null = null
 let pendingBgmRetry: { node: HTMLElement; control: string } | null = null
 let bgmRetryListenersAttached = false
+let bgmControlNode: HTMLElement | null = null
 
 function clearPendingBgmRetry() {
   pendingBgmRetry = null
@@ -54,6 +55,7 @@ function stopCurrentBgm() {
   }
 
   bgmElement = null
+  bgmControlNode = null
   current.pause()
   current.remove()
 }
@@ -149,11 +151,13 @@ function nodeObserve(node: HTMLElement) {
           clearPendingBgmRetry()
           const audio = new Audio(split[2])
           bgmElement = audio
+          bgmControlNode = node
           audio.volume = volume
           audio.addEventListener('ended', () => {
             audio.remove()
             if (bgmElement === audio) {
               bgmElement = null
+              bgmControlNode = null
             }
           })
           const playback = audio.play()
@@ -161,6 +165,7 @@ function nodeObserve(node: HTMLElement) {
             void playback.catch(() => {
               if (bgmElement !== audio) return
               bgmElement = null
+              bgmControlNode = null
               audio.pause()
               audio.remove()
               observedControlNodes.delete(node)
@@ -189,6 +194,14 @@ function handleDomMutations(mutations: MutationRecord[]) {
       nodeObserve(mutation.target)
       continue
     }
+
+    mutation.removedNodes.forEach((node) => {
+      const activeControl = bgmControlNode
+      if (activeControl && (node === activeControl || node.contains(activeControl))) {
+        observedControlNodes.delete(activeControl)
+        stopCurrentBgm()
+      }
+    })
 
     mutation.addedNodes.forEach((node) => {
       if (node instanceof HTMLElement) {
