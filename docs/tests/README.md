@@ -12,11 +12,11 @@ Assertions are commonly exact and stateful: request bodies and headers, SSE fram
 
 The main weakness is integration depth rather than raw case count. Most frontend tests run in happy-dom with mocked network/storage/browser APIs; most provider tests mock upstream services; and the per-file-serial Playwright suite covers selected built-browser/Fastify/SQLite journeys. The Phase 7 fast-bootstrap matrix now provides isolated response-loss replay, offline replay, event-gap recovery, multi-tab writer takeover, observer promotion, direct-link, and optional-runtime failure journeys. There is still no normal composer-to-stream-to-durable-reload browser journey, page-crash/reload outbox journey combined with writer transfer, or destructive backup-restore/outbox-quarantine journey. CI also enforces only a deliberately small UI coverage sentinel, not the much broader frontend or backend coverage maps.
 
-The active
-[Frontend Test Architecture plan](../plan/frontend-test-architecture/status.md)
-tracks final verification and closeout of the explicit Node, Svelte+Node, DOM,
-and built-browser capability topology. The commands and routing documented
-below are authoritative.
+The
+[Frontend Test Architecture record](../plan/frontend-test-architecture/status.md)
+explains the completed migration to explicit Node, Svelte+Node, DOM, and
+built-browser capability ownership. The commands and routing documented below
+are authoritative.
 
 ## Index
 
@@ -61,17 +61,24 @@ entrypoints are:
 | Full local quality aggregate | `pnpm test:all` |
 | Startup rollout evidence | `pnpm verify:fast-bootstrap:phase7` |
 
-All Vitest projects reject focused tests. A new plain `*.test.ts` file runs in
-Node by default. Use `*.svelte-node.test.ts` only for client-mode Svelte
-transformation/runes with Node globals and no DOM setup, `*.svelte.test.ts` for
-mounted component behavior, and `*.dom.test.ts` for other DOM/browser-shaped
-Happy-DOM contracts. Playwright browser-smoke retains `*.spec.ts`. Pre-suffix
-DOM files that cannot be renamed without broad churn are explicitly registered
-in `vitest.frontend-routing.ts`; do not add an entry without execution evidence
-and a reviewed reason. The exhaustive gate rejects omitted, unclassified,
-multiply assigned, stale, or filename/project-mismatched files and reliable
-DOM-only imports in zero-DOM projects. Legitimate dependency-injected tests may
-use `// @frontend-test-capability-override: <reviewed reason>`.
+### Frontend capability classification
+
+| Class | File ownership | Runtime | Use and retention rule |
+| ----- | -------------- | ------- | ---------------------- |
+| N | Plain `*.test.ts` by default | Node | Pure TypeScript/JavaScript and injected fakes with no required Svelte client transform or browser behavior. |
+| S | `*.svelte-node.test.ts` | Svelte client transform with Node globals | Svelte modules or runes whose behavior does not require DOM globals, mounting, layout, focus, or browser APIs. |
+| D | `*.svelte.test.ts`, `*.dom.test.ts`, or a reviewed legacy registration | Svelte plus Happy-DOM | Mounted/visible component behavior and browser-shaped contracts, including accessibility, focus, optimistic paint, rollback, real DOM parsing, and transitive eager browser access. |
+| B | Browser-smoke `*.spec.ts` | Built SPA in Chromium against Fastify/SQLite | Cross-layer behavior that requires a real browser, navigation, responsive layout, reload, multi-tab ownership, or durable recovery. |
+
+All Vitest projects reject focused tests. Pre-suffix DOM files that cannot be
+renamed without broad churn are explicitly registered in
+`vitest.frontend-routing.ts`; these are probe-backed retainers, not an implicit
+fallback. Do not add a registration without execution evidence and a reviewed
+reason. The exhaustive gate rejects omitted, unclassified, multiply assigned,
+stale, or filename/project-mismatched files and reliable DOM-only imports in
+zero-DOM projects. Legitimate dependency-injected tests may use
+`// @frontend-test-capability-override: <reviewed reason>`. Use runner discovery
+and the checked capability manifest for the current exact file distribution.
 
 Playwright keeps each spec serial, uses two local file workers (one in CI),
 retains traces on failure, and sets `forbidOnly` in CI. The normally skipped

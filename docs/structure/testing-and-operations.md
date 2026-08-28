@@ -9,10 +9,11 @@ startup telemetry/measurement, built-SPA serving, browser support, and runtime
 environment variables live in
 [Development And Observability](development-and-observability.md).
 
-The active
-[Frontend Test Architecture plan](../plan/frontend-test-architecture/status.md)
-tracks the phased rollout of frontend project ownership. This document and the
-current runner configuration describe the phases that have landed.
+The
+[Frontend Test Architecture record](../plan/frontend-test-architecture/status.md)
+explains the rollout and benchmarks behind the settled frontend project
+ownership. This document and the current runner configuration are the source of
+truth for the resulting commands, routing, setup, and lane behavior.
 
 ## Scripts
 

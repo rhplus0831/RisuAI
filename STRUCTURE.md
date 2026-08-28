@@ -27,7 +27,7 @@ records past decisions and is not authoritative.
 | Modules, plugins, permissions, or MCP | [Plugins And MCP](docs/structure/plugins-and-mcp.md) |
 | Assets, inlay catalog, `.risu`/CharX/chat exchange, backups, reset, or Realm conversion | [Assets And Saves](docs/structure/assets-and-saves.md) |
 | Startup performance, bundle boundaries, observer rollout, or readiness budgets | [Development And Observability](docs/structure/development-and-observability.md#fast-bootstrap-measurement-and-rollout-gate), [Server Resources And Hydration](docs/structure/server-resources-and-bridges.md), and [Client Runtime](src/docs/client-runtime.md) |
-| Tests, compatibility harness, CI, TypeScript, or formatting | [Testing And Operations](docs/structure/testing-and-operations.md) and [Test Suite Guide](docs/tests/README.md) |
+| Tests, Node/Svelte+Node/DOM/browser capability routing, compatibility harness, CI, TypeScript, or formatting | [Testing And Operations](docs/structure/testing-and-operations.md) and [Test Suite Guide](docs/tests/README.md) |
 | Local dev, tracing, startup telemetry, environment, or browser support | [Development And Observability](docs/structure/development-and-observability.md) |
 | Generated, ignored, compatibility-only, or removed paths | [Generated And Legacy](docs/structure/generated-and-legacy.md) |
 
