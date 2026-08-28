@@ -11,8 +11,11 @@ Status: In Progress
 - [Toggles audit consolidation](slices/phase-5/toggles-audit-consolidation.md)
   moves the three grouped and optimistic visible-paint cases under one mounted
   owner and removes one repeated environment/import boundary.
-- Next: consolidate the three AlertComp visible-behavior owners with one shared
-  lifecycle harness.
+- [Alert component consolidation](slices/phase-5/alert-component-consolidation.md)
+  retains all 15 visible dialog contracts under one real-component mount and
+  cleanup harness while removing two file boundaries.
+- Next: consolidate the Ooba/provider-control pair without mixing their
+  provider-specific behavior groups.
 
 ## Objective
 

@@ -9,6 +9,28 @@ accounting selected three repeated-import families plus one explicit
 static-source-policy follow-up. This record does not authorize repository-wide
 default inversion or migration outside the later phase rules.
 
+## Phase 5 Alert Component Consolidation
+
+The three pre-change AlertComp owners passed 3 files / 15 tests in 10.15s
+Vitest and 11.10s wall. Their worker-phase sums were 23.69s transform, 235ms
+setup, 29.18s import, 220ms tests, and 365ms environment; peak RSS was 1,812,376
+KiB.
+
+The consolidated `AlertComp.dom.test.ts` owner passed the same 15 tests in
+10.32s Vitest and 11.20s wall. Its phases were 8.17s transform, 97ms setup,
+9.74s import, 176ms tests, and 138ms environment; peak RSS was 1,160,192 KiB.
+Vitest (+1.7%) and wall (+0.9%) are unchanged inside noise. Import sum improves
+66.6%, environment sum 62.2%, transform sum 65.5%, and peak RSS 36.0%.
+
+All cases now use one real-component mount and cleanup harness with
+describe-local branch/request data. Shuffled test-order runs with seeds 101,
+202, and 303 passed with retries disabled.
+
+Inventory regeneration passed. Full discovery is now 536 files at 192 N / 17 S
+/ 327 D, standalone ordinary is 534 at 192 N / 17 S / 325 D, and aggregate
+ordinary is 528 at 191 N / 17 S / 320 D. The change removes two D boundaries
+without removing any test.
+
 ## Phase 5 Toggles Audit Consolidation
 
 The two pre-change DOM-first audit owners passed 2 files / 3 tests in 12.14s

@@ -10,13 +10,13 @@ codebase remain authoritative until a phase lands.
 
 - Plan state: Phases 0-4 complete; Phase 5 in progress.
 - Current phase: Phase 5 — DOM Contract Consolidation (in progress).
-- Active slice: AlertComp contract consolidation.
-- Implementation state: The two Toggles audit files now share one DOM-first
-  owner; all three grouped and optimistic-paint cases remain. The fresh profile
-  also selected AlertComp and Ooba/provider-control families.
+- Active slice: Ooba/provider-control consolidation.
+- Implementation state: Toggles and AlertComp now have one DOM owner apiece;
+  all 18 grouped, optimistic-paint, accessibility, focus, race, input, selection,
+  queue, and request-data cases remain.
 - Blockers: None.
-- Next action: Consolidate the three AlertComp suites while retaining their
-  visible accessibility, focus, race, input, selection, and queue assertions.
+- Next action: Consolidate the Ooba/provider-control pair while keeping its
+  Ooba and OpenRouter behavior groups explicit.
 
 ## Phase Router
 
@@ -341,6 +341,10 @@ DOM setup now belongs to Phase 5.
     files into one without dropping any of their three DOM-first cases. Focused
     Vitest improved 12.5%, import sum 55.9%, environment sum 64.8%, and peak RSS
     25.4%; three shuffled seeds passed.
+42. Three AlertComp files became one real-component owner with one mount/cleanup
+    harness and all 15 cases retained. Focused wall was unchanged within noise,
+    while import sum fell 66.6%, environment sum 62.2%, and peak RSS 36.0%; three
+    shuffled seeds passed.
 
 ## Accepted Observations
 
@@ -383,9 +387,9 @@ promotion continues.
 
 ## Latest Completed Slice
 
-[Phase 5 Toggles audit consolidation](phases/slices/phase-5/toggles-audit-consolidation.md)
-retained all three DOM-first audit cases under one component lifecycle and
-removed one repeated Happy-DOM environment/import boundary.
+[Phase 5 Alert component consolidation](phases/slices/phase-5/alert-component-consolidation.md)
+retained all 15 AlertComp behavior cases under one real-component mount and
+cleanup harness while removing two Happy-DOM file boundaries.
 
 ## Latest Verification
 

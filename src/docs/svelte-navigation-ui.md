@@ -99,7 +99,7 @@ The branch-graph action also strictly hydrates every chat and abandons its
 result if the character owner changes. It passes a read-only graph of hashed
 greetings and message prefixes from `src/ts/gui/branches.ts` to
 `AlertComp.svelte`; branch details appear on pointer hover and keyboard focus.
-`AlertComp.branches.test.ts` covers the dialog surface.
+`AlertComp.dom.test.ts` covers the dialog surface.
 
 ## Chat-Scoped Generation Controls
 
