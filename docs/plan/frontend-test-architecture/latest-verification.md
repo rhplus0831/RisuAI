@@ -4,9 +4,56 @@ Date: 2026-08-28
 
 ## State
 
-Phase 2 prompt-toggle durability Node-probe closeout. Phase 2 remains in
-progress; this record does not authorize repository-wide default inversion, S
-promotion, or bulk migration outside the active phase rules.
+Phase 2 chat-generation toggle-presets runtime-probe closeout. Phase 2 remains
+in progress; this record does not authorize repository-wide default inversion,
+S promotion, or bulk migration outside the active phase rules.
+
+## Phase 2 Chat-Generation Toggle-Presets Probe Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `ad1acfe52fe2ce7d782f67e6a704a75ed5edbfb3`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Available CPUs: 10
+- Frontend test-all UI-map exclusion: `RISU_TEST_EXCLUDE_UI_MAP=true`
+- Isolation: enabled
+- Measurement tree: the clean prompt-toggle probe commit. Temporary Node and
+  Svelte+Node entries were removed before documentation changes.
+
+## Phase 2 Chat-Generation Toggle-Presets Capability Proof
+
+The proposed slice evaluated `src/ts/chatGenerationTogglePresets.test.ts`. Its
+five tests cover saved-toggle normalization, similarity, deterministic best
+matching, cloning, and fallback selection without direct DOM assertions.
+
+The current-owner command passed 1 file / 5 tests in 3.87s wall and 3.17s
+Vitest duration, with 673,244 KiB peak RSS and 104ms environment time.
+
+After temporarily adding the suite to `vitest.node-tests.ts`, the exact Node
+command failed before collection with `ReferenceError: $state is not defined`
+at `src/ts/stores/coreStores.svelte.ts:5`, reached through `alert.ts` and
+`storage/fastifyStorage.ts`. It took 1.19s wall and 549ms Vitest duration, with
+413,952 KiB peak RSS and no environment time.
+
+After moving the temporary entry to `vitest.svelte-node-tests.ts`, the exact
+Svelte+Node command failed before collection with `ReferenceError: window is
+not defined` at `src/ts/stores.svelte.ts:23`, reached through `chatCommands.ts`
+and `activeChatGenerationSettings.ts`. It took 1.60s wall and 981ms Vitest
+duration, with 458,124 KiB peak RSS and 16ms environment time.
+
+D is the smallest current runtime for the unchanged subject graph. Both
+temporary entries were removed; no production or test boundary changed.
+
+## Phase 2 Chat-Generation Toggle-Presets Discovery And Validation
+
+`pnpm check:frontend-test-inventory` passed with unchanged exhaustive and
+disjoint counts: full 537 files at 158 N / 2 S / 377 D, standalone ordinary
+535 files at 158 N / 2 S / 375 D, and aggregate ordinary 529 files at 157 N /
+2 S / 370 D. The current owner passed all five tests; the exact N and S probes
+failed for the recorded reasons. Formatting of changed files and
+`git diff --check` passed. With no ownership change, no paired ordinary or
+affected execution was required.
 
 ## Phase 2 Prompt-Toggle Durability Probe Environment And Source State
 

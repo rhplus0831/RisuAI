@@ -47,6 +47,10 @@ Status: In progress
   retained the two-test durable mutation suite in Happy-DOM after its Node
   probe reached the outbox activity rune; a classification probe passed in
   Svelte+Node for later Phase 3 ownership.
+- [Chat-generation toggle presets Node probe](slices/phase-2/chat-generation-toggle-presets-node-probe.md):
+  retained the five-test helper suite in Happy-DOM after Node reached a rune
+  and Svelte+Node reached an eager `window` read; later extraction owns any
+  smaller-runtime seam.
 
 ## Objective
 
