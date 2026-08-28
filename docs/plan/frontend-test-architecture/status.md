@@ -8,15 +8,16 @@ codebase remain authoritative until a phase lands.
 
 ## Current Snapshot
 
-- Plan state: Phases 0-2 complete; Phase 3 pending.
-- Current phase: Phase 3 — Svelte+Node Promotion (pending).
-- Active slice: None; Phase 2 exit verification is complete.
-- Implementation state: Thirty-five files and 176 tests have moved from the
-  Happy-DOM fallback to Node across thirteen bounded slices with no production
-  changes.
+- Plan state: Phases 0-2 complete; Phase 3 in progress.
+- Current phase: Phase 3 — Svelte+Node Promotion (in progress).
+- Active slice: Prepare the next bounded target-S probe batch after the
+  proof-backed runtime-bridge promotion.
+- Implementation state: Phase 3 has moved seven files and 69 tests from
+  Happy-DOM to Svelte+Node without production or test-body changes. Phases 2-3
+  have promoted 42 files and 245 tests in total.
 - Blockers: None.
-- Next action: Prepare the first bounded Phase 3 Svelte+Node promotion slice,
-  beginning with the probe-backed rune suites retained by Phase 2.
+- Next action: Probe the remaining Phase 0 target-S candidates in bounded
+  domain slices and record exact blockers for any real DOM/browser dependency.
 
 ## Phase Router
 
@@ -25,7 +26,7 @@ codebase remain authoritative until a phase lands.
 | [0](phases/phase-0-baseline-and-classification.md) | Complete | Ratified metrics, capability rules, and discovery/completeness proof. |
 | [1](phases/phase-1-runtime-topology.md) | Complete | Added and piloted the Node, Svelte+Node, and Happy-DOM topology. |
 | [2](phases/phase-2-pure-node-promotion.md) | Complete | Promoted already-pure tests to Node and recorded every retained N candidate. |
-| [3](phases/phase-3-svelte-node-promotion.md) | Pending | Promote Svelte-compiled tests that do not require DOM behavior. |
+| [3](phases/phase-3-svelte-node-promotion.md) | In Progress | Promote Svelte-compiled tests that do not require DOM behavior. |
 | [4](phases/phase-4-pure-logic-extraction.md) | Pending | Extract measured pure-logic seams while retaining DOM contracts. |
 | [5](phases/phase-5-dom-contract-consolidation.md) | Pending | Consolidate repeated DOM setup and clarify visible-state ownership. |
 | [6](phases/phase-6-routing-and-ci-enforcement.md) | Pending | Enforce explicit routing and align affected tests, coverage, aggregate execution, and CI. |
@@ -96,6 +97,25 @@ phase-level performance claim. The three-run closeout median establishes a
 guard. The workstream-wide 20% target remains open for Phases 3-7. No Phase 2 N
 candidate remains unprobed. The 13 generated N mismatches are all probe-backed
 retainers under recorded Phase 3, Phase 4, or DOM-contract owners.
+
+## Phase 3 Current Result
+
+| Measurement | Result |
+| --- | ---: |
+| Completed slices | 1 |
+| Promoted suites | 7 files / 69 tests |
+| Full three-project universe | 537 files: 161 N / 9 S / 367 D |
+| Standalone ordinary frontend | 535 files: 161 N / 9 S / 365 D |
+| `test:all` ordinary frontend | 529 files: 160 N / 9 S / 360 D |
+| Remaining target-runtime probes | 133 |
+| Focused Happy-DOM environment time | 1.35s |
+| Focused Svelte+Node environment time | 170ms |
+
+The first slice promoted only suites with exact Phase 2 Svelte+Node evidence.
+Its combined focused wall observation moved from 2.52s to 1.97s and peak RSS
+from 939,396 KiB to 785,804 KiB. These are capability and mechanism observations,
+not the formal Phase 3 performance result; the stopping-gate benchmark remains
+pending until every target-S candidate is promoted or blocked.
 
 ## Current Decisions
 
@@ -203,6 +223,10 @@ retainers under recorded Phase 3, Phase 4, or DOM-contract owners.
     warm ordinary frontend runs passed with a 69.50s wall median, and the final
     `test:all` rerun passed every lane. The 20% end-state wall target remains a
     workstream goal rather than a Phase 2 exit requirement.
+28. Phase 3 began with seven suites and 69 tests whose exact Svelte+Node probes
+    had already passed during Phase 2. Their durable prompt, character-card,
+    hydration, asset, backup, bootstrap, and replacement-database contracts now
+    run without Happy-DOM; no production or test-body boundary changed.
 
 ## Accepted Observations
 
@@ -252,9 +276,9 @@ Svelte+Node. All Phase 2 N candidates now have target-runtime evidence.
 
 ## Latest Verification
 
-See [`latest-verification.md`](latest-verification.md) for the Phase 2 three-run
-timing gate, final aggregate validation, accepted browser-smoke observation,
-and the preceding promotion and probe records.
+See [`latest-verification.md`](latest-verification.md) for the current Phase 3
+slice evidence, the Phase 2 three-run timing gate, final aggregate validation,
+accepted browser-smoke observation, and preceding promotion and probe records.
 
 ## Maintenance Rules
 

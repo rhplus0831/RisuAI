@@ -4,8 +4,53 @@ Date: 2026-08-28
 
 ## State
 
-Phase 2 closeout complete. This record does not authorize repository-wide
-default inversion or migration outside the later phase rules.
+Phase 3 in progress after its first proof-backed Svelte+Node promotion slice.
+This record does not authorize repository-wide default inversion or migration
+outside the active phase rules.
+
+## Phase 3 Probe-Backed Runtime Bridges Environment And Source State
+
+- Repository: `/home/codex/risuai-fastify`
+- Base commit: `88d4b4398a0b11cca40848175b90c8a7540c2af0`
+- Node: 24.19.0
+- pnpm: 11.23.0
+- Vitest: 4.1.2
+- Isolation: enabled
+- Measurement tree: the clean Phase 2 closeout plus the seven-file Svelte+Node
+  ownership change and regenerated inventory. No production or test-body file
+  changed.
+
+## Phase 3 Probe-Backed Runtime Bridges Capability And Measurements
+
+The first Phase 3 slice promoted seven suites and 69 tests with exact
+Svelte+Node passes already recorded during Phase 2. Plain Node is invalid for
+the unchanged graphs because they initialize resource or persistence `$state`;
+the tests execute no DOM behavior and supply explicit IndexedDB, network,
+command, alert, asset, and storage boundaries.
+
+The combined Happy-DOM owner passed 7 files / 69 tests in 2.52s wall and 1.60s
+Vitest duration, with 939,396 KiB peak RSS. Aggregate transform, setup, import,
+test, and environment times were 5.14s, 736ms, 7.19s, 270ms, and 1.35s.
+
+The exact Svelte+Node promotion scope passed 7 files / 69 tests in 1.97s wall
+and 1.32s Vitest duration, with 785,804 KiB peak RSS. Aggregate transform,
+setup, import, test, and environment times were 5.53s, 538ms, 6.91s, 358ms,
+and 170ms. The same scope passed again in 1.20s Vitest duration. Environment
+removal saved 1.18s of aggregate setup work in the measured comparison; the
+transform and import totals are recorded without claiming deterministic gains.
+
+## Phase 3 Probe-Backed Runtime Bridges Discovery And Validation
+
+Inventory update and check commands passed. Full discovery is 537 files at 161
+N / 9 S / 367 D, standalone ordinary is 535 files at 161 N / 9 S / 365 D, and
+aggregate ordinary is 529 files at 160 N / 9 S / 360 D. The generated target
+distribution is 167 N / 136 S / 234 D / 7 B, with 133 target-runtime probes
+remaining.
+
+The exact target scope passed twice, and the exhaustive/disjoint checks passed
+in all three frontend discovery views. Formatting and `git diff --check`
+passed. Complete project, ordinary, coverage, affected, aggregate, and formal
+benchmark evidence remain Phase 3 exit work rather than per-slice claims.
 
 ## Phase 2 Exit Environment And Source State
 

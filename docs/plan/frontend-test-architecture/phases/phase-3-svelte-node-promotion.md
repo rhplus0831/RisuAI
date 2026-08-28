@@ -1,6 +1,12 @@
 # Phase 3: Svelte+Node Promotion
 
-Status: Pending Phase 2
+Status: In Progress
+
+## Completed Slices
+
+- [Probe-backed runtime bridges](slices/phase-3/probe-backed-runtime-bridges.md):
+  promoted seven suites and 69 tests whose unchanged Svelte+Node capability
+  probes already passed during Phase 2.
 
 ## Objective
 
