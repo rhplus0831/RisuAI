@@ -1,5 +1,5 @@
-// Paint-half coverage: click a sidebar/jailbreak toggle and assert the visual
-// toggle flips optimistically.
+// DOM-first toggle coverage: assert grouped controls paint structurally and
+// sidebar/jailbreak checkboxes flip optimistically.
 // The settle half (flip survives command + refreeze) is the Tier-2 journey in
 // server/fastify/browser-smoke/visibleStateRecovery.spec.ts.
 //
@@ -42,7 +42,13 @@ import { getResourceDatabase, replaceResourceDatabase } from 'src/ts/server/reso
 import { resolveActiveChatGenerationSettings } from 'src/ts/activeChatGenerationSettings'
 import { clearCachedServerCommandRevision } from 'src/ts/server/commands'
 import { waitForPendingChatGenerationSettingsSave } from 'src/ts/chatCommands'
-import { classifyDifferential, readJailbreakSelected, readToggleSelected } from './domStateOracle'
+import {
+  classifyDifferential,
+  isInScopeFinding,
+  readJailbreakSelected,
+  readToggleGroupLabels,
+  readToggleSelected,
+} from './domStateOracle'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -61,6 +67,8 @@ interface DeferredCommandTransport {
 let target: HTMLElement
 let component: MountedComponent | undefined
 let activeCommandTransport: DeferredCommandTransport | undefined
+
+const GROUP_TEMPLATE = '=Preset Group=group\nmood=Mood=select=Calm,Spicy\nflag=Flag\n==groupend\nnote=Note=text'
 
 // Hold the save response until the optimistic assertions have run, then let
 // the test deliberately fail the command and drain its fire-and-forget queue.
@@ -127,7 +135,7 @@ async function releaseAndDrainCommandTransport(): Promise<void> {
   if (activeCommandTransport === transport) activeCommandTransport = undefined
 }
 
-function seedDb(): void {
+function seedOptimisticDb(): void {
   selectedCharID.set(0)
   replaceResourceDatabase({
     username: 'User',
@@ -184,11 +192,68 @@ function seedDb(): void {
   } as never)
 }
 
+function seedGroupedDb(): void {
+  replaceResourceDatabase({
+    username: 'User',
+    selectedPersona: 0,
+    botPresetsId: 0,
+    modelPresetsId: 0,
+    promptPresetsId: 0,
+    jailbreakToggle: false,
+    customPromptTemplateToggle: '',
+    customSidebarItems: [],
+    hypaV3: false,
+    personas: [{ id: 'persona-a', name: 'Persona A', personaPrompt: '', icon: '', note: '' }],
+    botPresets: [],
+    modelPresets: [{ id: 'model-a', name: 'Model A' }],
+    promptPresets: [
+      {
+        id: 'prompt-a',
+        name: 'Prompt A',
+        jailbreak: '',
+        customPromptTemplateToggle: GROUP_TEMPLATE,
+      },
+    ],
+    modules: [],
+    enabledModules: [],
+    characters: [
+      {
+        chaId: 'char-a',
+        name: 'Character A',
+        chatPage: 0,
+        chats: [
+          {
+            id: 'chat-a',
+            name: 'Chat A',
+            note: '',
+            message: [],
+            localLore: [],
+            generationSettings: {
+              configured: true,
+              personaId: 'persona-a',
+              modelPresetId: 'model-a',
+              promptPresetId: 'prompt-a',
+              jailbreakToggle: false,
+              sidebarToggles: { mood: '1', flag: '1', note: 'n' },
+            },
+          },
+        ],
+      },
+    ],
+  } as never)
+}
+
+function storeGroupLabels(): string[] {
+  return resolveActiveChatGenerationSettings()
+    .displayedSidebarToggles.filter((toggle) => toggle.kind === 'group')
+    .map((toggle) => toggle.label)
+}
+
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   clearCachedServerCommandRevision()
-  seedDb()
+  seedOptimisticDb()
 })
 
 afterEach(async () => {
@@ -284,5 +349,32 @@ describe('optimistic toggle paint (DOM oracle)', () => {
     )
 
     await releaseAndDrainCommandTransport()
+  })
+})
+
+describe('grouped toggle rendering (DOM oracle)', () => {
+  it('paints the preset toggle group as an accordion container in the DOM', async () => {
+    seedGroupedDb()
+    component = mount(Toggles, {
+      target,
+      props: { chara: getResourceDatabase().characters[0], noContainer: true },
+    })
+    await tick()
+
+    const domGroupLabels = readToggleGroupLabels(target)
+    expect(domGroupLabels).toEqual(['Preset Group'])
+
+    const verdict = classifyDifferential({
+      dom: domGroupLabels,
+      store: storeGroupLabels(),
+      expected: ['Preset Group'],
+    })
+    expect(verdict).toBe('dom-matches-store')
+    expect(isInScopeFinding(verdict)).toBe(false)
+
+    const group = target.querySelector<HTMLElement>(
+      '[data-risu-generation-toggle-group][data-risu-toggle-label="Preset Group"]',
+    )
+    expect(group, 'preset toggle group container').toBeTruthy()
   })
 })

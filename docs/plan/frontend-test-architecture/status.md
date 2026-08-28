@@ -10,13 +10,13 @@ codebase remain authoritative until a phase lands.
 
 - Plan state: Phases 0-4 complete; Phase 5 in progress.
 - Current phase: Phase 5 — DOM Contract Consolidation (in progress).
-- Active slice: Toggles audit-gate consolidation.
-- Implementation state: The fresh D profile selected the Toggles audit,
-  AlertComp, and Ooba/provider-control families. All 330 full-discovery D owners
-  have an explicit direct-D or probe-backed browser reason.
+- Active slice: AlertComp contract consolidation.
+- Implementation state: The two Toggles audit files now share one DOM-first
+  owner; all three grouped and optimistic-paint cases remain. The fresh profile
+  also selected AlertComp and Ooba/provider-control families.
 - Blockers: None.
-- Next action: Consolidate the two Toggles DOM-first audit gates while retaining
-  independent setup, cleanup, and visible optimistic-paint assertions.
+- Next action: Consolidate the three AlertComp suites while retaining their
+  visible accessibility, focus, race, input, selection, and queue assertions.
 
 ## Phase Router
 
@@ -336,6 +336,11 @@ DOM setup now belongs to Phase 5.
     median is +2.4% from Phase 3, inside run noise, and remains 3.0% below Phase
     0. Further extraction is stopped until fresh evidence demonstrates another
     production planner/reducer; repeated DOM harness cost transfers to Phase 5.
+41. Phase 5 began with explicit accounting for all 330 D owners and a fresh
+    ordinary-D profile. The first implementation consolidated two Toggles audit
+    files into one without dropping any of their three DOM-first cases. Focused
+    Vitest improved 12.5%, import sum 55.9%, environment sum 64.8%, and peak RSS
+    25.4%; three shuffled seeds passed.
 
 ## Accepted Observations
 
@@ -378,10 +383,9 @@ promotion continues.
 
 ## Latest Completed Slice
 
-[Phase 5 baseline and candidate profile](phases/slices/phase-5/baseline-and-candidate-profile.md)
-accounted for every current D owner, recorded the fresh ordinary-D profile, and
-selected three coherent repeated-import families plus one explicit static-gate
-follow-up.
+[Phase 5 Toggles audit consolidation](phases/slices/phase-5/toggles-audit-consolidation.md)
+retained all three DOM-first audit cases under one component lifecycle and
+removed one repeated Happy-DOM environment/import boundary.
 
 ## Latest Verification
 

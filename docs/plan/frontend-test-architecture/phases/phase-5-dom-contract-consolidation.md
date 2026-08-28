@@ -8,8 +8,11 @@ Status: In Progress
   accounts for every current Happy-DOM owner, records the fresh ordinary-D
   profile, selects three coherent consolidation families, and defines the
   explicit static-source-policy follow-up.
-- Next: consolidate the two Toggles audit gates without changing their
-  independent setup or DOM-first assertions.
+- [Toggles audit consolidation](slices/phase-5/toggles-audit-consolidation.md)
+  moves the three grouped and optimistic visible-paint cases under one mounted
+  owner and removes one repeated environment/import boundary.
+- Next: consolidate the three AlertComp visible-behavior owners with one shared
+  lifecycle harness.
 
 ## Objective
 

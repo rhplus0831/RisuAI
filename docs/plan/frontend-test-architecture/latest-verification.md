@@ -9,6 +9,28 @@ accounting selected three repeated-import families plus one explicit
 static-source-policy follow-up. This record does not authorize repository-wide
 default inversion or migration outside the later phase rules.
 
+## Phase 5 Toggles Audit Consolidation
+
+The two pre-change DOM-first audit owners passed 2 files / 3 tests in 12.14s
+Vitest and 13.17s wall. Their worker-phase sums were 19.03s transform, 256ms
+setup, 23.28s import, 105ms tests, and 349ms environment; peak RSS was 1,452,164
+KiB.
+
+The consolidated owner passed the same 3 tests in 10.62s Vitest and 11.48s
+wall. Its phases were 8.54s transform, 87ms setup, 10.26s import, 75ms tests,
+and 123ms environment; peak RSS was 1,083,596 KiB. Focused Vitest improves 12.5%,
+wall 12.8%, import sum 55.9%, environment sum 64.8%, and peak RSS 25.4%.
+
+All primary assertions remain DOM-first. Every case receives fresh mounted and
+resource state, and teardown drains deferred commands before unmounting and
+clearing globals. Shuffled test-order runs with seeds 101, 202, and 303 passed
+with retries disabled.
+
+Inventory regeneration passed. Full discovery is now 538 files at 192 N / 17 S
+/ 329 D, standalone ordinary is 536 at 192 N / 17 S / 327 D, and aggregate
+ordinary is 530 at 191 N / 17 S / 322 D. The change removes one D file boundary
+without removing any test or audit-gate ownership.
+
 ## Phase 5 Baseline Environment And Source State
 
 - Repository: `/home/codex/risuai-fastify`

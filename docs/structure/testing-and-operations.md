@@ -203,12 +203,11 @@ helpers, bridge
 watchers, router selection, array create/delete/reorder flows, `$derived`,
 `$effect`, keyed lists, memo signatures, or render dependency keys.
 
-The two mounted audit probes
-`src/lib/_audit/optimisticTogglePaint.dom.test.ts` and
-`src/lib/_audit/groupedToggleRendering.dom.test.ts` make DOM assertions before
-using stores as classification aids. They run in the default
+The mounted audit probe `src/lib/_audit/optimisticTogglePaint.dom.test.ts`
+asserts optimistic and grouped toggle rendering before using stores as
+classification aids. It runs in the default
 `pnpm test:frontend` lane and `pnpm test:all`; `pnpm test:gates:audit` selects
-only those files for focused debugging. Use the same DOM-first pattern in
+that file for focused debugging. Use the same DOM-first pattern in
 feature-owned component tests; reserve a new audit probe for a cross-cutting
 invariant that benefits from a dedicated audit location.
 
