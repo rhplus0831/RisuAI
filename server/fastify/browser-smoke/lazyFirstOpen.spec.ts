@@ -31,6 +31,11 @@ interface LazyRouteCase {
   surface: string
 }
 
+interface TransitionRequestOracle {
+  paths: string[]
+  openedAssetPaths: Set<string>
+}
+
 const manifestPath = path.resolve('dist/vite-assets-manifest.json')
 const manifest = readManifest()
 
@@ -292,70 +297,113 @@ test('smoke manifest accounts for every lazy boundary', async () => {
 })
 
 test('every Settings and Playground route opens its real first-use chunk', async ({ page }) => {
-  const requestedPaths = new Set<string>()
+  const requestOracle = observeTransitionRequests(page)
   const pageErrors: string[] = []
-  page.on('request', (request) => requestedPaths.add(new URL(request.url()).pathname))
   page.on('pageerror', (error) => pageErrors.push(error.message))
 
   await openLoadedHome(page)
 
   for (const routeCase of settingsCases) {
-    await navigateTo(page, routeCase.path)
-    await expect(lazySurface(page, routeCase.surface)).toHaveAttribute('data-risu-lazy-state', 'ready')
-    expect(requestedPaths.has(assetPath(routeCase.source)), `${routeCase.source} was not requested`).toBe(true)
+    await expectLazyAssetOnTransition(requestOracle, routeCase.source, routeCase.path, async () => {
+      await navigateTo(page, routeCase.path)
+      await expect(lazySurface(page, routeCase.surface)).toHaveAttribute('data-risu-lazy-state', 'ready')
+    })
   }
 
-  await navigateTo(page, '/playground')
-  await expect(lazySurface(page, 'playground-menu')).toHaveAttribute('data-risu-lazy-state', 'ready')
-  expect(requestedPaths.has(assetPath('src/lib/Playground/PlaygroundMenu.svelte'))).toBe(true)
+  await expectLazyAssetOnTransition(
+    requestOracle,
+    'src/lib/Playground/PlaygroundMenu.svelte',
+    '/playground',
+    async () => {
+      await navigateTo(page, '/playground')
+      await expect(lazySurface(page, 'playground-menu')).toHaveAttribute('data-risu-lazy-state', 'ready')
+    },
+  )
 
   for (const routeCase of playgroundCases) {
-    await navigateTo(page, routeCase.path)
-    await expect(lazySurface(page, routeCase.surface)).toHaveAttribute('data-risu-lazy-state', 'ready')
-    expect(requestedPaths.has(assetPath(routeCase.source)), `${routeCase.source} was not requested`).toBe(true)
+    await expectLazyAssetOnTransition(requestOracle, routeCase.source, routeCase.path, async () => {
+      await navigateTo(page, routeCase.path)
+      await expect(lazySurface(page, routeCase.surface)).toHaveAttribute('data-risu-lazy-state', 'ready')
+    })
   }
 
   expect(pageErrors).toEqual([])
 })
 
 test('grid, route handlers, Sidebar panels, and chat dialogs open only on first use', async ({ page }) => {
-  const requestedPaths = new Set<string>()
-  page.on('request', (request) => requestedPaths.add(new URL(request.url()).pathname))
+  const requestOracle = observeTransitionRequests(page)
   await openLoadedHome(page)
 
-  await navigateTo(page, '/grid')
-  await expect(lazySurface(page, 'character-grid')).toHaveAttribute('data-risu-lazy-state', 'ready')
-  expect(requestedPaths.has(assetPath('src/lib/Others/GridCatalog.svelte'))).toBe(true)
+  await expectLazyAssetOnTransition(requestOracle, 'src/lib/Others/GridCatalog.svelte', '/grid', async () => {
+    await navigateTo(page, '/grid')
+    await expect(lazySurface(page, 'character-grid')).toHaveAttribute('data-risu-lazy-state', 'ready')
+  })
 
-  await navigateTo(page, '/character/char-smoke/chat-smoke-two')
-  await expect(page.getByTestId('default-chat-composer')).toBeVisible()
-  expect(requestedPaths.has(assetPath('src/ts/routeHandlers/character.ts'))).toBe(true)
+  await expectLazyAssetOnTransition(
+    requestOracle,
+    'src/ts/routeHandlers/character.ts',
+    '/character/char-smoke/chat-smoke-two',
+    async () => {
+      await navigateTo(page, '/character/char-smoke/chat-smoke-two')
+      await expect(page.getByTestId('default-chat-composer')).toBeVisible()
+    },
+  )
 
-  await page.locator('button[data-risu-sidebar-tab="character"]').click()
-  await expect(lazySurface(page, 'character-editor')).toHaveAttribute('data-risu-lazy-state', 'ready')
-  expect(requestedPaths.has(assetPath('src/lib/SideBars/CharConfig.svelte'))).toBe(true)
+  await expectLazyAssetOnTransition(
+    requestOracle,
+    'src/lib/SideBars/CharConfig.svelte',
+    'character sidebar tab',
+    async () => {
+      await page.locator('button[data-risu-sidebar-tab="character"]').click()
+      await expect(lazySurface(page, 'character-editor')).toHaveAttribute('data-risu-lazy-state', 'ready')
+    },
+  )
 
-  await page.getByTestId('sidebar-developer-tools-button').click()
-  await expect(lazySurface(page, 'developer-tools')).toHaveAttribute('data-risu-lazy-state', 'ready')
-  expect(requestedPaths.has(assetPath('src/lib/SideBars/DevTool.svelte'))).toBe(true)
+  await expectLazyAssetOnTransition(
+    requestOracle,
+    'src/lib/SideBars/DevTool.svelte',
+    'developer tools sidebar tab',
+    async () => {
+      await page.getByTestId('sidebar-developer-tools-button').click()
+      await expect(lazySurface(page, 'developer-tools')).toHaveAttribute('data-risu-lazy-state', 'ready')
+    },
+  )
 
-  await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.setQuickSettingsOpen(true))
-  await expect(lazySurface(page, 'quick-settings')).toHaveAttribute('data-risu-lazy-state', 'ready')
-  expect(requestedPaths.has(assetPath('src/lib/Others/QuickSettingsGUI.svelte'))).toBe(true)
+  await expectLazyAssetOnTransition(
+    requestOracle,
+    'src/lib/Others/QuickSettingsGUI.svelte',
+    'quick settings open',
+    async () => {
+      await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.setQuickSettingsOpen(true))
+      await expect(lazySurface(page, 'quick-settings')).toHaveAttribute('data-risu-lazy-state', 'ready')
+    },
+  )
   await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.setQuickSettingsOpen(false))
 
-  await page.locator('button[data-risu-sidebar-tab="chat"]').click()
-  await page.getByTestId('default-chat-menu-button').click()
-  await page.getByTestId('default-chat-open-chat-list').click()
-  await expect(lazySurface(page, 'chat-list')).toHaveAttribute('data-risu-lazy-state', 'ready')
-  expect(requestedPaths.has(assetPath('src/lib/Others/ChatList.svelte'))).toBe(true)
+  await expectLazyAssetOnTransition(
+    requestOracle,
+    'src/lib/Others/ChatList.svelte',
+    'chat list dialog open',
+    async () => {
+      await page.locator('button[data-risu-sidebar-tab="chat"]').click()
+      await page.getByTestId('default-chat-menu-button').click()
+      await page.getByTestId('default-chat-open-chat-list').click()
+      await expect(lazySurface(page, 'chat-list')).toHaveAttribute('data-risu-lazy-state', 'ready')
+    },
+  )
   await page.keyboard.press('Escape')
   await expect(lazySurface(page, 'chat-list')).toHaveCount(0)
 
-  await page.getByTestId('default-chat-menu-button').click()
-  await page.getByTestId('default-chat-open-modules').click()
-  await expect(lazySurface(page, 'module-chat-menu')).toHaveAttribute('data-risu-lazy-state', 'ready')
-  expect(requestedPaths.has(assetPath('src/lib/Setting/Pages/Module/ModuleChatMenu.svelte'))).toBe(true)
+  await expectLazyAssetOnTransition(
+    requestOracle,
+    'src/lib/Setting/Pages/Module/ModuleChatMenu.svelte',
+    'module chat dialog open',
+    async () => {
+      await page.getByTestId('default-chat-menu-button').click()
+      await page.getByTestId('default-chat-open-modules').click()
+      await expect(lazySurface(page, 'module-chat-menu')).toHaveAttribute('data-risu-lazy-state', 'ready')
+    },
+  )
 })
 
 test('a delayed emitted stylesheet keeps the route visible and applies before ready', async ({ page }) => {
@@ -533,6 +581,43 @@ function assetPath(source: string): string {
   const chunk = manifest[source]
   if (!chunk) throw new Error(`Missing Vite manifest entry for ${source}`)
   return `/${chunk.file}`
+}
+
+function observeTransitionRequests(page: Page): TransitionRequestOracle {
+  const oracle: TransitionRequestOracle = { paths: [], openedAssetPaths: new Set() }
+  page.on('request', (request) => oracle.paths.push(new URL(request.url()).pathname))
+  return oracle
+}
+
+async function expectLazyAssetOnTransition(
+  oracle: TransitionRequestOracle,
+  source: string,
+  transitionLabel: string,
+  transition: () => Promise<void>,
+): Promise<void> {
+  const pathname = assetPath(source)
+  const alreadyOpened = oracle.openedAssetPaths.has(pathname)
+  const requestsBeforeTransition = oracle.paths.filter((requestedPath) => requestedPath === pathname).length
+  expect(
+    requestsBeforeTransition,
+    alreadyOpened
+      ? `${source} was requested again before ${transitionLabel}`
+      : `${source} was requested before its first-open transition ${transitionLabel}`,
+  ).toBe(alreadyOpened ? 1 : 0)
+
+  const transitionStart = oracle.paths.length
+  await transition()
+  const transitionRequests = oracle.paths
+    .slice(transitionStart)
+    .filter((requestedPath) => requestedPath === pathname).length
+
+  expect(
+    transitionRequests,
+    alreadyOpened
+      ? `${source} was fetched again during cached transition ${transitionLabel}`
+      : `${source} was not requested by first-open transition ${transitionLabel}`,
+  ).toBe(alreadyOpened ? 0 : 1)
+  oracle.openedAssetPaths.add(pathname)
 }
 
 function lazySurface(page: Page, surface: string) {
