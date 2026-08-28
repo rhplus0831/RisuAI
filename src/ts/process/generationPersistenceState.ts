@@ -154,9 +154,12 @@ async function refreshGenerationFinalizationPersistences(): Promise<void> {
       const { applyGenerationOperationBootstrap } = getGenerationOperationsRuntime()
       const recoveredGenerationEffects = getRecoveredEffectsRuntime()
       applyGenerationOperationBootstrap(result.bootstrap, 'bootstrap')
-      setGenerationFinalizationPersistences(result.bootstrap.generationFinalizations)
       recoveredGenerationEffects.setPendingRecoveredGenerationEffects(result.bootstrap.pendingGenerationEffects ?? [])
       await recoveredGenerationEffects.reconcilePendingRecoveredGenerationEffects()
+      // Keep the last queued/stalled projection as the refresh trigger until
+      // every newly published effect has reconciled. Clearing it first would
+      // leave no timer owner when a transient effect runtime failure occurs.
+      setGenerationFinalizationPersistences(result.bootstrap.generationFinalizations)
     }
   } catch {
     // Keep the last truthful projection; the next bounded refresh can retry.

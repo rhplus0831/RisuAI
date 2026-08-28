@@ -339,6 +339,39 @@ describe('generation finalization persistence projection', () => {
     expect(persistenceStateMocks.reconcilePendingRecoveredGenerationEffects).toHaveBeenCalledOnce()
   })
 
+  it('retains the refresh trigger until recovered effects reconcile successfully', async () => {
+    const queuedFinalization = {
+      generationId: 'generation-a',
+      chatId: 'chat-a',
+      messageId: 'generation-a',
+      mode: 'send' as const,
+      state: 'queued' as const,
+      failureCount: 1,
+    }
+    setGenerationFinalizationPersistences([queuedFinalization])
+    persistenceStateMocks.fetchBootstrap.mockResolvedValue({
+      status: 'ok',
+      bootstrap: {
+        generationFinalizations: [],
+        pendingGenerationEffects: [],
+      },
+    })
+    persistenceStateMocks.reconcilePendingRecoveredGenerationEffects.mockRejectedValueOnce(
+      new Error('effect runtime is not ready'),
+    )
+
+    startGenerationFinalizationPersistenceRefresh()
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    expect(get(generationFinalizationPersistences)).toEqual([queuedFinalization])
+    expect(persistenceStateMocks.reconcilePendingRecoveredGenerationEffects).toHaveBeenCalledOnce()
+
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    expect(get(generationFinalizationPersistences)).toEqual([])
+    expect(persistenceStateMocks.reconcilePendingRecoveredGenerationEffects).toHaveBeenCalledTimes(2)
+  })
+
   it('acknowledges persisted pending rows without silently clearing terminal history', () => {
     generationFinalizationPersistences.set([
       { chatId: 'chat-a', messageId: 'generation-a', generationId: 'generation-a', state: 'queued' },
