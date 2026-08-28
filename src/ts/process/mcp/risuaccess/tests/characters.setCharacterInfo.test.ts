@@ -25,6 +25,7 @@ import {
   replaceResourceDatabase as setDatabaseLite,
 } from 'src/ts/server/resourceState.svelte'
 import { resetLorebookHydration } from 'src/ts/server/lorebookBridge.svelte'
+import type { character } from 'src/ts/storage/database.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
 import { seedCloneCostDb } from 'src/ts/__tests__/cloneCostHarness'
 import { CharacterHandler } from '../characters'
@@ -280,6 +281,62 @@ describe('MCP character writes optimistic projection', () => {
       'Error: Character with ID char-1 changed before access was accepted. Please retry.',
     )
     expect(getDatabase().characters[1].name).toBe('Replacement character')
+    expect(calls).toEqual([])
+  })
+
+  it.each([
+    {
+      args: { id: 'char-1', name: 'Stale lore', content: 'stale content' },
+      family: 'lorebook',
+      prepare: () => {
+        getDatabase().characters[1].globalLore = []
+      },
+      tool: 'risu-set-character-lorebook',
+    },
+    {
+      args: { id: 'char-1', name: 'Stale regex', in: 'stale-in', out: 'stale-out' },
+      family: 'regex',
+      prepare: () => {
+        getDatabase().characters[1].customscript = []
+      },
+      tool: 'risu-set-character-regex-scripts',
+    },
+    {
+      args: { id: 'char-1', code: 'print("stale")' },
+      family: 'Lua',
+      prepare: () => {
+        getDatabase().characters[1].triggerscript = [makeLuaTrigger('print("original")') as any]
+      },
+      tool: 'risu-set-character-lua-script',
+    },
+  ])('rejects a $family write when the character row is replaced while access is pending', async (testCase) => {
+    testCase.prepare()
+    setResourceWriteGuardEnabled(true)
+    const { calls } = stubCommandFetch()
+    const handler = new CharacterHandler()
+    const replacement = JSON.parse(JSON.stringify(getDatabase().characters[1])) as character
+    replacement.name = 'Replacement character'
+    const replacementSnapshot = JSON.parse(JSON.stringify(replacement))
+    let acceptPrompt!: (accepted: boolean) => void
+    alertConfirmSpy.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          acceptPrompt = resolve
+        }),
+    )
+
+    const pending = handler.handle(testCase.tool, testCase.args)
+
+    expect(alertConfirmSpy).toHaveBeenCalledTimes(1)
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[1] = replacement
+    })
+    acceptPrompt(true)
+
+    expect(toolText(await pending)).toBe(
+      'Error: Character with ID char-1 changed before access was accepted. Please retry.',
+    )
+    expect(getDatabase().characters[1]).toEqual(replacementSnapshot)
     expect(calls).toEqual([])
   })
 

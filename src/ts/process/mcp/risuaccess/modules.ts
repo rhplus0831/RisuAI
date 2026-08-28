@@ -609,6 +609,8 @@ export class ModuleHandler extends MCPToolHandler {
         },
       ]
     }
+    const staleTargetResponse = moduleMutationTargetChangedResponse(id, module)
+    if (staleTargetResponse) return staleTargetResponse
 
     const previous = canUseServerCommands()
       ? currentLorebookCollectionScopedSnapshot({ kind: 'module', moduleId: module.id })
@@ -697,6 +699,8 @@ export class ModuleHandler extends MCPToolHandler {
         },
       ]
     }
+    const staleTargetResponse = moduleMutationTargetChangedResponse(id, module)
+    if (staleTargetResponse) return staleTargetResponse
 
     const previous = canUseServerCommands()
       ? currentLorebookCollectionScopedSnapshot({ kind: 'module', moduleId: module.id })
@@ -787,6 +791,8 @@ export class ModuleHandler extends MCPToolHandler {
         },
       ]
     }
+    const staleTargetResponse = moduleMutationTargetChangedResponse(id, module)
+    if (staleTargetResponse) return staleTargetResponse
 
     const previous = canUseServerCommands()
       ? { kind: 'moduleScripts' as const, moduleId: module.id, scripts: cloneJsonValue(module.regex ?? []) }
@@ -866,6 +872,8 @@ export class ModuleHandler extends MCPToolHandler {
         },
       ]
     }
+    const staleTargetResponse = moduleMutationTargetChangedResponse(id, module)
+    if (staleTargetResponse) return staleTargetResponse
 
     const previous = canUseServerCommands()
       ? { kind: 'moduleScripts' as const, moduleId: module.id, scripts: cloneJsonValue(module.regex ?? []) }
@@ -941,6 +949,8 @@ export class ModuleHandler extends MCPToolHandler {
         },
       ]
     }
+    const staleTargetResponse = moduleMutationTargetChangedResponse(id, module)
+    if (staleTargetResponse) return staleTargetResponse
 
     const previous = canUseServerCommands()
       ? { kind: 'moduleTriggers' as const, moduleId: module.id, triggers: cloneJsonValue(module.trigger ?? []) }
@@ -977,6 +987,20 @@ export class ModuleHandler extends MCPToolHandler {
 function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+function moduleMutationTargetChangedResponse(id: string, original: { id: string }): RPCToolCallContent[] | null {
+  const live = getDatabase().modules.find((candidate) => candidate.id === original.id)
+  if (!live || live.mcp) return moduleNotFound(id)
+  if (live !== original) {
+    return [
+      {
+        type: 'text',
+        text: `Error: Module with ID ${id} changed before access was accepted. Please retry.`,
+      },
+    ]
+  }
+  return null
 }
 
 function applyModuleInfoOptimistically(moduleId: string, patch: ModuleSnapshot, enabled: boolean | null): void {

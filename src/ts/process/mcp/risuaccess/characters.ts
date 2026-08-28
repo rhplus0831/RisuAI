@@ -648,6 +648,8 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ]
     }
+    const staleTargetResponse = characterMutationTargetChangedResponse(id, char)
+    if (staleTargetResponse) return staleTargetResponse
 
     const entries = cloneJsonValue(char.globalLore ?? [])
     const entryIndex = entries.findIndex((entry) => {
@@ -739,6 +741,8 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ]
     }
+    const staleTargetResponse = characterMutationTargetChangedResponse(id, char)
+    if (staleTargetResponse) return staleTargetResponse
 
     const entries = cloneJsonValue(char.globalLore ?? [])
     const entryIndex = entries.findIndex((entry) => {
@@ -834,6 +838,8 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ]
     }
+    const staleTargetResponse = characterMutationTargetChangedResponse(id, char)
+    if (staleTargetResponse) return staleTargetResponse
 
     const hadScriptsField = Object.prototype.hasOwnProperty.call(char, 'customscript')
     const previousScripts = cloneJsonValue(char.customscript ?? [])
@@ -925,6 +931,8 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ]
     }
+    const staleTargetResponse = characterMutationTargetChangedResponse(id, char)
+    if (staleTargetResponse) return staleTargetResponse
 
     const hadScriptsField = Object.prototype.hasOwnProperty.call(char, 'customscript')
     const previousScripts = cloneJsonValue(char.customscript ?? [])
@@ -1099,6 +1107,8 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ]
     }
+    const staleTargetResponse = characterMutationTargetChangedResponse(id, char)
+    if (staleTargetResponse) return staleTargetResponse
 
     const hadTriggersField = Object.prototype.hasOwnProperty.call(char, 'triggerscript')
     const previousTriggers = cloneJsonValue(char.triggerscript ?? [])
@@ -1191,6 +1201,27 @@ function characterLorebookNotReadyResponse(char: character): RPCToolCallContent[
 
 function characterAccessName(char: character): string {
   return getCharacterDisplayName(char, char.chaId || 'Unnamed')
+}
+
+function characterMutationTargetChangedResponse(id: string, original: character): RPCToolCallContent[] | null {
+  const live = getDatabase().characters?.find((candidate) => candidate.chaId === original.chaId)
+  if (!live) {
+    return [
+      {
+        type: 'text',
+        text: `Error: Character with ID ${id} not found.`,
+      },
+    ]
+  }
+  if (live !== original) {
+    return [
+      {
+        type: 'text',
+        text: `Error: Character with ID ${id} changed before access was accepted. Please retry.`,
+      },
+    ]
+  }
+  return null
 }
 
 function applyCharacterInfoPatchOptimistically(characterId: string, patch: Record<string, unknown>): void {

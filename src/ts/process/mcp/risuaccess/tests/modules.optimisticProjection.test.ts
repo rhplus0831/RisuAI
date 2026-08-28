@@ -276,6 +276,61 @@ describe('MCP module writes optimistic projection', () => {
     expect(calls).toEqual([])
   })
 
+  it.each([
+    {
+      args: { id: 'module-a', name: 'Stale lore', content: 'stale content' },
+      family: 'lorebook',
+      prepare: () => {
+        getDatabase().modules[0].lorebook = []
+      },
+      tool: 'risu-set-module-lorebook',
+    },
+    {
+      args: { id: 'module-a', name: 'Stale regex', in: 'stale-in', out: 'stale-out' },
+      family: 'regex',
+      prepare: () => {
+        getDatabase().modules[0].regex = []
+      },
+      tool: 'risu-set-module-regex-script',
+    },
+    {
+      args: { id: 'module-a', code: 'print("stale")' },
+      family: 'Lua',
+      prepare: () => {
+        getDatabase().modules[0].trigger = [makeLuaTrigger('print("original")')]
+      },
+      tool: 'risu-set-module-lua-script',
+    },
+  ])('rejects a $family write when the module row is replaced while access is pending', async (testCase) => {
+    withTrustedResourceWrite(testCase.prepare)
+    const { calls } = stubCommandFetch()
+    const handler = new ModuleHandler()
+    const replacement = JSON.parse(JSON.stringify(getDatabase().modules[0])) as RisuModule
+    replacement.name = 'Replacement module'
+    const replacementSnapshot = JSON.parse(JSON.stringify(replacement))
+    let acceptPrompt!: (accepted: boolean) => void
+    alertConfirmSpy.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          acceptPrompt = resolve
+        }),
+    )
+
+    const pending = handler.handle(testCase.tool, testCase.args)
+
+    expect(alertConfirmSpy).toHaveBeenCalledTimes(1)
+    withTrustedResourceWrite(() => {
+      getDatabase().modules[0] = replacement
+    })
+    acceptPrompt(true)
+
+    expect(toolText(await pending)).toBe(
+      'Error: Module with ID module-a changed before access was accepted. Please retry.',
+    )
+    expect(getDatabase().modules[0]).toEqual(replacementSnapshot)
+    expect(calls).toEqual([])
+  })
+
   it('setModuleInfo patches resource state and read-tool output before sequenced commands resolve', async () => {
     const { calls, releaseHeldResponses } = stubCommandFetch({
       holdUrls: ['/api/v1/commands/modules/module-a'],
