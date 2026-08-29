@@ -1,7 +1,8 @@
-import { execFileSync, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
+import { checkCompatibilityBaseline } from '../../util/compat-baseline'
 import type {
   Cluster10Artifact,
   CompatCellArtifact,
@@ -11,8 +12,6 @@ import type {
 } from './types'
 
 const ROOT = resolve(import.meta.dirname, '../..')
-const BASELINE_ROOT = '/home/codex/risu-baseline-71c476e9c'
-const BASELINE_COMMIT = '71c476e9c86263fe907105b011ca4dde0a619d66'
 const GOLDEN_DIR = resolve(import.meta.dirname, 'golden')
 const DIAGNOSTIC_DIR = resolve(ROOT, 'fast-bootstrap-results/compat-harness')
 const UPDATE = process.env.UPDATE_COMPAT_HARNESS === '1'
@@ -89,19 +88,6 @@ function buildDiff(baseline: CompatSideArtifact, current: CompatSideArtifact): C
   }
 }
 
-function assertBaseline(): void {
-  if (!existsSync(BASELINE_ROOT)) {
-    throw new Error(`Fork-point worktree is missing: ${BASELINE_ROOT}`)
-  }
-  const commit = execFileSync('git', ['-C', BASELINE_ROOT, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
-  if (commit !== BASELINE_COMMIT) {
-    throw new Error(`Fork-point worktree is at ${commit}; expected ${BASELINE_COMMIT}`)
-  }
-  if (!existsSync(resolve(BASELINE_ROOT, 'node_modules'))) {
-    throw new Error(`Baseline dependencies are missing. Run: pnpm --dir ${BASELINE_ROOT} install --frozen-lockfile`)
-  }
-}
-
 function compareOrUpdate(name: string, actual: unknown): boolean {
   const path = resolve(GOLDEN_DIR, name)
   if (UPDATE) {
@@ -118,7 +104,7 @@ function compareOrUpdate(name: string, actual: unknown): boolean {
   return false
 }
 
-if (!CURRENT_ONLY) assertBaseline()
+if (!CURRENT_ONLY) checkCompatibilityBaseline()
 const scratch = mkdtempSync(resolve(tmpdir(), 'risu-compat-harness-'))
 try {
   const baselinePath = resolve(scratch, 'baseline.json')
