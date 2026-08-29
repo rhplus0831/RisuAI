@@ -20,6 +20,7 @@ import {
   isStreamDeadlineActivityFrame,
   normalizeHeartbeatSec,
   normalizeStreamTimeoutMs,
+  resolveLocalNetworkTarget,
   runStreamJob,
   sanitizeLocalTargetUrl,
 } from '../src/streamJobs.js'
@@ -195,6 +196,25 @@ describe('sanitizeLocalTargetUrl', () => {
     expect(sanitizeLocalTargetUrl(null)).toBeNull()
     expect(sanitizeLocalTargetUrl(42)).toBeNull()
     expect(sanitizeLocalTargetUrl({})).toBeNull()
+  })
+
+  it('pins a private DNS answer for local hostnames', async () => {
+    const target = await resolveLocalNetworkTarget('http://printer.local:8080/path', async () => [
+      { address: '192.168.1.25', family: 4 },
+    ])
+
+    expect(target.url.href).toBe('http://printer.local:8080/path')
+    expect(target.address).toBe('192.168.1.25')
+    expect(target.family).toBe(4)
+  })
+
+  it('rejects a local hostname when any DNS answer escapes the private boundary', async () => {
+    await expect(
+      resolveLocalNetworkTarget('http://printer.local', async () => [
+        { address: '192.168.1.25', family: 4 },
+        { address: '203.0.113.10', family: 4 },
+      ]),
+    ).rejects.toMatchObject({ statusCode: 403 })
   })
 })
 

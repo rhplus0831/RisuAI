@@ -1,9 +1,20 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { lookup as dnsLookup } from 'node:dns/promises'
 import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import { Readable } from 'node:stream'
-import { bufferToBodyInit, filterResponseHeaders, normalizeForwardHeaders } from './proxy.js'
+import { filterResponseHeaders, normalizeForwardHeaders } from './proxy.js'
+import {
+  PluginNetworkTargetError,
+  requestPluginNetworkWithRedirects,
+  requestResolvedPluginNetworkTarget,
+  type PluginDnsAddress,
+  type PluginDnsResolver,
+  type PluginNetworkRedirectDependencies,
+  type PluginNetworkRequestOptions,
+  type ResolvedPluginNetworkTarget,
+} from './pluginNetwork.js'
 import { STREAM_CLIENT_MAX_BUFFERED_BYTES } from './streamBackpressure.js'
 import { SHARED_DEFAULT_REQUEST_TIMEOUT_MS, SHARED_MAX_REQUEST_TIMEOUT_MS } from './requestTimeouts.js'
 
@@ -141,7 +152,7 @@ const PRIVATE_BLOCKS = (() => {
   return list
 })()
 
-function isLocalNetworkHost(hostname: string): boolean {
+export function isLocalNetworkHost(hostname: string): boolean {
   if (typeof hostname !== 'string' || hostname.trim() === '') return false
   let normalized = hostname.toLowerCase().replace(/\.$/, '').split('%')[0]
   if (normalized.startsWith('[') && normalized.endsWith(']')) {
@@ -154,6 +165,61 @@ function isLocalNetworkHost(hostname: string): boolean {
   if (family === 4) return PRIVATE_BLOCKS.check(normalized, 'ipv4')
   if (family === 6) return PRIVATE_BLOCKS.check(normalized, 'ipv6')
   return false
+}
+
+const defaultLocalNetworkResolver: PluginDnsResolver = async (hostname) => {
+  const addresses = await dnsLookup(hostname, { all: true, verbatim: true })
+  return addresses
+    .filter((entry): entry is { address: string; family: 4 | 6 } => entry.family === 4 || entry.family === 6)
+    .map((entry) => ({ address: entry.address, family: entry.family }))
+}
+
+/**
+ * Resolves a local-network target once and requires every answer to stay in the
+ * deliberate loopback/private/link-local boundary. The selected address is
+ * pinned into the socket so a second DNS answer cannot pivot the request.
+ */
+export async function resolveLocalNetworkTarget(
+  rawUrl: unknown,
+  resolver: PluginDnsResolver = defaultLocalNetworkResolver,
+): Promise<ResolvedPluginNetworkTarget> {
+  const sanitized = sanitizeLocalTargetUrl(rawUrl)
+  if (!sanitized) throw new PluginNetworkTargetError('Blocked non-local target URL', 400)
+
+  const url = new URL(sanitized)
+  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '').split('%')[0]
+  const literalFamily = net.isIP(hostname)
+  let addresses: readonly PluginDnsAddress[]
+  try {
+    addresses = literalFamily
+      ? [{ address: hostname, family: literalFamily as 4 | 6 }]
+      : await resolver(hostname)
+  } catch {
+    throw new PluginNetworkTargetError('Local network target could not be resolved', 502)
+  }
+
+  if (addresses.length === 0) {
+    throw new PluginNetworkTargetError('Local network target could not be resolved', 502)
+  }
+  if (addresses.some((entry) => !isLocalNetworkHost(entry.address))) {
+    throw new PluginNetworkTargetError('Local network target resolved outside the private network', 403)
+  }
+
+  const selected = addresses[0]
+  return { url, address: selected.address, family: selected.family }
+}
+
+const defaultLocalRedirectDependencies: PluginNetworkRedirectDependencies = {
+  resolveTarget: (rawUrl) => resolveLocalNetworkTarget(rawUrl),
+  requestTarget: requestResolvedPluginNetworkTarget,
+}
+
+export function requestLocalNetworkWithRedirects(
+  rawUrl: string,
+  options: PluginNetworkRequestOptions,
+  dependencies: PluginNetworkRedirectDependencies = defaultLocalRedirectDependencies,
+) {
+  return requestPluginNetworkWithRedirects(rawUrl, options, dependencies)
 }
 
 export function sanitizeLocalTargetUrl(raw: unknown): string | null {
@@ -810,22 +876,27 @@ export async function runStreamJob(registry: JobRegistry, job: StreamJob, arg: R
   }
 
   try {
-    const upstream = await fetch(targetUrl, {
+    const upstream = await requestLocalNetworkWithRedirects(targetUrl, {
       method: arg.method,
       headers,
-      body: arg.bodyBuffer ? bufferToBodyInit(arg.bodyBuffer) : undefined,
+      body: arg.bodyBuffer,
       signal: job.abortController.signal,
     })
 
+    const responseHeaders = new Headers()
+    for (const [name, value] of Object.entries(upstream.headers)) {
+      if (typeof value === 'string') responseHeaders.set(name, value)
+      else if (Array.isArray(value)) for (const entry of value) responseHeaders.append(name, entry)
+    }
+
     registry.pushEvent(job, {
       type: 'upstream_headers',
-      status: upstream.status,
-      headers: filterResponseHeaders(upstream.headers),
+      status: upstream.statusCode ?? 502,
+      headers: filterResponseHeaders(responseHeaders),
     })
 
-    if (upstream.body) {
-      const stream = Readable.fromWeb(upstream.body as Parameters<typeof Readable.fromWeb>[0])
-      for await (const value of stream) {
+    if (upstream.readable) {
+      for await (const value of upstream) {
         if (job.abortController.signal.aborted) break
         const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value as Uint8Array)
         if (chunk.length > 0) {
@@ -851,6 +922,11 @@ export async function runStreamJob(registry: JobRegistry, job: StreamJob, arg: R
     registry.pushEvent(job, { type: 'done' })
     registry.markDone(job)
   } catch (err) {
+    if (err instanceof PluginNetworkTargetError) {
+      registry.pushEvent(job, { type: 'error', status: err.statusCode, message: err.message })
+      registry.markDone(job)
+      return
+    }
     const name = (err as { name?: string } | null)?.name
     const message = name === 'AbortError' ? 'Proxy stream job aborted' : `${err}`
     registry.pushEvent(job, { type: 'error', status: 504, message })
