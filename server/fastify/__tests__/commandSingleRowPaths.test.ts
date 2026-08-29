@@ -10,6 +10,7 @@ import { setupAuthedClient } from './helpers/auth.js'
 import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 import { assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
 import { serializeChatGenerationSettingsDigestInput } from '../../../src/ts/chatGenerationSettings.js'
+import { createBardWikiDocument } from '../src/bardWikiRepository.js'
 
 // Single character-row / single chat-row regression. Character/chat metadata
 // edits write only their target row plus documented conditional co-writes instead
@@ -796,6 +797,22 @@ describe('fork (character row + chat rows + surgical messages)', () => {
       },
     })
     expect(readChatMessageIds('chat-a-1')).toEqual(['src-msg-1'])
+    const bardWikiDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      createBardWikiDocument(bardWikiDb, {
+        id: 'source-bardwiki-document',
+        chatId: 'chat-a-1',
+        kind: 'event',
+        title: 'Future source fact',
+        logicalPath: 'Events/Future source fact',
+        markdown: 'This authoritative row belongs only to the source chat.',
+        actor: 'model',
+        reason: 'analysis',
+        commandRevision: appended.revision,
+      })
+    } finally {
+      bardWikiDb.close()
+    }
     const before = rowidSnapshot()
 
     const { metric, body } = await runCommand({
@@ -837,6 +854,15 @@ describe('fork (character row + chat rows + surgical messages)', () => {
       extensionPayload: { preserved: true },
     })
     expect(readChatMessageIds('chat-a-1')).toEqual(['src-msg-1'])
+    const verify = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      expect(verify.prepare('SELECT id FROM bardwiki_documents WHERE chat_id = ?').all('chat-a-1')).toEqual([
+        { id: 'source-bardwiki-document' },
+      ])
+      expect(verify.prepare('SELECT id FROM bardwiki_documents WHERE chat_id = ?').all('fork-1')).toEqual([])
+    } finally {
+      verify.close()
+    }
   })
 
   it('rejects unloaded placeholders in fork and create transcripts without writing anything', async () => {

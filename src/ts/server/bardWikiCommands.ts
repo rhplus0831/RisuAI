@@ -4,15 +4,24 @@ import {
   confirmBardWikiAssistantCommand,
   deleteBardWikiDocumentCommand,
   patchBardWikiChatSettingsCommand,
+  previewBardWikiRebuildCommand,
+  queueBardWikiRebuildCommand,
+  importBardWikiVaultCommand,
   runServerCommand,
   updateBardWikiDocumentCommand,
   type BardWikiChatSettingsPatch,
+  type BardWikiRebuildPolicy,
+  type BardWikiRebuildPreview,
+  type BardWikiVaultConflictStrategy,
+  type BardWikiVaultExpectedTarget,
+  type BardWikiVaultImportPlan,
   type BardWikiDocumentCommandFields,
   type ServerCommandResult,
   type ServerCommandTransportOptions,
 } from './commands'
 import { dispatchDurableMutation, registerDurableMutationSettlementListener } from './durableMutationDispatch'
 import { stagePendingMutation, type DurableMutationIntent } from './pendingMutationOutbox'
+import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 
 export type BardWikiMutationFailure = Exclude<ServerCommandResult, { status: 'ok' }>
 export type BardWikiMutationFinalOutcome =
@@ -29,6 +38,11 @@ export type BardWikiMutationOutcome<T extends Record<string, unknown> = {}> =
     }
   | { status: 'conflict'; result: BardWikiMutationFailure }
   | { status: 'failed'; result: BardWikiMutationFailure }
+
+export type BardWikiVaultExportResult =
+  | { status: 'ok'; archive: Blob }
+  | { status: 'error'; error: string }
+  | { status: 'unavailable' }
 
 interface DurableBardWikiMutationInput<T extends Record<string, unknown>> {
   key: string
@@ -171,4 +185,85 @@ export function confirmBardWikiAssistant(
     intent,
     command: (baseRevision, signal) => confirmBardWikiAssistantCommand({ baseRevision, chatId, ...source }, signal),
   })
+}
+
+export function previewBardWikiRebuild(
+  chatId: string,
+  policy: BardWikiRebuildPolicy,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ preview: BardWikiRebuildPreview }>> {
+  return previewBardWikiRebuildCommand(chatId, policy, signal)
+}
+
+export function queueBardWikiRebuild(
+  chatId: string,
+  policy: BardWikiRebuildPolicy,
+  expectedSourceCount: number,
+): Promise<BardWikiMutationOutcome<{ job: BardWikiJobSummary }>> {
+  const path = `/bardwiki/chats/${encodeURIComponent(chatId)}/rebuilds`
+  const body = { preview: false, confirm: true, policy, expectedSourceCount }
+  const intent: DurableMutationIntent = { version: 1, requests: [{ method: 'POST', path, body }] }
+  return dispatchBardWikiMutation({
+    key: `bardwiki-rebuild:${chatId}`,
+    intent,
+    command: (baseRevision, signal) =>
+      queueBardWikiRebuildCommand({ baseRevision, chatId, policy, expectedSourceCount }, signal),
+  })
+}
+
+export function previewBardWikiVaultImport(
+  chatId: string,
+  archiveBase64: string,
+  strategy: BardWikiVaultConflictStrategy,
+  expectedTargets: BardWikiVaultExpectedTarget[] = [],
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ dryRun: boolean; plan: BardWikiVaultImportPlan }>> {
+  return importBardWikiVaultCommand({ chatId, dryRun: true, strategy, archiveBase64, expectedTargets }, signal)
+}
+
+export function importBardWikiVault(
+  chatId: string,
+  archiveBase64: string,
+  strategy: BardWikiVaultConflictStrategy,
+  expectedTargets: BardWikiVaultExpectedTarget[] = [],
+): Promise<ServerCommandResult<{ dryRun: boolean; plan: BardWikiVaultImportPlan }>> {
+  return runServerCommand({
+    command: (baseRevision) =>
+      importBardWikiVaultCommand({
+        baseRevision,
+        chatId,
+        dryRun: false,
+        strategy,
+        archiveBase64,
+        expectedTargets,
+      }),
+  })
+}
+
+export async function exportBardWikiVault(
+  chatId: string,
+  signal?: AbortSignal | null,
+): Promise<BardWikiVaultExportResult> {
+  let response: Response
+  try {
+    response = await fetch(`/api/v1/bardwiki/chats/${encodeURIComponent(chatId)}/export`, {
+      headers: { 'risu-auth': await getNodeServerProxyAuth() },
+      signal: signal ?? undefined,
+    })
+  } catch (error) {
+    return { status: 'error', error: error instanceof Error ? error.message : String(error) }
+  }
+  if (!response.ok) {
+    if (response.status === 404 || response.status === 503) return { status: 'unavailable' }
+    return { status: 'error', error: `HTTP ${response.status}` }
+  }
+  return { status: 'ok', archive: await response.blob() }
+}
+
+export type {
+  BardWikiRebuildPolicy,
+  BardWikiRebuildPreview,
+  BardWikiVaultConflictStrategy,
+  BardWikiVaultExpectedTarget,
+  BardWikiVaultImportPlan,
 }

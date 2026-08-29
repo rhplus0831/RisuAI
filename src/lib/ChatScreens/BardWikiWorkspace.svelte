@@ -1,6 +1,15 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
-  import { BookOpenIcon, HistoryIcon, PlusIcon, RotateCcwIcon, Trash2Icon, XIcon } from '@lucide/svelte'
+  import {
+    BookOpenIcon,
+    DownloadIcon,
+    HistoryIcon,
+    PlusIcon,
+    RotateCcwIcon,
+    Trash2Icon,
+    UploadIcon,
+    XIcon,
+  } from '@lucide/svelte'
   import type {
     BardWikiContextPolicy,
     BardWikiDocument,
@@ -22,11 +31,21 @@
   import {
     createBardWikiDocument,
     deleteBardWikiDocument,
+    exportBardWikiVault,
+    importBardWikiVault,
+    previewBardWikiRebuild,
+    previewBardWikiVaultImport,
+    queueBardWikiRebuild,
     saveBardWikiChatSettings,
     updateBardWikiDocument,
     type BardWikiMutationFailure,
     type BardWikiMutationFinalOutcome,
     type BardWikiMutationOutcome,
+    type BardWikiRebuildPolicy,
+    type BardWikiRebuildPreview,
+    type BardWikiVaultConflictStrategy,
+    type BardWikiVaultExpectedTarget,
+    type BardWikiVaultImportPlan,
   } from 'src/ts/server/bardWikiCommands'
   import { subscribeServerBardWikiJobEvents } from 'src/ts/server/bardWikiJobEvents'
   import { cancelServerBardWikiJob, retryServerBardWikiJob } from 'src/ts/process/request/serverBardWikiJobs'
@@ -80,6 +99,16 @@
   let settingsMutationError = $state('')
   let jobActionError = $state('')
   let jobActionInstanceIds = $state<Set<string>>(new Set())
+  let lifecycleBusy = $state(false)
+  let lifecycleError = $state('')
+  let lifecycleStatus = $state('')
+  let rebuildPolicy = $state<BardWikiRebuildPolicy>('full')
+  let rebuildPreview = $state<BardWikiRebuildPreview | null>(null)
+  let importStrategy = $state<BardWikiVaultConflictStrategy>('skip')
+  let importArchiveBase64 = $state('')
+  let importFilename = $state('')
+  let importPlan = $state<BardWikiVaultImportPlan | null>(null)
+  let importExpectedTargets = $state<BardWikiVaultExpectedTarget[]>([])
   let enabledOverrideDraft = $state<'inherit' | 'enabled' | 'disabled'>('inherit')
   let memoryModeOverrideDraft = $state<'inherit' | 'hypa' | 'bardwiki' | 'hybrid'>('inherit')
   let confirmationPolicyOverrideDraft = $state<'inherit' | 'manual' | 'automatic'>('inherit')
@@ -226,12 +255,134 @@
     setJobActionPending(job.instanceId, false)
   }
 
+  async function retryAllFailedJobs(): Promise<void> {
+    for (const job of chatResource?.jobs.filter(({ status }) => status === 'failed') ?? []) {
+      await mutateJob(job, 'retry')
+    }
+  }
+
   function jobUpdatedLabel(job: BardWikiJobSummary): string {
     return language.bardWiki.jobUpdated(new Date(job.updatedAt).toLocaleString())
   }
 
   function receiptSourceLabel(receipt: BardWikiReceiptSummary): string {
     return language.bardWiki.receiptSource(receipt.userMessageId, receipt.assistantMessageId)
+  }
+
+  async function previewRebuild(): Promise<void> {
+    if (lifecycleBusy) return
+    lifecycleBusy = true
+    lifecycleError = ''
+    lifecycleStatus = ''
+    rebuildPreview = null
+    const result = await previewBardWikiRebuild(chatId, rebuildPolicy)
+    if (result.status === 'ok') rebuildPreview = result.preview
+    else lifecycleError = result.status === 'error' ? result.error : language.bardWiki.unavailable
+    lifecycleBusy = false
+  }
+
+  async function confirmRebuild(): Promise<void> {
+    const preview = rebuildPreview
+    if (!preview || lifecycleBusy || preview.activeJobId) return
+    if (!globalThis.confirm(language.bardWiki.rebuildConfirm(preview.sourceCount))) return
+    lifecycleBusy = true
+    lifecycleError = ''
+    const outcome = await queueBardWikiRebuild(chatId, preview.policy, preview.sourceCount)
+    if (outcome.status === 'accepted') {
+      lifecycleStatus = language.bardWiki.rebuildQueued
+      rebuildPreview = null
+      await loadChat(false)
+    } else if (outcome.status === 'queued') {
+      lifecycleStatus = language.bardWiki.queued
+      rebuildPreview = null
+      void outcome.settlement.then(async (final) => {
+        if (final.status === 'accepted') await loadChat(false)
+      })
+    } else {
+      lifecycleError = mutationFailureMessage(outcome.result)
+    }
+    lifecycleBusy = false
+  }
+
+  async function downloadVault(): Promise<void> {
+    if (lifecycleBusy) return
+    lifecycleBusy = true
+    lifecycleError = ''
+    lifecycleStatus = ''
+    const result = await exportBardWikiVault(chatId)
+    if (result.status === 'ok') {
+      const href = URL.createObjectURL(result.archive)
+      const anchor = document.createElement('a')
+      anchor.href = href
+      anchor.download = 'bardwiki-vault.zip'
+      anchor.click()
+      URL.revokeObjectURL(href)
+      lifecycleStatus = language.bardWiki.exportReady
+    } else {
+      lifecycleError = result.status === 'error' ? result.error : language.bardWiki.unavailable
+    }
+    lifecycleBusy = false
+  }
+
+  function expectedTargetsForPlan(plan: BardWikiVaultImportPlan): BardWikiVaultExpectedTarget[] {
+    const ids = new Set(
+      plan.actions.filter(({ conflict }) => conflict !== null).map(({ targetDocumentId }) => targetDocumentId),
+    )
+    return (
+      chatResource?.documents
+        .filter(({ id }) => ids.has(id))
+        .map(({ id, version, contentHash }) => ({ documentId: id, version, contentHash })) ?? []
+    )
+  }
+
+  async function previewImport(archiveBase64 = importArchiveBase64, strategy = importStrategy): Promise<void> {
+    if (!archiveBase64 || lifecycleBusy) return
+    lifecycleBusy = true
+    lifecycleError = ''
+    lifecycleStatus = ''
+    importPlan = null
+    importExpectedTargets = []
+    let result = await previewBardWikiVaultImport(chatId, archiveBase64, strategy)
+    if (result.status === 'ok' && strategy === 'replace') {
+      importExpectedTargets = expectedTargetsForPlan(result.plan)
+      result = await previewBardWikiVaultImport(chatId, archiveBase64, strategy, importExpectedTargets)
+    }
+    if (result.status === 'ok') importPlan = result.plan
+    else lifecycleError = result.status === 'error' ? result.error : language.bardWiki.unavailable
+    lifecycleBusy = false
+  }
+
+  async function selectImportArchive(event: Event): Promise<void> {
+    const input = event.currentTarget as HTMLInputElement
+    const file = input.files?.[0]
+    if (!file) return
+    if (file.size > 16 * 1024 * 1024) {
+      lifecycleError = language.bardWiki.importTooLarge
+      input.value = ''
+      return
+    }
+    importFilename = file.name
+    importArchiveBase64 = Buffer.from(await file.arrayBuffer()).toString('base64')
+    await previewImport(importArchiveBase64, importStrategy)
+  }
+
+  async function applyImport(): Promise<void> {
+    if (!importArchiveBase64 || !importPlan?.applicable || lifecycleBusy) return
+    if (!globalThis.confirm(language.bardWiki.importConfirm)) return
+    lifecycleBusy = true
+    lifecycleError = ''
+    const result = await importBardWikiVault(chatId, importArchiveBase64, importStrategy, importExpectedTargets)
+    if (result.status === 'ok') {
+      lifecycleStatus = language.bardWiki.importApplied
+      importPlan = null
+      importArchiveBase64 = ''
+      importFilename = ''
+      importExpectedTargets = []
+      await loadChat(false)
+    } else {
+      lifecycleError = result.status === 'error' ? result.error : language.bardWiki.unavailable
+    }
+    lifecycleBusy = false
   }
 
   function confirmDiscard(): boolean {
@@ -513,6 +664,14 @@
     settingsMutationState = 'idle'
     jobActionError = ''
     jobActionInstanceIds = new Set()
+    lifecycleBusy = false
+    lifecycleError = ''
+    lifecycleStatus = ''
+    rebuildPreview = null
+    importPlan = null
+    importArchiveBase64 = ''
+    importFilename = ''
+    importExpectedTargets = []
     void loadChat()
   })
 
@@ -650,6 +809,115 @@
         </div>
       </details>
 
+      <details data-testid="bardwiki-lifecycle" class="border-b border-darkborderc px-4 py-2">
+        <summary class="cursor-pointer font-medium">{language.bardWiki.lifecycleTools}</summary>
+        <div class="mt-3 grid gap-4 lg:grid-cols-2">
+          <section class="rounded-md border border-darkborderc p-3" aria-labelledby="bardwiki-rebuild-heading">
+            <h3 id="bardwiki-rebuild-heading" class="m-0 text-sm font-semibold">{language.bardWiki.rebuild}</h3>
+            <p class="text-sm text-textcolor2">{language.bardWiki.rebuildDescription}</p>
+            <div class="flex flex-wrap items-center gap-2">
+              <select
+                aria-label={language.bardWiki.rebuildPolicy}
+                class="rounded-md border border-darkborderc bg-darkbg p-2"
+                value={rebuildPolicy}
+                disabled={lifecycleBusy}
+                onchange={(event) => {
+                  rebuildPolicy = event.currentTarget.value as BardWikiRebuildPolicy
+                  rebuildPreview = null
+                }}>
+                <option value="full">{language.bardWiki.rebuildFull}</option>
+                <option value="missing">{language.bardWiki.rebuildMissing}</option>
+              </select>
+              <button
+                type="button"
+                disabled={lifecycleBusy}
+                class="rounded-md border border-darkborderc px-3 py-2 hover:bg-selected disabled:opacity-50"
+                onclick={() => void previewRebuild()}>{language.bardWiki.previewRebuild}</button>
+            </div>
+            {#if rebuildPreview}
+              <div class="mt-3 rounded-md bg-darkbg2 p-2 text-sm" data-testid="bardwiki-rebuild-preview">
+                <p class="m-0">{language.bardWiki.rebuildSourceCount(rebuildPreview.sourceCount)}</p>
+                <p class="m-0">
+                  {language.bardWiki.rebuildDocumentCounts(
+                    rebuildPreview.replaceDerivedDocumentCount,
+                    rebuildPreview.preserveUserDocumentCount,
+                  )}
+                </p>
+                {#if rebuildPreview.activeJobId}
+                  <p class="mb-0 text-textcolor2">{language.bardWiki.rebuildAlreadyActive}</p>
+                {:else}
+                  <button
+                    type="button"
+                    disabled={lifecycleBusy}
+                    class="mt-2 rounded-md border border-darkborderc px-3 py-2 hover:bg-selected disabled:opacity-50"
+                    onclick={() => void confirmRebuild()}>{language.bardWiki.confirmRebuild}</button>
+                {/if}
+              </div>
+            {/if}
+          </section>
+
+          <section class="rounded-md border border-darkborderc p-3" aria-labelledby="bardwiki-vault-heading">
+            <h3 id="bardwiki-vault-heading" class="m-0 text-sm font-semibold">{language.bardWiki.vault}</h3>
+            <p class="text-sm text-textcolor2">{language.bardWiki.vaultDescription}</p>
+            <div class="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={lifecycleBusy}
+                class="flex items-center gap-2 rounded-md border border-darkborderc px-3 py-2 hover:bg-selected disabled:opacity-50"
+                onclick={() => void downloadVault()}><DownloadIcon size={16} />{language.bardWiki.exportVault}</button>
+              <label
+                class="flex cursor-pointer items-center gap-2 rounded-md border border-darkborderc px-3 py-2 hover:bg-selected">
+                <UploadIcon size={16} />{language.bardWiki.chooseVault}
+                <input
+                  class="sr-only"
+                  type="file"
+                  accept=".zip,application/zip"
+                  disabled={lifecycleBusy}
+                  onchange={(event) => void selectImportArchive(event)} />
+              </label>
+              <select
+                aria-label={language.bardWiki.importStrategy}
+                class="rounded-md border border-darkborderc bg-darkbg p-2"
+                value={importStrategy}
+                disabled={lifecycleBusy}
+                onchange={(event) => {
+                  importStrategy = event.currentTarget.value as BardWikiVaultConflictStrategy
+                  void previewImport(importArchiveBase64, importStrategy)
+                }}>
+                <option value="skip">{language.bardWiki.importSkip}</option>
+                <option value="rename">{language.bardWiki.importRename}</option>
+                <option value="replace">{language.bardWiki.importReplace}</option>
+              </select>
+            </div>
+            {#if importFilename}<p class="mb-0 text-xs text-textcolor2">{importFilename}</p>{/if}
+            {#if importPlan}
+              <div class="mt-3 rounded-md bg-darkbg2 p-2 text-sm" data-testid="bardwiki-import-preview">
+                <p class="m-0">
+                  {language.bardWiki.importCounts(
+                    importPlan.creates,
+                    importPlan.replacements,
+                    importPlan.noops,
+                    importPlan.skips,
+                    importPlan.renames,
+                  )}
+                </p>
+                {#if !importPlan.applicable}
+                  <p class="mb-0 text-red-400">{language.bardWiki.importUnresolved}</p>
+                {:else}
+                  <button
+                    type="button"
+                    disabled={lifecycleBusy}
+                    class="mt-2 rounded-md border border-darkborderc px-3 py-2 hover:bg-selected disabled:opacity-50"
+                    onclick={() => void applyImport()}>{language.bardWiki.applyImport}</button>
+                {/if}
+              </div>
+            {/if}
+          </section>
+        </div>
+        {#if lifecycleStatus}<p class="mb-0 text-sm text-textcolor2" role="status">{lifecycleStatus}</p>{/if}
+        {#if lifecycleError}<p class="mb-0 text-sm text-red-400" role="alert">{lifecycleError}</p>{/if}
+      </details>
+
       <details
         data-testid="bardwiki-activity"
         open={chatResource.jobs.some((job) => isActiveJob(job) || job.status === 'failed')}
@@ -680,10 +948,18 @@
           <section aria-labelledby="bardwiki-jobs-heading">
             <div class="flex items-center justify-between gap-2">
               <h3 id="bardwiki-jobs-heading" class="m-0 text-sm font-semibold">{language.bardWiki.jobs}</h3>
-              <button
-                type="button"
-                class="rounded-md border border-darkborderc px-2 py-1 text-sm hover:bg-selected"
-                onclick={() => void loadChat(false)}>{language.bardWiki.refreshStatus}</button>
+              <div class="flex flex-wrap gap-2">
+                {#if chatResource.jobs.some(({ status }) => status === 'failed')}
+                  <button
+                    type="button"
+                    class="rounded-md border border-darkborderc px-2 py-1 text-sm hover:bg-selected"
+                    onclick={() => void retryAllFailedJobs()}>{language.bardWiki.retryAllFailed}</button>
+                {/if}
+                <button
+                  type="button"
+                  class="rounded-md border border-darkborderc px-2 py-1 text-sm hover:bg-selected"
+                  onclick={() => void loadChat(false)}>{language.bardWiki.refreshStatus}</button>
+              </div>
             </div>
             {#if chatResource.jobs.length === 0}
               <p class="text-sm text-textcolor2">{language.bardWiki.noJobs}</p>
@@ -698,6 +974,17 @@
                     <p class="my-1 text-xs text-textcolor2">
                       {language.bardWiki.jobAttempt(job.attemptCount, job.maxAttempts)} · {jobUpdatedLabel(job)}
                     </p>
+                    {#if typeof job.progressCurrent === 'number' && typeof job.progressTotal === 'number'}
+                      <div class="my-1 flex items-center gap-2">
+                        <progress
+                          class="h-2 grow"
+                          aria-label={language.bardWiki.rebuildProgress(job.progressCurrent, job.progressTotal)}
+                          max={Math.max(1, job.progressTotal)}
+                          value={job.progressCurrent}></progress>
+                        <span class="text-xs text-textcolor2"
+                          >{language.bardWiki.rebuildProgress(job.progressCurrent, job.progressTotal)}</span>
+                      </div>
+                    {/if}
                     {#if job.errorSummary}
                       <p class="my-1 text-red-400" role="alert">{job.errorSummary}</p>
                     {/if}

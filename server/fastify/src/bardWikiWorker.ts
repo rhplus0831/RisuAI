@@ -206,7 +206,7 @@ export class BardWikiWorker {
     this.emitJob(job)
     try {
       const handled = await this.handlers[job.kind](job, { signal: controller.signal })
-      if (handled?.outcome === 'rescheduled') {
+      if (handled && typeof handled === 'object' && handled.outcome === 'rescheduled') {
         if (handled.job.id !== job.id || handled.job.status !== 'pending') {
           throw new BardWikiJobHandlerError('bardwiki_invalid_job', 'Handler returned an invalid rescheduled job', {
             retryable: false,

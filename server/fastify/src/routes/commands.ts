@@ -9547,7 +9547,7 @@ export function registerCommandRoutes(
     try {
       const chatId = readBardWikiId((req.params as { chatId?: unknown }).chatId, 'chatId')
       const body = readBardWikiRebuildCommandBody(req.body)
-      if (body.preview) {
+      if (body.preview === true) {
         return {
           revision: getSchemaState(db).revision,
           preview: previewBardWikiRebuild(db, chatId, body.policy),

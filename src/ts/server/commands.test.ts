@@ -86,6 +86,9 @@ import {
   patchServerBackedSettings,
   patchRuntimeSettings,
   patchBardWikiChatSettingsCommand,
+  previewBardWikiRebuildCommand,
+  queueBardWikiRebuildCommand,
+  importBardWikiVaultCommand,
   patchSettingsGroup,
   patchSettingsObjectFieldsCommand,
   peekAppliedServerResourceRevision,
@@ -325,6 +328,21 @@ describe('server command API adapter', () => {
       documentId: 'document/a',
       ...fence,
     })
+    await previewBardWikiRebuildCommand('chat/a', 'full')
+    await queueBardWikiRebuildCommand({
+      baseRevision: 1,
+      chatId: 'chat/a',
+      policy: 'full',
+      expectedSourceCount: 4,
+    })
+    await importBardWikiVaultCommand({
+      baseRevision: 1,
+      chatId: 'chat/a',
+      dryRun: false,
+      strategy: 'rename',
+      archiveBase64: 'UEs=',
+      expectedTargets: [],
+    })
 
     expect(commandFetch.calls.map(({ url, method, body }) => ({ url, method, body }))).toEqual([
       {
@@ -349,6 +367,33 @@ describe('server command API adapter', () => {
         url: '/api/v1/commands/bardwiki/chats/chat%2Fa/documents/document%2Fa',
         method: 'DELETE',
         body: { baseRevision: 1, ...fence },
+      },
+      {
+        url: '/api/v1/commands/bardwiki/chats/chat%2Fa/rebuilds',
+        method: 'POST',
+        body: { preview: true, policy: 'full' },
+      },
+      {
+        url: '/api/v1/commands/bardwiki/chats/chat%2Fa/rebuilds',
+        method: 'POST',
+        body: {
+          baseRevision: 1,
+          preview: false,
+          confirm: true,
+          policy: 'full',
+          expectedSourceCount: 4,
+        },
+      },
+      {
+        url: '/api/v1/commands/bardwiki/chats/chat%2Fa/imports',
+        method: 'POST',
+        body: {
+          baseRevision: 1,
+          dryRun: false,
+          strategy: 'rename',
+          archiveBase64: 'UEs=',
+          expectedTargets: [],
+        },
       },
     ])
   })

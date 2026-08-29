@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
   remove: vi.fn(),
   settings: vi.fn(),
   confirm: vi.fn(),
+  rebuildPreview: vi.fn(),
+  rebuildQueue: vi.fn(),
+  vaultImport: vi.fn(),
   listener: undefined as undefined | ((settlement: 'accepted' | 'discarded', details: Record<string, unknown>) => void),
   retain: false,
 }))
@@ -28,10 +31,19 @@ vi.mock('./commands', () => ({
   deleteBardWikiDocumentCommand: mocks.remove,
   patchBardWikiChatSettingsCommand: mocks.settings,
   confirmBardWikiAssistantCommand: mocks.confirm,
+  previewBardWikiRebuildCommand: mocks.rebuildPreview,
+  queueBardWikiRebuildCommand: mocks.rebuildQueue,
+  importBardWikiVaultCommand: mocks.vaultImport,
   runServerCommand: ({ command }: { command: (baseRevision: number) => Promise<unknown> }) => command(7),
 }))
 
-import { confirmBardWikiAssistant, createBardWikiDocument, updateBardWikiDocument } from './bardWikiCommands'
+import {
+  confirmBardWikiAssistant,
+  createBardWikiDocument,
+  previewBardWikiRebuild,
+  queueBardWikiRebuild,
+  updateBardWikiDocument,
+} from './bardWikiCommands'
 
 const handle = {
   key: 'bardwiki-document:chat-a',
@@ -63,6 +75,9 @@ beforeEach(() => {
   mocks.remove.mockReset()
   mocks.settings.mockReset()
   mocks.confirm.mockReset()
+  mocks.rebuildPreview.mockReset()
+  mocks.rebuildQueue.mockReset()
+  mocks.vaultImport.mockReset()
   mocks.listener = undefined
 })
 
@@ -152,5 +167,36 @@ describe('BardWiki durable commands', () => {
       requests: [{ method: 'POST', path: '/bardwiki/chats/chat-a/confirmations', body: source }],
     })
     expect(mocks.confirm).toHaveBeenCalledWith({ baseRevision: 7, chatId: 'chat-a', ...source }, undefined)
+  })
+
+  it('previews rebuild scope without an outbox and durably queues the confirmed scope', async () => {
+    const preview = {
+      chatId: 'chat-a',
+      policy: 'full',
+      sourceCount: 4,
+      replaceDerivedDocumentCount: 2,
+      preserveUserDocumentCount: 1,
+      activeJobId: null,
+    }
+    mocks.rebuildPreview.mockResolvedValue({ status: 'ok', revision: 7, preview })
+    mocks.rebuildQueue.mockResolvedValue({ status: 'ok', revision: 8, job: { id: 'rebuild-a' } })
+
+    await expect(previewBardWikiRebuild('chat-a', 'full')).resolves.toMatchObject({ status: 'ok', preview })
+    expect(mocks.stage).not.toHaveBeenCalled()
+    await expect(queueBardWikiRebuild('chat-a', 'full', 4)).resolves.toMatchObject({ status: 'accepted' })
+    expect(mocks.stage).toHaveBeenCalledWith('bardwiki-rebuild:chat-a', {
+      version: 1,
+      requests: [
+        {
+          method: 'POST',
+          path: '/bardwiki/chats/chat-a/rebuilds',
+          body: { preview: false, confirm: true, policy: 'full', expectedSourceCount: 4 },
+        },
+      ],
+    })
+    expect(mocks.rebuildQueue).toHaveBeenCalledWith(
+      { baseRevision: 7, chatId: 'chat-a', policy: 'full', expectedSourceCount: 4 },
+      undefined,
+    )
   })
 })

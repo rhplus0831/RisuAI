@@ -623,6 +623,62 @@ export interface ConfirmBardWikiAssistantCommandInput {
   assistantContentHash: string
 }
 
+export type BardWikiRebuildPolicy = 'missing' | 'full'
+
+export interface BardWikiRebuildPreview {
+  chatId: string
+  policy: BardWikiRebuildPolicy
+  sourceCount: number
+  replaceDerivedDocumentCount: number
+  preserveUserDocumentCount: number
+  activeJobId: string | null
+}
+
+export interface QueueBardWikiRebuildCommandInput {
+  baseRevision: number
+  chatId: string
+  policy: BardWikiRebuildPolicy
+  expectedSourceCount: number
+}
+
+export type BardWikiVaultConflictStrategy = 'skip' | 'rename' | 'replace'
+
+export interface BardWikiVaultExpectedTarget {
+  documentId: string
+  version: number
+  contentHash: string
+}
+
+export interface BardWikiVaultImportAction {
+  sourceDocumentId: string
+  targetDocumentId: string
+  action: 'create' | 'replace' | 'noop' | 'skip'
+  logicalPath: string
+  conflict: 'id' | 'path' | 'id_and_path' | 'ambiguous' | null
+}
+
+export interface BardWikiVaultImportPlan {
+  format: 'risu-bardwiki-vault'
+  version: 1
+  strategy: BardWikiVaultConflictStrategy
+  creates: number
+  replacements: number
+  noops: number
+  skips: number
+  renames: number
+  applicable: boolean
+  actions: BardWikiVaultImportAction[]
+}
+
+export interface BardWikiVaultImportCommandInput {
+  baseRevision?: number
+  chatId: string
+  dryRun: boolean
+  strategy: BardWikiVaultConflictStrategy
+  archiveBase64: string
+  expectedTargets?: BardWikiVaultExpectedTarget[]
+}
+
 export interface DeleteServerInlayCatalogInput {
   assetId: string
   baseRevision: number
@@ -5684,6 +5740,52 @@ export async function confirmBardWikiAssistantCommand(
       userContentHash: input.userContentHash,
       assistantMessageId: input.assistantMessageId,
       assistantContentHash: input.assistantContentHash,
+    },
+    signal,
+  })
+}
+
+export async function previewBardWikiRebuildCommand(
+  chatId: string,
+  policy: BardWikiRebuildPolicy,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ preview: BardWikiRebuildPreview }>> {
+  return requestCommandJson(`/bardwiki/chats/${encodeURIComponent(chatId)}/rebuilds`, {
+    method: 'POST',
+    body: { preview: true, policy },
+    signal,
+  })
+}
+
+export async function queueBardWikiRebuildCommand(
+  input: QueueBardWikiRebuildCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ job: BardWikiJobSummary }>> {
+  return requestCommandJson(`/bardwiki/chats/${encodeURIComponent(input.chatId)}/rebuilds`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      preview: false,
+      confirm: true,
+      policy: input.policy,
+      expectedSourceCount: input.expectedSourceCount,
+    },
+    signal,
+  })
+}
+
+export async function importBardWikiVaultCommand(
+  input: BardWikiVaultImportCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ dryRun: boolean; plan: BardWikiVaultImportPlan }>> {
+  return requestCommandJson(`/bardwiki/chats/${encodeURIComponent(input.chatId)}/imports`, {
+    method: 'POST',
+    body: {
+      ...(input.baseRevision === undefined ? {} : { baseRevision: input.baseRevision }),
+      dryRun: input.dryRun,
+      strategy: input.strategy,
+      archiveBase64: input.archiveBase64,
+      expectedTargets: input.expectedTargets ?? [],
     },
     signal,
   })

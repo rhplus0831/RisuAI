@@ -13,6 +13,11 @@ const mutations = vi.hoisted(() => ({
   create: vi.fn(),
   update: vi.fn(),
   remove: vi.fn(),
+  rebuildPreview: vi.fn(),
+  rebuildQueue: vi.fn(),
+  vaultExport: vi.fn(),
+  vaultPreview: vi.fn(),
+  vaultImport: vi.fn(),
 }))
 
 const jobActions = vi.hoisted(() => ({
@@ -32,6 +37,11 @@ vi.mock('src/ts/server/bardWikiCommands', () => ({
   createBardWikiDocument: mutations.create,
   updateBardWikiDocument: mutations.update,
   deleteBardWikiDocument: mutations.remove,
+  previewBardWikiRebuild: mutations.rebuildPreview,
+  queueBardWikiRebuild: mutations.rebuildQueue,
+  exportBardWikiVault: mutations.vaultExport,
+  previewBardWikiVaultImport: mutations.vaultPreview,
+  importBardWikiVault: mutations.vaultImport,
 }))
 
 vi.mock('src/ts/process/request/serverBardWikiJobs', () => ({
@@ -149,6 +159,25 @@ beforeEach(() => {
   mutations.create.mockReset().mockResolvedValue({ status: 'accepted', result: accepted })
   mutations.update.mockReset().mockResolvedValue({ status: 'accepted', result: accepted })
   mutations.remove.mockReset().mockResolvedValue({ status: 'accepted', result: accepted })
+  mutations.rebuildPreview.mockReset().mockResolvedValue({
+    status: 'ok',
+    revision: 4,
+    preview: {
+      chatId: 'chat-a',
+      policy: 'full',
+      sourceCount: 3,
+      replaceDerivedDocumentCount: 1,
+      preserveUserDocumentCount: 2,
+      activeJobId: null,
+    },
+  })
+  mutations.rebuildQueue.mockReset().mockResolvedValue({
+    status: 'accepted',
+    result: { status: 'ok', revision: 5, job: { id: 'rebuild-a' } },
+  })
+  mutations.vaultExport.mockReset().mockResolvedValue({ status: 'ok', archive: new Blob(['zip']) })
+  mutations.vaultPreview.mockReset()
+  mutations.vaultImport.mockReset()
   jobActions.retry.mockReset()
   jobActions.cancel.mockReset()
   target = document.createElement('div')
@@ -506,6 +535,8 @@ describe('BardWiki workspace', () => {
       errorSummary: null,
       attemptCount: 1,
       maxAttempts: 3,
+      progressCurrent: 2,
+      progressTotal: 5,
       nextRunAt: '2026-08-29T00:00:00.000Z',
       createdAt: '2026-08-29T00:00:00.000Z',
       updatedAt: '2026-08-29T00:01:00.000Z',
@@ -524,5 +555,73 @@ describe('BardWiki workspace', () => {
     expect(jobActions.cancel).toHaveBeenCalledWith('job-a')
     expect(target.textContent).toContain('bardwiki_job_not_cancellable')
     expect(target.textContent).toContain('Running')
+    expect(target.querySelector('progress')?.value).toBe(2)
+    expect(target.textContent).toContain('2/5 turns')
+  })
+
+  it('previews and explicitly queues a historical rebuild from lifecycle tools', async () => {
+    component = mount(BardWikiWorkspace, { target, props: { chatId: 'chat-a' } })
+    await settle()
+
+    const preview = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim() === 'Preview rebuild',
+    )
+    preview?.click()
+    await settle()
+
+    expect(mutations.rebuildPreview).toHaveBeenCalledWith('chat-a', 'full')
+    expect(target.querySelector('[data-testid="bardwiki-rebuild-preview"]')?.textContent).toContain(
+      '3 eligible transcript turns',
+    )
+    const start = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim() === 'Start rebuild',
+    )
+    start?.click()
+    await settle()
+
+    expect(globalThis.confirm).toHaveBeenCalledWith('Rebuild BardWiki from 3 transcript turns?')
+    expect(mutations.rebuildQueue).toHaveBeenCalledWith('chat-a', 'full', 3)
+    expect(target.textContent).toContain('The rebuild was queued')
+  })
+
+  it('dry-runs a selected vault before enabling one revisioned import', async () => {
+    const plan = {
+      format: 'risu-bardwiki-vault' as const,
+      version: 1 as const,
+      strategy: 'skip' as const,
+      creates: 2,
+      replacements: 0,
+      noops: 1,
+      skips: 1,
+      renames: 0,
+      applicable: true,
+      actions: [],
+    }
+    mutations.vaultPreview.mockResolvedValue({ status: 'ok', revision: 4, dryRun: true, plan })
+    mutations.vaultImport.mockResolvedValue({ status: 'ok', revision: 5, dryRun: false, plan })
+    component = mount(BardWikiWorkspace, { target, props: { chatId: 'chat-a' } })
+    await settle()
+
+    const input = target.querySelector<HTMLInputElement>('input[type="file"]')!
+    const file = {
+      name: 'vault.zip',
+      size: 4,
+      arrayBuffer: async () => Uint8Array.from([0x50, 0x4b, 0x03, 0x04]).buffer,
+    } as File
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] })
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    await settle()
+
+    expect(mutations.vaultPreview).toHaveBeenCalledWith('chat-a', 'UEsDBA==', 'skip')
+    expect(target.querySelector('[data-testid="bardwiki-import-preview"]')?.textContent).toContain('2 create')
+    const apply = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim() === 'Apply import',
+    )
+    apply?.click()
+    await settle()
+
+    expect(globalThis.confirm).toHaveBeenCalledWith('Apply this validated BardWiki vault as one revision?')
+    expect(mutations.vaultImport).toHaveBeenCalledWith('chat-a', 'UEsDBA==', 'skip', [])
+    expect(target.textContent).toContain('The BardWiki vault was imported')
   })
 })
