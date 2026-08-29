@@ -42,7 +42,7 @@ export function registerAuthRoutes(app: FastifyInstance, state: AuthState): void
 
   app.post('/api/v1/auth/setup', { config: { rateLimit: authSetupRateLimit } }, async (req, reply) => {
     const body = (req.body ?? {}) as SetupBody
-    if (typeof body.password !== 'string' || body.password.length === 0) {
+    if (typeof body.password !== 'string' || body.password.trim().length === 0) {
       reply.code(400)
       return { error: 'Password required' }
     }

@@ -9,6 +9,7 @@ import fastifyStatic from '@fastify/static'
 import fastifyWebsocket from '@fastify/websocket'
 import { createActiveWriterState, registerActiveWriterGuard } from './activeWriter.js'
 import {
+  assertAgentDevAuthBypassHost,
   DEFAULT_AUTOMATIC_BACKUP_RETENTION,
   DEFAULT_REALM_IMPORT_MAX_EXPANDED_BYTES,
   type AppConfig,
@@ -137,6 +138,7 @@ function isPathWithin(parent: string, child: string): boolean {
 
 export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   const config = opts.config ?? loadConfig()
+  assertAgentDevAuthBypassHost(config)
   const app = Fastify({
     logger: process.env.LOG_LEVEL === 'silent' ? false : { level: process.env.LOG_LEVEL ?? 'info' },
     bodyLimit: config.bodyLimit,

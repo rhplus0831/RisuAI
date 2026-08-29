@@ -1,5 +1,6 @@
 import path from 'node:path'
 import process from 'node:process'
+import net from 'node:net'
 import { DEFAULT_GENERATION_TRACE_MAX_GZIP_BYTES } from './generation/generationTraceSidecar.js'
 
 export interface AppConfig {
@@ -151,6 +152,19 @@ function parseRequestTraceMode(raw: string | undefined): RequestTraceMode | unde
   throw new Error(`Invalid RISU_API_TRACE_MODE: ${raw}`)
 }
 
+function isLoopbackHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase()
+  if (normalized === 'localhost' || normalized.endsWith('.localhost')) return true
+  if (net.isIPv4(normalized)) return normalized.startsWith('127.')
+  return normalized === '::1' || normalized === '0:0:0:0:0:0:0:1'
+}
+
+export function assertAgentDevAuthBypassHost(config: Pick<AppConfig, 'agentDevAuthBypass' | 'host'>): void {
+  if (config.agentDevAuthBypass === true && !isLoopbackHost(config.host)) {
+    throw new Error('RISU_AGENT_DEV_AUTH_BYPASS requires a loopback RISU_API_HOST')
+  }
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const dataDir = env.RISU_API_DATA_DIR ? path.resolve(env.RISU_API_DATA_DIR) : path.join(repoRoot(), 'data')
   const requestTraceMode = parseRequestTraceMode(env.RISU_API_TRACE_MODE)
@@ -161,7 +175,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     'RISU_GENERATION_TRACE_FULL_PROMPT_MAX_GZIP_BYTES',
   )
 
-  return {
+  const config: AppConfig = {
     host: env.RISU_API_HOST ?? '0.0.0.0',
     port: parsePort(env.RISU_API_PORT, 6002),
     dataDir,
@@ -189,4 +203,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       maxGzipBytes: generationTraceMaxGzipBytes,
     },
   }
+  assertAgentDevAuthBypassHost(config)
+  return config
 }

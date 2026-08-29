@@ -124,6 +124,76 @@ describe('agent dev auth bypass', () => {
       fs.rmSync(dataDir, { recursive: true, force: true })
     }
   })
+
+  it('refuses an explicit non-loopback app configuration before opening the data directory', async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-auth-agent-bypass-bind-'))
+    try {
+      const { buildApp } = await import('../src/app.js')
+      await expect(
+        buildApp({
+          config: {
+            host: '0.0.0.0',
+            port: 0,
+            dataDir,
+            bodyLimit: 1024 * 1024,
+            importMaxBytes: Infinity,
+            trustProxy: false,
+            hubUrl: 'https://sv.risuai.xyz',
+            agentDevAuthBypass: true,
+          },
+          assetGc: false,
+          memoryWorker: false,
+        }),
+      ).rejects.toThrow(/requires a loopback/)
+      expect(fs.readdirSync(dataDir)).toEqual([])
+    } finally {
+      fs.rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('password setup', () => {
+  it('rejects a whitespace-only password without creating auth state', async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-auth-password-setup-'))
+    try {
+      const { buildApp } = await import('../src/app.js')
+      const { app } = await buildApp({
+        config: {
+          host: '127.0.0.1',
+          port: 0,
+          dataDir,
+          bodyLimit: 1024 * 1024,
+          importMaxBytes: Infinity,
+          trustProxy: false,
+          hubUrl: 'https://sv.risuai.xyz',
+        },
+        assetGc: false,
+        memoryWorker: false,
+      })
+
+      try {
+        const rejected = await app.inject({
+          method: 'POST',
+          url: '/api/v1/auth/setup',
+          payload: { password: '   ' },
+        })
+        expect(rejected.statusCode).toBe(400)
+        expect(rejected.json()).toEqual({ error: 'Password required' })
+        expect(fs.existsSync(path.join(dataDir, '__password'))).toBe(false)
+
+        const accepted = await app.inject({
+          method: 'POST',
+          url: '/api/v1/auth/setup',
+          payload: { password: 'hunter2' },
+        })
+        expect(accepted.statusCode).toBe(200)
+      } finally {
+        await app.close()
+      }
+    } finally {
+      fs.rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('fallback session authentication', () => {
