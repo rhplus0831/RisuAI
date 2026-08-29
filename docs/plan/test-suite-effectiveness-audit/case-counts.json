@@ -588,9 +588,9 @@
       "parameterizedRows": 14
     },
     "server/fastify/__tests__/realmImport.test.ts": {
-      "cases": 29,
-      "skipped": 0,
-      "parameterizedRows": 0
+      "cases": 30,
+      "skipped": 1,
+      "parameterizedRows": 1
     },
     "server/fastify/__tests__/repositoryWriterKit.test.ts": {
       "cases": 11,

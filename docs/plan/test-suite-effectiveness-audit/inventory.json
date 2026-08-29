@@ -5402,9 +5402,9 @@
         "globals"
       ],
       "caseCounts": {
-        "cases": 29,
-        "skipped": 0,
-        "parameterizedRows": 0,
+        "cases": 30,
+        "skipped": 1,
+        "parameterizedRows": 1,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
