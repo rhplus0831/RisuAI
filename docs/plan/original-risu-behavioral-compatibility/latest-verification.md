@@ -4,14 +4,15 @@ Date: 2026-08-30
 
 ## Current Verdict
 
-Phases 0 through 3 are complete. Phase 2 state/recovery implementation closes
-through `3ce85c1f034b3afc493e291f8a8f5e9227064463` and the partial-object projection
+Phases 0 through 3 and Phase 5 are complete. Phase 2 state/recovery implementation
+closes through `3ce85c1f034b3afc493e291f8a8f5e9227064463` and the partial-object projection
 correction `f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74`. Phase 3 closed-world durable
 ownership is at `958f8585138ec817fe5d134563df585434ed5821`, with exact BardWiki eventless
-receipt handling at `3f20a80b780f2538fd1e38aa6514d9a9f894985a`. Focused production, structural,
-browser event/recovery, built-browser, register, and post-correction pinned
-differential evidence pass. This is not yet a whole-product compatibility
-verdict; Phase 4 is in progress.
+receipt handling at `3f20a80b780f2538fd1e38aa6514d9a9f894985a`. Phase 5 closes settings and
+authoring ownership at `b34b7a78f28cb5903ece3880073fbb9e46392cb8`, with visible character reload
+evidence at `5eca30f4872e865efee2c86f4dde7ae71e915f9a`. Focused production, structural,
+browser, register, and pinned differential evidence pass. This is not yet a
+whole-product compatibility verdict; Phase 4 remains independently in progress.
 
 ## Phase 0 Environment And Baseline Evidence
 
@@ -136,6 +137,42 @@ fields, and the owning 251-test lane then passed.
 | `pnpm exec vitest run util/validate-original-risu-compatibility-registers.test.ts` | Passed; 1 file and 12 fail-closed register tests |
 | `pnpm exec prettier --check` for the Phase 2-3 closure files | Passed |
 | `git diff --check` | Passed |
+
+## Phase 5 Evidence
+
+| Check | Result |
+| --- | --- |
+| Closed settings and authoring ownership | `b34b7a78f28cb5903ece3880073fbb9e46392cb8` |
+| Visible built-browser character authoring and reload | `5eca30f4872e865efee2c86f4dde7ae71e915f9a` |
+| Category E inventory | New verified rows `ORC-SURFACE-094` through `ORC-SURFACE-096`; pilot row `ORC-SURFACE-001` re-verified; total inventory 96 rows |
+| Database/settings ownership | All 422 retained fields classified; browser/Fastify readable and writable groups exact and duplicate-free; Agent/model derived read-only projections explicit |
+| Preset catalogs | 82 legacy apply fields, 65 model fields, 20 prompt fields, and 41 prompt-model override fields close over retained Database owners |
+| Defaults and legacy settings | 15 retained initial defaults, seven semantically omitted defaults plus the Agent Preset pointer, 13 no-control settings, and imported `pip` normalization explicitly pinned |
+| Authoring collections | All 11 repository collections have a command prefix, SQLite table, and deeper domain owner; character/Agent/persona/lorebook/prompt owners remain targeted |
+| Character reload | Visible editor name/description/first-message edits receive the real Fastify character `PATCH`, preserve `chaId`, and survive full reload |
+| Realm/catalog/upload | Empty/failure/stale/confirmation outcomes, returned-id navigation, JSON/CharX staging and cleanup, upload idempotence/rollback, and inlay-catalog revisions re-verified |
+
+Runtime use of profile options remains cross-owned by Phases 6 and 7; Hypa V3,
+module/plugin lifecycle, and portable artifact bytes remain cross-owned by
+Phases 8, 10, and 11. Proposed character/module conversion
+`ORC-DECISION-058` remains Category J Phase 10/13 work. Phase 5 neither relies
+on nor adjudicates that unsupported boundary or Phase 4's independently pending
+responsive/mobile comparison.
+
+## Phase 5 Validation
+
+| Command/check | Result |
+| --- | --- |
+| `pnpm test:server` | Passed; 172 files and 3,556 tests, with one isolated Realm scale case skipped in the ordinary lane |
+| `pnpm exec vitest run --project frontend-dom src/ts/storage/database.svelte.test.ts src/ts/persona.test.ts src/ts/characterCommands.test.ts src/ts/characterCards.realmImport.test.ts src/ts/server/lorebookBridge.svelte.test.ts src/ts/providerSecretMask.test.ts` | Passed; 5 selected DOM files and 379 tests; the Node-owned secret-mask file was routed separately below |
+| `pnpm exec vitest run --project frontend-node src/ts/providerSecretMask.test.ts` | Passed; 1 file and 2 tests |
+| `pnpm build:smoke && pnpm exec playwright test -c playwright.fastify-smoke.config.ts server/fastify/browser-smoke/fastifyBrowserSmoke.spec.ts -g 'authored character identity fields survive command acceptance and a full reload'` | Passed; production smoke build and 1 built-browser test |
+| Initial `pnpm test:compat-harness` | Failed after both runners passed because Phase 2 decision `ORC-DECISION-020` had gained `ORC-SURFACE-087` while its governed cell mappings still named only `ORC-SURFACE-024` |
+| Governance correction | `7ba933fe6f1c3338bd9cce2ef308b2b216ac8e8d` linked the recovery-lineage inventory owner in the expected-difference mappings as an independent Phase 2 correction |
+| Repeated `pnpm test:compat-harness` | Passed; 16 baseline tests, 18 current/cluster tests, 16 compared cells, 15 governed divergences, cluster 10 healthy |
+| `pnpm check:server` | Passed at the Phase 5 structural anchor |
+| `pnpm validate:compat-registers` and fail-closed register Vitest | Passed; 96 inventory rows, 59 decisions, 15 findings, 85 upstream units, all 75 historical raw reports mapped, and 12 fail-closed validator tests |
+| Phase 5 Prettier check and `git diff --check` | Passed |
 
 ## Update Rules
 

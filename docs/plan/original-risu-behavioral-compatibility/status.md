@@ -23,16 +23,21 @@ findings under [`findings/`](findings/); inventory ownership under
   `/home/codex/risu-baseline-71c476e9c`; its exact commit, dependency state, and
   cleanliness are enforced by `pnpm prepare:compat-baseline` and the harness
   preflight.
-- Current compatibility state: Phases 2 and 3 are complete at
-  `f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74`; the post-correction full pinned
-  differential passed with 16 baseline cells, 18 current and cluster tests, 15
-  governed baseline/current divergences, and healthy cluster 10.
+- Current compatibility state: Phases 0 through 3 and Phase 5 are complete.
+  Phase 5 closes settings/default/preset/collection ownership at
+  `b34b7a78f28cb5903ece3880073fbb9e46392cb8` and visible character-authoring
+  reload evidence at `5eca30f4872e865efee2c86f4dde7ae71e915f9a`.
+  After the independent Phase 2 governance-link correction
+  `7ba933fe6f1c3338bd9cce2ef308b2b216ac8e8d`, the required pinned differential
+  passes with 16 baseline cells, 18
+  current/cluster tests, 15 governed divergences, and healthy cluster 10.
 - Canonical findings: 15 resolved findings: 14 historical imports with exact raw
   mappings plus the Phase 1 lossless-normalizer finding `ORC-A-015`.
 - Open maintainer decisions: four historical unsupported statements remain
   `proposed` because their sources do not identify individual authority.
-- Next action: execute the Phase 4 navigation/chat/shared-UI audit using the
-  completed state, command, event, and bridge ownership gates.
+- Next action: finish the Phase 4 navigation/chat/shared-UI comparison and its
+  decision-pending responsive/mobile boundary. Phase 5 was independently
+  evidenced without adjudicating or changing that Phase 4 blocker.
 
 ## Phase Router
 
@@ -43,7 +48,7 @@ findings under [`findings/`](findings/); inventory ownership under
 | [2. Browser state synchronization and recovery](phases/phase-2-browser-state-sync-and-recovery.md) | Complete | Re-verified bootstrap projections, writer/observer boundaries, outbox/receipts, replay, reconnect, reload, and recovery lineage. |
 | [3. Persistence, commands, events, and bridges](phases/phase-3-persistence-commands-events-and-bridges.md) | Complete | Closed command, durable-field, SQLite, event/resource, replay, and editing-bridge ownership. |
 | [4. Navigation, chat, shared UI, and presentation](phases/phase-4-navigation-chat-and-shared-ui.md) | In progress | Verify visible navigation, chat, composer, transcript, hotkey, focus, feedback, and responsive behavior. |
-| [5. Settings, profiles, authoring, and catalogs](phases/phase-5-settings-profiles-authoring-and-catalogs.md) | Pending | Verify defaults, legacy shapes, presets, personas, characters, lorebooks, catalogs, and authoring workflows. |
+| [5. Settings, profiles, authoring, and catalogs](phases/phase-5-settings-profiles-authoring-and-catalogs.md) | Complete | Closed settings/default/preset and collection ownership, visible character reload, Realm/catalog failure behavior, and upload atomicity. |
 | [6. Prompting, generation, and streaming](phases/phase-6-prompting-generation-and-streaming.md) | Pending | Verify model-visible assembly, transcript mutation, stream/cancel/retry/reattach, and finalization. |
 | [7. Providers, models, translation, and media](phases/phase-7-providers-models-translation-and-media.md) | Pending | Verify capability/resolution, credentials, endpoints, provider wire contracts, translation, and media behavior. |
 | [8. Memory, embeddings, jobs, and workers](phases/phase-8-memory-embeddings-jobs-and-workers.md) | Pending | Verify retained memory selection, context truncation, jobs, retries, cancellation, and reconciliation. |
@@ -124,6 +129,30 @@ findings under [`findings/`](findings/); inventory ownership under
 - Focused production, structural, browser event, and recovery lanes passed at
   `f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74`, followed by the required full
   pinned differential. The canonical inventory now contains 93 rows.
+
+## Phase 5 Completion Record
+
+- `b34b7a78f28cb5903ece3880073fbb9e46392cb8` closes all 422 retained
+  `Database` fields across settings/collection/character/dedicated/preset and
+  opaque-round-trip owners, exact browser/Fastify readable and writable groups,
+  preset-field catalogs, retained defaults, and legacy/no-control settings.
+- All eleven repository collection kinds have a reviewed command prefix,
+  SQLite table, and deeper domain owner. Category E owns their authoring surface;
+  runtime and interchange remain explicitly cross-owned by Phases 6-11.
+- `5eca30f4872e865efee2c86f4dde7ae71e915f9a` proves through the visible built
+  browser editor and real Fastify `PATCH` that character name, description,
+  first message, and stable identity survive full reload.
+- Realm catalog failure/empty/stale/confirmation behavior, atomic JSON/CharX
+  acquisition, bounded/idempotent uploads, staged-byte cleanup, and separately
+  revisioned inlay-catalog behavior were re-verified in the complete server lane
+  and focused browser-owner tests.
+- New verified Category E rows `ORC-SURFACE-094` through `ORC-SURFACE-096` own
+  these surfaces; pilot row `ORC-SURFACE-001` is re-verified. No new finding or
+  decision was required, and the inventory now contains 96 rows.
+- Proposed character/module conversion `ORC-DECISION-058` remains Category J
+  Phase 10/13 work. Phase 4 remains in progress for its independent visible
+  responsive/mobile decision boundary; neither is silently settled by this
+  out-of-order evidence closure.
 
 ## Locked Planning Decisions
 

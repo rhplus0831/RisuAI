@@ -72,10 +72,12 @@
         ],
         "current": [
           "server/fastify/src/commands/presets.ts#SNAPSHOT_KEYS",
-          "9aa1a51640c8f2f764990b567d7ea95fe2e6bac0"
+          "9aa1a51640c8f2f764990b567d7ea95fe2e6bac0",
+          "b34b7a78f28cb5903ece3880073fbb9e46392cb8"
         ],
-      "tests": [
-        "server/fastify/__tests__/commands.test.ts (legacy preset additionalParams save/apply/reset, persistence, and bootstrap matrix)"
+        "tests": [
+          "server/fastify/__tests__/commands.test.ts (legacy preset additionalParams save/apply/reset, persistence, and bootstrap matrix)",
+          "server/fastify/__tests__/phase5CompatibilityStructure.test.ts (closed legacy/model/prompt preset field catalogs)"
         ],
         "fixtures": [
           "server/fastify/__tests__/commands.test.ts (preset-a/preset-b imported database fixture)"
@@ -84,7 +86,7 @@
       "verification": {
         "state": "verified",
         "confidence": "high",
-        "lastFastifyCommit": "9ea7aa20dd5a93ac7e5c9112e8c8fbcb9fca1438",
+        "lastFastifyCommit": "b34b7a78f28cb5903ece3880073fbb9e46392cb8",
         "findingIds": [],
         "decisionId": null,
         "residual": "The baseline omitted this field, so this is verified as an additive Fastify-only preservation rule rather than fork-point parity."
@@ -5811,6 +5813,290 @@
         "residual": null
       },
       "notes": "Phase 3 found the server's intentional non-mutating eventless receipts were rejected by the otherwise fail-closed generic browser adapter; the correction is narrow and mutation receipts remain event-required."
+    },
+    {
+      "id": "ORC-SURFACE-094",
+      "title": "Closed settings, defaults, preset fields, and secret projections",
+      "primaryCategory": "E",
+      "seamTags": [
+        "C",
+        "G",
+        "K"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Every retained Database field belongs to one generic-settings, collection, character, dedicated-command, preset-derived, or opaque round-trip owner.",
+        "Every readable and writable settings group is exact and duplicate-free on the browser and Fastify sides, including the derived read-only Agent and model projections.",
+        "Legacy, model, prompt, and prompt-override preset field catalogs close over retained Database fields without silently dropping a newly added field.",
+        "Retained first-run defaults, semantically omitted legacy defaults, retired no-control keys, and provider-secret masking remain explicitly classified."
+      ],
+      "variants": [
+        "present, missing, null, empty, legacy, and non-default values",
+        "generic writable and derived read-only settings groups",
+        "legacy, model, prompt, and prompt-override preset fields",
+        "first-run default and semantic omission",
+        "retained no-control and opaque round-trip setting",
+        "top-level, nested, array-row, and record-row provider secret"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage/database.svelte.ts#Database",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage/database.svelte.ts#saveCurrentPreset",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage/database.svelte.ts#setPreset"
+        ],
+        "browser": [
+          "src/ts/storage/database.svelte.ts#Database",
+          "src/ts/server/settingsGroups.ts",
+          "src/ts/presetSplit.ts",
+          "src/ts/providerSecretMask.ts",
+          "src/ts/setting/advancedSettingsData.ts",
+          "src/ts/setting/displaySettingsData.svelte.ts",
+          "src/ts/setting/utils.ts"
+        ],
+        "protocol": [
+          "src/ts/server/commands.ts"
+        ],
+        "fastify": [
+          "server/fastify/src/databaseDefaults.ts",
+          "server/fastify/src/routes/commands.ts#SETTINGS_GROUP_KEYS",
+          "server/fastify/src/commands/presets.ts#LEGACY_BOT_PRESET_APPLY_DATABASE_FIELDS",
+          "server/fastify/src/commands/splitPresets.ts",
+          "server/fastify/src/providerSecrets.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/repository.ts#extractSettings",
+          "server/fastify/src/repository.ts#COLLECTION_FIELDS"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Missing, null, empty, default, legacy-retained, and masked-secret states remain distinct until their named normalizer or secret resolver owns the conversion.",
+        "A new Database or preset field must choose an explicit storage, editing, projection, default, runtime, interchange, and secrecy class before the closed-world gate is updated."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage/database.svelte.ts#Database",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage/database.svelte.ts#saveCurrentPreset",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage/database.svelte.ts#setPreset"
+        ],
+        "current": [
+          "b34b7a78f28cb5903ece3880073fbb9e46392cb8"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase5CompatibilityStructure.test.ts",
+          "server/fastify/__tests__/settingsGroupParity.test.ts",
+          "server/fastify/__tests__/databaseDefaults.test.ts",
+          "server/fastify/__tests__/commands.test.ts",
+          "server/fastify/__tests__/resourceReads.test.ts",
+          "src/ts/providerSecretMask.test.ts",
+          "src/ts/storage/database.svelte.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/commands.test.ts (missing/null/legacy preset save, apply, reset, copy, import, and reload fixtures)",
+          "src/ts/providerSecretMask.test.ts (registered secret-path sentinels)"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "b34b7a78f28cb5903ece3880073fbb9e46392cb8",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": "Runtime consumption of model/profile options remains cross-owned by Phases 6 and 7; Phase 5 closes their authoring, persistence, projection, and preset-field ownership."
+      },
+      "notes": "This row deepens Category C durable-field ownership into the settings-authoring axes required by Phase 5 and re-verifies the additive additionalParams preservation row ORC-SURFACE-001."
+    },
+    {
+      "id": "ORC-SURFACE-095",
+      "title": "Authoring collection, identity, command, and reload ownership",
+      "primaryCategory": "E",
+      "seamTags": [
+        "B",
+        "C",
+        "K"
+      ],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "Every retained collection kind is pinned to an authoritative SQLite table, a command family, and its deeper domain phase rather than a broad whole-database fallback.",
+        "Character, Agent, Agent Preset, persona, global lorebook, prompt, preset, loadout, translator-preset, module, and plugin authoring retain stable identities and owner-scoped mutation behavior.",
+        "Visible character name, description, and first-message edits are accepted through the character command, preserve chaId, and survive a full browser reload.",
+        "Queued, rejected, and accepted authoring outcomes preserve newer optimistic values or roll back only the attempted owner."
+      ],
+      "variants": [
+        "all eleven repository collection fields",
+        "character, persona, global lorebook, and prompt authoring",
+        "Agent and Agent Preset settings-row collections",
+        "create, patch, select, duplicate, delete, and reorder",
+        "accepted, queued, rejected, rollback, and reload",
+        "stable id with edited visible identity fields"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/lib/SideBars/CharConfig.svelte",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage/database.svelte.ts"
+        ],
+        "browser": [
+          "src/lib/SideBars/CharConfig.svelte",
+          "src/ts/characterCommands.ts",
+          "src/ts/persona.ts",
+          "src/ts/agentPresets.ts",
+          "src/ts/server/characterBridge.svelte.ts",
+          "src/ts/server/lorebookBridge.svelte.ts",
+          "src/ts/storage/database.svelte.ts"
+        ],
+        "protocol": [
+          "src/ts/server/commands.ts"
+        ],
+        "fastify": [
+          "server/fastify/src/routes/commands.ts",
+          "server/fastify/src/commands/characters.ts",
+          "server/fastify/src/commands/personas.ts",
+          "server/fastify/src/commands/agentPresets.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/repository.ts#COLLECTION_FIELDS",
+          "server/fastify/src/repository.ts#writeSingleCharacterRow",
+          "server/fastify/src/repository.ts#writeSingleCollectionTable"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Stable record ids, collection order, selected pointers, references, and accepted/queued/failed outcomes are semantic.",
+        "A full reload may rebuild browser projections but cannot replace the accepted authoritative identity or authored fields."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/lib/SideBars/CharConfig.svelte",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage/database.svelte.ts"
+        ],
+        "current": [
+          "5eca30f4872e865efee2c86f4dde7ae71e915f9a",
+          "b34b7a78f28cb5903ece3880073fbb9e46392cb8"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase5CompatibilityStructure.test.ts",
+          "server/fastify/__tests__/commands.test.ts",
+          "server/fastify/__tests__/repositoryWriterKit.test.ts",
+          "src/ts/characterCommands.test.ts",
+          "src/ts/persona.test.ts",
+          "src/ts/agentPresets.test.ts",
+          "src/ts/server/characterBridge.svelte.test.ts",
+          "src/ts/server/lorebookBridge.svelte.test.ts",
+          "src/ts/storage/database.svelte.test.ts",
+          "server/fastify/browser-smoke/fastifyBrowserSmoke.spec.ts (authored character identity fields survive command acceptance and a full reload)"
+        ],
+        "fixtures": [
+          "server/fastify/browser-smoke/fastifyBrowserSmoke.spec.ts#browserSmokeDatabase",
+          "server/fastify/__tests__/commands.test.ts (character/persona/lorebook/preset authoring fixtures)"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "b34b7a78f28cb5903ece3880073fbb9e46392cb8",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": "Portable artifact codecs and character/module conversion remain owned by Phases 10 and 11; this row covers retained authoring and stable-reference behavior only."
+      },
+      "notes": "The built-browser journey uses the visible character editor and observes the real accepted Fastify PATCH before reload; it does not mutate production state through a test-only browser helper."
+    },
+    {
+      "id": "ORC-SURFACE-096",
+      "title": "Realm catalog acquisition and asset-upload atomicity",
+      "primaryCategory": "E",
+      "seamTags": [
+        "B",
+        "C",
+        "K",
+        "L"
+      ],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "The browser distinguishes a failed Realm catalog request from a valid empty catalog, contains network errors, ignores stale completions, and does not import after terms are declined.",
+        "A successful Realm import reconciles the returned event and navigates by the imported character id; unsupported server downloads use the explicit legacy fallback without stale-index navigation.",
+        "JSON and CharX Realm imports stage asset and character work atomically, remove newly written bytes on later failure, preserve deduplicated bytes, and reject duplicates or limits without a false revision/event.",
+        "Direct and bulk asset uploads remain content-addressed, idempotent, writer-guarded, bounded, and cleanup earlier staged bytes when a later write fails; inlay catalog membership is separately revisioned."
+      ],
+      "variants": [
+        "empty catalog, HTTP failure, network rejection, and stale response",
+        "terms decline, low-level confirmation, server import, and unsupported fallback",
+        "JSON card and CharX package",
+        "duplicate character id, oversized source, cumulative limit, disconnect, and timeout",
+        "single and bulk asset upload, duplicate, corrupt metadata, and later-write failure",
+        "inlay catalog add, independent reader, deletion, and restored revision"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/characterCards.ts#downloadRisuHub",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/lib/Mobile/MobileCharacters.svelte"
+        ],
+        "browser": [
+          "src/ts/characterCards.ts",
+          "src/lib/Mobile/MobileCharacters.svelte",
+          "src/ts/server/realmImport.ts",
+          "src/ts/server/inlayCatalog.ts"
+        ],
+        "protocol": [
+          "src/ts/server/commands.ts",
+          "src/ts/server/realmImport.ts"
+        ],
+        "fastify": [
+          "server/fastify/src/routes/realmImport.ts",
+          "server/fastify/src/routes/assets.ts",
+          "server/fastify/src/routes/commands.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/realmImport",
+          "server/fastify/src/repository.ts#assets",
+          "server/fastify/src/db.ts#inlay_catalog"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Generated ids and progress timestamps may be normalized; catalog emptiness versus failure, confirmation, imported target identity, asset hashes/bytes, cleanup, revision, and visible outcome remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/characterCards.ts#downloadRisuHub"
+        ],
+        "current": [
+          "b34b7a78f28cb5903ece3880073fbb9e46392cb8"
+        ],
+        "tests": [
+          "src/ts/characterCards.realmImport.test.ts",
+          "src/ts/server/realmImport.test.ts",
+          "src/ts/server/inlayCatalog.test.ts",
+          "server/fastify/__tests__/realmImport.test.ts",
+          "server/fastify/__tests__/assets.test.ts",
+          "server/fastify/__tests__/inlayCatalog.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/realmImport.test.ts (JSON Realm, Realm CharX, staged-asset, duplicate-id, timeout, disconnect, and size-limit fixtures)",
+          "server/fastify/__tests__/assets.test.ts (real temporary asset files and SQLite metadata)",
+          "src/ts/characterCards.realmImport.test.ts (catalog, confirmation, refresh, fallback, and failure fixtures)"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "b34b7a78f28cb5903ece3880073fbb9e46392cb8",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": "Live third-party Realm availability is deterministically stubbed; portable CharX/package byte equivalence and backup/export ownership remain in Phase 11."
+      },
+      "notes": "This Category E row owns catalog acquisition, confirmation, navigation, and user-visible import/upload outcomes; Category K owns the underlying portable codecs and complete round-trip matrix."
     }
   ]
 }
