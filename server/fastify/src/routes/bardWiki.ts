@@ -23,11 +23,24 @@ import {
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
 import { loadSettingsFromSqlite } from '../repository.js'
+import { encodeBardWikiVault } from '../bardWikiVault.js'
 
 const BARDWIKI_READ_DEFAULT_LIMIT = 50
 const BARDWIKI_READ_MAX_LIMIT = 100
 
 export function registerBardWikiReadRoutes(app: FastifyInstance, db: DatabaseSync, authState: AuthState): void {
+  app.get<{ Params: { chatId: string } }>('/api/v1/bardwiki/chats/:chatId/export', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    const chatId = readId(req.params.chatId)
+    if (!chatId) return sendInvalidId(reply, 'chatId')
+    if (!chatExists(db, chatId)) return sendNotFound(reply, 'bardwiki_chat_not_found')
+    const archive = encodeBardWikiVault(db, chatId)
+    reply.header('content-type', 'application/zip')
+    reply.header('content-disposition', 'attachment; filename="bardwiki-vault.zip"')
+    reply.header('cache-control', 'private, no-store')
+    return reply.send(Buffer.from(archive))
+  })
+
   app.get<{ Params: { chatId: string } }>('/api/v1/bardwiki/chats/:chatId', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
     const chatId = readId(req.params.chatId)

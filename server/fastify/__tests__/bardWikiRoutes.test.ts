@@ -113,6 +113,64 @@ describe('BardWiki revisioned commands', () => {
 
     const read = await app.inject({ method: 'GET', url: '/api/v1/bardwiki/chats/chat-a' })
     expect(read.statusCode).toBe(401)
+    const exported = await app.inject({ method: 'GET', url: '/api/v1/bardwiki/chats/chat-a/export' })
+    expect(exported.statusCode).toBe(401)
+  })
+
+  it('exports a ZIP vault and imports it through dry-run plus one revisioned commit', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/bardwiki/chats/chat-a/documents',
+      headers: authHeaders(),
+      payload: {
+        baseRevision: 0,
+        document: {
+          kind: 'character',
+          title: 'Ada',
+          logicalPath: 'People/Ada',
+          aliases: ['A'],
+          markdown: '## Ada\nKnows [[Places/Inn]].',
+        },
+      },
+    })
+    expect(created.statusCode).toBe(200)
+
+    const exported = await app.inject({
+      method: 'GET',
+      url: '/api/v1/bardwiki/chats/chat-a/export',
+      headers: authHeaders(),
+    })
+    expect(exported.statusCode).toBe(200)
+    expect(exported.headers['content-type']).toBe('application/zip')
+    expect(exported.headers['content-disposition']).toBe('attachment; filename="bardwiki-vault.zip"')
+    const archiveBase64 = exported.rawPayload.toString('base64')
+
+    const dryRun = await app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/bardwiki/chats/chat-a/imports',
+      headers: authHeaders(),
+      payload: { dryRun: true, strategy: 'skip', archiveBase64 },
+    })
+    expect(dryRun.statusCode).toBe(200)
+    expect(dryRun.json()).toMatchObject({
+      revision: 1,
+      dryRun: true,
+      plan: { creates: 0, replacements: 0, noops: 1, skips: 0, applicable: true },
+    })
+    const imported = await app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/bardwiki/chats/chat-a/imports',
+      headers: authHeaders(),
+      payload: { baseRevision: 1, dryRun: false, strategy: 'skip', archiveBase64 },
+    })
+    expect(imported.statusCode).toBe(200)
+    expect(imported.json()).toMatchObject({
+      revision: 2,
+      event: { type: 'bardwiki.vault.imported', resource: 'bardWikiChat', id: 'chat-a' },
+      dryRun: false,
+      plan: { noops: 1 },
+    })
+    expect(inspectRows('SELECT COUNT(*) AS count FROM bardwiki_document_versions')).toEqual([{ count: 1 }])
   })
 
   it('serves body-free indexes, lazy document bodies, ETags, and paginated versions', async () => {

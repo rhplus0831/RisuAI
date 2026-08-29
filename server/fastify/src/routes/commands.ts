@@ -321,6 +321,7 @@ import {
 } from '../commands/pluginStorage.js'
 import { validateOptionalServerAssetRef } from '../commands/assets.js'
 import { requireAuth } from '../http.js'
+import { getSchemaState } from '../db.js'
 import type { ChatGenerationSettings } from '../../../../src/ts/chatGenerationSettings.js'
 import {
   MODEL_PRESET_FIELDS,
@@ -405,6 +406,13 @@ import {
   type ExplicitBardWikiConfirmationInput,
 } from '../bardWikiReceipts.js'
 import { isBardWikiGlobalSettings } from '@risuai/protocol'
+import {
+  applyBardWikiVaultImport,
+  decodeBardWikiVault,
+  planBardWikiVaultImport,
+  type BardWikiVaultConflictStrategy,
+  type BardWikiVaultExpectedTarget,
+} from '../bardWikiVault.js'
 
 function commandEventOrigin(req: FastifyRequest): CommandEventOrigin | undefined {
   const writerSessionId = readActiveWriterSessionId(req)
@@ -9484,6 +9492,53 @@ export function registerCommandRoutes(
       return sendCommandError(reply, err)
     }
   })
+
+  app.post(
+    '/api/v1/commands/bardwiki/chats/:chatId/imports',
+    { config: { bodyLimit: 24 * 1024 * 1024 } },
+    async (req, reply) => {
+      if (!(await requireAuth(authState, req, reply))) return
+
+      try {
+        const chatId = readBardWikiId((req.params as { chatId?: unknown }).chatId, 'chatId')
+        const body = readBardWikiImportCommandBody(req.body)
+        const vault = decodeBardWikiVault(body.archive)
+        if (body.dryRun) {
+          return {
+            revision: getSchemaState(db).revision,
+            dryRun: true,
+            plan: planBardWikiVaultImport(db, chatId, vault, body.strategy, body.expectedTargets),
+          }
+        }
+        const baseRevision = readBaseRevision(body)
+        const result = applyTargetedCommandMutation({
+          db,
+          dataDir,
+          baseRevision,
+          ...commandMutationContext(req, eventSink),
+          mutationPath: TARGETED_MUTATION_PATHS.bardWiki,
+          skipDatabaseLoad: true,
+          mutate(_database, innerDb) {
+            const plan = applyBardWikiVaultImport(
+              innerDb,
+              chatId,
+              vault,
+              body.strategy,
+              body.expectedTargets,
+              baseRevision + 1,
+            )
+            return {
+              event: { ...COMMAND_EVENT_CATALOG.bardWikiVaultImported, id: chatId },
+              extra: { dryRun: false, plan },
+            }
+          },
+        })
+        return { revision: result.revision, event: result.event, ...result.extra }
+      } catch (err) {
+        return sendCommandError(reply, err)
+      }
+    },
+  )
 }
 
 function readBardWikiId(value: unknown, label: string): string {
@@ -9646,6 +9701,54 @@ function readBardWikiDeleteDocumentCommandBody(value: unknown): {
     baseRevision: body.baseRevision,
     expectedVersion: readBardWikiExpectedVersion(body.expectedVersion),
     expectedContentHash: readBardWikiExpectedHash(body.expectedContentHash),
+  }
+}
+
+function readBardWikiImportCommandBody(value: unknown): {
+  baseRevision?: unknown
+  dryRun: boolean
+  strategy: BardWikiVaultConflictStrategy
+  archive: Uint8Array
+  expectedTargets: BardWikiVaultExpectedTarget[]
+} {
+  const body = readBardWikiObject(value ?? {}, 'body')
+  rejectUnsupportedBardWikiFields(
+    body,
+    ['baseRevision', 'dryRun', 'strategy', 'archiveBase64', 'expectedTargets'],
+    'BardWiki import command',
+  )
+  if (typeof body.dryRun !== 'boolean') throw new ValidationError('dryRun must be a boolean')
+  if (body.strategy !== 'skip' && body.strategy !== 'rename' && body.strategy !== 'replace') {
+    throw new ValidationError('strategy must be skip, rename, or replace')
+  }
+  if (typeof body.archiveBase64 !== 'string' || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(body.archiveBase64)) {
+    throw new ValidationError('archiveBase64 must be canonical base64')
+  }
+  const archive = Buffer.from(body.archiveBase64, 'base64')
+  if (archive.toString('base64') !== body.archiveBase64) throw new ValidationError('archiveBase64 must be canonical base64')
+  const rawTargets = body.expectedTargets ?? []
+  if (!Array.isArray(rawTargets) || rawTargets.length > 2_000) {
+    throw new ValidationError('expectedTargets must be a bounded array')
+  }
+  const expectedTargets = rawTargets.map((target, index): BardWikiVaultExpectedTarget => {
+    const object = readBardWikiObject(target, `expectedTargets[${index}]`)
+    rejectUnsupportedBardWikiFields(object, ['documentId', 'version', 'contentHash'], 'BardWiki import target')
+    return {
+      documentId: readBardWikiId(object.documentId, `expectedTargets[${index}].documentId`),
+      version: readBardWikiExpectedVersion(object.version),
+      contentHash: readBardWikiExpectedHash(object.contentHash),
+    }
+  })
+  if (new Set(expectedTargets.map(({ documentId }) => documentId)).size !== expectedTargets.length) {
+    throw new ValidationError('expectedTargets must not contain duplicate document ids')
+  }
+  if (!body.dryRun && body.baseRevision === undefined) throw new ValidationError('baseRevision is required for import')
+  return {
+    baseRevision: body.baseRevision,
+    dryRun: body.dryRun,
+    strategy: body.strategy,
+    archive,
+    expectedTargets,
   }
 }
 
@@ -10158,7 +10261,12 @@ function sendCommandError(
   if (err instanceof BardWikiValidationError) {
     if (err.code === 'bardwiki_chat_not_found' || err.code === 'bardwiki_document_not_found') reply.code(404)
     else if (err.code === 'bardwiki_limit_exceeded') reply.code(413)
-    else if (err.code === 'bardwiki_disabled' || err.code === 'bardwiki_source_not_active') reply.code(409)
+    else if (
+      err.code === 'bardwiki_disabled' ||
+      err.code === 'bardwiki_source_not_active' ||
+      err.code === 'bardwiki_import_conflict'
+    )
+      reply.code(409)
     else reply.code(400)
     return { error: err.code }
   }

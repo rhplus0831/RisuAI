@@ -237,6 +237,10 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'bardwiki.reconciliation.completed',
     resource: 'bardWikiChat',
   },
+  bardWikiVaultImported: {
+    type: 'bardwiki.vault.imported',
+    resource: 'bardWikiChat',
+  },
   settingsUpdated: {
     type: 'settings.updated',
     resource: 'settings',

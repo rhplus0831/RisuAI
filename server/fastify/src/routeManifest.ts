@@ -682,6 +682,21 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'bardwiki-vault-export',
+    methods: READ_METHODS,
+    path: '/api/v1/bardwiki/chats/:chatId/export',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'BardWiki vault exports contain private Markdown memory documents.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only deterministic BardWiki vault export.',
+    },
+    streaming: 'binary',
+  },
+  {
     id: 'bardwiki-chat-read',
     methods: READ_METHODS,
     path: '/api/v1/bardwiki/chats/:chatId',
