@@ -477,6 +477,7 @@ class WarmVitestLane {
             passWithNoTests: true,
             root: this.repoRoot,
             run: true,
+            watch: false,
           },
           undefined,
           { stderr: this.log.stderr, stdout: this.log.stdout },
