@@ -52,6 +52,16 @@ language settings are normalized by
 exposes the selection pointer through the language read projection while
 reserving writes to the preset command family.
 
+Each chat can override that global selection with its optional stable
+`translatorPresetId` string. `src/ts/translator/presets.ts` resolves a valid
+chat binding first and falls back to the global numeric selection when the
+binding is absent or unavailable; bound presets never replace the global
+legacy mirrors. The guarded chat-metadata PATCH owns selection and clearing.
+Deleting a preset clears matching chat bindings in the same transaction and
+uses state invalidation so preset and chat projections refresh together.
+Standalone-chat and full-save imports retain only bindings backed by their
+destination/imported preset collection.
+
 `src/ts/translator/pipeline.ts` expands language, source, previous-output,
 named-output, translator-note, and history slots before parsing optional
 role-tagged ChatML. Without ChatML, a prompt containing an embedded input slot
@@ -116,9 +126,12 @@ guide. Shared browser/server slot behavior and bounded hydration are pinned by
 
 Pipeline edits, selected profile changes, and relevant runtime options therefore
 invalidate LLM hits; unrelated settings do not. Forward and reverse keys remain
-separate. `src/ts/translator/translator.cache.svelte-node.test.ts` pins signatures,
-deterministic eviction, chat-scope clearing, quota fallback, and secret
-exclusion.
+separate. Browser translation captures the effective chat binding before
+asynchronous work and threads it through pipeline execution and every cache
+signature; explicitly no-chat surfaces such as Playground stay global, while
+inactive-chat export passes the exported chat's binding. `src/ts/translator/translator.cache.svelte-node.test.ts`
+pins signatures, deterministic eviction, chat-scope clearing, quota fallback,
+and secret exclusion.
 
 These browser caches are not an authority for server message persistence.
 `autoTranslateCachedOnly` disables generated-message LLM auto-translation
@@ -154,13 +167,17 @@ registry. `server/fastify/src/translation/greetingTranslationStore.ts` stores
 normalized rows keyed by character, greeting index, and settings hash, with the
 source hash guarding edits.
 `server/fastify/src/translation/serverGreetingTranslation.ts` snapshots the
-source, settings, and previous row, performs detached work, and rechecks all
-three plus the current job before persistence.
+source, chat-resolved settings, and previous row, performs detached work, and
+rechecks all three plus the current job before persistence. Greeting reads and
+translate commands carry the owning `chatId`; the store can safely reuse a row
+when source and effective settings hashes match, while client projections and
+job identities remain chat-scoped.
 
 `server/fastify/src/greetingTranslationJobs.ts` uses the same ten-minute
 terminal retention and 128-entry cap as message jobs. Bootstrap publishes
 `activeGreetingTranslations`; `src/ts/server/greetingTranslations.svelte.ts`
-refreshes the character projection and rejects settings/source-mismatched rows.
+refreshes the character/chat projection and rejects settings/source-mismatched
+rows.
 Greeting store and recovery contracts are covered by
 `server/fastify/__tests__/greetingTranslationStore.test.ts` and
 `src/ts/server/greetingTranslations.test.ts`.

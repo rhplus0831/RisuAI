@@ -257,9 +257,11 @@ not ordinary browser `/commands/*` resource endpoints:
   [Translation And Input Hooks](translation-and-input-hooks.md) owns the
   preset/pipeline and generated-message flow.
 - Manual greeting translation uses a separate process-local job registry and
-  normalized character-scoped rows. Source/settings/previous-value fences guard
-  persistence, `greetingTranslation.updated` drives targeted invalidation, and
-  bootstrap exposes running plus bounded recent succeeded/failed work through
+  normalized character-scoped rows. Requests and jobs carry the owning chat id
+  so the effective chat-bound translator preset participates in the settings
+  hash. Source/settings/previous-value fences guard persistence,
+  `greetingTranslation.updated` drives targeted invalidation, and bootstrap
+  exposes chat-scoped running plus bounded recent succeeded/failed work through
   `activeGreetingTranslations`.
 - Memory job create/cancel writes durable memory-job state and emits memory
   events without a domain revision. Worker writes and direct summary

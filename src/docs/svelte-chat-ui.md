@@ -139,6 +139,14 @@ an existing persisted translation is displayed for either role; the bot-only
 setting prevents new user-message translation requests without hiding stored
 user-message translation data.
 
+`src/lib/SideBars/ChatTranslationSettings.svelte` also owns the active chat's
+LLM translator preset selector. “Use Global Settings” leaves
+`chat.translatorPresetId` absent; a named option persists the preset's stable
+string id through the guarded chat-metadata command and reports
+accepted/queued/failed state like the adjacent translation toggles. Missing
+references are displayed as unavailable and execute with the global fallback;
+normal preset deletion and import normalization clear them durably.
+
 `src/lib/ChatScreens/ChatBody.svelte` retains the legacy client-only HTML
 translation path for synthetic greetings and non-persisted preview rows that
 have no server-raw target. Eligibility follows the active chat's
@@ -149,8 +157,10 @@ The synthetic greeting row (`idx === -1`) uses the separate manual projection
 in `src/ts/server/greetingTranslations.svelte.ts`.
 `src/lib/ChatScreens/Chat.svelte` renders that projection and
 `src/lib/ChatScreens/DefaultChatScreen.svelte` supplies its target and state.
-Persisted greeting projections do not become automatic merely because chat
-auto-translation is enabled.
+The projection, detached job identity, and server read/command request all carry
+the owning chat id so different preset bindings on chats for the same character
+cannot leak into one another. Persisted greeting projections do not become
+automatic merely because chat auto-translation is enabled.
 
 Partial block/text editing belongs to `PartialEditController.svelte`. Its
 match-selection, delete-confirmation, and failure dialogs share the modal focus

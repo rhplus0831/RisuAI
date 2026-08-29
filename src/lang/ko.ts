@@ -1410,6 +1410,8 @@ const languageKoreanBase = {
   trailingSingleQuote: '끝 작은따옴표',
   trailingDoubleQuote: '끝 큰따옴표',
   translatorNote: '번역자 메모',
+  translatorPreset: '번역기 프리셋',
+  translatorPresetUnavailable: (presetId: string) => `사용할 수 없는 프리셋 (${presetId}) — 전역 설정을 사용합니다`,
   formatGroupInSingle: '그룹 대화를 단일 메시지로 결합',
   defineCustomGUI: '사용자 정의 GUI 설정',
   chatHTML: '채팅 HTML',
