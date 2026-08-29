@@ -77,6 +77,7 @@ import { backfillLegacyHypaV3MemoryRows } from './memoryLegacyImport.js'
 import { MemoryWorker, type MemoryWorkerOptions } from './memoryWorker.js'
 import { BardWikiWorker, type BardWikiWorkerOptions } from './bardWikiWorker.js'
 import { createBardWikiApplyTurnHandler } from './bardWikiApplyTurnHandler.js'
+import { createBardWikiReconcileReceiptHandler } from './bardWikiReconcileHandler.js'
 import { createEmbedMemoryJobBatchHandler, createEmbedMemoryJobHandler } from './memoryEmbedJobHandler.js'
 import { createSummarizeMemoryJobBatchHandler, createSummarizeMemoryJobHandler } from './memorySummarizeJobHandler.js'
 import { registerRequestTrace } from './requestTrace.js'
@@ -274,6 +275,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
               dataDir: config.dataDir,
               eventSink: commandEventSink,
             }),
+            reconcile_receipt: createBardWikiReconcileReceiptHandler({ db, eventSink: commandEventSink }),
             ...bardWikiWorkerOptions.handlers,
           },
         })

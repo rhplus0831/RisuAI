@@ -233,6 +233,10 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'bardwiki.change_set.applied',
     resource: 'bardWikiChat',
   },
+  bardWikiReconciliationCompleted: {
+    type: 'bardwiki.reconciliation.completed',
+    resource: 'bardWikiChat',
+  },
   settingsUpdated: {
     type: 'settings.updated',
     resource: 'settings',

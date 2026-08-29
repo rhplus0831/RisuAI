@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { isDeepStrictEqual } from 'node:util'
 import { invalidateUnsummarizedMemoryForChat, invalidatesPromptMemorySource } from './memoryInvalidation.js'
 import { recordTableWrite } from './protocolMetrics.js'
+import { invalidateBardWikiReceiptsForTranscriptMutation } from './bardWikiInvalidation.js'
 
 // Chat messages live in their own SQLite table, one row per message, instead of
 // being embedded in the domain projection. This module is the CRUD boundary
@@ -232,6 +233,7 @@ export function replaceChatMessages(db: DatabaseSync, chatId: string, messages: 
   recordTableWrite('messages')
   db.prepare('DELETE FROM messages WHERE chat_id = ? AND alternate = 0').run(chatId)
   insertChatMessages(db, chatId, messages)
+  invalidateBardWikiReceiptsForTranscriptMutation(db, chatId)
 }
 
 export function activeMessageIdExists(db: DatabaseSync, messageId: string): boolean {
@@ -317,6 +319,7 @@ export function updateActiveMessageById(
     'UPDATE messages SET uid = ?, role = ?, data = ?, disabled = ?, json = ? WHERE chat_id = ? AND seq = ? AND alternate = 0',
   ).run(row.uid, row.role, row.data, row.disabled, row.json, location.chatId, location.seq)
   invalidatePromptMemoryIfNeeded(db, location.chatId, before, getChatMessages(db, location.chatId))
+  invalidateBardWikiReceiptsForTranscriptMutation(db, location.chatId)
   return { ok: true, chatId: location.chatId }
 }
 
@@ -431,6 +434,7 @@ export function writeGenerationChatMessage(
     'UPDATE messages SET uid = ?, role = ?, data = ?, disabled = ?, json = ? WHERE chat_id = ? AND seq = ? AND alternate = 0',
   ).run(row.uid, row.role, row.data, row.disabled, row.json, chatId, existing.seq)
   invalidatePromptMemoryIfNeeded(db, chatId, before, getChatMessages(db, chatId))
+  invalidateBardWikiReceiptsForTranscriptMutation(db, chatId)
   return { ok: true, messageId: row.uid, displaced: JSON.parse(existing.json) as JsonRecord }
 }
 
@@ -564,6 +568,7 @@ export function applyChatMessageDiff(
     }
   }
   if (invalidatesPromptMemory) invalidateUnsummarizedMemoryForChat(db, chatId)
+  if (prefix < base.length) invalidateBardWikiReceiptsForTranscriptMutation(db, chatId)
 }
 
 function invalidatePromptMemoryIfNeeded(

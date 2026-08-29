@@ -671,6 +671,17 @@ export function listBardWikiDocumentVersions(
   return rows.map(mapDocumentVersionRow)
 }
 
+export function getBardWikiDocumentVersion(
+  db: DatabaseSync,
+  documentId: string,
+  version: number,
+): BardWikiDocumentVersion | null {
+  const row = db
+    .prepare('SELECT * FROM bardwiki_document_versions WHERE document_id = ? AND version = ?')
+    .get(documentId, version) as unknown as BardWikiDocumentVersionRow | undefined
+  return row ? mapDocumentVersionRow(row) : null
+}
+
 export function listBardWikiDocumentVersionPage(
   db: DatabaseSync,
   documentId: string,
@@ -929,6 +940,7 @@ export function deleteBardWikiDocument(
   documentId: string,
   input: Pick<BardWikiDocumentUpdateInput, 'expectedVersion' | 'expectedContentHash' | 'commandRevision'> & {
     actor?: BardWikiDocumentVersion['actor']
+    reason?: BardWikiDocumentVersion['reason']
     receiptId?: string | null
     jobId?: string | null
   },
@@ -949,7 +961,7 @@ export function deleteBardWikiDocument(
   const deleted = requireDocument(db, chatId, documentId, true)
   insertDocumentVersion(db, deleted, {
     actor: input.actor ?? 'user',
-    reason: 'delete',
+    reason: input.reason ?? 'delete',
     receiptId: input.receiptId ?? null,
     jobId: input.jobId ?? null,
     commandRevision: requireRevision(input.commandRevision),
