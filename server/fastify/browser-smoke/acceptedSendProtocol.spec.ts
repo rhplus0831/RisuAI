@@ -16,6 +16,7 @@ import { setupBrowserSmokeAuth } from './auth.js'
 
 interface ProviderPlan {
   chunks: string[]
+  errorBeforeTokens?: string
   holdAfterChunk?: number
   holdAfterAbort?: boolean
 }
@@ -149,6 +150,10 @@ class ControlledProvider {
     try {
       await this.waitForViewer(context.generationId, signal)
       if (signal.aborted) return
+      if (plan.errorBeforeTokens) {
+        yield { kind: 'error' as const, error: plan.errorBeforeTokens, status: 503 }
+        return
+      }
       for (let index = 0; index < plan.chunks.length; index += 1) {
         yield { kind: 'token' as const, content: plan.chunks[index] }
         if (plan.holdAfterChunk === index + 1) {
@@ -319,6 +324,7 @@ const CHARACTER_ID = 'char-lifecycle'
 const chats = {
   reloadDesktop: 'chat-reload-desktop',
   responseLoss: 'chat-response-loss',
+  retryableProviderFailure: 'chat-retryable-provider-failure',
   reloadMobile: 'chat-reload-mobile',
   restart: 'chat-restart',
   stopDesktop: 'chat-stop-desktop',
@@ -399,6 +405,49 @@ test('accepted send recovers when the operation response is lost before identity
     harness.provider.release(chatId)
     await page.unroute('**/api/v1/generation-operations')
   }
+})
+
+test('provider failure before tokens exposes an exact Retry that succeeds without duplicating the user row', async ({
+  page,
+}) => {
+  const chatId = chats.retryableProviderFailure
+  const userText = 'retryable provider failure request'
+  const reply = 'Retry recovered reply'
+  harness.provider.configure(
+    chatId,
+    { chunks: [], errorBeforeTokens: 'browser smoke retryable provider failure' },
+    { chunks: [reply] },
+  )
+
+  await bootChat(page, chatId)
+  await sendMessage(page, userText)
+
+  const recovery = page.getByTestId('accepted-send-recovery')
+  await expect(recovery).toBeVisible({ timeout: 15_000 })
+  await expect(recovery).toContainText('could not be started')
+  await expect(recovery).toContainText('may already have run and may have been billed')
+  const providerError = page.getByRole('alertdialog')
+  await expect(providerError).toContainText('browser smoke retryable provider failure')
+  await providerError.getByRole('button', { name: 'OK', exact: true }).click()
+  const operation = await waitForOperation(page, chatId)
+  await expect
+    .poll(async () => summarizeMessages(await residentMessages(page, chatId)))
+    .toEqual([{ role: 'user', data: userText }])
+  expect(summarizeMessages(await authoritativeMessages(page, chatId))).toEqual([{ role: 'user', data: userText }])
+  expect(operation).toMatchObject({ state: 'retryable', providerMayHaveRun: true })
+  expect(harness.provider.calls(chatId)).toBe(1)
+
+  await recovery.getByTestId('accepted-send-retry').click()
+  const confirmation = page.getByRole('alertdialog')
+  await expect(confirmation).toContainText('may already have been billed')
+  await confirmation.getByRole('button', { name: 'YES' }).click()
+
+  await expectTerminalTruth(page, chatId, userText, reply, 'completed', operation.operationId)
+  expect(harness.provider.calls(chatId)).toBe(2)
+  expect(summarizeMessages(await authoritativeMessages(page, chatId))).toEqual([
+    { role: 'user', data: userText },
+    { role: 'char', data: reply },
+  ])
 })
 
 test('Pixel reload plus visibility/pageshow reattaches and commits one reply', async ({ browser }) => {
