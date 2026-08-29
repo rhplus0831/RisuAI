@@ -1,13 +1,15 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { Writable } from 'node:stream'
 import type { Vitest } from 'vitest/node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   TEST_WATCH_HEARTBEAT_STALE_MS,
   TEST_WATCH_SCHEMA_VERSION,
+  TestWatchLog,
   canRunIncrementally,
   createWorktreeSnapshot,
   diffWorktreeSnapshots,
@@ -164,6 +166,30 @@ describe('test watcher CLI', () => {
         label: 'changed server tests',
       }),
     ).toEqual(['server/fastify/__tests__/app.test.ts'])
+  })
+})
+
+describe('test watcher logging', () => {
+  it('keeps terminal forwarding outside later Vitest stream interception', () => {
+    const directory = temporaryDirectory('risu-test-watch-log-')
+    const logPath = path.join(directory, 'latest.log')
+    const terminalOutput: string[] = []
+    const terminal = new Writable({
+      write(chunk, _encoding, callback) {
+        terminalOutput.push(String(chunk))
+        callback()
+      },
+    })
+    const log = new TestWatchLog(logPath, terminal as NodeJS.WriteStream, terminal as NodeJS.WriteStream)
+    const interceptedWrite = vi.fn(() => true)
+    terminal.write = interceptedWrite as typeof terminal.write
+
+    log.stdout.write('lane output\n')
+    log.reset('next generation')
+
+    expect(interceptedWrite).not.toHaveBeenCalled()
+    expect(terminalOutput).toEqual(['lane output\n', 'next generation\n'])
+    expect(readFileSync(logPath, 'utf8')).toBe('next generation\n')
   })
 })
 

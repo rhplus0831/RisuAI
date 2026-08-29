@@ -508,19 +508,23 @@ export function extractVitestFileFilters(command: TestCommand): string[] {
   return filters
 }
 
-class TestWatchLog {
+export class TestWatchLog {
   readonly stderr: Writable
   readonly stdout: Writable
   private logPath: string
+  private writeTerminalStdout: (content: string | Uint8Array) => boolean
 
-  constructor(logPath: string) {
+  constructor(logPath: string, stdout = process.stdout, stderr = process.stderr) {
     this.logPath = logPath
-    const createWriter = (terminal: NodeJS.WriteStream) =>
+    const writeTerminalStdout = stdout.write.bind(stdout)
+    const writeTerminalStderr = stderr.write.bind(stderr)
+    this.writeTerminalStdout = writeTerminalStdout
+    const createWriter = (writeTerminal: (content: string | Uint8Array) => boolean) =>
       new Writable({
         write: (chunk, encoding, callback) => {
           try {
             const content = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding as BufferEncoding)
-            terminal.write(content)
+            writeTerminal(content)
             appendFileSync(this.logPath, content)
             callback()
           } catch (error) {
@@ -528,8 +532,8 @@ class TestWatchLog {
           }
         },
       })
-    this.stdout = createWriter(process.stdout)
-    this.stderr = createWriter(process.stderr)
+    this.stdout = createWriter(writeTerminalStdout)
+    this.stderr = createWriter(writeTerminalStderr)
   }
 
   reset(header: string): void {
@@ -537,7 +541,7 @@ class TestWatchLog {
     if (!existsSync(this.logPath)) writeFileSync(this.logPath, '')
     truncateSync(this.logPath)
     appendFileSync(this.logPath, `${header}\n`)
-    process.stdout.write(`${header}\n`)
+    this.writeTerminalStdout(`${header}\n`)
   }
 }
 

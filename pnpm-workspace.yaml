@@ -9,3 +9,9 @@ allowBuilds:
   onnxruntime-node: true
   protobufjs: true
   sharp: false
+
+minimumReleaseAgeExclude:
+  - '@vitest/coverage-v8@5.0.0-rc.3'
+  - '@vitest/mocker@5.0.0-rc.3'
+  - '@vitest/spy@5.0.0-rc.3'
+  - vitest@5.0.0-rc.3
