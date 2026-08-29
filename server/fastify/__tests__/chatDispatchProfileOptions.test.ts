@@ -1092,6 +1092,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
         forceReplaceUrl: 'risu::https://profile-responses.example.com/v1',
         proxyKey: 'sk-profile-responses',
         autofillRequestUrl: true,
+        useStreaming: true,
         additionalParams: [
           ['header::X-Profile', 'profile'],
           ['profileFlag', 'true'],
@@ -1116,6 +1117,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].body.model).toBe('profile-responses-model')
     expect(captured[0].body.profileFlag).toBe(true)
     expect(captured[0].body.store).toBe(false)
+    expect(captured[0].body.stream).toBeUndefined()
   })
 
   it('preserves an exact OpenAI Responses reverse-proxy endpoint when autofill is disabled', async () => {

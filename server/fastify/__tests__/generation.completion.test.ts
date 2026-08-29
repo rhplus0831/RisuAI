@@ -2504,6 +2504,29 @@ describe('POST /api/v1/generate/completion (openai-responses)', () => {
     expect(sent.input).toEqual([{ role: 'user', content: [{ type: 'input_text', text: 'hi' }] }])
     expect(sent.max_output_tokens).toBe(128)
   })
+
+  it('rejects streaming before dispatch because Responses completion is buffered', async () => {
+    const fetchSpy = vi.fn()
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch
+    const { assertion } = await setupAuthedClient(harness.app)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'openai-responses',
+        model: 'gpt-5',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: true,
+        options: { 'openai-responses': { apiKey: 'sk-resp' } },
+      },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'openai-responses streaming is not yet supported; set stream: false' })
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
 })
 
 describe('POST /api/v1/generate/completion (openai-responses additionalParams + reverse_proxy)', () => {

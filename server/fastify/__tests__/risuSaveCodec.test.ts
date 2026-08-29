@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import type { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
 import { risuSaveFixtureCases } from '../__fixtures__/risuSave/fixtures.js'
 import { classifyRisuSaveEnvelope, inspectRisuSaveBlockFixtureEnvelope } from '../src/risuSave/fixtureHarness.js'
@@ -955,6 +956,146 @@ describe('server .risu fixture harness', () => {
       expect(serialized).not.toContain('push-secret-auth')
     } finally {
       db.close()
+    }
+  })
+
+  it('round-trips ordered reroll candidates with identity and metadata through every portable .risu codec', async () => {
+    const candidates = [
+      {
+        role: 'char',
+        data: 'same visible candidate',
+        chatId: 'candidate-newest',
+        saying: 'Newest Candidate',
+        time: 222,
+        generationInfo: {
+          model: 'newest-model',
+          generationId: 'generation-newest',
+          operationId: 'operation-newest',
+          acceptedMessageId: 'candidate-newest',
+          effectLedgerChatId: 'portable-chat',
+          inputTokens: 12,
+          outputTokens: 34,
+        },
+        promptInfo: {
+          promptName: 'Newest Prompt',
+          promptToggles: [{ key: 'tone', value: 'warm' }],
+        },
+      },
+      {
+        role: 'char',
+        data: 'same visible candidate',
+        chatId: 'candidate-older',
+        saying: 'Older Candidate',
+        time: 111,
+        generationInfo: {
+          model: 'older-model',
+          generationId: 'generation-older',
+          operationId: 'operation-older',
+          acceptedMessageId: 'candidate-older',
+          effectLedgerChatId: 'portable-chat',
+          inputTokens: 56,
+          outputTokens: 78,
+        },
+        promptInfo: {
+          promptName: 'Older Prompt',
+          promptToggles: [{ key: 'tone', value: 'cold' }],
+        },
+      },
+    ]
+    const envelopeCases = [
+      {
+        expected: 'legacy-raw',
+        encode: (db: DatabaseSync, dataDir: string) => encodeRepositoryRisuSaveLegacyExport(db, dataDir, 'legacy-raw'),
+      },
+      {
+        expected: 'legacy-compressed',
+        encode: (db: DatabaseSync, dataDir: string) =>
+          encodeRepositoryRisuSaveLegacyExport(db, dataDir, 'legacy-compressed'),
+      },
+      {
+        expected: 'legacy-stream',
+        encode: (db: DatabaseSync, dataDir: string) =>
+          encodeRepositoryRisuSaveLegacyExport(db, dataDir, 'legacy-stream'),
+      },
+      {
+        expected: 'risusave-blocks',
+        encode: (db: DatabaseSync, dataDir: string) => encodeRepositoryRisuSaveBlockExport(db, dataDir),
+      },
+    ] as const
+
+    for (const envelopeCase of envelopeCases) {
+      const sourceDataDir = makeDataDir()
+      const sourceDb = openDatabase(sourceDataDir)
+      let encoded: Uint8Array
+      try {
+        writePersistedWithMessages(sourceDb, sourceDataDir, {
+          _version: 1,
+          database: {
+            version: 1,
+            characters: [
+              {
+                chaId: 'portable-character',
+                name: 'Portable Character',
+                chats: [
+                  {
+                    id: 'portable-chat',
+                    name: 'Portable Chat',
+                    note: '',
+                    localLore: [],
+                    bookmarks: ['active-response'],
+                    message: [
+                      { role: 'user', data: 'active prompt', chatId: 'active-prompt' },
+                      { role: 'char', data: 'active response', chatId: 'active-response' },
+                    ],
+                    alternates: candidates,
+                  },
+                ],
+              },
+            ],
+            characterOrder: ['portable-character'],
+            botPresets: [],
+            modules: [],
+            loadouts: [],
+            plugins: [],
+            pluginCustomStorage: {},
+          },
+          assets: [],
+        })
+        encoded = envelopeCase.encode(sourceDb, sourceDataDir)
+      } finally {
+        sourceDb.close()
+      }
+
+      const decoded = decodeRisuSaveImportSnapshot(encoded)
+      expect(decoded.envelope, envelopeCase.expected).toBe(envelopeCase.expected)
+      const decodedChat = (decoded.database.characters as Array<{ chats: Array<Record<string, unknown>> }>)[0].chats[0]
+      expect(decodedChat.alternates, envelopeCase.expected).toEqual(candidates)
+      expect(decodedChat.message, envelopeCase.expected).toEqual([
+        { role: 'user', data: 'active prompt', chatId: 'active-prompt' },
+        { role: 'char', data: 'active response', chatId: 'active-response' },
+      ])
+      expect(decodedChat.bookmarks, envelopeCase.expected).toEqual(['active-response'])
+
+      const targetDataDir = makeDataDir()
+      const targetDb = openDatabase(targetDataDir)
+      try {
+        await applyImport(targetDb, targetDataDir, decoded.database, {
+          greetingTranslations: decoded.greetingTranslations,
+          automaticBackupRetention: 0,
+        })
+        const reloaded = loadPersistedWithMessages(targetDb, targetDataDir).database as {
+          characters: Array<{ chats: Array<Record<string, unknown>> }>
+        }
+        const reloadedChat = reloaded.characters[0].chats[0]
+        expect(reloadedChat.alternates, envelopeCase.expected).toEqual(candidates)
+        expect(reloadedChat.message, envelopeCase.expected).toEqual([
+          { role: 'user', data: 'active prompt', chatId: 'active-prompt' },
+          { role: 'char', data: 'active response', chatId: 'active-response' },
+        ])
+        expect(reloadedChat.bookmarks, envelopeCase.expected).toEqual(['active-response'])
+      } finally {
+        targetDb.close()
+      }
     }
   })
 

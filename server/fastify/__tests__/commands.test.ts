@@ -4908,6 +4908,109 @@ describe('bot preset commands', () => {
     }
     expect(persisted.additionalParams).toEqual([['target', 'value']])
     expect(persisted.botPresets[0]?.additionalParams).toEqual([['current', 'value']])
+
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.resourceDatabase.additionalParams).toEqual([['target', 'value']])
+    const savedPreset = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/legacy-presets/preset-a',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(savedPreset.statusCode).toBe(200)
+    expect(savedPreset.json().preset.additionalParams).toEqual([['current', 'value']])
+  })
+
+  it.each([
+    {
+      name: 'absent field',
+      target: {},
+      expected: [['current', 'value']],
+    },
+    {
+      name: 'explicit null',
+      target: { additionalParams: null },
+      expected: null,
+    },
+    {
+      name: 'default empty array reset',
+      target: { additionalParams: [] },
+      expected: [],
+    },
+  ])('keeps the $name distinct when applying legacy preset additionalParams', async ({ target, expected }) => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [
+        { id: 'preset-a', name: 'A', additionalParams: [['stale', 'value']] },
+        { id: 'preset-b', name: 'B', ...target },
+      ],
+      botPresetsId: 0,
+      additionalParams: [['current', 'value']],
+    })
+
+    const selected = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/presets/select',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        presetId: 'preset-b',
+        saveCurrent: false,
+        apply: true,
+      },
+    })
+
+    expect(selected.statusCode, selected.body).toBe(200)
+    const persisted = loadPersistedFromDir(harness.dataDir).database as {
+      additionalParams: unknown
+      botPresets: Array<Record<string, unknown>>
+    }
+    expect(persisted.additionalParams).toEqual(expected)
+    expect(persisted.botPresets[1]).toEqual(expect.objectContaining({ id: 'preset-b', name: 'B', ...target }))
+  })
+
+  it('snapshots normalized default additionalParams before applying a non-default legacy preset', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [
+        { id: 'preset-a', name: 'A' },
+        {
+          id: 'preset-b',
+          name: 'B',
+          additionalParams: [
+            ['body.option', 'true'],
+            ['header::X-Target', 'target'],
+          ],
+        },
+      ],
+      botPresetsId: 0,
+    })
+
+    const selected = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/presets/select',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        presetId: 'preset-b',
+        saveCurrent: true,
+        apply: true,
+      },
+    })
+
+    expect(selected.statusCode, selected.body).toBe(200)
+    const persisted = loadPersistedFromDir(harness.dataDir).database as {
+      additionalParams: Array<[string, string]>
+      botPresets: Array<{ id: string; additionalParams?: Array<[string, string]> }>
+    }
+    expect(persisted.additionalParams).toEqual([
+      ['body.option', 'true'],
+      ['header::X-Target', 'target'],
+    ])
+    expect(persisted.botPresets[0]?.additionalParams).toEqual([])
   })
 
   it('reports the exact resource shape for no-apply preset selection', async () => {

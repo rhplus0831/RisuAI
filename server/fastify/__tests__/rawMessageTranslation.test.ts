@@ -504,6 +504,86 @@ describe('translateRawMessageData', () => {
     })
   })
 
+  it('falls back from a missing step profile to the selected translate profile', async () => {
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
+    const settings = {
+      ...llmSettings(true),
+      modelProfiles: [
+        {
+          id: 'translate-profile',
+          name: 'Translate Profile',
+          modelId: 'echo_model',
+          runtimeOptions: { temperature: 41 },
+        },
+      ],
+      modelRoleProfiles: {
+        translate: { mode: 'profile', profileId: 'translate-profile' },
+      },
+      translatorPresets: [
+        {
+          id: 'pipeline',
+          name: 'Pipeline',
+          prompt: 'Translate {{slot::content}}',
+          maxResponse: 123,
+          steps: [
+            {
+              id: 'translate',
+              name: 'Translate',
+              enabled: true,
+              prompt: 'Translate {{slot::content}}',
+              maxResponse: 123,
+              model: { mode: 'modelProfile', profileId: 'missing-profile' },
+            },
+          ],
+        },
+      ],
+      translatorPresetId: 0,
+    }
+
+    await translateRawMessageData({
+      settings,
+      text: 'source',
+      signal: new AbortController().signal,
+    })
+
+    expect(rawTranslationMocks.dispatchChatProvider.mock.calls[0][0]).toMatchObject({
+      outputTokens: 123,
+      profile: { profileId: 'translate-profile', modelId: 'echo_model' },
+      database: { aiModel: 'echo_model', temperature: 41, useStreaming: false },
+    })
+  })
+
+  it('uses the debug default when the legacy translate model is empty', async () => {
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
+
+    await translateRawMessageData({
+      settings: { ...llmSettings(true), aiModel: '' },
+      text: 'source',
+      signal: new AbortController().signal,
+    })
+
+    expect(rawTranslationMocks.dispatchChatProvider.mock.calls[0][0]).toMatchObject({
+      profile: { modelId: 'echo_model' },
+      database: { aiModel: 'echo_model', useStreaming: false },
+    })
+  })
+
+  it('surfaces an LLM provider error frame as a translation failure', async () => {
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () =>
+      (async function* () {
+        yield { kind: 'error' as const, error: 'translation provider unavailable', status: 503 }
+      })(),
+    )
+
+    await expect(
+      translateRawMessageData({
+        settings: llmSettings(true),
+        text: 'source',
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow('translation provider unavailable')
+  })
+
   it('removes internal reasoning from send-text-as-is source text when exclusion is enabled', async () => {
     const text =
       '<Thoughts data-private="true">draft secret <think>nested secret</think></Thoughts>\n' +

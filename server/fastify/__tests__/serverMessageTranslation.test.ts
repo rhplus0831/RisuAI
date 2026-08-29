@@ -58,6 +58,24 @@ describe('runServerMessageTranslation', () => {
         translatorType: 'llm',
         translatorSendTextAsIs: true,
         aiModel: 'echo_model',
+        temperature: 50,
+        top_p: 1,
+        modelProfiles: [
+          {
+            id: 'persisted-translate-profile',
+            name: 'Persisted Translate Profile',
+            providerId: 'debug-echo',
+            modelId: 'debug-echo',
+            providerOptions: {
+              baseUrl: 'debug://persisted-translate',
+              requestModel: 'persisted-translate-model',
+            },
+            runtimeOptions: { temperature: 37, topP: 0.43, useStreaming: true },
+          },
+        ],
+        modelRoleProfiles: {
+          translate: { mode: 'profile', profileId: 'persisted-translate-profile' },
+        },
         translatorPresetId: 0,
         // Real persistence keeps these legacy scalars synced to step one.
         translatorPrompt: 'Draft {{slot::content}}',
@@ -110,6 +128,9 @@ describe('runServerMessageTranslation', () => {
       assets: [],
     })
 
+    db.close()
+    db = openDatabase(dataDir)
+
     const settingsRow = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
     expect(JSON.parse(settingsRow.data_json)).not.toHaveProperty('translatorPresets')
     expect(db.prepare('SELECT COUNT(*) AS count FROM translator_presets').get()).toEqual({ count: 1 })
@@ -128,10 +149,35 @@ describe('runServerMessageTranslation', () => {
     expect(serverTranslationMocks.dispatchChatProvider).toHaveBeenCalledTimes(2)
     expect(serverTranslationMocks.dispatchChatProvider.mock.calls[0][0]).toMatchObject({
       outputTokens: 111,
+      profile: {
+        profileId: 'persisted-translate-profile',
+        modelId: 'debug-echo',
+        requestModel: 'persisted-translate-model',
+        providerOptions: {
+          baseUrl: 'debug://persisted-translate',
+        },
+      },
+      database: {
+        aiModel: 'debug-echo',
+        temperature: 37,
+        top_p: 0.43,
+        useStreaming: false,
+      },
       formated: [{ role: 'system', content: 'Draft original source' }],
     })
     expect(serverTranslationMocks.dispatchChatProvider.mock.calls[1][0]).toMatchObject({
       outputTokens: 222,
+      profile: {
+        profileId: 'persisted-translate-profile',
+        modelId: 'debug-echo',
+        requestModel: 'persisted-translate-model',
+      },
+      database: {
+        aiModel: 'debug-echo',
+        temperature: 37,
+        top_p: 0.43,
+        useStreaming: false,
+      },
       formated: [
         { role: 'system', content: 'Polish the previous translation' },
         { role: 'user', content: 'draft output' },

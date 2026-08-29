@@ -232,6 +232,25 @@ describe('runOpenAIResponses', () => {
     expect(capturedUrl).toBe('https://azure.example.com/openai/v1/responses?api-version=2026-01-01')
   })
 
+  it('preserves an already complete Responses base path and its query parameters', async () => {
+    let capturedUrl = ''
+    vi.stubGlobal('fetch', async (url: string) => {
+      capturedUrl = url
+      return ok({ output_text: 'ok' })
+    })
+    const resolved = resolveOpenAIResponsesRequest({
+      model: 'proxy-model',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'sk',
+      baseUrl: 'https://proxy.example.com/custom/responses/?api-version=2026-01-01&mode=exact',
+      signal: new AbortController().signal,
+    })!
+
+    await runOpenAIResponses(resolved)
+
+    expect(capturedUrl).toBe('https://proxy.example.com/custom/responses/?api-version=2026-01-01&mode=exact')
+  })
+
   it('preserves an exact query-bearing endpoint without Responses path autofill', async () => {
     let capturedUrl = ''
     vi.stubGlobal('fetch', async (url: string) => {
