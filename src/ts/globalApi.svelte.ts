@@ -1203,14 +1203,20 @@ export class AppendableBuffer {
  */
 const pipeFetchLog = (fetchLogIndex: number, readableStream: ReadableStream<Uint8Array>) => {
   if (fetchLogIndex < 0) return readableStream
-  const splited = readableStream.tee()
-
-  ;(async () => {
-    const text = await new Response(splited[0]).text()
-    fetchLog[fetchLogIndex].response = text
-  })()
-
-  return splited[1]
+  const decoder = new TextDecoder()
+  let responseText = ''
+  return readableStream.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        responseText += decoder.decode(chunk, { stream: true })
+        controller.enqueue(chunk)
+      },
+      flush() {
+        responseText += decoder.decode()
+        if (fetchLog[fetchLogIndex]) fetchLog[fetchLogIndex].response = responseText
+      },
+    }),
+  )
 }
 
 async function fetchViaProxyJobWs(
@@ -1276,10 +1282,11 @@ async function fetchViaProxyJobWs(
   const ws = new WebSocket(wsUrl, wsProtocols)
   ws.binaryType = 'arraybuffer'
   let terminalProxyFrameSeen = false
-  let localRequestAborted = false
+  let deleteJobOnClose = false
   let cancelDeleteSent = false
   let abortListenerAttached = false
   let abortHandler: () => void = () => {}
+  let responseCreated = false
 
   const detachAbortListener = () => {
     if (!abortListenerAttached) {
@@ -1302,18 +1309,22 @@ async function fetchViaProxyJobWs(
     }).catch(() => {})
   }
 
-  const closeAndEnd = () => {
+  const closeAndEnd = (error?: Error) => {
     if (settled) {
       return
     }
     settled = true
     detachAbortListener()
-    if (localRequestAborted && !terminalProxyFrameSeen) {
+    if (deleteJobOnClose && !terminalProxyFrameSeen) {
       deleteProxyJobOnce()
     }
     if (streamController) {
       try {
-        streamController.close()
+        if (error) {
+          streamController.error(error)
+        } else {
+          streamController.close()
+        }
       } catch {
         // no-op
       }
@@ -1330,6 +1341,7 @@ async function fetchViaProxyJobWs(
       streamController = controller
     },
     cancel() {
+      if (!terminalProxyFrameSeen) deleteJobOnClose = true
       closeAndEnd()
     },
   })
@@ -1342,28 +1354,60 @@ async function fetchViaProxyJobWs(
     }
   }
 
+  const terminateInvalidProxyStream = (message: string) => {
+    if (settled || terminalProxyFrameSeen) return
+    deleteJobOnClose = true
+    status = 502
+    responseHeaders = { 'content-type': 'text/plain; charset=utf-8' }
+    ensureHeadersReady()
+    if (responseCreated) {
+      closeAndEnd(new Error(message))
+    } else {
+      streamController?.enqueue(encoder.encode(message))
+      closeAndEnd()
+    }
+  }
+
   ws.onmessage = (event) => {
     const binaryChunk = readProxyJobWsBinaryChunk(event.data)
     if (binaryChunk) {
-      ensureHeadersReady()
+      if (!headersReady) {
+        terminateInvalidProxyStream('Proxy WebSocket sent a body chunk before upstream headers')
+        return
+      }
       streamController?.enqueue(binaryChunk)
       return
     }
     const parsed = parseProxyJobWsEvent(typeof event.data === 'string' ? event.data : '')
-    if (!parsed || !streamController) {
+    if (!streamController) {
+      return
+    }
+    if (!parsed) {
+      terminateInvalidProxyStream('Proxy WebSocket sent an invalid protocol frame')
       return
     }
     switch (parsed.type) {
       case 'job_accepted':
+        if (parsed.jobId !== jobId) {
+          terminateInvalidProxyStream('Proxy WebSocket accepted an unexpected job')
+        }
+        return
       case 'ping':
         return
       case 'upstream_headers':
+        if (headersReady) {
+          terminateInvalidProxyStream('Proxy WebSocket sent duplicate upstream headers')
+          return
+        }
         status = parsed.status
         responseHeaders = parsed.headers ?? {}
         ensureHeadersReady()
         return
       case 'chunk':
-        ensureHeadersReady()
+        if (!headersReady) {
+          terminateInvalidProxyStream('Proxy WebSocket sent a body chunk before upstream headers')
+          return
+        }
         streamController.enqueue(decodeProxyJobWsChunk(parsed.dataBase64))
         return
       case 'error': {
@@ -1377,35 +1421,26 @@ async function fetchViaProxyJobWs(
         return
       }
       case 'done':
+        if (!headersReady) {
+          terminateInvalidProxyStream('Proxy WebSocket completed before upstream headers')
+          return
+        }
         terminalProxyFrameSeen = true
-        ensureHeadersReady()
         closeAndEnd()
         return
     }
   }
 
   ws.onerror = () => {
-    if (!streamController) {
-      return
-    }
-    status = 502
-    responseHeaders = { 'content-type': 'text/plain; charset=utf-8' }
-    ensureHeadersReady()
-    streamController.enqueue(encoder.encode('Proxy WebSocket stream error'))
-    closeAndEnd()
+    terminateInvalidProxyStream('Proxy WebSocket stream error')
   }
 
   ws.onclose = () => {
-    if (!headersReady) {
-      status = 502
-      responseHeaders = { 'content-type': 'text/plain; charset=utf-8' }
-      ensureHeadersReady()
-    }
-    closeAndEnd()
+    terminateInvalidProxyStream('Proxy WebSocket closed before a terminal frame')
   }
 
   abortHandler = () => {
-    localRequestAborted = true
+    deleteJobOnClose = true
     status = 499
     responseHeaders = { 'content-type': 'text/plain; charset=utf-8' }
     ensureHeadersReady()
@@ -1422,6 +1457,7 @@ async function fetchViaProxyJobWs(
   }
 
   await waitHeaders
+  responseCreated = true
   return new Response(pipedReadable, {
     status,
     headers: new Headers(responseHeaders),

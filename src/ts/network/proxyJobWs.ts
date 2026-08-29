@@ -6,13 +6,55 @@ export type ProxyJobWsEvent =
   | { type: 'done' }
   | { type: 'ping'; ts: number }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isHttpStatus(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 100 && (value as number) <= 599
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return isRecord(value) && Object.values(value).every((entry) => typeof entry === 'string')
+}
+
+function isBase64(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.length % 4 === 0 &&
+    /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)
+  )
+}
+
 export function parseProxyJobWsEvent(raw: string): ProxyJobWsEvent | null {
   try {
-    const parsed = JSON.parse(raw) as ProxyJobWsEvent
-    if (!parsed || typeof parsed !== 'object' || typeof parsed.type !== 'string') {
-      return null
+    const parsed = JSON.parse(raw) as unknown
+    if (!isRecord(parsed) || typeof parsed.type !== 'string') return null
+    switch (parsed.type) {
+      case 'job_accepted':
+        return typeof parsed.jobId === 'string' && parsed.jobId.length > 0
+          ? { type: parsed.type, jobId: parsed.jobId }
+          : null
+      case 'upstream_headers':
+        return isHttpStatus(parsed.status) && isStringRecord(parsed.headers)
+          ? { type: parsed.type, status: parsed.status, headers: parsed.headers }
+          : null
+      case 'chunk':
+        return isBase64(parsed.dataBase64) ? { type: parsed.type, dataBase64: parsed.dataBase64 } : null
+      case 'error': {
+        if (typeof parsed.message !== 'string') return null
+        if (parsed.status === undefined) return { type: parsed.type, message: parsed.message }
+        if (!isHttpStatus(parsed.status)) return null
+        return { type: parsed.type, status: parsed.status, message: parsed.message }
+      }
+      case 'done':
+        return { type: parsed.type }
+      case 'ping':
+        return typeof parsed.ts === 'number' && Number.isFinite(parsed.ts) ? { type: parsed.type, ts: parsed.ts } : null
+      default:
+        return null
     }
-    return parsed
   } catch {
     return null
   }
