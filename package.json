@@ -37,6 +37,8 @@
     "test:server:realm-scale": "vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/realmImport.test.ts -t 'imports Realm charx packages with thousands of display assets' --no-file-parallelism --maxWorkers=1",
     "test:compat-harness": "tsx test/compat-harness/run.ts",
     "test:compat-current": "tsx test/compat-harness/run.ts --current-only",
+    "prepare:compat-baseline": "tsx util/compat-baseline.ts --prepare",
+    "validate:compat-registers": "tsx util/validate-original-risu-compatibility-registers.ts",
     "test:smoke": "pnpm smoke:fastify-browser",
     "test:all": "tsx util/test-all.ts",
     "coverage:all": "sh -c 'pnpm coverage:frontend; frontend=$?; pnpm coverage:backend; backend=$?; exit $((frontend || backend))'",
@@ -56,7 +58,6 @@
     "api:test": "pnpm test:server"
   },
   "dependencies": {
-    "@risuai/protocol": "workspace:*",
     "@adobe/css-tools": "4.4.4",
     "@aws-crypto/sha256-js": "^5.2.0",
     "@breezystack/lamejs": "^1.2.7",
@@ -73,6 +74,7 @@
     "@mlc-ai/web-tokenizers": "^0.1.6",
     "@noble/ciphers": "^2.2.0",
     "@risuai/ccardlib": "^0.4.2",
+    "@risuai/protocol": "workspace:*",
     "@smithy/protocol-http": "^3.3.0",
     "@smithy/signature-v4": "^2.3.0",
     "@tailwindcss/vite": "^4.2.2",
@@ -141,6 +143,8 @@
     "@types/web-push": "^3.6.4",
     "@types/wicg-file-system-access": "^2020.9.8",
     "@vitest/coverage-v8": "5.0.0-rc.3",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
     "autoprefixer": "^10.4.23",
     "cross-env": "^10.1.0",
     "fake-indexeddb": "^6.2.5",
