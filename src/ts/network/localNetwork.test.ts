@@ -6,7 +6,9 @@ describe('isLocalNetworkHost', () => {
   it('accepts localhost and loopback hosts', () => {
     expect(isLocalNetworkHost('localhost')).toBe(true)
     expect(isLocalNetworkHost('127.0.0.1')).toBe(true)
+    expect(isLocalNetworkHost('127.255.255.254')).toBe(true)
     expect(isLocalNetworkHost('0.0.0.0')).toBe(true)
+    expect(isLocalNetworkHost('0.1.2.3')).toBe(true)
     expect(isLocalNetworkHost('::1')).toBe(true)
   })
 
@@ -22,8 +24,9 @@ describe('isLocalNetworkHost', () => {
     expect(isLocalNetworkHost('fc00::1')).toBe(true)
     expect(isLocalNetworkHost('fd12:3456:789a::1')).toBe(true)
     expect(isLocalNetworkHost('fe80::1234')).toBe(true)
+    expect(isLocalNetworkHost('::ffff:7f00:1')).toBe(true)
+    expect(isLocalNetworkHost('::ffff:c0a8:10')).toBe(true)
     expect(isLocalNetworkHost('model-server.local')).toBe(true)
-    expect(isLocalNetworkHost('litellm')).toBe(true)
   })
 
   it('rejects public hosts', () => {
@@ -31,6 +34,8 @@ describe('isLocalNetworkHost', () => {
     expect(isLocalNetworkHost('1.1.1.1')).toBe(false)
     expect(isLocalNetworkHost('api.openai.com')).toBe(false)
     expect(isLocalNetworkHost('2001:4860:4860::8888')).toBe(false)
+    expect(isLocalNetworkHost('::ffff:101:101')).toBe(false)
+    expect(isLocalNetworkHost('litellm')).toBe(false)
   })
 })
 
@@ -40,12 +45,15 @@ describe('isLocalNetworkUrl', () => {
     expect(isLocalNetworkUrl('http://localhost:8080')).toBe(true)
     expect(isLocalNetworkUrl('http://[fd00::1]:4000/v1')).toBe(true)
     expect(isLocalNetworkUrl('http://my-box.local/v1/chat/completions')).toBe(true)
-    expect(isLocalNetworkUrl('http://litellm:4000/v1/chat/completions')).toBe(true)
+    expect(isLocalNetworkUrl('http://127.0.0.2:4000/v1/chat/completions')).toBe(true)
+    expect(isLocalNetworkUrl('http://[::ffff:7f00:1]:4000/v1/chat/completions')).toBe(true)
   })
 
   it('rejects public URLs', () => {
     expect(isLocalNetworkUrl('https://api.openai.com/v1/chat/completions')).toBe(false)
     expect(isLocalNetworkUrl('https://example.com')).toBe(false)
+    expect(isLocalNetworkUrl('http://litellm:4000/v1/chat/completions')).toBe(false)
+    expect(isLocalNetworkUrl('ftp://127.0.0.1/model')).toBe(false)
   })
 
   it('rejects invalid URLs', () => {
