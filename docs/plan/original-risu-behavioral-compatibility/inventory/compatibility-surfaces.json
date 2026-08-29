@@ -82,12 +82,12 @@
         ]
       },
       "verification": {
-      "state": "verified",
-      "confidence": "high",
-      "lastFastifyCommit": "9ea7aa20dd5a93ac7e5c9112e8c8fbcb9fca1438",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "9ea7aa20dd5a93ac7e5c9112e8c8fbcb9fca1438",
         "findingIds": [],
         "decisionId": null,
-      "residual": "The baseline omitted this field, so this is verified as an additive Fastify-only preservation rule rather than fork-point parity."
+        "residual": "The baseline omitted this field, so this is verified as an additive Fastify-only preservation rule rather than fork-point parity."
       },
       "notes": "This pilot traces a recent field-completeness omission rather than claiming that the baseline itself preserved preset-scoped additional parameters."
     },
@@ -4848,7 +4848,9 @@
         "state": "verified",
         "confidence": "high",
         "lastFastifyCommit": "5b6a9d492beb399a58d9695097171a9c3edf1b4d",
-        "findingIds": [],
+        "findingIds": [
+          "ORC-A-015"
+        ],
         "decisionId": null,
         "residual": null
       },

@@ -73,7 +73,7 @@ specific residual/revisit condition rather than claiming unrun proof.
 | `pnpm prepare:compat-baseline` | Passed; verified the clean detached baseline at `71c476e9c86263fe907105b011ca4dde0a619d66` |
 | `pnpm exec tsx util/compat-baseline.ts --check` | Passed; direct read-only verification of the same clean detached baseline |
 | `pnpm exec vitest run util/compat-baseline.test.ts test/compat-harness/governance.test.ts test/compat-harness/normalize.test.ts util/validate-original-risu-compatibility-registers.test.ts util/affected-tests.test.ts util/test-all.test.ts` | Passed; 6 files and 59 tests |
-| `pnpm validate:compat-registers` | Passed; 85 upstream units, 85 inventory surfaces including all 8 Category A owners, 59 decisions, 14 findings, and 75 unique raw mappings |
+| `pnpm validate:compat-registers` | Passed; 85 upstream units, 85 inventory surfaces including all 8 Category A owners, 59 decisions, 15 findings, and 75 unique raw mappings |
 | `pnpm test:affected --dry-run --base c33dac56811c3c6c6bdf72f8ad3faac796abfe59` | Passed; CI/config changes fail closed to `pnpm test:all` plus `pnpm test:compat-harness` |
 | `pnpm test:all --dry-run` | Passed; 11 lanes, including register validation and an isolated current harness after registers |
 | `pnpm test:compat-current` | Passed; 2 files and 18 tests, 16 current cells, cluster 10 healthy |

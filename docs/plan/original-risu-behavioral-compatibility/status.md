@@ -27,8 +27,8 @@ findings under [`findings/`](findings/); inventory ownership under
   `546ea5aaee78144176043971fdd2c13c9e7c6079`; the full pinned differential
   passed with 16 baseline cells, 18 current and cluster tests, 15 governed
   baseline/current divergences, and healthy cluster 10.
-- Canonical findings: 14 historical resolved findings imported with exact raw
-  mappings and implementation/verification evidence.
+- Canonical findings: 15 resolved findings: 14 historical imports with exact raw
+  mappings plus the Phase 1 lossless-normalizer finding `ORC-A-015`.
 - Open maintainer decisions: four historical unsupported statements remain
   `proposed` because their sources do not identify individual authority.
 - Next action: execute the Phase 2 bootstrap/writer/outbox recovery slice using

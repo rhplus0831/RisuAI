@@ -934,6 +934,42 @@
       ],
       "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
       "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+    },
+    {
+      "id": "ORC-A-015",
+      "title": "Lossy compatibility normalization hid unintended persisted generation metadata",
+      "category": "A",
+      "severity": "Medium",
+      "evidenceState": "reproduced",
+      "verificationState": "confirmed",
+      "disposition": "resolved",
+      "expected": "When prompt metadata persistence is disabled and no Agent Preset is active, generated transcript rows match the baseline empty promptInfo shape and omit Agent Preset diagnostics; prompt preview still exposes authoritative token diagnostics.",
+      "actual": "The prior normalizer discarded arbitrary transcript metadata, hiding persisted prompt token fields and an inactive Agent Preset status block; the first correction also erased prompt-preview token diagnostics until the preview and persistence contracts were separated.",
+      "userConsequence": "Reloaded chats carried unintended metadata and the compatibility golden could not detect it; an intermediate correction also made prompt preview token counts unavailable.",
+      "inventoryIds": [
+        "ORC-SURFACE-080"
+      ],
+      "sourceEvidence": [
+        "71c476e9c:src/ts/process/index.svelte.ts (post-generation promptInfo persistence)",
+        "test/compat-harness/golden/baseline.json",
+        "test/compat-harness/golden/current.json"
+      ],
+      "reproduction": [
+        "test/compat-harness/normalize.test.ts preserves arbitrary transcript metadata and missing/null distinctions",
+        "server/fastify/__tests__/assemble.test.ts verifies inactive Agent Preset omission and disabled promptInfo persistence",
+        "server/fastify/__tests__/generation.chat.test.ts verifies preview token diagnostics remain available"
+      ],
+      "decisionId": null,
+      "implementationCommit": "5b6a9d492beb399a58d9695097171a9c3edf1b4d",
+      "regressionEvidence": [
+        "test/compat-harness/normalize.test.ts",
+        "test/compat-harness/governance.test.ts",
+        "server/fastify/__tests__/assemble.test.ts",
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "pnpm test:compat-harness"
+      ],
+      "verificationCommit": "546ea5aaee78144176043971fdd2c13c9e7c6079",
+      "residualRisk": "Prompt preview and transcript persistence share assembly data but now have separate regression assertions; later prompt metadata additions remain governed by the lossless differential."
     }
   ]
 }
