@@ -1,0 +1,53 @@
+name: Compatibility Differential
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compatibility-differential
+  cancel-in-progress: false
+
+jobs:
+  full-differential:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      RISU_COMPAT_BASELINE_ROOT: ${{ runner.temp }}/risu-baseline-71c476e9c
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Prepare compatibility artifact directory
+        run: mkdir -p fast-bootstrap-results/compat-harness
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Prepare pinned detached baseline
+        run: |
+          set -o pipefail
+          pnpm prepare:compat-baseline 2>&1 | tee fast-bootstrap-results/compat-harness/baseline-prepare.log
+      - name: Run full pinned differential
+        run: |
+          set -o pipefail
+          pnpm test:compat-harness 2>&1 | tee fast-bootstrap-results/compat-harness/full-differential.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compatibility-differential-${{ github.run_id }}
+          path: |
+            fast-bootstrap-results/compat-harness/
+            test/compat-harness/golden/
+            test/compat-harness/expected-differences.json
+            test/compat-harness/fixture-provenance.json
+          if-no-files-found: warn
+          retention-days: 14

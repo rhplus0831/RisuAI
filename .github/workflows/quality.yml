@@ -167,6 +167,44 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:server:realm-scale
 
+  compat-registers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm validate:compat-registers
+
+  compat-current:
+    needs: compat-registers
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:compat-current
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: compatibility-current-${{ github.run_id }}
+          path: fast-bootstrap-results/compat-harness/
+          if-no-files-found: warn
+          retention-days: 14
+
   smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -204,6 +242,8 @@ jobs:
       - ui-coverage
       - server
       - realm-scale
+      - compat-registers
+      - compat-current
       - smoke
     runs-on: ubuntu-latest
     steps:
@@ -218,6 +258,8 @@ jobs:
           UI_COVERAGE_RESULT: ${{ needs['ui-coverage'].result }}
           SERVER_RESULT: ${{ needs.server.result }}
           REALM_SCALE_RESULT: ${{ needs['realm-scale'].result }}
+          COMPAT_REGISTERS_RESULT: ${{ needs['compat-registers'].result }}
+          COMPAT_CURRENT_RESULT: ${{ needs['compat-current'].result }}
           SMOKE_RESULT: ${{ needs.smoke.result }}
         run: |
           test "$FORMAT_RESULT" = success
@@ -228,5 +270,7 @@ jobs:
           test "$GATES_PERF_RESULT" = success
           test "$SERVER_RESULT" = success
           test "$REALM_SCALE_RESULT" = success
+          test "$COMPAT_REGISTERS_RESULT" = success
+          test "$COMPAT_CURRENT_RESULT" = success
           test "$SMOKE_RESULT" = success
           test "$UI_COVERAGE_RESULT" = success

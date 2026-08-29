@@ -1,10 +1,10 @@
 # Testing And Operations
 
-Last audited: 2026-08-29.
+Last audited: 2026-08-30.
 
 Use `pnpm` for package scripts. Node.js is declared as `>=24.0.0`. The package
-is root-only; there is no `server/fastify/package.json`. `package.json` does not
-pin a `packageManager`; the lockfile is pnpm lockfile v9. Local servers, tracing,
+is root-only; there is no `server/fastify/package.json`. `package.json` pins
+`pnpm@11.23.0`, and the lockfile is pnpm lockfile v9. Local servers, tracing,
 startup telemetry/measurement, built-SPA serving, browser support, and runtime
 environment variables live in
 [Development And Observability](development-and-observability.md).
@@ -51,10 +51,12 @@ current commands and behavior stay authoritative here.
 | `pnpm test:gates:perf`             | Run render-cost and clone-count gates.                                                                                                                                        |
 | `pnpm test:server`                 | Run Fastify/server Vitest tests.                                                                                                                                              |
 | `pnpm test:server:realm-scale`     | Run the isolated 7,000-asset Realm import capacity case with one worker.                                                                                                      |
+| `pnpm validate:compat-registers`   | Validate the compatibility inventory/findings schemas, cross-register references, and pinned upstream commit coverage.                                                       |
 | `pnpm test:compat-current`         | Check the 16 current-stack golden matrix cells and two cluster regressions without requiring the external baseline worktree.                                                  |
 | `pnpm test:compat-harness`         | Compare pinned local/Fastify generation matrices against a prepared pre-Fastify worktree; opt-in and not part of `test:all`.                                                 |
+| `pnpm prepare:compat-baseline`     | Create or verify the exact detached compatibility-baseline worktree and install its frozen dependencies.                                                                       |
 | `pnpm test:smoke`                  | Alias for `pnpm smoke:fastify-browser`.                                                                                                                                       |
-| `pnpm test:all`                    | Run format, Svelte, strict server/browser-smoke TypeScript, frontend tests, isolated performance gates, the UI coverage gate, server tests, and browser smoke with bounded concurrency; preserve every failing lane. |
+| `pnpm test:all`                    | Run format, Svelte, strict server/browser-smoke TypeScript, frontend tests, compatibility register/current checks, isolated performance gates, the UI coverage gate, server tests, and browser smoke with bounded concurrency; preserve every failing lane. |
 | `pnpm coverage:ui-map`             | Run the focused UI coverage gate and write text/JSON reports to `coverage/ui-map`; use `coverage:ui-map:html` for an on-demand HTML report.                                   |
 | `pnpm api:test`                    | Compatibility alias for `pnpm test:server`.                                                                                                                                   |
 | `pnpm smoke:fastify-browser`       | Build the smoke client without production sourcemaps, then run Playwright Fastify browser smoke.                                                                             |
@@ -182,14 +184,60 @@ browser changes trigger the smoke lane automatically; pass `--include-smoke` to
 the status command when smoke coverage is required. Stop the watcher when the
 task is complete.
 
-`pnpm test:compat-current` validates current-stack and cluster goldens without
-external prerequisites. The full compatibility harness additionally requires
-the pinned baseline worktree and its dependencies at the path declared in
-`test/compat-harness/run.ts`. Set `UPDATE_COMPAT_HARNESS=1` only when
-intentionally refreshing tracked golden artifacts. A mismatch preserves the
-actual JSON under ignored `fast-bootstrap-results/compat-harness/` for review.
-Compatibility is excluded from `pnpm test:all` because the external worktree is
-not a normal checkout prerequisite.
+`pnpm validate:compat-registers` and `pnpm test:compat-current` are ordinary
+quality owners. The current harness validates current-stack and cluster goldens
+without external prerequisites. The full compatibility harness additionally
+requires the pinned baseline worktree and its dependencies prepared by
+`pnpm prepare:compat-baseline`; it remains outside `pnpm test:all` because that
+external worktree is not a normal checkout prerequisite. The preparer defaults
+to the sibling `../risu-baseline-71c476e9c` path; set
+`RISU_COMPAT_BASELINE_ROOT` to an absolute path when a runner needs another
+location. Preparation and harness execution resolve the same override.
+
+Compatibility fixtures and goldens are evidence, not permission to change
+behavior. Run the full harness normally first and review its retained semantic
+artifacts. For an intentional adjudicated change, use
+`pnpm test:compat-harness -- --update-goldens --reason "<review reason>"`; the
+full pinned lane and a nontrivial reason are mandatory, and current-only runs
+cannot update goldens. The command refreshes the tracked
+`test/compat-harness/golden/{baseline,current,diff,cluster10}.json` files and
+their digest manifest only after governance validation passes.
+
+Review all four golden artifacts together. The computed `diff.json` is checked
+against `test/compat-harness/expected-differences.json`, whose cell/aspect
+digests, rationale, signed decision IDs, and inventory IDs are validated against
+the compatibility registers. A new, removed, or changed divergence fails until
+that mapping is adjudicated. A normalizer change also needs focused positive and
+negative cases showing that meaningful request, execution, or transcript
+differences remain visible.
+
+Compatibility fixture provenance is tracked in
+`test/compat-harness/fixture-provenance.json`. The harness validates its pinned
+baseline commit, ordered cases, normalization contract, source paths, and source
+digests on every run; the governed full update command refreshes those source
+digests before writing the golden manifest. There is no separate compatibility
+fixture-update environment switch.
+
+Each harness run writes `actual-*.json` under the ignored
+`fast-bootstrap-results/compat-harness/` directory. Compare those files with the
+tracked goldens and classify a failure as baseline preparation, provenance or
+governance validation, unexpected current behavior, or an intentional
+expected-difference change before updating anything. PR/main current-harness
+failures upload available diagnostics for 14 days. The scheduled/manual full
+workflow always uploads the preparation/run logs that were produced, actual
+artifacts, tracked comparison goldens and manifest, expected-difference map, and
+fixture provenance for 14 days. If a review outlives that window, preserve the
+relevant diff and rationale in the tracked change rather than relying on an
+expiring workflow artifact.
+
+Affected selection and aggregate ownership are deliberately different.
+`pnpm test:affected` routes compatibility register JSON or validator changes to
+register validation, compatibility production changes to the current harness,
+and harness/baseline infrastructure changes to both current and full pinned
+harnesses. `pnpm test:all` owns register validation and current compatibility,
+but not the full pinned differential. A targeted or aggregate pass therefore
+does not replace a full differential when the harness/baseline itself changes
+or when compatibility risk calls for baseline comparison.
 
 `pnpm test:all` runs up to two ordinary lanes concurrently by default and
 preserves any failure in the final aggregate result. Set
@@ -275,8 +323,8 @@ cross-layer startup, recovery, navigation, command, and durability evidence;
 they do not prove the live auth UI, external providers, production refresh
 timing, memory workers, or asset garbage collection.
 
-Prompt/generation fixtures live in `src/ts/process/__fixtures__/`; set
-`UPDATE_FIXTURES=1` to rewrite expected fixtures. Server `.risu` fixture helpers
+Prompt/generation fixtures live in `src/ts/process/__fixtures__/`; review any
+expected fixture change with its owning tests. Server `.risu` fixture helpers
 live in `server/fastify/__fixtures__/risuSave/`. Explicit performance gates live
 in `src/ts/__tests__/`, while cross-cutting UI audit probes live in
 `src/lib/_audit/` and run in the ordinary frontend lane. Keep those specialized
@@ -403,21 +451,35 @@ flags include `--project`, `--absolute`, `--compact`, and `--timeout-ms`. Set
 
 ## CI And Deployment
 
-`.github/workflows/quality.yml` is the only current workflow. Pull requests and
-pushes to `main` use Node 24 and the exact pnpm version declared by
-`packageManager` in `package.json`. Formatting, both typecheck lanes, frontend
-tests (including UI audit probes), focused UI
-coverage, isolated performance gates, server tests, and serial browser smoke run
-as independent jobs; only the smoke job installs Chromium. The ordinary
-frontend job always omits the six sentinel files because the unconditional
-coverage job executes them once with the same assertions and additional
-thresholds, then uploads its report. Playwright failure traces/results are also
-uploaded. A final `verify` job preserves the aggregate pass/fail contract while
-allowing independent lanes to finish after another lane fails. Local
-`pnpm test:all` has the same test ownership with bounded concurrency and
-isolated load-sensitive phases; CI additionally runs the initial-preload
-build/report lane.
+`.github/workflows/quality.yml` runs for pull requests and pushes to `main` with
+Node 24 and the exact pnpm version declared by `packageManager` in
+`package.json`. Formatting, both typecheck lanes, frontend tests (including UI
+audit probes), focused UI coverage, isolated performance gates, compatibility
+register validation, current compatibility, server tests, and serial browser
+smoke run as separate jobs; only the smoke job installs Chromium. Current
+compatibility waits for register validation, and both results are required by
+the final `verify` aggregate. The ordinary frontend job always omits the six
+sentinel files because the unconditional coverage job executes them once with
+the same assertions and additional thresholds, then uploads its report.
+Playwright failure traces/results are also uploaded. The final `verify` job
+preserves the aggregate pass/fail contract while allowing independent lanes to
+finish after another lane fails. Local `pnpm test:all` has the same test
+ownership with bounded concurrency and isolated load-sensitive phases; CI
+additionally runs the initial-preload build/report lane.
+
+`.github/workflows/compatibility-differential.yml` runs the full pinned
+differential nightly at 06:00 UTC and on manual dispatch. It fetches full Git
+history, prepares and rechecks the exact detached baseline, and runs
+`pnpm test:compat-harness` with read-only repository permissions, one shared
+non-cancelling concurrency group, and a 60-minute job timeout. Its retained
+artifact is the first triage source described above; preparation and harness
+failures still reach the `if: always()` upload step.
 
 The container path (`Dockerfile`, `docker-compose.yml`, `.dockerignore`) was
 removed on 2026-07-22; the project does not currently ship a Docker image, and
-running from source is the only supported deployment.
+running from source is the only supported deployment. There is no separate
+release workflow or packaged release channel in this repository. Consequently,
+the `main` Quality result plus a successful full differential for the candidate
+commit are the release-equivalent gates for source builds. The scheduled run
+usually supplies the full evidence for `main`; manually dispatch it at the
+candidate ref when the scheduled result does not cover that exact commit.

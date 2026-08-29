@@ -63,8 +63,62 @@ entrypoints are:
 | Ordinary frontend lane | `pnpm test` |
 | Complete owning frontend/server lane | `pnpm test:frontend:all` / `pnpm test:server` |
 | Built-browser smoke | `pnpm test:smoke` |
+| Compatibility registers/current behavior | `pnpm validate:compat-registers` / `pnpm test:compat-current` |
+| Full pinned compatibility differential | `pnpm prepare:compat-baseline && pnpm test:compat-harness` |
 | Full local quality aggregate | `pnpm test:all` |
 | Startup rollout evidence | `pnpm verify:fast-bootstrap:phase7` |
+
+### Compatibility evidence ownership
+
+Compatibility register validation and the current-stack/cluster golden harness
+run in `pnpm test:all` and as required PR/`main` Quality jobs. The full pinned
+baseline differential is intentionally separate: GitHub Actions runs it every
+night at 06:00 UTC and on manual dispatch, while affected selection adds it when
+compatibility harness or baseline infrastructure changes. A production
+compatibility change selects the current harness; compatibility register JSON
+or validator changes select register validation. Treat `test:affected` as a
+fast selector and `test:all` as the current aggregate owner, not as substitutes
+for the full pinned run when baseline comparison is required.
+`pnpm prepare:compat-baseline` uses the repository sibling
+`../risu-baseline-71c476e9c` by default; `RISU_COMPAT_BASELINE_ROOT` accepts an
+absolute override for CI or another checkout layout.
+
+Do not accept a fixture or golden change by regeneration alone. Run the full
+pinned harness normally first and inspect the retained semantic artifacts. Once
+the change is intentional and adjudicated, refresh goldens with
+`pnpm test:compat-harness -- --update-goldens --reason "<review reason>"`. The
+governed command requires the full lane and a nontrivial reason; current-only
+runs cannot update goldens.
+
+Review `baseline.json`, `current.json`, `diff.json`, and `cluster10.json`
+together. The separate `expected-differences.json` maps each accepted divergent
+cell/aspect digest to rationale plus signed decision and inventory IDs; the
+harness validates the map against the computed diff and compatibility
+registers. Normalizer edits also need positive and negative cases showing that
+behaviorally meaningful distinctions are not erased.
+
+Compatibility fixture provenance is tracked in `fixture-provenance.json` and
+validated on every harness run, including the pinned baseline, exact ordered
+case set, normalization contract, and source-file digests. The governed full
+update refreshes those digests and the golden manifest. There is no separate
+compatibility fixture-update environment switch.
+
+For local failures, inspect ignored
+`fast-bootstrap-results/compat-harness/actual-*.json`. In CI, current-harness
+failures upload available mismatch diagnostics, and every scheduled/manual full
+run uploads the preparation/run logs that were produced, actual artifacts,
+tracked goldens/manifest, expected-difference map, and fixture provenance. Both
+artifact classes are retained for 14 days. Triage baseline preparation and
+governance/provenance validation separately from request, execution, and
+persisted-transcript differences; only refresh tracked expectations after
+classifying the change as intentional. Keep the durable explanation in the
+reviewed change because CI artifacts expire.
+
+This repository has no separate release workflow or packaged release channel;
+source builds use the `main` Quality aggregate and a successful full pinned
+differential for the candidate commit as release-equivalent gates. Use the
+scheduled full run when it covers the exact `main` commit, or manually dispatch
+the workflow at the candidate ref.
 
 ### Frontend capability classification
 
