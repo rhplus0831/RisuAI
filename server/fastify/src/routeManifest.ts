@@ -742,6 +742,36 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'bardwiki-job-retry',
+    methods: ['POST'],
+    path: '/api/v1/bardwiki/jobs/:jobId/retry',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'BardWiki job status contains private memory activity.',
+    },
+    activeWriter: {
+      decision: 'active-writer',
+      reason: 'Retry changes operational durable job state without changing the domain revision.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'bardwiki-job-cancel',
+    methods: ['DELETE'],
+    path: '/api/v1/bardwiki/jobs/:jobId',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'BardWiki job status contains private memory activity.',
+    },
+    activeWriter: {
+      decision: 'active-writer',
+      reason: 'Cancellation changes operational durable job state without changing the domain revision.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'events',
     methods: GET_ONLY,
     path: '/api/v1/events',

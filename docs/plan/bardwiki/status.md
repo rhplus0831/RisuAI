@@ -5,14 +5,15 @@ Date: 2026-08-29
 The workstream is open. Phases 0-3 are complete and Phase 4 is current.
 BardWiki persistence, manual commands, targeted resources, backup recovery,
 global settings, and the chat-scoped manual workspace are implemented; prompt
-retrieval are implemented; autonomous worker behavior has not started.
+retrieval are implemented; the isolated durable BardWiki worker lane and its
+operational controls are implemented.
 
 ## Snapshot
 
 - Plan state: runtime implementation in progress.
-- Current phase: Phase 4, no slices complete.
-- Current implementation cursor: split the existing memory worker into
-  explicitly filtered Hypa and BardWiki lanes while preserving Hypa behavior.
+- Current phase: Phase 4, two of five slices complete.
+- Current implementation cursor: add the explicit confirmation command and
+  atomically create/reuse its exact-source receipt and pending job.
 - Blockers: none.
 - Runtime changes in this workstream: schema v33, low-level repository,
   revisioned settings/manual-document commands, shared wire schemas, targeted
@@ -49,6 +50,10 @@ retrieval are implemented; autonomous worker behavior has not started.
   2026-08-29.
 - Phase 3 slice 4 validation: all server-facing typechecks, the production
   browser build, and all 37 Playwright smoke tests passed on 2026-08-29.
+- Phase 4 slices 1-2 validation: BardWiki repository/worker/job-route coverage
+  passed 10 tests; Hypa route/protection compatibility passed 26 tests; the
+  existing 23-test Hypa worker suite passed independently; all server-facing
+  typechecks passed on 2026-08-29.
 - Residual risk: Phase 4 must isolate BardWiki job claiming, recovery, abort,
   and retention from the existing Hypa lane while making event commits exactly
   once across crashes.
@@ -79,15 +84,16 @@ retrieval are implemented; autonomous worker behavior has not started.
 | [1. Persistence and resources](phases/phase-1-persistence-and-resources.md) | Complete | Authoritative persistence, manual commands/resources, cascade lifecycle, and backup/restore recovery are proven. |
 | [2. Settings and workspace](phases/phase-2-settings-and-workspace.md) | Complete | Global/per-chat settings and conflict-safe durable manual document editing are usable. |
 | [3. Prompt retrieval](phases/phase-3-prompt-retrieval.md) | Complete | Committed documents are selected and injected deterministically under budget. |
-| [4. Jobs and explicit confirmation](phases/phase-4-jobs-and-explicit-confirmation.md) | In progress (0/5) | Separate durable worker execution and explicit event-document generation are reliable. |
+| [4. Jobs and explicit confirmation](phases/phase-4-jobs-and-explicit-confirmation.md) | In progress (2/5) | Separate durable worker execution and explicit event-document generation are reliable. |
 | [5. Automatic and canonical updates](phases/phase-5-automatic-and-canonical-updates.md) | Pending | Prior-turn automatic confirmation, canonical patches, and stale reconciliation land. |
 | [6. Lifecycle and interchange](phases/phase-6-lifecycle-and-interchange.md) | Pending | Edit/delete/fork/import/export/restore/rebuild and operational edges are complete. |
 | [7. Verification and closeout](phases/phase-7-verification-and-closeout.md) | Pending | Full regression, recovery, performance, browser, docs, and rollout proof closes the workstream. |
 
 ## Next Action
 
-Execute Phase 4 slice 1: add reusable job-kind lane filters to claim, recovery,
-retention, wake, and abort paths with complete Hypa compatibility coverage.
+Execute Phase 4 slice 3: add the revisioned explicit confirmation command and
+atomically insert/reuse one receipt plus one pending job for the exact source
+hash pair.
 
 ## Maintenance Rules
 

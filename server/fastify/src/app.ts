@@ -9,6 +9,7 @@ import fastifyStatic from '@fastify/static'
 import fastifyWebsocket from '@fastify/websocket'
 import { createActiveWriterState, registerActiveWriterGuard } from './activeWriter.js'
 import { registerBardWikiReadRoutes } from './routes/bardWiki.js'
+import { registerBardWikiJobRoutes } from './routes/bardWikiJobs.js'
 import {
   assertAgentDevAuthBypassHost,
   DEFAULT_AUTOMATIC_BACKUP_RETENTION,
@@ -74,6 +75,7 @@ import { GreetingTranslationJobRegistry } from './greetingTranslationJobs.js'
 import { buildMemoryJobEvent, createMemoryEventBus, type MemoryEventSink } from './memoryEvents.js'
 import { backfillLegacyHypaV3MemoryRows } from './memoryLegacyImport.js'
 import { MemoryWorker, type MemoryWorkerOptions } from './memoryWorker.js'
+import { BardWikiWorker, type BardWikiWorkerOptions } from './bardWikiWorker.js'
 import { createEmbedMemoryJobBatchHandler, createEmbedMemoryJobHandler } from './memoryEmbedJobHandler.js'
 import { createSummarizeMemoryJobBatchHandler, createSummarizeMemoryJobHandler } from './memorySummarizeJobHandler.js'
 import { registerRequestTrace } from './requestTrace.js'
@@ -111,6 +113,7 @@ export interface BuildAppOptions {
     maxFetchedAssetTotalBytes?: number
   }
   memoryWorker?: false | Omit<MemoryWorkerOptions, 'db'>
+  bardWikiWorker?: false | Omit<BardWikiWorkerOptions, 'db'>
   memoryEvents?: MemoryEventSink
   commandEvents?: CommandEventSink
   mcpOAuthRefresh?: McpOAuthRefreshRouteOptions
@@ -255,6 +258,16 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
           },
         })
   memoryWorker?.start()
+  const bardWikiWorkerOptions = opts.bardWikiWorker === false ? null : (opts.bardWikiWorker ?? {})
+  const bardWikiWorker =
+    bardWikiWorkerOptions === null
+      ? null
+      : new BardWikiWorker({
+          db,
+          onEvent: emitMemoryEvent,
+          ...bardWikiWorkerOptions,
+        })
+  bardWikiWorker?.start()
   const authState = createAuthState(config.dataDir, {
     agentDevAuthBypass: config.agentDevAuthBypass === true,
   })
@@ -294,6 +307,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   let generationFinalizationRetryTimer: ReturnType<typeof setInterval> | null = null
 
   app.addHook('onClose', async () => {
+    await bardWikiWorker?.stop()
     await memoryWorker?.stop()
     clearInterval(gcTimer)
     if (assetGcTimer) clearInterval(assetGcTimer)
@@ -345,6 +359,11 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerStartupTelemetryRoutes(app, authState)
   registerResourceReadRoutes(app, db, authState, config.dataDir)
   registerBardWikiReadRoutes(app, db, authState)
+  registerBardWikiJobRoutes(app, db, authState, {
+    onEvent: emitMemoryEvent,
+    abortRunningJob: (jobId) => bardWikiWorker?.abortRunningJob(jobId) ?? false,
+    wakeWorker: () => bardWikiWorker?.wake(),
+  })
   registerSaveRoutes(app, db, authState, config.dataDir, commandEventSink, {
     maxExpandedImportBytes: config.bodyLimit,
     importMaxBytes: config.importMaxBytes,

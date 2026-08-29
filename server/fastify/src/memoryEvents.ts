@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyBaseLogger } from 'fastify'
 import type { MemoryJob, MemoryJobListItem } from './memoryRepository.js'
+import type { BardWikiJob } from './bardWikiJobs.js'
 import { emitProtocolMetric, jsonPayloadBytes } from './protocolMetrics.js'
 
 export interface MemoryJobEvent {
@@ -12,7 +13,26 @@ export interface MemoryJobEvent {
     Partial<Pick<MemoryJobListItem, 'error' | 'updatedAt'>>
 }
 
-export type MemoryEvent = MemoryJobEvent
+export interface BardWikiJobEvent {
+  type: 'bardwiki.job'
+  streamId?: string
+  version?: number
+  chatId: string
+  job: {
+    id: string
+    instanceId: string
+    receiptId: string | null
+    kind: BardWikiJob['kind']
+    status: BardWikiJob['status']
+    attemptCount: number
+    maxAttempts: number
+    errorCode?: string | null
+    errorSummary?: string | null
+    updatedAt: string
+  }
+}
+
+export type MemoryEvent = MemoryJobEvent | BardWikiJobEvent
 
 export interface MemoryJobSnapshot {
   type: 'memory.snapshot'
@@ -100,6 +120,28 @@ export function buildMemoryJobEvent(job: MemoryJob): MemoryJobEvent {
   }
   if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
     event.job.error = sanitizeMemoryJobError(job.error)
+  }
+  return event
+}
+
+export function buildBardWikiJobEvent(job: BardWikiJob): BardWikiJobEvent {
+  const event: BardWikiJobEvent = {
+    type: 'bardwiki.job',
+    chatId: job.chatId,
+    job: {
+      id: job.id,
+      instanceId: job.instanceId,
+      receiptId: job.receiptId,
+      kind: job.kind,
+      status: job.status,
+      attemptCount: job.attemptCount,
+      maxAttempts: job.maxAttempts,
+      updatedAt: job.updatedAt,
+    },
+  }
+  if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+    event.job.errorCode = sanitizeMemoryJobError(job.errorCode)
+    event.job.errorSummary = sanitizeMemoryJobError(job.errorSummary)
   }
   return event
 }

@@ -1,6 +1,6 @@
 # Phase 4: Durable Jobs and Explicit Confirmation
 
-Status: pending.
+Status: in progress (slices 1-2 of 5 complete).
 
 Goal: add restart-safe BardWiki background execution and explicit confirmation
 that creates one atomic event document per exact confirmed source version.
@@ -123,3 +123,28 @@ tests. The exact list belongs in the phase completion note.
   work; BardWiki jobs must originate from dedicated validated commands.
 - Writing the event document before completing analysis validation would repeat
   RisuBard's partial-write weakness.
+
+## Completion Notes
+
+### 2026-08-29: slices 1-2 — isolated jobs and operational observation
+
+- Preserved the existing `memory_jobs`/`MemoryWorker` Hypa ownership boundary
+  and adapted its mechanics into a second `bardwiki_jobs`/`BardWikiWorker`
+  lane. The separate tables make claim, startup recovery, retention, wake,
+  abort maps, timers, and single-provider-call ownership structurally unable
+  to cross lanes.
+- Added strict identifier-only payload validators for all three locked job
+  kinds, including exact field sets, source-hash validation, identity fences,
+  bounded retry metadata, and the 16 KiB persisted-payload ceiling.
+- Added atomic due claims, per-chat round-robin scheduling, legal terminal
+  transitions, bounded exponential retry, explicit failed-job retry with a new
+  instance id, cancellation, startup recovery, and terminal retention.
+- Added authenticated active-writer retry/cancel routes without a public
+  BardWiki enqueue endpoint. Hypa's public route remains fenced to
+  `chunk|embed|summarize`.
+- Added secret-free `bardwiki.job` status events. Payloads, hashes, prompts,
+  provider output, and credentials are absent from the route and event
+  projections.
+- Focused BardWiki repository/worker/routes passed 10 tests; Hypa route and
+  protection compatibility passed 26 tests; the pre-existing 23-test Hypa
+  worker suite passed independently; `pnpm run check:server` passed.
