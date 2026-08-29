@@ -12,8 +12,8 @@ findings under [`findings/`](findings/); inventory ownership under
 ## Current Snapshot
 
 - Plan state: Active.
-- Current phase: Phase 13 — consolidation, adjudication, and remediation.
-- Active slice: [Phase 13 consolidation, adjudication, and remediation](phases/phase-13-consolidation-adjudication-and-remediation.md).
+- Current phase: Phase 14 — verification and closeout.
+- Active slice: [Phase 14 verification and closeout](phases/phase-14-verification-and-closeout.md).
 - Planning audit anchor: `1933c43ff7b4d35b57b0852013d95f3881a8cb28`.
 - Compatibility baseline: `71c476e9c86263fe907105b011ca4dde0a619d66`.
 - Behavioral sync cursor: `f3f0242fba297d82e0efcc2c31ca1428569b70f2`.
@@ -23,7 +23,7 @@ findings under [`findings/`](findings/); inventory ownership under
   `/home/codex/risu-baseline-71c476e9c`; its exact commit, dependency state, and
   cleanliness are enforced by `pnpm prepare:compat-baseline` and the harness
   preflight.
-- Current compatibility state: Phases 0 through 12 are complete.
+- Current compatibility state: Phases 0 through 13 are complete.
   Phase 5 closes settings/default/preset/collection ownership at
   `b34b7a78f28cb5903ece3880073fbb9e46392cb8` and visible character-authoring
   reload evidence at `5eca30f4872e865efee2c86f4dde7ae71e915f9a`.
@@ -56,6 +56,11 @@ findings under [`findings/`](findings/); inventory ownership under
   products at `1430b714855f4df208a07f54df4653a681a04351` and
   `140c04d24724fcb09cef9ad57fd38bcc976054f6`, with Push boundary
   hardening at `8820b3e8c2cd1452b155b56167c66292e3029cdf`.
+  Phase 13 makes register closure executable at
+  `473f88478a22ce3bb851e5ab3e1323addd15fbbf`, closes the final historical
+  evidence placeholders at `7bf742dd0e8bb37aa6d29fc40c97c4f49fbace5d`,
+  and exhausts the upstream sweep at
+  `d8d00b60b63f7905ff45de9a9b88aa8814c2d82b`.
   After the independent Phase 2 governance-link correction
   `7ba933fe6f1c3338bd9cce2ef308b2b216ac8e8d`, the required pinned differential
   passes with 16 baseline cells, 18
@@ -63,16 +68,17 @@ findings under [`findings/`](findings/); inventory ownership under
 - Phase 4 closes route/control ownership, visible chat lifecycle, and the signed
   shared responsive-shell decision through
   `6487cba00e3cc435a3c4f57f8121663bcdccc57e`.
-- Canonical findings: 15 resolved findings: 14 historical imports with exact raw
-  mappings plus the Phase 1 lossless-normalizer finding `ORC-A-015`.
+- Canonical findings: 15 resolved findings with current verification commits:
+  14 historical imports with exact raw mappings plus the Phase 1
+  lossless-normalizer finding `ORC-A-015`.
 - Open maintainer decisions: none. All 71 decisions are signed; individual RH+
   commits reconstruct authority for the four historical boundaries, responsive
   shell, retired character additional-information retrieval, and the six
   Phase 9 parser/runtime differences, and four cohesive Phase 12 no-port
   products.
-- Next action: consolidate all cross-domain evidence, re-verify the remaining
-  historical Category D rows and 47 pending upstream units, strengthen
-  closed-state gates, and publish the exact Phase 14 run manifest.
+- Next action: run the exact Phase 14 whole-product manifest, record the final
+  verification commit and artifacts, close all four registers, synchronize
+  current documentation, and archive the intact workstream.
 
 ## Phase Router
 
@@ -91,8 +97,8 @@ findings under [`findings/`](findings/); inventory ownership under
 | [10. Plugins, modules, MCP, and specialized tools](phases/phase-10-plugins-modules-mcp-and-specialized-tools.md) | Complete | Closed Plugin V3 API/permission/runtime ownership, module lifecycle/no-port, MCP/OAuth/egress, and specialized-tool catalogs and failure behavior. |
 | [11. Assets, imports, exports, saves, and backups](phases/phase-11-assets-import-export-and-backups.md) | Complete | Closed portable envelopes/blocks/tables, asset reference and stream integrity, staged import/restore/salvage, historical formats, and supported round trips. |
 | [12. Runtime, platform, limits, and diagnostics](phases/phase-12-runtime-platform-and-diagnostics.md) | Complete | Closed route policy, shared limits, recovery ordering, diagnostic secrecy, supported runtime/polyfills, Web Push, and four individually signed no-port products. |
-| [13. Consolidation, adjudication, and remediation](phases/phase-13-consolidation-adjudication-and-remediation.md) | In progress | Deduplicate findings, settle decisions, land shared gates and fix waves, and close cross-domain ownership. |
-| [14. Verification and closeout](phases/phase-14-verification-and-closeout.md) | Pending | Prove zero unexplained differences, complete decisions, final quality/release gates, current docs, and archive handoff. |
+| [13. Consolidation, adjudication, and remediation](phases/phase-13-consolidation-adjudication-and-remediation.md) | Complete | Closed historical evidence, made lifecycle closure fail closed, and independently adjudicated all 85 upstream units. |
+| [14. Verification and closeout](phases/phase-14-verification-and-closeout.md) | In progress | Prove zero unexplained differences, complete decisions, final quality/release gates, current docs, and archive handoff. |
 
 ## Phase 0 Completion Record
 
@@ -370,6 +376,31 @@ findings under [`findings/`](findings/); inventory ownership under
   decisions are signed.
 - The focused/expanded Fastify and browser lanes, server/browser checks,
   registers, formatting, and diff checks pass.
+
+## Phase 13 Completion Record
+
+- `473f88478a22ce3bb851e5ab3e1323addd15fbbf` adds coherent lifecycle state to
+  all four registers and rejects any declared closure with unfinished rows,
+  proposed decisions, stale finding placeholders, or upstream units without
+  current evidence.
+- `7bf742dd0e8bb37aa6d29fc40c97c4f49fbace5d` re-verifies the last six mapped
+  Category D rows at direct reroll, multisend, Stop, concurrency, Continue, and
+  stopped-partial owners, and refreshes all 14 historical findings at their
+  completed domain anchors. All 134 inventory rows are verified and all 15
+  findings are resolved with current regression evidence.
+- `50b24164f06c93b425c65ae14dad034c1af01715` records the component-wise
+  upstream adjudication and exact Phase 14 manifest;
+  `d8d00b60b63f7905ff45de9a9b88aa8814c2d82b` publishes 47 verified and 38
+  currently not-applicable upstream units with no pending state or empty
+  evidence.
+- No new incompatibility, duplicate finding, orphan raw report, proposed
+  decision, or unsigned expected difference was found. All 71 decisions remain
+  signed and all 75 raw reports remain mapped exactly once.
+- The focused Category D browser lane passes 7 files/185 tests; the complete
+  Fastify lane passes 178 files/3,648 tests with one skip; the focused upstream
+  browser-owner lane passes 25 files/677 tests; affected selection, the
+  13-test fail-closed register suite, schema validation, formatting, and diff
+  checks pass.
 
 ## Locked Planning Decisions
 

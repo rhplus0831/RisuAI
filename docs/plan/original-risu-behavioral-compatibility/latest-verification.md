@@ -4,7 +4,7 @@ Date: 2026-08-30
 
 ## Current Verdict
 
-Phases 0 through 8 are complete. Phase 2 state/recovery implementation
+Phases 0 through 13 are complete. Phase 2 state/recovery implementation
 closes through `3ce85c1f034b3afc493e291f8a8f5e9227064463` and the partial-object projection
 correction `f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74`. Phase 3 closed-world durable
 ownership is at `958f8585138ec817fe5d134563df585434ed5821`, with exact BardWiki eventless
@@ -28,7 +28,11 @@ assets, import/export, salvage, and backups through
 `56287bcb62c1dcdb969a7d185371a1c539bf3200`. Phase 12 closes runtime, route
 policy, limits, diagnostics, Push, and signed no-port ownership through
 `1430b714855f4df208a07f54df4653a681a04351` and
-`140c04d24724fcb09cef9ad57fd38bcc976054f6`; Phase 13 is in progress.
+`140c04d24724fcb09cef9ad57fd38bcc976054f6`. Phase 13 closes register lifecycle
+governance, all historical evidence, and all 85 current upstream dispositions
+through `d8d00b60b63f7905ff45de9a9b88aa8814c2d82b`. This is not yet the final
+whole-product verdict; Phase 14 must run the recorded manifest at the final
+commit before the registers close.
 
 ## Phase 0 Environment And Baseline Evidence
 
@@ -414,6 +418,30 @@ browser recovery/cache state, PWA presentation, or Web Push.
 | Category L closure | Passed; 10 of 10 Category L rows verified |
 | Register gates | Passed; 134 surfaces, 71 signed decisions, 15 findings, and 12 fail-closed validator tests |
 | Phase 12 Prettier and `git diff --check` | Passed |
+
+## Phase 13 Evidence
+
+| Check | Result |
+| --- | --- |
+| Fail-closed lifecycle semantics | `473f88478a22ce3bb851e5ab3e1323addd15fbbf` |
+| Historical inventory/finding closure | `7bf742dd0e8bb37aa6d29fc40c97c4f49fbace5d` |
+| Component-wise upstream adjudication and Phase 14 manifest | `50b24164f06c93b425c65ae14dad034c1af01715` |
+| Current upstream register | `d8d00b60b63f7905ff45de9a9b88aa8814c2d82b` |
+| Inventory | 134 verified rows; zero mapped, pending-finding, decision-required, or unowned rows |
+| Findings and decisions | 15 resolved findings with current evidence; 71 signed decisions; 75 raw reports mapped once |
+| Upstream range | 85 exact first-parent units: 47 verified and 38 currently not applicable; zero pending, finding, or decision-required units |
+
+## Phase 13 Validation
+
+| Check | Result |
+| --- | --- |
+| Closed-state register validator | Passed; 1 file and 13 tests, including unfinished-closure negatives |
+| Category D browser owners | Passed; 7 files and 185 tests |
+| Complete Fastify lane during consolidation | Passed; 178 files and 3,648 tests, with one skip |
+| Upstream browser-side owners | Passed; 25 files and 677 tests |
+| `pnpm test:affected --dry-run` and selected register lane | Passed; schema validator and fail-closed tests selected and passed |
+| `pnpm validate:compat-registers` | Passed after all current upstream outcomes were published |
+| Phase 13 Prettier and `git diff --check` | Passed |
 
 ## Update Rules
 
