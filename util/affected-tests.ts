@@ -28,6 +28,9 @@ export interface AffectedTestPlan {
   notes: string[]
 }
 
+export const FULL_QUALITY_CHANGE_NOTE =
+  'Build, dependency, or CI configuration changed; targeted test selection is unsafe.'
+
 interface CliOptions extends AffectedTestOptions {
   all: boolean
   dryRun: boolean
@@ -119,7 +122,7 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
   if (fullQualityChanged) {
     return {
       commands: [{ label: 'full quality suite', args: ['test:all'] }],
-      notes: ['Build, dependency, or CI configuration changed; targeted test selection is unsafe.'],
+      notes: [FULL_QUALITY_CHANGE_NOTE],
     }
   }
   const rootRunnerChanged = changedFiles.some(isRootRunnerFile)

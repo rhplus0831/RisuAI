@@ -20,6 +20,7 @@ import path from 'node:path'
 import { Writable } from 'node:stream'
 import type { TestRunResult, TestSpecification, Vitest } from 'vitest/node'
 import {
+  FULL_QUALITY_CHANGE_NOTE,
   collectChangedPaths,
   planAffectedTests,
   type AffectedTestPlan,
@@ -49,7 +50,15 @@ const IGNORED_WATCH_DIRECTORIES = new Set([
   'test-results',
 ])
 
-export type TestWatchState = 'starting' | 'running' | 'passed' | 'failed' | 'stale' | 'error' | 'stopped'
+export type TestWatchState =
+  | 'starting'
+  | 'running'
+  | 'waiting-for-commit'
+  | 'passed'
+  | 'failed'
+  | 'stale'
+  | 'error'
+  | 'stopped'
 
 export interface WorktreeSnapshot {
   baseCommit: string
@@ -305,6 +314,14 @@ export function evaluateTestWatchStatus(
       currentFingerprint,
       exitCode: 2,
       message: `generation ${status.generation} is still running`,
+      verdict: 'running',
+    }
+  }
+  if (status.state === 'waiting-for-commit' && currentFingerprint && status.targetFingerprint === currentFingerprint) {
+    return {
+      currentFingerprint,
+      exitCode: 2,
+      message: `generation ${status.generation} is waiting for a commit`,
       verdict: 'running',
     }
   }
@@ -779,6 +796,7 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
   let drainPromise: Promise<void> | undefined
   let generation = 0
   let lastCompleted: TestWatchStatus | undefined
+  let waitingForHeadCommit: string | undefined
   let nextRunAt = 0
   let rerunRequested = false
   let shutdownRequested = false
@@ -804,7 +822,7 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
     resolveShutdown()
   }
 
-  const runGeneration = async (): Promise<void> => {
+  const runGeneration = async (): Promise<'completed' | 'waiting-for-commit'> => {
     let snapshot: WorktreeSnapshot
     try {
       snapshot = await createWorktreeSnapshot(repoRoot, options.base)
@@ -814,12 +832,23 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
         failure: error instanceof Error ? error.message : String(error),
         state: 'error',
       })
-      return
+      return 'completed'
     }
+
+    if (waitingForHeadCommit === snapshot.headCommit) {
+      persist({
+        ...status,
+        changedPaths: snapshot.changes,
+        state: 'waiting-for-commit',
+        targetFingerprint: snapshot.fingerprint,
+      })
+      return 'waiting-for-commit'
+    }
+    waitingForHeadCommit = undefined
 
     if (lastCompleted?.testedFingerprint === snapshot.fingerprint) {
       persist({ ...lastCompleted, heartbeatAt: new Date().toISOString() })
-      return
+      return 'completed'
     }
 
     generation += 1
@@ -835,6 +864,18 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
       `[test:watch] generation ${generation} for ${snapshot.fingerprint.slice(0, 12)} (${snapshot.changes.length} changed path(s))`,
     )
     for (const note of plan.notes) log.stdout.write(`[test:watch] ${note}\n`)
+
+    if (plan.notes.includes(FULL_QUALITY_CHANGE_NOTE)) {
+      waitingForHeadCommit = snapshot.headCommit
+      status = {
+        ...status,
+        runStartedAt: undefined,
+        state: 'waiting-for-commit',
+      }
+      persist(status)
+      log.stdout.write('[test:watch] waiting for HEAD to advance; pnpm test:all was not started\n')
+      return 'waiting-for-commit'
+    }
 
     const commandResults: TestWatchCommandResult[] = []
     let passed = true
@@ -868,7 +909,7 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
       })
       rerunRequested = true
       nextRunAt = Date.now() + options.debounceMs
-      return
+      return 'completed'
     }
 
     if (finalSnapshot.fingerprint !== snapshot.fingerprint) {
@@ -881,7 +922,7 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
       })
       rerunRequested = true
       nextRunAt = Date.now() + options.debounceMs
-      return
+      return 'completed'
     }
 
     const completed: TestWatchStatus = {
@@ -897,6 +938,7 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
     lastCompleted = completed
     persist(completed)
     log.stdout.write(`[test:watch] generation ${generation} ${passed ? 'passed' : 'failed'}\n`)
+    return 'completed'
   }
 
   const drain = async (): Promise<void> => {
@@ -905,8 +947,8 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
       if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs))
       if (Date.now() < nextRunAt) continue
       rerunRequested = false
-      await runGeneration()
-      if (options.once) {
+      const result = await runGeneration()
+      if (options.once && result === 'completed') {
         requestShutdown()
         return
       }
@@ -917,7 +959,9 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
     if (shutdownRequested) return
     rerunRequested = true
     nextRunAt = Date.now() + delayMs
-    if (status.state !== 'starting' && status.state !== 'stale') persist({ ...status, state: 'stale' })
+    if (status.state !== 'starting' && status.state !== 'stale' && status.state !== 'waiting-for-commit') {
+      persist({ ...status, state: 'stale' })
+    }
     if (debounceTimer) clearTimeout(debounceTimer)
     debounceTimer = setTimeout(() => {
       debounceTimer = undefined

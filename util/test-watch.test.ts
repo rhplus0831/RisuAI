@@ -41,6 +41,20 @@ function initializedRepository(): string {
   return repoRoot
 }
 
+async function waitForWatcherState(
+  repoRoot: string,
+  expectedState: TestWatchStatus['state'],
+  timeoutMs = 5_000,
+): Promise<TestWatchStatus> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const watched = readTestWatchStatus(testWatchPaths(repoRoot).status)
+    if (watched?.state === expectedState) return watched
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  throw new Error(`test watcher did not reach ${expectedState}`)
+}
+
 function status(overrides: Partial<TestWatchStatus> = {}): TestWatchStatus {
   return {
     base: 'HEAD',
@@ -162,6 +176,19 @@ describe('watched result validation', () => {
     ).toMatchObject({ exitCode: 1, verdict: 'failed' })
   })
 
+  it('reports waiting-for-commit as a current running generation', () => {
+    expect(
+      evaluateTestWatchStatus(status({ state: 'waiting-for-commit' }), 'current', {
+        nowMs: 10_001,
+        processAlive: true,
+      }),
+    ).toMatchObject({
+      exitCode: 2,
+      message: 'generation 3 is waiting for a commit',
+      verdict: 'running',
+    })
+  })
+
   it('rejects results from a different base, worktree, or required smoke scope', () => {
     expect(
       evaluateTestWatchStatus(status(), 'current', {
@@ -215,5 +242,32 @@ describe('watched result validation', () => {
       state: 'stopped',
     })
     expect(watched?.testedFingerprint).toMatch(/^[a-f0-9]{64}$/)
+  })
+
+  it('waits for configuration changes to be committed instead of running test:all', async () => {
+    const repoRoot = initializedRepository()
+    writeFileSync(path.join(repoRoot, 'package.json'), '{}\n')
+
+    const watcherPromise = runTestWatchCli(['--once', '--debounce-ms=10'], repoRoot)
+    const waiting = await waitForWatcherState(repoRoot, 'waiting-for-commit')
+
+    expect(waiting).toMatchObject({
+      changedPaths: [{ path: 'package.json', status: 'A' }],
+      commandResults: [],
+      commands: [{ command: 'pnpm "test:all"', label: 'full quality suite' }],
+      generation: 1,
+      state: 'waiting-for-commit',
+    })
+
+    git(repoRoot, ['add', 'package.json'])
+    git(repoRoot, ['commit', '-m', 'resolve configuration change'])
+
+    expect(await watcherPromise).toBe(0)
+    expect(readTestWatchStatus(testWatchPaths(repoRoot).status)).toMatchObject({
+      changedPaths: [],
+      commandResults: [],
+      generation: 2,
+      state: 'stopped',
+    })
   })
 })

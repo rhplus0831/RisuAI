@@ -121,6 +121,14 @@ discarded and a new generation is queued. The status includes the watcher
 PID/heartbeat, base ref, generation, target and tested fingerprints, selected
 commands, notes, per-command results, timings, and changed paths.
 
+When build, dependency, aggregate-runner, or CI configuration changes make
+targeted selection unsafe, the watcher publishes `waiting-for-commit` and does
+not fall back to `test:all`. It continues to refresh the waiting snapshot while
+the current `HEAD` is unchanged, then rebuilds the affected plan after a commit
+advances `HEAD`. With the default `--base HEAD`, committing the configuration
+change removes it from the uncommitted affected scope and resumes the ordinary
+watch loop.
+
 Use `pnpm test:watch:status` as the trust boundary. It independently fingerprints
 the current worktree and requires a live watcher heartbeat. Its exit statuses
 mean:
@@ -129,8 +137,9 @@ mean:
   replace a redundant `pnpm test:affected` run with the same watcher options.
 - `1`: the watched affected plan failed for the exact current worktree. Read
   `.test-watch/latest.log`; rerunning is needed only for additional diagnostics.
-- `2`: the watcher is still running, the worktree/result differs, the watcher
-  stopped, or status is unavailable. Wait for it or run the normal test command.
+- `2`: the watcher is still running or waiting for a commit, the worktree/result
+  differs, the watcher stopped, or status is unavailable. Wait for it or run the
+  normal test command.
 
 Raw status JSON is not sufficient evidence. A watched pass replaces only the
 affected plan it records; browser-smoke/compatibility notes and broader owning
