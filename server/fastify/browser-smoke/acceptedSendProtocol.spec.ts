@@ -729,22 +729,35 @@ async function ensureChatGenerationSettingsReady(page: Page, chatId: string): Pr
     const headers = await window.__RISU_FASTIFY_BROWSER_SMOKE__!.activeWriterHeaders()
     const bootstrap = await fetch('/api/v1/bootstrap', { headers })
     const bootstrapBody = (await bootstrap.json()) as { revision?: unknown }
-    const response = await fetch(`/api/v1/commands/chats/${encodeURIComponent(targetChatId)}/generation-settings`, {
-      method: 'PUT',
-      headers: { ...headers, 'content-type': 'application/json' },
-      body: JSON.stringify({
-        baseRevision: bootstrapBody.revision,
-        generationSettings: {
-          configured: true,
-          personaId: 'persona-lifecycle',
-          modelPresetId: 'model-preset-lifecycle',
-          promptPresetId: 'prompt-preset-lifecycle',
-          jailbreakToggle: false,
-          sidebarToggles: {},
-        },
-      }),
-    })
-    return { status: response.status, body: await response.json() }
+    let baseRevision = bootstrapBody.revision
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const response = await fetch(`/api/v1/commands/chats/${encodeURIComponent(targetChatId)}/generation-settings`, {
+        method: 'PUT',
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          baseRevision,
+          generationSettings: {
+            configured: true,
+            personaId: 'persona-lifecycle',
+            modelPresetId: 'model-preset-lifecycle',
+            promptPresetId: 'prompt-preset-lifecycle',
+            jailbreakToggle: false,
+            sidebarToggles: {},
+          },
+        }),
+      })
+      const body = (await response.json()) as { error?: unknown; currentRevision?: unknown }
+      if (
+        response.status !== 409 ||
+        body.error !== 'revision_conflict' ||
+        typeof body.currentRevision !== 'number' ||
+        attempt === 4
+      ) {
+        return { status: response.status, body }
+      }
+      baseRevision = body.currentRevision
+    }
+    throw new Error('generation-settings revision retry loop exhausted')
   }, chatId)
   expect(result.status, JSON.stringify(result.body)).toBe(200)
   await expect
