@@ -28,7 +28,7 @@ import {
   type TestCommand,
 } from './affected-tests.js'
 
-export const TEST_WATCH_SCHEMA_VERSION = 1
+export const TEST_WATCH_SCHEMA_VERSION = 2
 export const TEST_WATCH_DIRECTORY = '.test-watch'
 export const TEST_WATCH_STATUS_FILE = 'status.json'
 export const TEST_WATCH_LOG_FILE = 'latest.log'
@@ -65,6 +65,12 @@ export interface WorktreeSnapshot {
   changes: ChangedPath[]
   fingerprint: string
   headCommit: string
+  pathFingerprints: ReadonlyMap<string, string>
+}
+
+export interface WorktreeDelta {
+  changes: ChangedPath[]
+  removedPaths: string[]
 }
 
 export interface TestWatchCommandResult {
@@ -77,10 +83,13 @@ export interface TestWatchCommandResult {
 }
 
 export interface TestWatchStatus {
+  affectedCommands: Array<{ command: string; label: string }>
   base: string
   changedPaths: ChangedPath[]
   commandResults: TestWatchCommandResult[]
   commands: Array<{ command: string; label: string }>
+  executionChangedPaths: ChangedPath[]
+  executionMode: 'full' | 'incremental'
   durationMs?: number
   failure?: string
   generation: number
@@ -96,6 +105,7 @@ export interface TestWatchStatus {
   state: TestWatchState
   targetFingerprint?: string
   testedFingerprint?: string
+  reusedTestedFingerprint?: string
   watcherId: string
 }
 
@@ -150,13 +160,10 @@ function sameStat(left: ReturnType<typeof lstatSync>, right: ReturnType<typeof l
   )
 }
 
-async function hashChangedPath(
-  hash: ReturnType<typeof createHash>,
-  repoRoot: string,
-  change: ChangedPath,
-): Promise<void> {
+async function fingerprintChangedPath(repoRoot: string, change: ChangedPath): Promise<string> {
+  const hash = createHash('sha256')
   hash.update(`change\0${change.status}\0${change.path}\0`)
-  if (change.status === 'D') return
+  if (change.status === 'D') return hash.digest('hex')
 
   const absolutePath = assertInsideRepo(repoRoot, change.path)
   let before: ReturnType<typeof lstatSync>
@@ -183,6 +190,7 @@ async function hashChangedPath(
     throw error
   }
   if (!sameStat(before, after)) throw new SnapshotChangedError()
+  return hash.digest('hex')
 }
 
 async function createWorktreeSnapshotOnce(repoRoot: string, base: string): Promise<WorktreeSnapshot> {
@@ -190,8 +198,13 @@ async function createWorktreeSnapshotOnce(repoRoot: string, base: string): Promi
   const headCommit = gitOutput(repoRoot, ['rev-parse', '--verify', 'HEAD^{commit}'])
   const changes = collectChangedPaths(base, repoRoot)
   const hash = createHash('sha256')
-  hash.update(`risu-test-watch-v1\0${baseCommit}\0${headCommit}\0`)
-  for (const change of changes) await hashChangedPath(hash, repoRoot, change)
+  const pathFingerprints = new Map<string, string>()
+  hash.update(`risu-test-watch-v2\0${baseCommit}\0${headCommit}\0`)
+  for (const change of changes) {
+    const pathFingerprint = await fingerprintChangedPath(repoRoot, change)
+    pathFingerprints.set(change.path, pathFingerprint)
+    hash.update(`path\0${pathFingerprint}\0`)
+  }
 
   const finalHeadCommit = gitOutput(repoRoot, ['rev-parse', '--verify', 'HEAD^{commit}'])
   const finalChanges = collectChangedPaths(base, repoRoot)
@@ -199,7 +212,7 @@ async function createWorktreeSnapshotOnce(repoRoot: string, base: string): Promi
     throw new SnapshotChangedError()
   }
 
-  return { baseCommit, changes, fingerprint: hash.digest('hex'), headCommit }
+  return { baseCommit, changes, fingerprint: hash.digest('hex'), headCommit, pathFingerprints }
 }
 
 export async function createWorktreeSnapshot(repoRoot: string, base: string): Promise<WorktreeSnapshot> {
@@ -212,6 +225,57 @@ export async function createWorktreeSnapshot(repoRoot: string, base: string): Pr
     }
   }
   throw new Error('could not capture a stable worktree snapshot')
+}
+
+export function diffWorktreeSnapshots(previous: WorktreeSnapshot, current: WorktreeSnapshot): WorktreeDelta {
+  const changes = current.changes.filter(
+    (change) => previous.pathFingerprints.get(change.path) !== current.pathFingerprints.get(change.path),
+  )
+  const removedPaths = [...previous.pathFingerprints.keys()]
+    .filter((file) => !current.pathFingerprints.has(file))
+    .sort()
+  return { changes, removedPaths }
+}
+
+function affectedPlanShape(plan: AffectedTestPlan): string {
+  return JSON.stringify({
+    commands: plan.commands.map((command) => ({ env: command.env ?? {}, label: command.label })),
+    notes: plan.notes,
+  })
+}
+
+function isAddedVitestTest(file: string): boolean {
+  return /(?:^|\/).+\.test\.[cm]?[jt]sx?$/.test(file)
+}
+
+function isPotentialSourceAddition(file: string): boolean {
+  return /^(?:packages\/protocol\/src|server\/fastify\/(?:__fixtures__|src)|src|util)\//.test(file)
+}
+
+export function canRunIncrementally(
+  previousSnapshot: WorktreeSnapshot,
+  currentSnapshot: WorktreeSnapshot,
+  previousPlan: AffectedTestPlan,
+  currentPlan: AffectedTestPlan,
+  delta: WorktreeDelta,
+): boolean {
+  if (
+    previousSnapshot.baseCommit !== currentSnapshot.baseCommit ||
+    previousSnapshot.headCommit !== currentSnapshot.headCommit ||
+    delta.removedPaths.length > 0 ||
+    affectedPlanShape(previousPlan) !== affectedPlanShape(currentPlan)
+  ) {
+    return false
+  }
+  return !delta.changes.some(
+    (change) =>
+      change.status === 'D' ||
+      change.status === 'R' ||
+      (change.status === 'A' &&
+        !previousSnapshot.pathFingerprints.has(change.path) &&
+        isPotentialSourceAddition(change.path) &&
+        !isAddedVitestTest(change.path)),
+  )
 }
 
 export function testWatchPaths(repoRoot: string): { directory: string; log: string; status: string } {
@@ -239,9 +303,20 @@ export function writeTestWatchStatus(statusPath: string, status: TestWatchStatus
 
 export function readTestWatchStatus(statusPath: string): TestWatchStatus | undefined {
   if (!existsSync(statusPath)) return undefined
-  const parsed = JSON.parse(readFileSync(statusPath, 'utf8')) as Partial<TestWatchStatus>
-  if (parsed.schemaVersion !== TEST_WATCH_SCHEMA_VERSION || typeof parsed.watcherId !== 'string') {
+  const parsed = JSON.parse(readFileSync(statusPath, 'utf8')) as Partial<Omit<TestWatchStatus, 'schemaVersion'>> & {
+    schemaVersion?: number
+  }
+  if (typeof parsed.watcherId !== 'string' || (parsed.schemaVersion !== 1 && parsed.schemaVersion !== 2)) {
     throw new Error(`unsupported test watcher status schema in ${statusPath}`)
+  }
+  if (parsed.schemaVersion === 1) {
+    return {
+      ...parsed,
+      affectedCommands: parsed.commands ?? [],
+      executionChangedPaths: parsed.changedPaths ?? [],
+      executionMode: 'full',
+      schemaVersion: TEST_WATCH_SCHEMA_VERSION,
+    } as TestWatchStatus
   }
   return parsed as TestWatchStatus
 }
@@ -472,6 +547,25 @@ interface VitestCommandResult {
   testFiles: number
 }
 
+export function prepareVitestContext(context: Vitest, repoRoot: string, changes: readonly ChangedPath[]): void {
+  const prepared = new Set<string>()
+  for (const change of changes) {
+    const absolutePath = path.resolve(repoRoot, change.path)
+    if (prepared.has(absolutePath)) continue
+    prepared.add(absolutePath)
+
+    if (change.status !== 'D') {
+      let source: string | undefined
+      const matchesTest = context.projects.some((project) =>
+        project.matchesTestGlob(absolutePath, () => (source ??= readFileSync(absolutePath, 'utf8'))),
+      )
+      if (matchesTest) context.clearSpecificationsCache(absolutePath)
+    }
+    context.invalidateFile(absolutePath)
+    context.watcher.invalidates.add(absolutePath)
+  }
+}
+
 class WarmVitestLane {
   private contextPromise?: Promise<Vitest>
 
@@ -523,8 +617,7 @@ class WarmVitestLane {
 
   private async prepare(changes: readonly ChangedPath[]): Promise<Vitest> {
     const context = await this.context()
-    context.clearSpecificationsCache()
-    for (const change of changes) context.invalidateFile(path.resolve(this.repoRoot, change.path))
+    prepareVitestContext(context, this.repoRoot, changes)
     return context
   }
 
@@ -534,6 +627,7 @@ class WarmVitestLane {
     allTestsRun = false,
   ): Promise<VitestCommandResult> {
     if (specifications.length === 0) {
+      context.watcher.invalidates.clear()
       this.log.stdout.write('[test:watch] no related test files found\n')
       return { passed: true, testFiles: 0 }
     }
@@ -687,18 +781,29 @@ function statusFromPlan(
   current: TestWatchStatus,
   generation: number,
   snapshot: WorktreeSnapshot,
-  plan: AffectedTestPlan,
+  affectedPlan: AffectedTestPlan,
+  executionPlan: AffectedTestPlan,
+  executionChangedPaths: ChangedPath[],
+  executionMode: TestWatchStatus['executionMode'],
+  reusedTestedFingerprint?: string,
 ): TestWatchStatus {
   return {
     ...current,
+    affectedCommands: affectedPlan.commands.map((command) => ({
+      command: displayTestCommand(command),
+      label: command.label,
+    })),
     changedPaths: snapshot.changes,
     commandResults: [],
-    commands: plan.commands.map((command) => ({ command: displayTestCommand(command), label: command.label })),
+    commands: executionPlan.commands.map((command) => ({ command: displayTestCommand(command), label: command.label })),
     durationMs: undefined,
+    executionChangedPaths,
+    executionMode,
     failure: undefined,
     generation,
     heartbeatAt: new Date().toISOString(),
-    notes: plan.notes,
+    notes: affectedPlan.notes,
+    reusedTestedFingerprint,
     runFinishedAt: undefined,
     runStartedAt: new Date().toISOString(),
     state: 'running',
@@ -771,10 +876,13 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
 
   const watcherId = randomUUID()
   let status: TestWatchStatus = {
+    affectedCommands: [],
     base: options.base,
     changedPaths: [],
     commandResults: [],
     commands: [],
+    executionChangedPaths: [],
+    executionMode: 'full',
     generation: 0,
     heartbeatAt: new Date().toISOString(),
     includeSmoke: options.includeSmoke,
@@ -796,6 +904,8 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
   let drainPromise: Promise<void> | undefined
   let generation = 0
   let lastCompleted: TestWatchStatus | undefined
+  let lastPassingPlan: AffectedTestPlan | undefined
+  let lastPassingSnapshot: WorktreeSnapshot | undefined
   let waitingForHeadCommit: string | undefined
   let nextRunAt = 0
   let rerunRequested = false
@@ -852,20 +962,57 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
     }
 
     generation += 1
-    const plan = planAffectedTests(snapshot.changes, {
+    const affectedPlan = planAffectedTests(snapshot.changes, {
       bail: true,
       base: options.base,
       includeSmoke: options.includeSmoke,
     })
-    status = statusFromPlan(status, generation, snapshot, plan)
+    let executionChangedPaths = snapshot.changes
+    let executionMode: TestWatchStatus['executionMode'] = 'full'
+    let executionPlan = affectedPlan
+    let reusedTestedFingerprint: string | undefined
+    if (
+      lastCompleted?.state === 'passed' &&
+      lastCompleted.testedFingerprint &&
+      lastPassingPlan &&
+      lastPassingSnapshot
+    ) {
+      const delta = diffWorktreeSnapshots(lastPassingSnapshot, snapshot)
+      if (canRunIncrementally(lastPassingSnapshot, snapshot, lastPassingPlan, affectedPlan, delta)) {
+        executionChangedPaths = delta.changes
+        executionMode = 'incremental'
+        executionPlan = planAffectedTests(delta.changes, {
+          bail: true,
+          base: options.base,
+          includeSmoke: options.includeSmoke,
+        })
+        reusedTestedFingerprint = lastCompleted.testedFingerprint
+      }
+    }
+    status = statusFromPlan(
+      status,
+      generation,
+      snapshot,
+      affectedPlan,
+      executionPlan,
+      executionChangedPaths,
+      executionMode,
+      reusedTestedFingerprint,
+    )
+    if (executionMode === 'incremental') {
+      status.notes = [
+        ...status.notes,
+        `Reused passing coverage for ${reusedTestedFingerprint!.slice(0, 12)} and executed ${executionChangedPaths.length} changed path(s).`,
+      ]
+    }
     persist(status)
     const startedAt = Date.now()
     log.reset(
-      `[test:watch] generation ${generation} for ${snapshot.fingerprint.slice(0, 12)} (${snapshot.changes.length} changed path(s))`,
+      `[test:watch] generation ${generation} for ${snapshot.fingerprint.slice(0, 12)} (${snapshot.changes.length} affected path(s), ${executionMode}, ${executionChangedPaths.length} executed path(s))`,
     )
-    for (const note of plan.notes) log.stdout.write(`[test:watch] ${note}\n`)
+    for (const note of status.notes) log.stdout.write(`[test:watch] ${note}\n`)
 
-    if (plan.notes.includes(FULL_QUALITY_CHANGE_NOTE)) {
+    if (affectedPlan.notes.includes(FULL_QUALITY_CHANGE_NOTE)) {
       waitingForHeadCommit = snapshot.headCommit
       status = {
         ...status,
@@ -881,9 +1028,9 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
     let passed = true
     let failure: string | undefined
     try {
-      for (const command of plan.commands) {
+      for (const command of executionPlan.commands) {
         log.stdout.write(`[test:watch] ${command.label}: ${displayTestCommand(command)}\n`)
-        const result = await runner.run(command, snapshot.changes)
+        const result = await runner.run(command, executionChangedPaths)
         commandResults.push(result)
         if (result.status === 'failed') {
           passed = false
@@ -936,6 +1083,10 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
       testedFingerprint: snapshot.fingerprint,
     }
     lastCompleted = completed
+    if (passed) {
+      lastPassingPlan = affectedPlan
+      lastPassingSnapshot = snapshot
+    }
     persist(completed)
     log.stdout.write(`[test:watch] generation ${generation} ${passed ? 'passed' : 'failed'}\n`)
     return 'completed'
@@ -1017,7 +1168,7 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
 function printHelp(): void {
   console.log(`Usage: pnpm test:watch:agent [options]
 
-Continuously runs the affected test plan and publishes a freshness-checked result.
+Continuously validates the affected test plan with passing-baseline incremental reruns.
 
 Options:
   --base <git-ref>       Compare branch changes with this ref (default: HEAD)

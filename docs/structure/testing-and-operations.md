@@ -100,12 +100,23 @@ Run `pnpm test:watch:agent` in the task's integrated terminal to move the
 affected-test feedback loop into a persistent process. It debounces edit bursts,
 captures the complete Git diff plus untracked files, hashes the contents and
 metadata of every changed path, and builds the same plan as
-`pnpm test:affected`. Ordinary direct/dependency-aware frontend and server runs
-reuse long-lived Vitest/Vite contexts. Protocol, performance,
-browser-smoke, compatibility, Realm-scale, and full-quality commands retain
-their package-script process and environment behavior. Full-lane runs recreate
-their warm context first so deleted files or runner changes cannot use an old
-module graph.
+`pnpm test:affected`. The first compatible affected scope runs as a full
+baseline. After it passes, the watcher compares per-path fingerprints with that
+passing snapshot and executes only the latest compatible delta while retaining
+the full affected scope as the reported coverage. Modified tests rerun directly;
+new test files are registered with their matching Vitest project and run
+directly; modified source files use dependency-aware selection. Source additions,
+deletions, renames, HEAD changes, and affected-lane shape changes fall back to a
+new full baseline. A failed generation cannot seed an incremental run.
+
+Ordinary direct/dependency-aware frontend and server runs reuse long-lived
+Vitest/Vite contexts, including their test-file discovery caches. Changed test
+specifications are invalidated individually, and all changed modules are
+invalidated in both the host module graph and reused worker pools. Protocol,
+performance, browser-smoke, compatibility, Realm-scale, and full-quality
+commands retain their package-script process and environment behavior.
+Full-lane runs recreate their warm context first so deleted files or runner
+changes cannot use an old module graph.
 
 The watcher writes `.test-watch/status.json` atomically and streams the latest
 generation to both the terminal and `.test-watch/latest.log`. Every relevant
@@ -113,8 +124,9 @@ filesystem event marks the current result stale. A run is published as `passed`
 or `failed` only when a second worktree fingerprint taken after the commands
 exactly matches the fingerprint taken before them; otherwise the result is
 discarded and a new generation is queued. The status includes the watcher
-PID/heartbeat, base ref, generation, target and tested fingerprints, selected
-commands, notes, per-command results, timings, and changed paths.
+PID/heartbeat, base ref, generation, target and tested fingerprints, full
+affected commands, actually executed commands, execution mode and changed
+paths, any reused tested fingerprint, notes, per-command results, and timings.
 
 When build, dependency, aggregate-runner, or CI configuration changes make
 targeted selection unsafe, the watcher publishes `waiting-for-commit` and does
