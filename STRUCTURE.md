@@ -1,6 +1,6 @@
 # Project Structure
 
-Last audited: 2026-08-29.
+Last audited: 2026-08-30.
 
 Use this file to orient yourself in the Fastify-only RisuAI codebase. The
 supported toolchain is Node.js 24 or newer with pnpm. Choose the guide for your
@@ -51,13 +51,13 @@ source-equivalent ancestor; compatibility work remains pinned to `71c476e9c`.
 | `STRUCTURE.md`, `docs/structure/`, `src/docs/` | Current architecture and implementation guides. Start at the [Architecture Index](docs/structure/README.md). |
 | `docs/plan/` | Active multi-phase workstreams, including live status, phase boundaries, and verification records. These plans do not supersede current runtime documentation until their phases land. |
 | `docs/tests/` | Test-discovery guides organized by product and domain area. |
-| `.archived-docs/` | Closed or retired workstreams and dated reports, including the test-suite effectiveness audit, Fast Bootstrap execution guide, August Fastify audits, upstream-sync sweep, data-driven UI inventory, and message-generation parity audit. Test-audit manifests and narrative records are historical. |
-| `test/compat-harness/` | Opt-in golden compatibility comparison against the pinned pre-Fastify worktree; it is not part of `pnpm test:all`. |
+| `.archived-docs/` | Closed or retired workstreams and dated reports, including the test-suite effectiveness and Original RisuAI compatibility audits, Fast Bootstrap execution guide, August Fastify audits, upstream-sync sweep, data-driven UI inventory, and message-generation parity audit. Test-audit manifests and narrative records are historical. |
+| `test/compat-harness/` | Current-stack compatibility goldens run in `pnpm test:all`; the full pinned comparison against the prepared pre-Fastify worktree remains an opt-in/scheduled lane. |
 | `public/` | Static application sources copied or served by Vite, including the service worker and vendor/tokenizer payloads. |
 | `resources/` | Retained packaging artwork; the current Vite/Fastify build does not consume it. |
 | `util/` | Full-stack dev runners, database analyzer, tsserver wrapper, API-flag runner, and userscript bridge. |
 | `tsconfig*.json`, `vitest*.ts`, `playwright*.ts` | TypeScript, Vitest, and Playwright configuration. |
-| `.github/workflows/quality.yml` | Parallel Node 24 CI for pull requests and `main`; preserves local `test:all` ownership, always runs the focused UI coverage map once, and adds initial-preload reporting. |
+| `.github/workflows/quality.yml`, `.github/workflows/compatibility-differential.yml` | Parallel Node 24 CI for pull requests and `main`, plus the scheduled/manual full pinned compatibility differential. Quality preserves local `test:all` ownership, runs the focused UI coverage map once, and adds initial-preload reporting. |
 | `.claude/`, `.vscode/`, `.npmrc`, `.gitattributes`, `.gitignore`, `.ignore` | Agent tooling, editor, package-manager, Git, and search policy. |
 | `.prettier*`, `README.md`, `version.json`, `LICENSE`, `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md` | Formatting policy, project metadata, and shared/local contributor and agent guidance. |
 | `dist/`, `data/`, `data-agent/`, `node_modules/`, `coverage/`, `test-results/`, `fast-bootstrap-results/` | Generated or runtime state. Persisted/user-uploaded assets live under `data/assets/`; see [Generated And Legacy](docs/structure/generated-and-legacy.md). |

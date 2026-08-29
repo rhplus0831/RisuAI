@@ -1,6 +1,6 @@
 # Data And Events
 
-Last audited: 2026-08-29.
+Last audited: 2026-08-30.
 
 Fastify owns authoritative application state. The browser reads authenticated
 REST resources and sends revision-checked commands or explicit server-owned
@@ -168,6 +168,12 @@ event, owner, revision, digest, and projection checks pass; malformed, stale,
 tainted, missing, or non-contiguous acknowledgements fail closed to the normal
 authoritative event read.
 
+Two BardWiki read-only POSTs are deliberate eventless exceptions: rebuild
+preview and vault-import dry run. The browser accepts them only when their
+exact-key response, requested chat/policy or strategy, counts, action shapes,
+and revision validate; malformed success bodies fail closed like other command
+receipts.
+
 Protocol-v1 accepted sends use that same rule outside the ordinary command
 transport. The generation-operation response must carry a matching message
 append event and revision. While that response is being applied, matching
@@ -288,8 +294,9 @@ not ordinary browser `/commands/*` resource endpoints:
   settings mutation while returning only the access token to the browser.
 - The startup push service loads or generates VAPID keys; push notification
   subscription create/delete routes mutate operational Web Push rows without a
-  domain revision. They are authenticated runtime state, not application
-  resource state.
+  domain revision. They authenticate before parsing a 16 KiB-capped body and
+  accept only bounded, credential-free HTTPS subscription endpoints and keys.
+  They are authenticated runtime state, not application resource state.
 - Backup create/delete mutate backup files without a domain revision; restore
   replaces allowlisted repository state, clears live request history, rotates
   the database lineage, clears mutation receipts, and emits `state.restored`.
@@ -361,6 +368,10 @@ scope, not an authoritative data payload; the browser must reconcile it against
 the corresponding committed resource at that revision. Persisted command events
 retain their revision order for reconnect replay, while revision-free
 server-owned exceptions remain outside that ordering as listed above.
+Generation-adjacent events may also carry `databaseLineage`, `operationId`,
+`sourceMessageId`, and `jobId`. Command-response and SSE parsers retain only
+string-valued identifiers; these fields fence recovery and routing and do not
+turn the event into an authoritative resource body.
 
 The canonical REST endpoint, bootstrap, common-revision read, hydration,
 cache-cap, shell/body, and stale-response workflow belongs to

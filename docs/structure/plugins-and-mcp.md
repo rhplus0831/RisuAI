@@ -1,6 +1,6 @@
 # Plugins And MCP
 
-Last audited: 2026-08-27.
+Last audited: 2026-08-30.
 
 Plugins and MCP tooling are browser runtime features with server-backed records.
 Fastify stores plugin records, plugin storage, settings, and module state, but it
@@ -259,6 +259,15 @@ Runtime MCP identifier forms:
 - `stdio:{...}` wrappers. Runtime parsing requires a JSON `url`; command/args
   process launch is not supported. The wrapped URL is then handled like any
   other HTTP(S) runtime URL.
+
+Bundled specialized tools fail closed at their local authority boundary. Dice
+notation must be fully consumed, rolls at most 100 dice with at most 1,000,000
+sides each, and returns an MCP-shaped error for invalid input. Graph memory
+validates every stored entry before reading or appending, rejects malformed
+state without overwriting it, and limits search depth to an integer from 1 to 8.
+The File System client cannot revive a lost directory handle from a tool call;
+its recovery response tells the user to reinitialize the MCP and select a
+directory again.
 
 Creation validation is intentionally shallower than runtime parsing.
 `isImportableMCPIdentifier()` accepts raw HTTPS and loopback HTTP, plus any

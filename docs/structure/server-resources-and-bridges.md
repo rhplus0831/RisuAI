@@ -1,6 +1,6 @@
 # Server Resources And Hydration
 
-Last audited: 2026-08-29.
+Last audited: 2026-08-30.
 
 This guide owns the Fastify-to-browser read boundary: bootstrap resources,
 root and targeted REST reads, hash-verified cache substitution, lazy body
@@ -191,9 +191,16 @@ version-1 response is exact-key validated and contains:
 
 - one outer revision;
 - the allowlisted values in `SERVER_SHELL_SETTINGS_KEYS`, with canonical defaults
-  supplied when an older database omits a value; and
+  supplied for omitted or malformed values, partial `colorScheme` and
+  `customTextTheme` records merged over their defaults, and legacy `pip`
+  keepalive normalized to `sound`; and
 - one version-1 character-summary envelope whose nested revision must equal the
   outer revision.
+
+The same settings normalization feeds full settings, hash-cache, and settings-
+group reads. A missing or malformed order becomes empty, and a selected-
+character index outside the current summary range becomes `-1` rather than
+pointing at a different or absent character.
 
 `applyServerShellResource()` preflights both slices before applying either one,
 records the shell as a partial settings projection, and advances the applied

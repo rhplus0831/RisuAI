@@ -1,6 +1,6 @@
 # Prompt Assembly And Scripting
 
-Last audited: 2026-08-29.
+Last audited: 2026-08-30.
 
 This guide owns server prompt construction, CBS and history variables,
 lorebook and memory injection, prompt-template precedence, generation
@@ -145,6 +145,10 @@ missing value as empty before Unicode-aware reversal, and `setdefaultvar`
 considers absent, empty, or the compatibility string `"null"` unset. Run-var
 mutations are removed from rendered text and emitted as targeted chat-variable
 mutations.
+
+For a malformed legacy chat without a numeric first-message index,
+`{{firstmsgindex}}` follows the parser's callback-error contract and remains
+literal instead of fabricating `-1`.
 
 Fresh generation and prompt-preview requests report a bounded browser-context
 snapshot. Fastify resolves `{{screenwidth}}`, `{{screenheight}}`, and
@@ -455,6 +459,12 @@ them. No diff means no state write. Coverage lives in
 variables/local variables, comparisons, loops, safe data helpers, message
 reads/writes, additional system prompts, and server Lua effects under effect,
 loop, recursion, and wall-clock budgets.
+
+Retained legacy guards can end the whole trigger before later effects. This
+applies to malformed literal-container variable names and display/request-state
+effects used outside display mode. Earlier durable variable writes remain
+eligible for persistence, while transient chat/output changes from the aborted
+run are discarded.
 
 Unsupported V2 effects are preserved for round-trip compatibility and skipped,
 not partially executed. `src/ts/process/triggerServerSupport.ts` is the source
