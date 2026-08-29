@@ -12,8 +12,8 @@ findings under [`findings/`](findings/); inventory ownership under
 ## Current Snapshot
 
 - Plan state: Active.
-- Current phase: Phase 11 — assets, imports, exports, saves, and backups.
-- Active slice: [Phase 11 assets, imports, exports, saves, and backups](phases/phase-11-assets-import-export-and-backups.md).
+- Current phase: Phase 12 — runtime, platform, limits, and diagnostics.
+- Active slice: [Phase 12 runtime, platform, limits, and diagnostics](phases/phase-12-runtime-platform-and-diagnostics.md).
 - Planning audit anchor: `1933c43ff7b4d35b57b0852013d95f3881a8cb28`.
 - Compatibility baseline: `71c476e9c86263fe907105b011ca4dde0a619d66`.
 - Behavioral sync cursor: `f3f0242fba297d82e0efcc2c31ca1428569b70f2`.
@@ -23,7 +23,7 @@ findings under [`findings/`](findings/); inventory ownership under
   `/home/codex/risu-baseline-71c476e9c`; its exact commit, dependency state, and
   cleanliness are enforced by `pnpm prepare:compat-baseline` and the harness
   preflight.
-- Current compatibility state: Phases 0 through 10 are complete.
+- Current compatibility state: Phases 0 through 11 are complete.
   Phase 5 closes settings/default/preset/collection ownership at
   `b34b7a78f28cb5903ece3880073fbb9e46392cb8` and visible character-authoring
   reload evidence at `5eca30f4872e865efee2c86f4dde7ae71e915f9a`.
@@ -48,6 +48,9 @@ findings under [`findings/`](findings/); inventory ownership under
   tool ownership at `e8bbbeea6ad400234aa4d0abad330356265c3c23`, with
   bounded/fail-closed specialized tool corrections at
   `397e06c67694f59d96a087ea1974802e5e0bd4c6`.
+  Phase 11 closes portable envelope/block/table, asset/export integrity, staged
+  import/restore, salvage, and backup ownership at
+  `56287bcb62c1dcdb969a7d185371a1c539bf3200`.
   After the independent Phase 2 governance-link correction
   `7ba933fe6f1c3338bd9cce2ef308b2b216ac8e8d`, the required pinned differential
   passes with 16 baseline cells, 18
@@ -61,8 +64,8 @@ findings under [`findings/`](findings/); inventory ownership under
   commits reconstruct authority for the four historical boundaries, responsive
   shell, retired character additional-information retrieval, and the six
   Phase 9 parser/runtime differences.
-- Next action: complete Phase 11 portable formats, asset integrity, staged
-  import/restore, salvage, and backup lifecycle evidence.
+- Next action: complete Phase 12 runtime, auth/route policy, limit, diagnostic,
+  startup/shutdown, platform, and Web Push evidence.
 
 ## Phase Router
 
@@ -79,8 +82,8 @@ findings under [`findings/`](findings/); inventory ownership under
 | [8. Memory, embeddings, jobs, and workers](phases/phase-8-memory-embeddings-jobs-and-workers.md) | Complete | Closed retained-memory/embedding selection, budgets, memory/BardWiki job states, retry/cancel/restart, stale-target, and reconciliation ownership. |
 | [9. Scripting, parsing, triggers, and automation](phases/phase-9-scripting-parsing-triggers-and-automation.md) | Complete | Closed CBS/parser parity, individually signed runtime differences, trigger/effect ordering, explicit unsupported effects, regex bounds, and Lua API/failure ownership. |
 | [10. Plugins, modules, MCP, and specialized tools](phases/phase-10-plugins-modules-mcp-and-specialized-tools.md) | Complete | Closed Plugin V3 API/permission/runtime ownership, module lifecycle/no-port, MCP/OAuth/egress, and specialized-tool catalogs and failure behavior. |
-| [11. Assets, imports, exports, saves, and backups](phases/phase-11-assets-import-export-and-backups.md) | In progress | Verify references, codecs, salvage, staged assets, historical formats, and bidirectional round trips. |
-| [12. Runtime, platform, limits, and diagnostics](phases/phase-12-runtime-platform-and-diagnostics.md) | Pending | Verify shared platform behavior, visible rejection/diagnostics, browser/server environment, startup/shutdown, and Push. |
+| [11. Assets, imports, exports, saves, and backups](phases/phase-11-assets-import-export-and-backups.md) | Complete | Closed portable envelopes/blocks/tables, asset reference and stream integrity, staged import/restore/salvage, historical formats, and supported round trips. |
+| [12. Runtime, platform, limits, and diagnostics](phases/phase-12-runtime-platform-and-diagnostics.md) | In progress | Verify shared platform behavior, visible rejection/diagnostics, browser/server environment, startup/shutdown, and Push. |
 | [13. Consolidation, adjudication, and remediation](phases/phase-13-consolidation-adjudication-and-remediation.md) | Pending | Deduplicate findings, settle decisions, land shared gates and fix waves, and close cross-domain ownership. |
 | [14. Verification and closeout](phases/phase-14-verification-and-closeout.md) | Pending | Prove zero unexplained differences, complete decisions, final quality/release gates, current docs, and archive handoff. |
 
@@ -313,6 +316,29 @@ findings under [`findings/`](findings/); inventory ownership under
   and the total inventory is 121 rows.
 - The 426-test browser lane, 308-test Fastify lane, specialized regressions,
   server/browser checks, registers, formatting, and diff checks pass.
+
+## Phase 11 Completion Record
+
+- `56287bcb62c1dcdb969a7d185371a1c539bf3200` closes all four
+  supported `.risu` envelopes, every portable block type, every declarative and
+  specialized asset owner, and every live SQLite table over an explicit
+  import/export/backup disposition.
+- Export preflights asset size/SHA before starting a response and verifies bytes
+  again while streaming. Corruption fails before headers; post-preflight
+  mutation aborts ZIP and legacy streams instead of producing a successful
+  corrupt artifact.
+- Import bounds database bytes, entry count/names, legacy records, duplicates,
+  envelope/version/hash data, writer/auth state, and disconnects. Staging
+  failure rolls back new bytes without removing deduplicated live assets or
+  replacing the database; successful restore creates a safety snapshot and
+  reopens fresh state.
+- Category K rows `ORC-SURFACE-122` through `ORC-SURFACE-124` own the new
+  closed surfaces. All nine historical mapped Category K rows are re-verified
+  alongside pilot `ORC-SURFACE-004`; Category K is 13/13 verified and the total
+  inventory is 124 rows.
+- The 112-test owning lane, server checks, registers, formatting, and diff checks
+  pass. The pinned Original harness's lack of an executable reroll save exchange
+  remains the exact explicit pilot residual.
 
 ## Locked Planning Decisions
 

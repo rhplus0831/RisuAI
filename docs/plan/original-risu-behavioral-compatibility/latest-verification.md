@@ -23,7 +23,9 @@ ownership at `a77f47c9f79b0233e147456e73ded69e1869d192`. Phase 9 closes scriptin
 parsing, trigger, regex, and Lua ownership through
 `3963a1278b5f15175c295e3707d25fbf07bdcb56`. Phase 10 closes extension, module,
 MCP, OAuth, and specialized-tool ownership through
-`e8bbbeea6ad400234aa4d0abad330356265c3c23`, and Phase 11 is in progress.
+`e8bbbeea6ad400234aa4d0abad330356265c3c23`. Phase 11 closes portable formats,
+assets, import/export, salvage, and backups through
+`56287bcb62c1dcdb969a7d185371a1c539bf3200`, and Phase 12 is in progress.
 
 ## Phase 0 Environment And Baseline Evidence
 
@@ -347,6 +349,36 @@ unowned surfaces.
 | Category J closure | Passed; 5 of 5 Category J rows verified and zero remain mapped-only |
 | Register gates | Passed; 121 surfaces, 67 signed decisions, 15 findings, and 12 fail-closed validator tests |
 | Phase 10 Prettier and `git diff --check` | Passed |
+
+## Phase 11 Evidence
+
+| Check | Result |
+| --- | --- |
+| Portable-format, asset-integrity, and atomic-import implementation | `56287bcb62c1dcdb969a7d185371a1c539bf3200` |
+| Category K inventory | New verified rows `ORC-SURFACE-122` through `ORC-SURFACE-124`; all nine historical mapped Category K rows re-verified alongside pilot `ORC-SURFACE-004`; 13 verified Category K rows and 124 total inventory rows |
+| Envelope/block vocabulary | Four supported envelopes and every `RisuSaveBlockType`, each classified for import and export |
+| Asset vocabulary | Every declarative owner plus nine specialized owner shapes shared by reference discovery and legacy-path rewriting |
+| Backup vocabulary | Every live SQLite table included in backup or deliberately excluded with a nonempty reason |
+| Export integrity | Pre-response size/SHA preflight plus streaming verification; corrupt preflight returns 400 and post-preflight mutation aborts ZIP/legacy streams |
+| Import atomicity | Bounded database/entry/record/name/version/hash validation, staged-byte cleanup, deduplicated-live preservation, no failed replacement, safety snapshot, fresh reopen, and qualified salvage |
+| Historical boundaries | Credential inclusion/scrubbing, inert CharX exclusions, cold-chat export, incomplete restore, standalone CHAT salvage, Agent-only lore, and monolithic-preset migration independently re-verified |
+
+The pinned Original harness has no executable save exchange because it mocks
+rerolls. Every supported current codec independently proves portable reroll
+candidate round trips; the exact cross-application limitation remains recorded
+instead of being normalized or overclaimed.
+
+## Phase 11 Validation
+
+| Check | Result |
+| --- | --- |
+| Structure, bundle export, and bundle import selection | Passed; 3 files and 61 tests |
+| Asset-reference, legacy-database, and codec selection | Passed; 3 files and 51 tests |
+| Complete Phase 11 selection | Passed; 6 files and 112 tests |
+| `pnpm check:server` | Passed at the implementation anchor |
+| Category K closure | Passed; 13 of 13 Category K rows verified and zero remain mapped-only |
+| Register gates | Passed; 124 surfaces, 67 signed decisions, 15 findings, and 12 fail-closed validator tests |
+| Phase 11 Prettier and `git diff --check` | Passed |
 
 ## Update Rules
 

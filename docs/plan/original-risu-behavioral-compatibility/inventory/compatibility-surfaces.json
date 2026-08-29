@@ -519,12 +519,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "56287bcb62c1dcdb969a7d185371a1c539bf3200",
         "findingIds": [],
         "decisionId": "ORC-DECISION-003",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -577,12 +577,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "56287bcb62c1dcdb969a7d185371a1c539bf3200",
         "findingIds": [],
         "decisionId": "ORC-DECISION-004",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -1190,12 +1190,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "56287bcb62c1dcdb969a7d185371a1c539bf3200",
         "findingIds": [],
         "decisionId": "ORC-DECISION-014",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -1816,12 +1816,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "56287bcb62c1dcdb969a7d185371a1c539bf3200",
         "findingIds": [],
         "decisionId": "ORC-DECISION-024",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -1874,12 +1874,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "56287bcb62c1dcdb969a7d185371a1c539bf3200",
         "findingIds": [],
         "decisionId": "ORC-DECISION-025",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -4066,14 +4066,14 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
+        "state": "verified",
         "confidence": "high",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "lastFastifyCommit": "56287bcb62c1dcdb969a7d185371a1c539bf3200",
         "findingIds": [
           "ORC-K-002"
         ],
         "decisionId": null,
-        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+        "residual": null
       },
       "notes": "Canonical import of a resolved 2026-08 compatibility finding."
     },
@@ -4690,14 +4690,14 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
+        "state": "verified",
         "confidence": "high",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "lastFastifyCommit": "56287bcb62c1dcdb969a7d185371a1c539bf3200",
         "findingIds": [
           "ORC-K-012"
         ],
         "decisionId": null,
-        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+        "residual": null
       },
       "notes": "Canonical import of a resolved 2026-08 compatibility finding."
     },
@@ -4749,14 +4749,14 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
+        "state": "verified",
         "confidence": "high",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "lastFastifyCommit": "56287bcb62c1dcdb969a7d185371a1c539bf3200",
         "findingIds": [
           "ORC-K-013"
         ],
         "decisionId": null,
-        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+        "residual": null
       },
       "notes": "Canonical import of a resolved 2026-08 compatibility finding."
     },
@@ -4808,14 +4808,14 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
+        "state": "verified",
         "confidence": "high",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "lastFastifyCommit": "56287bcb62c1dcdb969a7d185371a1c539bf3200",
         "findingIds": [
           "ORC-K-014"
         ],
         "decisionId": null,
-        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+        "residual": null
       },
       "notes": "Canonical import of a resolved 2026-08 compatibility finding."
     },
@@ -8113,6 +8113,235 @@
         "residual": "Normal CI does not invoke paid model/search services or exercise an operating-system directory picker; deterministic authority, schema, mutation, and failure seams remain covered."
       },
       "notes": "The Phase 10 implementation fixed the concrete validation and diagnostic gaps found during catalog closure."
+    },
+    {
+      "id": "ORC-SURFACE-122",
+      "title": "Closed portable envelope, block, persisted-table, and semantic round-trip ownership",
+      "primaryCategory": "K",
+      "seamTags": [
+        "C",
+        "E",
+        "J"
+      ],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "All four supported .risu envelopes decode and encode through an explicit owner.",
+        "Every portable block type is emitted, accepted, reported/skipped, or classified as an unsupported reference without silent loss.",
+        "Every live SQLite table is included in portable backup or has a documented deliberate exclusion, and supported exports reimport with equivalent logical state."
+      ],
+      "variants": [
+        "legacy raw, compressed, streamed, and block envelopes",
+        "config, root, character/chat, preset, module, plugin, loadout, plugin storage, standalone chat, and remote blocks",
+        "unknown, unsupported, empty, corrupt, truncated, imported, and current round trips"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage"
+        ],
+        "browser": [
+          "src/ts/storage/database.svelte.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/risuSave/legacyEnvelopeCodec.ts",
+          "server/fastify/src/risuSave/blockCodec.ts",
+          "server/fastify/src/risuSave/importSnapshot.ts",
+          "server/fastify/src/risuSave/exportSnapshot.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/repository.ts",
+          "server/fastify/src/db.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Archive entry metadata, timestamps, compression bytes, and generated ids may be normalized; logical fields, identity relationships, row/block order, inclusion, warnings, reroll candidates, and semantic reimport result remain exact."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage"
+        ],
+        "current": [
+          "56287bcb62c1dcdb969a7d185371a1c539bf3200"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase11CompatibilityStructure.test.ts",
+          "server/fastify/__tests__/risuSaveCodec.test.ts",
+          "server/fastify/__tests__/risuSaveBundleExportRoute.test.ts",
+          "server/fastify/__tests__/risuSaveBundleImportRoute.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/phase11CompatibilityStructure.test.ts#ENVELOPE_POLICY",
+          "server/fastify/__tests__/phase11CompatibilityStructure.test.ts#BLOCK_POLICY"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "56287bcb62c1dcdb969a7d185371a1c539bf3200",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": "The pinned Original harness mocks rerolls and exposes no executable save exchange; all supported current envelopes retain portable reroll candidates, and the exact cross-application limitation remains explicit."
+      },
+      "notes": "Signed credential, CharX exclusion, cold-chat, incomplete-restore, and module-interchange boundaries remain independently governed."
+    },
+    {
+      "id": "ORC-SURFACE-123",
+      "title": "Asset reference discovery, legacy rewriting, export integrity, and streaming failure ownership",
+      "primaryCategory": "K",
+      "seamTags": [
+        "E",
+        "J",
+        "L"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Every declarative and specialized asset owner is shared by portable discovery and legacy-path rewriting.",
+        "Asset ids, MIME/type, order, ownership, deduplication, embedded/external references, bytes, size, and SHA-256 survive supported export/import paths.",
+        "Export preflights bytes before headers and verifies them again while streaming, so corrupt or concurrently mutated assets cannot appear as a successful archive."
+      ],
+      "variants": [
+        "root, nested setting, preset, character scalar/tuple/list/text, persona, module, chat, ccAsset, VITS, and plugin-storage owners",
+        "missing, deduplicated, non-SHA legacy, corrupt hash/size, and post-preflight mutation",
+        "ZIP bundle and Original-compatible legacy export"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage"
+        ],
+        "browser": [
+          "src/ts/storage/database.svelte.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/risuSave/assetOwnerCatalog.ts",
+          "server/fastify/src/risuSave/assetReferences.ts",
+          "server/fastify/src/risuSave/localBackupDatabase.ts",
+          "server/fastify/src/risuSave/bundleExport.ts",
+          "server/fastify/src/routes/save.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/assetStore.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Archive entry timestamps/compression may vary; reference owner/path, MIME, byte length, SHA-256, bytes, order, warning, response status, and stream completion remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage"
+        ],
+        "current": [
+          "56287bcb62c1dcdb969a7d185371a1c539bf3200"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase11CompatibilityStructure.test.ts",
+          "server/fastify/__tests__/risuSaveAssetReferences.test.ts",
+          "server/fastify/__tests__/risuSaveBundleExportRoute.test.ts",
+          "server/fastify/__tests__/localBackupDatabase.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/phase11CompatibilityStructure.test.ts#SPECIALIZED_ASSET_OWNER_POLICY",
+          "server/fastify/__tests__/risuSaveBundleExportRoute.test.ts (corrupt and post-preflight mutation fixtures)"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "56287bcb62c1dcdb969a7d185371a1c539bf3200",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "The second streaming verification protects the interval after preflight rather than weakening the pre-response integrity guarantee."
+    },
+    {
+      "id": "ORC-SURFACE-124",
+      "title": "Staged import, bounded salvage, restore, rollback, and garbage-collection ownership",
+      "primaryCategory": "K",
+      "seamTags": [
+        "B",
+        "C",
+        "L"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Import validates expanded bytes, entry count/names, legacy record bounds, duplicate database records, envelope/version, hashes, auth/writer state, and disconnect before replacement.",
+        "A failure removes newly staged bytes, preserves deduplicated live assets, avoids database replacement, and continues later cleanup attempts.",
+        "Successful replacement creates a safety snapshot and reopens database plus assets in a fresh instance; salvage reports every qualified omission instead of claiming full success."
+      ],
+      "variants": [
+        "Original database.risudat plus assets, ZIP bundle, and every .risu envelope",
+        "hollow/exact-boundary truncation, standalone CHAT, group character, unknown block, duplicate DB, invalid version/hash/name, abort, and cleanup failure",
+        "staged asset collision/deduplication, safety snapshot, restore swap, reopen, and GC reachability"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage"
+        ],
+        "browser": [
+          "src/ts/storage/database.svelte.ts"
+        ],
+        "protocol": [
+          "src/ts/server/commands.ts"
+        ],
+        "fastify": [
+          "server/fastify/src/risuSave/bundleImport.ts",
+          "server/fastify/src/risuSave/localBackupDatabase.ts",
+          "server/fastify/src/risuSave/importLimits.ts",
+          "server/fastify/src/routes/save.ts",
+          "server/fastify/src/backups.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/repository.ts",
+          "server/fastify/src/assetStore.ts",
+          "server/fastify/src/db.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Temporary paths, timestamps, generated safety-snapshot ids, and archive metadata may be normalized; admitted records/assets, omissions, warnings, cleanup order, replacement cardinality, restored state, and live reachability remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage"
+        ],
+        "current": [
+          "56287bcb62c1dcdb969a7d185371a1c539bf3200"
+        ],
+        "tests": [
+          "server/fastify/__tests__/risuSaveBundleImportRoute.test.ts",
+          "server/fastify/__tests__/localBackupDatabase.test.ts",
+          "server/fastify/__tests__/risuSaveCodec.test.ts",
+          "server/fastify/__tests__/backups.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/risuSaveBundleImportRoute.test.ts (bounded staging/rollback/reopen fixtures)",
+          "server/fastify/__tests__/localBackupDatabase.test.ts (Original record, legacy asset, and salvage fixtures)"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "56287bcb62c1dcdb969a7d185371a1c539bf3200",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "Phase 12 owns application-start recovery ordering for interrupted restore swaps; this row owns portable bytes and atomic import/restore outcomes."
     }
   ]
 }
