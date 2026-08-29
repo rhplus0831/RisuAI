@@ -102,6 +102,10 @@ export interface CommandEvent {
   resource: string
   id?: string
   parentId?: string
+  databaseLineage?: string
+  operationId?: string
+  sourceMessageId?: string
+  jobId?: string
   origin?: {
     writerSessionId: string
   }
@@ -9099,6 +9103,10 @@ function readCommandEvent(body: unknown): CommandEvent | null {
   if (typeof record.type !== 'string') return null
   if (!Number.isInteger(record.revision) || (record.revision as number) < 0) return null
   if (typeof record.resource !== 'string') return null
+  for (const key of ['id', 'parentId', 'databaseLineage', 'operationId', 'sourceMessageId', 'jobId'] as const) {
+    if (record[key] !== undefined && typeof record[key] !== 'string') return null
+  }
+  if (record.origin !== undefined && !isCommandEventOrigin(record.origin)) return null
   const parsed: CommandEvent = {
     type: record.type,
     revision: record.revision as number,
@@ -9106,13 +9114,18 @@ function readCommandEvent(body: unknown): CommandEvent | null {
   }
   if (typeof record.id === 'string') parsed.id = record.id
   if (typeof record.parentId === 'string') parsed.parentId = record.parentId
-  if (record.origin && typeof record.origin === 'object') {
-    const writerSessionId = (record.origin as { writerSessionId?: unknown }).writerSessionId
-    if (typeof writerSessionId === 'string') {
-      parsed.origin = { writerSessionId }
-    }
-  }
+  if (typeof record.databaseLineage === 'string') parsed.databaseLineage = record.databaseLineage
+  if (typeof record.operationId === 'string') parsed.operationId = record.operationId
+  if (typeof record.sourceMessageId === 'string') parsed.sourceMessageId = record.sourceMessageId
+  if (typeof record.jobId === 'string') parsed.jobId = record.jobId
+  if (isCommandEventOrigin(record.origin)) parsed.origin = record.origin
   return parsed
+}
+
+function isCommandEventOrigin(value: unknown): value is { writerSessionId: string } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const writerSessionId = (value as { writerSessionId?: unknown }).writerSessionId
+  return typeof writerSessionId === 'string' && writerSessionId.trim() !== ''
 }
 
 function readCommandSuccessReceipt(

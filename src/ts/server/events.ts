@@ -529,6 +529,10 @@ function parseCommandEvent(data: string): CommandEvent | null {
   if (typeof record.resource !== 'string') return null
   if (record.id !== undefined && typeof record.id !== 'string') return null
   if (record.parentId !== undefined && typeof record.parentId !== 'string') return null
+  if (record.databaseLineage !== undefined && typeof record.databaseLineage !== 'string') return null
+  if (record.operationId !== undefined && typeof record.operationId !== 'string') return null
+  if (record.sourceMessageId !== undefined && typeof record.sourceMessageId !== 'string') return null
+  if (record.jobId !== undefined && typeof record.jobId !== 'string') return null
   if (record.origin !== undefined && !isCommandEventOrigin(record.origin)) return null
 
   return {
@@ -537,6 +541,10 @@ function parseCommandEvent(data: string): CommandEvent | null {
     resource: record.resource,
     ...(typeof record.id === 'string' ? { id: record.id } : {}),
     ...(typeof record.parentId === 'string' ? { parentId: record.parentId } : {}),
+    ...(typeof record.databaseLineage === 'string' ? { databaseLineage: record.databaseLineage } : {}),
+    ...(typeof record.operationId === 'string' ? { operationId: record.operationId } : {}),
+    ...(typeof record.sourceMessageId === 'string' ? { sourceMessageId: record.sourceMessageId } : {}),
+    ...(typeof record.jobId === 'string' ? { jobId: record.jobId } : {}),
     ...(isCommandEventOrigin(record.origin) ? { origin: record.origin } : {}),
   }
 }

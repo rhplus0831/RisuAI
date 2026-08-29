@@ -67,9 +67,15 @@ afterEach(() => {
 describe('server command event subscription helper', () => {
   it('fetches the event stream with auth and emits command, memory, and writer events', async () => {
     const commandEvent: CommandEvent = {
-      type: 'settings.updated',
+      type: 'generation.persisted',
       revision: 3,
-      resource: 'settings',
+      resource: 'generation',
+      id: 'message-a',
+      parentId: 'chat-a',
+      databaseLineage: 'database-a',
+      operationId: 'operation-a',
+      sourceMessageId: 'message-user-a',
+      jobId: 'job-a',
       origin: { writerSessionId: 'writer-a' },
     }
     const memoryEvent: ServerMemoryEvent = {
@@ -248,6 +254,21 @@ describe('server command event subscription helper', () => {
 
     expect(subscription.status).toBe('ok')
     await waitFor(() => onError.mock.calls.length === 1)
+    expect(onError.mock.calls[0][0]).toContain('Malformed command event frame')
+  })
+
+  it('rejects command frames with malformed recovery lineage metadata', async () => {
+    stubEventsFetch(
+      'event: command\ndata: {"type":"generation.persisted","revision":3,"resource":"generation","operationId":7}\n\n',
+    )
+    const onCommandEvent = vi.fn()
+    const onError = vi.fn()
+
+    const subscription = await subscribeServerCommandEvents({ onCommandEvent, onError })
+
+    expect(subscription.status).toBe('ok')
+    await waitFor(() => onError.mock.calls.length === 1)
+    expect(onCommandEvent).not.toHaveBeenCalled()
     expect(onError.mock.calls[0][0]).toContain('Malformed command event frame')
   })
 

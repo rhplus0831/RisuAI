@@ -250,6 +250,76 @@ describe('authenticated resource read routes', () => {
     expect(response.payload).not.toContain('Large message')
   })
 
+  it('normalizes missing, null, empty, malformed, and legacy shell settings before strict bootstrap validation', async () => {
+    const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      const row = sqlite.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      const settings = JSON.parse(row.data_json) as Record<string, unknown>
+      delete settings.language
+      settings.username = null
+      settings.customCSS = ''
+      settings.keepSessionAlive = 'pip'
+      settings.animationSpeed = 'fast'
+      settings.colorScheme = {}
+      settings.doNotWarnExternalServers = 1
+      settings.characterOrder = null
+      settings.currentChar = 99
+      sqlite.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+    } finally {
+      sqlite.close()
+    }
+
+    const response = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/resources/shell',
+      headers: authHeaders(),
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json().settings).toMatchObject({
+      language: 'en',
+      username: 'User',
+      customCSS: '',
+      keepSessionAlive: 'sound',
+      animationSpeed: 0.4,
+      colorScheme: expect.objectContaining({ type: 'dark' }),
+      doNotWarnExternalServers: false,
+    })
+    expect(response.json().characters).toMatchObject({ characterOrder: [], currentChar: -1 })
+    expect(isServerShellPayload(response.json())).toBe(true)
+
+    const fullSettings = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings',
+      headers: authHeaders(),
+    })
+    expect(fullSettings.json().settings).toMatchObject({
+      language: 'en',
+      username: 'User',
+      customCSS: '',
+      keepSessionAlive: 'sound',
+      animationSpeed: 0.4,
+      colorScheme: expect.objectContaining({ type: 'dark' }),
+      doNotWarnExternalServers: false,
+      characterOrder: [],
+      currentChar: -1,
+    })
+
+    const languageGroup = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/language',
+      headers: authHeaders(),
+    })
+    expect(languageGroup.json().settings.language).toBe('en')
+
+    const advancedGroup = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/advanced',
+      headers: authHeaders(),
+    })
+    expect(advancedGroup.json().settings.keepSessionAlive).toBe('sound')
+  })
+
   it('returns one exact standalone setting projection', async () => {
     const present = await harness.app.inject({
       method: 'GET',

@@ -5,6 +5,7 @@ import { SERVER_CHARACTER_SUMMARY_VERSION } from '../../../../src/ts/server/char
 import {
   SERVER_SHELL_PROTOCOL_VERSION,
   SERVER_SHELL_SETTINGS_KEYS,
+  isServerShellSettings,
   type ServerShellSettings,
 } from '../../../../src/ts/server/shellProtocol.js'
 import {
@@ -68,6 +69,48 @@ const LEGACY_BOT_PRESET_SHELL_FIELDS = [
 ] as const
 const DEFAULT_SHELL_DATABASE = createInitialDatabase()
 
+function normalizeSettingsForRead(db: DatabaseSync): Record<string, unknown> {
+  const persistedSettings = loadSettingsFromSqlite(db) ?? {}
+  const normalizedSettings = structuredClone(persistedSettings)
+  const shellSettings = Object.fromEntries(
+    SERVER_SHELL_SETTINGS_KEYS.map((key) => [key, structuredClone(DEFAULT_SHELL_DATABASE[key])]),
+  ) as ServerShellSettings
+  for (const key of SERVER_SHELL_SETTINGS_KEYS) {
+    const persisted = persistedSettings[key]
+    const value =
+      key === 'keepSessionAlive'
+        ? persisted === 'pip' || persisted === 'sound'
+          ? 'sound'
+          : 'off'
+        : (persisted ?? structuredClone(DEFAULT_SHELL_DATABASE[key]))
+    const candidate = { ...shellSettings, [key]: value }
+    if (isServerShellSettings(candidate)) shellSettings[key] = value as never
+  }
+  for (const key of SERVER_SHELL_SETTINGS_KEYS) {
+    normalizedSettings[key] = shellSettings[key]
+  }
+  if (!Array.isArray(normalizedSettings.characterOrder)) normalizedSettings.characterOrder = []
+  const { count: characterCount } = db.prepare('SELECT COUNT(*) AS count FROM characters').get() as { count: number }
+  if (
+    !Number.isInteger(normalizedSettings.currentChar) ||
+    (normalizedSettings.currentChar as number) < 0 ||
+    (normalizedSettings.currentChar as number) >= characterCount
+  ) {
+    normalizedSettings.currentChar = -1
+  }
+  return normalizedSettings
+}
+
+function projectShellSettings(normalizedSettings: Record<string, unknown>): ServerShellSettings {
+  const settings = Object.fromEntries(
+    SERVER_SHELL_SETTINGS_KEYS.map((key) => {
+      return [key, normalizedSettings[key] ?? structuredClone(DEFAULT_SHELL_DATABASE[key])]
+    }),
+  ) as ServerShellSettings
+  if (!isServerShellSettings(settings)) throw new Error('Normalized server shell settings are invalid')
+  return settings
+}
+
 interface ChatMessageRangeQuery {
   start?: string
   limit?: string
@@ -115,7 +158,7 @@ export function registerResourceReadRoutes(
   app.get('/api/v1/settings', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
     const { revision } = getSchemaState(db)
-    const settings = loadSettingsFromSqlite(db)
+    const settings = normalizeSettingsForRead(db)
     return metricResourceResponse(req, reply, 'settings', revision, {
       revision,
       settings: maskProviderSecretsInPlace(settings ?? {}),
@@ -125,16 +168,16 @@ export function registerResourceReadRoutes(
   app.get('/api/v1/resources/shell', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
     const { revision } = getSchemaState(db)
-    const persistedSettings = loadPersistedDatabaseFields(db, dataDir, SERVER_SHELL_SETTINGS_KEYS)
-    const settings = Object.fromEntries(
-      SERVER_SHELL_SETTINGS_KEYS.map((key) => [
-        key,
-        Object.prototype.hasOwnProperty.call(persistedSettings, key)
-          ? persistedSettings[key]
-          : DEFAULT_SHELL_DATABASE[key],
-      ]),
-    ) as ServerShellSettings
-    const characterSettings = loadPersistedDatabaseFields(db, dataDir, ['characterOrder', 'currentChar'])
+    const normalizedSettings = normalizeSettingsForRead(db)
+    const settings = projectShellSettings(normalizedSettings)
+    const characters = loadCharacterSummariesForRead(db)
+    const persistedCurrentChar = normalizedSettings.currentChar
+    const currentChar =
+      Number.isInteger(persistedCurrentChar) &&
+      (persistedCurrentChar as number) >= 0 &&
+      (persistedCurrentChar as number) < characters.length
+        ? (persistedCurrentChar as number)
+        : -1
     return metricResourceResponse(req, reply, 'shell', revision, {
       protocolVersion: SERVER_SHELL_PROTOCOL_VERSION,
       revision,
@@ -142,9 +185,9 @@ export function registerResourceReadRoutes(
       characters: {
         version: SERVER_CHARACTER_SUMMARY_VERSION,
         revision,
-        characters: loadCharacterSummariesForRead(db),
-        characterOrder: Array.isArray(characterSettings.characterOrder) ? characterSettings.characterOrder : [],
-        currentChar: Number.isInteger(characterSettings.currentChar) ? characterSettings.currentChar : -1,
+        characters,
+        characterOrder: Array.isArray(normalizedSettings.characterOrder) ? normalizedSettings.characterOrder : [],
+        currentChar,
       },
     })
   })
@@ -195,7 +238,7 @@ export function registerResourceReadRoutes(
       return sendInvalidResourceCacheRequest(reply, cacheRequest)
     }
     const { revision } = getSchemaState(db)
-    const settings = maskProviderSecretsInPlace(loadSettingsFromSqlite(db) ?? {})
+    const settings = maskProviderSecretsInPlace(normalizeSettingsForRead(db))
     const substitution = substituteCachedValue(settings, cacheRequest.hashes.get('settings'))
     return metricResourceResponse(
       req,
@@ -965,7 +1008,7 @@ function metricResourceResponse<T>(
   return response
 }
 
-function loadSettingsGroup(db: DatabaseSync, dataDir: string, group: ReadableSettingsGroup): Record<string, unknown> {
+function loadSettingsGroup(db: DatabaseSync, _dataDir: string, group: ReadableSettingsGroup): Record<string, unknown> {
   // hypaV3Presets is command-owned by the memory group but persists in its
   // own collection table. Keep this endpoint settings-only; the dedicated
   // cross-resource event invalidates that collection separately.
@@ -978,7 +1021,14 @@ function loadSettingsGroup(db: DatabaseSync, dataDir: string, group: ReadableSet
         (group === 'language' && key === 'translatorPresetId') ||
         READABLE_SETTINGS_GROUPS.find((candidate) => SETTINGS_GROUP_KEYS[candidate].includes(key)) === group),
   )
-  return maskProviderSecretsInPlace(loadPersistedDatabaseFields(db, dataDir, keys))
+  const normalizedSettings = normalizeSettingsForRead(db)
+  return maskProviderSecretsInPlace(
+    Object.fromEntries(
+      keys
+        .filter((key) => Object.prototype.hasOwnProperty.call(normalizedSettings, key))
+        .map((key) => [key, normalizedSettings[key]]),
+    ),
+  )
 }
 
 function parseResourceCacheRequest(

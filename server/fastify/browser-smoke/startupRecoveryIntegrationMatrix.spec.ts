@@ -236,6 +236,59 @@ test('direct-link matrix hydrates every route family from an empty browser and r
   }
 })
 
+test('legacy and null shell state is repaired before built-browser bootstrap', async ({ browser }) => {
+  const harness = await startFastBootstrapHarness(smallFastBootstrapFixture(), {
+    temporaryDirectoryPrefix: 'risu-phase2-legacy-shell-',
+  })
+  const context = await browser.newContext()
+  try {
+    const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      const row = sqlite.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      const settings = JSON.parse(row.data_json) as Record<string, unknown>
+      delete settings.language
+      settings.username = null
+      settings.customCSS = ''
+      settings.keepSessionAlive = 'pip'
+      settings.animationSpeed = 'fast'
+      settings.colorScheme = {}
+      settings.doNotWarnExternalServers = 1
+      settings.characterOrder = null
+      settings.currentChar = 99
+      sqlite.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+    } finally {
+      sqlite.close()
+    }
+
+    await setObserverShellMode(context, 'disabled')
+    const page = await context.newPage()
+    const pageErrors: string[] = []
+    page.on('pageerror', (error) => pageErrors.push(error.message))
+
+    await page.goto(harness.baseUrl, { waitUntil: 'domcontentloaded' })
+    await waitForSmokeHook(page)
+    await page.evaluate(() =>
+      window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForStartupMilestone('background-ready', 30_000),
+    )
+
+    expect(await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot())).toMatchObject({
+      language: 'en',
+      username: 'User',
+      customCSS: '',
+      keepSessionAlive: 'sound',
+      animationSpeed: 0.4,
+      colorScheme: expect.objectContaining({ type: 'dark' }),
+      doNotWarnExternalServers: false,
+      characterOrder: [],
+      currentChar: -1,
+    })
+    expect(pageErrors).toEqual([])
+  } finally {
+    await context.close().catch(() => undefined)
+    await closeFastBootstrapHarness(harness)
+  }
+})
+
 test('durable recovery replays offline work and committed work whose response was lost', async ({ browser }) => {
   for (const scenario of ['offline-before-send', 'response-lost-after-commit'] as const) {
     const harness = await startFastBootstrapHarness(smallFastBootstrapFixture(), {

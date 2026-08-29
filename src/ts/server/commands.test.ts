@@ -1011,7 +1011,18 @@ describe('server command API adapter', () => {
   })
 
   it('notifies the command success reconciler before resolving an ok command', async () => {
-    const event = { type: 'settings.updated', revision: 3, resource: 'settings', origin: { writerSessionId: 'w1' } }
+    const event = {
+      type: 'generation.persisted',
+      revision: 3,
+      resource: 'generation',
+      id: 'message-a',
+      parentId: 'chat-a',
+      databaseLineage: 'database-a',
+      operationId: 'operation-a',
+      sourceMessageId: 'message-user-a',
+      jobId: 'job-a',
+      origin: { writerSessionId: 'w1' },
+    }
     const commandFetch = makeCommandFetch(() => ({ revision: 3, event }))
     vi.stubGlobal('fetch', commandFetch.fetch)
     const observed: unknown[] = []
