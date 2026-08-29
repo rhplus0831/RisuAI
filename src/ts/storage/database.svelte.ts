@@ -4106,6 +4106,8 @@ export interface Database {
   ollamaCloudModel: string
   ollamaCloudModelName: string
   ollamaThinkingMode: 'auto' | 'off' | 'on' | 'low' | 'medium' | 'high'
+  autoContinueChat?: boolean
+  autoContinueMinTokens?: number
   removeIncompleteResponse: boolean
   customTokenizer: string
   instructChatTemplate: string

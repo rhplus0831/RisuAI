@@ -274,6 +274,41 @@ describe('settings-scalar mutation range', () => {
     expect(readCollection('bot_presets')).toHaveLength(2)
   })
 
+  it('persists retained legacy memory settings through the browser-owned memory group', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric, body } = await runCommand({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/memory',
+      payload: {
+        baseRevision: revision,
+        patch: {
+          memoryAlgorithmType: 'hypaMemoryV2',
+          supaModelType: 'distilbart',
+          hypaMemory: true,
+          hypav2: true,
+          hanuraiEnable: false,
+          legacyMemoryMigrationNoticeDismissed: true,
+        },
+      },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-settings')
+    expect(metric.writtenTables).toEqual(['settings'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(body.event).toMatchObject({ type: 'settings.updated', resource: 'settings', id: 'memory' })
+    expect(readSettings()).toMatchObject({
+      memoryAlgorithmType: 'hypaMemoryV2',
+      supaModelType: 'distilbart',
+      hypaMemory: true,
+      hypav2: true,
+      hanuraiEnable: false,
+      legacyMemoryMigrationNoticeDismissed: true,
+    })
+  })
+
   it('prompt-settings writes only the settings row', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
