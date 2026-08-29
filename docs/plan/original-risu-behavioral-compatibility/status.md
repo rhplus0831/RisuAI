@@ -61,9 +61,11 @@ findings under [`findings/`](findings/); inventory ownership under
   evidence placeholders at `7bf742dd0e8bb37aa6d29fc40c97c4f49fbace5d`,
   and exhausts the upstream sweep at
   `d8d00b60b63f7905ff45de9a9b88aa8814c2d82b`.
-  After the independent Phase 2 governance-link correction
-  `7ba933fe6f1c3338bd9cce2ef308b2b216ac8e8d`, the required pinned differential
-  passes with 16 baseline cells, 18
+  Phase 14's exact final behavioral candidate is
+  `309823d6d3551638ce63888569f0a8790bf2fe3a`; its whole-product manifest passes
+  with zero unexplained differences. After the independent Phase 2
+  governance-link correction `7ba933fe6f1c3338bd9cce2ef308b2b216ac8e8d`,
+  the required pinned differential passes with 16 baseline cells, 18
   current/cluster tests, 15 governed divergences, and healthy cluster 10.
 - Phase 4 closes route/control ownership, visible chat lifecycle, and the signed
   shared responsive-shell decision through
@@ -76,9 +78,8 @@ findings under [`findings/`](findings/); inventory ownership under
   shell, retired character additional-information retrieval, and the six
   Phase 9 parser/runtime differences, and four cohesive Phase 12 no-port
   products.
-- Next action: run the exact Phase 14 whole-product manifest, record the final
-  verification commit and artifacts, close all four registers, synchronize
-  current documentation, and archive the intact workstream.
+- Next action: close all four registers, synchronize current documentation, and
+  archive the intact workstream now that the exact Phase 14 manifest passes.
 
 ## Phase Router
 

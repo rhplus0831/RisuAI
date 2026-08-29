@@ -30,9 +30,11 @@ policy, limits, diagnostics, Push, and signed no-port ownership through
 `1430b714855f4df208a07f54df4653a681a04351` and
 `140c04d24724fcb09cef9ad57fd38bcc976054f6`. Phase 13 closes register lifecycle
 governance, all historical evidence, and all 85 current upstream dispositions
-through `d8d00b60b63f7905ff45de9a9b88aa8814c2d82b`. This is not yet the final
-whole-product verdict; Phase 14 must run the recorded manifest at the final
-commit before the registers close.
+through `d8d00b60b63f7905ff45de9a9b88aa8814c2d82b`. Phase 14's final behavioral
+candidate is `309823d6d3551638ce63888569f0a8790bf2fe3a`. The exact whole-product,
+pinned differential, browser, build, typecheck, formatting, and register
+manifest passes at that candidate with no unexplained difference. The remaining
+closeout work is documentary register closure and intact archival.
 
 ## Phase 0 Environment And Baseline Evidence
 
@@ -442,6 +444,47 @@ browser recovery/cache state, PWA presentation, or Web Push.
 | `pnpm test:affected --dry-run` and selected register lane | Passed; schema validator and fail-closed tests selected and passed |
 | `pnpm validate:compat-registers` | Passed after all current upstream outcomes were published |
 | Phase 13 Prettier and `git diff --check` | Passed |
+
+## Phase 14 Evidence
+
+| Check | Result |
+| --- | --- |
+| Final Fastify behavioral candidate | `309823d6d3551638ce63888569f0a8790bf2fe3a` |
+| Toolchain | Node `v24.19.0`; pnpm `11.23.0` |
+| Pinned baseline | Clean detached worktree at `71c476e9c86263fe907105b011ca4dde0a619d66` |
+| Inventory and findings | 134 verified surfaces; 15 resolved findings; 71 signed decisions; 75 historical raw reports mapped exactly once |
+| Upstream adjudication | 85 exact first-parent units: 47 verified and 38 currently not applicable |
+| Differential verdict | 16 compared cells; 15 signed expected differences; cluster 10 healthy; zero unexplained differences |
+| Initial preload | 11 files; 330.73 KiB gzip; protected boundaries, regression ceilings, and milestone gates passed |
+
+## Phase 14 Validation
+
+| Command/check | Result |
+| --- | --- |
+| `pnpm prepare:compat-baseline` | Passed; exact detached baseline present, clean, and dependency-ready |
+| `pnpm exec tsx util/compat-baseline.ts --check` | Passed against the same pinned worktree |
+| `pnpm validate:compat-registers` | Passed before closure with all register contents complete |
+| `pnpm test:affected --dry-run` and `pnpm test:affected` | Passed; clean exact-candidate tree had no uncommitted selection |
+| `pnpm test:compat-current` | Passed; 2 files, 18 tests, 16 current cells, cluster 10 healthy |
+| `pnpm test:compat-harness` | Passed; 3 baseline files/29 tests and 2 current files/18 tests; 16 cells, 15 governed differences, cluster 10 healthy |
+| `pnpm test:all` | Passed in 4m 27.0s: 544 frontend files/6,685 tests; 178 Fastify files/3,648 tests plus one skip; 41 browser journeys; 6 UI-map files/206 tests; Realm scale and 6 performance-gate tests; register, current-harness, typecheck, coverage, format, and frontend-check lanes |
+| `pnpm smoke:fastify-browser` | Passed; production smoke build and all 41 browser journeys |
+| `pnpm build:initial-preload` | Passed; HTML preload closure and protected boundaries passed; 330.73 KiB gzip total and 282.48 KiB largest file, within both ceilings |
+| `pnpm check` | Passed with 0 errors and 0 warnings |
+| `pnpm check:server` | Passed protocol, client declarations, Fastify, and browser-smoke typechecks |
+| `pnpm check:protocol` | Passed |
+| `pnpm format:check` and `git diff --check` | Passed |
+
+The first aggregate attempt admitted the Phase 9 baseline-only test to the
+ordinary frontend lane and used a test-watch fixture that did not model the
+current compatibility command. `55b93ff24ba98416a327d1cda1ac3b576e9229e2`
+fixed both test-graph defects; the repeated aggregate then passed. The first
+standalone browser run subsequently exposed a real test-helper race: a durable
+write could advance the global revision between bootstrap and a concurrent
+chat-settings PUT. `309823d6d3551638ce63888569f0a8790bf2fe3a` bounded retries to
+authoritative revision-conflict responses. The raced journey passed three
+repetitions, its 11-test owning spec passed, and both the exact standalone smoke
+command and the final aggregate passed all 41 journeys.
 
 ## Update Rules
 

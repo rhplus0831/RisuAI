@@ -1,6 +1,6 @@
 # Phase 14 — Verification And Closeout
 
-Status: Pending  
+Status: In progress
 Depends on: Phase 13
 
 ## Objective
@@ -8,6 +8,10 @@ Depends on: Phase 13
 Prove the compatibility contract at a final Fastify commit, close every register,
 make permanent gates operational, synchronize shipped documentation, and
 archive the intact workstream.
+
+The final behavioral candidate is
+`309823d6d3551638ce63888569f0a8790bf2fe3a`. Its exact manifest passes; register
+closure, current-document synchronization, and intact archival remain.
 
 ## Required Work
 
