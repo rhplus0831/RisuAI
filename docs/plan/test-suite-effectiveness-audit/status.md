@@ -9,13 +9,11 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Snapshot
 
-- Plan state: Active; Phases 0-12 complete and Phase 13 in progress.
-- Current phase: Phase 13 — Cross-Suite Consolidation And Remediation.
-- Active slice: synthesize the named Phase 2-12 residuals: large-entry
-  streaming/materialization and absolute budgets, resource-adapter and
-  asset-owner parity, representative browser/provider/MCP/import composition,
-  shared oracle drift, and only those consolidation/removal candidates with a
-  complete evidence package. No owner remains Pending.
+- Plan state: Active; Phases 0-13 complete and Phase 14 in progress.
+- Current phase: Phase 14 — Verification And Closeout.
+- Active slice: final independent discovery/count reconciliation, stability and
+  broad coverage proof, current-document updates, accepted-residual verdicts,
+  and intact archive handoff. No owner remains Pending.
 - Implementation state: exhaustive test/case/support manifests and their local,
   affected, aggregate, coverage, and CI checks are live. The protocol import
   policy uses recursive AST evidence and the Realm scale case has isolated local
@@ -44,14 +42,17 @@ in [`latest-verification.md`](latest-verification.md).
   exceptions, DNS-pinned local streams, terminated abandoned browser proxy
   jobs, cancelled abandoned imports, bounded completion/job/snapshot output,
   corrected the echo compatibility owner, and completed every live file
-  disposition.
+  disposition. Phase 13 removed the hidden resource-database response adapter,
+  fixed legacy preset parameter parity, centralized the narrow persisted
+  asset-owner vocabulary, streamed local-backup asset staging, added visible
+  settings-backup-restore-reload proof, and rejected every unproven Merge,
+  orphan cleanup, and mechanical mega-suite split.
 - Blockers: the full differential compatibility harness cannot run because its
   pinned external worktree is absent. The new current-only owner is green; the
   blocker applies only to historical baseline claims.
-- Next action: reconcile only the exact deferred parity, materialization,
-  composition, and duplicate-owner findings assigned to Phase 13; implement
-  approved gaps/removals, run the complete aggregate, and hand the bounded final
-  residual set to Phase 14.
+- Next action: execute Phase 14 final discovery, repeated/order-sensitive and
+  broad coverage proof; reconcile current guidance and accepted residuals; then
+  archive the intact workstream and remove its active-plan entry.
 
 ## Planning Baseline
 
@@ -65,11 +66,11 @@ in [`latest-verification.md`](latest-verification.md).
 | Fastify Vitest                       | 155 files                                    |
 | Browser smoke                        | 7 files                                      |
 | Compatibility harness                | Current-only green; full differential blocked |
-| Collected cases                      | 10,200 total; 1 direct-only skip; 1,326 parameterized rows |
+| Collected cases                      | 10,212 total; 1 direct-only skip; 1,332 parameterized rows |
 | Support owners                       | 252 standalone; 64 mixed production seams   |
 | Primary-category assignments         | 700 of 700 ratified                          |
 | Complete file dispositions           | 617 Keep / 83 Reclassify; 2 removed historical owners |
-| Findings                             | 141 done / 12 deferred                       |
+| Findings                             | 148 done / 13 deferred                       |
 
 The 698-file rows preserve the plan-creation anchor. The live counts, support
 owners, runtime evidence, and category totals are checked by the Phase 0
@@ -92,8 +93,8 @@ manifests and verification record.
 | [10](phases/phase-10-plugins-modules-mcp-and-specialized-tools.md) | Complete | Audited plugins, modules, MCP, Playground, and specialized tools. |
 | [11](phases/phase-11-assets-import-export-and-backups.md) | Complete | Audited assets, imports, exports, saves, and backups. |
 | [12](phases/phase-12-api-security-runtime-and-observability.md) | Complete | Audited API security, runtime, limits, tracing, and operations. |
-| [13](phases/phase-13-cross-suite-consolidation-and-remediation.md) | In progress | Resolve cross-suite duplication, removals, replacements, and gaps. |
-| [14](phases/phase-14-verification-and-closeout.md) | Pending | Verify final effectiveness, counts, documentation, and closeout. |
+| [13](phases/phase-13-cross-suite-consolidation-and-remediation.md) | Complete | Resolve cross-suite duplication, removals, replacements, and gaps. |
+| [14](phases/phase-14-verification-and-closeout.md) | In progress | Verify final effectiveness, counts, documentation, and closeout. |
 
 See [`phases/README.md`](phases/README.md) for links and shared slice rules.
 

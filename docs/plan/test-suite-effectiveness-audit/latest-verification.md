@@ -1317,3 +1317,91 @@ streaming/materialization, absolute response budgets, structural route capture,
 bounded real browser/service composition, and cross-suite consolidation to
 Phase 13; Phase 14 owns final historical, external-service, cross-browser, and
 residual-support verdicts.
+
+## Phase 13 Evidence
+
+### Bounded synthesis and remediation
+
+The required read-only parallel Luna synthesis completed 8/8 broad tasks, then
+4/4 concise follow-ups cross-checked the actionable conclusions. No live test
+pair met the mandatory Merge proof; no orphan fixture/golden/snapshot or
+evidence-backed mega-suite split was found. The one approved cleanup was the
+hidden resource-database bootstrap adapter. Concrete drift/capacity gaps were
+legacy preset `additionalParams`, the duplicated persisted asset-owner
+vocabulary, whole-asset local-backup materialization, and visible browser
+backup-restore composition. A second independent subagent pass implemented and
+cross-checked the three overlapping backend/browser changes without committing
+or overwriting shared work.
+
+Focused proof passed:
+
+- resource-adapter removal and six-consumer migration: 9 owners / 582 cases;
+- preset selection: complete commands owner / 224 cases;
+- shared asset vocabulary: 3 owners / 28 cases;
+- streamed local-backup staging and owning import/export routes: 90 cases;
+- settings authoring → local-backup download → conflicting edit → visible
+  restore → authoritative resync → full reload: owning browser spec 6/6;
+- repeated server/browser typecheck, targeted Prettier, and diff checks.
+
+The resource migration keeps real bootstrap JSON untouched, uses explicit
+settings/collections/characters composition behind the existing equal-revision
+fence, and preserves the browser-shaped fetch reader. Production bootstrap has
+an initialized no-`database` assertion and repository search finds no installer
+symbol. ZIP/legacy asset staging uses multi-megabyte positive probes plus
+pre-allocation database-cap, hash-mismatch, and abort-cleanup negatives.
+
+### Affected and live inventory proof
+
+Commands:
+
+```sh
+pnpm test:affected --dry-run --base 936427e5f
+pnpm update:frontend-test-inventory
+pnpm check:test-inventories
+pnpm test:affected --base 936427e5f --include-smoke
+```
+
+The first inventory check failed closed because the new 90-second browser case
+shifted a checked line-level capability signal. Regenerating the reviewed TSV
+changed only that exact browser-smoke line; all later inventory checks passed.
+Affected selection widened the 18-path Phase 13 code/test set to inventories,
+ordinary frontend, isolated performance, complete Fastify, and browser smoke.
+Results were 6,771/6,771 ordinary frontend, 6/6 performance, 3,398 passed plus
+the one intentional Realm skip across 155 Fastify owners, and 36/36 Chromium
+journeys. The production smoke build emitted only the existing CSS,
+externalization, plugin-timing, and chunk-size diagnostics.
+
+Fresh Vitest and Playwright JSON listings independently collected 700 owners
+and 10,211 ordinarily listed cases / 1,331 parameterized rows. Preserving the
+separately measured direct-only Realm case produces the checked final total of
+10,212 cases, one skip, and 1,332 parameterized rows. The only deltas are
+commands `+1`, local-backup database parity `+1`, bundle import `+9`, and browser
+smoke `+1`; no owner was added or removed. Categories remain A=21, B=39, C=62,
+D=111, E=101, F=84, G=109, H=26, I=39, J=42, K=25, and L=41. Decisions remain
+617 Keep / 83 Reclassify / zero Pending; support remains 252 standalone and 64
+mixed production seams.
+
+Seven Phase 13 findings are Done. `TSA-P13-008` defers only claims requiring
+external/product authority or unavailable infrastructure: sanitized live or
+recorded provider/media/Push and locally conformant MCP service evidence,
+Firefox/WebKit/fault-injection lanes, historical baseline comparison, and a
+streaming export-envelope design that does not make existing user data
+unexportable. No substitute baseline, paid call, refreshed golden, or invented
+response cap was used.
+
+### Complete Phase 13 gates
+
+`pnpm test:all` passed every lane in 4m 2.3s: inventory/routing 7.0s;
+server/browser typecheck 17.7s; partitioned frontend 6,565/6,565 in 1m 20.8s;
+Fastify 3,398 passed plus one intentional skip in 27.8s; direct Realm scale
+1/1 in 2.7s; Chromium 36/36 in 1m 31.0s; zero-diagnostic frontend check in
+30.7s; UI coverage 206/206 with 14.43% lines, 14.83% statements, 18.12%
+functions, and 9.45% branches in 20.7s; format in 32.2s; and isolated
+performance 6/6 in 12.3s. The ordinary/UI/performance partition accounts for
+all 6,777 full frontend cases without duplicate execution.
+
+`pnpm test:compat-current` passed 18/18 and matched 16 cells plus the healthy
+cluster-10 regressions. `pnpm test:compat-harness` stopped before execution at
+the unchanged missing prerequisite:
+`/home/codex/risu-baseline-71c476e9c`. This is the only Phase 13 validation
+blocker and applies only to historical comparison claims.

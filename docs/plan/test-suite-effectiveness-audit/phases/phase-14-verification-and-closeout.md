@@ -1,6 +1,6 @@
 # Phase 14: Verification And Closeout
 
-Status: Pending; depends on Phases 0-13.
+Status: In progress; Phases 0-13 are complete.
 
 ## Objective
 

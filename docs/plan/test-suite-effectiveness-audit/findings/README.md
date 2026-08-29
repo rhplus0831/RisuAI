@@ -3751,3 +3751,213 @@ Every finding records:
 - Validation: exact/full/type/smoke/inventory gates bound current claims.
 - Count delta: none.
 - Revisit condition: Phase 13 remediation and mandatory Phase 14 closeout.
+
+## Phase 13 Findings
+
+### TSA-P13-001: The resource-database adapter altered real bootstrap responses
+
+- State: Done.
+- Severity: High.
+- Category: C/L.
+- Decision: Remove the hidden adapter; Keep explicit resource readers.
+- Tests/cases: six migrated Fastify consumer suites plus bootstrap,
+  resource-read, and route-policy owners.
+- Production owner: `/api/v1/bootstrap` and the settings/collections/characters
+  resource projection.
+- Protected contract or plausible defect: a test-only `app.inject` monkeypatch
+  added a whole `database` field that production never serves, so consumers
+  could pass against a wire shape unavailable to the browser.
+- Evidence: migrated callers compose the three named resources behind their
+  common-revision fence while revision/lineage assertions read the untouched
+  bootstrap JSON; initialized bootstrap explicitly has no `database` property.
+- Companion/overlap analysis: the retained fetch reader protects browser-shaped
+  consumption and is not an installer or response mutation.
+- Action and rollback: remove `installResourceDatabaseBootstrapAdapter` and all
+  imports/usages; keep explicit inject/fetch composition.
+- Validation: nine focused owners / 582 cases, full Fastify, typecheck, and
+  affected lanes passed; repository search finds no installer symbol.
+- Count delta: no owner and no collected-case delta; one existing bootstrap
+  case gained the production negative assertion.
+- Revisit condition: a deliberate typed whole-database bootstrap protocol.
+
+### TSA-P13-002: Legacy preset switching omitted additional parameters
+
+- State: Done.
+- Severity: High.
+- Category: D/E.
+- Decision: Strengthen, then Keep.
+- Tests/cases: one route-level preset selection regression in the existing
+  commands owner.
+- Production owner: legacy bot-preset save-current and apply key maps.
+- Protected contract or plausible defect: selecting a preset with
+  `saveCurrent` could discard the current `additionalParams`, while applying a
+  target could leave the prior parameter list active.
+- Evidence: the client legacy snapshot vocabulary contains `additionalParams`;
+  the server map did not. The new case proves both outgoing snapshot and target
+  application through persistence.
+- Companion/overlap analysis: split prompt/model preset tests do not execute
+  this legacy bot-preset exchange path.
+- Action and rollback: share the field through the existing snapshot/apply map.
+- Validation: complete commands owner / 224 cases and full Fastify passed.
+- Count delta: `+1` Fastify case.
+- Revisit condition: legacy bot-preset schema changes.
+
+### TSA-P13-003: Portable and legacy asset-owner vocabularies could drift
+
+- State: Done.
+- Severity: High.
+- Category: K.
+- Decision: Consolidate the vocabulary; Keep distinct shape handlers.
+- Tests/cases: portable walker, legacy database rewrite, and asset-GC parity
+  owners.
+- Production owner: portable save discovery, legacy `.bin` reference rewriting,
+  and GC reference reporting.
+- Protected contract or plausible defect: a newly persisted owner could be
+  exported without its asset, fail legacy path conversion, or be reclaimed by
+  GC if hand-maintained field lists diverged.
+- Evidence: the two database walkers now consume one declarative catalog; the
+  positive owner corpus produces the same portable report before/after legacy
+  rewriting, the arbitrary-JSON negative remains empty, and GC already proves
+  scoped and broad reports identical.
+- Companion/overlap analysis: VITS, CC assets, GPT-SoVITS, inlays, plugin
+  storage, messages, and operational GC rows retain distinct shape-specific
+  handlers because flattening them would broaden ownership unsafely.
+- Action and rollback: keep the shared narrow catalog and negative self-proof.
+- Validation: three focused owners / 28 cases, server typecheck, and full
+  Fastify passed.
+- Count delta: `+1` Fastify case.
+- Revisit condition: any new durable asset-bearing field or collection.
+
+### TSA-P13-004: Local-backup assets were materialized before staging
+
+- State: Done.
+- Severity: High.
+- Category: K/L.
+- Decision: Strengthen, then Keep.
+- Tests/cases: ZIP/legacy multi-megabyte allocation probes, both-format database
+  cap, hash mismatch, abort cleanup, and route-forwarding regressions.
+- Production owner: device-backup upload decode and staged asset import.
+- Protected contract or plausible defect: every asset and unrelated legacy
+  record was buffered as a complete `Buffer`, multiplying memory for large
+  backups before the existing import transaction ran.
+- Evidence: ZIP and legacy assets hash/write into `.part` files incrementally;
+  unrelated legacy payloads advance by validated file position; the embedded
+  database is rejected against the existing inner `.risu` ceiling before
+  allocation; abort/hash failures close and remove staging.
+- Companion/overlap analysis: upload streaming and cumulative expansion caps
+  did not constrain per-entry materialization after upload.
+- Action and rollback: retain streamed asset staging. Manifest and database
+  control records remain intentionally buffered for existing decoders.
+- Validation: 90 focused bundle/import/export cases, complete Fastify, server
+  typecheck, and affected lanes passed.
+- Count delta: `+9` Fastify cases, including six parameterized rows.
+- Revisit condition: a streaming database envelope decoder or archive library
+  with a stronger decompressor-output bound.
+
+### TSA-P13-005: Settings restore lacked shipped-browser composition proof
+
+- State: Done.
+- Severity: High.
+- Category: B/E/K.
+- Decision: Add a case to the existing browser owner, then Keep.
+- Tests/cases: one deterministic Chromium journey in
+  `fastifyBrowserSmoke.spec.ts`.
+- Production owner: visible settings authoring, local-backup download/import,
+  replacement-database resync, and reload persistence.
+- Protected contract or plausible defect: focused UI and inject tests could all
+  pass while dialogs/file chooser, backup bytes, resource invalidation, or the
+  post-replacement browser projection remained stale.
+- Evidence: the journey authors `Show Memory Limit`, downloads a real local
+  backup, authors a conflicting value, restores through visible controls,
+  observes the authoritative resync, reloads, and rechecks the control.
+- Companion/overlap analysis: the older lineage-recovery smoke uses an injected
+  import and does not exercise the backup UI/download/file chooser chain.
+- Action and rollback: retain the bounded localhost-only journey with
+  role/name selectors and response/state barriers.
+- Validation: owning spec 6/6 and complete Chromium smoke 36/36 passed.
+- Count delta: `+1` browser case.
+- Revisit condition: backup UI/protocol or replacement resync changes.
+
+### TSA-P13-006: Apparent duplicates remain intentional defense in depth
+
+- State: Done.
+- Severity: Informational.
+- Category: A-L.
+- Decision: Reject every Merge candidate; Keep.
+- Tests/cases: all 700 live owners and the named race/focus/rollback/provider,
+  route, persistence, DOM, API, browser, compatibility, and performance pairs.
+- Production owner: boundary-specific contracts recorded in `inventory.json`.
+- Protected contract or plausible defect: merging by feature name would erase
+  a parser, transaction, transport, browser, compatibility, or budget oracle
+  whose failure mode is not observed by its companion.
+- Evidence: independent cross-suite review found no pair with equivalent
+  stimulus, fault, lifecycle owner, assertion, and replacement lane. The hidden
+  resource adapter was the only approved cleanup and was replaced explicitly.
+- Companion/overlap analysis: the final duplicate map is the Phase 13 contract
+  table; it records why boundary layers remain distinct.
+- Action and rollback: no test-file merge or owner removal.
+- Validation: inventory, affected, complete, smoke, coverage, and aggregate
+  gates recorded in Phase 13 verification.
+- Count delta: none.
+- Revisit condition: a future candidate supplies the complete mandatory merge
+  proof rather than name or coverage similarity.
+
+### TSA-P13-007: No orphan or mega-suite split had evidence for safe churn
+
+- State: Done.
+- Severity: Informational.
+- Category: A.
+- Decision: Keep current owners and support artifacts.
+- Tests/cases: 700 owners, 252 standalone supports, 64 mixed production seams,
+  seven browser specs, compatibility fixtures/goldens, and dense suite review.
+- Production owner: discovery, routing, fixtures, helpers, snapshots/goldens,
+  and owning lane isolation.
+- Protected contract or plausible defect: mechanical splitting or speculative
+  cleanup could add shared-state/order failures or delete support for direct,
+  opt-in, coverage, compatibility, or browser owners.
+- Evidence: no tracked helper/fixture/golden/snapshot is unreferenced; no dense
+  suite has an independent mock/lifecycle boundary whose move is safer than its
+  current diagnostics. The one hidden helper removal leaves its file live for
+  explicit readers.
+- Companion/overlap analysis: size and `describe` count are not removal/split
+  evidence under the plan rubric.
+- Action and rollback: reject orphan deletion and mega-suite splitting in this
+  bounded phase.
+- Validation: support, filesystem, runner, affected, and aggregate discovery
+  remain exhaustive.
+- Count delta: none.
+- Revisit condition: a concrete orphan, order failure, or independently owned
+  mock/lifecycle boundary.
+
+### TSA-P13-008: External, historical, cross-browser, and export-streaming claims remain bounded
+
+- State: Deferred with retained owners and explicit external authority.
+- Severity: High.
+- Category: B/G/H/J/K/L.
+- Decision: Keep deterministic evidence; do not invent unsupported canaries or
+  data-export limits.
+- Tests/cases: provider/media/Push/MCP, browser fidelity, memory/script
+  composition, export, and compatibility owners.
+- Production owner: sanitized recorded or opt-in live services, locally
+  conformant MCP/plugin servers, Firefox/WebKit and browser fault injection,
+  summarized-memory/support policy, streaming export writers, and the pinned
+  historical baseline.
+- Protected contract or plausible defect: deterministic mocks/Chromium cannot
+  prove external service drift or every browser engine, while imposing an
+  unapproved export cap could make a user's current data impossible to recover.
+- Evidence: no tracked sanitized provider transcript, locally conformant MCP
+  service, paid-call authority, cross-browser CI lane, or exact baseline
+  worktree exists. Current `.risu` database export still materializes its
+  snapshot/encoded envelope; true streaming requires a new cursor/writer
+  architecture and a product decision for legacy envelopes.
+- Companion/overlap analysis: local provider/MCP units, Fastify inject tests,
+  36 Chromium journeys, bounded import staging, and current-only compatibility
+  remain useful but do not authorize broader claims.
+- Action and rollback: retain current owners; never substitute the baseline,
+  refresh goldens, call paid services, or set a data-loss-prone export ceiling.
+- Validation: Phase 14 records the final supported-claim boundary and current
+  lane evidence.
+- Count delta: none.
+- Revisit condition: product authority plus sanitized infrastructure for each
+  canary; Firefox/WebKit CI and fault-injection harnesses; a streaming envelope
+  design; or restoration of `/home/codex/risu-baseline-71c476e9c`.

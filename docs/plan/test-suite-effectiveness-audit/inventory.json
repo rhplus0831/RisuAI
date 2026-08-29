@@ -1687,7 +1687,7 @@
         "globals"
       ],
       "caseCounts": {
-        "cases": 223,
+        "cases": 224,
         "skipped": 0,
         "parameterizedRows": 2,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
@@ -3188,7 +3188,7 @@
         "database"
       ],
       "caseCounts": {
-        "cases": 3,
+        "cases": 4,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
@@ -5834,9 +5834,9 @@
         "globals"
       ],
       "caseCounts": {
-        "cases": 30,
+        "cases": 39,
         "skipped": 0,
-        "parameterizedRows": 5,
+        "parameterizedRows": 11,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
@@ -7161,7 +7161,7 @@
         "browser"
       ],
       "caseCounts": {
-        "cases": 5,
+        "cases": 6,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"

@@ -138,7 +138,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/commands.test.ts": {
-      "cases": 223,
+      "cases": 224,
       "skipped": 0,
       "parameterizedRows": 2
     },
@@ -323,7 +323,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/localBackupDatabase.test.ts": {
-      "cases": 3,
+      "cases": 4,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -638,9 +638,9 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/risuSaveBundleImportRoute.test.ts": {
-      "cases": 30,
+      "cases": 39,
       "skipped": 0,
-      "parameterizedRows": 5
+      "parameterizedRows": 11
     },
     "server/fastify/__tests__/risuSaveCodec.test.ts": {
       "cases": 40,
@@ -793,7 +793,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/browser-smoke/fastifyBrowserSmoke.spec.ts": {
-      "cases": 5,
+      "cases": 6,
       "skipped": 0,
       "parameterizedRows": 0
     },
