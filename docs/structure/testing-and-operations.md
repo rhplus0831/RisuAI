@@ -117,9 +117,12 @@ diagnostic pass is full while later source edits reuse the warm TypeScript/Svelt
 program. A relevant edit invalidates an older cycle; diagnostics that finish
 after another edit are discarded until a cycle for the newest source version
 completes. Warnings remain visible but preserve the ordinary `pnpm check` exit
-policy: only errors fail the command. Changes outside the root Svelte project
-reuse its latest diagnostic cycle; imported JSON and checker-configuration edits
-conservatively recycle the warm process before publishing a new result.
+policy: only errors fail the command. Source additions, deletions, and renames
+conservatively recycle the warm process after the edit debounce so newly imported
+modules cannot retain a transient pre-save snapshot. Changes outside the root
+Svelte project otherwise reuse its latest diagnostic cycle; imported JSON and
+checker-configuration edits also recycle the warm process before publishing a
+new result.
 
 Ordinary direct/dependency-aware frontend and server runs reuse long-lived
 Vitest/Vite contexts, including their test-file discovery caches. Changed test

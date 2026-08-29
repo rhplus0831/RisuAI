@@ -265,6 +265,13 @@ function isPotentialSourceAddition(file: string): boolean {
   return /^(?:packages\/protocol\/src|server\/fastify\/(?:__fixtures__|src)|src|util)\//.test(file)
 }
 
+export function requiresFrontendCheckTopologyRestart(changes: readonly ChangedPath[]): boolean {
+  return changes.some(
+    (change) =>
+      change.status !== 'M' && isPotentialSourceAddition(change.path.replaceAll('\\', '/').replace(/^\.\//, '')),
+  )
+}
+
 export function canRunIncrementally(
   previousSnapshot: WorktreeSnapshot,
   currentSnapshot: WorktreeSnapshot,
@@ -693,7 +700,8 @@ class WarmSvelteCheckLane {
     await new Promise<void>((resolve) => child.once('close', () => resolve()))
   }
 
-  async run(): Promise<{ failure?: string; passed: boolean }> {
+  async run(restartForSourceTopology = false): Promise<{ failure?: string; passed: boolean }> {
+    if (restartForSourceTopology) this.restart()
     this.start()
     const cached = this.latest?.version === this.version ? this.latest : undefined
     const result = cached ?? (await new Promise<SvelteCheckWatchResult>((resolve) => this.waiters.add(resolve)))
@@ -715,6 +723,7 @@ class WarmSvelteCheckLane {
     if (this.child || this.closed) return
     this.closing = false
     this.stderr = ''
+    this.lastReportedSequence = 0
     this.parser = new SvelteCheckWatchOutputParser()
     const executable = path.resolve(
       path.dirname(fileURLToPath(import.meta.url)),
@@ -770,9 +779,9 @@ class WarmSvelteCheckLane {
   }
 
   private restart(): void {
+    this.latest = undefined
     const child = this.child
     if (!child || child.exitCode !== null || child.signalCode !== null) {
-      this.latest = undefined
       return
     }
     this.restartAfterClose = true
@@ -1004,7 +1013,7 @@ class TestCommandRunner {
     const filters = extractVitestFileFilters(command)
 
     if (command.label === FRONTEND_CHECK_COMMAND.label) {
-      outcome = await this.svelte.run()
+      outcome = await this.svelte.run(requiresFrontendCheckTopologyRestart(changes))
     } else if (command.label === 'affected frontend tests') {
       outcome = await this.frontend.runRelated(changes)
     } else if (command.label === 'changed frontend tests') {

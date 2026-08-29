@@ -20,6 +20,7 @@ import {
   parseTestWatchCli,
   prepareVitestContext,
   readTestWatchStatus,
+  requiresFrontendCheckTopologyRestart,
   runTestWatchCli,
   testWatchPaths,
   writeTestWatchStatus,
@@ -216,6 +217,21 @@ describe('warm Svelte checker', () => {
     expect(isFrontendCheckWatchPath('src/ts/web/legacy.ts')).toBe(false)
     expect(isFrontendCheckWatchPath('server/fastify/src/app.ts')).toBe(false)
     expect(isFrontendCheckWatchPath('docs/README.md')).toBe(false)
+  })
+
+  it('restarts diagnostics when changed paths alter source topology', () => {
+    expect(requiresFrontendCheckTopologyRestart([{ path: 'src/new.test.ts', status: 'A' }])).toBe(true)
+    expect(
+      requiresFrontendCheckTopologyRestart([
+        { path: 'server/fastify/src/new-handler.ts', status: 'A' },
+        { path: 'server/fastify/src/app.ts', status: 'M' },
+      ]),
+    ).toBe(true)
+    expect(requiresFrontendCheckTopologyRestart([{ path: 'src/removed.ts', status: 'D' }])).toBe(true)
+    expect(requiresFrontendCheckTopologyRestart([{ path: 'src/existing.ts', status: 'M' }])).toBe(false)
+    expect(
+      requiresFrontendCheckTopologyRestart([{ path: 'server/fastify/__tests__/new-handler.test.ts', status: 'A' }]),
+    ).toBe(false)
   })
 })
 
@@ -670,6 +686,99 @@ describe('watched result validation', () => {
       watcherProcesses.splice(watcherProcesses.indexOf(child), 1)
     }
   }, 30_000)
+
+  it('waits for final diagnostics when a transitive server module is completed after creation', async () => {
+    const repoRoot = initializedRepository()
+    mkdirSync(path.join(repoRoot, 'server/fastify/src'), { recursive: true })
+    mkdirSync(path.join(repoRoot, 'src'), { recursive: true })
+    writeFileSync(
+      path.join(repoRoot, 'vitest.config.ts'),
+      "export default { test: { globals: true, include: ['src/**/*.test.ts'] } }\n",
+    )
+    writeFileSync(
+      path.join(repoRoot, 'server/fastify/vitest.config.ts'),
+      "export default { test: { globals: true, include: ['server/fastify/__tests__/**/*.test.ts'], passWithNoTests: true } }\n",
+    )
+    writeFileSync(
+      path.join(repoRoot, 'tsconfig.json'),
+      `${JSON.stringify({ compilerOptions: { skipLibCheck: true }, include: ['globals.d.ts', 'tracked.ts', 'src/**/*.ts', 'src/**/*.svelte'] }, null, 2)}\n`,
+    )
+    writeFileSync(path.join(repoRoot, 'src/App.svelte'), '<p>server bridge fixture</p>\n')
+    writeFileSync(path.join(repoRoot, 'server/fastify/src/existing.ts'), 'export const serverValue = 1\n')
+    writeFileSync(
+      path.join(repoRoot, 'src/serverBridge.ts'),
+      "export { serverValue } from '../server/fastify/src/existing.js'\n",
+    )
+    git(repoRoot, [
+      'add',
+      'vitest.config.ts',
+      'server/fastify/vitest.config.ts',
+      'tsconfig.json',
+      'src/App.svelte',
+      'server/fastify/src/existing.ts',
+      'src/serverBridge.ts',
+    ])
+    git(repoRoot, ['commit', '-m', 'add transitive server fixture'])
+
+    const child = spawn(
+      path.resolve('node_modules/.bin/tsx'),
+      [path.resolve('util/test-watch.ts'), '--debounce-ms=10'],
+      {
+        cwd: repoRoot,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    )
+    watcherProcesses.push(child)
+    let output = ''
+    child.stdout?.on('data', (chunk) => {
+      output += String(chunk)
+    })
+    child.stderr?.on('data', (chunk) => {
+      output += String(chunk)
+    })
+
+    try {
+      const baseline = await waitForWatcherStatus(
+        repoRoot,
+        (watched) => watched.generation === 1 && watched.state === 'passed',
+      )
+
+      writeFileSync(path.join(repoRoot, 'server/fastify/src/new-module.ts'), '')
+      writeFileSync(
+        path.join(repoRoot, 'src/serverBridge.ts'),
+        "export { serverValue } from '../server/fastify/src/new-module.js'\n",
+      )
+      const diagnosticDeadline = Date.now() + 15_000
+      while (!/is not a module/.test(output) && Date.now() < diagnosticDeadline) {
+        await new Promise((resolve) => setTimeout(resolve, 25))
+      }
+      expect(output).toMatch(/is not a module/)
+      const transientGeneration =
+        readTestWatchStatus(testWatchPaths(repoRoot).status)?.generation ?? baseline.generation
+
+      writeFileSync(path.join(repoRoot, 'server/fastify/src/new-module.ts'), 'export const serverValue = 2\n')
+      const recovered = await waitForWatcherStatus(
+        repoRoot,
+        (watched) => watched.generation > transientGeneration && watched.state === 'passed',
+      )
+
+      expect(recovered).toMatchObject({
+        commandResults: [
+          { label: 'frontend check', status: 'passed' },
+          { label: 'affected frontend tests', status: 'passed' },
+          { label: 'affected server tests', status: 'passed' },
+        ],
+        executionMode: 'full',
+        testedFingerprint: recovered.targetFingerprint,
+      })
+      expect(readFileSync(testWatchPaths(repoRoot).log, 'utf8')).not.toMatch(/is not a module/)
+    } catch (error) {
+      throw new Error(`${error instanceof Error ? error.message : String(error)}\n${output}`)
+    } finally {
+      await stopWatcherProcess(child)
+      watcherProcesses.splice(watcherProcesses.indexOf(child), 1)
+    }
+  }, 45_000)
 
   it('runs one complete watcher generation and leaves an untrusted stopped marker', async () => {
     const repoRoot = initializedRepository()
