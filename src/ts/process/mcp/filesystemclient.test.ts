@@ -115,6 +115,15 @@ describe('FileSystem MCP read caps', () => {
     expect(tools.map((tool) => tool.name)).not.toContain('fs_watch_directory')
   })
 
+  it('diagnoses a missing directory without referring to an unadvertised tool', async () => {
+    const client = new FileSystemClient()
+
+    const result = await client.callTool('fs_write_file', { path: 'notes.txt', content: 'hello' })
+
+    expect(textContent(result)).toContain('Reinitialize the File System MCP and select a directory')
+    expect(textContent(result)).not.toContain('fs_select_directory')
+  })
+
   it('encodes capped base64 reads in chunks instead of spreading the whole file', async () => {
     const payload = bytes(FILESYSTEM_BASE64_ENCODE_CHUNK_BYTES * 4 + 10)
     const readLimit = FILESYSTEM_BASE64_ENCODE_CHUNK_BYTES * 3 + 9
