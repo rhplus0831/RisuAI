@@ -6,7 +6,7 @@ import { webcrypto } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { ACTIVE_WRITER_SESSION_HEADER } from '../src/activeWriter.js'
-import { findProtocolRouteDecision, isProtocolMutatingMethod } from '../src/routeManifest.js'
+import { findProtocolRouteDecision, isProtocolMutatingMethod, PROTOCOL_ROUTE_MANIFEST } from '../src/routeManifest.js'
 import {
   assetBulkUploadRateLimit,
   assetExistsRateLimit,
@@ -141,6 +141,66 @@ afterEach(async () => {
 })
 
 describe('route protection (table-wide auth enforcement)', () => {
+  it('keeps public and conditional auth exceptions within the independently reviewed allowlist', () => {
+    const reviewedExceptions = [
+      'health:public',
+      'auth-status:public',
+      'auth-setup:public',
+      'auth-login:public',
+      'auth-crypto:public',
+      'asset-read:public',
+      'asset-exists:public',
+      'push-vapid-public-key:public',
+      'hub-proxy:conditional',
+    ]
+    const actualExceptions = PROTOCOL_ROUTE_MANIFEST.filter((entry) => entry.auth.decision !== 'required').map(
+      (entry) => `${entry.id}:${entry.auth.decision}`,
+    )
+
+    expect(actualExceptions).toEqual(reviewedExceptions)
+  })
+
+  it('keeps mutating active-writer exceptions within the independently reviewed allowlist', () => {
+    const reviewedExceptions = [
+      'auth-setup:auth-session',
+      'auth-login:auth-session',
+      'auth-crypto:stateless-helper',
+      'startup-telemetry:stateless-helper',
+      'settings-cache-read:read-only-post',
+      'settings-group-cache-read:read-only-post',
+      'collections-cache-read:read-only-post',
+      'collection-cache-read:read-only-post',
+      'character-aggregate-cache-read:read-only-post',
+      'characters-cache-read:read-only-post',
+      'chat-messages-bulk-read:read-only-post',
+      'chat-display-sources:read-only-post',
+      'character-lorebook-cache-read:read-only-post',
+      'character-lorebooks-bulk-read:read-only-post',
+      'legacy-preset-cache-read:read-only-post',
+      'prompt-preset-template-cache-read:read-only-post',
+      'asset-exists:read-only-post',
+      'push-subscription-create:auth-session',
+      'push-subscription-delete:auth-session',
+      'mcp-oauth-refresh:runtime-proxy',
+      'embedding-operations:runtime-proxy',
+      'provider-operations:runtime-proxy',
+      'openai-transcription:runtime-proxy',
+      'tts-synthesis:runtime-proxy',
+      'image-generation:runtime-generation',
+      'proxy-fetch:runtime-proxy',
+      'proxy-plugin-fetch:runtime-proxy',
+      'proxy-stream-job-create:runtime-proxy',
+      'proxy-stream-job-cancel:runtime-proxy',
+      'hub-proxy:runtime-proxy',
+      'generation-completion:runtime-generation',
+    ]
+    const actualExceptions = PROTOCOL_ROUTE_MANIFEST.filter(
+      (entry) => entry.methods.some(isProtocolMutatingMethod) && entry.activeWriter.decision !== 'active-writer',
+    ).map((entry) => `${entry.id}:${entry.activeWriter.decision}`)
+
+    expect(actualExceptions).toEqual(reviewedExceptions)
+  })
+
   it('has a protocol-manifest decision for every live API route', async () => {
     const routes = parseRouteTree(harness.app.printRoutes({ commonPrefix: false }))
     const unclassified = routes
