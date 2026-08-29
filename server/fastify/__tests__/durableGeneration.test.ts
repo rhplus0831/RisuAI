@@ -634,9 +634,13 @@ async function waitForAssistantMessage(): Promise<Record<string, unknown>> {
 }
 
 /** Re-seed the fixture chat with an explicit transcript (for continue / regenerate). */
-async function seedChatWithMessages(messages: Array<Record<string, unknown>>): Promise<void> {
+async function seedChatWithMessages(
+  messages: Array<Record<string, unknown>>,
+  databaseOverrides: Record<string, unknown> = {},
+): Promise<void> {
   await seedDatabase({
     ...fixtureDatabase,
+    ...databaseOverrides,
     characters: [
       {
         ...fixtureDatabase.characters[0],
@@ -772,6 +776,16 @@ async function patchMessage(messageId: string, patch: Record<string, unknown>): 
     method: 'PATCH',
     headers: authHeaders({ 'content-type': 'application/json' }),
     body: JSON.stringify({ baseRevision: boot.revision, patch }),
+  })
+  expect(res.status).toBe(200)
+}
+
+async function deleteMessage(messageId: string): Promise<void> {
+  const boot = await bootstrap()
+  const res = await fetch(`${harness.baseUrl}/api/v1/commands/messages/${encodeURIComponent(messageId)}`, {
+    method: 'DELETE',
+    headers: authHeaders({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ baseRevision: boot.revision }),
   })
   expect(res.status).toBe(200)
 }
@@ -3129,6 +3143,63 @@ describe('Durable generation', () => {
     controller.abort()
   })
 
+  it.each(['continue', 'regenerate'] as const)(
+    'rejects stale durable %s finalization when the admitted target assistant is deleted',
+    async (mode) => {
+      await seedChatWithMessages(
+        [
+          { role: 'user', data: mode === 'continue' ? 'story' : 'greet me', chatId: 'msg-user-1' },
+          {
+            role: 'char',
+            data: mode === 'continue' ? 'Once upon a time' : 'old reply',
+            chatId: 'msg-char-1',
+            saying: 'char-1',
+          },
+        ],
+        { useSayNothing: false },
+      )
+      const gated = makeGatedProvider({ before: 'partial', after: ' completion' })
+      providerImpl = gated.dispatchProvider
+
+      const controller = newController()
+      const res = await postDurable(
+        mode === 'continue'
+          ? { mode, userMessage: undefined }
+          : { mode, regenerateMessageId: 'msg-char-1', userMessage: undefined },
+        { signal: controller.signal },
+      )
+      const events = await readSse(res, (event) => event.type === 'token')
+      const jobId = jobIdFromEvents(events)
+
+      await deleteMessage('msg-char-1')
+      gated.release()
+
+      const terminal = await waitForTerminalFinalization(jobId)
+      expect(terminal.terminal_error).toContain('stale')
+      expect(await chatMessages(await bootstrap())).toEqual([
+        expect.objectContaining({ role: 'user', chatId: 'msg-user-1' }),
+      ])
+      expect((await chatHydration(await bootstrap())).alternates).toEqual([])
+
+      const replay = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+        headers: authHeaders(),
+      })
+      const replayEvents = await readSse(replay, (event) => event.type === 'error')
+      expect(replayEvents.find((event) => event.type === 'error')?.data).toMatchObject({
+        reason: 'generation_persistence_failed',
+        persistenceDisposition: 'rejected',
+        generationProjection: {
+          characterId: 'char-1',
+          chatId: 'chat-1',
+          generationId: jobId,
+          mode,
+          ...(mode === 'regenerate' ? { targetMessageId: 'msg-char-1' } : {}),
+        },
+      })
+      controller.abort()
+    },
+  )
+
   // Durable continue / regenerate.
   // The durable job finalizes all three generating modes: Continue follows its
   // append/extend disposition, regenerate replaces the target, and send appends.
@@ -3291,6 +3362,63 @@ describe('Durable generation', () => {
           messageId: appended.chatId,
           revision: expect.any(Number),
           finalText: '*says nothing* and then',
+        },
+      },
+    })
+    controller.abort()
+    replayController.abort()
+  })
+
+  it('cancels an extend-style durable continue by persisting the partial on the original assistant row', async () => {
+    await seedChatWithMessages(
+      [
+        { role: 'user', data: 'story', chatId: 'msg-user-1' },
+        { role: 'char', data: 'Once upon a time', chatId: 'msg-char-1', saying: 'char-1' },
+      ],
+      { useSayNothing: false },
+    )
+    const gated = makeGatedProvider({ before: ' and then' }) // never released
+    providerImpl = gated.dispatchProvider
+
+    const controller = newController()
+    const res = await postDurable({ mode: 'continue', userMessage: undefined }, { signal: controller.signal })
+    let jobId = ''
+    await readSse(res, (event) => {
+      if (event.type === 'job_accepted') jobId = event.data.jobId as string
+      return event.type === 'token'
+    })
+    await cancelJob(jobId)
+
+    await waitFor(async () => {
+      const row = (await chatMessages(await bootstrap())).find((message) => message.chatId === 'msg-char-1')
+      return row?.data === 'Once upon a time and then' ? row : undefined
+    })
+    const hydration = await chatHydration(await bootstrap())
+    expect(hydration.message).toEqual([
+      expect.objectContaining({ role: 'user', data: 'story', chatId: 'msg-user-1' }),
+      expect.objectContaining({ role: 'char', data: 'Once upon a time and then', chatId: 'msg-char-1' }),
+    ])
+    expect(hydration.alternates).toEqual([])
+    expect(generationFinalizationRetryRows()).toEqual([])
+
+    const replayController = newController()
+    const replay = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+      headers: authHeaders(),
+      signal: replayController.signal,
+    })
+    const replayEvents = await readSse(replay, (event) => event.type === 'done')
+    expect(replayEvents.at(-1)).toMatchObject({
+      type: 'done',
+      data: {
+        outcome: 'cancelled',
+        result: ' and then',
+        generationId: jobId,
+        continueDisposition: 'extend',
+        continueBase: 'Once upon a time',
+        postGeneration: {
+          messageId: 'msg-char-1',
+          revision: expect.any(Number),
+          finalText: 'Once upon a time and then',
         },
       },
     })
