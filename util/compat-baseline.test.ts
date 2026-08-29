@@ -3,7 +3,14 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { checkCompatibilityBaseline, prepareCompatibilityBaseline, type BaselineCommandRunner } from './compat-baseline'
+import {
+  COMPAT_BASELINE_ROOT_ENV,
+  COMPAT_SOURCE_ROOT,
+  checkCompatibilityBaseline,
+  prepareCompatibilityBaseline,
+  resolveCompatibilityBaselineRoot,
+  type BaselineCommandRunner,
+} from './compat-baseline'
 
 function run(file: string, args: string[], cwd: string): string {
   return execFileSync(file, args, { cwd, encoding: 'utf8' }).trim()
@@ -60,6 +67,16 @@ afterEach(() => {
 })
 
 describe('compatibility baseline preparation', () => {
+  it('defaults to the repository sibling and accepts an absolute environment override', () => {
+    expect(resolveCompatibilityBaselineRoot({})).toBe(path.resolve(COMPAT_SOURCE_ROOT, '../risu-baseline-71c476e9c'))
+    expect(resolveCompatibilityBaselineRoot({ [COMPAT_BASELINE_ROOT_ENV]: fixture.baselineRoot })).toBe(
+      fixture.baselineRoot,
+    )
+    expect(() => resolveCompatibilityBaselineRoot({ [COMPAT_BASELINE_ROOT_ENV]: 'relative/baseline' })).toThrow(
+      /must be an absolute path/,
+    )
+  })
+
   it('creates a detached baseline, installs immutably, and is idempotent without changing the source checkout', () => {
     fs.writeFileSync(path.resolve(fixture.sourceRoot, 'moving-checkout-note'), 'preserve me\n', 'utf8')
     const sourceHead = run('git', ['rev-parse', 'HEAD'], fixture.sourceRoot)

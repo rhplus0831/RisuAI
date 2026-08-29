@@ -1,0 +1,192 @@
+{
+  "schemaVersion": 1,
+  "baselineCommit": "71c476e9c86263fe907105b011ca4dde0a619d66",
+  "decisionRegister": "docs/plan/original-risu-behavioral-compatibility/findings/decisions.json",
+  "inventoryRegister": "docs/plan/original-risu-behavioral-compatibility/inventory/compatibility-surfaces.json",
+  "mappings": [
+    {
+      "cellId": "send__buffered__say-off",
+      "aspect": "transcript",
+      "differenceDigest": "bef707354649cd94e9e99433cc6f55e7e6a96c1409ad73361241acf1a74c0948",
+      "decisionIds": ["ORC-DECISION-020"],
+      "inventoryIds": ["ORC-SURFACE-024"],
+      "rationale": "Fastify persists signed durable generation protocol metadata."
+    },
+    {
+      "cellId": "send__buffered__say-on",
+      "aspect": "transcript",
+      "differenceDigest": "dbbe2a91453785125c74f0642d5be4ca3cf6b26df1f413a440819c8089678e5c",
+      "decisionIds": ["ORC-DECISION-020"],
+      "inventoryIds": ["ORC-SURFACE-024"],
+      "rationale": "Fastify persists signed durable generation protocol metadata."
+    },
+    {
+      "cellId": "send__streamed__say-off",
+      "aspect": "transcript",
+      "differenceDigest": "bef707354649cd94e9e99433cc6f55e7e6a96c1409ad73361241acf1a74c0948",
+      "decisionIds": ["ORC-DECISION-020"],
+      "inventoryIds": ["ORC-SURFACE-024"],
+      "rationale": "Fastify persists signed durable generation protocol metadata."
+    },
+    {
+      "cellId": "send__streamed__say-on",
+      "aspect": "transcript",
+      "differenceDigest": "dbbe2a91453785125c74f0642d5be4ca3cf6b26df1f413a440819c8089678e5c",
+      "decisionIds": ["ORC-DECISION-020"],
+      "inventoryIds": ["ORC-SURFACE-024"],
+      "rationale": "Fastify persists signed durable generation protocol metadata."
+    },
+    {
+      "cellId": "regenerate__buffered__say-off",
+      "aspect": "transcript",
+      "differenceDigest": "bc0a060f6469e5dd8b3c26f885371461b6d0ebdd8c580eb42fc1c600b4a73240",
+      "decisionIds": ["ORC-DECISION-020"],
+      "inventoryIds": ["ORC-SURFACE-024"],
+      "rationale": "Fastify persists signed durable generation protocol metadata."
+    },
+    {
+      "cellId": "regenerate__buffered__say-on",
+      "aspect": "transcript",
+      "differenceDigest": "bc0a060f6469e5dd8b3c26f885371461b6d0ebdd8c580eb42fc1c600b4a73240",
+      "decisionIds": ["ORC-DECISION-020"],
+      "inventoryIds": ["ORC-SURFACE-024"],
+      "rationale": "Fastify persists signed durable generation protocol metadata."
+    },
+    {
+      "cellId": "regenerate__streamed__say-off",
+      "aspect": "transcript",
+      "differenceDigest": "bc0a060f6469e5dd8b3c26f885371461b6d0ebdd8c580eb42fc1c600b4a73240",
+      "decisionIds": ["ORC-DECISION-020"],
+      "inventoryIds": ["ORC-SURFACE-024"],
+      "rationale": "Fastify persists signed durable generation protocol metadata."
+    },
+    {
+      "cellId": "regenerate__streamed__say-on",
+      "aspect": "transcript",
+      "differenceDigest": "bc0a060f6469e5dd8b3c26f885371461b6d0ebdd8c580eb42fc1c600b4a73240",
+      "decisionIds": ["ORC-DECISION-020"],
+      "inventoryIds": ["ORC-SURFACE-024"],
+      "rationale": "Fastify persists signed durable generation protocol metadata."
+    },
+    {
+      "cellId": "continue__buffered__say-off",
+      "aspect": "transcript",
+      "differenceDigest": "59a93080a25e0decf2dc84abc9fe9836eb262da164758ddc58b16c97d7581dfc",
+      "decisionIds": ["ORC-DECISION-010"],
+      "inventoryIds": ["ORC-SURFACE-014"],
+      "rationale": "Fastify preserves the signed extend-mode row identity instead of reminting it."
+    },
+    {
+      "cellId": "continue__buffered__say-on",
+      "aspect": "transcript",
+      "differenceDigest": "bef707354649cd94e9e99433cc6f55e7e6a96c1409ad73361241acf1a74c0948",
+      "decisionIds": ["ORC-DECISION-020"],
+      "inventoryIds": ["ORC-SURFACE-024"],
+      "rationale": "Fastify persists signed durable generation protocol metadata."
+    },
+    {
+      "cellId": "continue__streamed__say-on",
+      "aspect": "transcript",
+      "differenceDigest": "5d14834c31679284e15c8df4b7fe5e3ecd62a31569d66465d909ed8adc74c869",
+      "decisionIds": ["ORC-DECISION-008", "ORC-DECISION-009", "ORC-DECISION-028"],
+      "inventoryIds": ["ORC-SURFACE-012", "ORC-SURFACE-013", "ORC-SURFACE-032"],
+      "rationale": "Fastify applies the signed transient append boundary and streams into a new assistant row even after a user tail."
+    },
+    {
+      "cellId": "multisend__buffered__say-off",
+      "aspect": "execution",
+      "differenceDigest": "de39a7432619595a9d4c68a25f6fcc066ba4597f89523eb9f523a33b7f22dc3c",
+      "decisionIds": ["ORC-DECISION-013"],
+      "inventoryIds": ["ORC-SURFACE-017"],
+      "rationale": "Fastify retains the signed corrected sequential multisend workflow."
+    },
+    {
+      "cellId": "multisend__buffered__say-off",
+      "aspect": "transcript",
+      "differenceDigest": "af1a0abe0b758e876deef8b59a43f6f53cc2e42f1032edfa6dcd70115ef8760a",
+      "decisionIds": ["ORC-DECISION-013", "ORC-DECISION-020", "ORC-DECISION-021"],
+      "inventoryIds": ["ORC-SURFACE-017", "ORC-SURFACE-024", "ORC-SURFACE-025"],
+      "rationale": "The signed multisend workflow emits every turn with durable protocol metadata, client IDs, and timestamps."
+    },
+    {
+      "cellId": "multisend__buffered__say-off",
+      "aspect": "request",
+      "differenceDigest": "698f7ef88d9660d1d2da8cb12e57c7be61e50642f73fab8da862d683d34851b4",
+      "decisionIds": ["ORC-DECISION-013"],
+      "inventoryIds": ["ORC-SURFACE-017"],
+      "rationale": "The signed corrected multisend workflow performs the second sequential provider request."
+    },
+    {
+      "cellId": "multisend__buffered__say-on",
+      "aspect": "execution",
+      "differenceDigest": "de39a7432619595a9d4c68a25f6fcc066ba4597f89523eb9f523a33b7f22dc3c",
+      "decisionIds": ["ORC-DECISION-013"],
+      "inventoryIds": ["ORC-SURFACE-017"],
+      "rationale": "Fastify retains the signed corrected sequential multisend workflow."
+    },
+    {
+      "cellId": "multisend__buffered__say-on",
+      "aspect": "transcript",
+      "differenceDigest": "af1a0abe0b758e876deef8b59a43f6f53cc2e42f1032edfa6dcd70115ef8760a",
+      "decisionIds": ["ORC-DECISION-013", "ORC-DECISION-020", "ORC-DECISION-021"],
+      "inventoryIds": ["ORC-SURFACE-017", "ORC-SURFACE-024", "ORC-SURFACE-025"],
+      "rationale": "The signed multisend workflow emits every turn with durable protocol metadata, client IDs, and timestamps."
+    },
+    {
+      "cellId": "multisend__buffered__say-on",
+      "aspect": "request",
+      "differenceDigest": "698f7ef88d9660d1d2da8cb12e57c7be61e50642f73fab8da862d683d34851b4",
+      "decisionIds": ["ORC-DECISION-013"],
+      "inventoryIds": ["ORC-SURFACE-017"],
+      "rationale": "The signed corrected multisend workflow performs the second sequential provider request."
+    },
+    {
+      "cellId": "multisend__streamed__say-off",
+      "aspect": "execution",
+      "differenceDigest": "de39a7432619595a9d4c68a25f6fcc066ba4597f89523eb9f523a33b7f22dc3c",
+      "decisionIds": ["ORC-DECISION-013"],
+      "inventoryIds": ["ORC-SURFACE-017"],
+      "rationale": "Fastify retains the signed corrected sequential multisend workflow."
+    },
+    {
+      "cellId": "multisend__streamed__say-off",
+      "aspect": "transcript",
+      "differenceDigest": "af1a0abe0b758e876deef8b59a43f6f53cc2e42f1032edfa6dcd70115ef8760a",
+      "decisionIds": ["ORC-DECISION-013", "ORC-DECISION-020", "ORC-DECISION-021"],
+      "inventoryIds": ["ORC-SURFACE-017", "ORC-SURFACE-024", "ORC-SURFACE-025"],
+      "rationale": "The signed multisend workflow emits every turn with durable protocol metadata, client IDs, and timestamps."
+    },
+    {
+      "cellId": "multisend__streamed__say-off",
+      "aspect": "request",
+      "differenceDigest": "850e0999ffa51ac40c1e52c1cd9dc499c30c1216e1e835dcb783403b1b05a29d",
+      "decisionIds": ["ORC-DECISION-013"],
+      "inventoryIds": ["ORC-SURFACE-017"],
+      "rationale": "The signed corrected multisend workflow performs the second sequential provider request."
+    },
+    {
+      "cellId": "multisend__streamed__say-on",
+      "aspect": "execution",
+      "differenceDigest": "de39a7432619595a9d4c68a25f6fcc066ba4597f89523eb9f523a33b7f22dc3c",
+      "decisionIds": ["ORC-DECISION-013"],
+      "inventoryIds": ["ORC-SURFACE-017"],
+      "rationale": "Fastify retains the signed corrected sequential multisend workflow."
+    },
+    {
+      "cellId": "multisend__streamed__say-on",
+      "aspect": "transcript",
+      "differenceDigest": "af1a0abe0b758e876deef8b59a43f6f53cc2e42f1032edfa6dcd70115ef8760a",
+      "decisionIds": ["ORC-DECISION-013", "ORC-DECISION-020", "ORC-DECISION-021"],
+      "inventoryIds": ["ORC-SURFACE-017", "ORC-SURFACE-024", "ORC-SURFACE-025"],
+      "rationale": "The signed multisend workflow emits every turn with durable protocol metadata, client IDs, and timestamps."
+    },
+    {
+      "cellId": "multisend__streamed__say-on",
+      "aspect": "request",
+      "differenceDigest": "850e0999ffa51ac40c1e52c1cd9dc499c30c1216e1e835dcb783403b1b05a29d",
+      "decisionIds": ["ORC-DECISION-013"],
+      "inventoryIds": ["ORC-SURFACE-017"],
+      "rationale": "The signed corrected multisend workflow performs the second sequential provider request."
+    }
+  ]
+}

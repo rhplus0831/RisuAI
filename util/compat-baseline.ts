@@ -4,8 +4,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const COMPAT_BASELINE_COMMIT = '71c476e9c86263fe907105b011ca4dde0a619d66'
-export const COMPAT_BASELINE_ROOT = '/home/codex/risu-baseline-71c476e9c'
 export const COMPAT_SOURCE_ROOT = path.resolve(import.meta.dirname, '..')
+export const DEFAULT_COMPAT_BASELINE_ROOT = path.resolve(COMPAT_SOURCE_ROOT, '../risu-baseline-71c476e9c')
+export const COMPAT_BASELINE_ROOT_ENV = 'RISU_COMPAT_BASELINE_ROOT'
 
 const PREPARE_COMMAND = 'pnpm exec tsx util/compat-baseline.ts --prepare'
 
@@ -30,6 +31,15 @@ export interface CompatibilityBaselineResult {
   baselineCommit: string
   created: boolean
   dependenciesInstalled: boolean
+}
+
+export function resolveCompatibilityBaselineRoot(env: NodeJS.ProcessEnv = process.env): string {
+  const override = env[COMPAT_BASELINE_ROOT_ENV]
+  if (!override) return DEFAULT_COMPAT_BASELINE_ROOT
+  if (!path.isAbsolute(override)) {
+    throw new Error(`${COMPAT_BASELINE_ROOT_ENV} must be an absolute path; received: ${override}`)
+  }
+  return path.normalize(override)
 }
 
 function defaultRunCommand(file: string, args: string[], options: CommandOptions): string {
@@ -86,7 +96,7 @@ export function checkCompatibilityBaseline(
 
 export function prepareCompatibilityBaseline(options: CompatibilityBaselineOptions = {}): CompatibilityBaselineResult {
   const mode = options.mode ?? 'prepare'
-  const baselineRoot = options.baselineRoot ?? COMPAT_BASELINE_ROOT
+  const baselineRoot = options.baselineRoot ?? resolveCompatibilityBaselineRoot()
   const sourceRoot = options.sourceRoot ?? COMPAT_SOURCE_ROOT
   const baselineCommit = options.baselineCommit ?? COMPAT_BASELINE_COMMIT
   const runCommand = options.runCommand ?? defaultRunCommand

@@ -17,32 +17,32 @@ vi.mock('@mlc-ai/web-tokenizers', () => ({
   },
 }))
 
-vi.mock('/home/codex/risu-baseline-71c476e9c/src/ts/process/tts.ts', () => ({
+vi.mock('src/ts/process/tts.ts', () => ({
   sayTTS: async () => undefined,
 }))
 
-vi.mock('/home/codex/risu-baseline-71c476e9c/src/ts/process/inlayScreen.ts', () => ({
+vi.mock('src/ts/process/inlayScreen.ts', () => ({
   runInlayScreen: (_character: unknown, text: string) => ({ text }),
 }))
 
-vi.mock('/home/codex/risu-baseline-71c476e9c/src/ts/process/stableDiff.ts', () => ({
+vi.mock('src/ts/process/stableDiff.ts', () => ({
   stableDiff: async () => undefined,
   generateAIImage: async () => undefined,
 }))
 
-vi.mock('/home/codex/risu-baseline-71c476e9c/src/ts/process/prereroll.ts', () => ({
+vi.mock('src/ts/process/prereroll.ts', () => ({
   addRerolls: () => undefined,
   Prereroll: () => null,
   PreUnreroll: () => null,
 }))
 
-vi.mock('/home/codex/risu-baseline-71c476e9c/src/ts/process/files/inlays.ts', () => ({
+vi.mock('src/ts/process/files/inlays.ts', () => ({
   getInlayAsset: async () => null,
   supportsInlayImage: () => false,
   writeInlayImage: async () => undefined,
 }))
 
-vi.mock('/home/codex/risu-baseline-71c476e9c/src/ts/process/scriptings.ts', () => ({
+vi.mock('src/ts/process/scriptings.ts', () => ({
   runLuaEditTrigger: async (_character: unknown, _mode: string, content: unknown) => content,
   runScripted: async (_code: string, args: { chat?: unknown }) => ({
     res: undefined,
@@ -53,11 +53,11 @@ vi.mock('/home/codex/risu-baseline-71c476e9c/src/ts/process/scriptings.ts', () =
   runLuaButtonTrigger: async () => undefined,
 }))
 
-vi.mock('/home/codex/risu-baseline-71c476e9c/src/ts/process/triggers.ts', () => ({
+vi.mock('src/ts/process/triggers.ts', () => ({
   runTrigger: async () => null,
 }))
 
-vi.mock('/home/codex/risu-baseline-71c476e9c/src/ts/process/modules.ts', () => ({
+vi.mock('src/ts/process/modules.ts', () => ({
   moduleUpdate: () => undefined,
   getModuleAssets: () => [],
   getModuleLorebooks: () => [],
@@ -67,33 +67,33 @@ vi.mock('/home/codex/risu-baseline-71c476e9c/src/ts/process/modules.ts', () => (
   getModuleTriggers: () => [],
 }))
 
-vi.mock('/home/codex/risu-baseline-71c476e9c/src/ts/process/scripts.ts', () => ({
+vi.mock('src/ts/process/scripts.ts', () => ({
   processScript: async (_character: unknown, data: string) => data,
   processScriptFull: async (_character: unknown, data: string) => ({ data, emoChanged: false }),
   risuChatParser: (data: string) => data,
   resetScriptCache: () => undefined,
 }))
 
-vi.mock('/home/codex/risu-baseline-71c476e9c/src/ts/parser/parser.svelte.ts', () => ({
+vi.mock('src/ts/parser/parser.svelte.ts', () => ({
   assetRegex: /$^/g,
   risuChatParser: (data: string) => data,
   risuEscape: (data: string) => data,
   risuUnescape: (data: string) => data,
 }))
 
-vi.mock('/home/codex/risu-baseline-71c476e9c/src/ts/process/mcp/mcp.ts', () => ({
+vi.mock('src/ts/process/mcp/mcp.ts', () => ({
   getTools: async () => [],
   callTool: async () => ({ content: [] }),
   decodeToolCall: async () => null,
   encodeToolCall: () => '',
 }))
 
-vi.mock('/home/codex/risu-baseline-71c476e9c/src/ts/process/transformers.ts', async (importActual) => {
+vi.mock('src/ts/process/transformers.ts', async (importActual) => {
   const actual = await importActual<Record<string, unknown>>()
   return { ...actual, runImageEmbedding: async () => [{ generated_text: 'compat caption' }] }
 })
 
-vi.mock('/home/codex/risu-baseline-71c476e9c/src/ts/process/memory/hypav3.ts', async (importActual) => {
+vi.mock('src/ts/process/memory/hypav3.ts', async (importActual) => {
   const actual = await importActual<Record<string, unknown>>()
   return {
     ...actual,
@@ -105,15 +105,10 @@ vi.mock('/home/codex/risu-baseline-71c476e9c/src/ts/process/memory/hypav3.ts', a
 })
 
 import { get } from 'svelte/store'
-import { processMultiCommand } from '/home/codex/risu-baseline-71c476e9c/src/ts/process/command.ts'
-import {
-  abortChat,
-  chatProcessStage,
-  doingChat,
-  sendChat,
-} from '/home/codex/risu-baseline-71c476e9c/src/ts/process/index.svelte.ts'
-import { getDatabase, setDatabase } from '/home/codex/risu-baseline-71c476e9c/src/ts/storage/database.svelte.ts'
-import { selectedCharID } from '/home/codex/risu-baseline-71c476e9c/src/ts/stores.svelte.ts'
+import { processMultiCommand } from 'src/ts/process/command.ts'
+import { abortChat, chatProcessStage, doingChat, sendChat } from 'src/ts/process/index.svelte.ts'
+import { getDatabase, setDatabase } from 'src/ts/storage/database.svelte.ts'
+import { selectedCharID } from 'src/ts/stores.svelte.ts'
 import { isTokenizerUrl, serveTokenizerFetch } from '../../src/ts/process/__fixtures__/mocks/tokenizerFetch'
 import { FIXTURE_ASSISTANT_ID, MULTISEND_COMMAND, createFixtureDatabase, providerReply } from './fixture'
 import { captureProviderRequest, normalizeTranscript, openAiMockResponse } from './normalize'

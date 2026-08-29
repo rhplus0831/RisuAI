@@ -1,17 +1,22 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte'
+import { resolve } from 'node:path'
 import { defineConfig } from 'vitest/config'
+import { resolveCompatibilityBaselineRoot } from '../../util/compat-baseline'
+
+const root = resolve(import.meta.dirname, '../..')
+const baselineRoot = resolveCompatibilityBaselineRoot()
 
 export default defineConfig({
   plugins: [svelte()],
   resolve: {
     alias: {
-      src: '/home/codex/risu-baseline-71c476e9c/src',
+      src: resolve(baselineRoot, 'src'),
     },
     conditions: ['browser'],
   },
   server: {
     fs: {
-      allow: ['/home/codex/risuai-fastify', '/home/codex/risu-baseline-71c476e9c'],
+      allow: [root, baselineRoot],
     },
   },
   test: {

@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "generation-matrix-v1",
+  "baselineCommit": "71c476e9c86263fe907105b011ca4dde0a619d66",
+  "deterministicClock": "2026-08-12T00:00:00.000Z",
+  "providerEndpoint": "https://api.openai.com/v1/chat/completions",
+  "caseIds": [
+    "send__buffered__say-off",
+    "send__buffered__say-on",
+    "send__streamed__say-off",
+    "send__streamed__say-on",
+    "regenerate__buffered__say-off",
+    "regenerate__buffered__say-on",
+    "regenerate__streamed__say-off",
+    "regenerate__streamed__say-on",
+    "continue__buffered__say-off",
+    "continue__buffered__say-on",
+    "continue__streamed__say-off",
+    "continue__streamed__say-on",
+    "multisend__buffered__say-off",
+    "multisend__buffered__say-on",
+    "multisend__streamed__say-off",
+    "multisend__streamed__say-on"
+  ],
+  "sourceFiles": [
+    {
+      "path": "test/compat-harness/types.ts",
+      "sha256": "d21c56dead386837a6d5fea240fe03968acd21e65c81c9dd18b2a3d740a2b6e3"
+    },
+    {
+      "path": "test/compat-harness/fixture.ts",
+      "sha256": "fbb4c0f91c68b85d6325d8b231abeee912992ff3d5abe83759c87a4de920abaa"
+    },
+    {
+      "path": "test/compat-harness/normalize.ts",
+      "sha256": "3b11e8d537361cdefb459aa8db4f450e97a325f118af9106b77440d3abbc2f9d"
+    },
+    {
+      "path": "test/compat-harness/baseline.runner.ts",
+      "sha256": "2d7e0991b2581b9d75558cf71cb296e710fabae559cfaeae7928714f99bed237"
+    },
+    {
+      "path": "test/compat-harness/current.runner.ts",
+      "sha256": "ebed38141a341a002964610d23b04cae2b9184504d090c2fb3077e1a453715bf"
+    }
+  ],
+  "normalizationContract": [
+    "Generated transcript and durable protocol identifiers are replaced consistently while fixture-owned identifiers remain literal.",
+    "Present non-null message timestamps become <present>; missing and null timestamps remain distinct.",
+    "The deterministic fixture secret is redacted wherever it occurs in request headers.",
+    "HTTP header-name casing is canonicalized because Fetch treats names case-insensitively; header values and arbitrary headers are preserved.",
+    "Object keys are sorted recursively; array ordering, repetitions, endpoints, HTTP methods, roles, nulls, missing fields, and arbitrary metadata are preserved."
+  ]
+}

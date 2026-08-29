@@ -28,45 +28,41 @@ function idNormalizer() {
   }
 }
 
+const GENERATION_ID_KEYS = new Set([
+  'generationId',
+  'databaseLineage',
+  'operationId',
+  'acceptedMessageId',
+  'jobId',
+  'effectLedgerKeyId',
+  'effectLedgerCharacterId',
+  'effectLedgerChatId',
+])
+
 function normalizeGenerationInfo(value: unknown, normalizeId: (value: unknown) => unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => canonicalJson(item))
   if (!isRecord(value)) return value
-  const identityKeys = [
-    'model',
-    'generationId',
-    'databaseLineage',
-    'operationId',
-    'acceptedMessageId',
-    'attemptNo',
-    'jobId',
-    'effectLedgerKeyType',
-    'effectLedgerKeyId',
-    'effectLedgerCharacterId',
-    'effectLedgerChatId',
-  ]
-  const out: Record<string, unknown> = {}
-  for (const key of identityKeys) {
-    if (!(key in value)) continue
-    out[key] = key.endsWith('Id') || key === 'databaseLineage' ? normalizeId(value[key]) : value[key]
-  }
-  return out
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, GENERATION_ID_KEYS.has(key) ? normalizeId(value[key]) : canonicalJson(value[key])]),
+  )
 }
 
 export function normalizeTranscript(messages: unknown[]): Array<Record<string, unknown>> {
   const normalizeId = idNormalizer()
   return messages.map((raw) => {
-    const message = isRecord(raw) ? raw : {}
-    const normalized: Record<string, unknown> = {
-      role: message.role,
-      data: message.data,
-    }
-    if ('chatId' in message) normalized.chatId = normalizeId(message.chatId)
-    if ('saying' in message) normalized.saying = normalizeId(message.saying)
-    if ('name' in message) normalized.name = message.name
-    if ('time' in message) normalized.time = '<present>'
-    if ('generationInfo' in message) {
-      normalized.generationInfo = normalizeGenerationInfo(message.generationInfo, normalizeId)
-    }
-    return normalized
+    if (!isRecord(raw)) throw new Error('Transcript entries must be objects')
+    return Object.fromEntries(
+      Object.keys(raw)
+        .sort()
+        .map((key) => {
+          if (key === 'chatId' || key === 'saying') return [key, normalizeId(raw[key])]
+          if (key === 'time' && raw[key] !== null) return [key, '<present>']
+          if (key === 'generationInfo') return [key, normalizeGenerationInfo(raw[key], normalizeId)]
+          return [key, canonicalJson(raw[key])]
+        }),
+    )
   })
 }
 
@@ -77,8 +73,7 @@ function headersRecord(headers: HeadersInit | undefined): Record<string, string>
   return Object.fromEntries(
     entries
       .map(([key, value]) => [key.toLowerCase(), String(value)] as const)
-      .filter(([key]) => ['authorization', 'content-type', 'http-referer', 'x-title', 'x-proxy-risu'].includes(key))
-      .map(([key, value]) => [key, value.replace(MOCK_OPENAI_KEY, '<redacted>')] as const)
+      .map(([key, value]) => [key, value.replaceAll(MOCK_OPENAI_KEY, '<redacted>')] as const)
       .sort(([left], [right]) => left.localeCompare(right)),
   )
 }
@@ -113,7 +108,7 @@ export function captureProviderRequest(
   const body = raw.length > 0 ? (canonicalJson(JSON.parse(raw)) as Record<string, unknown>) : {}
   return {
     url,
-    method: (init?.method ?? 'GET').toUpperCase(),
+    method: init?.method ?? 'GET',
     headers: headersRecord(init?.headers),
     body,
   }

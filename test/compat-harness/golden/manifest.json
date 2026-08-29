@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "baselineCommit": "71c476e9c86263fe907105b011ca4dde0a619d66",
+  "updateReason": "Phase 1 final lossless normalizer and governance review",
+  "updateCommand": "pnpm test:compat-harness -- --update-goldens --reason \"<review reason>\"",
+  "files": [
+    {
+      "path": "test/compat-harness/golden/baseline.json",
+      "sha256": "e3f733b97736d6d09b3594ddff2d643642a351163e59923a217b05a7b65b8a7e"
+    },
+    {
+      "path": "test/compat-harness/golden/current.json",
+      "sha256": "4e50dc7a1c2dcf98f06ad5afd3ef3ed37dcda2375d22405c89a2b7e94f2352ad"
+    },
+    {
+      "path": "test/compat-harness/golden/diff.json",
+      "sha256": "636b7fdf24f32b924d26c3edd01d7151b56e405c0d4537a9681c39a85d4ddf39"
+    },
+    {
+      "path": "test/compat-harness/golden/cluster10.json",
+      "sha256": "c821efd64d3bc959332759c6344428c2d6e421a4651578f4f3ab41b217dd1e34"
+    },
+    {
+      "path": "test/compat-harness/expected-differences.json",
+      "sha256": "2ea71ef0f9ddd6416081060a8c55e103b8c86560e2c2cbca040c20447740a000"
+    },
+    {
+      "path": "test/compat-harness/fixture-provenance.json",
+      "sha256": "a012a74cf3b4310985438b9805d64ab67a2dde056d0a6c3a0c9c2b82fc049577"
+    }
+  ]
+}

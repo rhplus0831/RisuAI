@@ -25,28 +25,38 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Seed answer.",
             "chatId": "fixture-assistant-1",
+            "data": "Seed answer.",
+            "role": "char",
             "saying": "compat-char",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Empty-send reply.",
             "chatId": "<generated-id-1>",
-            "saying": "compat-char",
-            "time": "<present>",
+            "data": "Empty-send reply.",
             "generationInfo": {
+              "generationId": "<generated-id-1>",
+              "inputTokens": 242,
+              "maxContext": 4000,
               "model": "gpt4o",
-              "generationId": "<generated-id-1>"
-            }
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -90,36 +100,46 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Seed answer.",
             "chatId": "fixture-assistant-1",
+            "data": "Seed answer.",
+            "role": "char",
             "saying": "compat-char",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Empty-send reply.",
             "chatId": "<generated-id-1>",
-            "saying": "compat-char",
-            "time": "<present>",
+            "data": "Empty-send reply.",
             "generationInfo": {
-              "model": "gpt4o",
-              "generationId": "<generated-id-1>",
-              "databaseLineage": "<generated-id-2>",
-              "operationId": "<generated-id-3>",
               "attemptNo": 1,
-              "jobId": "<generated-id-1>",
-              "effectLedgerKeyType": "generation",
-              "effectLedgerKeyId": "<generated-id-1>",
+              "databaseLineage": "<generated-id-2>",
               "effectLedgerCharacterId": "compat-char",
-              "effectLedgerChatId": "compat-chat"
-            }
+              "effectLedgerChatId": "compat-chat",
+              "effectLedgerKeyId": "<generated-id-1>",
+              "effectLedgerKeyType": "generation",
+              "generationId": "<generated-id-1>",
+              "inputTokens": 242,
+              "jobId": "<generated-id-1>",
+              "maxContext": 4000,
+              "model": "gpt4o",
+              "operationId": "<generated-id-3>",
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -173,34 +193,44 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
-            "time": "<present>"
-          },
-          {
-            "role": "char",
-            "data": "Seed answer.",
-            "chatId": "fixture-assistant-1",
-            "saying": "compat-char",
-            "time": "<present>"
-          },
-          {
+            "data": "Seed question.",
             "role": "user",
-            "data": "*says nothing*",
-            "chatId": "<generated-id-1>",
-            "name": null
+            "time": "<present>"
           },
           {
+            "chatId": "fixture-assistant-1",
+            "data": "Seed answer.",
             "role": "char",
-            "data": "Empty-send reply.",
-            "chatId": "<generated-id-2>",
             "saying": "compat-char",
-            "time": "<present>",
+            "time": "<present>"
+          },
+          {
+            "chatId": "<generated-id-1>",
+            "data": "*says nothing*",
+            "name": null,
+            "role": "user"
+          },
+          {
+            "chatId": "<generated-id-2>",
+            "data": "Empty-send reply.",
             "generationInfo": {
+              "generationId": "<generated-id-2>",
+              "inputTokens": 251,
+              "maxContext": 4000,
               "model": "gpt4o",
-              "generationId": "<generated-id-2>"
-            }
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -248,42 +278,52 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
-            "time": "<present>"
-          },
-          {
-            "role": "char",
-            "data": "Seed answer.",
-            "chatId": "fixture-assistant-1",
-            "saying": "compat-char",
-            "time": "<present>"
-          },
-          {
+            "data": "Seed question.",
             "role": "user",
-            "data": "*says nothing*",
-            "chatId": "<generated-id-1>",
-            "name": null
+            "time": "<present>"
           },
           {
+            "chatId": "fixture-assistant-1",
+            "data": "Seed answer.",
             "role": "char",
-            "data": "Empty-send reply.",
-            "chatId": "<generated-id-2>",
             "saying": "compat-char",
-            "time": "<present>",
+            "time": "<present>"
+          },
+          {
+            "chatId": "<generated-id-1>",
+            "data": "*says nothing*",
+            "name": null,
+            "role": "user"
+          },
+          {
+            "chatId": "<generated-id-2>",
+            "data": "Empty-send reply.",
             "generationInfo": {
-              "model": "gpt4o",
-              "generationId": "<generated-id-2>",
-              "databaseLineage": "<generated-id-3>",
-              "operationId": "<generated-id-4>",
               "attemptNo": 1,
-              "jobId": "<generated-id-2>",
-              "effectLedgerKeyType": "generation",
-              "effectLedgerKeyId": "<generated-id-2>",
+              "databaseLineage": "<generated-id-3>",
               "effectLedgerCharacterId": "compat-char",
-              "effectLedgerChatId": "compat-chat"
-            }
+              "effectLedgerChatId": "compat-chat",
+              "effectLedgerKeyId": "<generated-id-2>",
+              "effectLedgerKeyType": "generation",
+              "generationId": "<generated-id-2>",
+              "inputTokens": 251,
+              "jobId": "<generated-id-2>",
+              "maxContext": 4000,
+              "model": "gpt4o",
+              "operationId": "<generated-id-4>",
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -341,28 +381,38 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Seed answer.",
             "chatId": "fixture-assistant-1",
+            "data": "Seed answer.",
+            "role": "char",
             "saying": "compat-char",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Empty-send reply.",
             "chatId": "<generated-id-1>",
-            "saying": "compat-char",
-            "time": "<present>",
+            "data": "Empty-send reply.",
             "generationInfo": {
+              "generationId": "<generated-id-1>",
+              "inputTokens": 242,
+              "maxContext": 4000,
               "model": "gpt4o",
-              "generationId": "<generated-id-1>"
-            }
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -406,36 +456,46 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Seed answer.",
             "chatId": "fixture-assistant-1",
+            "data": "Seed answer.",
+            "role": "char",
             "saying": "compat-char",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Empty-send reply.",
             "chatId": "<generated-id-1>",
-            "saying": "compat-char",
-            "time": "<present>",
+            "data": "Empty-send reply.",
             "generationInfo": {
-              "model": "gpt4o",
-              "generationId": "<generated-id-1>",
-              "databaseLineage": "<generated-id-2>",
-              "operationId": "<generated-id-3>",
               "attemptNo": 1,
-              "jobId": "<generated-id-1>",
-              "effectLedgerKeyType": "generation",
-              "effectLedgerKeyId": "<generated-id-1>",
+              "databaseLineage": "<generated-id-2>",
               "effectLedgerCharacterId": "compat-char",
-              "effectLedgerChatId": "compat-chat"
-            }
+              "effectLedgerChatId": "compat-chat",
+              "effectLedgerKeyId": "<generated-id-1>",
+              "effectLedgerKeyType": "generation",
+              "generationId": "<generated-id-1>",
+              "inputTokens": 242,
+              "jobId": "<generated-id-1>",
+              "maxContext": 4000,
+              "model": "gpt4o",
+              "operationId": "<generated-id-3>",
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -489,34 +549,44 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
-            "time": "<present>"
-          },
-          {
-            "role": "char",
-            "data": "Seed answer.",
-            "chatId": "fixture-assistant-1",
-            "saying": "compat-char",
-            "time": "<present>"
-          },
-          {
+            "data": "Seed question.",
             "role": "user",
-            "data": "*says nothing*",
-            "chatId": "<generated-id-1>",
-            "name": null
+            "time": "<present>"
           },
           {
+            "chatId": "fixture-assistant-1",
+            "data": "Seed answer.",
             "role": "char",
-            "data": "Empty-send reply.",
-            "chatId": "<generated-id-2>",
             "saying": "compat-char",
-            "time": "<present>",
+            "time": "<present>"
+          },
+          {
+            "chatId": "<generated-id-1>",
+            "data": "*says nothing*",
+            "name": null,
+            "role": "user"
+          },
+          {
+            "chatId": "<generated-id-2>",
+            "data": "Empty-send reply.",
             "generationInfo": {
+              "generationId": "<generated-id-2>",
+              "inputTokens": 251,
+              "maxContext": 4000,
               "model": "gpt4o",
-              "generationId": "<generated-id-2>"
-            }
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -564,42 +634,52 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
-            "time": "<present>"
-          },
-          {
-            "role": "char",
-            "data": "Seed answer.",
-            "chatId": "fixture-assistant-1",
-            "saying": "compat-char",
-            "time": "<present>"
-          },
-          {
+            "data": "Seed question.",
             "role": "user",
-            "data": "*says nothing*",
-            "chatId": "<generated-id-1>",
-            "name": null
+            "time": "<present>"
           },
           {
+            "chatId": "fixture-assistant-1",
+            "data": "Seed answer.",
             "role": "char",
-            "data": "Empty-send reply.",
-            "chatId": "<generated-id-2>",
             "saying": "compat-char",
-            "time": "<present>",
+            "time": "<present>"
+          },
+          {
+            "chatId": "<generated-id-1>",
+            "data": "*says nothing*",
+            "name": null,
+            "role": "user"
+          },
+          {
+            "chatId": "<generated-id-2>",
+            "data": "Empty-send reply.",
             "generationInfo": {
-              "model": "gpt4o",
-              "generationId": "<generated-id-2>",
-              "databaseLineage": "<generated-id-3>",
-              "operationId": "<generated-id-4>",
               "attemptNo": 1,
-              "jobId": "<generated-id-2>",
-              "effectLedgerKeyType": "generation",
-              "effectLedgerKeyId": "<generated-id-2>",
+              "databaseLineage": "<generated-id-3>",
               "effectLedgerCharacterId": "compat-char",
-              "effectLedgerChatId": "compat-chat"
-            }
+              "effectLedgerChatId": "compat-chat",
+              "effectLedgerKeyId": "<generated-id-2>",
+              "effectLedgerKeyType": "generation",
+              "generationId": "<generated-id-2>",
+              "inputTokens": 251,
+              "jobId": "<generated-id-2>",
+              "maxContext": 4000,
+              "model": "gpt4o",
+              "operationId": "<generated-id-4>",
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -657,21 +737,31 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Regenerated reply.",
             "chatId": "<generated-id-1>",
-            "saying": "compat-char",
-            "time": "<present>",
+            "data": "Regenerated reply.",
             "generationInfo": {
+              "generationId": "<generated-id-1>",
+              "inputTokens": 234,
+              "maxContext": 4000,
               "model": "gpt4o",
-              "generationId": "<generated-id-1>"
-            }
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -711,29 +801,39 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Regenerated reply.",
             "chatId": "<generated-id-1>",
-            "saying": "compat-char",
-            "time": "<present>",
+            "data": "Regenerated reply.",
             "generationInfo": {
-              "model": "gpt4o",
-              "generationId": "<generated-id-1>",
-              "databaseLineage": "<generated-id-2>",
-              "operationId": "<generated-id-3>",
               "attemptNo": 1,
-              "jobId": "<generated-id-1>",
-              "effectLedgerKeyType": "generation",
-              "effectLedgerKeyId": "<generated-id-1>",
+              "databaseLineage": "<generated-id-2>",
               "effectLedgerCharacterId": "compat-char",
-              "effectLedgerChatId": "compat-chat"
-            }
+              "effectLedgerChatId": "compat-chat",
+              "effectLedgerKeyId": "<generated-id-1>",
+              "effectLedgerKeyType": "generation",
+              "generationId": "<generated-id-1>",
+              "inputTokens": 234,
+              "jobId": "<generated-id-1>",
+              "maxContext": 4000,
+              "model": "gpt4o",
+              "operationId": "<generated-id-3>",
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -783,21 +883,31 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Regenerated reply.",
             "chatId": "<generated-id-1>",
-            "saying": "compat-char",
-            "time": "<present>",
+            "data": "Regenerated reply.",
             "generationInfo": {
+              "generationId": "<generated-id-1>",
+              "inputTokens": 234,
+              "maxContext": 4000,
               "model": "gpt4o",
-              "generationId": "<generated-id-1>"
-            }
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -837,29 +947,39 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Regenerated reply.",
             "chatId": "<generated-id-1>",
-            "saying": "compat-char",
-            "time": "<present>",
+            "data": "Regenerated reply.",
             "generationInfo": {
-              "model": "gpt4o",
-              "generationId": "<generated-id-1>",
-              "databaseLineage": "<generated-id-2>",
-              "operationId": "<generated-id-3>",
               "attemptNo": 1,
-              "jobId": "<generated-id-1>",
-              "effectLedgerKeyType": "generation",
-              "effectLedgerKeyId": "<generated-id-1>",
+              "databaseLineage": "<generated-id-2>",
               "effectLedgerCharacterId": "compat-char",
-              "effectLedgerChatId": "compat-chat"
-            }
+              "effectLedgerChatId": "compat-chat",
+              "effectLedgerKeyId": "<generated-id-1>",
+              "effectLedgerKeyType": "generation",
+              "generationId": "<generated-id-1>",
+              "inputTokens": 234,
+              "jobId": "<generated-id-1>",
+              "maxContext": 4000,
+              "model": "gpt4o",
+              "operationId": "<generated-id-3>",
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -909,21 +1029,31 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Regenerated reply.",
             "chatId": "<generated-id-1>",
-            "saying": "compat-char",
-            "time": "<present>",
+            "data": "Regenerated reply.",
             "generationInfo": {
+              "generationId": "<generated-id-1>",
+              "inputTokens": 234,
+              "maxContext": 4000,
               "model": "gpt4o",
-              "generationId": "<generated-id-1>"
-            }
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -963,29 +1093,39 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Regenerated reply.",
             "chatId": "<generated-id-1>",
-            "saying": "compat-char",
-            "time": "<present>",
+            "data": "Regenerated reply.",
             "generationInfo": {
-              "model": "gpt4o",
-              "generationId": "<generated-id-1>",
-              "databaseLineage": "<generated-id-2>",
-              "operationId": "<generated-id-3>",
               "attemptNo": 1,
-              "jobId": "<generated-id-1>",
-              "effectLedgerKeyType": "generation",
-              "effectLedgerKeyId": "<generated-id-1>",
+              "databaseLineage": "<generated-id-2>",
               "effectLedgerCharacterId": "compat-char",
-              "effectLedgerChatId": "compat-chat"
-            }
+              "effectLedgerChatId": "compat-chat",
+              "effectLedgerKeyId": "<generated-id-1>",
+              "effectLedgerKeyType": "generation",
+              "generationId": "<generated-id-1>",
+              "inputTokens": 234,
+              "jobId": "<generated-id-1>",
+              "maxContext": 4000,
+              "model": "gpt4o",
+              "operationId": "<generated-id-3>",
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -1035,21 +1175,31 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Regenerated reply.",
             "chatId": "<generated-id-1>",
-            "saying": "compat-char",
-            "time": "<present>",
+            "data": "Regenerated reply.",
             "generationInfo": {
+              "generationId": "<generated-id-1>",
+              "inputTokens": 234,
+              "maxContext": 4000,
               "model": "gpt4o",
-              "generationId": "<generated-id-1>"
-            }
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -1089,29 +1239,39 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Regenerated reply.",
             "chatId": "<generated-id-1>",
-            "saying": "compat-char",
-            "time": "<present>",
+            "data": "Regenerated reply.",
             "generationInfo": {
-              "model": "gpt4o",
-              "generationId": "<generated-id-1>",
-              "databaseLineage": "<generated-id-2>",
-              "operationId": "<generated-id-3>",
               "attemptNo": 1,
-              "jobId": "<generated-id-1>",
-              "effectLedgerKeyType": "generation",
-              "effectLedgerKeyId": "<generated-id-1>",
+              "databaseLineage": "<generated-id-2>",
               "effectLedgerCharacterId": "compat-char",
-              "effectLedgerChatId": "compat-chat"
-            }
+              "effectLedgerChatId": "compat-chat",
+              "effectLedgerKeyId": "<generated-id-1>",
+              "effectLedgerKeyType": "generation",
+              "generationId": "<generated-id-1>",
+              "inputTokens": 234,
+              "jobId": "<generated-id-1>",
+              "maxContext": 4000,
+              "model": "gpt4o",
+              "operationId": "<generated-id-3>",
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -1161,21 +1321,31 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Seed answer. Continued reply.",
             "chatId": "<generated-id-1>",
-            "saying": "compat-char",
-            "time": "<present>",
+            "data": "Seed answer. Continued reply.",
             "generationInfo": {
+              "generationId": "<generated-id-1>",
+              "inputTokens": 253,
+              "maxContext": 4000,
               "model": "gpt4o",
-              "generationId": "<generated-id-1>"
-            }
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -1223,15 +1393,15 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Seed answer. Continued reply.",
             "chatId": "fixture-assistant-1",
+            "data": "Seed answer. Continued reply.",
+            "role": "char",
             "saying": "compat-char",
             "time": "<present>"
           }
@@ -1291,28 +1461,38 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Seed answer.",
             "chatId": "fixture-assistant-1",
+            "data": "Seed answer.",
+            "role": "char",
             "saying": "compat-char",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "*says nothing* Continued reply.",
             "chatId": "<generated-id-1>",
-            "saying": "compat-char",
-            "time": "<present>",
+            "data": "*says nothing* Continued reply.",
             "generationInfo": {
+              "generationId": "<generated-id-1>",
+              "inputTokens": 262,
+              "maxContext": 4000,
               "model": "gpt4o",
-              "generationId": "<generated-id-1>"
-            }
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -1364,36 +1544,46 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Seed answer.",
             "chatId": "fixture-assistant-1",
+            "data": "Seed answer.",
+            "role": "char",
             "saying": "compat-char",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "*says nothing* Continued reply.",
             "chatId": "<generated-id-1>",
-            "saying": "compat-char",
-            "time": "<present>",
+            "data": "*says nothing* Continued reply.",
             "generationInfo": {
-              "model": "gpt4o",
-              "generationId": "<generated-id-1>",
-              "databaseLineage": "<generated-id-2>",
-              "operationId": "<generated-id-3>",
               "attemptNo": 1,
-              "jobId": "<generated-id-1>",
-              "effectLedgerKeyType": "generation",
-              "effectLedgerKeyId": "<generated-id-1>",
+              "databaseLineage": "<generated-id-2>",
               "effectLedgerCharacterId": "compat-char",
-              "effectLedgerChatId": "compat-chat"
-            }
+              "effectLedgerChatId": "compat-chat",
+              "effectLedgerKeyId": "<generated-id-1>",
+              "effectLedgerKeyType": "generation",
+              "generationId": "<generated-id-1>",
+              "inputTokens": 262,
+              "jobId": "<generated-id-1>",
+              "maxContext": 4000,
+              "model": "gpt4o",
+              "operationId": "<generated-id-3>",
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -1455,15 +1645,15 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Seed answer. Continued reply.",
             "chatId": "fixture-assistant-1",
+            "data": "Seed answer. Continued reply.",
+            "role": "char",
             "saying": "compat-char",
             "time": "<present>"
           }
@@ -1513,15 +1703,15 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Seed answer. Continued reply.",
             "chatId": "fixture-assistant-1",
+            "data": "Seed answer. Continued reply.",
+            "role": "char",
             "saying": "compat-char",
             "time": "<present>"
           }
@@ -1581,23 +1771,23 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Seed answer.",
             "chatId": "fixture-assistant-1",
+            "data": "Seed answer.",
+            "role": "char",
             "saying": "compat-char",
             "time": "<present>"
           },
           {
-            "role": "user",
-            "data": "*says nothing* Continued reply.",
             "chatId": "<generated-id-1>",
-            "name": null
+            "data": "*says nothing* Continued reply.",
+            "name": null,
+            "role": "user"
           }
         ],
         "providerRequests": [
@@ -1649,36 +1839,46 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Seed answer.",
             "chatId": "fixture-assistant-1",
+            "data": "Seed answer.",
+            "role": "char",
             "saying": "compat-char",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "*says nothing* Continued reply.",
             "chatId": "<generated-id-1>",
-            "saying": "compat-char",
-            "time": "<present>",
+            "data": "*says nothing* Continued reply.",
             "generationInfo": {
-              "model": "gpt4o",
-              "generationId": "<generated-id-1>",
-              "databaseLineage": "<generated-id-2>",
-              "operationId": "<generated-id-3>",
               "attemptNo": 1,
-              "jobId": "<generated-id-1>",
-              "effectLedgerKeyType": "generation",
-              "effectLedgerKeyId": "<generated-id-1>",
+              "databaseLineage": "<generated-id-2>",
               "effectLedgerCharacterId": "compat-char",
-              "effectLedgerChatId": "compat-chat"
-            }
+              "effectLedgerChatId": "compat-chat",
+              "effectLedgerKeyId": "<generated-id-1>",
+              "effectLedgerKeyType": "generation",
+              "generationId": "<generated-id-1>",
+              "inputTokens": 262,
+              "jobId": "<generated-id-1>",
+              "maxContext": 4000,
+              "model": "gpt4o",
+              "operationId": "<generated-id-3>",
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -1740,33 +1940,43 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
-            "time": "<present>"
-          },
-          {
-            "role": "char",
-            "data": "Seed answer.",
-            "chatId": "fixture-assistant-1",
-            "saying": "compat-char",
-            "time": "<present>"
-          },
-          {
+            "data": "Seed question.",
             "role": "user",
-            "data": "First multisend turn.",
-            "chatId": "<generated-id-1>"
+            "time": "<present>"
           },
           {
+            "chatId": "fixture-assistant-1",
+            "data": "Seed answer.",
             "role": "char",
-            "data": "Multisend reply 1.",
-            "chatId": "<generated-id-2>",
             "saying": "compat-char",
-            "time": "<present>",
+            "time": "<present>"
+          },
+          {
+            "chatId": "<generated-id-1>",
+            "data": "First multisend turn.",
+            "role": "user"
+          },
+          {
+            "chatId": "<generated-id-2>",
+            "data": "Multisend reply 1.",
             "generationInfo": {
+              "generationId": "<generated-id-2>",
+              "inputTokens": 252,
+              "maxContext": 4000,
               "model": "gpt4o",
-              "generationId": "<generated-id-2>"
-            }
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -1814,67 +2024,87 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Seed answer.",
             "chatId": "fixture-assistant-1",
+            "data": "Seed answer.",
+            "role": "char",
             "saying": "compat-char",
             "time": "<present>"
           },
           {
-            "role": "user",
-            "data": "First multisend turn.",
             "chatId": "<generated-id-1>",
-            "time": "<present>"
-          },
-          {
-            "role": "char",
-            "data": "Multisend reply 1.",
-            "chatId": "<generated-id-2>",
-            "saying": "compat-char",
-            "time": "<present>",
-            "generationInfo": {
-              "model": "gpt4o",
-              "generationId": "<generated-id-2>",
-              "databaseLineage": "<generated-id-3>",
-              "operationId": "<generated-id-4>",
-              "attemptNo": 1,
-              "jobId": "<generated-id-2>",
-              "effectLedgerKeyType": "generation",
-              "effectLedgerKeyId": "<generated-id-2>",
-              "effectLedgerCharacterId": "compat-char",
-              "effectLedgerChatId": "compat-chat"
-            }
-          },
-          {
+            "data": "First multisend turn.",
             "role": "user",
-            "data": "Second multisend turn.",
-            "chatId": "<generated-id-5>",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Multisend reply 2.",
-            "chatId": "<generated-id-6>",
-            "saying": "compat-char",
-            "time": "<present>",
+            "chatId": "<generated-id-2>",
+            "data": "Multisend reply 1.",
             "generationInfo": {
-              "model": "gpt4o",
-              "generationId": "<generated-id-6>",
-              "databaseLineage": "<generated-id-3>",
-              "operationId": "<generated-id-7>",
               "attemptNo": 1,
-              "jobId": "<generated-id-6>",
-              "effectLedgerKeyType": "generation",
-              "effectLedgerKeyId": "<generated-id-6>",
+              "databaseLineage": "<generated-id-3>",
               "effectLedgerCharacterId": "compat-char",
-              "effectLedgerChatId": "compat-chat"
-            }
+              "effectLedgerChatId": "compat-chat",
+              "effectLedgerKeyId": "<generated-id-2>",
+              "effectLedgerKeyType": "generation",
+              "generationId": "<generated-id-2>",
+              "inputTokens": 252,
+              "jobId": "<generated-id-2>",
+              "maxContext": 4000,
+              "model": "gpt4o",
+              "operationId": "<generated-id-4>",
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
+          },
+          {
+            "chatId": "<generated-id-5>",
+            "data": "Second multisend turn.",
+            "role": "user",
+            "time": "<present>"
+          },
+          {
+            "chatId": "<generated-id-6>",
+            "data": "Multisend reply 2.",
+            "generationInfo": {
+              "attemptNo": 1,
+              "databaseLineage": "<generated-id-3>",
+              "effectLedgerCharacterId": "compat-char",
+              "effectLedgerChatId": "compat-chat",
+              "effectLedgerKeyId": "<generated-id-6>",
+              "effectLedgerKeyType": "generation",
+              "generationId": "<generated-id-6>",
+              "inputTokens": 274,
+              "jobId": "<generated-id-6>",
+              "maxContext": 4000,
+              "model": "gpt4o",
+              "operationId": "<generated-id-7>",
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -1975,33 +2205,43 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
-            "time": "<present>"
-          },
-          {
-            "role": "char",
-            "data": "Seed answer.",
-            "chatId": "fixture-assistant-1",
-            "saying": "compat-char",
-            "time": "<present>"
-          },
-          {
+            "data": "Seed question.",
             "role": "user",
-            "data": "First multisend turn.",
-            "chatId": "<generated-id-1>"
+            "time": "<present>"
           },
           {
+            "chatId": "fixture-assistant-1",
+            "data": "Seed answer.",
             "role": "char",
-            "data": "Multisend reply 1.",
-            "chatId": "<generated-id-2>",
             "saying": "compat-char",
-            "time": "<present>",
+            "time": "<present>"
+          },
+          {
+            "chatId": "<generated-id-1>",
+            "data": "First multisend turn.",
+            "role": "user"
+          },
+          {
+            "chatId": "<generated-id-2>",
+            "data": "Multisend reply 1.",
             "generationInfo": {
+              "generationId": "<generated-id-2>",
+              "inputTokens": 252,
+              "maxContext": 4000,
               "model": "gpt4o",
-              "generationId": "<generated-id-2>"
-            }
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -2049,67 +2289,87 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Seed answer.",
             "chatId": "fixture-assistant-1",
+            "data": "Seed answer.",
+            "role": "char",
             "saying": "compat-char",
             "time": "<present>"
           },
           {
-            "role": "user",
-            "data": "First multisend turn.",
             "chatId": "<generated-id-1>",
-            "time": "<present>"
-          },
-          {
-            "role": "char",
-            "data": "Multisend reply 1.",
-            "chatId": "<generated-id-2>",
-            "saying": "compat-char",
-            "time": "<present>",
-            "generationInfo": {
-              "model": "gpt4o",
-              "generationId": "<generated-id-2>",
-              "databaseLineage": "<generated-id-3>",
-              "operationId": "<generated-id-4>",
-              "attemptNo": 1,
-              "jobId": "<generated-id-2>",
-              "effectLedgerKeyType": "generation",
-              "effectLedgerKeyId": "<generated-id-2>",
-              "effectLedgerCharacterId": "compat-char",
-              "effectLedgerChatId": "compat-chat"
-            }
-          },
-          {
+            "data": "First multisend turn.",
             "role": "user",
-            "data": "Second multisend turn.",
-            "chatId": "<generated-id-5>",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Multisend reply 2.",
-            "chatId": "<generated-id-6>",
-            "saying": "compat-char",
-            "time": "<present>",
+            "chatId": "<generated-id-2>",
+            "data": "Multisend reply 1.",
             "generationInfo": {
-              "model": "gpt4o",
-              "generationId": "<generated-id-6>",
-              "databaseLineage": "<generated-id-3>",
-              "operationId": "<generated-id-7>",
               "attemptNo": 1,
-              "jobId": "<generated-id-6>",
-              "effectLedgerKeyType": "generation",
-              "effectLedgerKeyId": "<generated-id-6>",
+              "databaseLineage": "<generated-id-3>",
               "effectLedgerCharacterId": "compat-char",
-              "effectLedgerChatId": "compat-chat"
-            }
+              "effectLedgerChatId": "compat-chat",
+              "effectLedgerKeyId": "<generated-id-2>",
+              "effectLedgerKeyType": "generation",
+              "generationId": "<generated-id-2>",
+              "inputTokens": 252,
+              "jobId": "<generated-id-2>",
+              "maxContext": 4000,
+              "model": "gpt4o",
+              "operationId": "<generated-id-4>",
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
+          },
+          {
+            "chatId": "<generated-id-5>",
+            "data": "Second multisend turn.",
+            "role": "user",
+            "time": "<present>"
+          },
+          {
+            "chatId": "<generated-id-6>",
+            "data": "Multisend reply 2.",
+            "generationInfo": {
+              "attemptNo": 1,
+              "databaseLineage": "<generated-id-3>",
+              "effectLedgerCharacterId": "compat-char",
+              "effectLedgerChatId": "compat-chat",
+              "effectLedgerKeyId": "<generated-id-6>",
+              "effectLedgerKeyType": "generation",
+              "generationId": "<generated-id-6>",
+              "inputTokens": 274,
+              "jobId": "<generated-id-6>",
+              "maxContext": 4000,
+              "model": "gpt4o",
+              "operationId": "<generated-id-7>",
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -2210,33 +2470,43 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
-            "time": "<present>"
-          },
-          {
-            "role": "char",
-            "data": "Seed answer.",
-            "chatId": "fixture-assistant-1",
-            "saying": "compat-char",
-            "time": "<present>"
-          },
-          {
+            "data": "Seed question.",
             "role": "user",
-            "data": "First multisend turn.",
-            "chatId": "<generated-id-1>"
+            "time": "<present>"
           },
           {
+            "chatId": "fixture-assistant-1",
+            "data": "Seed answer.",
             "role": "char",
-            "data": "Multisend reply 1.",
-            "chatId": "<generated-id-2>",
             "saying": "compat-char",
-            "time": "<present>",
+            "time": "<present>"
+          },
+          {
+            "chatId": "<generated-id-1>",
+            "data": "First multisend turn.",
+            "role": "user"
+          },
+          {
+            "chatId": "<generated-id-2>",
+            "data": "Multisend reply 1.",
             "generationInfo": {
+              "generationId": "<generated-id-2>",
+              "inputTokens": 252,
+              "maxContext": 4000,
               "model": "gpt4o",
-              "generationId": "<generated-id-2>"
-            }
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -2284,67 +2554,87 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Seed answer.",
             "chatId": "fixture-assistant-1",
+            "data": "Seed answer.",
+            "role": "char",
             "saying": "compat-char",
             "time": "<present>"
           },
           {
-            "role": "user",
-            "data": "First multisend turn.",
             "chatId": "<generated-id-1>",
-            "time": "<present>"
-          },
-          {
-            "role": "char",
-            "data": "Multisend reply 1.",
-            "chatId": "<generated-id-2>",
-            "saying": "compat-char",
-            "time": "<present>",
-            "generationInfo": {
-              "model": "gpt4o",
-              "generationId": "<generated-id-2>",
-              "databaseLineage": "<generated-id-3>",
-              "operationId": "<generated-id-4>",
-              "attemptNo": 1,
-              "jobId": "<generated-id-2>",
-              "effectLedgerKeyType": "generation",
-              "effectLedgerKeyId": "<generated-id-2>",
-              "effectLedgerCharacterId": "compat-char",
-              "effectLedgerChatId": "compat-chat"
-            }
-          },
-          {
+            "data": "First multisend turn.",
             "role": "user",
-            "data": "Second multisend turn.",
-            "chatId": "<generated-id-5>",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Multisend reply 2.",
-            "chatId": "<generated-id-6>",
-            "saying": "compat-char",
-            "time": "<present>",
+            "chatId": "<generated-id-2>",
+            "data": "Multisend reply 1.",
             "generationInfo": {
-              "model": "gpt4o",
-              "generationId": "<generated-id-6>",
-              "databaseLineage": "<generated-id-3>",
-              "operationId": "<generated-id-7>",
               "attemptNo": 1,
-              "jobId": "<generated-id-6>",
-              "effectLedgerKeyType": "generation",
-              "effectLedgerKeyId": "<generated-id-6>",
+              "databaseLineage": "<generated-id-3>",
               "effectLedgerCharacterId": "compat-char",
-              "effectLedgerChatId": "compat-chat"
-            }
+              "effectLedgerChatId": "compat-chat",
+              "effectLedgerKeyId": "<generated-id-2>",
+              "effectLedgerKeyType": "generation",
+              "generationId": "<generated-id-2>",
+              "inputTokens": 252,
+              "jobId": "<generated-id-2>",
+              "maxContext": 4000,
+              "model": "gpt4o",
+              "operationId": "<generated-id-4>",
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
+          },
+          {
+            "chatId": "<generated-id-5>",
+            "data": "Second multisend turn.",
+            "role": "user",
+            "time": "<present>"
+          },
+          {
+            "chatId": "<generated-id-6>",
+            "data": "Multisend reply 2.",
+            "generationInfo": {
+              "attemptNo": 1,
+              "databaseLineage": "<generated-id-3>",
+              "effectLedgerCharacterId": "compat-char",
+              "effectLedgerChatId": "compat-chat",
+              "effectLedgerKeyId": "<generated-id-6>",
+              "effectLedgerKeyType": "generation",
+              "generationId": "<generated-id-6>",
+              "inputTokens": 274,
+              "jobId": "<generated-id-6>",
+              "maxContext": 4000,
+              "model": "gpt4o",
+              "operationId": "<generated-id-7>",
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -2445,33 +2735,43 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
-            "time": "<present>"
-          },
-          {
-            "role": "char",
-            "data": "Seed answer.",
-            "chatId": "fixture-assistant-1",
-            "saying": "compat-char",
-            "time": "<present>"
-          },
-          {
+            "data": "Seed question.",
             "role": "user",
-            "data": "First multisend turn.",
-            "chatId": "<generated-id-1>"
+            "time": "<present>"
           },
           {
+            "chatId": "fixture-assistant-1",
+            "data": "Seed answer.",
             "role": "char",
-            "data": "Multisend reply 1.",
-            "chatId": "<generated-id-2>",
             "saying": "compat-char",
-            "time": "<present>",
+            "time": "<present>"
+          },
+          {
+            "chatId": "<generated-id-1>",
+            "data": "First multisend turn.",
+            "role": "user"
+          },
+          {
+            "chatId": "<generated-id-2>",
+            "data": "Multisend reply 1.",
             "generationInfo": {
+              "generationId": "<generated-id-2>",
+              "inputTokens": 252,
+              "maxContext": 4000,
               "model": "gpt4o",
-              "generationId": "<generated-id-2>"
-            }
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
@@ -2519,67 +2819,87 @@
         },
         "persistedTranscript": [
           {
-            "role": "user",
-            "data": "Seed question.",
             "chatId": "fixture-user-1",
+            "data": "Seed question.",
+            "role": "user",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Seed answer.",
             "chatId": "fixture-assistant-1",
+            "data": "Seed answer.",
+            "role": "char",
             "saying": "compat-char",
             "time": "<present>"
           },
           {
-            "role": "user",
-            "data": "First multisend turn.",
             "chatId": "<generated-id-1>",
-            "time": "<present>"
-          },
-          {
-            "role": "char",
-            "data": "Multisend reply 1.",
-            "chatId": "<generated-id-2>",
-            "saying": "compat-char",
-            "time": "<present>",
-            "generationInfo": {
-              "model": "gpt4o",
-              "generationId": "<generated-id-2>",
-              "databaseLineage": "<generated-id-3>",
-              "operationId": "<generated-id-4>",
-              "attemptNo": 1,
-              "jobId": "<generated-id-2>",
-              "effectLedgerKeyType": "generation",
-              "effectLedgerKeyId": "<generated-id-2>",
-              "effectLedgerCharacterId": "compat-char",
-              "effectLedgerChatId": "compat-chat"
-            }
-          },
-          {
+            "data": "First multisend turn.",
             "role": "user",
-            "data": "Second multisend turn.",
-            "chatId": "<generated-id-5>",
             "time": "<present>"
           },
           {
-            "role": "char",
-            "data": "Multisend reply 2.",
-            "chatId": "<generated-id-6>",
-            "saying": "compat-char",
-            "time": "<present>",
+            "chatId": "<generated-id-2>",
+            "data": "Multisend reply 1.",
             "generationInfo": {
-              "model": "gpt4o",
-              "generationId": "<generated-id-6>",
-              "databaseLineage": "<generated-id-3>",
-              "operationId": "<generated-id-7>",
               "attemptNo": 1,
-              "jobId": "<generated-id-6>",
-              "effectLedgerKeyType": "generation",
-              "effectLedgerKeyId": "<generated-id-6>",
+              "databaseLineage": "<generated-id-3>",
               "effectLedgerCharacterId": "compat-char",
-              "effectLedgerChatId": "compat-chat"
-            }
+              "effectLedgerChatId": "compat-chat",
+              "effectLedgerKeyId": "<generated-id-2>",
+              "effectLedgerKeyType": "generation",
+              "generationId": "<generated-id-2>",
+              "inputTokens": 252,
+              "jobId": "<generated-id-2>",
+              "maxContext": 4000,
+              "model": "gpt4o",
+              "operationId": "<generated-id-4>",
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
+          },
+          {
+            "chatId": "<generated-id-5>",
+            "data": "Second multisend turn.",
+            "role": "user",
+            "time": "<present>"
+          },
+          {
+            "chatId": "<generated-id-6>",
+            "data": "Multisend reply 2.",
+            "generationInfo": {
+              "attemptNo": 1,
+              "databaseLineage": "<generated-id-3>",
+              "effectLedgerCharacterId": "compat-char",
+              "effectLedgerChatId": "compat-chat",
+              "effectLedgerKeyId": "<generated-id-6>",
+              "effectLedgerKeyType": "generation",
+              "generationId": "<generated-id-6>",
+              "inputTokens": 274,
+              "jobId": "<generated-id-6>",
+              "maxContext": 4000,
+              "model": "gpt4o",
+              "operationId": "<generated-id-7>",
+              "outputTokens": 96,
+              "stageTiming": {
+                "stage1": 0,
+                "stage2": 0,
+                "stage3": 0,
+                "stage4": 0
+              }
+            },
+            "promptInfo": {},
+            "role": "char",
+            "saying": "compat-char",
+            "time": "<present>"
           }
         ],
         "providerRequests": [
