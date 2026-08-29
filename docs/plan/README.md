@@ -7,6 +7,9 @@ plan, status, phase, slice, decision, and verification structure intact.
 
 ## Workstreams
 
-There are no active multi-phase workstreams. The completed test-suite
-effectiveness audit is preserved under
+- [BardWiki memory](bardwiki/README.md): planned. Add a per-chat, server-owned
+  Markdown wiki with durable background updates and deterministic prompt
+  retrieval. Phase 0 is the next implementation phase.
+
+The completed test-suite effectiveness audit is preserved under
 [Performance and stability](../../.archived-docs/performance-and-stability/README.md).
