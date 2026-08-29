@@ -85,26 +85,13 @@ to find companion files and tests.
   authoritative. Browser caches are disposable; the encrypted outbox and scoped
   drafts retain pending intent or edits, not an independent offline database.
   See the [Cache Protocol](docs/structure/server-resources-and-bridges.md#cache-protocol).
-- Intermediate `editdisplay` processing is Fastify-owned for negotiated,
-  parity-supported chat rows, while final Markdown/sanitization/DOM work remains
-  browser-owned. Derived `displaySource` text is process-local and never message
-  authority; see
-  [Intermediate Display Processing](docs/structure/prompt-assembly-and-scripting.md#intermediate-display-processing).
 - Normal revision-tracked domain writes use command mutations and global
   revision ordering. Server-owned exceptions are listed in
   [Data And Events](docs/structure/data-and-events.md#server-owned-exceptions).
-- Persisted credentials are resolved server-side and masked in browser
-  projections. Only typed operations may accept one-shot drafts. Whole-database
-  saves contain raw credentials and must be treated as secrets. See
-  [Provider Credentials](docs/structure/providers-and-models.md#provider-credentials)
-  and [Assets And Saves](docs/structure/assets-and-saves.md).
-- Durable content must not be silently discarded. Imports either reject
-  unsupported content atomically or report exact salvage, and generation
-  finalization fences the assembly-time transcript snapshot. See
-  [Assets And Saves](docs/structure/assets-and-saves.md#character-cards)
-  and [Generation And Background Work](docs/structure/backend.md#generation-and-background-work).
 - Mutation-facing UI must distinguish `accepted`, `queued`, and `failed`. A
   queued mutation is retained intent, not server acceptance; preserve newer
   drafts and do not report success merely because dispatch began.
 - Put new user-visible frontend strings in `src/lang`; `src/lang/en.ts` is the
   source language pack.
+- Unless there is an explicit instruction to change the architecture, we should continue to follow the single-writer rule for now. The single-writer rule exists to reduce implementation complexity, so new features do not need to account for multi-writer scenarios.
+
