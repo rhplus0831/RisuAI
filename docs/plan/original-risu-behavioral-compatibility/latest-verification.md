@@ -4,7 +4,7 @@ Date: 2026-08-30
 
 ## Current Verdict
 
-Phases 0 through 6 are complete. Phase 2 state/recovery implementation
+Phases 0 through 7 are complete. Phase 2 state/recovery implementation
 closes through `3ce85c1f034b3afc493e291f8a8f5e9227064463` and the partial-object projection
 correction `f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74`. Phase 3 closed-world durable
 ownership is at `958f8585138ec817fe5d134563df585434ed5821`, with exact BardWiki eventless
@@ -17,7 +17,8 @@ visible route/control and responsive-shell contract through
 generation ownership through `19ba37af26df7db60d7393976d61b520a785076b`,
 with exact visible failure/Retry evidence at
 `477a3aece1fffc159b0354fef5b21ecddf60cab5`. This is not yet a whole-product
-compatibility verdict; Phase 7 is in progress.
+compatibility verdict; Phase 7 closes its provider and media matrices at
+`fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050`, and Phase 8 is in progress.
 
 ## Phase 0 Environment And Baseline Evidence
 
@@ -229,6 +230,31 @@ governed responsive-shell decision.
 | Category F closure check | Passed; zero Category F rows remain mapped-only |
 | `pnpm validate:compat-registers` and fail-closed register Vitest | Passed; 102 inventory rows, 61 signed decisions, 15 findings, 85 upstream units, all 75 historical raw reports mapped, and 12 validator tests |
 | Phase 6 Prettier check and `git diff --check` | Passed |
+
+## Phase 7 Evidence
+
+| Check | Result |
+| --- | --- |
+| Closed provider, option, operation, translation, and media structure | `fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050` |
+| Category G inventory | New verified rows `ORC-SURFACE-103` through `ORC-SURFACE-105`; all 13 historical mapped-only Category G rows re-verified; 18 verified Category G rows and 105 total inventory rows |
+| Model and adapter vocabulary | 24 retained `LLMFormat` values, 15 admitted text adapters or explicit browser-only dispositions, and nine first-class profile-provider ids |
+| Option and request ownership | Every profile provider option and runtime option has a materialization/consumer owner; deterministic provider tests retain endpoint, credentials, headers, model, roles, body options, stream, fallback, cancel, and error semantics |
+| Fixed operations | All 18 provider operations have a production dispatcher and sanitized request-capture owner |
+| Translation and media | Four raw translator kinds, five detached/browser translation lifecycle owners, eight image providers, five TTS operations, and fixed Whisper VTT transcription are closed over production and assurance owners |
+| Signed boundaries | `ORC-DECISION-006` keeps browser-only provider paths out of Fastify; `ORC-DECISION-059` retains the curated catalog and inert `dynamicOutput` classification |
+
+## Phase 7 Validation
+
+| Command/check | Result |
+| --- | --- |
+| `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/phase7CompatibilityStructure.test.ts` | Passed; 1 file and 6 closed-world tests |
+| Focused Fastify provider/operation/translation/media selection | Passed; 11 files and 249 tests |
+| Focused browser/runtime profile, translation, speech, and media selection | Passed; 11 files and 205 tests |
+| `pnpm exec playwright test -c playwright.fastify-smoke.config.ts server/fastify/browser-smoke/fastifyBrowserSmoke.spec.ts --grep 'translator preset bindings persist independently across chats'` | Passed; 1 production-bundle browser test |
+| `pnpm test:affected --dry-run --base fe7825f3d^` | Selected the Phase 7 structural server test plus compatibility register validation and its fail-closed tests |
+| `pnpm check:server` | Passed at the Phase 7 implementation anchor |
+| Category G closure check | Passed; 18 of 18 Category G rows verified and zero remain mapped-only |
+| Register validation, Prettier, and `git diff --check` | Passed after the Category G register update; 105 inventory rows, 61 signed decisions, and 15 findings |
 
 ## Update Rules
 

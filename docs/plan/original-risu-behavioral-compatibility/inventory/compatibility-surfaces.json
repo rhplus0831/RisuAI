@@ -701,12 +701,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
+        "state": "verified",
         "confidence": "high",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "lastFastifyCommit": "fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050",
         "findingIds": [],
         "decisionId": "ORC-DECISION-006",
-        "residual": "Individual maintainer authority is reconstructed from commit c0187dc730f0d85eb0d69b54d5f9f9d4e2384c4a; Phase 7 must independently re-verify each live rejection path."
+        "residual": null
       },
       "notes": "The maintainer explicitly documented the browser/local selectors as rejected by Fastify server chat dispatch."
     },
@@ -1928,12 +1928,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050",
         "findingIds": [],
         "decisionId": "ORC-DECISION-026",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -2347,12 +2347,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050",
         "findingIds": [],
         "decisionId": "ORC-DECISION-033",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -2406,12 +2406,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050",
         "findingIds": [],
         "decisionId": "ORC-DECISION-034",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -3196,12 +3196,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050",
         "findingIds": [],
         "decisionId": "ORC-DECISION-047",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -3255,12 +3255,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050",
         "findingIds": [],
         "decisionId": "ORC-DECISION-048",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -3314,12 +3314,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050",
         "findingIds": [],
         "decisionId": "ORC-DECISION-049",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -3373,12 +3373,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050",
         "findingIds": [],
         "decisionId": "ORC-DECISION-050",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -3432,12 +3432,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050",
         "findingIds": [],
         "decisionId": "ORC-DECISION-051",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -3491,12 +3491,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050",
         "findingIds": [],
         "decisionId": "ORC-DECISION-052",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -3550,12 +3550,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050",
         "findingIds": [],
         "decisionId": "ORC-DECISION-053",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -3918,12 +3918,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
+        "state": "verified",
         "confidence": "high",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "lastFastifyCommit": "fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050",
         "findingIds": [],
         "decisionId": "ORC-DECISION-059",
-        "residual": "Individual maintainer authority is reconstructed from commit aad698dba728556134dee19a3facf72817290570; Phase 7 must independently re-verify the curated-catalog boundary."
+        "residual": null
       },
       "notes": "The maintainer explicitly chose a curated provider catalog over dynamic OpenAI registration plumbing."
     },
@@ -4156,14 +4156,14 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
+        "state": "verified",
         "confidence": "high",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "lastFastifyCommit": "fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050",
         "findingIds": [
           "ORC-G-004"
         ],
         "decisionId": null,
-        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+        "residual": null
       },
       "notes": "Canonical import of a resolved 2026-08 compatibility finding."
     },
@@ -6653,6 +6653,251 @@
         "residual": null
       },
       "notes": "RH+ commit ec124302c explicitly retires editing and retrieval while requiring preserved imported data, visible read-only diagnosis, and a pinned prompt omission."
+    },
+    {
+      "id": "ORC-SURFACE-103",
+      "title": "Closed model-format, provider, endpoint, credential, and option dispatch",
+      "primaryCategory": "G",
+      "seamTags": [
+        "E",
+        "F",
+        "L"
+      ],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "Every retained model format is classified as an admitted Fastify adapter or an explicit browser-only path.",
+        "Every admitted adapter and first-class profile provider has endpoint, credential, provider-option, runtime-option, request, response, and failure ownership.",
+        "Curated and browser-only boundaries cannot silently gain server dispatch, and profile options cannot disappear between authoring and provider consumption."
+      ],
+      "variants": [
+        "all 24 retained LLM formats and 15 admitted text adapters",
+        "all nine first-class profile providers",
+        "missing, null, default, legacy, and explicit provider/runtime options",
+        "buffered, streamed, retry, fallback, cancellation, endpoint override, and error",
+        "masked, missing, invalid, and provider-scoped credentials"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/model/modellist.ts",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/request"
+        ],
+        "browser": [
+          "src/ts/model/modelProfileResolver.ts",
+          "src/ts/process/request/providerCapability.ts"
+        ],
+        "protocol": [
+          "packages/protocol/src/generation.ts"
+        ],
+        "fastify": [
+          "server/fastify/src/prompt/chatDispatch.ts",
+          "server/fastify/src/generation"
+        ],
+        "persistence": [
+          "server/fastify/src/repository.ts",
+          "server/fastify/src/commands/providerCredentials.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Credential values and generated request ids are secret/nondeterministic and may be masked; provider, endpoint path/query, method, headers, model, roles, message order, option presence, retry order, status, and failure class remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/model/modellist.ts",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/request"
+        ],
+        "current": [
+          "fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase7CompatibilityStructure.test.ts",
+          "server/fastify/__tests__/chatDispatchProfileOptions.test.ts",
+          "server/fastify/__tests__/openaiResponses.test.ts",
+          "src/ts/model/modelProfileRecords.test.ts",
+          "src/ts/model/modelProfileUiState.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/phase7CompatibilityStructure.test.ts#LLM_FORMAT_POLICY",
+          "server/fastify/__tests__/phase7CompatibilityStructure.test.ts#TEXT_ADAPTER_OWNERS",
+          "server/fastify/__tests__/chatDispatchProfileOptions.test.ts (sanitized request captures)"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": "Live paid-provider canaries are outside normal CI; sanitized deterministic request captures own the provider-wire contract."
+      },
+      "notes": "Historical signed nonserver-provider and curated-catalog rows retain their individual decisions; this row owns the closed current vocabulary."
+    },
+    {
+      "id": "ORC-SURFACE-104",
+      "title": "Fixed provider-operation request, response, and failure ownership",
+      "primaryCategory": "G",
+      "seamTags": [
+        "E",
+        "L"
+      ],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "Every retained fixed provider operation dispatches through its named server owner with provider-scoped credentials and sanitized request-capture assurance.",
+        "Operation-specific URL, headers, body, response parsing, error status, and cancellation boundaries remain explicit and cannot silently fall through to another provider."
+      ],
+      "variants": [
+        "all 18 fixed provider operations",
+        "success, upstream rejection, malformed response, timeout, and abort",
+        "missing, invalid, and provider-scoped credential"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/request"
+        ],
+        "browser": [
+          "src/ts/server/providerOperations.ts"
+        ],
+        "protocol": [
+          "src/ts/server/providerOperationsProtocol.ts"
+        ],
+        "fastify": [
+          "server/fastify/src/providerOperations.ts",
+          "server/fastify/src/routes/providerOperations.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/commands/providerCredentials.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Credential values, request ids, and remote timestamps may be masked; operation identity, endpoint, request semantics, abort state, response shape, and visible error remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/request"
+        ],
+        "current": [
+          "fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase7CompatibilityStructure.test.ts",
+          "server/fastify/__tests__/providerOperations.test.ts",
+          "src/ts/server/providerOperations.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/providerOperations.test.ts (sanitized fixed-operation request captures)"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": "Live third-party availability is fixture-proven and not exercised by the deterministic compatibility lane."
+      },
+      "notes": "The operation protocol is a closed union; new operations must add a production and request-capture owner."
+    },
+    {
+      "id": "ORC-SURFACE-105",
+      "title": "Translation, image, speech, and transcription lifecycle ownership",
+      "primaryCategory": "G",
+      "seamTags": [
+        "C",
+        "D",
+        "H",
+        "K"
+      ],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "Raw and profile-based translation preserve target message or greeting identity, ordering, cache ownership, durable metadata, failure feedback, and reload behavior.",
+        "Every retained image and TTS operation plus the fixed Whisper VTT transcription path has bounded request, response, asset, cancellation, and failure ownership.",
+        "Per-chat translator-preset bindings remain independent and persist across chat switches and authoritative reload-backed projection."
+      ],
+      "variants": [
+        "all four raw translator kinds and five translation lifecycle owners",
+        "all eight image providers and five TTS synthesis operations",
+        "generation-completion, message, greeting, draft, and BTW translation",
+        "success, empty, stale, retry, cancellation, malformed binary/text, and upstream error",
+        "chat switch and reload-backed translator preset selection"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/translator",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/tts.ts",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/scriptings.ts"
+        ],
+        "browser": [
+          "src/ts/translator/translator.ts",
+          "src/ts/process/tts.ts",
+          "src/ts/server/imageGeneration.ts",
+          "src/ts/server/openAITranscription.ts"
+        ],
+        "protocol": [
+          "src/ts/server/imageGenerationProtocol.ts",
+          "src/ts/server/ttsProtocol.ts"
+        ],
+        "fastify": [
+          "server/fastify/src/translation",
+          "server/fastify/src/imageGeneration.ts",
+          "server/fastify/src/tts.ts",
+          "server/fastify/src/openAITranscription.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/repository.ts",
+          "server/fastify/src/translation/serverMessageTranslation.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Remote ids and timestamps may be normalized; target identity, translated text/order, selected profile, media bytes/type/reference, request cardinality, cancellation, persistence, and visible failure remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/translator",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process"
+        ],
+        "current": [
+          "fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase7CompatibilityStructure.test.ts",
+          "server/fastify/__tests__/rawMessageTranslation.test.ts",
+          "server/fastify/__tests__/serverMessageTranslation.test.ts",
+          "server/fastify/__tests__/imageGeneration.test.ts",
+          "server/fastify/__tests__/tts.test.ts",
+          "server/fastify/__tests__/openAITranscription.test.ts",
+          "src/ts/translator/translator.cache.svelte-node.test.ts",
+          "src/ts/process/tts.test.ts",
+          "server/fastify/browser-smoke/fastifyBrowserSmoke.spec.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/phase7CompatibilityStructure.test.ts#TRANSLATION_LIFECYCLE_OWNERS",
+          "server/fastify/__tests__/imageGeneration.test.ts (binary/text/provider fixtures)",
+          "server/fastify/browser-smoke/fastifyBrowserSmoke.spec.ts (independent translator-preset bindings)"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": "Remote codec support and browser autoplay policy are deterministic fixture/platform boundaries; no paid media service is called by normal CI."
+      },
+      "notes": "Phase 8 owns detached job durability and Phase 12 owns shared auth, limits, redaction, and runtime diagnostics."
     }
   ]
 }
