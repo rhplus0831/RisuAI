@@ -12,8 +12,8 @@ findings under [`findings/`](findings/); inventory ownership under
 ## Current Snapshot
 
 - Plan state: Active.
-- Current phase: Phase 8 — memory, embeddings, jobs, and workers.
-- Active slice: [Phase 8 memory, embeddings, jobs, and workers](phases/phase-8-memory-embeddings-jobs-and-workers.md).
+- Current phase: Phase 9 — scripting, parsing, triggers, and automation.
+- Active slice: [Phase 9 scripting, parsing, triggers, and automation](phases/phase-9-scripting-parsing-triggers-and-automation.md).
 - Planning audit anchor: `1933c43ff7b4d35b57b0852013d95f3881a8cb28`.
 - Compatibility baseline: `71c476e9c86263fe907105b011ca4dde0a619d66`.
 - Behavioral sync cursor: `f3f0242fba297d82e0efcc2c31ca1428569b70f2`.
@@ -23,7 +23,7 @@ findings under [`findings/`](findings/); inventory ownership under
   `/home/codex/risu-baseline-71c476e9c`; its exact commit, dependency state, and
   cleanliness are enforced by `pnpm prepare:compat-baseline` and the harness
   preflight.
-- Current compatibility state: Phases 0 through 7 are complete.
+- Current compatibility state: Phases 0 through 8 are complete.
   Phase 5 closes settings/default/preset/collection ownership at
   `b34b7a78f28cb5903ece3880073fbb9e46392cb8` and visible character-authoring
   reload evidence at `5eca30f4872e865efee2c86f4dde7ae71e915f9a`.
@@ -36,6 +36,9 @@ findings under [`findings/`](findings/); inventory ownership under
   fixed provider operation, translation lifecycle, image provider, speech
   operation, and transcription path at
   `fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050`.
+  Phase 8 closes retained memory/embedding selection and complete memory/BardWiki
+  queue lifecycles, including a real SQLite close/reopen startup recovery, at
+  `a77f47c9f79b0233e147456e73ded69e1869d192`.
   After the independent Phase 2 governance-link correction
   `7ba933fe6f1c3338bd9cce2ef308b2b216ac8e8d`, the required pinned differential
   passes with 16 baseline cells, 18
@@ -48,9 +51,8 @@ findings under [`findings/`](findings/); inventory ownership under
 - Open maintainer decisions: none. All 61 decisions are signed; individual RH+
   commits reconstruct authority for the four historical boundaries, responsive
   shell, and retired character additional-information retrieval.
-- Next action: complete Phase 8 memory selection, embedding resolution,
-  context-budget, queue, worker, retry, cancellation, restart, and
-  reconciliation evidence.
+- Next action: complete Phase 9 CBS, regex, Lua, trigger/effect ordering, durable
+  script state, execution-bound, and explicit unsupported-effect evidence.
 
 ## Phase Router
 
@@ -64,8 +66,8 @@ findings under [`findings/`](findings/); inventory ownership under
 | [5. Settings, profiles, authoring, and catalogs](phases/phase-5-settings-profiles-authoring-and-catalogs.md) | Complete | Closed settings/default/preset and collection ownership, visible character reload, Realm/catalog failure behavior, and upload atomicity. |
 | [6. Prompting, generation, and streaming](phases/phase-6-prompting-generation-and-streaming.md) | Complete | Closed model-visible contributor/action/style ownership, durable transcript/fault/finalization semantics, visible retry, and signed unsupported boundaries. |
 | [7. Providers, models, translation, and media](phases/phase-7-providers-models-translation-and-media.md) | Complete | Closed format/adapter/profile/option/operation ownership, provider-wire fixtures, persisted translation routing, and media dispatch. |
-| [8. Memory, embeddings, jobs, and workers](phases/phase-8-memory-embeddings-jobs-and-workers.md) | In progress | Verify retained memory selection, context truncation, jobs, retries, cancellation, and reconciliation. |
-| [9. Scripting, parsing, triggers, and automation](phases/phase-9-scripting-parsing-triggers-and-automation.md) | Pending | Verify CBS, regex, Lua, trigger/script ordering and state, transformations, and explicit unsupported effects. |
+| [8. Memory, embeddings, jobs, and workers](phases/phase-8-memory-embeddings-jobs-and-workers.md) | Complete | Closed retained-memory/embedding selection, budgets, memory/BardWiki job states, retry/cancel/restart, stale-target, and reconciliation ownership. |
+| [9. Scripting, parsing, triggers, and automation](phases/phase-9-scripting-parsing-triggers-and-automation.md) | In progress | Verify CBS, regex, Lua, trigger/script ordering and state, transformations, and explicit unsupported effects. |
 | [10. Plugins, modules, MCP, and specialized tools](phases/phase-10-plugins-modules-mcp-and-specialized-tools.md) | Pending | Verify retained extension data/APIs/lifecycle, permissions, tools, and no-port boundaries. |
 | [11. Assets, imports, exports, saves, and backups](phases/phase-11-assets-import-export-and-backups.md) | Pending | Verify references, codecs, salvage, staged assets, historical formats, and bidirectional round trips. |
 | [12. Runtime, platform, limits, and diagnostics](phases/phase-12-runtime-platform-and-diagnostics.md) | Pending | Verify shared platform behavior, visible rejection/diagnostics, browser/server environment, startup/shutdown, and Push. |
@@ -232,6 +234,32 @@ findings under [`findings/`](findings/); inventory ownership under
 - Focused server/browser provider, translation, speech, and media suites,
   server typechecks, the visible translator-preset browser journey, registers,
   formatting, and diff checks pass.
+
+## Phase 8 Completion Record
+
+- `a77f47c9f79b0233e147456e73ded69e1869d192` closes the standard Hypa planner,
+  five retired algorithms, 18 embedding aliases, four allocation categories,
+  three BardWiki modes, and nine score reasons over explicit owners.
+- The same structural gate closes every memory/BardWiki job kind, all five
+  queue states, terminal states, retry/exhaustion, cancellation, duplicate
+  delivery, restart recovery, stale invalidation/reconciliation, and terminal
+  diagnostic owner. Reserved `chunk` is explicitly no-op because assembly owns
+  live planning.
+- A real SQLite close/reopen plus Fastify-start regression proves an abandoned
+  running job is recovered, executed once, and remains durably completed with
+  attempt count 2 after another reopen. Invalid-ratio diagnostics and
+  conventional empty-flag lore regex parsing are also pinned.
+- Category H rows `ORC-SURFACE-106` through `ORC-SURFACE-108` own the new closed
+  surfaces. Historical rows `ORC-SURFACE-035` and `ORC-SURFACE-058` through
+  `ORC-SURFACE-060` are independently re-verified; Category H is 7/7 verified
+  and the total inventory is 108.
+- Decision-owner records for `ORC-DECISION-031` and `ORC-DECISION-054` through
+  `056` now point to the actual lorebook, memory-adapter/planner, allocator,
+  assembly, and worker regressions. No new decision or production fix was
+  needed.
+- The 563-test owning lane, persistence/generation integration, retired-memory
+  browser assurance, server typechecks, registers, formatting, and diff checks
+  pass.
 
 ## Locked Planning Decisions
 

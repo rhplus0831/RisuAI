@@ -2197,10 +2197,9 @@
         ],
         "browser": [],
         "protocol": [],
-        "fastify": [
-          "server/fastify/src/memoryWorker.ts",
-          "server/fastify/src/prompt/assemble.ts"
-        ],
+      "fastify": [
+        "server/fastify/src/prompt/lorebook.ts"
+      ],
         "persistence": []
       },
       "upstream": {
@@ -2215,23 +2214,23 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
         ],
-        "current": [
-          "server/fastify/src/memoryWorker.ts",
-          "server/fastify/src/prompt/assemble.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/memoryWorker.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/prompt/lorebook.ts",
+        "a77f47c9f79b0233e147456e73ded69e1869d192"
+      ],
+      "tests": [
+        "server/fastify/__tests__/lorebook.test.ts",
+        "server/fastify/__tests__/phase8CompatibilityStructure.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "state": "verified",
+      "confidence": "high",
+      "lastFastifyCommit": "a77f47c9f79b0233e147456e73ded69e1869d192",
         "findingIds": [],
         "decisionId": "ORC-DECISION-031",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -3579,10 +3578,11 @@
         ],
         "browser": [],
         "protocol": [],
-        "fastify": [
-          "server/fastify/src/memoryWorker.ts",
-          "server/fastify/src/prompt/assemble.ts"
-        ],
+      "fastify": [
+        "server/fastify/src/prompt/memoryAdapter.ts",
+        "server/fastify/src/prompt/memory.ts",
+        "server/fastify/src/prompt/assemble.ts"
+      ],
         "persistence": []
       },
       "upstream": {
@@ -3597,23 +3597,26 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
         ],
-        "current": [
-          "server/fastify/src/memoryWorker.ts",
-          "server/fastify/src/prompt/assemble.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/memoryWorker.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/prompt/memoryAdapter.ts",
+        "server/fastify/src/prompt/memory.ts",
+        "server/fastify/src/prompt/assemble.ts",
+        "a77f47c9f79b0233e147456e73ded69e1869d192"
+      ],
+      "tests": [
+        "server/fastify/__tests__/promptMemoryAdapter.test.ts",
+        "server/fastify/__tests__/assemble.test.ts",
+        "server/fastify/__tests__/phase8CompatibilityStructure.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "state": "verified",
+      "confidence": "high",
+      "lastFastifyCommit": "a77f47c9f79b0233e147456e73ded69e1869d192",
         "findingIds": [],
         "decisionId": "ORC-DECISION-054",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -3637,11 +3640,16 @@
         ],
         "browser": [],
         "protocol": [],
-        "fastify": [
-          "server/fastify/src/memoryWorker.ts",
-          "server/fastify/src/prompt/assemble.ts"
-        ],
-        "persistence": []
+      "fastify": [
+        "server/fastify/src/memoryPlanner.ts",
+        "server/fastify/src/memoryChunkPlanner.ts",
+        "server/fastify/src/memorySummarizeJobHandler.ts",
+        "server/fastify/src/memoryWorker.ts",
+        "server/fastify/src/prompt/assemble.ts"
+      ],
+      "persistence": [
+        "server/fastify/src/memoryRepository.ts"
+      ]
       },
       "upstream": {
         "commits": [],
@@ -3655,23 +3663,30 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
         ],
-        "current": [
-          "server/fastify/src/memoryWorker.ts",
-          "server/fastify/src/prompt/assemble.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/memoryWorker.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/memoryPlanner.ts",
+        "server/fastify/src/memoryChunkPlanner.ts",
+        "server/fastify/src/memorySummarizeJobHandler.ts",
+        "server/fastify/src/memoryWorker.ts",
+        "server/fastify/src/prompt/assemble.ts",
+        "a77f47c9f79b0233e147456e73ded69e1869d192"
+      ],
+      "tests": [
+        "server/fastify/__tests__/assemble.test.ts",
+        "server/fastify/__tests__/memoryChunkPlanner.test.ts",
+        "server/fastify/__tests__/memorySummarizeJobHandler.test.ts",
+        "server/fastify/__tests__/memoryWorker.test.ts",
+        "server/fastify/__tests__/phase8CompatibilityStructure.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "state": "verified",
+      "confidence": "high",
+      "lastFastifyCommit": "a77f47c9f79b0233e147456e73ded69e1869d192",
         "findingIds": [],
         "decisionId": "ORC-DECISION-055",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -3695,10 +3710,11 @@
         ],
         "browser": [],
         "protocol": [],
-        "fastify": [
-          "server/fastify/src/memoryWorker.ts",
-          "server/fastify/src/prompt/assemble.ts"
-        ],
+      "fastify": [
+        "server/fastify/src/memoryPlanner.ts",
+        "server/fastify/src/memoryBudgetAllocator.ts",
+        "server/fastify/src/prompt/assemble.ts"
+      ],
         "persistence": []
       },
       "upstream": {
@@ -3713,23 +3729,27 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
         ],
-        "current": [
-          "server/fastify/src/memoryWorker.ts",
-          "server/fastify/src/prompt/assemble.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/memoryWorker.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/memoryPlanner.ts",
+        "server/fastify/src/memoryBudgetAllocator.ts",
+        "server/fastify/src/prompt/assemble.ts",
+        "a77f47c9f79b0233e147456e73ded69e1869d192"
+      ],
+      "tests": [
+        "server/fastify/__tests__/memoryPlanner.test.ts",
+        "server/fastify/__tests__/memoryBudgetAllocator.test.ts",
+        "server/fastify/__tests__/assemble.test.ts",
+        "server/fastify/__tests__/phase8CompatibilityStructure.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "state": "verified",
+      "confidence": "high",
+      "lastFastifyCommit": "a77f47c9f79b0233e147456e73ded69e1869d192",
         "findingIds": [],
         "decisionId": "ORC-DECISION-056",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -6898,6 +6918,258 @@
         "residual": "Remote codec support and browser autoplay policy are deterministic fixture/platform boundaries; no paid media service is called by normal CI."
       },
       "notes": "Phase 8 owns detached job durability and Phase 12 owns shared auth, limits, redaction, and runtime diagnostics."
+    },
+    {
+      "id": "ORC-SURFACE-106",
+      "title": "Closed retained-memory planning, embeddings, selection, and model-visible budget",
+      "primaryCategory": "H",
+      "seamTags": [
+        "E",
+        "F",
+        "G"
+      ],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "The retained standard Hypa planner owns chunking, summary selection, four allocation categories, token budgeting, and model-visible row placement.",
+        "Every retained Hypa embedding alias is classified as a server-routable model/provider or an explicit browser-local model.",
+        "Five removed memory algorithms remain detectable through a migration notice and cannot silently appear active as the maintained Hypa V3 path.",
+        "BardWiki hypa, bardwiki, and hybrid modes preserve their requested budgets, selection reasons, ordering, and prompt placement."
+      ],
+      "variants": [
+        "standard Hypa planner and five retired algorithms",
+        "all 18 retained Hypa embedding aliases",
+        "important, recent, similar, and random allocation",
+        "missing, valid, invalid, clamped, zero, and exhausted budgets",
+        "hypa, bardwiki, and hybrid modes with nine score reasons",
+        "raw system-row summaries and deferred new summaries"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/memory/hypav3.ts",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/memory/hypamemory.ts"
+        ],
+        "browser": [
+          "src/ts/process/memory/hypamemory.ts",
+          "src/ts/process/legacyMemoryMigrationNotice.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/memoryPlanner.ts",
+          "server/fastify/src/memoryEmbeddingModel.ts",
+          "server/fastify/src/memoryBudgetAllocator.ts",
+          "server/fastify/src/prompt/memoryAdapter.ts",
+          "server/fastify/src/prompt/bardWikiSelection.ts",
+          "server/fastify/src/prompt/assemble.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/memoryRepository.ts",
+          "server/fastify/src/bardWikiRepository.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Generated summary/embedding ids and timestamps may be normalized; source range, model/provider, candidate score/rank, category order, selected content, token accounting, diagnostics, role, and model-visible placement remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/memory"
+        ],
+        "current": [
+          "a77f47c9f79b0233e147456e73ded69e1869d192"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase8CompatibilityStructure.test.ts",
+          "server/fastify/__tests__/memoryPlanner.test.ts",
+          "server/fastify/__tests__/memoryEmbeddingModel.test.ts",
+          "server/fastify/__tests__/memoryBudgetAllocator.test.ts",
+          "server/fastify/__tests__/bardWikiSelection.test.ts",
+          "server/fastify/__tests__/promptMemoryAdapter.test.ts",
+          "server/fastify/__tests__/assemble.test.ts",
+          "src/ts/process/legacyMemoryMigrationNotice.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/phase8CompatibilityStructure.test.ts#HYPA_EMBEDDING_MODEL_OWNERS",
+          "server/fastify/__tests__/memoryPlanner.test.ts (threshold/range/invalid-setting fixtures)",
+          "server/fastify/__tests__/bardWikiSelection.test.ts (rank and budget fixtures)"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "a77f47c9f79b0233e147456e73ded69e1869d192",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": "Browser-local embedding engines remain explicitly client-owned; no model download or live embedding endpoint is required by deterministic CI."
+      },
+      "notes": "Signed raw-row, deferred-summary, ratio-clamp, and conventional-regex differences remain governed by their individual historical rows."
+    },
+    {
+      "id": "ORC-SURFACE-107",
+      "title": "Durable memory job queue, worker, retry, cancellation, and restart ownership",
+      "primaryCategory": "H",
+      "seamTags": [
+        "B",
+        "C",
+        "L"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Every memory job kind and state has a production handler or explicit reserved no-op disposition, a legal transition owner, terminal diagnostics, and behavioral assurance.",
+        "Embed and summarize jobs retry with bounded backoff, cancel safely, deduplicate durable delivery, reject stale targets, and expose completed, failed, or cancelled terminal state.",
+        "An abandoned running job survives SQLite close/reopen, is recovered at Fastify startup, executes once, and remains durably completed after a second reopen."
+      ],
+      "variants": [
+        "chunk reserved no-op, embed, and summarize",
+        "pending, running, completed, failed, and cancelled",
+        "handler failure, bounded retry, exhaustion, cancellation, and shutdown",
+        "duplicate delivery and stale/deleted chat target",
+        "database close/reopen, application start, and durable post-start verification"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/memory"
+        ],
+        "browser": [
+          "src/ts/server/events.ts"
+        ],
+        "protocol": [
+          "src/ts/server/commands.ts"
+        ],
+        "fastify": [
+          "server/fastify/src/memoryWorker.ts",
+          "server/fastify/src/memoryEmbedJobHandler.ts",
+          "server/fastify/src/memorySummarizeJobHandler.ts",
+          "server/fastify/src/memoryInvalidation.ts",
+          "server/fastify/src/memoryEvents.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/memoryRepository.ts",
+          "server/fastify/src/db.ts#memory_jobs"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Job ids, timestamps, and backoff wall-clock values may be normalized; job kind, chat/target identity, attempt count/order, handler cardinality, state transition, durable result, cancellation, and sanitized diagnostic remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/memory"
+        ],
+        "current": [
+          "a77f47c9f79b0233e147456e73ded69e1869d192"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase8CompatibilityStructure.test.ts",
+          "server/fastify/__tests__/memoryRepository.test.ts",
+          "server/fastify/__tests__/memoryWorker.test.ts",
+          "server/fastify/__tests__/memoryEmbedJobHandler.test.ts",
+          "server/fastify/__tests__/memorySummarizeJobHandler.test.ts",
+          "server/fastify/__tests__/memoryJobsRoutes.test.ts",
+          "server/fastify/__tests__/commands.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/memoryWorker.test.ts (real SQLite close/reopen and Fastify startup)",
+          "server/fastify/__tests__/memoryEmbedJobHandler.test.ts (duplicate-delivery and stale-source fixtures)"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "a77f47c9f79b0233e147456e73ded69e1869d192",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": "The public chunk kind is intentionally reserved/no-op because live chunk planning is assembly-owned; the closed catalog prevents it from being mistaken for an active durable mutation handler."
+      },
+      "notes": "The combined database-reopen/application-start case fills the only concrete persistence assurance gap found in this Phase 8 audit."
+    },
+    {
+      "id": "ORC-SURFACE-108",
+      "title": "BardWiki job, receipt, reconciliation, and terminal-diagnostic ownership",
+      "primaryCategory": "H",
+      "seamTags": [
+        "B",
+        "C",
+        "F",
+        "L"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Apply-turn, receipt-reconciliation, and chat-rebuild jobs close over every queue state and legal transition.",
+        "Retries, explicit retry, cancellation, restart recovery, exact duplicate receipts, transcript invalidation, stale-source reconciliation, and terminal diagnostics cannot duplicate or mis-target durable memory effects.",
+        "Prompt consumption observes only confirmed/current BardWiki state and preserves selected row order and budget."
+      ],
+      "variants": [
+        "apply_turn, reconcile_receipt, and rebuild_chat",
+        "pending, running, completed, failed, and cancelled",
+        "response loss, exact duplicate receipt, stale transcript, rebuild, restart, retry, and exhaustion",
+        "hypa, bardwiki, and hybrid prompt consumption"
+      ],
+      "owners": {
+        "baseline": [],
+        "browser": [
+          "src/ts/server/events.ts"
+        ],
+        "protocol": [
+          "src/ts/server/commands.ts"
+        ],
+        "fastify": [
+          "server/fastify/src/bardWikiApplyTurnHandler.ts",
+          "server/fastify/src/bardWikiReconcileHandler.ts",
+          "server/fastify/src/bardWikiRebuildHandler.ts",
+          "server/fastify/src/bardWikiReceipts.ts",
+          "server/fastify/src/bardWikiInvalidation.ts",
+          "server/fastify/src/memoryEvents.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/bardWikiJobs.ts",
+          "server/fastify/src/bardWikiRepository.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Job/receipt ids and timestamps may be normalized; source identity, revision, job kind/state, attempt order, receipt cardinality, invalidation/reconciliation result, selected prompt rows, and sanitized terminal error remain semantic."
+      ],
+      "evidence": {
+        "baseline": [],
+        "current": [
+          "a77f47c9f79b0233e147456e73ded69e1869d192"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase8CompatibilityStructure.test.ts",
+          "server/fastify/__tests__/bardWikiJobs.test.ts",
+          "server/fastify/__tests__/bardWikiApplyTurnHandler.test.ts",
+          "server/fastify/__tests__/bardWikiLifecycle.test.ts",
+          "server/fastify/__tests__/bardWikiRebuildHandler.test.ts",
+          "server/fastify/__tests__/bardWikiConfirmation.test.ts",
+          "server/fastify/__tests__/bardWikiWorker.test.ts",
+          "server/fastify/__tests__/bardWikiPrompt.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/bardWikiLifecycle.test.ts (restart/stale-source/reconciliation fixtures)",
+          "server/fastify/__tests__/bardWikiConfirmation.test.ts (duplicate-receipt fixtures)"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "a77f47c9f79b0233e147456e73ded69e1869d192",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "BardWiki is a Fastify-only interaction over shared transcripts; Phase 8 owns its durable memory effects and Phase 6 owns provider-visible prompt assembly."
     }
   ]
 }

@@ -4,7 +4,7 @@ Date: 2026-08-30
 
 ## Current Verdict
 
-Phases 0 through 7 are complete. Phase 2 state/recovery implementation
+Phases 0 through 8 are complete. Phase 2 state/recovery implementation
 closes through `3ce85c1f034b3afc493e291f8a8f5e9227064463` and the partial-object projection
 correction `f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74`. Phase 3 closed-world durable
 ownership is at `958f8585138ec817fe5d134563df585434ed5821`, with exact BardWiki eventless
@@ -18,7 +18,9 @@ generation ownership through `19ba37af26df7db60d7393976d61b520a785076b`,
 with exact visible failure/Retry evidence at
 `477a3aece1fffc159b0354fef5b21ecddf60cab5`. This is not yet a whole-product
 compatibility verdict; Phase 7 closes its provider and media matrices at
-`fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050`, and Phase 8 is in progress.
+`fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050`. Phase 8 closes memory/worker
+ownership at `a77f47c9f79b0233e147456e73ded69e1869d192`, and Phase 9 is in
+progress.
 
 ## Phase 0 Environment And Baseline Evidence
 
@@ -255,6 +257,29 @@ governed responsive-shell decision.
 | `pnpm check:server` | Passed at the Phase 7 implementation anchor |
 | Category G closure check | Passed; 18 of 18 Category G rows verified and zero remain mapped-only |
 | Register validation, Prettier, and `git diff --check` | Passed after the Category G register update; 105 inventory rows, 61 signed decisions, and 15 findings |
+
+## Phase 8 Evidence
+
+| Check | Result |
+| --- | --- |
+| Closed memory, embedding, BardWiki, job, and worker structure | `a77f47c9f79b0233e147456e73ded69e1869d192` |
+| Category H inventory | New verified rows `ORC-SURFACE-106` through `ORC-SURFACE-108`; all four historical Category H rows re-verified; 7 verified Category H rows and 108 total inventory rows |
+| Retained memory vocabulary | Standard Hypa planner, five explicitly retired algorithms, all 18 embedding aliases, four selection categories, three BardWiki modes, and nine score reasons |
+| Queue vocabulary | Three memory kinds, three BardWiki kinds, all five states and terminal states, with retry/exhaustion, cancellation, restart, duplicate delivery, stale invalidation/reconciliation, and diagnostics owned |
+| Real restart persistence | A running job survives SQLite close/reopen, is recovered once at Fastify start, completes at attempt count 2, and remains completed after another reopen |
+| Signed boundaries | Decision owners corrected for conventional lore regex parsing, raw Hypa summary rows, worker-deferred summaries, and invalid-ratio clamp diagnostics |
+
+## Phase 8 Validation
+
+| Command/check | Result |
+| --- | --- |
+| Changed-file Phase 8 selection | Passed; 4 files and 112 tests |
+| Full memory/BardWiki/assembly/lorebook owning selection | Passed; 37 files and 563 tests |
+| Commands plus generation persistence/integration selection | Passed; 2 files and 411 tests |
+| Retired-memory browser assurance | Passed; 1 file and 3 tests |
+| `pnpm check:server` | Passed after the Phase 8 structural test |
+| Category H closure check | Passed; 7 of 7 Category H rows verified and zero remain mapped-only |
+| Register validation, Prettier, and `git diff --check` | Passed after the Category H register and decision-owner update; 108 inventory rows, 61 signed decisions, and 15 findings |
 
 ## Update Rules
 
