@@ -277,4 +277,31 @@ describe('BackgroundDom parser dependencies', () => {
 
     expect(backgroundParserMocks.ParseMarkdown).toHaveBeenCalledOnce()
   })
+
+  it('keeps the rendered background visible while a same-character reparse is pending', async () => {
+    seedDatabase()
+    component = mount(BackgroundDom, { target })
+    await waitForParserCalls(1)
+    expect(target.textContent).toContain('markdown:parsed:background one')
+
+    let resolveReparse: ((value: string) => void) | undefined
+    backgroundParserMocks.ParseMarkdown.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveReparse = resolve
+        }),
+    )
+
+    ReloadGUIPointer.update((value) => value + 1)
+    await waitForParserCalls(2)
+
+    expect(resolveReparse).toBeTypeOf('function')
+    expect(target.textContent).toContain('markdown:parsed:background one')
+
+    resolveReparse?.('markdown:<section>background after chat selection</section>')
+    await settle()
+
+    expect(target.textContent).toContain('markdown:background after chat selection')
+    expect(target.textContent).not.toContain('background one')
+  })
 })
