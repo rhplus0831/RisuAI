@@ -10,7 +10,7 @@ import {
   type BardWikiDocumentResource,
   type BardWikiGlobalSettings,
   type BardWikiVersionsResource,
-} from '@risuai/protocol/bardwiki'
+} from '@risuai/protocol'
 import type { AuthState } from '../auth.js'
 import {
   getBardWikiChatSettings,

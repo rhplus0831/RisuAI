@@ -147,7 +147,7 @@ import {
   getBardWikiDocumentResource,
   resetBardWikiResource,
 } from './bardWikiResource'
-import { BARDWIKI_PROTOCOL_VERSION, DEFAULT_BARDWIKI_GLOBAL_SETTINGS } from '@risuai/protocol/bardwiki'
+import { BARDWIKI_PROTOCOL_VERSION, DEFAULT_BARDWIKI_GLOBAL_SETTINGS } from '@risuai/protocol'
 
 const hooks: ServerResourceInvalidationHooks = {
   reapplyPendingPresetProjections: sideEffects.reapplyPendingPresets,

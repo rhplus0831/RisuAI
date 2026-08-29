@@ -1,9 +1,5 @@
 import { get, writable } from 'svelte/store'
-import type {
-  BardWikiChatResource,
-  BardWikiDocumentResource,
-  BardWikiVersionsResource,
-} from '@risuai/protocol/bardwiki'
+import type { BardWikiChatResource, BardWikiDocumentResource, BardWikiVersionsResource } from '@risuai/protocol'
 import {
   fetchServerBardWikiChat,
   fetchServerBardWikiDocument,

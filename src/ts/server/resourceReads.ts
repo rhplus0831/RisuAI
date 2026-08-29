@@ -45,7 +45,7 @@ import {
   type BardWikiChatResource,
   type BardWikiDocumentResource,
   type BardWikiVersionsResource,
-} from '@risuai/protocol/bardwiki'
+} from '@risuai/protocol'
 
 const SETTINGS_ENDPOINT = '/api/v1/settings'
 const COLLECTIONS_ENDPOINT = '/api/v1/collections'

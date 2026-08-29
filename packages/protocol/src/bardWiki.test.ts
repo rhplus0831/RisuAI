@@ -6,7 +6,7 @@ import {
   isBardWikiDocumentResource,
   isBardWikiGlobalSettings,
   isBardWikiVersionsResource,
-} from '@risuai/protocol/bardwiki'
+} from '@risuai/protocol'
 
 const hash = 'a'.repeat(64)
 const document = {
