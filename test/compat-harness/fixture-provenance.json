@@ -1,6 +1,8 @@
 {
   "schemaVersion": 1,
   "fixtureId": "generation-matrix-v1",
+  "origin": "synthetic-adversarial",
+  "sourceDescription": "A deterministic synthetic matrix exercises production baseline and current generation paths with fixed IDs, clock, provider responses, transport modes, and say-nothing variants.",
   "baselineCommit": "71c476e9c86263fe907105b011ca4dde0a619d66",
   "deterministicClock": "2026-08-12T00:00:00.000Z",
   "providerEndpoint": "https://api.openai.com/v1/chat/completions",

@@ -56,6 +56,8 @@ interface FixtureSource {
 export interface FixtureProvenanceRegister {
   schemaVersion: 1
   fixtureId: string
+  origin: 'immutable-baseline' | 'current-production' | 'historical-real-world' | 'synthetic-adversarial'
+  sourceDescription: string
   baselineCommit: string
   deterministicClock: string
   providerEndpoint: string
@@ -446,6 +448,8 @@ export function validateFixtureProvenance(
     [
       'schemaVersion',
       'fixtureId',
+      'origin',
+      'sourceDescription',
       'baselineCommit',
       'deterministicClock',
       'providerEndpoint',
@@ -458,6 +462,13 @@ export function validateFixtureProvenance(
   )
   if (provenance.schemaVersion !== 1) throw new Error('fixture provenance schemaVersion must be 1')
   nonEmptyString(provenance.fixtureId, 'fixture provenance.fixtureId')
+  const origin = nonEmptyString(provenance.origin, 'fixture provenance.origin')
+  if (
+    !['immutable-baseline', 'current-production', 'historical-real-world', 'synthetic-adversarial'].includes(origin)
+  ) {
+    throw new Error(`fixture provenance origin is invalid: ${origin}`)
+  }
+  nonEmptyString(provenance.sourceDescription, 'fixture provenance.sourceDescription')
   if (provenance.baselineCommit !== COMPAT_BASELINE_COMMIT) {
     throw new Error(`fixture provenance baselineCommit must be ${COMPAT_BASELINE_COMMIT}`)
   }

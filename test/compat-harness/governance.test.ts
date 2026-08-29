@@ -87,6 +87,9 @@ describe('compatibility harness governance', () => {
   it('rejects fixture-provenance and golden-manifest digest drift', () => {
     const provenance = readJsonFile(path.resolve(ROOT, FIXTURE_PROVENANCE_PATH))
     validateFixtureProvenance(provenance, ROOT)
+    const unknownOrigin = clone(provenance as { origin: string })
+    unknownOrigin.origin = 'unspecified'
+    expect(() => validateFixtureProvenance(unknownOrigin, ROOT)).toThrow(/origin is invalid/)
     const brokenProvenance = clone(provenance as { sourceFiles: Array<{ sha256: string }> })
     brokenProvenance.sourceFiles[0].sha256 = '0'.repeat(64)
     expect(() => validateFixtureProvenance(brokenProvenance, ROOT)).toThrow(/digest mismatch/)

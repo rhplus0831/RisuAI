@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "baselineCommit": "71c476e9c86263fe907105b011ca4dde0a619d66",
-  "updateReason": "Phase 1 final lossless normalizer and governance review",
+  "updateReason": "Classify the synthetic compatibility fixture provenance",
   "updateCommand": "pnpm test:compat-harness -- --update-goldens --reason \"<review reason>\"",
   "files": [
     {
@@ -26,7 +26,7 @@
     },
     {
       "path": "test/compat-harness/fixture-provenance.json",
-      "sha256": "a012a74cf3b4310985438b9805d64ab67a2dde056d0a6c3a0c9c2b82fc049577"
+      "sha256": "949a8e78978a2f560d84465a44b3eec923e41530c548b56e66774ddeb4677c1e"
     }
   ]
 }
