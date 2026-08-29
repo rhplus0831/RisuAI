@@ -12,8 +12,8 @@ findings under [`findings/`](findings/); inventory ownership under
 ## Current Snapshot
 
 - Plan state: Active.
-- Current phase: Phase 12 — runtime, platform, limits, and diagnostics.
-- Active slice: [Phase 12 runtime, platform, limits, and diagnostics](phases/phase-12-runtime-platform-and-diagnostics.md).
+- Current phase: Phase 13 — consolidation, adjudication, and remediation.
+- Active slice: [Phase 13 consolidation, adjudication, and remediation](phases/phase-13-consolidation-adjudication-and-remediation.md).
 - Planning audit anchor: `1933c43ff7b4d35b57b0852013d95f3881a8cb28`.
 - Compatibility baseline: `71c476e9c86263fe907105b011ca4dde0a619d66`.
 - Behavioral sync cursor: `f3f0242fba297d82e0efcc2c31ca1428569b70f2`.
@@ -23,7 +23,7 @@ findings under [`findings/`](findings/); inventory ownership under
   `/home/codex/risu-baseline-71c476e9c`; its exact commit, dependency state, and
   cleanliness are enforced by `pnpm prepare:compat-baseline` and the harness
   preflight.
-- Current compatibility state: Phases 0 through 11 are complete.
+- Current compatibility state: Phases 0 through 12 are complete.
   Phase 5 closes settings/default/preset/collection ownership at
   `b34b7a78f28cb5903ece3880073fbb9e46392cb8` and visible character-authoring
   reload evidence at `5eca30f4872e865efee2c86f4dde7ae71e915f9a`.
@@ -51,6 +51,11 @@ findings under [`findings/`](findings/); inventory ownership under
   Phase 11 closes portable envelope/block/table, asset/export integrity, staged
   import/restore, salvage, and backup ownership at
   `56287bcb62c1dcdb969a7d185371a1c539bf3200`.
+  Phase 12 closes route/auth/writer/stream policy, limits, recovery ordering,
+  diagnostics, supported runtime, Web Push, and four individually signed no-port
+  products at `1430b714855f4df208a07f54df4653a681a04351` and
+  `140c04d24724fcb09cef9ad57fd38bcc976054f6`, with Push boundary
+  hardening at `8820b3e8c2cd1452b155b56167c66292e3029cdf`.
   After the independent Phase 2 governance-link correction
   `7ba933fe6f1c3338bd9cce2ef308b2b216ac8e8d`, the required pinned differential
   passes with 16 baseline cells, 18
@@ -60,12 +65,14 @@ findings under [`findings/`](findings/); inventory ownership under
   `6487cba00e3cc435a3c4f57f8121663bcdccc57e`.
 - Canonical findings: 15 resolved findings: 14 historical imports with exact raw
   mappings plus the Phase 1 lossless-normalizer finding `ORC-A-015`.
-- Open maintainer decisions: none. All 67 decisions are signed; individual RH+
+- Open maintainer decisions: none. All 71 decisions are signed; individual RH+
   commits reconstruct authority for the four historical boundaries, responsive
   shell, retired character additional-information retrieval, and the six
-  Phase 9 parser/runtime differences.
-- Next action: complete Phase 12 runtime, auth/route policy, limit, diagnostic,
-  startup/shutdown, platform, and Web Push evidence.
+  Phase 9 parser/runtime differences, and four cohesive Phase 12 no-port
+  products.
+- Next action: consolidate all cross-domain evidence, re-verify the remaining
+  historical Category D rows and 47 pending upstream units, strengthen
+  closed-state gates, and publish the exact Phase 14 run manifest.
 
 ## Phase Router
 
@@ -83,8 +90,8 @@ findings under [`findings/`](findings/); inventory ownership under
 | [9. Scripting, parsing, triggers, and automation](phases/phase-9-scripting-parsing-triggers-and-automation.md) | Complete | Closed CBS/parser parity, individually signed runtime differences, trigger/effect ordering, explicit unsupported effects, regex bounds, and Lua API/failure ownership. |
 | [10. Plugins, modules, MCP, and specialized tools](phases/phase-10-plugins-modules-mcp-and-specialized-tools.md) | Complete | Closed Plugin V3 API/permission/runtime ownership, module lifecycle/no-port, MCP/OAuth/egress, and specialized-tool catalogs and failure behavior. |
 | [11. Assets, imports, exports, saves, and backups](phases/phase-11-assets-import-export-and-backups.md) | Complete | Closed portable envelopes/blocks/tables, asset reference and stream integrity, staged import/restore/salvage, historical formats, and supported round trips. |
-| [12. Runtime, platform, limits, and diagnostics](phases/phase-12-runtime-platform-and-diagnostics.md) | In progress | Verify shared platform behavior, visible rejection/diagnostics, browser/server environment, startup/shutdown, and Push. |
-| [13. Consolidation, adjudication, and remediation](phases/phase-13-consolidation-adjudication-and-remediation.md) | Pending | Deduplicate findings, settle decisions, land shared gates and fix waves, and close cross-domain ownership. |
+| [12. Runtime, platform, limits, and diagnostics](phases/phase-12-runtime-platform-and-diagnostics.md) | Complete | Closed route policy, shared limits, recovery ordering, diagnostic secrecy, supported runtime/polyfills, Web Push, and four individually signed no-port products. |
+| [13. Consolidation, adjudication, and remediation](phases/phase-13-consolidation-adjudication-and-remediation.md) | In progress | Deduplicate findings, settle decisions, land shared gates and fix waves, and close cross-domain ownership. |
 | [14. Verification and closeout](phases/phase-14-verification-and-closeout.md) | Pending | Prove zero unexplained differences, complete decisions, final quality/release gates, current docs, and archive handoff. |
 
 ## Phase 0 Completion Record
@@ -339,6 +346,30 @@ findings under [`findings/`](findings/); inventory ownership under
 - The 112-test owning lane, server checks, registers, formatting, and diff checks
   pass. The pinned Original harness's lack of an executable reroll save exchange
   remains the exact explicit pilot residual.
+
+## Phase 12 Completion Record
+
+- `1430b714855f4df208a07f54df4653a681a04351` closes route
+  method/path/auth/writer/stream policies, 15 route rate limits, shared
+  size/count/time/concurrency bounds, startup/readiness/recovery/shutdown order,
+  diagnostic redaction/retention, nine baseline runtime features, and Web Push
+  lifecycle ownership.
+- `8820b3e8c2cd1452b155b56167c66292e3029cdf` authenticates Push
+  mutation before bounded parsing, validates bounded HTTPS-only subscription
+  fields, applies a 10-second delivery timeout, and proves persisted session,
+  VAPID, and subscription state after reopen.
+- `140c04d24724fcb09cef9ad57fd38bcc976054f6` pins absent wrapper,
+  PeerJS room, Account/Drive cloud-sync, and browser-local authoritative runtime
+  surfaces while retaining their explicitly excluded supported web/server
+  neighbors.
+- `ORC-DECISION-068` through `ORC-DECISION-071` reconstruct individual RH+
+  authority for those four cohesive no-port products; no umbrella guidance is
+  promoted into a decision.
+- Category L rows `ORC-SURFACE-125` through `ORC-SURFACE-134` own the closed
+  surfaces. Category L is 10/10 verified, the inventory has 134 rows, and all 71
+  decisions are signed.
+- The focused/expanded Fastify and browser lanes, server/browser checks,
+  registers, formatting, and diff checks pass.
 
 ## Locked Planning Decisions
 

@@ -25,7 +25,10 @@ parsing, trigger, regex, and Lua ownership through
 MCP, OAuth, and specialized-tool ownership through
 `e8bbbeea6ad400234aa4d0abad330356265c3c23`. Phase 11 closes portable formats,
 assets, import/export, salvage, and backups through
-`56287bcb62c1dcdb969a7d185371a1c539bf3200`, and Phase 12 is in progress.
+`56287bcb62c1dcdb969a7d185371a1c539bf3200`. Phase 12 closes runtime, route
+policy, limits, diagnostics, Push, and signed no-port ownership through
+`1430b714855f4df208a07f54df4653a681a04351` and
+`140c04d24724fcb09cef9ad57fd38bcc976054f6`; Phase 13 is in progress.
 
 ## Phase 0 Environment And Baseline Evidence
 
@@ -379,6 +382,38 @@ instead of being normalized or overclaimed.
 | Category K closure | Passed; 13 of 13 Category K rows verified and zero remain mapped-only |
 | Register gates | Passed; 124 surfaces, 67 signed decisions, 15 findings, and 12 fail-closed validator tests |
 | Phase 11 Prettier and `git diff --check` | Passed |
+
+## Phase 12 Evidence
+
+| Check | Result |
+| --- | --- |
+| Push boundary hardening and persisted reopen evidence | `8820b3e8c2cd1452b155b56167c66292e3029cdf` |
+| Closed runtime/platform/limit/diagnostic structure | `1430b714855f4df208a07f54df4653a681a04351` |
+| Signed no-port absence gate | `140c04d24724fcb09cef9ad57fd38bcc976054f6` |
+| Category L inventory | New verified rows `ORC-SURFACE-125` through `ORC-SURFACE-134`; 10 verified Category L rows and 134 total inventory rows |
+| Route/runtime vocabulary | Exact method/path/auth/writer/stream classes, 15 rate limits, 19 startup steps, five readiness capabilities, and nine baseline runtime features |
+| Limit/recovery ownership | Request/body/import/stream/backpressure/retention bounds plus restore-before-backfill, reconciliation-before-routes, runner-settle-before-close, and persisted session/Push reopen |
+| Diagnostic ownership | Request trace/history, generation sidecar, startup telemetry, retention pruning, and protected production-bundle negatives |
+| Web Push | Permission/fallback/cleanup, pre-parse auth, 16 KiB body cap, bounded HTTPS endpoint/keys, 10-second timeout, persisted VAPID/subscription, and expired-subscription prune |
+| Signed products | `ORC-DECISION-068` wrapper runtimes; `069` PeerJS rooms; `070` Account/Drive cloud sync; `071` browser-local authoritative persistence |
+
+The four no-port records use their exact originating RH+ commits and remain
+narrow. They do not retire responsive mobile web, command/SSE synchronization,
+server/portable backup, unrelated account/Google features, retained scoped
+browser recovery/cache state, PWA presentation, or Web Push.
+
+## Phase 12 Validation
+
+| Check | Result |
+| --- | --- |
+| Phase 12 structural/no-port gate | Passed; 1 file and 4 tests |
+| Focused auth/Push/structure selection | Passed; 3 files and 24 tests before the final no-port assertion; structural file passed again afterward |
+| Expanded Fastify runtime/diagnostic lane | Passed; 6 files and 54 tests |
+| Browser platform/diagnostic lane | Passed; 6 files and 57 tests |
+| `pnpm check` and `pnpm check:server` | Passed with 0 frontend errors/warnings and all server/browser-smoke typechecks |
+| Category L closure | Passed; 10 of 10 Category L rows verified |
+| Register gates | Passed; 134 surfaces, 71 signed decisions, 15 findings, and 12 fail-closed validator tests |
+| Phase 12 Prettier and `git diff --check` | Passed |
 
 ## Update Rules
 

@@ -1993,6 +1993,136 @@
         "The Fastify failure includes its edit mode and sanitized script failure; browser fallback behavior is pinned separately."
       ],
       "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-068",
+      "state": "signed",
+      "title": "Native desktop and mobile wrapper runtimes remain no-port",
+      "baselineBehavior": "The baseline retained Tauri desktop packaging and native/mobile project surfaces alongside the web application.",
+      "decidedBehavior": "The supported product runtime is the Fastify-served browser application; Tauri, Electron/native launch paths, and Capacitor mobile packaging are absent and not selectable.",
+      "observables": [
+        "No native desktop/mobile wrapper project, launcher, package, runtime branch, or build workflow can appear supported.",
+        "Responsive mobile web and the signed shared narrow-viewport shell remain supported and are outside this no-port boundary."
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-131"
+      ],
+      "rationale": "The maintainer explicitly adopted a single Fastify-served runtime and then labeled desktop/mobile wrappers no-port rather than relocated.",
+      "parityAlternative": "Restore and support first-party Tauri/Electron/Capacitor runtimes with their packaging, IPC/filesystem, update, security, and lifecycle contracts.",
+      "authority": "RH+ (RisuAI Fastify maintainer)",
+      "authorityDate": "2026-05-27",
+      "source": "commits 6e27cbeb78edab9a0a838c693ee83f5cebf8bb6b and c63436c87285a95e4138cf08dbb85554302a699d; .archived-docs/architecture-and-migration/fastify-migration/phases/fastify-only.md:12-23",
+      "implementationOwners": [
+        "src/ts/platform.ts",
+        "package.json",
+        "public/manifest.json"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/phase12CompatibilityStructure.test.ts",
+        "src/ts/browserLocalSurface.test.ts"
+      ],
+      "diagnostics": [
+        "Removed wrapper projects and launch controls are absent; the retained web manifest and responsive App shell prevent mobile-web support from being conflated with wrapper no-port."
+      ],
+      "revisitTrigger": "Revisit only through an explicitly accepted first-party wrapper runtime with packaging, IPC/filesystem, update, security, and lifecycle ownership."
+    },
+    {
+      "id": "ORC-DECISION-069",
+      "state": "signed",
+      "title": "PeerJS multi-user room synchronization remains no-port",
+      "baselineBehavior": "The baseline exposed PeerJS-backed multi-user room creation/joining, peer transport, UI connection state, and send-chat integration.",
+      "decidedBehavior": "PeerJS multi-user rooms and peer transport are absent and unsupported rather than relocated to Fastify.",
+      "observables": [
+        "No PeerJS dependency, multi-user transport owner, room control, connection gate, or send-chat branch can appear active.",
+        "Ordinary command/SSE synchronization, multi-tab recovery, and durable writer/observer reconciliation remain supported and are outside this decision."
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-132"
+      ],
+      "rationale": "The maintainer's Fastify roadmap made server-side peer reimplementation a non-goal and locked peer-room removal as a separate product boundary.",
+      "parityAlternative": "Restore PeerJS rooms and every transport, identity, conflict, UI, send, lifecycle, and failure owner from the baseline.",
+      "authority": "RH+ (RisuAI Fastify maintainer)",
+      "authorityDate": "2026-05-20",
+      "source": "commit 470b7df10c149361fff7f917d5343257834ebd88; .archived-docs/architecture-and-migration/fastify-migration/phases/phase-0-removals.md:53-63",
+      "implementationOwners": [
+        "src/ts/process/index.svelte.ts",
+        "src/ts/server/commands.ts",
+        "package.json"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/phase12CompatibilityStructure.test.ts"
+      ],
+      "diagnostics": [
+        "Peer room controls and implementation are absent; supported server synchronization retains separate command, event, recovery, and writer-policy owners."
+      ],
+      "revisitTrigger": "Revisit only with an approved collaboration model, identity/authorization, conflict semantics, durable ownership, and lifecycle tests."
+    },
+    {
+      "id": "ORC-DECISION-070",
+      "state": "signed",
+      "title": "Risu Account Sync and Google Drive cloud sync remain no-port",
+      "baselineBehavior": "The baseline exposed Sionyw/Risu Account cloud persistence and Google Drive OAuth save/restore synchronization.",
+      "decidedBehavior": "Risu Account Sync/Sionyw and Google Drive cloud persistence are absent; Fastify SQLite is application truth, while Fastify server backups and portable .risu import/export remain separate supported workflows.",
+      "observables": [
+        "No account-storage/Drive transport, OAuth worker, cloud-sync settings/control, or isAccount authority branch can appear active.",
+        "Local/server backup, portable import/export, unrelated account/Realm behavior, and non-Drive Google integrations remain outside this no-port boundary."
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-133"
+      ],
+      "rationale": "The maintainer planned account and Drive removals together, removed them in one exact change, and explicitly preserved in-app backup as a distinct workflow.",
+      "parityAlternative": "Restore both cloud authorities with OAuth/credential, remote storage, conflict, encryption, recovery, UI, and round-trip ownership.",
+      "authority": "RH+ (RisuAI Fastify maintainer)",
+      "authorityDate": "2026-05-20",
+      "source": "commit 470b7df10c149361fff7f917d5343257834ebd88; .archived-docs/architecture-and-migration/fastify-migration/phases/phase-0-removals.md:65-108",
+      "implementationOwners": [
+        "src/ts/storage/backup.ts",
+        "server/fastify/src/routes/backups.ts",
+        "package.json"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/phase12CompatibilityStructure.test.ts",
+        "src/ts/storage/backup.test.ts",
+        "server/fastify/__tests__/backups.test.ts"
+      ],
+      "diagnostics": [
+        "Cloud-sync controls and authority modules are absent; current backup/import/export controls name and execute only their retained Fastify/portable owners."
+      ],
+      "revisitTrigger": "Revisit only with a separately accepted remote-sync authority, credential, conflict, encryption, recovery, and round-trip contract."
+    },
+    {
+      "id": "ORC-DECISION-071",
+      "state": "signed",
+      "title": "Standalone browser-local authoritative persistence remains no-port",
+      "baselineBehavior": "The baseline could select OPFS/localforage/local save-file application persistence and browser-local bootstrap/backup authority.",
+      "decidedBehavior": "Standalone browser-local application persistence is not an authoritative runtime; Fastify SQLite, asset storage, and compatibility files own durable application truth.",
+      "observables": [
+        "Storage selection cannot choose OPFS/localforage/local save-file application authority or bootstrap without Fastify.",
+        "Browser caches, encrypted outbox rows, recovery drafts, plugin/device-local storage, tokenizer/model caches, UI flags, PWA presentation, and Web Push remain scoped non-authoritative state rather than being removed by this decision."
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-134"
+      ],
+      "rationale": "The maintainer adopted the single-runtime contract and explicitly labeled local browser persistence no-port while retaining narrowly scoped browser state.",
+      "parityAlternative": "Restore standalone browser-local database/bootstrap/backup authority with a complete offline and multi-writer reconciliation contract.",
+      "authority": "RH+ (RisuAI Fastify maintainer)",
+      "authorityDate": "2026-05-27",
+      "source": "commits 6e27cbeb78edab9a0a838c693ee83f5cebf8bb6b and c63436c87285a95e4138cf08dbb85554302a699d; .archived-docs/architecture-and-migration/fastify-migration/other/removed-and-out-of-scope.md:39-49",
+      "implementationOwners": [
+        "src/ts/storage/autoStorage.ts",
+        "src/ts/storage/fastifyStorage.ts",
+        "src/ts/bootstrap.ts",
+        "public/manifest.json"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/phase12CompatibilityStructure.test.ts",
+        "src/ts/storage/autoStorage.test.ts",
+        "src/ts/browserLocalSurface.test.ts"
+      ],
+      "diagnostics": [
+        "The storage adapter selects Fastify unconditionally; absent local-authority surfaces are distinguished from retained non-authoritative browser recovery/cache state."
+      ],
+      "revisitTrigger": "Revisit only if a separately accepted offline/multi-writer authority and reconciliation protocol lands."
     }
   ]
 }

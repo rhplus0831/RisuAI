@@ -8299,7 +8299,7 @@
           "server/fastify/src/risuSave/localBackupDatabase.ts",
           "server/fastify/src/risuSave/importLimits.ts",
           "server/fastify/src/routes/save.ts",
-          "server/fastify/src/backups.ts"
+          "server/fastify/src/routes/backups.ts"
         ],
         "persistence": [
           "server/fastify/src/repository.ts",
@@ -8342,6 +8342,741 @@
         "residual": null
       },
       "notes": "Phase 12 owns application-start recovery ordering for interrupted restore swaps; this row owns portable bytes and atomic import/restore outcomes."
+    },
+    {
+      "id": "ORC-SURFACE-125",
+      "title": "Closed route auth, session, active-writer, method, path, and streaming policy",
+      "primaryCategory": "L",
+      "seamTags": [
+        "B",
+        "C",
+        "G"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Every route has an exact method/path match class, auth decision, active-writer decision, and streaming shape.",
+        "Fallback sessions persist across reopen, expire/revoke by their owner, and cannot silently authorize an unknown client.",
+        "Auth rejection occurs before protected body parsing or mutation where the route accepts bounded user-controlled payloads."
+      ],
+      "variants": [
+        "public, conditional, required, missing, malformed, expired, revoked, and persisted sessions",
+        "active writer, observer, registration, runtime proxy/generation, stateless helper, and read-only post",
+        "exact/prefix/pattern routes and none/binary/proxy/SSE/websocket streaming"
+      ],
+      "owners": {
+        "baseline": [],
+        "browser": [
+          "src/ts/server/commands.ts",
+          "src/ts/storage/fastifyStorage.ts"
+        ],
+        "protocol": [
+          "packages/protocol/src"
+        ],
+        "fastify": [
+          "server/fastify/src/routeManifest.ts",
+          "server/fastify/src/auth.ts",
+          "server/fastify/src/routes/auth.ts",
+          "server/fastify/src/routes/pushNotifications.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/auth.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Session tokens, request ids, timestamps, and route parameter values may be normalized; auth decision/reason, writer class, parse/mutation cardinality, method/path class, and stream shape remain semantic."
+      ],
+      "evidence": {
+        "baseline": [],
+        "current": [
+          "8820b3e8c2cd1452b155b56167c66292e3029cdf",
+          "1430b714855f4df208a07f54df4653a681a04351"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase12CompatibilityStructure.test.ts",
+          "server/fastify/__tests__/routeProtection.test.ts",
+          "server/fastify/__tests__/auth.test.ts",
+          "server/fastify/__tests__/pushNotifications.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/auth.test.ts (fallback session reopen fixture)",
+          "server/fastify/__tests__/pushNotifications.test.ts (pre-parse auth and no-mutation fixture)"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "1430b714855f4df208a07f54df4653a681a04351",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "The structural vocabulary fails when a route-policy class is added without explicit ownership."
+    },
+    {
+      "id": "ORC-SURFACE-126",
+      "title": "Bounded rate, size, count, time, concurrency, and backpressure rejection staging",
+      "primaryCategory": "L",
+      "seamTags": [
+        "C",
+        "G",
+        "K"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "All 15 exported route rate-limit declarations have a production route and negative assurance owner.",
+        "Request receive, authenticated body, expanded import, stream pending/replay, response backpressure, diagnostic retention, provider, and tool work are bounded.",
+        "Limit rejection happens before partial durable mutation, paid dispatch, unbounded allocation, or a successful-looking partial response."
+      ],
+      "variants": [
+        "below, exactly at, and above each byte/count/time/concurrency bound",
+        "unauthenticated and authenticated oversized requests",
+        "buffer overflow, replay aggregate, timeout, rate exhaustion, and cleanup"
+      ],
+      "owners": {
+        "baseline": [],
+        "browser": [
+          "src/ts/server"
+        ],
+        "protocol": [
+          "packages/protocol/src"
+        ],
+        "fastify": [
+          "server/fastify/src/routeRateLimits.ts",
+          "server/fastify/src/app.ts",
+          "server/fastify/src/streamJobs.ts",
+          "server/fastify/src/streamBackpressure.ts",
+          "server/fastify/src/requestHistory.ts",
+          "server/fastify/src/routes/pushNotifications.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/repository.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Wall-clock timing and generated request ids may be normalized; configured limit, admitted count/bytes, rejection stage/status, dispatch/mutation cardinality, cleanup, and diagnostic class remain semantic."
+      ],
+      "evidence": {
+        "baseline": [],
+        "current": [
+          "8820b3e8c2cd1452b155b56167c66292e3029cdf",
+          "1430b714855f4df208a07f54df4653a681a04351"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase12CompatibilityStructure.test.ts",
+          "server/fastify/__tests__/routeProtection.test.ts",
+          "server/fastify/__tests__/requestAbort.test.ts",
+          "server/fastify/__tests__/streamJobs.test.ts",
+          "server/fastify/__tests__/streamBackpressure.test.ts",
+          "server/fastify/__tests__/pushNotifications.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/phase12CompatibilityStructure.test.ts#RATE_LIMIT_OWNERS",
+          "server/fastify/__tests__/phase12CompatibilityStructure.test.ts#LIMIT_CLASS_OWNERS"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "1430b714855f4df208a07f54df4653a681a04351",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "Domain-specific codec, provider, MCP, and generation limits remain deeper-owned by their phases; this row closes shared rejection staging."
+    },
+    {
+      "id": "ORC-SURFACE-127",
+      "title": "Startup, restore, reconciliation, readiness, shutdown, and restart ordering",
+      "primaryCategory": "L",
+      "seamTags": [
+        "B",
+        "C",
+        "F",
+        "H",
+        "K"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Nineteen startup steps and five readiness capabilities transition through exact owners without duplicate milestone corruption.",
+        "Interrupted restore swaps recover before database backfill, generation operations/effects reconcile before route admission, and orderly shutdown settles runners before database close.",
+        "Persisted sessions, VAPID identity/subscriptions, jobs, pending operations, and restored data survive close/reopen with one reconciled outcome."
+      ],
+      "variants": [
+        "cold start, duplicate milestone, observer, writer adoption, pending replay, resource hydration, plugin/chat/background/push readiness",
+        "interrupted restore, abandoned generation/job, shutdown during work, database close/reopen, and another reopen",
+        "success, failure, retry, reconciliation, and terminal diagnostics"
+      ],
+      "owners": {
+        "baseline": [],
+        "browser": [
+          "src/ts/startupReadiness.ts",
+          "src/ts/server/lifecycleRecovery.ts"
+        ],
+        "protocol": [
+          "packages/protocol/src/startupTelemetry.ts"
+        ],
+        "fastify": [
+          "server/fastify/src/app.ts",
+          "server/fastify/src/routes/startupTelemetry.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/db.ts",
+          "server/fastify/src/repository.ts",
+          "server/fastify/src/auth.ts",
+          "server/fastify/src/pushNotifications.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Timestamps, durations, process ids, and generated operation/job ids may be normalized; startup/recovery order, milestone/result, attempt count, durable identity/state, shutdown code, and mutation cardinality remain semantic."
+      ],
+      "evidence": {
+        "baseline": [],
+        "current": [
+          "8820b3e8c2cd1452b155b56167c66292e3029cdf",
+          "1430b714855f4df208a07f54df4653a681a04351"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase12CompatibilityStructure.test.ts",
+          "server/fastify/__tests__/auth.test.ts",
+          "server/fastify/__tests__/pushNotifications.test.ts",
+          "server/fastify/__tests__/startupTelemetry.test.ts",
+          "server/fastify/__tests__/backups.test.ts",
+          "server/fastify/__tests__/generationOperationsStartup.test.ts",
+          "server/fastify/__tests__/durableGeneration.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/phase12CompatibilityStructure.test.ts#RECOVERY_OWNERS"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "1430b714855f4df208a07f54df4653a681a04351",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "Earlier phases retain deeper ownership of their durable jobs/effects; Phase 12 closes application-wide ordering and readiness."
+    },
+    {
+      "id": "ORC-SURFACE-128",
+      "title": "Trace, request-history, startup, generation, and production-bundle diagnostic safety",
+      "primaryCategory": "L",
+      "seamTags": [
+        "C",
+        "F",
+        "G"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Request traces/history, generation sidecars, startup telemetry, health/error responses, and bundle-boundary reports retain useful classifications without secrets, prompt bodies, private assets, or protected server modules.",
+        "Redaction recognizes secret-shaped values and PEM data before retention, and retained diagnostic bytes are bounded/pruned.",
+        "The production initial closure fails if a protected server module enters the browser bundle."
+      ],
+      "variants": [
+        "headers, query, nested metadata, prompt/body, PEM, URL credentials, and startup telemetry",
+        "agent and human trace modes, empty/error/oversized retention, and pruning",
+        "clean and deliberately contaminated production bundle graphs"
+      ],
+      "owners": {
+        "baseline": [],
+        "browser": [
+          "src/ts/startupReadiness.ts"
+        ],
+        "protocol": [
+          "packages/protocol/src/startupTelemetry.ts"
+        ],
+        "fastify": [
+          "server/fastify/src/requestTrace.ts",
+          "server/fastify/src/requestHistory.ts",
+          "server/fastify/src/generation/generationTraceSidecar.ts",
+          "server/fastify/src/routes/startupTelemetry.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/requestHistory.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Timestamps, durations, request ids, paths, and hashes may be normalized; redacted/retained field identity, diagnostic class, byte bound/prune order, and protected-module presence remain semantic."
+      ],
+      "evidence": {
+        "baseline": [],
+        "current": [
+          "1430b714855f4df208a07f54df4653a681a04351"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase12CompatibilityStructure.test.ts",
+          "server/fastify/__tests__/requestTrace.test.ts",
+          "server/fastify/__tests__/requestHistory.test.ts",
+          "server/fastify/__tests__/generationTraceSidecar.test.ts",
+          "server/fastify/__tests__/startupTelemetry.test.ts",
+          "util/bundle-boundary-report.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/phase12CompatibilityStructure.test.ts#DIAGNOSTIC_OWNERS"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "1430b714855f4df208a07f54df4653a681a04351",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "Remote logging infrastructure is outside scope; every retained local diagnostic and production-bundle negative boundary is owned."
+    },
+    {
+      "id": "ORC-SURFACE-129",
+      "title": "Supported Baseline-browser polyfill and Fastify environment matrix",
+      "primaryCategory": "L",
+      "seamTags": [
+        "B",
+        "D",
+        "I"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "The only supported Risu environment label is Fastify and browser/server platform probes agree on that authority.",
+        "Nine baseline runtime features are detected exactly and only missing features are polyfilled before their consumers run.",
+        "The retained service worker and the explicit absence of legacy Web Share/file-handler/native-preload entry points remain visible rather than silently impersonating removed wrappers."
+      ],
+      "variants": [
+        "all features present, each missing feature, partial support, and structuredClone fallback",
+        "browser shell, Fastify server, retained service worker, absent Web Share/file handlers, and browser-local feature probes",
+        "supported and unavailable platform operations"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/polyfill.ts"
+        ],
+        "browser": [
+          "src/ts/platform.ts",
+          "src/ts/polyfill.ts",
+          "public/manifest.json",
+          "public/service-worker.js"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/app.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Browser version and user-agent text may vary; environment label, feature presence, polyfill selection/order, exposed capability, and visible unavailable outcome remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/polyfill.ts"
+        ],
+        "current": [
+          "1430b714855f4df208a07f54df4653a681a04351"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase12CompatibilityStructure.test.ts",
+          "src/ts/polyfill.test.ts",
+          "src/ts/browserLocalSurface.test.ts",
+          "util/bundle-boundary-report.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/phase12CompatibilityStructure.test.ts#PLATFORM_OWNERS"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "1430b714855f4df208a07f54df4653a681a04351",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": "The closed matrix owns the supported Baseline-browser/Fastify runtime; broader removed native/peer/account products require their own signed no-port scope rather than being inferred here."
+      },
+      "notes": "This row does not claim compatibility for removed products; a separate signed row owns any retained standing no-port boundary."
+    },
+    {
+      "id": "ORC-SURFACE-130",
+      "title": "Web Push permission, VAPID, subscription, delivery, cleanup, timeout, and reload lifecycle",
+      "primaryCategory": "L",
+      "seamTags": [
+        "B",
+        "C",
+        "G"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Enable/disable owns permission, service worker, PushManager, VAPID acquisition, subscription registration/deletion, fallback, and partial-cleanup outcomes.",
+        "Server subscription mutation authenticates before its 16 KiB body parse, accepts only bounded credential-free HTTPS endpoints/keys, and makes no mutation on rejection.",
+        "VAPID identity and subscriptions survive database reopen; delivery has a 10-second socket timeout and prunes an expired 410 subscription."
+      ],
+      "variants": [
+        "enabled, permission denied/default, unavailable API/service worker, registration/subscription/VAPID failure, disabled, and partial cleanup",
+        "valid, insecure, malformed, credential-bearing, fragment-bearing, oversized, unauthenticated, and expired subscriptions",
+        "delivery success/failure/timeout, 410 prune, database close/reopen, and disable retry"
+      ],
+      "owners": {
+        "baseline": [],
+        "browser": [
+          "src/ts/server/pushNotifications.ts",
+          "public/service-worker.js"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/pushNotifications.ts",
+          "server/fastify/src/routes/pushNotifications.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/pushNotifications.ts",
+          "server/fastify/src/db.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Generated VAPID keys, endpoint fixtures, timestamps, and request ids may be controlled/normalized; permission/status/fallback, endpoint security, body/field bounds, auth stage, subscription identity, timeout, delivery/prune cardinality, and reopen state remain semantic."
+      ],
+      "evidence": {
+        "baseline": [],
+        "current": [
+          "8820b3e8c2cd1452b155b56167c66292e3029cdf",
+          "1430b714855f4df208a07f54df4653a681a04351"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase12CompatibilityStructure.test.ts",
+          "server/fastify/__tests__/pushNotifications.test.ts",
+          "src/ts/server/pushNotifications.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/pushNotifications.test.ts (VAPID/subscription reopen, unsafe input, oversize/auth, timeout, and 410 prune fixtures)"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "1430b714855f4df208a07f54df4653a681a04351",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": "Deterministic tests mock the external push provider and operating-system notification display; they retain the complete local/server transport, persistence, timeout, and cleanup contract."
+      },
+      "notes": "HTTPS push endpoints are authenticated operator input under the existing proxy trust model; no separate DNS/private-address egress policy is implied."
+    },
+    {
+      "id": "ORC-SURFACE-131",
+      "title": "Signed native desktop and mobile wrapper runtime no-port",
+      "primaryCategory": "L",
+      "seamTags": [
+        "D"
+      ],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Tauri, Electron/native launch paths, Capacitor packaging, and their packages/projects/build workflows are absent and cannot appear selectable.",
+        "The Fastify-served browser app, installable web presentation, and signed responsive shared App shell remain supported."
+      ],
+      "variants": [
+        "Tauri desktop/Rust, Electron/native launchers, Capacitor mobile, Hono/non-Fastify project surfaces, and build scripts",
+        "desktop browser, narrow responsive browser, and standalone-display web manifest"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src-tauri"
+        ],
+        "browser": [
+          "src/ts/platform.ts",
+          "src/App.svelte",
+          "public/manifest.json"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/app.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Browser user-agent/window dimensions may vary; runtime label, available project/launcher/control, package/build owner, web manifest mode, and responsive-shell availability remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src-tauri"
+        ],
+        "current": [
+          "a8dd411c3d6066e683a7bf6d415ac371993c0924",
+          "88d56c8cee088e96dd42679e937f6e72fa73604c",
+          "140c04d24724fcb09cef9ad57fd38bcc976054f6"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase12CompatibilityStructure.test.ts",
+          "src/ts/browserLocalSurface.test.ts",
+          "src/ts/uiCompatibilityInventory.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/phase12CompatibilityStructure.test.ts#SIGNED_PLATFORM_NO_PORT_BOUNDARIES.wrapper_runtimes"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "140c04d24724fcb09cef9ad57fd38bcc976054f6",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-068",
+        "residual": null
+      },
+      "notes": "This no-port is packaging/runtime scoped and does not retire responsive mobile web or ordinary native-named browser APIs."
+    },
+    {
+      "id": "ORC-SURFACE-132",
+      "title": "Signed PeerJS multi-user room synchronization no-port",
+      "primaryCategory": "L",
+      "seamTags": [
+        "B",
+        "C",
+        "D"
+      ],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "PeerJS, its multi-user transport module, room create/join controls, connection gates, and send-chat peer branches are absent.",
+        "Fastify command/SSE synchronization, writer/observer state, multi-tab recovery, and chat concurrency remain separately supported."
+      ],
+      "variants": [
+        "room create, join, connection state, peer send/receive, disconnect, and UI gating",
+        "ordinary command/event replay, multi-tab observer, and concurrent chat generation"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/sync/multiuser.ts"
+        ],
+        "browser": [
+          "src/ts/process/index.svelte.ts",
+          "src/ts/server/commands.ts",
+          "src/ts/server/events.ts"
+        ],
+        "protocol": [
+          "packages/protocol/src"
+        ],
+        "fastify": [
+          "server/fastify/src/routes/commands.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/repository.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Command/event/session ids may be normalized; peer dependency/module/control absence and retained server synchronization identity/order/recovery remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/sync/multiuser.ts"
+        ],
+        "current": [
+          "4b8172b27979b31c844625c8cf0ee87db97e83a7",
+          "140c04d24724fcb09cef9ad57fd38bcc976054f6"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase12CompatibilityStructure.test.ts",
+          "src/ts/server/commands.test.ts",
+          "src/ts/server/events.test.ts",
+          "src/ts/server/pendingMutationOutbox.crossTab.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/phase12CompatibilityStructure.test.ts#SIGNED_PLATFORM_NO_PORT_BOUNDARIES.peerjs_multi_user"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "140c04d24724fcb09cef9ad57fd38bcc976054f6",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-069",
+        "residual": null
+      },
+      "notes": "This decision is PeerJS-room scoped and cannot be used to classify all synchronization as unsupported."
+    },
+    {
+      "id": "ORC-SURFACE-133",
+      "title": "Signed Risu Account Sync and Google Drive cloud-sync no-port",
+      "primaryCategory": "L",
+      "seamTags": [
+        "C",
+        "K"
+      ],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Sionyw/Risu Account cloud persistence, Google Drive storage/OAuth modules, public Drive worker, cloud settings, and isAccount authority branches are absent.",
+        "Fastify server backup, local safety snapshots, portable import/export, Realm/account features unrelated to cloud storage, and non-Drive Google integrations remain supported."
+      ],
+      "variants": [
+        "account login/cloud save, Drive OAuth/list/read/write/restore, conflict, failure, and removed settings",
+        "server backup/restore, .risu import/export, local safety snapshot, and unrelated account/Google paths"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage/accountStorage.ts",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/drive"
+        ],
+        "browser": [
+          "src/ts/storage/backup.ts",
+          "src/ts/server/backups.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/backups.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/repository.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Backup ids/timestamps may be normalized; removed cloud authority/control/credential paths and retained Fastify backup/import/export identity, bytes, conflict, and recovery outcomes remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage/accountStorage.ts",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/drive"
+        ],
+        "current": [
+          "22482edf8c5b1f3c36206fa06dd749fa8861746d",
+          "3f421660b008174b1fc12071f3ce556408830968",
+          "140c04d24724fcb09cef9ad57fd38bcc976054f6"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase12CompatibilityStructure.test.ts",
+          "src/ts/storage/backup.test.ts",
+          "server/fastify/__tests__/backups.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/phase12CompatibilityStructure.test.ts#SIGNED_PLATFORM_NO_PORT_BOUNDARIES.account_and_drive_sync"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "140c04d24724fcb09cef9ad57fd38bcc976054f6",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-070",
+        "residual": "Two stale Korean Drive localization strings remain without any non-language consumer; the absent owner/control/package catalog prevents them from advertising or executing cloud sync."
+      },
+      "notes": "The boundary is cloud-persistence scoped, not a blanket ban on account, Realm, or Google features."
+    },
+    {
+      "id": "ORC-SURFACE-134",
+      "title": "Signed standalone browser-local authoritative persistence no-port",
+      "primaryCategory": "L",
+      "seamTags": [
+        "B",
+        "C",
+        "K"
+      ],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Application storage selection always chooses Fastify and cannot select OPFS/localforage/local save-file database, bootstrap, service-worker, or backup authority.",
+        "Retained encrypted outbox rows, recovery drafts, plugin/device storage, caches, UI flags, PWA presentation, and Web Push remain explicitly non-authoritative browser state."
+      ],
+      "variants": [
+        "cold bootstrap, offline, observer, writer, reload, storage read/write/remove/list, backup/restore, and service worker",
+        "authoritative database/assets versus outbox/draft/cache/plugin/device/UI/push state"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage/opfsStorage.ts",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage/persistant.ts"
+        ],
+        "browser": [
+          "src/ts/storage/autoStorage.ts",
+          "src/ts/storage/fastifyStorage.ts",
+          "src/ts/bootstrap.ts",
+          "public/manifest.json",
+          "public/service-worker.js"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/legacyStorage.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/repository.ts",
+          "server/fastify/src/assetStore.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Generated cache/outbox/draft ids and timestamps may be normalized; authoritative owner, storage selection, offline/reload outcome, mutation/replay identity, and retained non-authoritative state class remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage/opfsStorage.ts",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage/persistant.ts"
+        ],
+        "current": [
+          "0190d9f5f1d87e0e63e99d7d30e02235f7937b55",
+          "55a6fdd0e7447545b4e1aae9ac99c4abbb77b4e6",
+          "f7eb20aee7c3f96b668d2f5be0927c9aea2592d7",
+          "2ad07d9db9bae0485881bda3b6f71017bca4f59c",
+          "d95be7f322e173e7f855fc666c8db8d7fb46398e",
+          "140c04d24724fcb09cef9ad57fd38bcc976054f6"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase12CompatibilityStructure.test.ts",
+          "src/ts/storage/autoStorage.test.ts",
+          "src/ts/storage/fastifyStorage.test.ts",
+          "src/ts/browserLocalSurface.test.ts",
+          "src/ts/server/pendingMutationOutbox.crossTab.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/phase12CompatibilityStructure.test.ts#SIGNED_PLATFORM_NO_PORT_BOUNDARIES.browser_local_authority"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "140c04d24724fcb09cef9ad57fd38bcc976054f6",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-071",
+        "residual": null
+      },
+      "notes": "This decision distinguishes authoritative application persistence from retained scoped browser state rather than claiming all local browser storage is removed."
     }
   ]
 }
