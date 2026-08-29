@@ -339,6 +339,81 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
     .toEqual([])
 })
 
+test('authored settings survive local backup restore and a full reload', async ({ page }) => {
+  test.setTimeout(90_000)
+  const database = browserSmokeDatabase()
+  database.showMemoryLimit = false
+  await importDatabase(harness.app, browserSmokeAssertion, database)
+
+  await page.goto(`${harness.baseUrl}/settings/display`)
+  await waitForBrowserSmokeLoaded(page)
+  await page.getByRole('button', { name: 'Others', exact: true }).click()
+
+  const showMemoryLimit = page.getByRole('checkbox', { name: 'Show Memory Limit', exact: true })
+  await expect(showMemoryLimit).not.toBeChecked()
+  const enabled = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PATCH' &&
+      new URL(response.url()).pathname === '/api/v1/commands/settings/display',
+  )
+  await showMemoryLimit.focus()
+  await showMemoryLimit.press('Space')
+  expect((await enabled).ok()).toBe(true)
+
+  await page.goto(`${harness.baseUrl}/settings/backup`)
+  await waitForBrowserSmokeLoaded(page)
+  await page.getByRole('button', { name: 'Save local backup', exact: true }).click()
+  const downloadStarted = page.waitForEvent('download')
+  await page.getByRole('alertdialog').getByRole('button', { name: 'YES', exact: true }).click()
+  const backupDownload = await downloadStarted
+  const backupPath = await backupDownload.path()
+  if (!backupPath) throw new Error('Local backup download did not produce a filesystem path')
+  await page
+    .getByRole('dialog', { name: 'Local backup saved', exact: true })
+    .getByRole('button', { name: 'OK' })
+    .click()
+
+  await page.goto(`${harness.baseUrl}/settings/display`)
+  await waitForBrowserSmokeLoaded(page)
+  await page.getByRole('button', { name: 'Others', exact: true }).click()
+  const changedAfterBackup = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PATCH' &&
+      new URL(response.url()).pathname === '/api/v1/commands/settings/display',
+  )
+  const changedShowMemoryLimit = page.getByRole('checkbox', { name: 'Show Memory Limit', exact: true })
+  await changedShowMemoryLimit.focus()
+  await changedShowMemoryLimit.press('Space')
+  expect((await changedAfterBackup).ok()).toBe(true)
+
+  await page.goto(`${harness.baseUrl}/settings/backup`)
+  await waitForBrowserSmokeLoaded(page)
+  await page.getByRole('button', { name: 'Load Backup Locally', exact: true }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: 'YES', exact: true }).click()
+  const fileChooserOpened = page.waitForEvent('filechooser')
+  await page.getByRole('alertdialog').getByRole('button', { name: 'YES', exact: true }).click()
+  const fileChooser = await fileChooserOpened
+  const restored = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/import/bundle',
+  )
+  await fileChooser.setFiles(backupPath)
+  expect((await restored).ok()).toBe(true)
+  const backupLoadedDialog = page.getByRole('dialog', { name: /^Local backup loaded(?:\.|, but )/ })
+  await expect(backupLoadedDialog).toBeVisible()
+  await expect
+    .poll(() => page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot().showMemoryLimit))
+    .toBe(true)
+  await backupLoadedDialog.getByRole('button', { name: 'OK' }).click()
+
+  await page.reload()
+  await waitForBrowserSmokeLoaded(page)
+  await page.goto(`${harness.baseUrl}/settings/display`)
+  await waitForBrowserSmokeLoaded(page)
+  await page.getByRole('button', { name: 'Others', exact: true }).click()
+  await expect(page.getByRole('checkbox', { name: 'Show Memory Limit', exact: true })).toBeChecked()
+})
+
 test('flagged observer shell survives denial and cross-tab writer takeover without mutation', async ({ browser }) => {
   test.setTimeout(60_000)
   await importDatabase(harness.app, browserSmokeAssertion, browserSmokeDatabase())
