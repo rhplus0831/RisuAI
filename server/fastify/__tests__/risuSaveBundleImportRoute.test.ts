@@ -26,6 +26,7 @@ import { encodeRisuSaveBlockEnvelope, RisuSaveBlockType } from '../src/risuSave/
 import { RISUSAVE_EMPTY_DATABASE_ERROR, RISUSAVE_INCOMPLETE_BLOCKS_ERROR } from '../src/risuSave/importSnapshot.js'
 import { decodeRisuSaveImportSnapshot } from '../src/risuSave/importSnapshot.js'
 import { RISU_SERVER_DATA_KEY } from '../src/risuSave/portableMetadata.js'
+import { LOCAL_BACKUP_ZIP_MAX_ENTRIES, LOCAL_BACKUP_ZIP_MAX_NAME_BYTES } from '../src/risuSave/localBackupImport.js'
 
 interface Harness {
   app: FastifyInstance
@@ -221,6 +222,21 @@ function buildBundleZip(databaseBytes: Uint8Array): Uint8Array {
     'manifest.json': new TextEncoder().encode(JSON.stringify({ version: 1 })),
     [`assets/${ASSET_ID}.png`]: ASSET_BYTES,
   })
+}
+
+function buildBundleZipEntries(entries: ReadonlyArray<{ name: string; data?: Uint8Array }>): Uint8Array {
+  const chunks: Uint8Array[] = []
+  const zip = new fflate.Zip((error, chunk) => {
+    if (error) throw error
+    chunks.push(chunk)
+  })
+  for (const { name, data = new Uint8Array() } of entries) {
+    const entry = new fflate.ZipPassThrough(name)
+    zip.add(entry)
+    entry.push(data, true)
+  }
+  zip.end()
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)))
 }
 
 function multipartBundle(bytes: Uint8Array, filename = 'database.risu.zip') {
@@ -1264,6 +1280,63 @@ describe('repository .risu bundle import route', () => {
     })
     expect(imported.statusCode).toBe(400)
     expect((imported.json() as { error: string }).error).toContain('manifest version')
+  })
+
+  it.each([
+    {
+      label: 'duplicate entry names',
+      entries: [
+        { name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify({ version: 1 })) },
+        { name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify({ version: 1 })) },
+      ],
+      expected: 'duplicate entry',
+    },
+    {
+      label: 'ambiguous database names',
+      entries: [
+        { name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify({ version: 1 })) },
+        { name: 'replacement.risu', data: encodeLegacyRisuSaveEnvelope({ version: 1 }, 'legacy-raw') },
+      ],
+      expected: 'must be named database.risu',
+    },
+    {
+      label: 'oversized entry names',
+      entries: [
+        { name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify({ version: 1 })) },
+        { name: 'x'.repeat(LOCAL_BACKUP_ZIP_MAX_NAME_BYTES + 1) },
+      ],
+      expected: `entry name exceeds ${LOCAL_BACKUP_ZIP_MAX_NAME_BYTES} bytes`,
+    },
+  ])('rejects structurally ambiguous bundles with $label', async ({ entries, expected }) => {
+    const upload = multipartBundle(buildBundleZipEntries(entries))
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/bundle',
+      payload: upload.payload,
+      headers: { 'content-type': upload.contentType },
+    })
+
+    expect(imported.statusCode).toBe(400)
+    expect((imported.json() as { error: string }).error).toContain(expected)
+  })
+
+  it('bounds zero-byte bundle entry cardinality independently of expanded bytes', async () => {
+    const entries = Array.from({ length: LOCAL_BACKUP_ZIP_MAX_ENTRIES + 1 }, (_, index) => ({
+      name: `empty/${index}`,
+    }))
+    const upload = multipartBundle(buildBundleZipEntries(entries))
+
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/bundle',
+      payload: upload.payload,
+      headers: { 'content-type': upload.contentType },
+    })
+
+    expect(imported.statusCode).toBe(400)
+    expect((imported.json() as { error: string }).error).toContain(
+      `.risu bundle exceeds ${LOCAL_BACKUP_ZIP_MAX_ENTRIES} entries`,
+    )
   })
 
   it('rejects a bundle whose asset bytes do not match their content hash', async () => {

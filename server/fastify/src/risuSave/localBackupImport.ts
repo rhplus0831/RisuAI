@@ -8,7 +8,10 @@ const ZIP_MAGIC = Uint8Array.from([0x50, 0x4b, 0x03, 0x04]) // "PK\x03\x04"
 const MANIFEST_PATH = 'manifest.json'
 const ASSET_PREFIX = 'assets/'
 const RISU_SUFFIX = '.risu'
+const BUNDLE_DATABASE_PATH = 'database.risu'
 const LEGACY_DATABASE_RECORD = 'database.risudat'
+export const LOCAL_BACKUP_ZIP_MAX_ENTRIES = 10_000
+export const LOCAL_BACKUP_ZIP_MAX_NAME_BYTES = 1_024
 
 export type LocalBackupFormat = 'risu-bundle-zip' | 'legacy-local-backup'
 
@@ -171,6 +174,8 @@ function decodeBundleZip(filePath: string, options: DecodeLocalBackupOptions): P
   const sizeTracker = new ExpandedSizeTracker(options.maxExpandedBytes)
   let databaseBytes: Uint8Array | undefined
   let manifestBytes: Uint8Array | undefined
+  let entryCount = 0
+  const entryNames = new Set<string>()
 
   return new Promise<DecodedLocalBackup>((resolve, reject) => {
     let settled = false
@@ -192,8 +197,12 @@ function decodeBundleZip(filePath: string, options: DecodeLocalBackupOptions): P
         stager.add(decodeBundleAsset(name, bytes))
         return
       }
-      if (name.endsWith(RISU_SUFFIX)) {
+      if (name === BUNDLE_DATABASE_PATH) {
         databaseBytes = bytes
+        return
+      }
+      if (name.endsWith(RISU_SUFFIX)) {
+        throw new ValidationError(`.risu bundle database entry must be named ${BUNDLE_DATABASE_PATH}`)
       }
       // Non-asset, non-manifest, non-.risu entries are ignored; malformed asset
       // entries are rejected by `decodeBundleAsset`.
@@ -202,6 +211,17 @@ function decodeBundleZip(filePath: string, options: DecodeLocalBackupOptions): P
     const unzip = new fflate.Unzip()
     unzip.register(fflate.UnzipInflate)
     unzip.onfile = (file) => {
+      entryCount += 1
+      if (entryCount > LOCAL_BACKUP_ZIP_MAX_ENTRIES) {
+        return fail(new ValidationError(`.risu bundle exceeds ${LOCAL_BACKUP_ZIP_MAX_ENTRIES} entries`))
+      }
+      if (Buffer.byteLength(file.name, 'utf8') > LOCAL_BACKUP_ZIP_MAX_NAME_BYTES) {
+        return fail(new ValidationError(`.risu bundle entry name exceeds ${LOCAL_BACKUP_ZIP_MAX_NAME_BYTES} bytes`))
+      }
+      if (entryNames.has(file.name)) {
+        return fail(new ValidationError(`.risu bundle contains a duplicate entry: ${file.name}`))
+      }
+      entryNames.add(file.name)
       const chunks: Uint8Array[] = []
       file.ondata = (err, chunk, final) => {
         if (settled) return
