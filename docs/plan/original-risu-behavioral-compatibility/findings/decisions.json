@@ -121,7 +121,7 @@
     },
     {
       "id": "ORC-DECISION-005",
-      "state": "proposed",
+      "state": "signed",
       "title": "CA-OR-2: Group-chat generation remains no-port",
       "baselineBehavior": "The baseline supported group-chat generation.",
       "decidedBehavior": "Fastify does not expose or execute group-chat generation.",
@@ -131,11 +131,11 @@
       "inventoryIds": [
         "ORC-SURFACE-009"
       ],
-      "rationale": "The historical ledger labels this a standing boundary, but individual signer/date metadata was not reconstructed.",
+      "rationale": "The maintainer removed the remaining legacy group-chat UI branches, kept the server and browser hard-fail defenses, and described group chat as fully legacy because the server has no group/member model.",
       "parityAlternative": "Restore the baseline behavior described for CA-OR-2.",
-      "authority": "Authority import pending; historical record is not individual signer proof",
-      "authorityDate": "2026-08-12",
-      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:102-110",
+      "authority": "RH+ (RisuAI Fastify maintainer)",
+      "authorityDate": "2026-05-30",
+      "source": "commit 11da314a83e144ae3cc58f3f524e0d98e153ef3c; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:102-110",
       "implementationOwners": [
         "server/fastify/src/routes/generationChat.ts",
         "src/ts/process/serverBackedSendChat.ts"
@@ -150,7 +150,7 @@
     },
     {
       "id": "ORC-DECISION-006",
-      "state": "proposed",
+      "state": "signed",
       "title": "CA-PR-3: Non-server-routable providers remain unavailable",
       "baselineBehavior": "The baseline could route NovelAI text, NovelList, non-legacy Ooba, plugin providers, and WebLLM in browser/native contexts.",
       "decidedBehavior": "Fastify excludes those providers from live server routing and must keep the boundary hidden or explicit.",
@@ -160,11 +160,11 @@
       "inventoryIds": [
         "ORC-SURFACE-010"
       ],
-      "rationale": "The historical ledger labels this standing platform scope, but individual signer/date metadata was not reconstructed.",
+      "rationale": "The maintainer documented these browser/local selectors as explicitly rejected by server dispatch even when the shared registry can describe them.",
       "parityAlternative": "Restore the baseline behavior described for CA-PR-3.",
-      "authority": "Authority import pending; historical record is not individual signer proof",
-      "authorityDate": "2026-08-12",
-      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:102-110",
+      "authority": "RH+ (RisuAI Fastify maintainer)",
+      "authorityDate": "2026-08-27",
+      "source": "commit c0187dc730f0d85eb0d69b54d5f9f9d4e2384c4a; docs/structure/providers-and-models.md:134-140; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:102-110",
       "implementationOwners": [
         "server/fastify/src/prompt/chatDispatch.ts",
         "src/ts/model/modelProfileResolver.ts"
@@ -1664,7 +1664,7 @@
     },
     {
       "id": "ORC-DECISION-058",
-      "state": "proposed",
+      "state": "signed",
       "title": "upstream-F1: Character and module interchangeability remains unported",
       "baselineBehavior": "Post-fork upstream added character-module conversion and CharX module interchange.",
       "decidedBehavior": "Fastify does not expose or partially execute the conversion surface.",
@@ -1674,11 +1674,11 @@
       "inventoryIds": [
         "ORC-SURFACE-062"
       ],
-      "rationale": "The upstream sweep records a skip decision, but individual signer metadata was not reconstructed.",
+      "rationale": "The maintainer explicitly accepted that upstream CharX module exports will not import because the feature is rarely used, with a user-pain revisit trigger.",
       "parityAlternative": "Restore the baseline behavior described for upstream-F1.",
-      "authority": "Authority import pending; historical record is not individual signer proof",
+      "authority": "RH+ (RisuAI Fastify maintainer)",
       "authorityDate": "2026-08-07",
-      "source": ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md:18-35,128-149",
+      "source": "commit eee00871f8c994b9ee3ce3c2dbafb067991d43e2; .archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md:18-35,128-149",
       "implementationOwners": [
         "src/ts/plugins/apiV3/v3.svelte.ts",
         "docs/structure/plugins-and-mcp.md"
@@ -1693,7 +1693,7 @@
     },
     {
       "id": "ORC-DECISION-059",
-      "state": "proposed",
+      "state": "signed",
       "title": "upstream-81b: Dynamic OpenAI model registration remains unported",
       "baselineBehavior": "Post-fork upstream can register arbitrary OpenAI models dynamically.",
       "decidedBehavior": "Fastify retains a curated provider catalog.",
@@ -1703,11 +1703,11 @@
       "inventoryIds": [
         "ORC-SURFACE-063"
       ],
-      "rationale": "The upstream sweep records a skip decision, but individual signer metadata was not reconstructed.",
+      "rationale": "The maintainer explicitly chose the curated catalog rather than adding provider-operation and credential plumbing for dynamic OpenAI registration.",
       "parityAlternative": "Restore the baseline behavior described for upstream-81b.",
-      "authority": "Authority import pending; historical record is not individual signer proof",
+      "authority": "RH+ (RisuAI Fastify maintainer)",
       "authorityDate": "2026-08-08",
-      "source": ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md:112-149",
+      "source": "commit aad698dba728556134dee19a3facf72817290570; .archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md:112-149",
       "implementationOwners": [
         "server/fastify/src/prompt/chatDispatch.ts",
         "src/ts/model/modelProfileResolver.ts"

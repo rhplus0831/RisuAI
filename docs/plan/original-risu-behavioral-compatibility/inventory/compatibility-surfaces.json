@@ -591,7 +591,7 @@
       "title": "Historical decision CA-OR-2: Group-chat generation remains no-port",
       "primaryCategory": "F",
       "seamTags": [],
-      "sourceObligation": "standing-unsupported",
+      "sourceObligation": "signed-divergence",
       "observables": [
         "Group-chat generation remains no-port"
       ],
@@ -636,21 +636,21 @@
         "fixtures": []
       },
       "verification": {
-        "state": "decision-required",
-        "confidence": "low",
+        "state": "mapped",
+        "confidence": "high",
         "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
         "findingIds": [],
         "decisionId": "ORC-DECISION-005",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": "Individual maintainer authority is reconstructed from commit 11da314a83e144ae3cc58f3f524e0d98e153ef3c; Phase 6 must independently re-verify the live rejection boundary."
       },
-      "notes": "Historical boundary imported as proposed because individual signer metadata is incomplete."
+      "notes": "The maintainer explicitly removed legacy group-chat UI branches while preserving server and browser rejection defenses."
     },
     {
       "id": "ORC-SURFACE-010",
       "title": "Historical decision CA-PR-3: Non-server-routable providers remain unavailable",
       "primaryCategory": "G",
       "seamTags": [],
-      "sourceObligation": "standing-unsupported",
+      "sourceObligation": "signed-divergence",
       "observables": [
         "Non-server-routable providers remain unavailable"
       ],
@@ -695,14 +695,14 @@
         "fixtures": []
       },
       "verification": {
-        "state": "decision-required",
-        "confidence": "low",
+        "state": "mapped",
+        "confidence": "high",
         "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
         "findingIds": [],
         "decisionId": "ORC-DECISION-006",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": "Individual maintainer authority is reconstructed from commit c0187dc730f0d85eb0d69b54d5f9f9d4e2384c4a; Phase 7 must independently re-verify each live rejection path."
       },
-      "notes": "Historical boundary imported as proposed because individual signer metadata is incomplete."
+      "notes": "The maintainer explicitly documented the browser/local selectors as rejected by Fastify server chat dispatch."
     },
     {
       "id": "ORC-SURFACE-011",
@@ -3732,7 +3732,7 @@
       "title": "Historical decision upstream-F1: Character and module interchangeability remains unported",
       "primaryCategory": "J",
       "seamTags": [],
-      "sourceObligation": "standing-unsupported",
+      "sourceObligation": "signed-divergence",
       "observables": [
         "Character and module interchangeability remains unported"
       ],
@@ -3788,21 +3788,21 @@
         "fixtures": []
       },
       "verification": {
-        "state": "decision-required",
-        "confidence": "low",
+        "state": "mapped",
+        "confidence": "high",
         "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
         "findingIds": [],
         "decisionId": "ORC-DECISION-058",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": "Individual maintainer authority is reconstructed from commit eee00871f8c994b9ee3ce3c2dbafb067991d43e2; Phase 10 must independently re-verify the visible no-port boundary."
       },
-      "notes": "Historical boundary imported as proposed because individual signer metadata is incomplete."
+      "notes": "The maintainer explicitly accepted that upstream CharX module exports will not import and recorded a user-pain revisit trigger."
     },
     {
       "id": "ORC-SURFACE-063",
       "title": "Historical decision upstream-81b: Dynamic OpenAI model registration remains unported",
       "primaryCategory": "G",
       "seamTags": [],
-      "sourceObligation": "standing-unsupported",
+      "sourceObligation": "signed-divergence",
       "observables": [
         "Dynamic OpenAI model registration remains unported"
       ],
@@ -3849,14 +3849,14 @@
         "fixtures": []
       },
       "verification": {
-        "state": "decision-required",
-        "confidence": "low",
+        "state": "mapped",
+        "confidence": "high",
         "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
         "findingIds": [],
         "decisionId": "ORC-DECISION-059",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": "Individual maintainer authority is reconstructed from commit aad698dba728556134dee19a3facf72817290570; Phase 7 must independently re-verify the curated-catalog boundary."
       },
-      "notes": "Historical boundary imported as proposed because individual signer metadata is incomplete."
+      "notes": "The maintainer explicitly chose a curated provider catalog over dynamic OpenAI registration plumbing."
     },
     {
       "id": "ORC-SURFACE-064",
