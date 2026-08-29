@@ -383,6 +383,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     commandEventSink,
     messageTranslationJobRegistry,
     greetingTranslationJobRegistry,
+    { wakeWorker: () => bardWikiWorker?.wake() },
   )
   registerDisplaySourceRoutes(app, authState, displaySourceService)
   registerEventsRoutes(app, db, authState, commandEventSink, memoryEventBus, activeWriterState)

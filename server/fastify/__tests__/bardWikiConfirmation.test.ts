@@ -1,0 +1,283 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { webcrypto } from 'node:crypto'
+import { DatabaseSync } from 'node:sqlite'
+import type { FastifyInstance } from 'fastify'
+import { DEFAULT_BARDWIKI_GLOBAL_SETTINGS } from '@risuai/protocol'
+import { buildApp } from '../src/app.js'
+import { createInitialDatabase } from '../src/databaseDefaults.js'
+import { getDatabaseLineage } from '../src/databaseLineage.js'
+import { hashBardWikiMessageContent } from '../src/bardWikiReceipts.js'
+
+const subtle = webcrypto.subtle
+const USER_TEXT = 'We enter the old tavern.'
+const ASSISTANT_TEXT = 'Mira lights a lantern beside the door.'
+let app: FastifyInstance
+let dataDir: string
+let assertion: string
+
+beforeEach(async () => {
+  process.env.LOG_LEVEL = 'silent'
+  dataDir = mkdtempSync(path.join(tmpdir(), 'risu-bardwiki-confirmation-'))
+  ;({ app } = await buildApp({
+    config: {
+      host: '127.0.0.1',
+      port: 0,
+      dataDir,
+      bodyLimit: 1024 * 1024,
+      importMaxBytes: Infinity,
+      trustProxy: false,
+      hubUrl: 'https://sv.risuai.xyz',
+    },
+    memoryWorker: false,
+    bardWikiWorker: false,
+  }))
+  assertion = await setupAuthedClient(app)
+  seedConfirmationChat()
+})
+
+afterEach(async () => {
+  await app.close()
+  rmSync(dataDir, { recursive: true, force: true })
+})
+
+function seedConfirmationChat(
+  options: { enabled?: boolean; assistantDisabled?: boolean; assistantRole?: string } = {},
+): void {
+  const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+  try {
+    const initial = createInitialDatabase() as unknown as Record<string, unknown>
+    initial.bardWiki = {
+      ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
+      enabledByDefault: options.enabled ?? true,
+      memoryMode: 'bardwiki',
+    }
+    db.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(JSON.stringify(initial))
+    db.prepare("INSERT INTO characters (id, position, data_json) VALUES ('character-a', 0, '{}')").run()
+    db.prepare(
+      "INSERT INTO chats (id, character_id, position, data_json) VALUES ('chat-a', 'character-a', 0, '{}')",
+    ).run()
+    const insert = db.prepare(
+      `INSERT INTO messages (chat_id, seq, uid, role, data, disabled, json, alternate)
+       VALUES ('chat-a', ?, ?, ?, ?, ?, ?, 0)`,
+    )
+    insert.run(
+      0,
+      'user-a',
+      'user',
+      USER_TEXT,
+      null,
+      JSON.stringify({ chatId: 'user-a', role: 'user', data: USER_TEXT }),
+    )
+    const assistantRole = options.assistantRole ?? 'char'
+    const assistantDisabled = options.assistantDisabled === true
+    insert.run(
+      1,
+      'assistant-a',
+      assistantRole,
+      ASSISTANT_TEXT,
+      assistantDisabled ? 'true' : null,
+      JSON.stringify({
+        chatId: 'assistant-a',
+        role: assistantRole,
+        data: ASSISTANT_TEXT,
+        ...(assistantDisabled ? { disabled: true } : {}),
+      }),
+    )
+  } finally {
+    db.close()
+  }
+}
+
+function confirmationBody(baseRevision = 0) {
+  return {
+    baseRevision,
+    userMessageId: 'user-a',
+    userContentHash: hashBardWikiMessageContent(USER_TEXT),
+    assistantMessageId: 'assistant-a',
+    assistantContentHash: hashBardWikiMessageContent(ASSISTANT_TEXT),
+  }
+}
+
+async function confirm(body = confirmationBody(), headers: Record<string, string> = {}) {
+  return app.inject({
+    method: 'POST',
+    url: '/api/v1/commands/bardwiki/chats/chat-a/confirmations',
+    headers: { 'risu-auth': assertion, ...headers },
+    payload: body,
+  })
+}
+
+function inspect(sql: string): unknown[] {
+  const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+  try {
+    return db.prepare(sql).all()
+  } finally {
+    db.close()
+  }
+}
+
+describe('explicit BardWiki confirmation', () => {
+  it('atomically queues one exact-source receipt and identifier-only job', async () => {
+    const response = await confirm()
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      revision: 1,
+      event: {
+        type: 'bardwiki.confirmation.queued',
+        resource: 'bardWikiChat',
+        id: 'chat-a',
+        sourceMessageId: 'assistant-a',
+        jobId: expect.any(String),
+      },
+      receipt: {
+        chatId: 'chat-a',
+        userMessageId: 'user-a',
+        assistantMessageId: 'assistant-a',
+        confirmationMode: 'explicit',
+        state: 'queued',
+      },
+      job: { kind: 'apply_turn', status: 'pending', receiptId: expect.any(String) },
+      created: true,
+    })
+    expect(response.json().job).not.toHaveProperty('payload')
+    const payload = inspect('SELECT payload_json FROM bardwiki_jobs')[0] as { payload_json: string }
+    expect(payload.payload_json).not.toContain(USER_TEXT)
+    expect(payload.payload_json).not.toContain(ASSISTANT_TEXT)
+    expect(inspect('SELECT * FROM bardwiki_turn_receipts')).toHaveLength(1)
+    expect(inspect('SELECT * FROM bardwiki_jobs')).toHaveLength(1)
+  })
+
+  it('reuses the exact tuple without duplicating the receipt or job', async () => {
+    const first = await confirm()
+    const duplicate = await confirm(confirmationBody(1))
+    expect(first.statusCode).toBe(200)
+    expect(duplicate.statusCode).toBe(200)
+    expect(duplicate.json()).toMatchObject({
+      revision: 2,
+      receipt: { id: first.json().receipt.id },
+      job: { id: first.json().job.id },
+      created: false,
+    })
+    expect(inspect('SELECT id FROM bardwiki_turn_receipts')).toHaveLength(1)
+    expect(inspect('SELECT id FROM bardwiki_jobs')).toHaveLength(1)
+  })
+
+  it('replays a mutation receipt without a second revision or wake authority', async () => {
+    const writer = 'writer-a'
+    const headers = {
+      'risu-writer-session': writer,
+      'risu-mutation-id': 'confirmation-mutation-a',
+      'risu-database-lineage': databaseLineage(),
+    }
+    const first = await confirm(confirmationBody(), headers)
+    const replay = await confirm(confirmationBody(), headers)
+    expect(first.statusCode).toBe(200)
+    expect(replay.statusCode).toBe(200)
+    expect(replay.json()).toEqual(first.json())
+    expect(inspect('SELECT revision FROM schema_version WHERE id = 1')).toMatchObject([{ revision: 1 }])
+    expect(inspect('SELECT id FROM bardwiki_turn_receipts')).toHaveLength(1)
+  })
+
+  it('rejects stale ids or hashes without a revision or partial receipt', async () => {
+    for (const patch of [
+      { assistantMessageId: 'assistant-old' },
+      { assistantContentHash: 'f'.repeat(64) },
+      { userMessageId: 'user-old' },
+      { userContentHash: 'e'.repeat(64) },
+    ]) {
+      const response = await confirm({ ...confirmationBody(), ...patch })
+      expect(response.statusCode).toBe(409)
+      expect(response.json()).toEqual({ error: 'bardwiki_source_not_active' })
+    }
+    expect(inspect('SELECT id FROM bardwiki_turn_receipts')).toEqual([])
+    expect(inspect('SELECT revision FROM schema_version WHERE id = 1')).toMatchObject([{ revision: 0 }])
+  })
+
+  it.each([
+    { assistantDisabled: true, assistantRole: 'char', label: 'disabled' },
+    { assistantDisabled: false, assistantRole: 'user', label: 'non-assistant' },
+  ])('rejects a $label target as non-active', async ({ assistantDisabled, assistantRole }) => {
+    await app.close()
+    rmSync(dataDir, { recursive: true, force: true })
+    dataDir = mkdtempSync(path.join(tmpdir(), 'risu-bardwiki-confirmation-invalid-'))
+    ;({ app } = await buildApp({
+      config: {
+        host: '127.0.0.1',
+        port: 0,
+        dataDir,
+        bodyLimit: 1024 * 1024,
+        importMaxBytes: Infinity,
+        trustProxy: false,
+        hubUrl: 'https://sv.risuai.xyz',
+      },
+      memoryWorker: false,
+      bardWikiWorker: false,
+    }))
+    assertion = await setupAuthedClient(app)
+    seedConfirmationChat({ assistantDisabled, assistantRole })
+    const response = await confirm()
+    expect(response.statusCode).toBe(409)
+    expect(response.json()).toEqual({ error: 'bardwiki_source_not_active' })
+    expect(inspect('SELECT id FROM bardwiki_turn_receipts')).toEqual([])
+  })
+
+  it('rejects a valid source when BardWiki is disabled', async () => {
+    const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      db.prepare(
+        "UPDATE settings SET data_json = json_set(data_json, '$.bardWiki.enabledByDefault', json('false'))",
+      ).run()
+    } finally {
+      db.close()
+    }
+    const response = await confirm()
+    expect(response.statusCode).toBe(409)
+    expect(response.json()).toEqual({ error: 'bardwiki_disabled' })
+    expect(inspect('SELECT id FROM bardwiki_turn_receipts')).toEqual([])
+  })
+
+  it('serializes concurrent confirmation so only one exact tuple is accepted initially', async () => {
+    const [left, right] = await Promise.all([confirm(), confirm()])
+    expect([left.statusCode, right.statusCode].sort()).toEqual([200, 409])
+    expect(inspect('SELECT id FROM bardwiki_turn_receipts')).toHaveLength(1)
+    expect(inspect('SELECT id FROM bardwiki_jobs')).toHaveLength(1)
+  })
+})
+
+function databaseLineage(): string {
+  const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+  try {
+    return getDatabaseLineage(db)
+  } finally {
+    db.close()
+  }
+}
+
+async function setupAuthedClient(target: FastifyInstance): Promise<string> {
+  const setup = await target.inject({ method: 'POST', url: '/api/v1/auth/setup', payload: { password: 'hunter2' } })
+  expect(setup.statusCode).toBe(200)
+  const keypair = (await subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
+    'sign',
+    'verify',
+  ])) as CryptoKeyPair
+  const publicKey = await subtle.exportKey('jwk', keypair.publicKey)
+  const login = await target.inject({
+    method: 'POST',
+    url: '/api/v1/auth/login',
+    payload: { password: 'hunter2', publicKey },
+  })
+  expect(login.statusCode).toBe(200)
+  const now = Math.floor(Date.now() / 1000)
+  const headerB64 = Buffer.from(JSON.stringify({ alg: 'ES256', typ: 'JWT' })).toString('base64url')
+  const payloadB64 = Buffer.from(JSON.stringify({ iat: now, exp: now + 60, pub: publicKey })).toString('base64url')
+  const signingInput = `${headerB64}.${payloadB64}`
+  const signature = await subtle.sign(
+    { name: 'ECDSA', hash: { name: 'SHA-256' } },
+    keypair.privateKey,
+    Buffer.from(signingInput),
+  )
+  return `${signingInput}.${Buffer.from(signature).toString('base64url')}`
+}

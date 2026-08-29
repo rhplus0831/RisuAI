@@ -209,6 +209,10 @@ function validateCommandEventForPersistence(event: CommandEvent): void {
 }
 
 export const COMMAND_EVENT_CATALOG = {
+  bardWikiConfirmationQueued: {
+    type: 'bardwiki.confirmation.queued',
+    resource: 'bardWikiChat',
+  },
   bardWikiSettingsUpdated: {
     type: 'bardwiki.settings.updated',
     resource: 'bardWikiChat',

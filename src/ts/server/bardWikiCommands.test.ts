@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   remove: vi.fn(),
   settings: vi.fn(),
+  confirm: vi.fn(),
   listener: undefined as undefined | ((settlement: 'accepted' | 'discarded', details: Record<string, unknown>) => void),
   retain: false,
 }))
@@ -26,10 +27,11 @@ vi.mock('./commands', () => ({
   updateBardWikiDocumentCommand: mocks.update,
   deleteBardWikiDocumentCommand: mocks.remove,
   patchBardWikiChatSettingsCommand: mocks.settings,
+  confirmBardWikiAssistantCommand: mocks.confirm,
   runServerCommand: ({ command }: { command: (baseRevision: number) => Promise<unknown> }) => command(7),
 }))
 
-import { createBardWikiDocument, updateBardWikiDocument } from './bardWikiCommands'
+import { confirmBardWikiAssistant, createBardWikiDocument, updateBardWikiDocument } from './bardWikiCommands'
 
 const handle = {
   key: 'bardwiki-document:chat-a',
@@ -60,6 +62,7 @@ beforeEach(() => {
   mocks.update.mockReset()
   mocks.remove.mockReset()
   mocks.settings.mockReset()
+  mocks.confirm.mockReset()
   mocks.listener = undefined
 })
 
@@ -122,5 +125,32 @@ describe('BardWiki durable commands', () => {
       status: 'conflict',
       result: { status: 'error', error: 'bardwiki_document_conflict' },
     })
+  })
+
+  it('stages an exact-source confirmation without an enqueue-time revision', async () => {
+    const source = {
+      userMessageId: 'user-a',
+      userContentHash: 'a'.repeat(64),
+      assistantMessageId: 'assistant-a',
+      assistantContentHash: 'b'.repeat(64),
+    }
+    mocks.confirm.mockResolvedValue({
+      status: 'ok',
+      revision: 8,
+      event: { type: 'bardwiki.confirmation.queued', revision: 8, resource: 'bardWikiChat' },
+      receipt: { id: 'receipt-a' },
+      job: { id: 'job-a' },
+      created: true,
+    })
+
+    await expect(confirmBardWikiAssistant('chat-a', source)).resolves.toMatchObject({
+      status: 'accepted',
+      result: { revision: 8, created: true },
+    })
+    expect(mocks.stage).toHaveBeenCalledWith(`bardwiki-confirmation:chat-a:assistant-a:${'b'.repeat(64)}`, {
+      version: 1,
+      requests: [{ method: 'POST', path: '/bardwiki/chats/chat-a/confirmations', body: source }],
+    })
+    expect(mocks.confirm).toHaveBeenCalledWith({ baseRevision: 7, chatId: 'chat-a', ...source }, undefined)
   })
 })

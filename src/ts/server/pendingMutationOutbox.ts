@@ -286,6 +286,7 @@ const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
   { method: 'POST', path: /^\/bardwiki\/chats\/[^/?#]+\/documents$/ },
   { method: 'PATCH', path: /^\/bardwiki\/chats\/[^/?#]+\/documents\/[^/?#]+$/ },
   { method: 'DELETE', path: /^\/bardwiki\/chats\/[^/?#]+\/documents\/[^/?#]+$/ },
+  { method: 'POST', path: /^\/bardwiki\/chats\/[^/?#]+\/confirmations$/ },
   { method: 'PUT', path: /^\/(?:characters|chats|modules)\/[^/?#]+\/lorebooks$/ },
   { method: 'PUT', path: /^\/(?:characters|chats|modules)\/[^/?#]+\/lorebooks\/entries\/[^/?#]+$/ },
   { method: 'DELETE', path: /^\/(?:characters|chats|modules)\/[^/?#]+\/lorebooks\/entries\/[^/?#]+$/ },

@@ -400,6 +400,10 @@ import {
   type BardWikiContextPolicy,
   type BardWikiReviewState,
 } from '../bardWikiRepository.js'
+import {
+  createOrReuseExplicitBardWikiConfirmation,
+  type ExplicitBardWikiConfirmationInput,
+} from '../bardWikiReceipts.js'
 import { isBardWikiGlobalSettings } from '@risuai/protocol'
 
 function commandEventOrigin(req: FastifyRequest): CommandEventOrigin | undefined {
@@ -2064,6 +2068,7 @@ export function registerCommandRoutes(
   eventSink: CommandEventSink,
   messageTranslationJobs?: MessageTranslationJobRegistry,
   greetingTranslationJobs?: GreetingTranslationJobRegistry,
+  bardWikiJobs?: { wakeWorker?: () => void },
 ): void {
   app.addHook('preHandler', async (req, reply) => {
     const path = req.url.split('?')[0] ?? req.url
@@ -9329,6 +9334,44 @@ export function registerCommandRoutes(
     }
   })
 
+  app.post('/api/v1/commands/bardwiki/chats/:chatId/confirmations', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const chatId = readBardWikiId((req.params as { chatId?: unknown }).chatId, 'chatId')
+      const body = readBardWikiConfirmationCommandBody(req.body, chatId)
+      const baseRevision = readBaseRevision(body)
+      const result = applyTargetedCommandMutation({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.bardWiki,
+        skipDatabaseLoad: true,
+        mutate(_database, innerDb) {
+          const confirmation = createOrReuseExplicitBardWikiConfirmation(innerDb, body.confirmation)
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.bardWikiConfirmationQueued,
+              id: chatId,
+              jobId: confirmation.job.id,
+              sourceMessageId: confirmation.receipt.assistantMessageId,
+            },
+            extra: {
+              receipt: confirmation.receipt,
+              job: confirmation.job,
+              created: confirmation.created,
+            },
+          }
+        },
+      })
+      bardWikiJobs?.wakeWorker?.()
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
   app.post('/api/v1/commands/bardwiki/chats/:chatId/documents', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
 
@@ -9531,6 +9574,31 @@ function readBardWikiSettingsCommandBody(value: unknown): {
     throw new ValidationError('BardWiki autonomous updates are not available yet')
   }
   return { baseRevision: body.baseRevision, patch }
+}
+
+function readBardWikiConfirmationCommandBody(
+  value: unknown,
+  chatId: string,
+): { baseRevision?: unknown; confirmation: ExplicitBardWikiConfirmationInput } {
+  const body = readBardWikiObject(value ?? {}, 'body')
+  const allowed = [
+    'baseRevision',
+    'userMessageId',
+    'userContentHash',
+    'assistantMessageId',
+    'assistantContentHash',
+  ] as const
+  rejectUnsupportedBardWikiFields(body, allowed, 'BardWiki confirmation command')
+  return {
+    baseRevision: body.baseRevision,
+    confirmation: {
+      chatId,
+      userMessageId: readBardWikiId(body.userMessageId, 'userMessageId'),
+      userContentHash: readBardWikiExpectedHash(body.userContentHash),
+      assistantMessageId: readBardWikiId(body.assistantMessageId, 'assistantMessageId'),
+      assistantContentHash: readBardWikiExpectedHash(body.assistantContentHash),
+    },
+  }
 }
 
 function readBardWikiCreateDocumentCommandBody(value: unknown): {
@@ -10100,6 +10168,7 @@ function sendCommandError(
   if (err instanceof BardWikiValidationError) {
     if (err.code === 'bardwiki_chat_not_found' || err.code === 'bardwiki_document_not_found') reply.code(404)
     else if (err.code === 'bardwiki_limit_exceeded') reply.code(413)
+    else if (err.code === 'bardwiki_disabled' || err.code === 'bardwiki_source_not_active') reply.code(409)
     else reply.code(400)
     return { error: err.code }
   }

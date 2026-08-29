@@ -1,6 +1,6 @@
 # Phase 4: Durable Jobs and Explicit Confirmation
 
-Status: in progress (slices 1-2 of 5 complete).
+Status: in progress (slices 1-3 of 5 complete).
 
 Goal: add restart-safe BardWiki background execution and explicit confirmation
 that creates one atomic event document per exact confirmed source version.
@@ -148,3 +148,27 @@ tests. The exact list belongs in the phase completion note.
 - Focused BardWiki repository/worker/routes passed 10 tests; Hypa route and
   protection compatibility passed 26 tests; the pre-existing 23-test Hypa
   worker suite passed independently; `pnpm run check:server` passed.
+
+### 2026-08-29: slice 3 — exact-source explicit confirmation
+
+- Added the revisioned confirmation command and durable browser bridge. The
+  staged intent omits `baseRevision`, while the normal mutation id, lineage,
+  active-writer, and command-receipt contracts provide replay behavior.
+- The server rereads the authoritative active transcript and accepts only the
+  current adjacent eligible `user -> char` tail (mapped to the contract's
+  `user -> assistant` roles), with expected ids and SHA-256 hashes of the raw
+  message text. Alternate, disabled/comment/reset-boundary, stale, and
+  non-assistant targets cannot create a receipt.
+- Effective global/chat settings are reread in the transaction and disabled
+  confirmation returns `bardwiki_disabled` without a revision.
+- One `BEGIN IMMEDIATE` command transaction inserts or reuses the unique exact
+  source tuple, links one pending `apply_turn` job, bumps one revision, persists
+  one targeted command event, and only then wakes the independent worker. Job
+  payloads retain only ids, hashes, profile/prompt ids, prompt version, the
+  canonical flag, and bounded repair metadata.
+- Duplicate semantic commands return the same receipt/job identities;
+  mutation-id replay returns the original response and revision; concurrent
+  requests serialize to one accepted initial tuple.
+- Explicit confirmation plus job/command regressions passed 238 server tests;
+  the browser command and complete durable outbox allowlist passed 234 tests;
+  `pnpm run check:server` passed.

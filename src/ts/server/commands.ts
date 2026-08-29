@@ -70,6 +70,8 @@ import type {
   BardWikiContextPolicy,
   BardWikiDocument,
   BardWikiDocumentKind,
+  BardWikiJobSummary,
+  BardWikiReceiptSummary,
   BardWikiReviewState,
 } from '@risuai/protocol'
 
@@ -610,6 +612,15 @@ export interface DeleteBardWikiDocumentCommandInput {
   documentId: string
   expectedVersion: number
   expectedContentHash: string
+}
+
+export interface ConfirmBardWikiAssistantCommandInput {
+  baseRevision: number
+  chatId: string
+  userMessageId: string
+  userContentHash: string
+  assistantMessageId: string
+  assistantContentHash: string
 }
 
 export interface DeleteServerInlayCatalogInput {
@@ -5653,6 +5664,29 @@ export async function deleteBardWikiDocumentCommand(
       signal,
     },
   )
+}
+
+export async function confirmBardWikiAssistantCommand(
+  input: ConfirmBardWikiAssistantCommandInput,
+  signal?: AbortSignal | null,
+): Promise<
+  ServerCommandResult<{
+    receipt: BardWikiReceiptSummary
+    job: BardWikiJobSummary
+    created: boolean
+  }>
+> {
+  return requestCommandJson(`/bardwiki/chats/${encodeURIComponent(input.chatId)}/confirmations`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      userMessageId: input.userMessageId,
+      userContentHash: input.userContentHash,
+      assistantMessageId: input.assistantMessageId,
+      assistantContentHash: input.assistantContentHash,
+    },
+    signal,
+  })
 }
 
 export async function upsertServerInlayCatalogCommand(

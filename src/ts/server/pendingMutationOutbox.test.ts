@@ -1193,6 +1193,7 @@ describe('pending mutation outbox', () => {
     ['POST', '/bardwiki/chats/chat-a/documents'],
     ['PATCH', '/bardwiki/chats/chat-a/documents/document-a'],
     ['DELETE', '/bardwiki/chats/chat-a/documents/document-a'],
+    ['POST', '/bardwiki/chats/chat-a/confirmations'],
   ] as const)('allowlists the durable bridge route %s %s', async (method, path) => {
     const handle = stagePendingMutation(`allowlist:${method}:${path}`, {
       version: 1,

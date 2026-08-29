@@ -706,7 +706,23 @@ export function listBardWikiReceiptSummaries(db: DatabaseSync, chatId: string, l
        ORDER BY updated_at DESC, id DESC LIMIT ?`,
     )
     .all(chatId, safeLimit) as unknown as BardWikiReceiptSummaryRow[]
-  return rows.map((row) => ({
+  return rows.map(mapReceiptSummaryRow)
+}
+
+export function getBardWikiReceiptSummary(db: DatabaseSync, receiptId: string): BardWikiReceiptSummary | null {
+  const row = db
+    .prepare(
+      `SELECT id, chat_id, user_message_id, user_content_hash, assistant_message_id,
+              assistant_content_hash, confirmation_mode, state, event_document_id,
+              job_id, error_code, error_summary, created_at, updated_at, applied_at
+       FROM bardwiki_turn_receipts WHERE id = ?`,
+    )
+    .get(receiptId) as unknown as BardWikiReceiptSummaryRow | undefined
+  return row ? mapReceiptSummaryRow(row) : null
+}
+
+function mapReceiptSummaryRow(row: BardWikiReceiptSummaryRow): BardWikiReceiptSummary {
+  return {
     id: row.id,
     chatId: row.chat_id,
     userMessageId: row.user_message_id,
@@ -722,7 +738,7 @@ export function listBardWikiReceiptSummaries(db: DatabaseSync, chatId: string, l
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     appliedAt: row.applied_at,
-  }))
+  }
 }
 
 export function listBardWikiJobSummaries(db: DatabaseSync, chatId: string, limit = 100): BardWikiJobSummary[] {

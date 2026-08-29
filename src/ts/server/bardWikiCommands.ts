@@ -1,6 +1,7 @@
-import type { BardWikiDocument } from '@risuai/protocol'
+import type { BardWikiDocument, BardWikiJobSummary, BardWikiReceiptSummary } from '@risuai/protocol'
 import {
   createBardWikiDocumentCommand,
+  confirmBardWikiAssistantCommand,
   deleteBardWikiDocumentCommand,
   patchBardWikiChatSettingsCommand,
   runServerCommand,
@@ -151,5 +152,23 @@ export function deleteBardWikiDocument(
     intent,
     command: (baseRevision, signal) =>
       deleteBardWikiDocumentCommand({ baseRevision, chatId, documentId, ...fence }, signal),
+  })
+}
+
+export function confirmBardWikiAssistant(
+  chatId: string,
+  source: {
+    userMessageId: string
+    userContentHash: string
+    assistantMessageId: string
+    assistantContentHash: string
+  },
+): Promise<BardWikiMutationOutcome<{ receipt: BardWikiReceiptSummary; job: BardWikiJobSummary; created: boolean }>> {
+  const path = `/bardwiki/chats/${encodeURIComponent(chatId)}/confirmations`
+  const intent: DurableMutationIntent = { version: 1, requests: [{ method: 'POST', path, body: source }] }
+  return dispatchBardWikiMutation({
+    key: `bardwiki-confirmation:${chatId}:${source.assistantMessageId}:${source.assistantContentHash}`,
+    intent,
+    command: (baseRevision, signal) => confirmBardWikiAssistantCommand({ baseRevision, chatId, ...source }, signal),
   })
 }
