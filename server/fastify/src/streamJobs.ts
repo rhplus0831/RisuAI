@@ -20,6 +20,8 @@ import { SHARED_DEFAULT_REQUEST_TIMEOUT_MS, SHARED_MAX_REQUEST_TIMEOUT_MS } from
 
 export const PROXY_STREAM_DEFAULT_TIMEOUT_MS = SHARED_DEFAULT_REQUEST_TIMEOUT_MS
 export const PROXY_STREAM_MAX_TIMEOUT_MS = SHARED_MAX_REQUEST_TIMEOUT_MS
+/** Hard wall-clock lifetime even when useful stream activity refreshes the inactivity deadline. */
+export const PROXY_STREAM_ABSOLUTE_LIFETIME_MS = PROXY_STREAM_MAX_TIMEOUT_MS
 export const PROXY_STREAM_DEFAULT_HEARTBEAT_SEC = 15
 export const PROXY_STREAM_HEARTBEAT_MIN_SEC = 5
 export const PROXY_STREAM_HEARTBEAT_MAX_SEC = 60
@@ -29,6 +31,8 @@ export const PROXY_STREAM_MAX_ACTIVE_JOBS = 64
 export const PROXY_STREAM_MAX_PENDING_EVENTS = 512
 export const PROXY_STREAM_MAX_PENDING_BYTES = 2 * 1024 * 1024
 export const DURABLE_REPLAY_MAX_AGGREGATE_BYTES = 16 * 1024 * 1024
+/** Maximum serialized durable terminal frame and on-disk snapshot size. */
+export const DURABLE_TERMINAL_SNAPSHOT_MAX_BYTES = 16 * 1024 * 1024
 export const PROXY_STREAM_MAX_BODY_BASE64_BYTES = 8 * 1024 * 1024
 
 export type StreamJobEvent =
@@ -72,8 +76,10 @@ export interface StreamJob {
   }
   abortController: AbortController
   deadlineAt: number
+  absoluteDeadlineAt: number
   heartbeatSec: number
   timeoutMs: number
+  absoluteLifetimeMs: number
   slidingDeadline: boolean
   /**
    * Durable-generation extensions. Unused by the proxy stream job. `chatId` ties
@@ -187,13 +193,15 @@ export async function resolveLocalNetworkTarget(
   if (!sanitized) throw new PluginNetworkTargetError('Blocked non-local target URL', 400)
 
   const url = new URL(sanitized)
-  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '').split('%')[0]
+  const hostname = url.hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '')
+    .replace(/\.$/, '')
+    .split('%')[0]
   const literalFamily = net.isIP(hostname)
   let addresses: readonly PluginDnsAddress[]
   try {
-    addresses = literalFamily
-      ? [{ address: hostname, family: literalFamily as 4 | 6 }]
-      : await resolver(hostname)
+    addresses = literalFamily ? [{ address: hostname, family: literalFamily as 4 | 6 }] : await resolver(hostname)
   } catch {
     throw new PluginNetworkTargetError('Local network target could not be resolved', 502)
   }
@@ -253,6 +261,7 @@ export interface CreateJobOptions {
   /** Preallocated durable-attempt id. Omitted proxy jobs receive a new UUID. */
   id?: string
   timeoutMs: unknown
+  absoluteLifetimeMs?: unknown
   heartbeatSec: unknown
   slidingDeadline?: boolean
   now?: number
@@ -262,7 +271,15 @@ export interface JobRegistryOptions {
   replayMaxEvents?: number
   replayMaxBytes?: number
   replayMaxAggregateBytes?: number
+  replaySnapshotMaxBytes?: number
   replaySnapshotDir?: string
+}
+
+export class DurableTerminalSnapshotLimitError extends Error {
+  constructor(readonly maxBytes: number) {
+    super(`durable terminal snapshot exceeded the ${maxBytes}-byte size cap`)
+    this.name = 'DurableTerminalSnapshotLimitError'
+  }
 }
 
 function serializedSseEventType(text: string): string | undefined {
@@ -380,6 +397,9 @@ export class JobRegistry {
   private readonly replayMaxEvents: number
   private readonly replayMaxBytes: number
   private readonly replayMaxAggregateBytes: number
+  private readonly replaySnapshotMaxBytes: number
+  private readonly inactivityDeadlineTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private readonly absoluteDeadlineTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private replayAggregateBytes = 0
   private nextReplaySequence = 1
   private replaySnapshotDir: string | undefined
@@ -390,6 +410,10 @@ export class JobRegistry {
     this.replayMaxAggregateBytes = Math.max(
       1,
       Math.floor(options.replayMaxAggregateBytes ?? DURABLE_REPLAY_MAX_AGGREGATE_BYTES),
+    )
+    this.replaySnapshotMaxBytes = Math.max(
+      1,
+      Math.floor(options.replaySnapshotMaxBytes ?? DURABLE_TERMINAL_SNAPSHOT_MAX_BYTES),
     )
     this.replaySnapshotDir = options.replaySnapshotDir
   }
@@ -426,9 +450,16 @@ export class JobRegistry {
   }
 
   private persistTerminalSnapshot(job: StreamJob, text: string): void {
+    if (Buffer.byteLength(text) > this.replaySnapshotMaxBytes) {
+      throw new DurableTerminalSnapshotLimitError(this.replaySnapshotMaxBytes)
+    }
     const data = serializedSseData(text)
     if (!isRecord(data)) throw new Error('Durable terminal frame did not contain a JSON object payload')
     const payload = JSON.stringify(data)
+    const payloadBytes = Buffer.byteLength(payload)
+    if (payloadBytes > this.replaySnapshotMaxBytes) {
+      throw new DurableTerminalSnapshotLimitError(this.replaySnapshotMaxBytes)
+    }
     const target = this.replaySnapshotPath(job.id)
     const temporary = `${target}.${randomUUID()}.tmp`
     try {
@@ -443,7 +474,7 @@ export class JobRegistry {
       throw error
     }
     job.replayTerminalSnapshot = {
-      bytes: Buffer.byteLength(payload),
+      bytes: payloadBytes,
       href: `/api/v1/generate/chat/${encodeURIComponent(job.id)}/terminal-snapshot`,
     }
   }
@@ -627,8 +658,38 @@ export class JobRegistry {
     }
   }
 
+  private clearDeadlineTimer(timers: Map<string, ReturnType<typeof setTimeout>>, jobId: string): void {
+    const timer = timers.get(jobId)
+    if (!timer) return
+    clearTimeout(timer)
+    timers.delete(jobId)
+  }
+
+  private armDeadlineTimer(timers: Map<string, ReturnType<typeof setTimeout>>, job: StreamJob, delayMs: number): void {
+    this.clearDeadlineTimer(timers, job.id)
+    const timer = setTimeout(() => {
+      timers.delete(job.id)
+      if (this.jobs.get(job.id) !== job || job.done) return
+      this.clearJobDeadlineTimers(job.id)
+      if (job.abortController.signal.aborted) return
+      job.abortController.abort()
+    }, delayMs)
+    timer.unref?.()
+    timers.set(job.id, timer)
+  }
+
+  private armInactivityDeadline(job: StreamJob): void {
+    this.armDeadlineTimer(this.inactivityDeadlineTimers, job, job.timeoutMs)
+  }
+
+  private clearJobDeadlineTimers(jobId: string): void {
+    this.clearDeadlineTimer(this.inactivityDeadlineTimers, jobId)
+    this.clearDeadlineTimer(this.absoluteDeadlineTimers, jobId)
+  }
+
   create(opts: CreateJobOptions): StreamJob {
     const timeoutMs = normalizeStreamTimeoutMs(opts.timeoutMs)
+    const absoluteLifetimeMs = normalizeStreamTimeoutMs(opts.absoluteLifetimeMs ?? PROXY_STREAM_ABSOLUTE_LIFETIME_MS)
     const heartbeatSec = normalizeHeartbeatSec(opts.heartbeatSec)
     const createdAt = opts.now ?? Date.now()
     const id = opts.id ?? randomUUID()
@@ -644,11 +705,15 @@ export class JobRegistry {
       pendingBytes: 0,
       abortController: new AbortController(),
       deadlineAt: createdAt + timeoutMs,
+      absoluteDeadlineAt: createdAt + absoluteLifetimeMs,
       heartbeatSec,
       timeoutMs,
+      absoluteLifetimeMs,
       slidingDeadline: opts.slidingDeadline === true,
     }
     this.jobs.set(job.id, job)
+    this.armInactivityDeadline(job)
+    this.armDeadlineTimer(this.absoluteDeadlineTimers, job, absoluteLifetimeMs)
     return job
   }
 
@@ -657,6 +722,7 @@ export class JobRegistry {
     const t = now ?? Date.now()
     job.updatedAt = t
     job.deadlineAt = t + job.timeoutMs
+    this.armInactivityDeadline(job)
   }
 
   enableReplay(job: StreamJob): void {
@@ -789,10 +855,12 @@ export class JobRegistry {
     if (job.done) return
     job.done = true
     job.cleanupAt = (now ?? Date.now()) + PROXY_STREAM_DONE_GRACE_MS
+    this.clearJobDeadlineTimers(job.id)
   }
 
   cleanup(jobId: string): void {
     const job = this.jobs.get(jobId)
+    this.clearJobDeadlineTimers(jobId)
     if (!job) return
     for (const client of job.clients) {
       try {
@@ -813,6 +881,10 @@ export class JobRegistry {
 
   dispose(): void {
     for (const job of [...this.jobs.values()]) this.cleanup(job.id)
+    for (const timer of this.inactivityDeadlineTimers.values()) clearTimeout(timer)
+    for (const timer of this.absoluteDeadlineTimers.values()) clearTimeout(timer)
+    this.inactivityDeadlineTimers.clear()
+    this.absoluteDeadlineTimers.clear()
     if (this.replaySnapshotDir) {
       try {
         fs.rmSync(this.replaySnapshotDir, { recursive: true, force: true })
@@ -836,7 +908,7 @@ export class JobRegistry {
   tickGc(now?: number): void {
     const t = now ?? Date.now()
     for (const [jobId, job] of this.jobs.entries()) {
-      if (!job.done && t >= job.deadlineAt && !job.abortController.signal.aborted) {
+      if (!job.done && (t >= job.deadlineAt || t >= job.absoluteDeadlineAt) && !job.abortController.signal.aborted) {
         job.abortController.abort()
       }
       if (job.done && job.clients.size === 0 && job.cleanupAt > 0 && t >= job.cleanupAt) {

@@ -5,7 +5,9 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  DurableTerminalSnapshotLimitError,
   JobRegistry,
+  PROXY_STREAM_ABSOLUTE_LIFETIME_MS,
   PROXY_STREAM_DEFAULT_HEARTBEAT_SEC,
   PROXY_STREAM_DEFAULT_TIMEOUT_MS,
   PROXY_STREAM_DONE_GRACE_MS,
@@ -229,6 +231,7 @@ describe('normalizeStreamTimeoutMs / normalizeHeartbeatSec', () => {
   it('clamps the timeout to MAX_TIMEOUT_MS', () => {
     expect(normalizeStreamTimeoutMs(PROXY_STREAM_MAX_TIMEOUT_MS + 1)).toBe(PROXY_STREAM_MAX_TIMEOUT_MS)
     expect(normalizeStreamTimeoutMs(`${PROXY_STREAM_MAX_TIMEOUT_MS + 123_456}`)).toBe(PROXY_STREAM_MAX_TIMEOUT_MS)
+    expect(PROXY_STREAM_ABSOLUTE_LIFETIME_MS).toBe(PROXY_STREAM_MAX_TIMEOUT_MS)
   })
 
   it('floors positive fractional timeouts to at least 1 ms', () => {
@@ -422,6 +425,29 @@ describe('JobRegistry buffering and lifecycle', () => {
     expect(String(client.messages[0])).toContain('"terminalSnapshot"')
   })
 
+  it('rejects an oversized durable terminal before replay or snapshot side effects', () => {
+    const reg = replayRegistry({ replaySnapshotMaxBytes: 128 })
+    const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
+    reg.enableReplay(job)
+    const client = fakeClient()
+    reg.attach(job.id, client)
+
+    expect(() => reg.pushRaw(job, `event: done\ndata: ${JSON.stringify({ result: 'x'.repeat(256) })}\n\n`)).toThrow(
+      expect.objectContaining<Partial<DurableTerminalSnapshotLimitError>>({
+        name: 'DurableTerminalSnapshotLimitError',
+        message: 'durable terminal snapshot exceeded the 128-byte size cap',
+        maxBytes: 128,
+      }),
+    )
+
+    expect(job.replayTerminalSnapshot).toBeUndefined()
+    expect(job.replayEvents).toEqual([])
+    expect(job.replayBytes).toBe(0)
+    expect(reg.replayMemoryBytes()).toBe(0)
+    expect(reg.readTerminalSnapshot(job.id)).toBeNull()
+    expect(client.messages).toEqual([])
+  })
+
   it('hard-caps protected-only replay and emits an explicit gap with eviction accounting', () => {
     const reg = new JobRegistry()
     const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
@@ -599,6 +625,46 @@ describe('JobRegistry buffering and lifecycle', () => {
     vi.advanceTimersByTime(101)
     reg.tickGc()
     expect(job.abortController.signal.aborted).toBe(true)
+  })
+
+  it('aborts an active sliding job at its absolute lifetime without waiting for a GC tick', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_500_000)
+    const reg = new JobRegistry()
+    const job = reg.create({
+      timeoutMs: 100,
+      absoluteLifetimeMs: 250,
+      heartbeatSec: 10,
+      slidingDeadline: true,
+    })
+
+    await vi.advanceTimersByTimeAsync(90)
+    reg.pushRaw(job, 'event: token\ndata: {"content":"a"}\n\n')
+    await vi.advanceTimersByTimeAsync(90)
+    reg.pushRaw(job, 'event: token\ndata: {"content":"b"}\n\n')
+    await vi.advanceTimersByTimeAsync(69)
+    expect(job.abortController.signal.aborted).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(job.abortController.signal.aborted).toBe(true)
+    reg.cleanup(job.id)
+  })
+
+  it('clears inactivity and absolute deadline timers when a job is cleaned up', async () => {
+    vi.useFakeTimers()
+    const reg = new JobRegistry()
+    const job = reg.create({
+      timeoutMs: 20,
+      absoluteLifetimeMs: 40,
+      heartbeatSec: 10,
+      slidingDeadline: true,
+    })
+
+    reg.cleanup(job.id)
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect(job.abortController.signal.aborted).toBe(false)
+    expect(reg.has(job.id)).toBe(false)
   })
 
   it('silent sliding durable generation jobs still die within the bounded deadline', () => {
