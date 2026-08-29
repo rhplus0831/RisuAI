@@ -123,10 +123,11 @@
       "id": "ORC-DECISION-005",
       "state": "signed",
       "title": "CA-OR-2: Group-chat generation remains no-port",
-      "baselineBehavior": "The baseline supported group-chat generation.",
-      "decidedBehavior": "Fastify does not expose or execute group-chat generation.",
+      "baselineBehavior": "The baseline supported group-chat generation and resolved group-aware CBS callbacks through the last speaking member.",
+      "decidedBehavior": "Fastify does not expose or execute group-chat generation, and retired group-aware parser branches do not resolve an imported group through a member character.",
       "observables": [
-        "Group-chat generation remains no-port"
+        "Group-chat generation remains no-port",
+        "CBS parsing does not revive group-member resolution through imported legacy group-shaped data."
       ],
       "inventoryIds": [
         "ORC-SURFACE-009"
@@ -135,13 +136,16 @@
       "parityAlternative": "Restore the baseline behavior described for CA-OR-2.",
       "authority": "RH+ (RisuAI Fastify maintainer)",
       "authorityDate": "2026-05-30",
-      "source": "commit 11da314a83e144ae3cc58f3f524e0d98e153ef3c; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:102-110",
+      "source": "commits 58bd2b2d54f9f1fbdb35130b3fc4e0176b1d07a6 and 11da314a83e144ae3cc58f3f524e0d98e153ef3c; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:102-110",
       "implementationOwners": [
         "server/fastify/src/routes/generationChat.ts",
-        "src/ts/process/serverBackedSendChat.ts"
+        "src/ts/process/serverBackedSendChat.ts",
+        "src/ts/cbs.ts"
       ],
       "regressionOwners": [
-        "server/fastify/__tests__/generation.chat.test.ts"
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "src/ts/parser/tests/cbs/phase9BaselineDrifts.dom.test.ts",
+        "test/compat-harness/phase9CbsBaseline.test.ts"
       ],
       "diagnostics": [
         "The unsupported boundary must be hidden, rejected, or visibly diagnosed; silent partial behavior is forbidden."
@@ -1794,6 +1798,199 @@
         "Nonempty imported data surfaces a read-only unsupported notice; the prompt regression fails if the compatibility data enters any generated prompt row."
       ],
       "revisitTrigger": "Revisit if server-owned embedding retrieval is restored with an explicit authoring, persistence, prompt-budget, and provider-visible contract."
+    },
+    {
+      "id": "ORC-DECISION-062",
+      "state": "signed",
+      "title": "CBS history arguments select bounded recent-message windows",
+      "baselineBehavior": "The baseline ignored every history/messages argument and returned the full transcript.",
+      "decidedBehavior": "A positive integer argument returns that many recent messages, while an invalid argument returns an empty array and an omitted argument retains the full transcript.",
+      "observables": [
+        "{{history::N}} and {{messages::N}} select the N most recent messages in transcript order.",
+        "Missing, valid, zero, negative, and invalid window arguments remain distinct."
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-109"
+      ],
+      "rationale": "The maintainer deliberately introduced numeric CBS history windows as an explicit parser feature.",
+      "parityAlternative": "Ignore the argument and return every transcript message as the fork-point baseline did.",
+      "authority": "RH+ (RisuAI Fastify maintainer)",
+      "authorityDate": "2026-07-29",
+      "source": "commit 197e80dcf6597360f1e55de3f2ecce1a2babf76b (feat: add CBS history windows)",
+      "implementationOwners": [
+        "src/ts/cbs.ts",
+        "server/fastify/src/prompt/variables.ts"
+      ],
+      "regressionOwners": [
+        "src/ts/parser/tests/cbs/phase9BaselineDrifts.dom.test.ts",
+        "server/fastify/__tests__/promptVariables.test.ts",
+        "test/compat-harness/phase9CbsBaseline.test.ts"
+      ],
+      "diagnostics": [
+        "Shared fixtures pin omitted, valid, and invalid argument outcomes at baseline, browser, and Fastify consumers."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-063",
+      "state": "signed",
+      "title": "CBS reverse operates on its expanded argument",
+      "baselineBehavior": "The baseline reversed the raw matcher text, so {{reverse::abc}} produced cba::esrever.",
+      "decidedBehavior": "The reverse callback operates on its expanded argument, so {{reverse::abc}} produces cba.",
+      "observables": [
+        "The matcher name and separator are never included in reverse output.",
+        "Argument expansion occurs before reversal."
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-110"
+      ],
+      "rationale": "The maintainer explicitly repaired the callback to reverse the supplied value rather than parser syntax.",
+      "parityAlternative": "Restore raw matcher-text reversal, including the matcher name and separator.",
+      "authority": "RH+ (RisuAI Fastify maintainer)",
+      "authorityDate": "2026-08-08",
+      "source": "commit 16842f066c32ce6474469e92c9b303bdd62ec6b3 (fix: repair CBS reverse and setdefaultvar null handling)",
+      "implementationOwners": [
+        "src/ts/cbs.ts",
+        "server/fastify/src/prompt/variables.ts"
+      ],
+      "regressionOwners": [
+        "src/ts/parser/tests/cbs/phase9BaselineDrifts.dom.test.ts",
+        "server/fastify/__tests__/promptVariables.test.ts",
+        "test/compat-harness/phase9CbsBaseline.test.ts"
+      ],
+      "diagnostics": [
+        "The shared baseline-drift fixture preserves both exact outputs and prevents normalization from hiding the change."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-064",
+      "state": "signed",
+      "title": "CBS metadata reports the Fastify-only runtime contract",
+      "baselineBehavior": "The baseline reported risutype=web and rejected the fastify metadata key while retaining desktop-era local/node branches.",
+      "decidedBehavior": "The sole-platform runtime reports risutype=fastify and fastify=1; retired local/node metadata remain false and browser language comes from the request context.",
+      "observables": [
+        "Runtime metadata identifies Fastify instead of the retired web/desktop split.",
+        "Local, node, Fastify, Risu type, and language values have the same explicit browser and server context ownership."
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-111"
+      ],
+      "rationale": "The maintainer removed desktop/Tauri authority, collapsed the runtime contract, made Fastify the sole platform, and later made browser-context CBS ownership explicit.",
+      "parityAlternative": "Report the baseline web/desktop metadata values and reject the Fastify key.",
+      "authority": "RH+ (RisuAI Fastify maintainer)",
+      "authorityDate": "2026-08-11",
+      "source": "commits a8dd411c3d6066e683a7bf6d415ac371993c0924, c5225365dad0c1935f9c1c459dfe379bc6b620f5, c2845022473796f6f9fa56c91c246693add1a07a, and 67210c623c77047e49fe938109903205bbb210ba",
+      "implementationOwners": [
+        "src/ts/cbs.ts",
+        "server/fastify/src/prompt/variables.ts",
+        "server/fastify/src/prompt/promptScope.ts"
+      ],
+      "regressionOwners": [
+        "src/ts/parser/tests/cbs/phase9BaselineDrifts.dom.test.ts",
+        "server/fastify/__tests__/promptVariables.test.ts",
+        "test/compat-harness/phase9CbsBaseline.test.ts"
+      ],
+      "diagnostics": [
+        "Unsupported or unavailable server callback context is reported through prompt diagnostics instead of silently impersonating a retired platform."
+      ],
+      "revisitTrigger": "Revisit if another supported runtime becomes a product target."
+    },
+    {
+      "id": "ORC-DECISION-065",
+      "state": "signed",
+      "title": "Standalone CBS slot tags resolve prompt-agent context",
+      "baselineBehavior": "The baseline documented slot but left a standalone {{slot::name}} tag literal outside legacy each substitution.",
+      "decidedBehavior": "Standalone slot tags resolve named values from the parser context so prompt-agent slot injection is executable.",
+      "observables": [
+        "A supplied slot value replaces its standalone tag.",
+        "Legacy each-loop slot substitution retains source order and nesting behavior."
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-112"
+      ],
+      "rationale": "The maintainer introduced the context agent with flexible prompt-slot injection and made the previously documentation-only callback executable.",
+      "parityAlternative": "Leave standalone slot tags literal and restrict slot replacement to the baseline each-loop substitution.",
+      "authority": "RH+ (RisuAI Fastify maintainer)",
+      "authorityDate": "2026-07-02",
+      "source": "commit c080398396d8bc7b6ca5322280c1e0b47dad78cd (feat: introduce context agent for flexible prompt slot injection)",
+      "implementationOwners": [
+        "src/ts/cbs.ts",
+        "src/ts/parser/risuChatParser.ts",
+        "server/fastify/src/prompt/variables.ts"
+      ],
+      "regressionOwners": [
+        "src/ts/parser/tests/cbs/phase9BaselineDrifts.dom.test.ts",
+        "server/fastify/__tests__/promptVariables.test.ts",
+        "test/compat-harness/phase9CbsBaseline.test.ts"
+      ],
+      "diagnostics": [
+        "Unknown callbacks remain literal; a supplied slot context is required for standalone replacement."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-066",
+      "state": "signed",
+      "title": "CBS each expansion has a fail-closed element budget",
+      "baselineBehavior": "The baseline expanded arbitrarily large {{#each}} arrays without an element cap.",
+      "decidedBehavior": "Each expansion stops before output construction when more than 4096 elements are requested and surfaces a typed parser-budget error through every recursive call.",
+      "observables": [
+        "Arrays of at most 4096 elements preserve ordered substitution.",
+        "An over-budget expansion fails visibly and cannot continue with partial parser output."
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-113"
+      ],
+      "rationale": "The maintainer explicitly capped each expansion and later repaired recursion-budget propagation so nested parsing cannot bypass the limit.",
+      "parityAlternative": "Permit unbounded each expansion as the baseline did.",
+      "authority": "RH+ (RisuAI Fastify maintainer)",
+      "authorityDate": "2026-08-29",
+      "source": "commits ad6c354434d9c80772af12dc97db06a8ab2e44ed and 014d96e90403590e527dac42f579994fa10a742b",
+      "implementationOwners": [
+        "src/ts/parser/risuChatParser.ts",
+        "server/fastify/src/prompt/variables.ts"
+      ],
+      "regressionOwners": [
+        "src/ts/parser/tests/cbs/phase9BaselineDrifts.dom.test.ts",
+        "server/fastify/__tests__/promptVariables.test.ts",
+        "test/compat-harness/phase9CbsBaseline.test.ts"
+      ],
+      "diagnostics": [
+        "RisuParserBudgetError includes the requested and maximum element counts."
+      ],
+      "revisitTrigger": "Revisit only with an equivalent bounded streaming expansion design."
+    },
+    {
+      "id": "ORC-DECISION-067",
+      "state": "signed",
+      "title": "Fastify Lua edit-hook failures surface instead of returning unchanged content",
+      "baselineBehavior": "The baseline browser edit hook caught a Lua failure and returned the original content.",
+      "decidedBehavior": "The browser fallback remains baseline-compatible, while server-owned prompt execution throws a sanitized Lua failure so generation cannot silently continue with unchanged content.",
+      "observables": [
+        "Browser-only Lua edit execution retains the original content after a failure.",
+        "Fastify-owned Lua edit execution fails visibly before provider dispatch rather than silently applying the original content."
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-114"
+      ],
+      "rationale": "The maintainer explicitly surfaced silent trigger fallbacks while preserving the legacy browser fallback for client-owned execution.",
+      "parityAlternative": "Catch the server Lua error and continue generation with unchanged content.",
+      "authority": "RH+ (RisuAI Fastify maintainer)",
+      "authorityDate": "2026-06-10",
+      "source": "commit ccfc708189cb95c5f3aa28321dc03383ccb0550c (fix: surface silent trigger fallbacks)",
+      "implementationOwners": [
+        "server/fastify/src/prompt/luaRuntime.ts",
+        "src/ts/process/scriptings.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/luaRuntime.test.ts",
+        "test/compat-harness/phase9LuaFailureSemantics.test.ts"
+      ],
+      "diagnostics": [
+        "The Fastify failure includes its edit mode and sanitized script failure; browser fallback behavior is pinned separately."
+      ],
+      "revisitTrigger": null
     }
   ]
 }

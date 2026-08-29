@@ -19,8 +19,9 @@ with exact visible failure/Retry evidence at
 `477a3aece1fffc159b0354fef5b21ecddf60cab5`. This is not yet a whole-product
 compatibility verdict; Phase 7 closes its provider and media matrices at
 `fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050`. Phase 8 closes memory/worker
-ownership at `a77f47c9f79b0233e147456e73ded69e1869d192`, and Phase 9 is in
-progress.
+ownership at `a77f47c9f79b0233e147456e73ded69e1869d192`. Phase 9 closes scripting,
+parsing, trigger, regex, and Lua ownership through
+`3963a1278b5f15175c295e3707d25fbf07bdcb56`, and Phase 10 is in progress.
 
 ## Phase 0 Environment And Baseline Evidence
 
@@ -280,6 +281,38 @@ governed responsive-shell decision.
 | `pnpm check:server` | Passed after the Phase 8 structural test |
 | Category H closure check | Passed; 7 of 7 Category H rows verified and zero remain mapped-only |
 | Register validation, Prettier, and `git diff --check` | Passed after the Category H register and decision-owner update; 108 inventory rows, 61 signed decisions, and 15 findings |
+
+## Phase 9 Evidence
+
+| Check | Result |
+| --- | --- |
+| Scripting compatibility implementation | `08d04efbf6bcc0f64c706bafe454a8649f9971be` |
+| Closed CBS, trigger/effect, regex, and Lua structure | `3963a1278b5f15175c295e3707d25fbf07bdcb56` |
+| Category I inventory | New verified rows `ORC-SURFACE-109` through `ORC-SURFACE-117`; all nine historical Category I rows re-verified; 18 verified Category I rows and 117 total inventory rows |
+| CBS vocabulary | 176 registrations, 151 executable callbacks, and 245 normalized matcher names, each with one owner |
+| Trigger vocabulary | 118 effect kinds, six modes, four condition kinds, four regex stages, and 40 explicitly unsupported effect kinds |
+| Lua vocabulary | 54 identical browser/Fastify host declarations, exhaustively classified as supported, browser-UI no-op, interactive rejection, or media-read rejection |
+| Shared compatibility proof | One state-independent corpus plus exact baseline/current fixtures for group, history, reverse, metadata, slot, each budget, malformed `fmIndex`, and Lua failure behavior |
+| Signed differences | `ORC-DECISION-062` through `ORC-DECISION-067` record exact RH+ authority; `ORC-DECISION-005` now also owns group-aware parser retirement |
+
+The only difference without an exact maintainer authority was malformed data
+missing `fmIndex`; it was restored to baseline parity. Locale-sensitive matcher
+folding has no demonstrated registered-name outcome, and the authorized shallow
+history clone is byte-identical, so neither is recorded as an unexplained
+observable difference.
+
+## Phase 9 Validation
+
+| Check | Result |
+| --- | --- |
+| Phase 9 Fastify selection | Passed; 6 files and 359 tests |
+| Shared browser corpus and baseline-drift selection | Passed; 2 files and 24 tests |
+| `pnpm test:compat-harness` | Passed; 29 baseline tests, 18 current/cluster tests, 16 compared cells, 15 governed harness divergences, cluster 10 healthy |
+| `pnpm check` | Passed with 0 errors and 0 warnings |
+| `pnpm check:server` | Passed protocol, client-declaration, browser-smoke, and Fastify typechecks |
+| Category I closure | Passed; 18 of 18 Category I rows verified and zero remain mapped-only |
+| Register gates | Passed; 117 surfaces, 67 signed decisions, 15 findings, and 12 fail-closed validator tests |
+| Phase 9 Prettier and `git diff --check` | Passed |
 
 ## Update Rules
 

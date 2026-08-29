@@ -402,12 +402,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "3963a1278b5f15175c295e3707d25fbf07bdcb56",
         "findingIds": [],
         "decisionId": "ORC-DECISION-001",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -461,12 +461,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "3963a1278b5f15175c295e3707d25fbf07bdcb56",
         "findingIds": [],
         "decisionId": "ORC-DECISION-002",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -604,10 +604,11 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:102-110"
         ],
-    "browser": [
-      "src/ts/process/request/serverPromptAssembly.ts",
-      "src/ts/process/serverBackedSendChat.ts",
-      "src/ts/storage/database.svelte.ts"
+      "browser": [
+        "src/ts/process/request/serverPromptAssembly.ts",
+        "src/ts/process/serverBackedSendChat.ts",
+        "src/ts/storage/database.svelte.ts",
+        "src/ts/cbs.ts"
         ],
         "protocol": [],
         "fastify": [
@@ -632,12 +633,16 @@
         "src/ts/process/request/serverPromptAssembly.ts",
         "src/ts/process/serverBackedSendChat.ts",
         "src/ts/storage/database.svelte.ts",
-        "19ba37af26df7db60d7393976d61b520a785076b"
+        "19ba37af26df7db60d7393976d61b520a785076b",
+        "08d04efbf6bcc0f64c706bafe454a8649f9971be",
+        "3963a1278b5f15175c295e3707d25fbf07bdcb56"
       ],
       "tests": [
         "server/fastify/__tests__/generation.chat.test.ts",
         "src/ts/process/request/tests/serverPromptAssembly.test.ts",
-        "src/ts/storage/database.svelte.test.ts"
+        "src/ts/storage/database.svelte.test.ts",
+        "src/ts/parser/tests/cbs/phase9BaselineDrifts.dom.test.ts",
+        "test/compat-harness/phase9CbsBaseline.test.ts"
         ],
         "fixtures": []
       },
@@ -765,7 +770,7 @@
       "verification": {
         "state": "verified",
         "confidence": "high",
-        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
+        "lastFastifyCommit": "3963a1278b5f15175c295e3707d25fbf07bdcb56",
         "findingIds": [],
         "decisionId": "ORC-DECISION-007",
         "residual": null
@@ -1753,12 +1758,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "3963a1278b5f15175c295e3707d25fbf07bdcb56",
         "findingIds": [],
         "decisionId": "ORC-DECISION-023",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -2107,12 +2112,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "3963a1278b5f15175c295e3707d25fbf07bdcb56",
         "findingIds": [],
         "decisionId": "ORC-DECISION-029",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -2711,12 +2716,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "3963a1278b5f15175c295e3707d25fbf07bdcb56",
         "findingIds": [],
         "decisionId": "ORC-DECISION-039",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -3018,12 +3023,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "3963a1278b5f15175c295e3707d25fbf07bdcb56",
         "findingIds": [],
         "decisionId": "ORC-DECISION-044",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -3077,12 +3082,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "3963a1278b5f15175c295e3707d25fbf07bdcb56",
         "findingIds": [],
         "decisionId": "ORC-DECISION-045",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -3136,12 +3141,12 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "3963a1278b5f15175c295e3707d25fbf07bdcb56",
         "findingIds": [],
         "decisionId": "ORC-DECISION-046",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -4362,14 +4367,14 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
+        "state": "verified",
         "confidence": "high",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "lastFastifyCommit": "3963a1278b5f15175c295e3707d25fbf07bdcb56",
         "findingIds": [
           "ORC-I-007"
         ],
         "decisionId": null,
-        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+        "residual": null
       },
       "notes": "Canonical import of a resolved 2026-08 compatibility finding."
     },
@@ -7170,6 +7175,627 @@
         "residual": null
       },
       "notes": "BardWiki is a Fastify-only interaction over shared transcripts; Phase 8 owns its durable memory effects and Phase 6 owns provider-visible prompt assembly."
+    },
+    {
+      "id": "ORC-SURFACE-109",
+      "title": "Signed CBS history-window semantics",
+      "primaryCategory": "I",
+      "seamTags": [
+        "F"
+      ],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "A positive history/messages argument selects that many recent transcript rows in original order.",
+        "An omitted argument returns all rows and an invalid argument returns an empty array."
+      ],
+      "variants": [
+        "omitted, positive, zero, negative, and invalid arguments",
+        "empty, shorter-than-window, and longer-than-window transcripts",
+        "browser and Fastify prompt consumers"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/cbs.ts"
+        ],
+        "browser": [
+          "src/ts/cbs.ts",
+          "src/ts/parser/parser.svelte.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/variables.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "JSON formatting may be normalized; selected row identity, order, role, content, and window cardinality remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "test/compat-harness/phase9CbsBaseline.test.ts"
+        ],
+        "current": [
+          "197e80dcf6597360f1e55de3f2ecce1a2babf76b",
+          "08d04efbf6bcc0f64c706bafe454a8649f9971be"
+        ],
+        "tests": [
+          "test/compat-harness/phase9CbsBaseline.test.ts",
+          "src/ts/parser/tests/cbs/phase9BaselineDrifts.dom.test.ts",
+          "server/fastify/__tests__/promptVariables.test.ts"
+        ],
+        "fixtures": [
+          "src/ts/parser/tests/cbs/phase9BaselineDriftFixtures.ts#historyWindow"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "3963a1278b5f15175c295e3707d25fbf07bdcb56",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-062",
+        "residual": null
+      },
+      "notes": "The exact baseline and current outputs remain side by side; no normalizer hides the signed difference."
+    },
+    {
+      "id": "ORC-SURFACE-110",
+      "title": "Signed CBS reverse argument semantics",
+      "primaryCategory": "I",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Reverse operates on the expanded callback argument rather than the raw matcher text.",
+        "Matcher syntax cannot leak into the returned string."
+      ],
+      "variants": [
+        "plain, empty, expanded, Unicode, and nested arguments",
+        "browser and Fastify consumers"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/cbs.ts"
+        ],
+        "browser": [
+          "src/ts/cbs.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/variables.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "No output normalization is permitted for reverse results."
+      ],
+      "evidence": {
+        "baseline": [
+          "test/compat-harness/phase9CbsBaseline.test.ts"
+        ],
+        "current": [
+          "16842f066c32ce6474469e92c9b303bdd62ec6b3",
+          "08d04efbf6bcc0f64c706bafe454a8649f9971be"
+        ],
+        "tests": [
+          "test/compat-harness/phase9CbsBaseline.test.ts",
+          "src/ts/parser/tests/cbs/phase9BaselineDrifts.dom.test.ts",
+          "server/fastify/__tests__/promptVariables.test.ts"
+        ],
+        "fixtures": [
+          "src/ts/parser/tests/cbs/phase9BaselineDriftFixtures.ts#reverse"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "3963a1278b5f15175c295e3707d25fbf07bdcb56",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-063",
+        "residual": null
+      },
+      "notes": "The former raw-matcher reversal remains captured only as baseline evidence."
+    },
+    {
+      "id": "ORC-SURFACE-111",
+      "title": "Signed Fastify CBS runtime metadata",
+      "primaryCategory": "I",
+      "seamTags": [
+        "L"
+      ],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "CBS reports Fastify as the sole supported runtime instead of the retired web/desktop split.",
+        "Browser-context language and unavailable server-context callbacks have explicit authority and diagnostics."
+      ],
+      "variants": [
+        "local, node, fastify, risutype, and language keys",
+        "browser request context and server prompt context",
+        "known and unknown metadata keys"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/cbs.ts"
+        ],
+        "browser": [
+          "src/ts/cbs.ts",
+          "src/ts/platform.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/variables.ts",
+          "server/fastify/src/prompt/promptScope.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Platform labels and boolean values are semantic; only environment-specific language input may vary by explicit fixture."
+      ],
+      "evidence": {
+        "baseline": [
+          "test/compat-harness/phase9CbsBaseline.test.ts"
+        ],
+        "current": [
+          "67210c623c77047e49fe938109903205bbb210ba",
+          "08d04efbf6bcc0f64c706bafe454a8649f9971be"
+        ],
+        "tests": [
+          "test/compat-harness/phase9CbsBaseline.test.ts",
+          "src/ts/parser/tests/cbs/phase9BaselineDrifts.dom.test.ts",
+          "server/fastify/__tests__/promptVariables.test.ts"
+        ],
+        "fixtures": [
+          "src/ts/parser/tests/cbs/phase9BaselineDriftFixtures.ts#metadata"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "3963a1278b5f15175c295e3707d25fbf07bdcb56",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-064",
+        "residual": null
+      },
+      "notes": "Phase 12 separately owns the supported platform and runtime environment matrix."
+    },
+    {
+      "id": "ORC-SURFACE-112",
+      "title": "Signed standalone CBS prompt-slot expansion",
+      "primaryCategory": "I",
+      "seamTags": [
+        "F"
+      ],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Standalone slot callbacks resolve named prompt-agent context values.",
+        "Legacy each-loop slot replacement remains ordered and nested correctly."
+      ],
+      "variants": [
+        "supplied, missing, empty, nested, and legacy each-loop slots",
+        "browser parser and Fastify prompt expansion"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/cbs.ts"
+        ],
+        "browser": [
+          "src/ts/cbs.ts",
+          "src/ts/parser/risuChatParser.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/variables.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Slot names, values, nesting, replacement order, and literal fallback remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "test/compat-harness/phase9CbsBaseline.test.ts"
+        ],
+        "current": [
+          "c080398396d8bc7b6ca5322280c1e0b47dad78cd",
+          "08d04efbf6bcc0f64c706bafe454a8649f9971be"
+        ],
+        "tests": [
+          "test/compat-harness/phase9CbsBaseline.test.ts",
+          "src/ts/parser/tests/cbs/phase9BaselineDrifts.dom.test.ts",
+          "server/fastify/__tests__/promptVariables.test.ts"
+        ],
+        "fixtures": [
+          "src/ts/parser/tests/cbs/phase9BaselineDriftFixtures.ts#standaloneSlot"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "3963a1278b5f15175c295e3707d25fbf07bdcb56",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-065",
+        "residual": null
+      },
+      "notes": "The decision makes the formerly documentation-only standalone callback executable."
+    },
+    {
+      "id": "ORC-SURFACE-113",
+      "title": "Signed fail-closed CBS each expansion budget",
+      "primaryCategory": "I",
+      "seamTags": [
+        "L"
+      ],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Each expansion preserves source order up to 4096 elements.",
+        "An oversized or recursively oversized expansion surfaces a typed budget failure without partial output."
+      ],
+      "variants": [
+        "empty, one, exactly 4096, and 4097 elements",
+        "nested blocks and recursive parser calls",
+        "baseline, browser, and Fastify consumers"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/parser/risuChatParser.ts"
+        ],
+        "browser": [
+          "src/ts/parser/risuChatParser.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/variables.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "No normalization may erase the failure type, requested count, maximum count, or absence of partial output."
+      ],
+      "evidence": {
+        "baseline": [
+          "test/compat-harness/phase9CbsBaseline.test.ts"
+        ],
+        "current": [
+          "ad6c354434d9c80772af12dc97db06a8ab2e44ed",
+          "014d96e90403590e527dac42f579994fa10a742b",
+          "08d04efbf6bcc0f64c706bafe454a8649f9971be"
+        ],
+        "tests": [
+          "test/compat-harness/phase9CbsBaseline.test.ts",
+          "src/ts/parser/tests/cbs/phase9BaselineDrifts.dom.test.ts",
+          "server/fastify/__tests__/promptVariables.test.ts"
+        ],
+        "fixtures": [
+          "src/ts/parser/tests/cbs/phase9BaselineDriftFixtures.ts#phase9OverBudgetEachInput"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "3963a1278b5f15175c295e3707d25fbf07bdcb56",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-066",
+        "residual": null
+      },
+      "notes": "The baseline's unbounded output is executed only inside the pinned differential fixture."
+    },
+    {
+      "id": "ORC-SURFACE-114",
+      "title": "Signed visible Fastify Lua edit-hook failure",
+      "primaryCategory": "I",
+      "seamTags": [
+        "F",
+        "L"
+      ],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Browser-owned Lua edit hooks retain baseline fallback to the original content after failure.",
+        "Fastify-owned Lua edit hooks surface a sanitized failure before provider dispatch instead of silently continuing."
+      ],
+      "variants": [
+        "editinput, editoutput, editprocess, and editdisplay modes",
+        "compile, runtime, timeout, and host-API failures",
+        "browser fallback and server generation authority"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/scriptings.ts"
+        ],
+        "browser": [
+          "src/ts/process/scriptings.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/luaRuntime.ts",
+          "server/fastify/src/prompt/assemble.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Stack paths may be sanitized; edit mode, failure classification, provider-call absence, and browser fallback content remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "test/compat-harness/phase9LuaFailureSemantics.test.ts"
+        ],
+        "current": [
+          "ccfc708189cb95c5f3aa28321dc03383ccb0550c",
+          "08d04efbf6bcc0f64c706bafe454a8649f9971be"
+        ],
+        "tests": [
+          "test/compat-harness/phase9LuaFailureSemantics.test.ts",
+          "server/fastify/__tests__/luaRuntime.test.ts",
+          "server/fastify/__tests__/scripts.test.ts"
+        ],
+        "fixtures": [
+          "test/compat-harness/phase9LuaFailureSemantics.test.ts#runLuaEditTriggerBody"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "3963a1278b5f15175c295e3707d25fbf07bdcb56",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-067",
+        "residual": null
+      },
+      "notes": "This decision is scoped to server-owned execution; it does not change the baseline-compatible browser fallback."
+    },
+    {
+      "id": "ORC-SURFACE-115",
+      "title": "Closed CBS registry, grammar, fallback, and shared-consumer parity",
+      "primaryCategory": "I",
+      "seamTags": [
+        "F"
+      ],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "All 176 CBS registrations, 151 executable callbacks, and 245 normalized matcher names have exactly one owner.",
+        "Escaping, aliases, nesting, block order, missing callbacks, malformed callback failures, and legacy loop substitution agree across retained consumers.",
+        "A malformed chat missing fmIndex preserves the literal firstmsgindex tag exactly as the baseline."
+      ],
+      "variants": [
+        "known, aliased, unknown, missing, and throwing callbacks",
+        "nested if, when, and each blocks",
+        "browser, Fastify, and pinned baseline consumers"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/cbs.ts",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/parser"
+        ],
+        "browser": [
+          "src/ts/cbs.ts",
+          "src/ts/parser/risuChatParser.ts",
+          "src/ts/parser/parser.svelte.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/variables.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Matcher case, spaces, hyphens, and underscores normalize by the production rule; array order, literal fallback, expanded output, and error class remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "test/compat-harness/phase9CbsBaseline.test.ts"
+        ],
+        "current": [
+          "08d04efbf6bcc0f64c706bafe454a8649f9971be",
+          "3963a1278b5f15175c295e3707d25fbf07bdcb56"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase9CompatibilityStructure.test.ts",
+          "server/fastify/__tests__/promptVariables.test.ts",
+          "src/ts/parser/tests/cbs/strings.test.ts",
+          "src/ts/parser/tests/cbs/phase9BaselineDrifts.dom.test.ts",
+          "test/compat-harness/phase9CbsBaseline.test.ts"
+        ],
+        "fixtures": [
+          "src/ts/parser/tests/cbs/phase9CompatibilityCorpus.ts",
+          "src/ts/parser/tests/cbs/phase9BaselineDriftFixtures.ts"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "3963a1278b5f15175c295e3707d25fbf07bdcb56",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": "Locale-sensitive matcher folding and shallow history clones have no demonstrated registry-observable or byte-observable difference; exact ASCII matcher ownership and output bytes remain pinned."
+      },
+      "notes": "Every intentional CBS difference has its own signed row; this row owns the retained parity surface only."
+    },
+    {
+      "id": "ORC-SURFACE-116",
+      "title": "Closed trigger modes, effects, ordering, mutable state, and unsupported boundaries",
+      "primaryCategory": "I",
+      "seamTags": [
+        "C",
+        "F"
+      ],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "All six trigger modes, four condition kinds, 118 effect kinds, and four regex stages are classified as implemented or explicitly unsupported.",
+        "Input, start, request, output, and display execution preserve effect order, prior durable variable writes, recursion budgets, and transient-output rollback on a retained whole-trigger guard.",
+        "Forty unsupported effect kinds cannot silently perform partial persistent mutation."
+      ],
+      "variants": [
+        "input, start, manual, request, output, and display",
+        "condition miss, stop, recursion, malformed container variable, and state effect in the wrong mode",
+        "durable script variables, transient chat/prompt output, and unsupported effects"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/triggers.ts"
+        ],
+        "browser": [
+          "src/ts/process/triggers.ts",
+          "src/ts/process/scripts.ts",
+          "src/ts/process/triggerServerSupport.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/triggers.ts",
+          "server/fastify/src/prompt/triggerDataEffects.ts",
+          "server/fastify/src/prompt/history.ts",
+          "server/fastify/src/prompt/assemble.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/prompt/assemble.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Generated diagnostics may sanitize paths; effect order, variable values, transcript identity/content, provider-call count, unsupported kind, and abort boundary remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/triggers.ts"
+        ],
+        "current": [
+          "08d04efbf6bcc0f64c706bafe454a8649f9971be",
+          "3963a1278b5f15175c295e3707d25fbf07bdcb56"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase9CompatibilityStructure.test.ts",
+          "server/fastify/__tests__/triggers.test.ts",
+          "server/fastify/__tests__/history.test.ts",
+          "server/fastify/__tests__/scripts.test.ts",
+          "server/fastify/__tests__/assemble.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/triggers.test.ts (whole-trigger abort, recursion, unsupported-effect, and durable-state fixtures)"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "3963a1278b5f15175c295e3707d25fbf07bdcb56",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "Historical signed unsupported and state semantics remain independently owned by their Category I rows."
+    },
+    {
+      "id": "ORC-SURFACE-117",
+      "title": "Closed Lua API, regex transformation, execution-bound, and automation failure ownership",
+      "primaryCategory": "I",
+      "seamTags": [
+        "F",
+        "L"
+      ],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "Browser and Fastify declare the same 54 Lua host APIs, each classified as supported, browser-UI no-op, interactive rejection, or media-read rejection.",
+        "Global and local regex stages preserve order, fresh global/sticky state, unmatched group behavior, compatibility bounds, and visible failure.",
+        "Timeout, recursion, parser, regex, and host-API failures stop before destructive or paid side effects according to their owning stage."
+      ],
+      "variants": [
+        "54 Lua APIs and every script mode",
+        "global, module, character, and preset regex stages",
+        "success, compile failure, runtime failure, timeout, recursion exhaustion, cancellation, and unsupported host API"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/scriptings.ts",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/scripts.ts"
+        ],
+        "browser": [
+          "src/ts/process/scriptings.ts",
+          "src/ts/process/scripts.ts",
+          "src/ts/process/triggers.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/luaRuntime.ts",
+          "server/fastify/src/prompt/scripts.ts",
+          "server/fastify/src/prompt/boundedRegex.ts",
+          "server/fastify/src/prompt/assemble.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/prompt/assemble.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Stack paths and wall-clock durations may be sanitized; API name, mode, input/output text, transform order, regex captures, durable writes, failure class, and provider-call absence remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "test/compat-harness/phase9LuaFailureSemantics.test.ts",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/scripts.ts"
+        ],
+        "current": [
+          "08d04efbf6bcc0f64c706bafe454a8649f9971be",
+          "3963a1278b5f15175c295e3707d25fbf07bdcb56"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase9CompatibilityStructure.test.ts",
+          "server/fastify/__tests__/luaRuntime.test.ts",
+          "server/fastify/__tests__/scripts.test.ts",
+          "src/ts/process/scripts.regexCache.test.ts",
+          "src/ts/process/triggers.regexMemo.test.ts",
+          "test/compat-harness/phase9LuaFailureSemantics.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/scripts.test.ts (regex stage/order/bound fixtures)",
+          "server/fastify/__tests__/luaRuntime.test.ts (host API, timeout, and failure fixtures)"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "3963a1278b5f15175c295e3707d25fbf07bdcb56",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "Signed Lua state and failure differences remain independently governed; this row owns the closed supported API and transformation surface."
     }
   ]
 }

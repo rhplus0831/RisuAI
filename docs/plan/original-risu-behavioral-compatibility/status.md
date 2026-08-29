@@ -12,8 +12,8 @@ findings under [`findings/`](findings/); inventory ownership under
 ## Current Snapshot
 
 - Plan state: Active.
-- Current phase: Phase 9 — scripting, parsing, triggers, and automation.
-- Active slice: [Phase 9 scripting, parsing, triggers, and automation](phases/phase-9-scripting-parsing-triggers-and-automation.md).
+- Current phase: Phase 10 — plugins, modules, MCP, and specialized tools.
+- Active slice: [Phase 10 plugins, modules, MCP, and specialized tools](phases/phase-10-plugins-modules-mcp-and-specialized-tools.md).
 - Planning audit anchor: `1933c43ff7b4d35b57b0852013d95f3881a8cb28`.
 - Compatibility baseline: `71c476e9c86263fe907105b011ca4dde0a619d66`.
 - Behavioral sync cursor: `f3f0242fba297d82e0efcc2c31ca1428569b70f2`.
@@ -23,7 +23,7 @@ findings under [`findings/`](findings/); inventory ownership under
   `/home/codex/risu-baseline-71c476e9c`; its exact commit, dependency state, and
   cleanliness are enforced by `pnpm prepare:compat-baseline` and the harness
   preflight.
-- Current compatibility state: Phases 0 through 8 are complete.
+- Current compatibility state: Phases 0 through 9 are complete.
   Phase 5 closes settings/default/preset/collection ownership at
   `b34b7a78f28cb5903ece3880073fbb9e46392cb8` and visible character-authoring
   reload evidence at `5eca30f4872e865efee2c86f4dde7ae71e915f9a`.
@@ -39,6 +39,11 @@ findings under [`findings/`](findings/); inventory ownership under
   Phase 8 closes retained memory/embedding selection and complete memory/BardWiki
   queue lifecycles, including a real SQLite close/reopen startup recovery, at
   `a77f47c9f79b0233e147456e73ded69e1869d192`.
+  Phase 9 closes CBS, trigger/effect, regex, Lua, execution-bound, and explicit
+  unsupported ownership at
+  `3963a1278b5f15175c295e3707d25fbf07bdcb56`, with baseline parity restoration
+  for malformed `firstmsgindex` and whole-trigger abort handling at
+  `08d04efbf6bcc0f64c706bafe454a8649f9971be`.
   After the independent Phase 2 governance-link correction
   `7ba933fe6f1c3338bd9cce2ef308b2b216ac8e8d`, the required pinned differential
   passes with 16 baseline cells, 18
@@ -48,11 +53,12 @@ findings under [`findings/`](findings/); inventory ownership under
   `6487cba00e3cc435a3c4f57f8121663bcdccc57e`.
 - Canonical findings: 15 resolved findings: 14 historical imports with exact raw
   mappings plus the Phase 1 lossless-normalizer finding `ORC-A-015`.
-- Open maintainer decisions: none. All 61 decisions are signed; individual RH+
+- Open maintainer decisions: none. All 67 decisions are signed; individual RH+
   commits reconstruct authority for the four historical boundaries, responsive
-  shell, and retired character additional-information retrieval.
-- Next action: complete Phase 9 CBS, regex, Lua, trigger/effect ordering, durable
-  script state, execution-bound, and explicit unsupported-effect evidence.
+  shell, retired character additional-information retrieval, and the six
+  Phase 9 parser/runtime differences.
+- Next action: complete Phase 10 extension API, module lifecycle, MCP/OAuth,
+  specialized-tool, and character/module no-port evidence.
 
 ## Phase Router
 
@@ -67,8 +73,8 @@ findings under [`findings/`](findings/); inventory ownership under
 | [6. Prompting, generation, and streaming](phases/phase-6-prompting-generation-and-streaming.md) | Complete | Closed model-visible contributor/action/style ownership, durable transcript/fault/finalization semantics, visible retry, and signed unsupported boundaries. |
 | [7. Providers, models, translation, and media](phases/phase-7-providers-models-translation-and-media.md) | Complete | Closed format/adapter/profile/option/operation ownership, provider-wire fixtures, persisted translation routing, and media dispatch. |
 | [8. Memory, embeddings, jobs, and workers](phases/phase-8-memory-embeddings-jobs-and-workers.md) | Complete | Closed retained-memory/embedding selection, budgets, memory/BardWiki job states, retry/cancel/restart, stale-target, and reconciliation ownership. |
-| [9. Scripting, parsing, triggers, and automation](phases/phase-9-scripting-parsing-triggers-and-automation.md) | In progress | Verify CBS, regex, Lua, trigger/script ordering and state, transformations, and explicit unsupported effects. |
-| [10. Plugins, modules, MCP, and specialized tools](phases/phase-10-plugins-modules-mcp-and-specialized-tools.md) | Pending | Verify retained extension data/APIs/lifecycle, permissions, tools, and no-port boundaries. |
+| [9. Scripting, parsing, triggers, and automation](phases/phase-9-scripting-parsing-triggers-and-automation.md) | Complete | Closed CBS/parser parity, individually signed runtime differences, trigger/effect ordering, explicit unsupported effects, regex bounds, and Lua API/failure ownership. |
+| [10. Plugins, modules, MCP, and specialized tools](phases/phase-10-plugins-modules-mcp-and-specialized-tools.md) | In progress | Verify retained extension data/APIs/lifecycle, permissions, tools, and no-port boundaries. |
 | [11. Assets, imports, exports, saves, and backups](phases/phase-11-assets-import-export-and-backups.md) | Pending | Verify references, codecs, salvage, staged assets, historical formats, and bidirectional round trips. |
 | [12. Runtime, platform, limits, and diagnostics](phases/phase-12-runtime-platform-and-diagnostics.md) | Pending | Verify shared platform behavior, visible rejection/diagnostics, browser/server environment, startup/shutdown, and Push. |
 | [13. Consolidation, adjudication, and remediation](phases/phase-13-consolidation-adjudication-and-remediation.md) | Pending | Deduplicate findings, settle decisions, land shared gates and fix waves, and close cross-domain ownership. |
@@ -260,6 +266,30 @@ findings under [`findings/`](findings/); inventory ownership under
 - The 563-test owning lane, persistence/generation integration, retired-memory
   browser assurance, server typechecks, registers, formatting, and diff checks
   pass.
+
+## Phase 9 Completion Record
+
+- `3963a1278b5f15175c295e3707d25fbf07bdcb56` closes all 176 CBS
+  registrations, 151 executable callbacks, 245 normalized matcher names, 118
+  trigger effects, six modes, four condition kinds, four regex stages, and 54
+  Lua host APIs over their browser/Fastify owners.
+- `08d04efbf6bcc0f64c706bafe454a8649f9971be` restores literal
+  `{{firstmsgindex}}` fallback when malformed chat data omits `fmIndex` and
+  retains whole-trigger abort semantics without leaking transient output or
+  losing prior durable variable writes.
+- Exact baseline/browser/Fastify fixtures expose rather than normalize group
+  retirement, history windows, reverse, runtime metadata, standalone slots,
+  each expansion bounds, missing callback data, and Lua failure behavior.
+- `ORC-DECISION-062` through `ORC-DECISION-067` reconstruct individual RH+
+  authority for the six retained differences; existing group no-port
+  `ORC-DECISION-005` now also owns the retired group-aware parser branch.
+- Category I rows `ORC-SURFACE-109` through `ORC-SURFACE-117` own the new
+  surfaces. All nine historical Category I rows are independently re-verified;
+  Category I is 18/18 verified, the inventory has 117 rows, and all 67
+  decisions are signed.
+- The 359-test Fastify lane, shared browser corpus, 29-test pinned baseline,
+  current differential, register gates, browser/server checks, formatting, and
+  diff checks pass.
 
 ## Locked Planning Decisions
 
