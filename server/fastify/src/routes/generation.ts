@@ -38,6 +38,7 @@ import { loadServerIntentCompletionSettings } from '../repository.js'
 import { dispatchChatProvider } from '../prompt/chatDispatch.js'
 import { generationSubmitRateLimit } from '../routeRateLimits.js'
 import { attachAbort } from '../requestAbort.js'
+import { writeBoundedRaw } from '../streamBackpressure.js'
 import { handleOllamaCloudToolProxy, isOllamaCloudToolOperation } from '../ollamaCloudToolProxy.js'
 import {
   validateServerToolDefinitions,
@@ -72,6 +73,19 @@ const SUPPORTED_PROVIDERS = new Set([
   'bedrock',
   'horde',
 ])
+
+/**
+ * Buffered completion routes must not accumulate an unbounded provider stream.
+ * Match the per-response upstream cap while counting decoded UTF-8 output.
+ */
+export const MAX_BUFFERED_COMPLETION_OUTPUT_BYTES = 32 * 1024 * 1024
+
+export class CompletionOutputLimitError extends Error {
+  constructor(readonly maxBytes: number) {
+    super(`completion output exceeded the ${maxBytes}-byte buffer cap`)
+    this.name = 'CompletionOutputLimitError'
+  }
+}
 
 interface ChatMessage {
   role: string
@@ -504,7 +518,7 @@ function legacyFinalizedPrompt(
   return typeof system === 'string' && system.length > 0 ? { system, messages } : messages
 }
 
-function writeSseChunk(reply: FastifyReply, frame: CompletionStreamFrame): void {
+function writeSseChunk(reply: FastifyReply, frame: CompletionStreamFrame, abortUpstream?: () => void): boolean {
   const event = frame.kind === 'done' ? 'done' : frame.kind === 'error' ? 'error' : 'chunk'
   const data =
     frame.kind === 'done'
@@ -521,7 +535,9 @@ function writeSseChunk(reply: FastifyReply, frame: CompletionStreamFrame): void 
             code: frame.code,
           })
         : JSON.stringify({ type: 'token', content: frame.content ?? '' })
-  reply.raw.write(`event: ${event}\ndata: ${data}\n\n`)
+  return writeBoundedRaw(reply.raw, `event: ${event}\ndata: ${data}\n\n`, {
+    onOverflow: abortUpstream,
+  })
 }
 
 function isCompletionDeadlineActivityFrame(frame: CompletionStreamFrame): boolean {
@@ -536,6 +552,7 @@ export async function pipeStream(
   reply: FastifyReply,
   frames: AsyncIterable<CompletionStreamFrame>,
   refreshDeadline?: () => void,
+  abortUpstream?: () => void,
 ): Promise<void> {
   reply.raw.writeHead(200, {
     'content-type': 'text/event-stream',
@@ -545,6 +562,8 @@ export async function pipeStream(
   const response = createRequestHistoryResponseCapture()
   try {
     for await (const frame of frames) {
+      const written = writeSseChunk(reply, frame, abortUpstream)
+      if (!written) break
       if (frame.kind === 'token') response.append(frame.content ?? '')
       if (frame.kind === 'done') {
         const captured = response.snapshot()
@@ -576,7 +595,6 @@ export async function pipeStream(
           },
         })
       }
-      writeSseChunk(reply, frame)
       if (refreshDeadline && isCompletionDeadlineActivityFrame(frame)) {
         refreshDeadline()
       }
@@ -602,13 +620,19 @@ export async function pipeStream(
   }
 }
 
-async function collectCompletionFrames(
+export async function collectCompletionFrames(
   frames: AsyncIterable<CompletionStreamFrame>,
+  maxBytes = MAX_BUFFERED_COMPLETION_OUTPUT_BYTES,
 ): Promise<CompletionResponsePayload> {
-  let result = ''
+  const resultChunks: string[] = []
+  let resultBytes = 0
+  const result = (): string => resultChunks.join('')
   for await (const frame of frames) {
     if (frame.kind === 'token') {
-      result += frame.content ?? ''
+      const content = frame.content ?? ''
+      resultBytes += Buffer.byteLength(content)
+      if (resultBytes > maxBytes) throw new CompletionOutputLimitError(maxBytes)
+      resultChunks.push(content)
       continue
     }
     if (frame.kind === 'error') {
@@ -623,23 +647,23 @@ async function collectCompletionFrames(
     if (frame.kind === 'done') {
       return {
         type: 'success',
-        result,
+        result: result(),
         ...(frame.toolCalls?.length ? { toolCalls: frame.toolCalls } : {}),
       }
     }
   }
-  return { type: 'success', result }
+  return { type: 'success', result: result() }
 }
 
 async function handleEchoStreaming(req: FastifyRequest, reply: FastifyReply, options: EchoOptions): Promise<void> {
-  const { signal, refresh, cleanup } = attachAbort(req, reply)
+  const { signal, refresh, abort, cleanup } = attachAbort(req, reply)
   try {
     const echo = resolveEchoRequest({
       message: options.message,
       delayMs: options.delayMs,
       signal,
     })
-    await pipeStream(reply, runEchoStream(echo), refresh)
+    await pipeStream(reply, runEchoStream(echo), refresh, abort)
   } finally {
     cleanup()
   }
@@ -738,7 +762,7 @@ async function handleAnthropicStreaming(
   messages: unknown[],
   options: AnthropicOptions,
 ): Promise<void> {
-  const { signal, refresh, cleanup } = attachAbort(req, reply)
+  const { signal, refresh, abort, cleanup } = attachAbort(req, reply)
   try {
     const ap = coerceAnthropicAdditionalParams(options)
     if (ap.ok === false) {
@@ -761,7 +785,7 @@ async function handleAnthropicStreaming(
       badRequest(reply, 'options.anthropic.apiKey is required')
       return
     }
-    await pipeStream(reply, runAnthropicStream(resolved), refresh)
+    await pipeStream(reply, runAnthropicStream(resolved), refresh, abort)
   } finally {
     cleanup()
   }
@@ -878,7 +902,7 @@ async function handleOllamaStreaming(
   messages: unknown[],
   options: OllamaOptions,
 ): Promise<void> {
-  const { signal, refresh, cleanup } = attachAbort(req, reply)
+  const { signal, refresh, abort, cleanup } = attachAbort(req, reply)
   try {
     const resolved = resolveOllamaRequest({
       model,
@@ -897,7 +921,7 @@ async function handleOllamaStreaming(
       badRequest(reply, 'options.ollama.baseUrl is required (and messages must be non-empty)')
       return
     }
-    await pipeStream(reply, runOllamaStream(resolved), refresh)
+    await pipeStream(reply, runOllamaStream(resolved), refresh, abort)
   } finally {
     cleanup()
   }
@@ -1108,7 +1132,7 @@ async function handleGeminiStreaming(
   messages: unknown[],
   options: GeminiOptions,
 ): Promise<void> {
-  const { signal, refresh, cleanup } = attachAbort(req, reply)
+  const { signal, refresh, abort, cleanup } = attachAbort(req, reply)
   try {
     const vertex = coerceVertexAuth(options.vertex)
     let vertexAuth: VertexAuthCoerced | undefined
@@ -1135,7 +1159,7 @@ async function handleGeminiStreaming(
       badRequest(reply, 'options.gemini.apiKey or options.gemini.vertex is required (and contents must be non-empty)')
       return
     }
-    await pipeStream(reply, runGeminiStream(resolved), refresh)
+    await pipeStream(reply, runGeminiStream(resolved), refresh, abort)
   } finally {
     cleanup()
   }
@@ -1235,7 +1259,7 @@ async function handleMistralStreaming(
   messages: unknown[],
   options: MistralOptions,
 ): Promise<void> {
-  const { signal, refresh, cleanup } = attachAbort(req, reply)
+  const { signal, refresh, abort, cleanup } = attachAbort(req, reply)
   try {
     const ap = coerceMistralAdditionalParams(options)
     if (ap.ok === false) {
@@ -1261,7 +1285,7 @@ async function handleMistralStreaming(
       badRequest(reply, 'options.mistral.apiKey is required')
       return
     }
-    await pipeStream(reply, runMistralStream(resolved), refresh)
+    await pipeStream(reply, runMistralStream(resolved), refresh, abort)
   } finally {
     cleanup()
   }
@@ -1315,7 +1339,7 @@ async function handleOpenAICompatibleStreaming(
   messages: unknown[],
   variant: OpenAICompatibleVariant,
 ): Promise<void> {
-  const { signal, refresh, cleanup } = attachAbort(req, reply)
+  const { signal, refresh, abort, cleanup } = attachAbort(req, reply)
   try {
     const resolved = resolveOpenAIRequest({
       model,
@@ -1333,7 +1357,7 @@ async function handleOpenAICompatibleStreaming(
       badRequest(reply, 'apiKey is required')
       return
     }
-    await pipeStream(reply, runOpenAIStream(resolved), refresh)
+    await pipeStream(reply, runOpenAIStream(resolved), refresh, abort)
   } finally {
     cleanup()
   }
@@ -1430,7 +1454,7 @@ async function handleServerIntentCompletion(
     return badRequest(reply, 'database is not initialized')
   }
 
-  const { signal, refresh, cleanup } = attachAbort(req, reply)
+  const { signal, refresh, abort, cleanup } = attachAbort(req, reply)
   try {
     const baseDatabase = settingsToCompletionDatabase(settings)
     const profile = selectedCompletionProfile(baseDatabase, body)
@@ -1454,13 +1478,14 @@ async function handleServerIntentCompletion(
     })
 
     if (body.stream === true) {
-      await pipeStream(reply, frames, refresh)
+      await pipeStream(reply, frames, refresh, abort)
       return
     }
 
     const result = await collectCompletionFrames(frames)
     reply.code(200).send(result)
   } catch (err) {
+    if (err instanceof CompletionOutputLimitError) abort()
     const message = err instanceof Error && err.message.length > 0 ? err.message : String(err)
     reply.code(400).send({ error: message || 'provider dispatch failed' })
   } finally {

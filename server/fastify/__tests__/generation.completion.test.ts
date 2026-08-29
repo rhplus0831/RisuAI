@@ -9,7 +9,8 @@ import { buildApp } from '../src/app.js'
 import { openDatabase } from '../src/db.js'
 import { writePersistedWithMessages } from '../src/repository.js'
 import { attachAbort } from '../src/requestAbort.js'
-import { pipeStream } from '../src/routes/generation.js'
+import { CompletionOutputLimitError, collectCompletionFrames, pipeStream } from '../src/routes/generation.js'
+import { STREAM_CLIENT_MAX_BUFFERED_BYTES } from '../src/streamBackpressure.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
 import { LLMFormat } from '../../../src/ts/model/types'
 
@@ -159,24 +160,28 @@ interface FakeRawReply extends EventEmitter {
   chunks: string[]
   ended: boolean
   writableEnded: boolean
+  writableLength: number
   writeHead(statusCode: number, headers: Record<string, string>): void
-  write(chunk: string): void
+  write(chunk: string): boolean
   end(): void
 }
 
-function fakeReply(): { reply: FastifyReply; raw: FakeRawReply } {
+function fakeReply(bufferedBytes = 0): { reply: FastifyReply; raw: FakeRawReply } {
   const raw = new EventEmitter() as FakeRawReply
   raw.statusCode = 0
   raw.headers = {}
   raw.chunks = []
   raw.ended = false
   raw.writableEnded = false
+  raw.writableLength = bufferedBytes
   raw.writeHead = (statusCode, headers) => {
     raw.statusCode = statusCode
     raw.headers = headers
   }
   raw.write = (chunk) => {
     raw.chunks.push(chunk)
+    raw.writableLength += Buffer.byteLength(chunk)
+    return true
   }
   raw.end = () => {
     raw.ended = true
@@ -1441,6 +1446,54 @@ describe('POST /api/v1/generate/completion (openai)', () => {
         `event: done\ndata: ${JSON.stringify({ finishReason: 'stop' })}\n\n`,
     )
     cleanup()
+  })
+
+  it('aborts the upstream before writing another SSE frame to a slow consumer', async () => {
+    const { reply, raw } = fakeReply(STREAM_CLIENT_MAX_BUFFERED_BYTES)
+    const abort = vi.fn()
+    let produced = 0
+    let finalized = false
+
+    async function* frames(): AsyncGenerator<CompletionStreamFrame> {
+      try {
+        produced += 1
+        yield { kind: 'token', content: 'first' }
+        produced += 1
+        yield { kind: 'token', content: 'second' }
+      } finally {
+        finalized = true
+      }
+    }
+
+    await pipeStream(reply, frames(), undefined, abort)
+
+    expect(abort).toHaveBeenCalledOnce()
+    expect(raw.chunks).toEqual([])
+    expect(raw.ended).toBe(true)
+    expect(produced).toBe(1)
+    expect(finalized).toBe(true)
+  })
+
+  it('rejects buffered completion output at the UTF-8 byte cap before retaining the overflow token', async () => {
+    let finalized = false
+    async function* frames(): AsyncGenerator<CompletionStreamFrame> {
+      try {
+        yield { kind: 'token', content: '한' }
+        yield { kind: 'token', content: 'abc' }
+        yield { kind: 'done', finishReason: 'stop' }
+      } finally {
+        finalized = true
+      }
+    }
+
+    await expect(collectCompletionFrames(frames(), 5)).rejects.toEqual(
+      expect.objectContaining<Partial<CompletionOutputLimitError>>({
+        name: 'CompletionOutputLimitError',
+        message: 'completion output exceeded the 5-byte buffer cap',
+        maxBytes: 5,
+      }),
+    )
+    expect(finalized).toBe(true)
   })
 
   it('idle streaming completion aborts at the bounded deadline', async () => {
