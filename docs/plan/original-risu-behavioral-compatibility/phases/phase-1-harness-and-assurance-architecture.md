@@ -1,6 +1,6 @@
 # Phase 1 — Harness And Assurance Architecture
 
-Status: Pending  
+Status: In progress
 Depends on: Phase 0
 
 ## Objective
@@ -51,3 +51,6 @@ Run focused harness tests, mutation/negative tests, `pnpm test:affected
 --dry-run`, every selected lane, `pnpm test:compat-current`, the pinned
 `pnpm test:compat-harness`, aggregate runner tests when changed, formatting, and
 `git diff --check`.
+
+Active execution record:
+[Phase 1 reproducible differential and gates](slices/phase-1-harness-and-assurance-architecture/phase-1-reproducible-differential-and-gates.md).

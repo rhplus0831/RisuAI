@@ -1,6 +1,6 @@
 # Phase 0 Slice — Baseline, Authority Import, And Pilot
 
-Status: Ready to execute  
+Status: Complete
 Phase: [Phase 0](../../phase-0-cursors-contract-and-inventory.md)  
 Opened from Fastify: `1933c43ff7b4d35b57b0852013d95f3881a8cb28`
 
@@ -110,3 +110,20 @@ the table is an entry hypothesis, not evidence.
 The slice is complete only when every work package has evidence and all Phase 0
 exit criteria pass. Baseline absence may remain a recorded environmental blocker
 for this short slice, but it cannot be waived for Phase 1 or final closure.
+
+## Completion Record
+
+- Baseline preparation and integrity enforcement landed in `bcb45b330605ba1cf021468e8cd4250fd19f24db`.
+- Fail-closed schema, relationship, authority, commit, upstream-range, and
+  canonicalization validation landed in `cfb36c1922fb5876f2b6233ff3f654277d187714`.
+- The exact 85-unit upstream interval and historical authority/raw-report import
+  landed in `9022d5bb45660ba50784e2324c93d339e75c96f9`.
+- Pilot regression evidence landed in
+  `9ea7aa20dd5a93ac7e5c9112e8c8fbcb9fca1438`.
+- Four incomplete historical authority statements remain visible as proposed
+  decisions; none is treated as an accepted expected difference.
+- Direct Original-app reroll save exchange remains infeasible because the pinned
+  harness has no such seam. Current raw, compressed, stream, and block `.risu`
+  codecs instead prove export, decode, fresh import, and reload without losing
+  candidate order, identity, metadata, references, transcript separation, or
+  bookmarks.

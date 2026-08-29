@@ -74,20 +74,20 @@
           "server/fastify/src/commands/presets.ts#SNAPSHOT_KEYS",
           "9aa1a51640c8f2f764990b567d7ea95fe2e6bac0"
         ],
-        "tests": [
-          "server/fastify/__tests__/commands.test.ts (legacy preset additionalParams selection)"
+      "tests": [
+        "server/fastify/__tests__/commands.test.ts (legacy preset additionalParams save/apply/reset, persistence, and bootstrap matrix)"
         ],
         "fixtures": [
           "server/fastify/__tests__/commands.test.ts (preset-a/preset-b imported database fixture)"
         ]
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "high",
-        "lastFastifyCommit": "9aa1a51640c8f2f764990b567d7ea95fe2e6bac0",
+      "state": "verified",
+      "confidence": "high",
+      "lastFastifyCommit": "9ea7aa20dd5a93ac7e5c9112e8c8fbcb9fca1438",
         "findingIds": [],
         "decisionId": null,
-        "residual": "The baseline omitted this field; Phase 0 treats the preservation fix as a Fastify-only interaction and still requires the full missing/null/reset variant evidence."
+      "residual": "The baseline omitted this field, so this is verified as an additive Fastify-only preservation rule rather than fork-point parity."
       },
       "notes": "This pilot traces a recent field-completeness omission rather than claiming that the baseline itself preserved preset-scoped additional parameters."
     },
@@ -159,9 +159,10 @@
           "bc8b1891187ac6ba97e303ed36df841f09516ab3",
           "c7563b7e5197ad8b59f3ab06334a9585c1396eaf"
         ],
-        "tests": [
-          "server/fastify/__tests__/rawMessageTranslation.test.ts",
-          "src/ts/translator/translator.cache.svelte-node.test.ts",
+      "tests": [
+        "server/fastify/__tests__/rawMessageTranslation.test.ts (missing/default/failure profile dispatch)",
+        "server/fastify/__tests__/serverMessageTranslation.test.ts (SQLite close/reopen and persisted profile dispatch)",
+        "src/ts/translator/translator.cache.svelte-node.test.ts",
           "src/ts/translator/presets.test.ts"
         ],
         "fixtures": [
@@ -169,12 +170,12 @@
         ]
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "high",
-        "lastFastifyCommit": "0d8f644f538ffa56b63b00769a9b64c1a0c5c169",
+      "state": "verified",
+      "confidence": "high",
+      "lastFastifyCommit": "9ea7aa20dd5a93ac7e5c9112e8c8fbcb9fca1438",
         "findingIds": [],
         "decisionId": null,
-        "residual": "The profile abstraction is post-baseline; Phase 0 still needs a single executable matrix that covers missing/default, failure, and reload together."
+      "residual": "The profile abstraction is post-baseline; live third-party transport remains deterministically stubbed while selection, request shape, failure, and reload are production-path tested."
       },
       "notes": "The comparison preserves the baseline's selected translation intent while allowing the Fastify profile representation to differ physically."
     },
@@ -242,9 +243,10 @@
           "server/fastify/src/generation/openaiResponses.ts#resolveResponsesRequest",
           "d49bdfa3e2d8e3e367ce08db0a4f2611f127ae55"
         ],
-        "tests": [
-          "server/fastify/__tests__/openaiResponses.test.ts",
-          "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+      "tests": [
+        "server/fastify/__tests__/openaiResponses.test.ts",
+        "server/fastify/__tests__/chatDispatchProfileOptions.test.ts",
+        "server/fastify/__tests__/generation.completion.test.ts"
         ],
         "fixtures": [
           "server/fastify/__tests__/openaiResponses.test.ts (query-bearing endpoint fixtures)"
@@ -253,7 +255,7 @@
       "verification": {
         "state": "verified",
         "confidence": "high",
-        "lastFastifyCommit": "d49bdfa3e2d8e3e367ce08db0a4f2611f127ae55",
+      "lastFastifyCommit": "9ea7aa20dd5a93ac7e5c9112e8c8fbcb9fca1438",
         "findingIds": [],
         "decisionId": null,
         "residual": "Live third-party retry behavior is fixture-proven rather than exercised against a paid endpoint."
@@ -328,8 +330,9 @@
           "server/fastify/src/repository.ts#writePersistedWithMessages",
           "9e7587afb83b8f0ee8fbce43fa5d500340ee06ed"
         ],
-        "tests": [
-          "server/fastify/__tests__/risuSaveExportRoute.test.ts",
+      "tests": [
+        "server/fastify/__tests__/risuSaveCodec.test.ts (export, decode, fresh import, and reload through all supported codecs)",
+        "server/fastify/__tests__/risuSaveExportRoute.test.ts",
           "server/fastify/__tests__/risuSaveImportRoute.test.ts",
           "src/ts/process/rerollNavigation.test.ts"
         ],
@@ -338,12 +341,12 @@
         ]
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "9e7587afb83b8f0ee8fbce43fa5d500340ee06ed",
+      "state": "verified",
+      "confidence": "high",
+      "lastFastifyCommit": "9ea7aa20dd5a93ac7e5c9112e8c8fbcb9fca1438",
         "findingIds": [],
         "decisionId": null,
-        "residual": "Current import and export are separately pinned, but an exported-byte round trip and direct Original-app execution proof remain to be recorded."
+      "residual": "All current raw, compressed, stream, and block .risu codecs pass an exported-byte round trip. Direct execution inside Original RisuAI is infeasible because the pinned harness exposes no save-exchange or durable-reroll seam; reopen when such a seam exists."
       },
       "notes": "Original retained candidates only in a process-local buffer; the Fastify-only persistence must remain additive and must not make shared saves unreadable."
     },

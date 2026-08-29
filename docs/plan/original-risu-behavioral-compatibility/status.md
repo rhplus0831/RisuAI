@@ -12,30 +12,33 @@ findings under [`findings/`](findings/); inventory ownership under
 ## Current Snapshot
 
 - Plan state: Active.
-- Current phase: Phase 0 — cursors, contract, inventory, and pilot.
-- Active slice: [Phase 0 baseline and pilot](phases/slices/phase-0-cursors-contract-and-inventory/phase-0-baseline-and-pilot.md).
+- Current phase: Phase 1 — harness and assurance architecture.
+- Active slice: [Phase 1 reproducible differential and gates](phases/slices/phase-1-harness-and-assurance-architecture/phase-1-reproducible-differential-and-gates.md).
 - Planning audit anchor: `1933c43ff7b4d35b57b0852013d95f3881a8cb28`.
 - Compatibility baseline: `71c476e9c86263fe907105b011ca4dde0a619d66`.
 - Behavioral sync cursor: `f3f0242fba297d82e0efcc2c31ca1428569b70f2`.
 - Toolchain observed at opening: Node `v24.19.0`; pnpm `11.23.0`.
 - Opening worktree state: clean.
-- Full differential prerequisite: blocked locally because
-  `/home/codex/risu-baseline-71c476e9c` is absent. Phase 0 must establish the
-  reproducible preparation procedure; this does not weaken the closure gate.
-- Current-only compatibility state: not run by this planning slice.
-- Confirmed findings: none in this new ledger yet. Historical findings are source
-  material until imported and re-verified.
-- Open maintainer decisions: none in this new ledger yet. Historical decisions
-  remain authoritative where individually signed and must be imported with IDs.
-- Next action: execute the Phase 0 baseline-and-pilot slice, starting with prior
-  decision/upstream-disposition import and baseline-worktree reproducibility.
+- Full differential prerequisite: available as a clean detached worktree at
+  `/home/codex/risu-baseline-71c476e9c`; its exact commit, dependency state, and
+  cleanliness are enforced by `pnpm prepare:compat-baseline` and the harness
+  preflight.
+- Current compatibility state: full pinned differential passed at
+  `9ea7aa20dd5a93ac7e5c9112e8c8fbcb9fca1438` (16 baseline cells, 18 current and
+  cluster tests, 15 explained baseline/current divergences, healthy cluster 10).
+- Canonical findings: 14 historical resolved findings imported with exact raw
+  mappings and implementation/verification evidence.
+- Open maintainer decisions: four historical unsupported statements remain
+  `proposed` because their sources do not identify individual authority.
+- Next action: execute the Phase 1 reproducible-differential-and-gates slice,
+  then begin the Phase 2 bootstrap/writer/outbox recovery slice.
 
 ## Phase Router
 
 | Phase | Status | Outcome |
 | ---: | --- | --- |
-| [0. Cursors, contract, inventory, and pilot](phases/phase-0-cursors-contract-and-inventory.md) | In progress | Freeze references, import authority, ratify schemas, and prove the method on representative boundary losses. |
-| [1. Harness and assurance architecture](phases/phase-1-harness-and-assurance-architecture.md) | Pending | Make baselines, fixtures, differential/expected-difference ownership, affected selection, CI, and release gates reproducible. |
+| [0. Cursors, contract, inventory, and pilot](phases/phase-0-cursors-contract-and-inventory.md) | Complete | Frozen references, exact authority import, fail-closed registers, reproducible baseline, and four verified pilots. |
+| [1. Harness and assurance architecture](phases/phase-1-harness-and-assurance-architecture.md) | In progress | Make baselines, fixtures, differential/expected-difference ownership, affected selection, CI, and release gates reproducible. |
 | [2. Browser state synchronization and recovery](phases/phase-2-browser-state-sync-and-recovery.md) | Pending | Verify bootstrap, writer, outbox, hydration, invalidation, reload, and recovery behavior. |
 | [3. Persistence, commands, events, and bridges](phases/phase-3-persistence-commands-events-and-bridges.md) | Pending | Verify logical durable state, mutation semantics, ordering, identity, receipts, and editing bridges. |
 | [4. Navigation, chat, shared UI, and presentation](phases/phase-4-navigation-chat-and-shared-ui.md) | Pending | Verify visible navigation, chat, composer, transcript, hotkey, focus, feedback, and responsive behavior. |
@@ -50,18 +53,23 @@ findings under [`findings/`](findings/); inventory ownership under
 | [13. Consolidation, adjudication, and remediation](phases/phase-13-consolidation-adjudication-and-remediation.md) | Pending | Deduplicate findings, settle decisions, land shared gates and fix waves, and close cross-domain ownership. |
 | [14. Verification and closeout](phases/phase-14-verification-and-closeout.md) | Pending | Prove zero unexplained differences, complete decisions, final quality/release gates, current docs, and archive handoff. |
 
-## Phase 0 Opening Record
+## Phase 0 Completion Record
 
 - `STRUCTURE.md` records the behavioral sync cursor separately from the Git fork
   point.
 - The archived upstream ledger covers `71c476e9c..f3f0242fb` and records that all
   units were dispositioned before the base advanced.
-- The existing compatibility harness pins the fork-point commit and hard-coded
-  baseline worktree path, but the worktree is not currently present.
-- The existing current-only harness is available without external prerequisites;
-  the full differential remains outside `test:all`.
-- Prior compatibility, data-loss, upstream-sync, and test-effectiveness audit
-  records are historical evidence, not automatically current findings.
+- The baseline object exists in both repositories; a detached clean worktree was
+  prepared without moving `/home/codex/Risuai`, and preflight rejects a wrong
+  commit, attached branch, dirty tree, or missing dependencies.
+- The upstream register contains all 85 first-parent units in exact Git order,
+  with historical disposition kept separate from current verification.
+- The registers contain 77 initial surfaces, 59 historical decisions (55 signed
+  and four authority-pending), 14 resolved findings, and all 75 historical raw
+  reports mapped exactly once.
+- The four pilots are verified by production-path tests for preset field
+  completeness, persisted translation dispatch, Responses request ownership,
+  and portable reroll candidates through all supported `.risu` codecs.
 
 ## Locked Planning Decisions
 

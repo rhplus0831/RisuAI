@@ -1,6 +1,6 @@
 # Phase 0 — Cursors, Contract, Inventory, And Pilot
 
-Status: In progress  
+Status: Complete
 Depends on: none
 
 ## Objective
@@ -73,3 +73,9 @@ audit method on recent recurring omission classes.
 
 Active execution record:
 [Phase 0 baseline and pilot](slices/phase-0-cursors-contract-and-inventory/phase-0-baseline-and-pilot.md).
+
+Completed at Fastify evidence commit
+`9ea7aa20dd5a93ac7e5c9112e8c8fbcb9fca1438`. The pinned differential,
+register validator, pilot-focused tests, server typechecks, formatting, and
+worktree integrity checks passed; exact command proof is in
+[`latest-verification.md`](../latest-verification.md).
