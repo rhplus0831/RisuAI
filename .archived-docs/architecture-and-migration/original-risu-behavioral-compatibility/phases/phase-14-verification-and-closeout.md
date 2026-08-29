@@ -10,9 +10,9 @@ make permanent gates operational, synchronize shipped documentation, and
 archive the intact workstream.
 
 The final behavioral candidate is
-`309823d6d3551638ce63888569f0a8790bf2fe3a`. Its exact manifest passes; register
-all four registers closed, current documentation was synchronized, and the
-intact workstream was archived under Architecture and migration.
+`a6b9cdcc074d4033c511509171268a821aa11d3c`. Its exact manifest passes; all four
+registers are closed, current documentation was synchronized, and the intact
+workstream was archived under Architecture and migration.
 
 ## Required Work
 

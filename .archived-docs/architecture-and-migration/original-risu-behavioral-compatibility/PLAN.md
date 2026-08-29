@@ -3,7 +3,7 @@
 Date: 2026-08-30
 
 > **ARCHIVED — workstream complete.** The final behavioral candidate is
-> `309823d6d3551638ce63888569f0a8790bf2fe3a`; the complete verification manifest
+> `a6b9cdcc074d4033c511509171268a821aa11d3c`; the complete verification manifest
 > passed, all four registers closed, and the intact workstream moved here on
 > 2026-08-30. Prefer [`STRUCTURE.md`](../../../STRUCTURE.md) and the code for
 > current behavior.

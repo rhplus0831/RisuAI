@@ -63,7 +63,7 @@ and stopping gates in [`PLAN.md`](PLAN.md); semantic and decision rules in
   and exhausts the upstream sweep at
   `d8d00b60b63f7905ff45de9a9b88aa8814c2d82b`.
   Phase 14's exact final behavioral candidate is
-  `309823d6d3551638ce63888569f0a8790bf2fe3a`; its whole-product manifest passes
+  `a6b9cdcc074d4033c511509171268a821aa11d3c`; its whole-product manifest passes
   with zero unexplained differences. After the independent Phase 2
   governance-link correction `7ba933fe6f1c3338bd9cce2ef308b2b216ac8e8d`,
   the required pinned differential passes with 16 baseline cells, 18
@@ -406,10 +406,10 @@ and stopping gates in [`PLAN.md`](PLAN.md); semantic and decision rules in
 
 ## Phase 14 Completion Record
 
-- `309823d6d3551638ce63888569f0a8790bf2fe3a` is the final behavioral candidate.
+- `a6b9cdcc074d4033c511509171268a821aa11d3c` is the final behavioral candidate.
   The pinned differential compares all 16 cells, governs all 15 expected
   differences with signed decisions, and reports cluster 10 healthy.
-- The exact aggregate passes 544 frontend files/6,685 tests, 178 Fastify
+- The exact aggregate passes 544 frontend files/6,688 tests, 178 Fastify
   files/3,648 tests plus one skip, all 41 production-bundle browser journeys,
   the Realm scale gate, UI coverage, frontend performance, typecheck, register,
   current-harness, formatting, and frontend-check lanes.
@@ -423,6 +423,12 @@ and stopping gates in [`PLAN.md`](PLAN.md); semantic and decision rules in
 - Current architecture and test guides were synchronized. The intact workstream
   was moved under Architecture and migration, and its register/harness/affected
   consumers remain permanent repository gates.
+- The final aggregate exposed two recovery races after archival: transient
+  effect-claim unavailability could lose its queued retry owner, and a newer
+  transcript projection could make terminal strict hydration reject once.
+  `a6b9cdcc074d4033c511509171268a821aa11d3c` retains the missing finalization
+  trigger and retries only failed terminal hydrations once; focused and
+  production-browser regressions cover both paths.
 
 ## Locked Planning Decisions
 

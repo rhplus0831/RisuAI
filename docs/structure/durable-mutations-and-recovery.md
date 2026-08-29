@@ -185,6 +185,15 @@ is preserved by stable id when possible, generation reattach is retriggered,
 and generation/message/greeting job metadata refreshes through read-only
 bootstrap.
 
+Generation finalization keeps a queued or stalled projection as the bounded
+refresh owner until every recovered effect has reached a terminal ledger state.
+If strict transcript hydration clears that provisional row before a transient
+effect claim becomes available, the refresh restores only the missing trigger;
+it never overwrites a newer projection. When an authoritative bootstrap retires
+a generation job, terminal transcript reconciliation retries only rejected chat
+hydrations once. This handles a stale response displaced by a newer transcript
+projection while repeated failures still publish the recovery warning.
+
 Server replay is backed by SQLite `command_events` and retained for
 `COMMAND_EVENT_HISTORY_LIMIT` revisions. After the writer frame and connected
 comment, every successful connection receives an initial `memory_snapshot`

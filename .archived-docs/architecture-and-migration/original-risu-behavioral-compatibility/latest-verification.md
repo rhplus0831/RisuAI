@@ -31,10 +31,11 @@ policy, limits, diagnostics, Push, and signed no-port ownership through
 `140c04d24724fcb09cef9ad57fd38bcc976054f6`. Phase 13 closes register lifecycle
 governance, all historical evidence, and all 85 current upstream dispositions
 through `d8d00b60b63f7905ff45de9a9b88aa8814c2d82b`. Phase 14's final behavioral
-candidate is `309823d6d3551638ce63888569f0a8790bf2fe3a`. The exact whole-product,
+candidate is `a6b9cdcc074d4033c511509171268a821aa11d3c`. The exact whole-product,
 pinned differential, browser, build, typecheck, formatting, and register
-manifest passes at that candidate with no unexplained difference. The remaining
-closeout work is documentary register closure and intact archival.
+manifest passes at that candidate with no unexplained difference. All registers
+are closed, the intact workstream is archived, and its permanent consumers and
+internal links remain fail-closed repository gates.
 
 ## Phase 0 Environment And Baseline Evidence
 
@@ -449,7 +450,11 @@ browser recovery/cache state, PWA presentation, or Web Push.
 
 | Check | Result |
 | --- | --- |
-| Final Fastify behavioral candidate | `309823d6d3551638ce63888569f0a8790bf2fe3a` |
+| Final Fastify behavioral candidate | `a6b9cdcc074d4033c511509171268a821aa11d3c` |
+| Register closure | `22d3164a285eaf4abbc5322d21b041b2eef889d4` |
+| Intact archival | `b0eb22aafdb56c15d1041937cff61d2c2381b521` |
+| Permanent archived-link validation | `282d66c88adbf41f1f0628af99c838e165350e1b` |
+| Final recovery correction | `a6b9cdcc074d4033c511509171268a821aa11d3c` |
 | Toolchain | Node `v24.19.0`; pnpm `11.23.0` |
 | Pinned baseline | Clean detached worktree at `71c476e9c86263fe907105b011ca4dde0a619d66` |
 | Inventory and findings | 134 verified surfaces; 15 resolved findings; 71 signed decisions; 75 historical raw reports mapped exactly once |
@@ -467,7 +472,7 @@ browser recovery/cache state, PWA presentation, or Web Push.
 | `pnpm test:affected --dry-run` and `pnpm test:affected` | Passed; clean exact-candidate tree had no uncommitted selection |
 | `pnpm test:compat-current` | Passed; 2 files, 18 tests, 16 current cells, cluster 10 healthy |
 | `pnpm test:compat-harness` | Passed; 3 baseline files/29 tests and 2 current files/18 tests; 16 cells, 15 governed differences, cluster 10 healthy |
-| `pnpm test:all` | Passed in 4m 27.0s: 544 frontend files/6,685 tests; 178 Fastify files/3,648 tests plus one skip; 41 browser journeys; 6 UI-map files/206 tests; Realm scale and 6 performance-gate tests; register, current-harness, typecheck, coverage, format, and frontend-check lanes |
+| `pnpm test:all` | Passed in 4m 23.1s: 544 frontend files/6,688 tests; 178 Fastify files/3,648 tests plus one skip; 41 browser journeys; 6 UI-map files/206 tests; Realm scale and 6 performance-gate tests; register, current-harness, typecheck, coverage, format, and frontend-check lanes |
 | `pnpm smoke:fastify-browser` | Passed; production smoke build and all 41 browser journeys |
 | `pnpm build:initial-preload` | Passed; HTML preload closure and protected boundaries passed; 330.73 KiB gzip total and 282.48 KiB largest file, within both ceilings |
 | `pnpm check` | Passed with 0 errors and 0 warnings |
@@ -484,7 +489,24 @@ write could advance the global revision between bootstrap and a concurrent
 chat-settings PUT. `309823d6d3551638ce63888569f0a8790bf2fe3a` bounded retries to
 authoritative revision-conflict responses. The raced journey passed three
 repetitions, its 11-test owning spec passed, and both the exact standalone smoke
-command and the final aggregate passed all 41 journeys.
+command and the then-current aggregate passed all 41 journeys.
+
+After register closure, documentation synchronization, intact archival, and the
+permanent Markdown-link gate, the next aggregate exposed two production
+recovery races. A strict transcript hydration could acknowledge and clear a
+queued finalization marker before a later effect claim reported transient
+unavailability, leaving no timer owner for the pending effects. Separately, a
+newer transcript projection could truthfully invalidate the first strict
+terminal hydration after the observer job had already disappeared, publishing
+a permanent recovery warning despite authoritative completion.
+`a6b9cdcc074d4033c511509171268a821aa11d3c` keeps all nonterminal effect results
+retryable, restores only a missing queued/stalled trigger after failed recovery,
+and retries only failed terminal chat hydrations once. The three focused files
+pass 58 tests; each raced browser journey passed ten repetitions; the complete
+11-test accepted-send browser owner passed; the pinned differential and initial
+preload gates passed; and the repeated exact aggregate passed all lanes and all
+41 browser journeys. This commit therefore supersedes `309823d6d` as the final
+behavioral candidate.
 
 ## Update Rules
 
