@@ -115,6 +115,8 @@ describe('server command event subscription helper', () => {
           errorSummary: null,
           attemptCount: 1,
           maxAttempts: 3,
+          progressCurrent: null,
+          progressTotal: null,
           nextRunAt: '2026-08-11T00:00:00.000Z',
           createdAt: '2026-08-11T00:00:00.000Z',
           updatedAt: '2026-08-11T00:00:00.000Z',
@@ -136,6 +138,8 @@ describe('server command event subscription helper', () => {
         errorSummary: 'Provider failed',
         attemptCount: 3,
         maxAttempts: 3,
+        progressCurrent: null,
+        progressTotal: null,
         updatedAt: '2026-08-11T00:01:00.000Z',
       },
     }

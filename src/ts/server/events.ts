@@ -370,6 +370,8 @@ function parseBardWikiEventJob(value: unknown): ServerBardWikiJobEvent['job'] | 
     errorSummary: record.errorSummary === undefined ? null : record.errorSummary,
     attemptCount: record.attemptCount,
     maxAttempts: record.maxAttempts,
+    progressCurrent: record.progressCurrent === undefined ? null : record.progressCurrent,
+    progressTotal: record.progressTotal === undefined ? null : record.progressTotal,
     updatedAt: record.updatedAt,
   }
 }
@@ -403,6 +405,8 @@ function parseBardWikiSnapshotJob(value: unknown): BardWikiJobSummary | null {
     errorSummary: record.errorSummary,
     attemptCount: record.attemptCount,
     maxAttempts: record.maxAttempts,
+    progressCurrent: record.progressCurrent === undefined ? null : record.progressCurrent,
+    progressTotal: record.progressTotal === undefined ? null : record.progressTotal,
     nextRunAt: record.nextRunAt,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
@@ -423,6 +427,8 @@ function isBardWikiJobCore(
   errorSummary?: string | null
   attemptCount: number
   maxAttempts: number
+  progressCurrent?: number | null
+  progressTotal?: number | null
 } {
   return (
     typeof record.id === 'string' &&
@@ -442,7 +448,13 @@ function isBardWikiJobCore(
     Number.isInteger(record.attemptCount) &&
     (record.attemptCount as number) >= 0 &&
     Number.isInteger(record.maxAttempts) &&
-    (record.maxAttempts as number) > 0
+    (record.maxAttempts as number) > 0 &&
+    (record.progressCurrent === undefined ||
+      record.progressCurrent === null ||
+      (Number.isInteger(record.progressCurrent) && (record.progressCurrent as number) >= 0)) &&
+    (record.progressTotal === undefined ||
+      record.progressTotal === null ||
+      (Number.isInteger(record.progressTotal) && (record.progressTotal as number) >= 0))
   )
 }
 

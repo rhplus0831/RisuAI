@@ -34,6 +34,7 @@ export interface BardWikiRebuildChatJobPayload {
   chatId: string
   generation: number
   sourceCursor: number
+  sourceTotal: number
   policy: 'missing' | 'full'
   stagingManifestId: string
 }
@@ -130,7 +131,7 @@ export function readBardWikiJobPayload(kind: BardWikiJobKind, value: unknown): B
       }
     }
     case 'rebuild_chat': {
-      requireExactKeys(payload, ['chatId', 'generation', 'sourceCursor', 'policy', 'stagingManifestId'])
+      requireExactKeys(payload, ['chatId', 'generation', 'sourceCursor', 'sourceTotal', 'policy', 'stagingManifestId'])
       const policy = payload.policy
       if (policy !== 'missing' && policy !== 'full') {
         throw new BardWikiJobValidationError('policy must be missing or full')
@@ -139,11 +140,38 @@ export function readBardWikiJobPayload(kind: BardWikiJobKind, value: unknown): B
         chatId: requireBoundedString(payload.chatId, 'chatId'),
         generation: requireInteger(payload.generation, 'generation', 0, Number.MAX_SAFE_INTEGER),
         sourceCursor: requireInteger(payload.sourceCursor, 'sourceCursor', 0, Number.MAX_SAFE_INTEGER),
+        sourceTotal: requireInteger(payload.sourceTotal, 'sourceTotal', 0, Number.MAX_SAFE_INTEGER),
         policy,
         stagingManifestId: requireBoundedString(payload.stagingManifestId, 'stagingManifestId'),
       }
     }
   }
+}
+
+export function rescheduleRunningBardWikiJob(
+  db: DatabaseSync,
+  id: string,
+  payload: BardWikiJobPayload,
+  options: { now?: string | Date } = {},
+): BardWikiJob | null {
+  const current = getBardWikiJob(db, id)
+  if (!current || current.status !== 'running') return null
+  const normalized = readBardWikiJobPayload(current.kind, payload)
+  const payloadJson = JSON.stringify(normalized)
+  if (Buffer.byteLength(payloadJson, 'utf8') > BARDWIKI_JOB_MAX_PAYLOAD_BYTES) {
+    throw new BardWikiJobValidationError('BardWiki job payload exceeds 16 KiB')
+  }
+  const now = normalizeTimestamp(options.now)
+  const row = db
+    .prepare(
+      `UPDATE bardwiki_jobs
+       SET status = 'pending', payload_json = ?, attempt_count = MAX(0, attempt_count - 1),
+           error_code = NULL, error_summary = NULL, next_run_at = ?, updated_at = ?
+       WHERE id = ? AND status = 'running'
+       RETURNING *`,
+    )
+    .get(payloadJson, now, now, id) as unknown as BardWikiJobRow | undefined
+  return row ? mapBardWikiJobRow(row) : null
 }
 
 export function enqueueBardWikiJob(db: DatabaseSync, input: EnqueueBardWikiJobInput): BardWikiJob {
@@ -433,6 +461,8 @@ function updateReceiptForJob(
 }
 
 function mapBardWikiJobRow(row: BardWikiJobRow): BardWikiJob {
+  const payload = readBardWikiJobPayload(row.kind, JSON.parse(row.payload_json) as unknown)
+  const rebuildPayload = row.kind === 'rebuild_chat' ? (payload as BardWikiRebuildChatJobPayload) : null
   return {
     id: row.id,
     instanceId: row.instance_id,
@@ -440,11 +470,13 @@ function mapBardWikiJobRow(row: BardWikiJobRow): BardWikiJob {
     receiptId: row.receipt_id,
     kind: row.kind,
     status: row.status,
-    payload: readBardWikiJobPayload(row.kind, JSON.parse(row.payload_json) as unknown),
+    payload,
     errorCode: row.error_code,
     errorSummary: row.error_summary,
     attemptCount: row.attempt_count,
     maxAttempts: row.max_attempts,
+    progressCurrent: rebuildPayload?.sourceCursor ?? null,
+    progressTotal: rebuildPayload?.sourceTotal ?? null,
     nextRunAt: row.next_run_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

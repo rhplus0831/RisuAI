@@ -413,6 +413,7 @@ import {
   type BardWikiVaultConflictStrategy,
   type BardWikiVaultExpectedTarget,
 } from '../bardWikiVault.js'
+import { enqueueBardWikiRebuild, previewBardWikiRebuild } from '../bardWikiRebuildHandler.js'
 
 function commandEventOrigin(req: FastifyRequest): CommandEventOrigin | undefined {
   const writerSessionId = readActiveWriterSessionId(req)
@@ -9539,6 +9540,46 @@ export function registerCommandRoutes(
       }
     },
   )
+
+  app.post('/api/v1/commands/bardwiki/chats/:chatId/rebuilds', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const chatId = readBardWikiId((req.params as { chatId?: unknown }).chatId, 'chatId')
+      const body = readBardWikiRebuildCommandBody(req.body)
+      if (body.preview) {
+        return {
+          revision: getSchemaState(db).revision,
+          preview: previewBardWikiRebuild(db, chatId, body.policy),
+        }
+      }
+      const baseRevision = readBaseRevision(body)
+      const result = applyTargetedCommandMutation({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.bardWiki,
+        skipDatabaseLoad: true,
+        mutate(_database, innerDb) {
+          const enqueued = enqueueBardWikiRebuild(innerDb, {
+            chatId,
+            policy: body.policy,
+            expectedSourceCount: body.expectedSourceCount,
+          })
+          const { payload: _payload, ...job } = enqueued
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.bardWikiRebuildQueued, id: chatId, jobId: job.id },
+            extra: { job },
+          }
+        },
+      })
+      bardWikiJobs?.wakeWorker?.()
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
 }
 
 function readBardWikiId(value: unknown, label: string): string {
@@ -9721,11 +9762,15 @@ function readBardWikiImportCommandBody(value: unknown): {
   if (body.strategy !== 'skip' && body.strategy !== 'rename' && body.strategy !== 'replace') {
     throw new ValidationError('strategy must be skip, rename, or replace')
   }
-  if (typeof body.archiveBase64 !== 'string' || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(body.archiveBase64)) {
+  if (
+    typeof body.archiveBase64 !== 'string' ||
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(body.archiveBase64)
+  ) {
     throw new ValidationError('archiveBase64 must be canonical base64')
   }
   const archive = Buffer.from(body.archiveBase64, 'base64')
-  if (archive.toString('base64') !== body.archiveBase64) throw new ValidationError('archiveBase64 must be canonical base64')
+  if (archive.toString('base64') !== body.archiveBase64)
+    throw new ValidationError('archiveBase64 must be canonical base64')
   const rawTargets = body.expectedTargets ?? []
   if (!Array.isArray(rawTargets) || rawTargets.length > 2_000) {
     throw new ValidationError('expectedTargets must be a bounded array')
@@ -9749,6 +9794,44 @@ function readBardWikiImportCommandBody(value: unknown): {
     strategy: body.strategy,
     archive,
     expectedTargets,
+  }
+}
+
+function readBardWikiRebuildCommandBody(value: unknown):
+  | { baseRevision?: unknown; preview: true; policy: 'missing' | 'full' }
+  | {
+      baseRevision?: unknown
+      preview: false
+      policy: 'missing' | 'full'
+      expectedSourceCount: number
+    } {
+  const body = readBardWikiObject(value ?? {}, 'body')
+  rejectUnsupportedBardWikiFields(
+    body,
+    ['baseRevision', 'preview', 'confirm', 'policy', 'expectedSourceCount'],
+    'BardWiki rebuild command',
+  )
+  if (body.policy !== 'missing' && body.policy !== 'full') {
+    throw new ValidationError('policy must be missing or full')
+  }
+  if (body.preview === true) {
+    if (body.confirm !== undefined || body.expectedSourceCount !== undefined || body.baseRevision !== undefined) {
+      throw new ValidationError('rebuild preview does not accept confirmation fields')
+    }
+    return { preview: true, policy: body.policy }
+  }
+  if (body.preview !== false || body.confirm !== true) {
+    throw new ValidationError('rebuild must be previewed or explicitly confirmed')
+  }
+  if (!Number.isSafeInteger(body.expectedSourceCount) || (body.expectedSourceCount as number) < 0) {
+    throw new ValidationError('expectedSourceCount must be a non-negative integer')
+  }
+  if (body.baseRevision === undefined) throw new ValidationError('baseRevision is required for rebuild')
+  return {
+    baseRevision: body.baseRevision,
+    preview: false,
+    policy: body.policy,
+    expectedSourceCount: body.expectedSourceCount as number,
   }
 }
 
@@ -10264,7 +10347,9 @@ function sendCommandError(
     else if (
       err.code === 'bardwiki_disabled' ||
       err.code === 'bardwiki_source_not_active' ||
-      err.code === 'bardwiki_import_conflict'
+      err.code === 'bardwiki_import_conflict' ||
+      err.code === 'bardwiki_rebuild_active' ||
+      err.code === 'bardwiki_rebuild_preview_stale'
     )
       reply.code(409)
     else reply.code(400)

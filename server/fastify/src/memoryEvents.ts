@@ -27,6 +27,8 @@ export interface BardWikiJobEvent {
     status: BardWikiJob['status']
     attemptCount: number
     maxAttempts: number
+    progressCurrent: number | null
+    progressTotal: number | null
     errorCode?: string | null
     errorSummary?: string | null
     updatedAt: string
@@ -138,6 +140,8 @@ export function buildBardWikiJobEvent(job: BardWikiJobSummary): BardWikiJobEvent
       status: job.status,
       attemptCount: job.attemptCount,
       maxAttempts: job.maxAttempts,
+      progressCurrent: job.progressCurrent,
+      progressTotal: job.progressTotal,
       updatedAt: job.updatedAt,
     },
   }

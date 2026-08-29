@@ -241,6 +241,14 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'bardwiki.vault.imported',
     resource: 'bardWikiChat',
   },
+  bardWikiRebuildQueued: {
+    type: 'bardwiki.rebuild.queued',
+    resource: 'bardWikiChat',
+  },
+  bardWikiRebuildCompleted: {
+    type: 'bardwiki.rebuild.completed',
+    resource: 'bardWikiChat',
+  },
   settingsUpdated: {
     type: 'settings.updated',
     resource: 'settings',

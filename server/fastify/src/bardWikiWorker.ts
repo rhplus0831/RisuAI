@@ -21,7 +21,11 @@ export interface BardWikiJobHandlerContext {
   signal: AbortSignal
 }
 
-export type BardWikiJobHandler = (job: BardWikiJob, context: BardWikiJobHandlerContext) => void | Promise<void>
+export type BardWikiJobHandlerResult = void | { outcome: 'rescheduled'; job: BardWikiJob }
+export type BardWikiJobHandler = (
+  job: BardWikiJob,
+  context: BardWikiJobHandlerContext,
+) => BardWikiJobHandlerResult | Promise<BardWikiJobHandlerResult>
 export type BardWikiJobHandlers = Record<BardWikiJobKind, BardWikiJobHandler>
 
 export interface BardWikiWorkerOptions {
@@ -201,9 +205,18 @@ export class BardWikiWorker {
     this.runningJobAbortControllers.set(job.id, controller)
     this.emitJob(job)
     try {
-      await this.handlers[job.kind](job, { signal: controller.signal })
-      const completed = completeBardWikiJob(this.db, job.id)
-      if (completed) this.emitJob(completed)
+      const handled = await this.handlers[job.kind](job, { signal: controller.signal })
+      if (handled?.outcome === 'rescheduled') {
+        if (handled.job.id !== job.id || handled.job.status !== 'pending') {
+          throw new BardWikiJobHandlerError('bardwiki_invalid_job', 'Handler returned an invalid rescheduled job', {
+            retryable: false,
+          })
+        }
+        this.emitJob(handled.job)
+      } else {
+        const completed = completeBardWikiJob(this.db, job.id)
+        if (completed) this.emitJob(completed)
+      }
     } catch (error) {
       const summary = error instanceof Error && error.message ? error.message : String(error)
       const code = error instanceof BardWikiJobHandlerError ? error.code : 'bardwiki_job_handler_failed'

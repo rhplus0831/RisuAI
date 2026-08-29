@@ -63,6 +63,8 @@ function isBardWikiJobSummary(value: unknown): value is BardWikiJobSummary {
     nonNegativeInteger(value.attemptCount) &&
     Number.isInteger(value.maxAttempts) &&
     (value.maxAttempts as number) > 0 &&
+    (value.progressCurrent === null || nonNegativeInteger(value.progressCurrent)) &&
+    (value.progressTotal === null || nonNegativeInteger(value.progressTotal)) &&
     typeof value.nextRunAt === 'string' &&
     typeof value.createdAt === 'string' &&
     typeof value.updatedAt === 'string'

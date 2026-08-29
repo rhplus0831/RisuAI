@@ -29,6 +29,7 @@ beforeEach(async () => {
       trustProxy: false,
       hubUrl: 'https://sv.risuai.xyz',
     },
+    bardWikiWorker: false,
   }))
   assertion = await setupAuthedClient(app)
   const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
@@ -171,6 +172,76 @@ describe('BardWiki revisioned commands', () => {
       plan: { noops: 1 },
     })
     expect(inspectRows('SELECT COUNT(*) AS count FROM bardwiki_document_versions')).toEqual([{ count: 1 }])
+  })
+
+  it('requires an exact rebuild preview before queuing observable work', async () => {
+    const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      const initial = createInitialDatabase() as unknown as Record<string, unknown>
+      initial.bardWiki = { ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS, enabledByDefault: true, memoryMode: 'bardwiki' }
+      db.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(JSON.stringify(initial))
+      const insert = db.prepare(
+        `INSERT INTO messages (chat_id, seq, uid, role, data, disabled, json, alternate)
+         VALUES ('chat-a', ?, ?, ?, ?, NULL, ?, 0)`,
+      )
+      insert.run(0, 'user-a', 'user', 'Question', JSON.stringify({ chatId: 'user-a', role: 'user', data: 'Question' }))
+      insert.run(
+        1,
+        'assistant-a',
+        'char',
+        'Answer',
+        JSON.stringify({ chatId: 'assistant-a', role: 'char', data: 'Answer' }),
+      )
+    } finally {
+      db.close()
+    }
+
+    const preview = await app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/bardwiki/chats/chat-a/rebuilds',
+      headers: authHeaders(),
+      payload: { preview: true, policy: 'full' },
+    })
+    expect(preview.statusCode).toBe(200)
+    expect(preview.json()).toMatchObject({
+      revision: 0,
+      preview: {
+        chatId: 'chat-a',
+        policy: 'full',
+        sourceCount: 1,
+        replaceDerivedDocumentCount: 0,
+        preserveUserDocumentCount: 0,
+        activeJobId: null,
+      },
+    })
+
+    const stale = await app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/bardwiki/chats/chat-a/rebuilds',
+      headers: authHeaders(),
+      payload: { baseRevision: 0, preview: false, confirm: true, policy: 'full', expectedSourceCount: 2 },
+    })
+    expect(stale.statusCode).toBe(409)
+    expect(stale.json()).toEqual({ error: 'bardwiki_rebuild_preview_stale' })
+
+    const queued = await app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/bardwiki/chats/chat-a/rebuilds',
+      headers: authHeaders(),
+      payload: { baseRevision: 0, preview: false, confirm: true, policy: 'full', expectedSourceCount: 1 },
+    })
+    expect(queued.statusCode).toBe(200)
+    expect(queued.json()).toMatchObject({
+      revision: 1,
+      event: { type: 'bardwiki.rebuild.queued', resource: 'bardWikiChat', id: 'chat-a' },
+      job: {
+        kind: 'rebuild_chat',
+        status: 'pending',
+        progressCurrent: 0,
+        progressTotal: 1,
+      },
+    })
+    expect(queued.json().job).not.toHaveProperty('payload')
   })
 
   it('serves body-free indexes, lazy document bodies, ETags, and paginated versions', async () => {

@@ -148,6 +148,8 @@ export interface BardWikiJobSummary {
   errorSummary: string | null
   attemptCount: number
   maxAttempts: number
+  progressCurrent: number | null
+  progressTotal: number | null
   nextRunAt: string
   createdAt: string
   updatedAt: string
@@ -757,7 +759,10 @@ export function listBardWikiJobSummaries(db: DatabaseSync, chatId: string, limit
   const rows = db
     .prepare(
       `SELECT id, instance_id, chat_id, receipt_id, kind, status, error_code,
-              error_summary, attempt_count, max_attempts, next_run_at, created_at, updated_at
+              error_summary, attempt_count, max_attempts,
+              CASE WHEN kind = 'rebuild_chat' THEN json_extract(payload_json, '$.sourceCursor') END AS progress_current,
+              CASE WHEN kind = 'rebuild_chat' THEN json_extract(payload_json, '$.sourceTotal') END AS progress_total,
+              next_run_at, created_at, updated_at
        FROM bardwiki_jobs WHERE chat_id = ?
        ORDER BY updated_at DESC, id DESC LIMIT ?`,
     )
@@ -769,7 +774,10 @@ export function listBardWikiJobSnapshotSummaries(db: DatabaseSync, terminalLimit
   const active = db
     .prepare(
       `SELECT id, instance_id, chat_id, receipt_id, kind, status, error_code,
-              error_summary, attempt_count, max_attempts, next_run_at, created_at, updated_at
+              error_summary, attempt_count, max_attempts,
+              CASE WHEN kind = 'rebuild_chat' THEN json_extract(payload_json, '$.sourceCursor') END AS progress_current,
+              CASE WHEN kind = 'rebuild_chat' THEN json_extract(payload_json, '$.sourceTotal') END AS progress_total,
+              next_run_at, created_at, updated_at
        FROM bardwiki_jobs WHERE status IN ('pending', 'running')
        ORDER BY created_at, id`,
     )
@@ -777,7 +785,10 @@ export function listBardWikiJobSnapshotSummaries(db: DatabaseSync, terminalLimit
   const terminal = db
     .prepare(
       `SELECT id, instance_id, chat_id, receipt_id, kind, status, error_code,
-              error_summary, attempt_count, max_attempts, next_run_at, created_at, updated_at
+              error_summary, attempt_count, max_attempts,
+              CASE WHEN kind = 'rebuild_chat' THEN json_extract(payload_json, '$.sourceCursor') END AS progress_current,
+              CASE WHEN kind = 'rebuild_chat' THEN json_extract(payload_json, '$.sourceTotal') END AS progress_total,
+              next_run_at, created_at, updated_at
        FROM bardwiki_jobs WHERE status IN ('completed', 'failed', 'cancelled')
        ORDER BY updated_at DESC, id DESC LIMIT ?`,
     )
@@ -797,6 +808,8 @@ function mapJobSummaryRow(row: BardWikiJobSummaryRow): BardWikiJobSummary {
     errorSummary: row.error_summary,
     attemptCount: row.attempt_count,
     maxAttempts: row.max_attempts,
+    progressCurrent: row.progress_current,
+    progressTotal: row.progress_total,
     nextRunAt: row.next_run_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -1112,6 +1125,8 @@ interface BardWikiJobSummaryRow {
   error_summary: string | null
   attempt_count: number
   max_attempts: number
+  progress_current: number | null
+  progress_total: number | null
   next_run_at: string
   created_at: string
   updated_at: string

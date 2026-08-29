@@ -95,10 +95,11 @@ describe('BardWiki job payload contract', () => {
         chatId: 'chat-a',
         generation: 2,
         sourceCursor: 10,
+        sourceTotal: 12,
         policy: 'missing',
         stagingManifestId: 'manifest-a',
       }),
-    ).toMatchObject({ chatId: 'chat-a', generation: 2, sourceCursor: 10, policy: 'missing' })
+    ).toMatchObject({ chatId: 'chat-a', generation: 2, sourceCursor: 10, sourceTotal: 12, policy: 'missing' })
   })
 
   it('rejects unknown fields, transcript bodies, malformed hashes, and identity mismatch', () => {

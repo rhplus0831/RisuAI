@@ -44,6 +44,43 @@ export interface BardWikiSourcePair {
   assistantContentHash: string
 }
 
+export type BardWikiRebuildPolicy = 'missing' | 'full'
+
+/** Enumerate eligible active transcript pairs in stable oldest-first source order. */
+export function listBardWikiRebuildSourcePairs(
+  db: DatabaseSync,
+  chatId: string,
+  policy: BardWikiRebuildPolicy = 'full',
+): BardWikiSourcePair[] {
+  if (!db.prepare('SELECT 1 FROM chats WHERE id = ?').get(chatId)) {
+    throw new BardWikiValidationError('bardwiki_chat_not_found')
+  }
+  const rows = [...listActiveMessageRows(db, chatId)].reverse()
+  const pairs: BardWikiSourcePair[] = []
+  let previous: ActiveMessageRow | null = null
+  for (const row of rows) {
+    if (isSelectionBoundary(row)) {
+      if (hasAllBeforeBoundary(row)) pairs.length = 0
+      previous = null
+      continue
+    }
+    if (previous?.role === 'user' && row.role === 'char') {
+      const source: BardWikiSourcePair = {
+        chatId,
+        userMessageId: previous.uid,
+        userContent: previous.data,
+        userContentHash: hashBardWikiMessageContent(previous.data),
+        assistantMessageId: row.uid,
+        assistantContent: row.data,
+        assistantContentHash: hashBardWikiMessageContent(row.data),
+      }
+      if (policy === 'full' || !hasAppliedExactReceipt(db, source)) pairs.push(source)
+    }
+    previous = row
+  }
+  return pairs
+}
+
 interface ActiveMessageRow {
   seq: number
   uid: string
@@ -296,6 +333,33 @@ function isSelectionBoundary(row: ActiveMessageRow): boolean {
     return true
   }
   return message.disabled === true || message.disabled === 'allBefore' || message.isComment === true
+}
+
+function hasAllBeforeBoundary(row: ActiveMessageRow): boolean {
+  try {
+    const parsed = JSON.parse(row.json) as { disabled?: unknown }
+    return parsed.disabled === 'allBefore'
+  } catch {
+    return false
+  }
+}
+
+function hasAppliedExactReceipt(db: DatabaseSync, source: BardWikiSourcePair): boolean {
+  return (
+    db
+      .prepare(
+        `SELECT 1 FROM bardwiki_turn_receipts
+         WHERE chat_id = ? AND user_message_id = ? AND user_content_hash = ?
+           AND assistant_message_id = ? AND assistant_content_hash = ? AND state = 'applied'`,
+      )
+      .get(
+        source.chatId,
+        source.userMessageId,
+        source.userContentHash,
+        source.assistantMessageId,
+        source.assistantContentHash,
+      ) !== undefined
+  )
 }
 
 export function resolveEffectiveBardWikiSettingsForChat(db: DatabaseSync, chatId: string): BardWikiGlobalSettings {

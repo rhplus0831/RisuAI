@@ -235,6 +235,8 @@ export const BardWikiJobSummarySchema = Type.Object(
     errorSummary: NullableStringSchema,
     attemptCount: Type.Integer({ minimum: 0 }),
     maxAttempts: Type.Integer({ minimum: 1 }),
+    progressCurrent: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
+    progressTotal: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
     nextRunAt: Type.String(),
     createdAt: Type.String(),
     updatedAt: Type.String(),
