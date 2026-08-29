@@ -96,10 +96,19 @@ vi.mock('../triggers', () => ({
   },
 }))
 
-// transformers.runImageEmbedding lazily imports @huggingface/transformers,
-// which we don't want vitest to pull in. The history-media-fallback fixture
-// exercises the no-image-input caption path, so we replace just that export
-// and preserve everything else via importActual.
+// The package's Node entry eagerly loads onnxruntime-node, whose native addon
+// cannot self-register in a second worker thread when the warm Vitest context
+// reruns this suite. The fixtures only need the browser-safe Gemma tokenizer,
+// so expose that implementation without evaluating the Node entrypoint.
+vi.mock('@huggingface/transformers', async () => {
+  const packageEntry = import.meta.resolve('@huggingface/transformers')
+  const browserEntryUrl = new URL('./transformers.web.js', packageEntry).href
+  const { GemmaTokenizer } = await import(/* @vite-ignore */ browserEntryUrl)
+  return { GemmaTokenizer }
+})
+
+// The history-media-fallback fixture exercises the no-image-input caption
+// path, so replace runImageEmbedding and preserve the remaining local module.
 vi.mock('../transformers', async (importActual) => {
   const actual = await importActual<typeof import('../transformers')>()
   return {
