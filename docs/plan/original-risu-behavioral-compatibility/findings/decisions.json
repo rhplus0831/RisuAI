@@ -1,0 +1,6 @@
+{
+  "$schema": "./decisions.schema.json",
+  "schemaVersion": 1,
+  "state": "historical-import-pending",
+  "decisions": []
+}

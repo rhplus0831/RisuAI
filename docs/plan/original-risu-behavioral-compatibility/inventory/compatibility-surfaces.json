@@ -1,0 +1,11 @@
+{
+  "$schema": "./inventory.schema.json",
+  "schemaVersion": 1,
+  "references": {
+    "compatibilityBaseline": "71c476e9c86263fe907105b011ca4dde0a619d66",
+    "behavioralSyncCursor": "f3f0242fba297d82e0efcc2c31ca1428569b70f2",
+    "planningAuditAnchor": "1933c43ff7b4d35b57b0852013d95f3881a8cb28"
+  },
+  "state": "phase-0-initialization",
+  "rows": []
+}

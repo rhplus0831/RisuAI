@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://risuai.local/schemas/original-risu-compatibility-findings-v1.json",
+  "title": "Original RisuAI compatibility findings",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "rawMappings",
+    "findings"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "rawMappings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sourceId",
+          "source",
+          "outcome",
+          "targetId",
+          "rationale"
+        ],
+        "properties": {
+          "sourceId": {
+            "$ref": "#/$defs/nonEmptyString"
+          },
+          "source": {
+            "$ref": "#/$defs/nonEmptyString"
+          },
+          "outcome": {
+            "enum": [
+              "canonical-finding",
+              "existing-decision",
+              "not-a-finding"
+            ]
+          },
+          "targetId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rationale": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stringList": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/nonEmptyString"
+      },
+      "uniqueItems": true
+    },
+    "commitOrNull": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "category",
+        "severity",
+        "evidenceState",
+        "verificationState",
+        "disposition",
+        "expected",
+        "actual",
+        "userConsequence",
+        "inventoryIds",
+        "sourceEvidence",
+        "reproduction",
+        "decisionId",
+        "implementationCommit",
+        "regressionEvidence",
+        "verificationCommit",
+        "residualRisk"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^ORC-[A-L]-[0-9]{3,}$"
+        },
+        "title": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "category": {
+          "type": "string",
+          "pattern": "^[A-L]$"
+        },
+        "severity": {
+          "enum": [
+            "Critical",
+            "High",
+            "Medium",
+            "Low"
+          ]
+        },
+        "evidenceState": {
+          "enum": [
+            "reported",
+            "cross-confirmed",
+            "code-verified",
+            "reproduced"
+          ]
+        },
+        "verificationState": {
+          "enum": [
+            "pending",
+            "confirmed",
+            "adjusted",
+            "refuted"
+          ]
+        },
+        "disposition": {
+          "enum": [
+            "fix",
+            "decide",
+            "signed-keep",
+            "standing-unsupported",
+            "resolved",
+            "deferred"
+          ]
+        },
+        "expected": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "actual": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "userConsequence": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "inventoryIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^ORC-SURFACE-[0-9]{3,}$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "sourceEvidence": {
+          "$ref": "#/$defs/stringList"
+        },
+        "reproduction": {
+          "$ref": "#/$defs/stringList"
+        },
+        "decisionId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "implementationCommit": {
+          "$ref": "#/$defs/commitOrNull"
+        },
+        "regressionEvidence": {
+          "$ref": "#/$defs/stringList"
+        },
+        "verificationCommit": {
+          "$ref": "#/$defs/commitOrNull"
+        },
+        "residualRisk": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

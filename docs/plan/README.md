@@ -7,7 +7,11 @@ plan, status, phase, slice, decision, and verification structure intact.
 
 ## Workstreams
 
-There are no active multi-phase workstreams.
+The [Original RisuAI behavioral compatibility audit](original-risu-behavioral-compatibility/PLAN.md)
+systematically compares retained shared behavior against the immutable fork
+point, separately verifies upstream work through the recorded behavioral sync
+cursor, and turns confirmed differences into decision-backed remediation and
+permanent regression gates. See its [live status](original-risu-behavioral-compatibility/status.md).
 
 The completed test-suite effectiveness audit is preserved under
 [Performance and stability](../../.archived-docs/performance-and-stability/README.md).

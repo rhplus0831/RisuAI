@@ -1,0 +1,285 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://risuai.local/schemas/original-risu-compatibility-inventory-v1.json",
+  "title": "Original RisuAI compatibility inventory",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "references",
+    "state",
+    "rows"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "references": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "compatibilityBaseline",
+        "behavioralSyncCursor",
+        "planningAuditAnchor"
+      ],
+      "properties": {
+        "compatibilityBaseline": {
+          "$ref": "#/$defs/commit"
+        },
+        "behavioralSyncCursor": {
+          "$ref": "#/$defs/commit"
+        },
+        "planningAuditAnchor": {
+          "$ref": "#/$defs/commit"
+        }
+      }
+    },
+    "state": {
+      "enum": [
+        "phase-0-initialization",
+        "active",
+        "closed"
+      ]
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/row"
+      }
+    }
+  },
+  "$defs": {
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stringList": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/nonEmptyString"
+      },
+      "uniqueItems": true
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "baseline",
+        "current",
+        "tests",
+        "fixtures"
+      ],
+      "properties": {
+        "baseline": {
+          "$ref": "#/$defs/stringList"
+        },
+        "current": {
+          "$ref": "#/$defs/stringList"
+        },
+        "tests": {
+          "$ref": "#/$defs/stringList"
+        },
+        "fixtures": {
+          "$ref": "#/$defs/stringList"
+        }
+      }
+    },
+    "upstream": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commits",
+        "disposition",
+        "nativePortCommits"
+      ],
+      "properties": {
+        "commits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/commit"
+          },
+          "uniqueItems": true
+        },
+        "disposition": {
+          "enum": [
+            "not-applicable",
+            "import-pending",
+            "ported",
+            "already-covered",
+            "no-port",
+            "decision-required"
+          ]
+        },
+        "nativePortCommits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/commit"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "confidence",
+        "lastFastifyCommit",
+        "findingIds",
+        "decisionId",
+        "residual"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "candidate",
+            "mapped",
+            "verified",
+            "finding",
+            "decision-required",
+            "retired"
+          ]
+        },
+        "confidence": {
+          "enum": [
+            "none",
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "lastFastifyCommit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/commit"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "findingIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^ORC-[A-L]-[0-9]{3,}$"
+          },
+          "uniqueItems": true
+        },
+        "decisionId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "residual": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "primaryCategory",
+        "seamTags",
+        "sourceObligation",
+        "observables",
+        "variants",
+        "owners",
+        "upstream",
+        "normalization",
+        "evidence",
+        "verification",
+        "notes"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^ORC-SURFACE-[0-9]{3,}$"
+        },
+        "title": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "primaryCategory": {
+          "type": "string",
+          "pattern": "^[A-L]$"
+        },
+        "seamTags": {
+          "$ref": "#/$defs/stringList"
+        },
+        "sourceObligation": {
+          "enum": [
+            "fork-parity",
+            "synced-upstream",
+            "signed-divergence",
+            "standing-unsupported",
+            "fastify-only-interaction"
+          ]
+        },
+        "observables": {
+          "$ref": "#/$defs/stringList"
+        },
+        "variants": {
+          "$ref": "#/$defs/stringList"
+        },
+        "owners": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "baseline",
+            "browser",
+            "protocol",
+            "fastify",
+            "persistence"
+          ],
+          "properties": {
+            "baseline": {
+              "$ref": "#/$defs/stringList"
+            },
+            "browser": {
+              "$ref": "#/$defs/stringList"
+            },
+            "protocol": {
+              "$ref": "#/$defs/stringList"
+            },
+            "fastify": {
+              "$ref": "#/$defs/stringList"
+            },
+            "persistence": {
+              "$ref": "#/$defs/stringList"
+            }
+          }
+        },
+        "upstream": {
+          "$ref": "#/$defs/upstream"
+        },
+        "normalization": {
+          "$ref": "#/$defs/stringList"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        },
+        "verification": {
+          "$ref": "#/$defs/verification"
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

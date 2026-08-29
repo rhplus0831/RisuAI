@@ -1,0 +1,6 @@
+{
+  "$schema": "./findings.schema.json",
+  "schemaVersion": 1,
+  "rawMappings": [],
+  "findings": []
+}

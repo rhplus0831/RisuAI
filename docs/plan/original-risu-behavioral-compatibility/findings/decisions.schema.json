@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://risuai.local/schemas/original-risu-compatibility-decisions-v1.json",
+  "title": "Original RisuAI compatibility decisions",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "state",
+    "decisions"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "state": {
+      "enum": [
+        "historical-import-pending",
+        "active",
+        "closed"
+      ]
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/decision"
+      }
+    }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stringList": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/nonEmptyString"
+      },
+      "uniqueItems": true
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state",
+        "title",
+        "baselineBehavior",
+        "decidedBehavior",
+        "observables",
+        "inventoryIds",
+        "rationale",
+        "parityAlternative",
+        "authority",
+        "authorityDate",
+        "source",
+        "implementationOwners",
+        "regressionOwners",
+        "diagnostics",
+        "revisitTrigger"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^ORC-DECISION-[0-9]{3,}$"
+        },
+        "state": {
+          "enum": [
+            "proposed",
+            "signed",
+            "superseded"
+          ]
+        },
+        "title": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "baselineBehavior": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "decidedBehavior": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "observables": {
+          "$ref": "#/$defs/stringList"
+        },
+        "inventoryIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^ORC-SURFACE-[0-9]{3,}$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "rationale": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "parityAlternative": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "authority": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "authorityDate": {
+          "type": "string",
+          "format": "date"
+        },
+        "source": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "implementationOwners": {
+          "$ref": "#/$defs/stringList"
+        },
+        "regressionOwners": {
+          "$ref": "#/$defs/stringList"
+        },
+        "diagnostics": {
+          "$ref": "#/$defs/stringList"
+        },
+        "revisitTrigger": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}
