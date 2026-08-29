@@ -3,6 +3,7 @@ export type FrontendVitestProject = 'frontend-node' | 'frontend-svelte-node' | '
 export const frontendTestFileGlob = '**/*.test.ts'
 export const svelteNodeTestFileGlob = '**/*.svelte-node.test.ts'
 export const explicitDomTestFileGlobs = ['**/*.svelte.test.ts', '**/*.dom.test.ts'] as const
+export const isolatedCompatibilityTestFiles = ['test/compat-harness/phase9CbsBaseline.test.ts'] as const
 
 // These pre-suffix suites are all probe-backed DOM owners recorded by Phases
 // 3-5. Registering them explicitly avoids a rename-only 187-file diff while
@@ -199,12 +200,14 @@ export const legacyDomTestFiles = [
 ] as const
 
 const legacyDomTestFileSet = new Set<string>(legacyDomTestFiles)
+const isolatedCompatibilityTestFileSet = new Set<string>(isolatedCompatibilityTestFiles)
 
 export function frontendVitestProjectForFile(
   file: string,
   registeredDomFiles: ReadonlySet<string> = legacyDomTestFileSet,
 ): FrontendVitestProject | undefined {
   if (!file.endsWith('.test.ts')) return undefined
+  if (isolatedCompatibilityTestFileSet.has(file)) return undefined
   if (file.endsWith('.svelte-node.test.ts')) return 'frontend-svelte-node'
   if (file.endsWith('.svelte.test.ts') || file.endsWith('.dom.test.ts') || registeredDomFiles.has(file)) {
     return 'frontend-dom'

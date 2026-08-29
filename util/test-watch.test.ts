@@ -50,7 +50,17 @@ function initializedRepository(): string {
   writeFileSync(path.join(repoRoot, '.gitignore'), '/.test-watch/\n/node_modules/\n/.vite/\n')
   writeFileSync(
     path.join(repoRoot, 'package.json'),
-    `${JSON.stringify({ private: true, scripts: { 'check:watch': 'svelte-check --tsconfig ./tsconfig.json --watch --output machine' } }, null, 2)}\n`,
+    `${JSON.stringify(
+      {
+        private: true,
+        scripts: {
+          'check:watch': 'svelte-check --tsconfig ./tsconfig.json --watch --output machine',
+          'test:compat-current': 'true',
+        },
+      },
+      null,
+      2,
+    )}\n`,
   )
   writeFileSync(
     path.join(repoRoot, 'tsconfig.json'),
@@ -767,6 +777,7 @@ describe('watched result validation', () => {
           { label: 'frontend check', status: 'passed' },
           { label: 'affected frontend tests', status: 'passed' },
           { label: 'affected server tests', status: 'passed' },
+          { label: 'current compatibility harness', status: 'passed' },
         ],
         executionMode: 'full',
         testedFingerprint: recovered.targetFingerprint,

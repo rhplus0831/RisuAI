@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { frontendVitestProjectForFile, legacyDomTestFiles } from './vitest.frontend-routing.js'
+import {
+  frontendVitestProjectForFile,
+  isolatedCompatibilityTestFiles,
+  legacyDomTestFiles,
+} from './vitest.frontend-routing.js'
 
 describe('frontend Vitest filename routing', () => {
   it('makes plain tests Node-default and keeps every explicit suffix disjoint', () => {
@@ -15,5 +19,9 @@ describe('frontend Vitest filename routing', () => {
 
     expect(frontendVitestProjectForFile(registered)).toBe('frontend-dom')
     expect(frontendVitestProjectForFile(registered, new Set())).toBe('frontend-node')
+  })
+
+  it('leaves baseline-only compatibility suites to their pinned custom project', () => {
+    expect(frontendVitestProjectForFile(isolatedCompatibilityTestFiles[0])).toBeUndefined()
   })
 })

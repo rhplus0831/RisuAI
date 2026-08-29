@@ -3,6 +3,7 @@ import { defineProject } from 'vitest/config'
 import {
   explicitDomTestFileGlobs,
   frontendTestFileGlob,
+  isolatedCompatibilityTestFiles,
   legacyDomTestFiles,
   svelteNodeTestFileGlob,
 } from './vitest.frontend-routing'
@@ -31,6 +32,7 @@ export default defineProject({
       svelteNodeTestFileGlob,
       ...explicitDomTestFileGlobs,
       ...legacyDomTestFiles,
+      ...isolatedCompatibilityTestFiles,
       ...(excludeUiCoverageTests ? uiCoverageTestFiles : []),
     ],
   },
