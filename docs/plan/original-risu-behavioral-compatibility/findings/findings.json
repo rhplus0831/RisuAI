@@ -556,8 +556,8 @@
         "server/fastify/__tests__/generation.chat.test.ts",
         ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
       ],
-      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
-      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+      "verificationCommit": "19ba37af26df7db60d7393976d61b520a785076b",
+      "residualRisk": null
     },
     {
       "id": "ORC-K-002",
@@ -585,8 +585,8 @@
         "server/fastify/__tests__/risuSaveCodec.test.ts",
         ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
       ],
-      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
-      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+      "verificationCommit": "56287bcb62c1dcdb969a7d185371a1c539bf3200",
+      "residualRisk": null
     },
     {
       "id": "ORC-D-003",
@@ -614,8 +614,8 @@
         "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts",
         ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
       ],
-      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
-      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+      "verificationCommit": "e9901b0f68acc405cef8a8af642eb40f83e8affb",
+      "residualRisk": null
     },
     {
       "id": "ORC-G-004",
@@ -643,8 +643,8 @@
         "server/fastify/__tests__/chatDispatchProfileOptions.test.ts",
         ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
       ],
-      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
-      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+      "verificationCommit": "fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050",
+      "residualRisk": null
     },
     {
       "id": "ORC-F-005",
@@ -672,8 +672,8 @@
         "server/fastify/__tests__/generation.chat.test.ts",
         ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
       ],
-      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
-      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+      "verificationCommit": "19ba37af26df7db60d7393976d61b520a785076b",
+      "residualRisk": null
     },
     {
       "id": "ORC-F-006",
@@ -701,8 +701,8 @@
         "server/fastify/__tests__/generation.chat.test.ts",
         ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
       ],
-      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
-      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+      "verificationCommit": "19ba37af26df7db60d7393976d61b520a785076b",
+      "residualRisk": null
     },
     {
       "id": "ORC-I-007",
@@ -730,8 +730,8 @@
         "server/fastify/__tests__/triggers.test.ts",
         ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
       ],
-      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
-      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+      "verificationCommit": "3963a1278b5f15175c295e3707d25fbf07bdcb56",
+      "residualRisk": null
     },
     {
       "id": "ORC-D-008",
@@ -759,8 +759,8 @@
         "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts",
         ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
       ],
-      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
-      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+      "verificationCommit": "e9901b0f68acc405cef8a8af642eb40f83e8affb",
+      "residualRisk": null
     },
     {
       "id": "ORC-B-009",
@@ -788,8 +788,8 @@
         "src/ts/server/chatMessageHydration.test.ts",
         ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
       ],
-      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
-      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+      "verificationCommit": "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74",
+      "residualRisk": null
     },
     {
       "id": "ORC-C-010",
@@ -817,8 +817,8 @@
         "server/fastify/__tests__/commands.test.ts",
         ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
       ],
-      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
-      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+      "verificationCommit": "958f8585138ec817fe5d134563df585434ed5821",
+      "residualRisk": null
     },
     {
       "id": "ORC-F-011",
@@ -846,8 +846,8 @@
         "server/fastify/__tests__/generation.chat.test.ts",
         ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
       ],
-      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
-      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+      "verificationCommit": "19ba37af26df7db60d7393976d61b520a785076b",
+      "residualRisk": null
     },
     {
       "id": "ORC-K-012",
@@ -875,8 +875,8 @@
         "server/fastify/__tests__/risuSaveCodec.test.ts",
         ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
       ],
-      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
-      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+      "verificationCommit": "56287bcb62c1dcdb969a7d185371a1c539bf3200",
+      "residualRisk": null
     },
     {
       "id": "ORC-K-013",
@@ -904,8 +904,8 @@
         "server/fastify/__tests__/risuSaveCodec.test.ts",
         ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
       ],
-      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
-      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+      "verificationCommit": "56287bcb62c1dcdb969a7d185371a1c539bf3200",
+      "residualRisk": null
     },
     {
       "id": "ORC-K-014",
@@ -933,8 +933,8 @@
         "server/fastify/__tests__/risuSaveCodec.test.ts",
         ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
       ],
-      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
-      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+      "verificationCommit": "56287bcb62c1dcdb969a7d185371a1c539bf3200",
+      "residualRisk": null
     },
     {
       "id": "ORC-A-015",

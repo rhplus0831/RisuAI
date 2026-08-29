@@ -1063,23 +1063,24 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:35-40,132-139"
         ],
-        "current": [
-          "src/lib/ChatScreens/DefaultChatScreen.svelte",
-          "src/ts/process/rerollNavigation.svelte.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts"
+      "current": [
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/ts/process/rerollNavigation.svelte.ts",
+        "e9901b0f68acc405cef8a8af642eb40f83e8affb"
+      ],
+      "tests": [
+        "src/ts/process/rerollNavigation.rollback.test.ts",
+        "src/ts/process/rerollNavigation.test.ts"
         ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "state": "verified",
+      "confidence": "high",
+      "lastFastifyCommit": "e9901b0f68acc405cef8a8af642eb40f83e8affb",
         "findingIds": [],
         "decisionId": "ORC-DECISION-012",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -1121,23 +1122,23 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:35-40,132-145"
         ],
-        "current": [
-          "src/lib/ChatScreens/DefaultChatScreen.svelte",
-          "src/ts/process/rerollNavigation.svelte.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts"
+      "current": [
+        "src/ts/process/__tests__/command.resourceGuard.test.ts",
+        "src/ts/process/acceptedSendCoordinator.svelte.ts",
+        "e9901b0f68acc405cef8a8af642eb40f83e8affb"
+      ],
+      "tests": [
+        "src/ts/process/__tests__/command.resourceGuard.test.ts"
         ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "state": "verified",
+      "confidence": "high",
+      "lastFastifyCommit": "e9901b0f68acc405cef8a8af642eb40f83e8affb",
         "findingIds": [],
         "decisionId": "ORC-DECISION-013",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -1299,23 +1300,24 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
         ],
-        "current": [
-          "src/lib/ChatScreens/DefaultChatScreen.svelte",
-          "src/ts/process/rerollNavigation.svelte.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts"
+      "current": [
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/ts/process/generationStop.svelte.ts",
+        "e9901b0f68acc405cef8a8af642eb40f83e8affb"
+      ],
+      "tests": [
+        "src/ts/process/index.svelte.stop.test.ts",
+        "server/fastify/browser-smoke/acceptedSendProtocol.spec.ts"
         ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "state": "verified",
+      "confidence": "high",
+      "lastFastifyCommit": "e9901b0f68acc405cef8a8af642eb40f83e8affb",
         "findingIds": [],
         "decisionId": "ORC-DECISION-016",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -1980,23 +1982,24 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
         ],
-        "current": [
-          "src/lib/ChatScreens/DefaultChatScreen.svelte",
-          "src/ts/process/rerollNavigation.svelte.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts"
+      "current": [
+        "src/ts/process/generationActivity.ts",
+        "server/fastify/src/generation/durableGeneration.ts",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "src/ts/process/generationActivity.test.ts",
+        "server/fastify/__tests__/durableGeneration.test.ts"
         ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "state": "verified",
+      "confidence": "high",
+      "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [],
         "decisionId": "ORC-DECISION-027",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -4115,9 +4118,10 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
         ],
-        "current": [
-          "9ce5df9fa5702b10441baa41b7acd693c253d2d9",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
+      "current": [
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/ts/process/serverBackedSendChat.ts",
+        "e9901b0f68acc405cef8a8af642eb40f83e8affb"
         ],
         "tests": [
           "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts"
@@ -4125,14 +4129,14 @@
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
+      "state": "verified",
         "confidence": "high",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "lastFastifyCommit": "e9901b0f68acc405cef8a8af642eb40f83e8affb",
         "findingIds": [
           "ORC-D-003"
         ],
         "decisionId": null,
-        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+      "residual": null
       },
       "notes": "Canonical import of a resolved 2026-08 compatibility finding."
     },
@@ -4420,24 +4424,26 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
         ],
-        "current": [
-          "0e46fed68c4c387788135d5232d2761c3f978d28",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts"
+      "current": [
+        "src/ts/process/serverBackedSendChat.ts",
+        "src/ts/process/generationDisplayProjection.ts",
+        "e9901b0f68acc405cef8a8af642eb40f83e8affb"
+      ],
+      "tests": [
+        "src/ts/process/serverBackedSendChat.findMessage.test.ts",
+        "server/fastify/browser-smoke/acceptedSendProtocol.spec.ts"
         ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
+      "state": "verified",
         "confidence": "high",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "lastFastifyCommit": "e9901b0f68acc405cef8a8af642eb40f83e8affb",
         "findingIds": [
           "ORC-D-008"
         ],
         "decisionId": null,
-        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+      "residual": null
       },
       "notes": "Canonical import of a resolved 2026-08 compatibility finding."
     },
