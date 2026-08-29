@@ -21,6 +21,7 @@ export interface GenerationFinalizationAttempt {
   actorWriterEpoch?: number
   acceptedMessageId?: string
   terminalOutcome?: 'completed' | 'cancelled'
+  automaticConfirmationEligible?: boolean
   chatId: string
   mode: GenerationFinalizationMode
   targetMessageId?: string
@@ -104,16 +105,24 @@ interface GenerationFinalizationMutationEnvelope {
   chatVarMutations: AssembleMutationPayload['chatVarMutations']
   characterFieldMutations?: AssembleMutationPayload['characterFieldMutations']
   localLoreMutation?: AssembleMutationPayload['localLoreMutation']
+  automaticConfirmationEligible?: boolean
 }
 
 function serializeGenerationFinalizationMutations(attempt: GenerationFinalizationAttempt): string {
-  if (!attempt.characterFieldMutations?.length && !attempt.localLoreMutation) {
+  if (
+    !attempt.characterFieldMutations?.length &&
+    !attempt.localLoreMutation &&
+    attempt.automaticConfirmationEligible === undefined
+  ) {
     return JSON.stringify(attempt.chatVarMutations)
   }
   return JSON.stringify({
     chatVarMutations: attempt.chatVarMutations,
     ...(attempt.characterFieldMutations?.length ? { characterFieldMutations: attempt.characterFieldMutations } : {}),
     ...(attempt.localLoreMutation ? { localLoreMutation: attempt.localLoreMutation } : {}),
+    ...(attempt.automaticConfirmationEligible !== undefined
+      ? { automaticConfirmationEligible: attempt.automaticConfirmationEligible }
+      : {}),
   } satisfies GenerationFinalizationMutationEnvelope)
 }
 
@@ -128,6 +137,12 @@ function parseGenerationFinalizationMutations(value: string): GenerationFinaliza
   const envelope = parsed as Partial<GenerationFinalizationMutationEnvelope>
   if (!Array.isArray(envelope.chatVarMutations)) {
     throw new Error('Invalid generation finalization chat variable mutations')
+  }
+  if (
+    envelope.automaticConfirmationEligible !== undefined &&
+    typeof envelope.automaticConfirmationEligible !== 'boolean'
+  ) {
+    throw new Error('Invalid generation finalization automatic confirmation eligibility')
   }
   return envelope as GenerationFinalizationMutationEnvelope
 }
@@ -406,6 +421,9 @@ export function listPendingGenerationFinalizationRetries(
             ? { characterFieldMutations: mutations.characterFieldMutations }
             : {}),
           ...(mutations.localLoreMutation ? { localLoreMutation: mutations.localLoreMutation } : {}),
+          ...(mutations.automaticConfirmationEligible !== undefined
+            ? { automaticConfirmationEligible: mutations.automaticConfirmationEligible }
+            : {}),
           ...(row.target_snapshot_json !== null
             ? { targetSnapshot: JSON.parse(row.target_snapshot_json) as GenerationFinalizationTargetSnapshot }
             : {}),
@@ -480,6 +498,9 @@ function parseGenerationFinalizationAttempt(row: GenerationFinalizationRetryRow)
       ? { characterFieldMutations: mutations.characterFieldMutations }
       : {}),
     ...(mutations.localLoreMutation ? { localLoreMutation: mutations.localLoreMutation } : {}),
+    ...(mutations.automaticConfirmationEligible !== undefined
+      ? { automaticConfirmationEligible: mutations.automaticConfirmationEligible }
+      : {}),
     ...(row.target_snapshot_json !== null
       ? { targetSnapshot: JSON.parse(row.target_snapshot_json) as GenerationFinalizationTargetSnapshot }
       : {}),

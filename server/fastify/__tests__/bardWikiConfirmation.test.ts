@@ -9,7 +9,7 @@ import { DEFAULT_BARDWIKI_GLOBAL_SETTINGS } from '@risuai/protocol'
 import { buildApp } from '../src/app.js'
 import { createInitialDatabase } from '../src/databaseDefaults.js'
 import { getDatabaseLineage } from '../src/databaseLineage.js'
-import { hashBardWikiMessageContent } from '../src/bardWikiReceipts.js'
+import { createOrReuseAutomaticBardWikiConfirmation, hashBardWikiMessageContent } from '../src/bardWikiReceipts.js'
 
 const subtle = webcrypto.subtle
 const USER_TEXT = 'We enter the old tavern.'
@@ -44,7 +44,12 @@ afterEach(async () => {
 })
 
 function seedConfirmationChat(
-  options: { enabled?: boolean; assistantDisabled?: boolean; assistantRole?: string } = {},
+  options: {
+    enabled?: boolean
+    assistantDisabled?: boolean
+    assistantRole?: string
+    confirmationPolicy?: 'manual' | 'automatic'
+  } = {},
 ): void {
   const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
   try {
@@ -53,6 +58,7 @@ function seedConfirmationChat(
       ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
       enabledByDefault: options.enabled ?? true,
       memoryMode: 'bardwiki',
+      confirmationPolicy: options.confirmationPolicy ?? 'manual',
     }
     db.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(JSON.stringify(initial))
     db.prepare("INSERT INTO characters (id, position, data_json) VALUES ('character-a', 0, '{}')").run()
@@ -86,6 +92,18 @@ function seedConfirmationChat(
         ...(assistantDisabled ? { disabled: true } : {}),
       }),
     )
+  } finally {
+    db.close()
+  }
+}
+
+function appendActiveMessage(seq: number, uid: string, role: 'user' | 'char', data: string): void {
+  const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+  try {
+    db.prepare(
+      `INSERT INTO messages (chat_id, seq, uid, role, data, disabled, json, alternate)
+       VALUES ('chat-a', ?, ?, ?, ?, NULL, ?, 0)`,
+    ).run(seq, uid, role, data, JSON.stringify({ chatId: uid, role, data }))
   } finally {
     db.close()
   }
@@ -244,6 +262,86 @@ describe('explicit BardWiki confirmation', () => {
     expect([left.statusCode, right.statusCode].sort()).toEqual([200, 409])
     expect(inspect('SELECT id FROM bardwiki_turn_receipts')).toHaveLength(1)
     expect(inspect('SELECT id FROM bardwiki_jobs')).toHaveLength(1)
+  })
+})
+
+describe('automatic BardWiki confirmation', () => {
+  it('anchors to the accepted send and queues only its exact preceding active turn', async () => {
+    appendActiveMessage(2, 'user-b', 'user', 'What happens next?')
+    appendActiveMessage(3, 'assistant-b', 'char', 'The door opens.')
+
+    const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      db.prepare(
+        "UPDATE settings SET data_json = json_set(data_json, '$.bardWiki.confirmationPolicy', 'automatic')",
+      ).run()
+      db.exec('BEGIN IMMEDIATE')
+      const result = createOrReuseAutomaticBardWikiConfirmation(db, {
+        chatId: 'chat-a',
+        acceptedUserMessageId: 'user-b',
+        resultAssistantMessageId: 'assistant-b',
+      })
+      db.exec('COMMIT')
+
+      expect(result).toMatchObject({
+        created: true,
+        receipt: {
+          userMessageId: 'user-a',
+          assistantMessageId: 'assistant-a',
+          confirmationMode: 'automatic',
+          state: 'queued',
+        },
+        job: { kind: 'apply_turn', status: 'pending' },
+      })
+      expect(
+        createOrReuseAutomaticBardWikiConfirmation(db, {
+          chatId: 'chat-a',
+          acceptedUserMessageId: 'user-b',
+          resultAssistantMessageId: 'assistant-b',
+        }),
+      ).toMatchObject({ created: false, receipt: { id: result?.receipt.id }, job: { id: result?.job.id } })
+    } finally {
+      db.close()
+    }
+    expect(inspect('SELECT id FROM bardwiki_turn_receipts')).toHaveLength(1)
+    expect(inspect('SELECT id FROM bardwiki_jobs')).toHaveLength(1)
+  })
+
+  it('skips the first send, manual policy, and non-exact active lineage without residue', async () => {
+    appendActiveMessage(2, 'user-b', 'user', 'What happens next?')
+    appendActiveMessage(3, 'assistant-b', 'char', 'The door opens.')
+    const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      expect(
+        createOrReuseAutomaticBardWikiConfirmation(db, {
+          chatId: 'chat-a',
+          acceptedUserMessageId: 'user-b',
+          resultAssistantMessageId: 'assistant-b',
+        }),
+      ).toBeNull()
+      db.prepare(
+        "UPDATE settings SET data_json = json_set(data_json, '$.bardWiki.confirmationPolicy', 'automatic')",
+      ).run()
+      expect(
+        createOrReuseAutomaticBardWikiConfirmation(db, {
+          chatId: 'chat-a',
+          acceptedUserMessageId: 'wrong-user',
+          resultAssistantMessageId: 'assistant-b',
+        }),
+      ).toBeNull()
+      db.prepare("DELETE FROM messages WHERE uid IN ('user-a', 'assistant-a')").run()
+      expect(
+        createOrReuseAutomaticBardWikiConfirmation(db, {
+          chatId: 'chat-a',
+          acceptedUserMessageId: 'user-b',
+          resultAssistantMessageId: 'assistant-b',
+        }),
+      ).toBeNull()
+    } finally {
+      db.close()
+    }
+    expect(inspect('SELECT id FROM bardwiki_turn_receipts')).toEqual([])
+    expect(inspect('SELECT id FROM bardwiki_jobs')).toEqual([])
   })
 })
 

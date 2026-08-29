@@ -27,6 +27,13 @@ export interface ExplicitBardWikiConfirmationResult {
   created: boolean
 }
 
+export interface AutomaticBardWikiConfirmationInput {
+  chatId: string
+  acceptedUserMessageId?: string
+  resultAssistantMessageId: string
+  fallbackMessages?: readonly unknown[]
+}
+
 export interface BardWikiSourcePair {
   chatId: string
   userMessageId: string
@@ -71,14 +78,7 @@ function resolveBardWikiSourcePair(
   if (!db.prepare('SELECT 1 FROM chats WHERE id = ?').get(input.chatId)) {
     throw new BardWikiValidationError('bardwiki_chat_not_found')
   }
-  const rows = db
-    .prepare(
-      `SELECT seq, uid, role, data, json
-       FROM messages
-       WHERE chat_id = ? AND alternate = 0
-       ORDER BY seq DESC`,
-    )
-    .all(input.chatId) as unknown as ActiveMessageRow[]
+  const rows = listActiveMessageRows(db, input.chatId)
   const assistantIndex = options.requireCurrentAssistant
     ? 0
     : rows.findIndex((row) => row.uid === input.assistantMessageId)
@@ -120,6 +120,120 @@ export function createOrReuseExplicitBardWikiConfirmation(
   const settings = resolveEffectiveBardWikiSettingsForChat(db, input.chatId)
   if (!settings.enabledByDefault) throw new BardWikiValidationError('bardwiki_disabled')
 
+  return createOrReuseBardWikiConfirmationInTransaction(db, source, settings, 'explicit')
+}
+
+export function createOrReuseAutomaticBardWikiConfirmation(
+  db: DatabaseSync,
+  input: AutomaticBardWikiConfirmationInput,
+): ExplicitBardWikiConfirmationResult | null {
+  const settings = resolveEffectiveBardWikiSettingsForChat(db, input.chatId)
+  if (!settings.enabledByDefault || settings.confirmationPolicy !== 'automatic') return null
+  const source =
+    resolveAutomaticBardWikiSourcePair(db, input) ??
+    resolveAutomaticBardWikiSourcePairFromMessages(input.chatId, input.fallbackMessages, input.acceptedUserMessageId)
+  if (!source) return null
+  return createOrReuseBardWikiConfirmationInTransaction(db, source, settings, 'automatic')
+}
+
+export function resolveAutomaticBardWikiSourcePairFromMessages(
+  chatId: string,
+  messages: readonly unknown[] | undefined,
+  acceptedUserMessageId?: string,
+): BardWikiSourcePair | null {
+  if (!messages || messages.length < 3) return null
+  const acceptedUser = readActiveMessage(messages.at(-1))
+  const sourceAssistant = readActiveMessage(messages.at(-2))
+  const sourceUser = readActiveMessage(messages.at(-3))
+  if (
+    !acceptedUser ||
+    !sourceAssistant ||
+    !sourceUser ||
+    acceptedUser.role !== 'user' ||
+    (acceptedUserMessageId !== undefined && acceptedUser.uid !== acceptedUserMessageId) ||
+    sourceAssistant.role !== 'char' ||
+    sourceUser.role !== 'user' ||
+    isSelectionBoundary(acceptedUser) ||
+    isSelectionBoundary(sourceAssistant) ||
+    isSelectionBoundary(sourceUser)
+  ) {
+    return null
+  }
+  return {
+    chatId,
+    userMessageId: sourceUser.uid,
+    userContent: sourceUser.data,
+    userContentHash: hashBardWikiMessageContent(sourceUser.data),
+    assistantMessageId: sourceAssistant.uid,
+    assistantContent: sourceAssistant.data,
+    assistantContentHash: hashBardWikiMessageContent(sourceAssistant.data),
+  }
+}
+
+function readActiveMessage(value: unknown): ActiveMessageRow | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const record = value as Record<string, unknown>
+  if (
+    typeof record.chatId !== 'string' ||
+    record.chatId.length === 0 ||
+    (record.role !== 'user' && record.role !== 'char') ||
+    typeof record.data !== 'string'
+  ) {
+    return null
+  }
+  return {
+    seq: 0,
+    uid: record.chatId,
+    role: record.role,
+    data: record.data,
+    json: JSON.stringify(record),
+  }
+}
+
+export function resolveAutomaticBardWikiSourcePair(
+  db: DatabaseSync,
+  input: AutomaticBardWikiConfirmationInput,
+): BardWikiSourcePair | null {
+  const rows = listActiveMessageRows(db, input.chatId)
+  const resultAssistant = rows[0]
+  const acceptedUser = rows[1]
+  const sourceAssistant = rows[2]
+  const sourceUser = rows[3]
+  if (
+    !resultAssistant ||
+    !acceptedUser ||
+    !sourceAssistant ||
+    !sourceUser ||
+    resultAssistant.uid !== input.resultAssistantMessageId ||
+    resultAssistant.role !== 'char' ||
+    (input.acceptedUserMessageId !== undefined && acceptedUser.uid !== input.acceptedUserMessageId) ||
+    acceptedUser.role !== 'user' ||
+    sourceAssistant.role !== 'char' ||
+    sourceUser.role !== 'user' ||
+    isSelectionBoundary(resultAssistant) ||
+    isSelectionBoundary(acceptedUser) ||
+    isSelectionBoundary(sourceAssistant) ||
+    isSelectionBoundary(sourceUser)
+  ) {
+    return null
+  }
+  return {
+    chatId: input.chatId,
+    userMessageId: sourceUser.uid,
+    userContent: sourceUser.data,
+    userContentHash: hashBardWikiMessageContent(sourceUser.data),
+    assistantMessageId: sourceAssistant.uid,
+    assistantContent: sourceAssistant.data,
+    assistantContentHash: hashBardWikiMessageContent(sourceAssistant.data),
+  }
+}
+
+function createOrReuseBardWikiConfirmationInTransaction(
+  db: DatabaseSync,
+  source: BardWikiSourcePair,
+  settings: BardWikiGlobalSettings,
+  confirmationMode: BardWikiReceiptSummary['confirmationMode'],
+): ExplicitBardWikiConfirmationResult {
   const existing = findExactReceipt(db, source)
   if (existing) {
     const existingJob = existing.jobId ? getBardWikiJob(db, existing.jobId) : null
@@ -141,7 +255,7 @@ export function createOrReuseExplicitBardWikiConfirmation(
     `INSERT INTO bardwiki_turn_receipts (
       id, chat_id, user_message_id, user_content_hash, assistant_message_id,
       assistant_content_hash, confirmation_mode, state, change_set_id
-    ) VALUES (?, ?, ?, ?, ?, ?, 'explicit', 'queued', ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?)`,
   ).run(
     receiptId,
     source.chatId,
@@ -149,6 +263,7 @@ export function createOrReuseExplicitBardWikiConfirmation(
     source.userContentHash,
     source.assistantMessageId,
     source.assistantContentHash,
+    confirmationMode,
     randomUUID(),
   )
   const job = insertApplyTurnJob(db, receiptId, source, settings)
@@ -158,6 +273,17 @@ export function createOrReuseExplicitBardWikiConfirmation(
     job: toJobSummary(job),
     created: true,
   }
+}
+
+function listActiveMessageRows(db: DatabaseSync, chatId: string): ActiveMessageRow[] {
+  return db
+    .prepare(
+      `SELECT seq, uid, role, data, json
+       FROM messages
+       WHERE chat_id = ? AND alternate = 0
+       ORDER BY seq DESC`,
+    )
+    .all(chatId) as unknown as ActiveMessageRow[]
 }
 
 function isSelectionBoundary(row: ActiveMessageRow): boolean {

@@ -68,6 +68,7 @@ async function startHarness(
       generationTrace,
     },
     generationChat,
+    bardWikiWorker: false,
   })
   return { app, dataDir }
 }
@@ -6956,6 +6957,188 @@ describe('POST /api/v1/generate/chat', () => {
     })
     expect(send.statusCode).toBe(200)
     expect(await persistedAlternates(assertion)).toHaveLength(0)
+  })
+
+  it.each([
+    { persistence: 'inline', durable: false },
+    { persistence: 'durable', durable: true },
+  ])(
+    '$persistence finalization atomically confirms only the exact prior turn after a later successful send',
+    async ({ durable }) => {
+      const { assertion } = await setupAuthedClient(harness.app)
+      await seedDatabase(harness.app, assertion, {
+        ...fixtureDatabase,
+        useSayNothing: false,
+        aiModel: 'echo_model',
+        echoMessage: 'the new candidate reply',
+        echoDelay: 0,
+        bardWiki: {
+          ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
+          enabledByDefault: true,
+          memoryMode: 'bardwiki',
+          confirmationPolicy: 'automatic',
+        },
+        characters: [
+          {
+            ...fixtureDatabase.characters[0],
+            chats: [
+              {
+                id: 'chat-1',
+                message: [
+                  { role: 'user', data: 'the prior user turn', chatId: 'prior-user' },
+                  { role: 'char', data: 'the prior candidate', chatId: 'prior-assistant', saying: 'char-1' },
+                  { role: 'user', data: 'the accepted next user', chatId: 'accepted-user' },
+                ],
+                note: '',
+                name: 'Chat',
+                localLore: [],
+              },
+            ],
+          },
+        ],
+      })
+      const settingsDb = openDatabase(harness.dataDir)
+      try {
+        const settings = settingsDb.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
+          data_json: string
+        }
+        expect((JSON.parse(settings.data_json) as { bardWiki?: unknown }).bardWiki).toMatchObject({
+          enabledByDefault: true,
+          confirmationPolicy: 'automatic',
+        })
+      } finally {
+        settingsDb.close()
+      }
+
+      const response = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: {
+          chatId: 'chat-1',
+          characterId: 'char-1',
+          mode: 'send',
+          userMessage: 'the accepted next user',
+          durable,
+        },
+      })
+      expect(response.statusCode).toBe(200)
+      expect(response.body).toContain('the new candidate reply')
+      expect(await persistedMessages(assertion)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ role: 'char', data: expect.stringContaining('the new candidate reply') }),
+        ]),
+      )
+      const db = openDatabase(harness.dataDir)
+      try {
+        expect(
+          db
+            .prepare(
+              `SELECT user_message_id, assistant_message_id, confirmation_mode, state
+             FROM bardwiki_turn_receipts`,
+            )
+            .all(),
+        ).toEqual([
+          {
+            user_message_id: 'prior-user',
+            assistant_message_id: 'prior-assistant',
+            confirmation_mode: 'automatic',
+            state: 'queued',
+          },
+        ])
+        expect(db.prepare('SELECT kind, status FROM bardwiki_jobs').all()).toEqual([
+          { kind: 'apply_turn', status: 'pending' },
+        ])
+        expect(listPersistedCommandEventHistory(db).filter((event) => event.type.startsWith('bardwiki.'))).toEqual([])
+      } finally {
+        db.close()
+      }
+    },
+  )
+
+  it('does not automatically confirm on the first send, continue, or regenerate', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const automaticDatabase = (messages: Array<Record<string, unknown>>, echoMessage: string) => ({
+      ...fixtureDatabase,
+      useSayNothing: false,
+      aiModel: 'echo_model',
+      echoMessage,
+      echoDelay: 0,
+      bardWiki: {
+        ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
+        enabledByDefault: true,
+        memoryMode: 'bardwiki',
+        confirmationPolicy: 'automatic',
+      },
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          chats: [{ id: 'chat-1', message: messages, note: '', name: 'Chat', localLore: [] }],
+        },
+      ],
+    })
+    const receiptCount = (): number => {
+      const db = openDatabase(harness.dataDir)
+      try {
+        return Number(
+          (db.prepare('SELECT COUNT(*) AS count FROM bardwiki_turn_receipts').get() as { count: number }).count,
+        )
+      } finally {
+        db.close()
+      }
+    }
+
+    await seedDatabase(
+      harness.app,
+      assertion,
+      automaticDatabase([{ role: 'user', data: 'first user', chatId: 'first-user' }], 'first candidate'),
+    )
+    expect(
+      (
+        await harness.app.inject({
+          method: 'POST',
+          url: '/api/v1/generate/chat',
+          headers: { 'risu-auth': assertion },
+          payload: { chatId: 'chat-1', characterId: 'char-1', mode: 'send', userMessage: 'first user' },
+        })
+      ).statusCode,
+    ).toBe(200)
+    expect(receiptCount()).toBe(0)
+
+    const pair = [
+      { role: 'user', data: 'prior user', chatId: 'prior-user' },
+      { role: 'char', data: 'prior assistant', chatId: 'prior-assistant', saying: 'char-1' },
+    ]
+    await seedDatabase(harness.app, assertion, automaticDatabase(pair, ' continued'))
+    expect(
+      (
+        await harness.app.inject({
+          method: 'POST',
+          url: '/api/v1/generate/chat',
+          headers: { 'risu-auth': assertion },
+          payload: { chatId: 'chat-1', characterId: 'char-1', mode: 'continue' },
+        })
+      ).statusCode,
+    ).toBe(200)
+    expect(receiptCount()).toBe(0)
+
+    await seedDatabase(harness.app, assertion, automaticDatabase(pair, 'replacement candidate'))
+    expect(
+      (
+        await harness.app.inject({
+          method: 'POST',
+          url: '/api/v1/generate/chat',
+          headers: { 'risu-auth': assertion },
+          payload: {
+            chatId: 'chat-1',
+            characterId: 'char-1',
+            mode: 'regenerate',
+            regenerateMessageId: 'prior-assistant',
+          },
+        })
+      ).statusCode,
+    ).toBe(200)
+    expect(receiptCount()).toBe(0)
   })
 
   it('runs a Lua editOutput hook server-side over the completion', async () => {

@@ -87,6 +87,7 @@ import { tokenizerEncodingFromDb } from '../prompt/tokenizerConfig.js'
 import { promptSummaryMetricFields, summarizePromptRows, type PromptRowsSummary } from '../prompt/promptSummary.js'
 import { triggerSourceMetricFields } from '../prompt/triggerSource.js'
 import { bardWikiRequestHistoryMetadata } from '../prompt/bardWiki.js'
+import { createOrReuseAutomaticBardWikiConfirmation } from '../bardWikiReceipts.js'
 import {
   formatPromptChatFrame,
   type PostGenerationFrame,
@@ -2480,6 +2481,7 @@ async function buildPostGenerationFrame(args: {
       mode: finalizationModeFromInput(args.input),
       targetSnapshot,
       alternateMessages,
+      automaticConfirmationEligible: finalizationModeFromInput(args.input) === 'send',
     })
   } catch (err) {
     emitProtocolMetric('generation_persistence', {
@@ -3181,6 +3183,18 @@ function finalizationAlreadyPersisted(args: {
     : false
 }
 
+function automaticConfirmationAcceptedUserMessageId(args: {
+  mode?: GenerationFinalizationMode
+  targetSnapshot?: GenerationFinalizationTargetSnapshot
+  operationLineage?: { acceptedMessageId?: string; terminalOutcome: GenerationOperationTerminalOutcome }
+}): string | undefined {
+  if (args.mode !== 'send') return undefined
+  if (args.operationLineage?.acceptedMessageId) return args.operationLineage.acceptedMessageId
+  if (args.targetSnapshot?.mode !== 'send' || args.targetSnapshot.kind !== 'tail') return undefined
+  const tail = args.targetSnapshot.tail?.message
+  return tail?.role === 'user' && typeof tail.chatId === 'string' ? tail.chatId : undefined
+}
+
 function validateGenerationFinalizationTargetFresh(args: {
   chatId: string
   liveRows: readonly unknown[]
@@ -3523,6 +3537,7 @@ function persistServerGenerationResult(args: {
    */
   targetMessageId?: string
   mode?: GenerationFinalizationMode
+  automaticConfirmationEligible?: boolean
   targetSnapshot?: GenerationFinalizationTargetSnapshot
   operationLineage?: {
     databaseLineage: string
@@ -3659,6 +3674,16 @@ function persistServerGenerationResult(args: {
           addAlternateMessage(targetDb, args.chatId, record)
         } else {
           clearAlternateMessages(targetDb, args.chatId)
+        }
+        const effectiveFinalizationMode = args.mode ?? args.targetSnapshot?.mode ?? 'send'
+        if (effectiveFinalizationMode === 'send' && args.automaticConfirmationEligible === true) {
+          const acceptedUserMessageId = automaticConfirmationAcceptedUserMessageId(args)
+          createOrReuseAutomaticBardWikiConfirmation(targetDb, {
+            chatId: args.chatId,
+            resultAssistantMessageId: write.messageId,
+            ...(acceptedUserMessageId ? { acceptedUserMessageId } : {}),
+            fallbackMessages: chat.message,
+          })
         }
         if (hasScriptstateWrite || hasLocalLoreWrite) {
           if (hasLocalLoreWrite) {
@@ -3802,6 +3827,7 @@ function persistGenerationFinalizationAttempt(args: {
     targetMessageId: args.attempt.targetMessageId,
     mode: args.attempt.mode,
     targetSnapshot: args.attempt.targetSnapshot,
+    automaticConfirmationEligible: args.attempt.automaticConfirmationEligible === true,
     ...(args.attempt.databaseLineage &&
     args.attempt.operationId &&
     args.attempt.operationAttemptNo !== undefined &&
@@ -4318,6 +4344,7 @@ async function buildDurablePostGeneration(args: {
     attempt: {
       generationId: args.generationId,
       ...generationFinalizationLineageForJob(args.job, 'completed'),
+      automaticConfirmationEligible: true,
       chatId: args.input.chatId,
       mode: finalizationModeFromInput(args.input),
       message,
@@ -4612,6 +4639,7 @@ async function persistCancelledPartialResult(args: {
     attempt: {
       generationId: args.generationId,
       ...generationFinalizationLineageForJob(args.job, 'cancelled'),
+      automaticConfirmationEligible: false,
       chatId: args.input.chatId,
       mode: finalizationModeFromInput(args.input),
       message,
