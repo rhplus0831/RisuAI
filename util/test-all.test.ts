@@ -24,6 +24,13 @@ describe('test:all orchestration', () => {
     expect(byId.get('browser-smoke')).toMatchObject({ after: ['server-check'], isolated: true })
     expect(byId.get('frontend-tests')?.args).toEqual(['test:frontend:run'])
     expect(byId.get('frontend-tests')?.env).toEqual({ RISU_TEST_EXCLUDE_UI_MAP: 'true' })
+    expect(byId.get('compat-registers')?.args).toEqual(['validate:compat-registers'])
+    expect(byId.get('compat-registers')?.isolated).toBeUndefined()
+    expect(byId.get('compat-current')).toMatchObject({
+      args: ['test:compat-current'],
+      after: ['compat-registers'],
+      isolated: true,
+    })
     expect(byId.get('ui-coverage')?.after).toContain('frontend-tests')
     expect(byId.get('server-tests')?.isolated).toBe(true)
     expect(byId.get('realm-scale')).toMatchObject({
@@ -99,6 +106,8 @@ describe('test:all orchestration', () => {
     const ciOwners = new Map([
       ['server-check', ['check-server', 'pnpm check:server']],
       ['frontend-tests', ['frontend', 'pnpm test:frontend:run']],
+      ['compat-registers', ['compat-registers', 'pnpm validate:compat-registers']],
+      ['compat-current', ['compat-current', 'pnpm test:compat-current']],
       ['server-tests', ['server', 'pnpm test:server']],
       ['realm-scale', ['realm-scale', 'pnpm test:server:realm-scale']],
       ['browser-smoke', ['smoke', 'pnpm test:smoke']],

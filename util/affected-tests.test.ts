@@ -60,6 +60,7 @@ describe('affected test planning', () => {
     expect(result.commands.map((command) => command.label)).toEqual([
       'affected frontend tests',
       'affected server tests',
+      'current compatibility harness',
     ])
     const affectedCommands = result.commands.filter((command) => command.label.startsWith('affected'))
     expect(affectedCommands.every((command) => command.args.includes('--changed'))).toBe(true)
@@ -89,6 +90,7 @@ describe('affected test planning', () => {
       'protocol typecheck',
       'affected frontend tests',
       'affected server tests',
+      'current compatibility harness',
     ])
     expect(
       result.commands
@@ -148,6 +150,7 @@ describe('affected test planning', () => {
     expect(result.commands).toEqual([
       { label: 'frontend tests', args: ['test:frontend:run'] },
       { label: 'server tests', args: ['test:server'] },
+      { label: 'current compatibility harness', args: ['test:compat-current'] },
     ])
   })
 
@@ -168,13 +171,63 @@ describe('affected test planning', () => {
     expect(result.notes).toContain('No affected automated test lane was found for the changed paths.')
   })
 
-  it('selects the opt-in compatibility harness independently', () => {
+  it('selects current and full pinned compatibility for harness changes', () => {
     const result = plan([{ path: 'test/compat-harness/current.runner.ts', status: 'M' }])
 
-    expect(result.commands).toEqual([{ label: 'current compatibility harness', args: ['test:compat-current'] }])
-    expect(result.notes).toContain(
-      'Run the full pinned compatibility harness when its external baseline worktree is available.',
-    )
+    expect(result.commands).toEqual([
+      { label: 'current compatibility harness', args: ['test:compat-current'] },
+      { label: 'full pinned compatibility harness', args: ['test:compat-harness'] },
+    ])
+    expect(result.notes).toEqual([])
+  })
+
+  it('selects focused baseline tests plus current and full pinned compatibility', () => {
+    for (const file of ['util/compat-baseline.ts', 'util/compat-baseline.test.ts']) {
+      expect(plan([{ path: file, status: 'M' }]).commands).toEqual([
+        {
+          label: 'compatibility baseline tests',
+          args: ['exec', 'vitest', 'run', 'util/compat-baseline.test.ts', '--bail=1'],
+        },
+        { label: 'current compatibility harness', args: ['test:compat-current'] },
+        { label: 'full pinned compatibility harness', args: ['test:compat-harness'] },
+      ])
+    }
+  })
+
+  it('selects fail-closed register validation and its focused tests', () => {
+    for (const file of [
+      'docs/plan/original-risu-behavioral-compatibility/inventory/upstream-units.schema.json',
+      'docs/plan/original-risu-behavioral-compatibility/findings/findings.json',
+      'util/validate-original-risu-compatibility-registers.ts',
+      'util/validate-original-risu-compatibility-registers.test.ts',
+    ]) {
+      expect(plan([{ path: file, status: 'M' }]).commands).toEqual([
+        { label: 'compatibility register validation', args: ['validate:compat-registers'] },
+        {
+          label: 'compatibility register validator tests',
+          args: ['exec', 'vitest', 'run', 'util/validate-original-risu-compatibility-registers.test.ts', '--bail=1'],
+        },
+      ])
+    }
+  })
+
+  it('adds current compatibility for client, server, and protocol production changes', () => {
+    for (const file of [
+      'src/ts/process/request/openAI/requests.ts',
+      'server/fastify/src/generation/openaiResponses.ts',
+      'packages/protocol/src/generationSse.ts',
+    ]) {
+      expect(plan([{ path: file, status: 'M' }]).commands.at(-1)).toEqual({
+        label: 'current compatibility harness',
+        args: ['test:compat-current'],
+      })
+    }
+
+    expect(
+      plan([{ path: 'src/docs/client-runtime.md', status: 'M' }]).commands.some(
+        (command) => command.label === 'current compatibility harness',
+      ),
+    ).toBe(false)
   })
 
   it('widens aggregate and affected-runner changes to the full quality suite', () => {
@@ -186,6 +239,18 @@ describe('affected test planning', () => {
     ])
     expect(plan([{ path: 'util/test-watch.ts', status: 'M' }]).commands).toEqual([
       { label: 'full quality suite', args: ['test:all'] },
+    ])
+  })
+
+  it('retains the pinned differential when compatibility and full-quality paths change together', () => {
+    const result = plan([
+      { path: 'util/affected-tests.ts', status: 'M' },
+      { path: 'test/compat-harness/normalize.ts', status: 'M' },
+    ])
+
+    expect(result.commands).toEqual([
+      { label: 'full quality suite', args: ['test:all'] },
+      { label: 'full pinned compatibility harness', args: ['test:compat-harness'] },
     ])
   })
 })

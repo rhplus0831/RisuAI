@@ -49,6 +49,14 @@ const rootRunnerFiles = new Set([
   'vitest.setup.test.ts',
 ])
 const fullQualityRunnerFiles = new Set(['util/affected-tests.ts', 'util/test-all.ts', 'util/test-watch.ts'])
+const compatibilityBaselineFiles = new Set(['util/compat-baseline.ts', 'util/compat-baseline.test.ts'])
+const compatibilityRegisterValidatorFiles = new Set([
+  'util/validate-original-risu-compatibility-registers.ts',
+  'util/validate-original-risu-compatibility-registers.test.ts',
+])
+const compatibilityRegisterRoot = 'docs/plan/original-risu-behavioral-compatibility/'
+const compatibilityBaselineTest = 'util/compat-baseline.test.ts'
+const compatibilityRegisterValidatorTest = 'util/validate-original-risu-compatibility-registers.test.ts'
 
 function normalizeRepoPath(file: string): string {
   return file.replaceAll('\\', '/').replace(/^\.\//, '')
@@ -78,6 +86,28 @@ function isRootRunnerFile(file: string): boolean {
   return rootRunnerFiles.has(file) || /^vitest(?:\.[^/]+)?\.ts$/.test(file) || /^tsconfig(?:\.[^/]+)?\.json$/.test(file)
 }
 
+function isCompatibilityBaselineFile(file: string): boolean {
+  return compatibilityBaselineFiles.has(file)
+}
+
+function isCompatibilityRegisterFile(file: string): boolean {
+  if (compatibilityRegisterValidatorFiles.has(file)) return true
+  if (!file.startsWith(compatibilityRegisterRoot) || !file.endsWith('.json')) return false
+  const relative = file.slice(compatibilityRegisterRoot.length)
+  return relative.startsWith('inventory/') || relative.startsWith('findings/')
+}
+
+function isCompatibilityRelevantProductionFile(file: string): boolean {
+  if (!/^(?:src|server\/fastify\/src|packages\/protocol\/src)\//.test(file)) return false
+  if (file.endsWith('.md') || file.endsWith('.snap')) return false
+  if (/(?:^|\/)(?:__tests__|tests|__fixtures__)(?:\/|$)/.test(file)) return false
+  return !isFrontendTest(file) && !isServerTest(file)
+}
+
+function isCompatibilityFocusedTest(file: string): boolean {
+  return file === compatibilityBaselineTest || file === compatibilityRegisterValidatorTest
+}
+
 function commandArgs(args: string[], bail: boolean): string[] {
   return bail ? [...args, '--bail=1'] : args
 }
@@ -92,8 +122,16 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
   const commands: TestCommand[] = []
   const existing = normalized.filter((change) => change.status !== 'D')
   const deleted = normalized.filter((change) => change.status === 'D')
+  const changedFiles = normalized.map((change) => change.path)
+  const compatHarnessChanged = changedFiles.some((file) => file.startsWith('test/compat-harness/'))
+  const compatBaselineChanged = changedFiles.some(isCompatibilityBaselineFile)
+  const compatibilityInfrastructureChanged = compatHarnessChanged || compatBaselineChanged
+  const compatibilityRegisterChanged = changedFiles.some(isCompatibilityRegisterFile)
+  const compatibilityProductionChanged = changedFiles.some(isCompatibilityRelevantProductionFile)
   const directFrontendTests = uniqueSorted(
-    existing.map((change) => change.path).filter((file) => isFrontendTest(file) && !isExplicitGate(file)),
+    existing
+      .map((change) => change.path)
+      .filter((file) => isFrontendTest(file) && !isExplicitGate(file) && !isCompatibilityFocusedTest(file)),
   )
   const directGateTests = uniqueSorted(
     existing.map((change) => change.path).filter((file) => isFrontendTest(file) && isExplicitGate(file)),
@@ -103,7 +141,6 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
     existing.map((change) => change.path).filter((file) => browserSmokePattern.test(file)),
   )
 
-  const changedFiles = normalized.map((change) => change.path)
   const fullQualityChanged = changedFiles.some(
     (file) =>
       file === 'package.json' ||
@@ -118,8 +155,12 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
       file.startsWith('.github/'),
   )
   if (fullQualityChanged) {
+    const fullQualityCommands: TestCommand[] = [{ label: 'full quality suite', args: ['test:all'] }]
+    if (compatibilityInfrastructureChanged) {
+      fullQualityCommands.push({ label: 'full pinned compatibility harness', args: ['test:compat-harness'] })
+    }
     return {
-      commands: [{ label: 'full quality suite', args: ['test:all'] }],
+      commands: fullQualityCommands,
       notes: [FULL_QUALITY_CHANGE_NOTE],
     }
   }
@@ -134,12 +175,13 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
       file.startsWith('server/fastify/browser-smoke/') ||
       file.startsWith('public/'),
   )
-  const compatHarnessChanged = changedFiles.some((file) => file.startsWith('test/compat-harness/'))
   const protocolSourceChanged = existing.some(({ path: file }) => isProtocolSource(file))
   const deletedProtocolSource = deleted.some(({ path: file }) => isProtocolSource(file))
   const frontendSourceChanged = existing.some(
     ({ path: file }) =>
       (/^(?:src|util|server\/fastify\/src)\//.test(file) || isProtocolSource(file)) &&
+      !isCompatibilityBaselineFile(file) &&
+      !compatibilityRegisterValidatorFiles.has(file) &&
       !isFrontendTest(file) &&
       !isServerTest(file),
   )
@@ -228,9 +270,26 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
     notes.push('Browser-smoke changes detected; rerun with --include-smoke before handoff.')
   }
 
-  if (compatHarnessChanged) {
+  if (compatibilityRegisterChanged) {
+    commands.push({ label: 'compatibility register validation', args: ['validate:compat-registers'] })
+    commands.push({
+      label: 'compatibility register validator tests',
+      args: commandArgs(['exec', 'vitest', 'run', compatibilityRegisterValidatorTest], options.bail),
+    })
+  }
+
+  if (compatBaselineChanged) {
+    commands.push({
+      label: 'compatibility baseline tests',
+      args: commandArgs(['exec', 'vitest', 'run', compatibilityBaselineTest], options.bail),
+    })
+  }
+
+  if (compatibilityInfrastructureChanged || compatibilityProductionChanged) {
     commands.push({ label: 'current compatibility harness', args: ['test:compat-current'] })
-    notes.push('Run the full pinned compatibility harness when its external baseline worktree is available.')
+  }
+  if (compatibilityInfrastructureChanged) {
+    commands.push({ label: 'full pinned compatibility harness', args: ['test:compat-harness'] })
   }
 
   if (commands.length === 0) {

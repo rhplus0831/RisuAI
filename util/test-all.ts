@@ -44,6 +44,19 @@ export const qualityLanes: readonly QualityLane[] = [
     priority: 1,
   },
   {
+    id: 'compat-registers',
+    label: 'compatibility register validation',
+    args: ['validate:compat-registers'],
+    priority: 1,
+  },
+  {
+    id: 'compat-current',
+    label: 'current compatibility harness',
+    args: ['test:compat-current'],
+    after: ['compat-registers'],
+    isolated: true,
+  },
+  {
     id: 'server-tests',
     label: 'server tests',
     args: ['test:server'],
