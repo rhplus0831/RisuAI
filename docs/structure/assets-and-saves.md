@@ -270,7 +270,7 @@ and Risu HTML embeds. It rekeys imported chats/folders, clears unknown folder
 references, normalizes chat-generation settings, and dispatches targeted
 server-backed creation commands.
 
-Only the sidebar's **Export all chats** action offers destructive follow-up:
+Only the sidebar's Export all chats action offers destructive follow-up:
 after the download succeeds, two confirmations are required before a durable
 command replaces that character's chats with one empty `Chat 1` and selects page
 `0`. After both confirmations, the client compares the live chat IDs, counts,

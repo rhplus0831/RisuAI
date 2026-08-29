@@ -64,7 +64,7 @@ shared provider-frame wrapper removes them earlier and request history sees the
 clean output. If it is disabled, request history retains the provider response
 and only the translation consumer is cleaned.
 
-In **Send Text As-Is** plus **Exclude Chain-of-Thought** mode, the same cleanup
+In Send Text As-Is plus Exclude Chain-of-Thought mode, the same cleanup
 also applies to source text and translation-history slots before dispatch.
 Outside Send Text As-Is, translation preserves blank separators and complete
 raw media-marker lines beginning `{{img`, `{{raw`, `{{video`, or `{{audio`;
@@ -213,7 +213,7 @@ stage 5 at progress 20. The constants live in
 Svelte Chat UI guide. BTW hooks use the same runtime and model-routing contract
 without becoming part of server prompt assembly.
 
-When a Draft hook has **Translation** enabled, sending the reviewed Draft output
+When a Draft hook has Translation enabled, sending the reviewed Draft output
 stores that output (including appended inlay markers) as the user message and
 stores the original composer text as its source-bound `MessageTranslation`.
 `src/ts/process/draftHookTranslation.ts` hashes the exact sent message as
