@@ -4658,6 +4658,525 @@
         "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
       },
       "notes": "Canonical import of a resolved 2026-08 compatibility finding."
+    },
+    {
+      "id": "ORC-SURFACE-078",
+      "title": "Pinned compatibility-baseline materialization and integrity",
+      "primaryCategory": "A",
+      "seamTags": [],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "A clean environment can materialize the exact compatibility-baseline commit in a detached worktree without moving the upstream checkout.",
+        "Preflight rejects an absent object, wrong commit, attached branch, dirty worktree, or missing dependency installation."
+      ],
+      "variants": [
+        "prepared clean detached baseline",
+        "missing worktree",
+        "wrong commit or attached branch",
+        "dirty worktree",
+        "dependencies absent"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66 (pinned Git object)"
+        ],
+        "browser": [],
+        "protocol": [],
+        "fastify": [
+          "util/compat-baseline.ts#prepareCompatibilityBaseline",
+          "util/compat-baseline.ts#checkCompatibilityBaseline"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "The moving upstream checkout, an attached branch, a dirty tree, or a merely similar revision cannot substitute for the exact detached baseline."
+      ],
+      "evidence": {
+        "baseline": [
+          "util/compat-baseline.ts#COMPAT_BASELINE_COMMIT"
+        ],
+        "current": [
+          "b0f06552dc84fc8c406c7279cd6330519d6c4db1"
+        ],
+        "tests": [
+          "util/compat-baseline.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "b0f06552dc84fc8c406c7279cd6330519d6c4db1",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "The package script owns prepare mode; direct CLI --check owns read-only integrity verification."
+    },
+    {
+      "id": "ORC-SURFACE-079",
+      "title": "Shared compatibility case matrix and artifact schema",
+      "primaryCategory": "A",
+      "seamTags": [],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Baseline and current runners execute the same ordered 16-cell scenario, transport, and say-nothing matrix.",
+        "Both sides emit the same closed artifact shape and reject missing, extra, duplicated, or reordered cells."
+      ],
+      "variants": [
+        "send, regenerate, continue, and multisend",
+        "buffered and streamed transport",
+        "say-nothing enabled and disabled",
+        "missing, duplicate, extra, and reordered artifact cells"
+      ],
+      "owners": {
+        "baseline": [
+          "test/compat-harness/baseline.runner.ts"
+        ],
+        "browser": [
+          "test/compat-harness/current.runner.ts"
+        ],
+        "protocol": [
+          "test/compat-harness/types.ts#compatCells"
+        ],
+        "fastify": [
+          "test/compat-harness/governance.ts#validateCompatSideArtifact",
+          "test/compat-harness/governance.ts#buildCompatDiff"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Artifact validation is closed-world: case identity, count, order, side, baseline commit, and semantic payload are comparison inputs."
+      ],
+      "evidence": {
+        "baseline": [
+          "test/compat-harness/golden/baseline.json"
+        ],
+        "current": [
+          "b0f06552dc84fc8c406c7279cd6330519d6c4db1"
+        ],
+        "tests": [
+          "test/compat-harness/governance.test.ts",
+          "test/compat-harness/baseline.runner.ts",
+          "test/compat-harness/current.runner.ts"
+        ],
+        "fixtures": [
+          "test/compat-harness/fixture.ts"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "b0f06552dc84fc8c406c7279cd6330519d6c4db1",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "The type contract and runtime validator jointly own the comparable artifact boundary."
+    },
+    {
+      "id": "ORC-SURFACE-080",
+      "title": "Semantic compatibility normalizer",
+      "primaryCategory": "A",
+      "seamTags": [
+        "F",
+        "G"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Only deterministic fixture IDs, approved volatile generation fields, header casing, and JSON object-key order normalize.",
+        "Missing versus null, array order, endpoint identity, message role, and generation metadata presence remain semantic."
+      ],
+      "variants": [
+        "volatile identifiers and timestamps",
+        "missing versus explicit null",
+        "ordered arrays and repeated values",
+        "provider endpoint and message role",
+        "inactive generation metadata omission"
+      ],
+      "owners": {
+        "baseline": [
+          "test/compat-harness/baseline.runner.ts"
+        ],
+        "browser": [],
+        "protocol": [
+          "test/compat-harness/normalize.ts#captureProviderRequest"
+        ],
+        "fastify": [
+          "test/compat-harness/normalize.ts#normalizeTranscript",
+          "server/fastify/src/prompt/assemble.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "JSON object keys and HTTP header names are canonicalized without sorting semantic arrays or rewriting endpoint URLs.",
+        "Absent properties stay absent; explicit null stays null; message roles and metadata presence are preserved."
+      ],
+      "evidence": {
+        "baseline": [
+          "test/compat-harness/golden/baseline.json"
+        ],
+        "current": [
+          "b0f06552dc84fc8c406c7279cd6330519d6c4db1",
+          "c33dac56811c3c6c6bdf72f8ad3faac796abfe59",
+          "5b6a9d492beb399a58d9695097171a9c3edf1b4d"
+        ],
+        "tests": [
+          "test/compat-harness/normalize.test.ts",
+          "server/fastify/__tests__/assemble.test.ts"
+        ],
+        "fixtures": [
+          "test/compat-harness/fixture.ts"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "5b6a9d492beb399a58d9695097171a9c3edf1b4d",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "The c33dac568 production correction proves inactive persisted metadata is fixed at its owner instead of being hidden by normalization; 5b6a9d492 preserves the distinct prompt-preview diagnostic contract."
+    },
+    {
+      "id": "ORC-SURFACE-081",
+      "title": "Fixture, golden, and expected-difference governance",
+      "primaryCategory": "A",
+      "seamTags": [],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Fixture source digests, the exact 16 case IDs, deterministic inputs, and the exact golden artifact set are fail-closed.",
+        "Every observed divergence must match one decision-backed inventory mapping and its semantic digest; golden updates require an explicit review reason."
+      ],
+      "variants": [
+        "fixture source drift",
+        "case matrix drift",
+        "golden artifact drift",
+        "unregistered, stale, duplicated, or unsigned expected difference",
+        "reviewed golden refresh"
+      ],
+      "owners": {
+        "baseline": [
+          "test/compat-harness/golden/baseline.json"
+        ],
+        "browser": [],
+        "protocol": [
+          "test/compat-harness/expected-differences.json"
+        ],
+        "fastify": [
+          "test/compat-harness/governance.ts#validateFixtureProvenance",
+          "test/compat-harness/governance.ts#validateExpectedDifferences",
+          "test/compat-harness/governance.ts#validateGoldenManifest",
+          "test/compat-harness/run.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "A changed semantic digest is a new difference and cannot inherit approval from a stale mapping.",
+        "Generated actual artifacts never become authority unless the explicit reviewed update command refreshes the governed goldens and manifests."
+      ],
+      "evidence": {
+        "baseline": [
+          "test/compat-harness/golden/manifest.json"
+        ],
+        "current": [
+          "b0f06552dc84fc8c406c7279cd6330519d6c4db1",
+          "c33dac56811c3c6c6bdf72f8ad3faac796abfe59",
+          "5b6a9d492beb399a58d9695097171a9c3edf1b4d",
+          "546ea5aaee78144176043971fdd2c13c9e7c6079"
+        ],
+        "tests": [
+          "test/compat-harness/governance.test.ts"
+        ],
+        "fixtures": [
+          "test/compat-harness/fixture-provenance.json",
+          "test/compat-harness/golden/manifest.json",
+          "test/compat-harness/expected-differences.json"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "546ea5aaee78144176043971fdd2c13c9e7c6079",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "The governed register currently owns 23 cell/aspect mappings across 15 divergent cells; no anonymous exception is accepted. Fixture provenance classifies every source at 546ea5aae, after 5b6a9d492 separated prompt-preview diagnostics from persisted transcript metadata."
+    },
+    {
+      "id": "ORC-SURFACE-082",
+      "title": "Compatibility register authority and fail-closed validation",
+      "primaryCategory": "A",
+      "seamTags": [],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Inventory, finding, decision, and upstream-unit documents satisfy their JSON schemas and cross-register references.",
+        "Duplicate stable IDs or raw source IDs, malformed commits, inconsistent decisions or dispositions, and incomplete or reordered upstream coverage fail validation."
+      ],
+      "variants": [
+        "valid linked registers",
+        "missing versus null authority reference",
+        "duplicate stable or raw source ID",
+        "invalid decision or finding reference",
+        "malformed or reordered upstream commit coverage"
+      ],
+      "owners": {
+        "baseline": [
+          "docs/plan/original-risu-behavioral-compatibility/inventory/upstream-units.json"
+        ],
+        "browser": [],
+        "protocol": [
+          "docs/plan/original-risu-behavioral-compatibility/inventory/inventory.schema.json",
+          "docs/plan/original-risu-behavioral-compatibility/inventory/upstream-units.schema.json",
+          "docs/plan/original-risu-behavioral-compatibility/findings/findings.schema.json",
+          "docs/plan/original-risu-behavioral-compatibility/findings/decisions.schema.json"
+        ],
+        "fastify": [
+          "util/validate-original-risu-compatibility-registers.ts#validateOriginalRisuCompatibilityRegisters",
+          "util/validate-original-risu-compatibility-registers.ts#validateOriginalRisuCompatibilityRegisterDocuments"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Register validation preserves missing, null, array order, repeated values, and endpoint identity as distinct semantic inputs."
+      ],
+      "evidence": {
+        "baseline": [
+          "docs/plan/original-risu-behavioral-compatibility/inventory/upstream-units.json"
+        ],
+        "current": [
+          "6ddc82431230ee40cf9c4151d3388baab0162998"
+        ],
+        "tests": [
+          "util/validate-original-risu-compatibility-registers.test.ts"
+        ],
+        "fixtures": [
+          "docs/plan/original-risu-behavioral-compatibility/inventory/compatibility-surfaces.json",
+          "docs/plan/original-risu-behavioral-compatibility/findings/findings.json",
+          "docs/plan/original-risu-behavioral-compatibility/findings/decisions.json"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "6ddc82431230ee40cf9c4151d3388baab0162998",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "Register and schema changes are also routed to this validator by affected-test selection."
+    },
+    {
+      "id": "ORC-SURFACE-083",
+      "title": "Affected compatibility test selection",
+      "primaryCategory": "A",
+      "seamTags": [],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Harness and baseline infrastructure changes select focused validation plus the full pinned differential.",
+        "Register authority changes select fail-closed register validation and tests, while compatibility-relevant production changes select the current-only compatibility lane."
+      ],
+      "variants": [
+        "harness or golden change",
+        "baseline utility change",
+        "register, schema, or validator change",
+        "browser, protocol, or Fastify production change",
+        "full-quality workflow change"
+      ],
+      "owners": {
+        "baseline": [
+          "util/affected-tests.ts#isCompatibilityBaselineFile"
+        ],
+        "browser": [
+          "util/affected-tests.ts#isCompatibilityRelevantProductionFile"
+        ],
+        "protocol": [
+          "util/affected-tests.ts#isCompatibilityRegisterFile"
+        ],
+        "fastify": [
+          "util/affected-tests.ts#planAffectedTests"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Path selection is additive and deduplicated; a focused test does not replace required current-only or full pinned compatibility proof."
+      ],
+      "evidence": {
+        "baseline": [],
+        "current": [
+          "6ddc82431230ee40cf9c4151d3388baab0162998"
+        ],
+        "tests": [
+          "util/affected-tests.test.ts"
+        ],
+        "fixtures": [
+          "util/affected-tests.test.ts (changed-path matrices)"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "6ddc82431230ee40cf9c4151d3388baab0162998",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "Selection tests cover compatibility infrastructure, register authority, production paths, and workflow parity."
+    },
+    {
+      "id": "ORC-SURFACE-084",
+      "title": "Aggregate compatibility quality-lane ownership",
+      "primaryCategory": "A",
+      "seamTags": [],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "The regular aggregate includes fail-closed register validation and a current-only compatibility lane.",
+        "Current-only compatibility runs after register validation and remains isolated from concurrently mutating lanes."
+      ],
+      "variants": [
+        "aggregate dry run",
+        "register validation failure",
+        "current-only harness failure",
+        "dependency and isolation graph drift"
+      ],
+      "owners": {
+        "baseline": [],
+        "browser": [],
+        "protocol": [
+          "util/test-all.ts#qualityLanes"
+        ],
+        "fastify": [
+          "util/test-all.ts#runLanePool",
+          "package.json#test:all"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Aggregate success requires both compatibility lanes; dependency or isolation metadata cannot silently drop either lane."
+      ],
+      "evidence": {
+        "baseline": [],
+        "current": [
+          "6ddc82431230ee40cf9c4151d3388baab0162998"
+        ],
+        "tests": [
+          "util/test-all.test.ts"
+        ],
+        "fixtures": [
+          "util/test-all.test.ts (quality-lane graph fixtures)"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "6ddc82431230ee40cf9c4151d3388baab0162998",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "The external pinned differential remains intentionally outside the ordinary aggregate because it owns a separately prepared worktree."
+    },
+    {
+      "id": "ORC-SURFACE-085",
+      "title": "CI cadence, artifact, and release-equivalent compatibility ownership",
+      "primaryCategory": "A",
+      "seamTags": [],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Main quality CI requires register validation before current-only compatibility and retains current artifacts for triage.",
+        "The full pinned differential runs on a daily schedule and manual dispatch, prepares the exact baseline, and retains its evidence.",
+        "Release-equivalent evidence combines successful main quality lanes with a successful full pinned differential for the exact candidate revision."
+      ],
+      "variants": [
+        "pull-request and main quality CI",
+        "daily pinned differential",
+        "manual pinned differential",
+        "current artifact upload",
+        "release-candidate evidence handoff"
+      ],
+      "owners": {
+        "baseline": [
+          ".github/workflows/compatibility-differential.yml"
+        ],
+        "browser": [],
+        "protocol": [
+          ".github/workflows/quality.yml#compat-registers",
+          ".github/workflows/quality.yml#compat-current"
+        ],
+        "fastify": [
+          "docs/structure/testing-and-operations.md",
+          "docs/tests/README.md#Compatibility evidence ownership"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "A current-only success cannot be reported as pinned parity, and a scheduled result from another revision cannot satisfy release-equivalent evidence."
+      ],
+      "evidence": {
+        "baseline": [
+          ".github/workflows/compatibility-differential.yml (daily 06:00 UTC and workflow_dispatch)"
+        ],
+        "current": [
+          "328a70787c26051525a713fc86311fe672dd7b8b"
+        ],
+        "tests": [
+          "util/test-all.test.ts (CI owner parity)"
+        ],
+        "fixtures": [
+          "fast-bootstrap-results/compat-harness/ (uploaded compatibility evidence)"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "328a70787c26051525a713fc86311fe672dd7b8b",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "Quality CI owns always-on register/current proof; the separate workflow owns the environment-heavy pinned proof and 14-day evidence retention."
     }
   ]
 }

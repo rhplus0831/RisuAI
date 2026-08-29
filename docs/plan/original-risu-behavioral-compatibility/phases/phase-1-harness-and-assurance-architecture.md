@@ -1,7 +1,8 @@
 # Phase 1 — Harness And Assurance Architecture
 
-Status: In progress
+Status: Complete
 Depends on: Phase 0
+Completed at Fastify: `546ea5aaee78144176043971fdd2c13c9e7c6079`
 
 ## Objective
 
@@ -52,5 +53,23 @@ Run focused harness tests, mutation/negative tests, `pnpm test:affected
 `pnpm test:compat-harness`, aggregate runner tests when changed, formatting, and
 `git diff --check`.
 
-Active execution record:
+Completed execution record:
 [Phase 1 reproducible differential and gates](slices/phase-1-harness-and-assurance-architecture/phase-1-reproducible-differential-and-gates.md).
+
+## Completion Evidence
+
+- Pinned baseline, shared case/artifact schema, semantic normalizer, and governed
+  fixtures, goldens, and expected differences:
+  `b0f06552dc84fc8c406c7279cd6330519d6c4db1`, finalized with classified fixture
+  provenance at `546ea5aaee78144176043971fdd2c13c9e7c6079`.
+- Production correction exposed by semantic comparison:
+  `c33dac56811c3c6c6bdf72f8ad3faac796abfe59`.
+- Prompt-preview diagnostics and persisted transcript metadata were separated in
+  follow-up `5b6a9d492beb399a58d9695097171a9c3edf1b4d`.
+- Register, affected-selection, and aggregate ownership:
+  `6ddc82431230ee40cf9c4151d3388baab0162998`.
+- CI cadence, retained artifacts, and release-equivalent ownership:
+  `328a70787c26051525a713fc86311fe672dd7b8b`.
+- Category A rows `ORC-SURFACE-078` through `ORC-SURFACE-085` are the canonical
+  inventory ownership record; exact command results are in
+  [`latest-verification.md`](../latest-verification.md).

@@ -1,8 +1,9 @@
 # Phase 1 Slice — Reproducible Differential And Gates
 
-Status: In progress
+Status: Complete
 Phase: [Phase 1](../../phase-1-harness-and-assurance-architecture.md)
 Opened from Fastify: `9ea7aa20dd5a93ac7e5c9112e8c8fbcb9fca1438`
+Completed at Fastify: `546ea5aaee78144176043971fdd2c13c9e7c6079`
 
 ## Outcome
 
@@ -46,7 +47,21 @@ automation cadence, artifacts, and release ownership fail closed.
 
 ## Handoff
 
-Phase 1 closes only when a clean checkout can prepare and run the pinned lane,
-every exception is owned, deliberate semantic mutations fail, local and CI
-selection are tested, and the first domain slice can consume the shared evidence
-contract without inventing new normalization or authority.
+Phase 1 closed at `546ea5aaee78144176043971fdd2c13c9e7c6079`.
+A clean checkout can prepare and run the pinned lane, every observed exception
+is owned, deliberate semantic mutations fail, and local, aggregate, and CI
+selection are tested. Phase 2 consumes the shared evidence contract without
+inventing new normalization or authority.
+
+## Completion Evidence
+
+| Assurance surface | Canonical inventory | Implementation evidence |
+| --- | --- | --- |
+| Pinned baseline | `ORC-SURFACE-078` | `b0f06552dc84fc8c406c7279cd6330519d6c4db1` |
+| Shared case/artifact schema | `ORC-SURFACE-079` | `b0f06552dc84fc8c406c7279cd6330519d6c4db1` |
+| Semantic normalizer and preview/persistence contract | `ORC-SURFACE-080` | `c33dac56811c3c6c6bdf72f8ad3faac796abfe59`, `b0f06552dc84fc8c406c7279cd6330519d6c4db1`, `5b6a9d492beb399a58d9695097171a9c3edf1b4d` |
+| Fixtures, goldens, and expected differences | `ORC-SURFACE-081` | `b0f06552dc84fc8c406c7279cd6330519d6c4db1`, `546ea5aaee78144176043971fdd2c13c9e7c6079` |
+| Register authority | `ORC-SURFACE-082` | `6ddc82431230ee40cf9c4151d3388baab0162998` |
+| Affected selection | `ORC-SURFACE-083` | `6ddc82431230ee40cf9c4151d3388baab0162998` |
+| Aggregate ownership | `ORC-SURFACE-084` | `6ddc82431230ee40cf9c4151d3388baab0162998` |
+| CI, cadence, artifacts, and release-equivalent ownership | `ORC-SURFACE-085` | `328a70787c26051525a713fc86311fe672dd7b8b` |

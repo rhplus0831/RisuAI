@@ -12,8 +12,8 @@ findings under [`findings/`](findings/); inventory ownership under
 ## Current Snapshot
 
 - Plan state: Active.
-- Current phase: Phase 1 — harness and assurance architecture.
-- Active slice: [Phase 1 reproducible differential and gates](phases/slices/phase-1-harness-and-assurance-architecture/phase-1-reproducible-differential-and-gates.md).
+- Current phase: Phase 2 — browser state synchronization and recovery.
+- Active slice: [Phase 2 bootstrap, writer, outbox, and recovery](phases/slices/phase-2-browser-state-sync-and-recovery/phase-2-bootstrap-writer-outbox-recovery.md).
 - Planning audit anchor: `1933c43ff7b4d35b57b0852013d95f3881a8cb28`.
 - Compatibility baseline: `71c476e9c86263fe907105b011ca4dde0a619d66`.
 - Behavioral sync cursor: `f3f0242fba297d82e0efcc2c31ca1428569b70f2`.
@@ -23,23 +23,24 @@ findings under [`findings/`](findings/); inventory ownership under
   `/home/codex/risu-baseline-71c476e9c`; its exact commit, dependency state, and
   cleanliness are enforced by `pnpm prepare:compat-baseline` and the harness
   preflight.
-- Current compatibility state: full pinned differential passed at
-  `9ea7aa20dd5a93ac7e5c9112e8c8fbcb9fca1438` (16 baseline cells, 18 current and
-  cluster tests, 15 explained baseline/current divergences, healthy cluster 10).
+- Current compatibility state: Phase 1 assurance architecture is complete at
+  `546ea5aaee78144176043971fdd2c13c9e7c6079`; the full pinned differential
+  passed with 16 baseline cells, 18 current and cluster tests, 15 governed
+  baseline/current divergences, and healthy cluster 10.
 - Canonical findings: 14 historical resolved findings imported with exact raw
   mappings and implementation/verification evidence.
 - Open maintainer decisions: four historical unsupported statements remain
   `proposed` because their sources do not identify individual authority.
-- Next action: execute the Phase 1 reproducible-differential-and-gates slice,
-  then begin the Phase 2 bootstrap/writer/outbox recovery slice.
+- Next action: execute the Phase 2 bootstrap/writer/outbox recovery slice using
+  the Phase 1 evidence contract and gates.
 
 ## Phase Router
 
 | Phase | Status | Outcome |
 | ---: | --- | --- |
 | [0. Cursors, contract, inventory, and pilot](phases/phase-0-cursors-contract-and-inventory.md) | Complete | Frozen references, exact authority import, fail-closed registers, reproducible baseline, and four verified pilots. |
-| [1. Harness and assurance architecture](phases/phase-1-harness-and-assurance-architecture.md) | In progress | Make baselines, fixtures, differential/expected-difference ownership, affected selection, CI, and release gates reproducible. |
-| [2. Browser state synchronization and recovery](phases/phase-2-browser-state-sync-and-recovery.md) | Pending | Verify bootstrap, writer, outbox, hydration, invalidation, reload, and recovery behavior. |
+| [1. Harness and assurance architecture](phases/phase-1-harness-and-assurance-architecture.md) | Complete | Made baselines, fixtures, differential/expected-difference ownership, affected selection, CI, and release gates reproducible. |
+| [2. Browser state synchronization and recovery](phases/phase-2-browser-state-sync-and-recovery.md) | In progress | Verify bootstrap, writer, outbox, hydration, invalidation, reload, and recovery behavior. |
 | [3. Persistence, commands, events, and bridges](phases/phase-3-persistence-commands-events-and-bridges.md) | Pending | Verify logical durable state, mutation semantics, ordering, identity, receipts, and editing bridges. |
 | [4. Navigation, chat, shared UI, and presentation](phases/phase-4-navigation-chat-and-shared-ui.md) | Pending | Verify visible navigation, chat, composer, transcript, hotkey, focus, feedback, and responsive behavior. |
 | [5. Settings, profiles, authoring, and catalogs](phases/phase-5-settings-profiles-authoring-and-catalogs.md) | Pending | Verify defaults, legacy shapes, presets, personas, characters, lorebooks, catalogs, and authoring workflows. |
@@ -70,6 +71,25 @@ findings under [`findings/`](findings/); inventory ownership under
 - The four pilots are verified by production-path tests for preset field
   completeness, persisted translation dispatch, Responses request ownership,
   and portable reroll candidates through all supported `.risu` codecs.
+
+## Phase 1 Completion Record
+
+- The pinned baseline, shared 16-cell schema, semantic normalizer, fixture and
+  golden manifests, and decision-backed expected-difference registry fail
+  closed at `546ea5aaee78144176043971fdd2c13c9e7c6079`, including explicit fixture-source
+  classifications.
+- The inactive-generation-metadata mismatch was corrected at its production
+  owner in `c33dac56811c3c6c6bdf72f8ad3faac796abfe59`; normalization did not hide it.
+- Prompt-preview diagnostics were kept distinct from persisted transcript
+  metadata in the follow-up `5b6a9d492beb399a58d9695097171a9c3edf1b4d`.
+- Affected and aggregate selection own register validation, current-only
+  compatibility, and required full-pinned selection at
+  `6ddc82431230ee40cf9c4151d3388baab0162998`.
+- Main quality CI, daily/manual pinned cadence, artifact retention, and
+  release-equivalent evidence ownership are recorded at
+  `328a70787c26051525a713fc86311fe672dd7b8b`.
+- Category A inventory rows `ORC-SURFACE-078` through `ORC-SURFACE-085` own the
+  eight assurance surfaces and their exact implementation and test evidence.
 
 ## Locked Planning Decisions
 
