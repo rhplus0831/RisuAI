@@ -66,8 +66,8 @@ describe('test effectiveness inventory', () => {
       ['src/ts/gui/loginMessageOrigin.test.ts', 'L'],
       ['server/fastify/__tests__/requestAbort.test.ts', 'L'],
       ['server/fastify/__tests__/streamBackpressure.test.ts', 'L'],
-      ['src/ts/chatImportPlanning.test.ts', 'K'],
-      ['src/ts/server/promptPresetIconUpload.test.ts', 'K'],
+      ['src/ts/chatImportPlanning.test.ts', 'C'],
+      ['src/ts/server/promptPresetIconUpload.test.ts', 'E'],
       ['src/ts/server/chatMessageHydration.test.ts', 'B'],
       ['src/ts/server/chatMessageHydration.reactivity.svelte.test.ts', 'B'],
       ['src/ts/process/request/tests/serverChat.test.ts', 'F'],
@@ -121,6 +121,32 @@ describe('test effectiveness inventory', () => {
 
     for (const [file, category] of counterexamples) {
       expect(categoryForTestFile(file).category, `${file} must not fall through to provider-model-media`).toBe(category)
+    }
+  })
+
+  it('routes reviewed asset-adjacent owners by their dominant contract', () => {
+    const counterexamples = new Map<string, string>([
+      ['src/ts/characters.importChat.test.ts', 'C'],
+      ['src/ts/chatImportPlanning.test.ts', 'C'],
+      ['src/ts/compatibilityAdapters.test.ts', 'C'],
+      ['src/ts/process/files/multisend.test.ts', 'C'],
+      ['src/ts/storage/database.importPreset.test.ts', 'C'],
+      ['src/ts/server/inlayCatalog.test.ts', 'B'],
+      ['src/ts/storage/database.downloadPreset.test.ts', 'B'],
+      ['src/ts/storage/risuSave.test.ts', 'B'],
+      ['src/ts/storage/backup.test.ts', 'D'],
+      ['src/ts/server/biasImport.test.ts', 'E'],
+      ['src/ts/server/moduleAssetUpload.test.ts', 'E'],
+      ['src/ts/server/naiVibeImport.test.ts', 'E'],
+      ['src/ts/server/promptPresetIconUpload.test.ts', 'E'],
+      ['src/ts/process/dynamicutils/pdf.test.ts', 'G'],
+      ['src/ts/globalApi.downloadFile.test.ts', 'L'],
+      ['src/ts/globalApi.getFileSrc.test.ts', 'L'],
+      ['src/ts/util.filePicker.test.ts', 'L'],
+    ])
+
+    for (const [file, category] of counterexamples) {
+      expect(categoryForTestFile(file).category, `${file} must not stay in asset-save-boundary`).toBe(category)
     }
   })
 

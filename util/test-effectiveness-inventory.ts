@@ -214,6 +214,56 @@ export const categoryRules: readonly CategoryRule[] = [
     ],
   },
   {
+    id: 'reviewed-asset-adjacent-persistence-boundaries',
+    category: 'C',
+    description:
+      'Reviewed import and compatibility owners whose dominant contract is durable command sequencing and rollback.',
+    patterns: [
+      /^src\/ts\/characters\.importChat\.test\.ts$/,
+      /^src\/ts\/chatImportPlanning\.test\.ts$/,
+      /^src\/ts\/compatibilityAdapters\.test\.ts$/,
+      /^src\/ts\/process\/files\/multisend\.test\.ts$/,
+      /^src\/ts\/storage\/database\.importPreset\.test\.ts$/,
+    ],
+  },
+  {
+    id: 'reviewed-asset-adjacent-browser-state-boundaries',
+    category: 'B',
+    description:
+      'Reviewed catalog, hydration-safe export, and cache-ownership owners whose dominant contract is browser state synchronization.',
+    patterns: [
+      /^src\/ts\/server\/inlayCatalog\.test\.ts$/,
+      /^src\/ts\/storage\/database\.downloadPreset\.test\.ts$/,
+      /^src\/ts\/storage\/risuSave\.test\.ts$/,
+    ],
+  },
+  {
+    id: 'reviewed-asset-adjacent-visible-boundaries',
+    category: 'D',
+    description: 'Reviewed backup feedback whose dominant contract is visible warning and salvage-result composition.',
+    patterns: [/^src\/ts\/storage\/backup\.test\.ts$/],
+  },
+  {
+    id: 'reviewed-asset-adjacent-authoring-boundaries',
+    category: 'E',
+    description:
+      'Reviewed file-backed settings and module/preset import owners whose dominant contract is stale-safe authoring.',
+    patterns: [/^src\/ts\/server\/(?:biasImport|moduleAssetUpload|naiVibeImport|promptPresetIconUpload)\.test\.ts$/],
+  },
+  {
+    id: 'reviewed-asset-adjacent-provider-boundaries',
+    category: 'G',
+    description: 'Reviewed PDF lifecycle owners whose dominant contract is media decoding and resource cleanup.',
+    patterns: [/^src\/ts\/process\/dynamicutils\/pdf\.test\.ts$/],
+  },
+  {
+    id: 'reviewed-asset-adjacent-runtime-boundaries',
+    category: 'L',
+    description:
+      'Reviewed download, reference-shape, and native picker owners whose dominant contract is browser platform safety and lifecycle.',
+    patterns: [/^src\/ts\/globalApi\.(?:downloadFile|getFileSrc)\.test\.ts$/, /^src\/ts\/util\.filePicker\.test\.ts$/],
+  },
+  {
     id: 'asset-save-boundary',
     category: 'K',
     description:
