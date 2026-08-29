@@ -9,12 +9,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   TEST_WATCH_HEARTBEAT_STALE_MS,
   TEST_WATCH_SCHEMA_VERSION,
+  SvelteCheckWatchOutputParser,
   TestWatchLog,
   canRunIncrementally,
   createWorktreeSnapshot,
   diffWorktreeSnapshots,
   evaluateTestWatchStatus,
   extractVitestFileFilters,
+  isFrontendCheckWatchPath,
   parseTestWatchCli,
   prepareVitestContext,
   readTestWatchStatus,
@@ -45,8 +47,20 @@ function initializedRepository(): string {
   git(repoRoot, ['config', 'user.name', 'Test User'])
   git(repoRoot, ['config', 'user.email', 'test@example.com'])
   writeFileSync(path.join(repoRoot, '.gitignore'), '/.test-watch/\n/node_modules/\n/.vite/\n')
+  writeFileSync(
+    path.join(repoRoot, 'package.json'),
+    `${JSON.stringify({ private: true, scripts: { 'check:watch': 'svelte-check --tsconfig ./tsconfig.json --watch --output machine' } }, null, 2)}\n`,
+  )
+  writeFileSync(
+    path.join(repoRoot, 'tsconfig.json'),
+    `${JSON.stringify({ compilerOptions: { skipLibCheck: true }, include: ['globals.d.ts', 'tracked.ts', 'src/**/*.ts'] }, null, 2)}\n`,
+  )
+  writeFileSync(
+    path.join(repoRoot, 'globals.d.ts'),
+    'declare function test(name: string, callback: () => void): void\n',
+  )
   writeFileSync(path.join(repoRoot, 'tracked.ts'), 'export const value = 1\n')
-  git(repoRoot, ['add', '.gitignore', 'tracked.ts'])
+  git(repoRoot, ['add', '.gitignore', 'globals.d.ts', 'package.json', 'tracked.ts', 'tsconfig.json'])
   git(repoRoot, ['commit', '-m', 'initial'])
   return repoRoot
 }
@@ -175,6 +189,33 @@ describe('test watcher CLI', () => {
         label: 'changed server tests',
       }),
     ).toEqual(['server/fastify/__tests__/app.test.ts'])
+  })
+})
+
+describe('warm Svelte checker', () => {
+  it('parses chunked machine output and keeps overlapping cycles tied to their start version', () => {
+    const parser = new SvelteCheckWatchOutputParser()
+
+    expect(parser.push('100 START "/repo"\n101 ERR', 1)).toEqual([])
+    expect(parser.push('OR "src/App.svelte" 1:1 "bad"\n102 START "/repo"\n', 2)).toEqual([])
+    expect(parser.push('103 COMPLETED 10 FILES 1 ERRORS 0 WARNINGS 1 FILES_WITH_PROBLEMS\n', 2)).toEqual([
+      expect.objectContaining({ errors: 1, passed: false, sequence: 1, version: 1 }),
+    ])
+    expect(parser.push('104 COMPLETED 10 FILES 0 ERRORS 2 WARNINGS 2 FILES_WITH_PROBLEMS\n', 2)).toEqual([
+      expect.objectContaining({ errors: 0, passed: true, sequence: 2, version: 2, warnings: 2 }),
+    ])
+  })
+
+  it('invalidates only paths covered by the frontend Svelte project', () => {
+    expect(isFrontendCheckWatchPath('src/App.svelte')).toBe(true)
+    expect(isFrontendCheckWatchPath('packages/protocol/src/index.ts')).toBe(true)
+    expect(isFrontendCheckWatchPath('public/service-worker.js')).toBe(true)
+    expect(isFrontendCheckWatchPath('version.json')).toBe(true)
+    expect(isFrontendCheckWatchPath('src/etc/o200k_base.json')).toBe(true)
+    expect(isFrontendCheckWatchPath('package.json')).toBe(true)
+    expect(isFrontendCheckWatchPath('src/ts/web/legacy.ts')).toBe(false)
+    expect(isFrontendCheckWatchPath('server/fastify/src/app.ts')).toBe(false)
+    expect(isFrontendCheckWatchPath('docs/README.md')).toBe(false)
   })
 })
 
@@ -479,7 +520,7 @@ describe('watched result validation', () => {
       await Promise.all([waitForFile(frontendMarker), waitForFile(serverMarker)])
       expect(await waitForWatcherState(repoRoot, 'passed')).toMatchObject({
         changedPaths: [],
-        commandResults: [],
+        commandResults: [{ label: 'frontend check', status: 'passed' }],
         generation: 1,
       })
     } finally {
@@ -494,10 +535,11 @@ describe('watched result validation', () => {
       path.join(repoRoot, 'vitest.config.ts'),
       "export default { test: { globals: true, include: ['**/*.test.ts'] } }\n",
     )
-    writeFileSync(path.join(repoRoot, 'first.test.ts'), "test('first baseline', () => {})\n")
-    git(repoRoot, ['add', 'vitest.config.ts', 'first.test.ts'])
+    mkdirSync(path.join(repoRoot, 'src'), { recursive: true })
+    writeFileSync(path.join(repoRoot, 'src/first.test.ts'), "test('first baseline', () => {})\n")
+    git(repoRoot, ['add', 'vitest.config.ts', 'src/first.test.ts'])
     git(repoRoot, ['commit', '-m', 'add test fixture'])
-    writeFileSync(path.join(repoRoot, 'first.test.ts'), "test('first changed baseline', () => {})\n")
+    writeFileSync(path.join(repoRoot, 'src/first.test.ts'), "test('first changed baseline', () => {})\n")
 
     const child = spawn(
       path.resolve('node_modules/.bin/tsx'),
@@ -523,7 +565,7 @@ describe('watched result validation', () => {
       )
       expect(baseline).toMatchObject({ executionMode: 'full' })
 
-      writeFileSync(path.join(repoRoot, 'second.test.ts'), "test('new delta', () => {})\n")
+      writeFileSync(path.join(repoRoot, 'src/second.test.ts'), "test('new delta', () => {})\n")
       const incremental = await waitForWatcherStatus(
         repoRoot,
         (watched) => watched.generation >= 2 && watched.state === 'passed',
@@ -532,42 +574,81 @@ describe('watched result validation', () => {
       expect(incremental).toMatchObject({
         affectedCommands: [
           {
+            label: 'frontend check',
+          },
+          {
             command: expect.stringContaining('first.test.ts'),
             label: 'changed frontend tests',
           },
         ],
-        commandResults: [{ status: 'passed', testFiles: 1 }],
+        commandResults: [
+          { label: 'frontend check', status: 'passed' },
+          { status: 'passed', testFiles: 1 },
+        ],
         commands: [
+          {
+            label: 'frontend check',
+          },
           {
             command: expect.not.stringContaining('first.test.ts'),
             label: 'changed frontend tests',
           },
         ],
-        executionChangedPaths: [{ path: 'second.test.ts', status: 'A' }],
+        executionChangedPaths: [{ path: 'src/second.test.ts', status: 'A' }],
         executionMode: 'incremental',
         reusedTestedFingerprint: baseline.testedFingerprint,
       })
-      expect(incremental.affectedCommands[0]?.command).toContain('second.test.ts')
-      expect(incremental.commands[0]?.command).toContain('second.test.ts')
+      expect(incremental.affectedCommands[1]?.command).toContain('second.test.ts')
+      expect(incremental.commands[1]?.command).toContain('second.test.ts')
       expect(incremental.testedFingerprint).toBe(incremental.targetFingerprint)
 
       writeFileSync(
-        path.join(repoRoot, 'first.test.ts'),
+        path.join(repoRoot, 'src/second.test.ts'),
+        "const invalid: string = 1\ntest('typecheck failure', () => invalid)\n",
+      )
+      const checkFailure = await waitForWatcherStatus(
+        repoRoot,
+        (watched) => watched.generation > incremental.generation && watched.state === 'failed',
+      )
+      expect(checkFailure).toMatchObject({
+        commandResults: [{ label: 'frontend check', status: 'failed' }],
+        executionChangedPaths: [{ path: 'src/second.test.ts', status: 'A' }],
+        executionMode: 'incremental',
+      })
+
+      writeFileSync(path.join(repoRoot, 'src/second.test.ts'), "test('new delta', () => {})\n")
+      const checkRecovered = await waitForWatcherStatus(
+        repoRoot,
+        (watched) => watched.generation > checkFailure.generation && watched.state === 'passed',
+      )
+      expect(checkRecovered).toMatchObject({
+        commandResults: [
+          { label: 'frontend check', status: 'passed' },
+          { status: 'passed', testFiles: 2 },
+        ],
+        executionMode: 'full',
+      })
+
+      writeFileSync(
+        path.join(repoRoot, 'src/first.test.ts'),
         "test('first changed baseline', () => {})\ntest('new failing case', () => { throw new Error('case ran') })\n",
       )
       const failedCase = await waitForWatcherStatus(
         repoRoot,
-        (watched) => watched.generation > incremental.generation && watched.state === 'failed',
+        (watched) => watched.generation > checkRecovered.generation && watched.state === 'failed',
       )
       expect(failedCase).toMatchObject({
-        commandResults: [{ status: 'failed', testFiles: 1 }],
-        executionChangedPaths: [{ path: 'first.test.ts', status: 'M' }],
+        commandResults: [
+          { label: 'frontend check', status: 'passed' },
+          { status: 'failed', testFiles: 1 },
+        ],
+        executionChangedPaths: [{ path: 'src/first.test.ts', status: 'M' }],
         executionMode: 'incremental',
-        reusedTestedFingerprint: incremental.testedFingerprint,
+        reusedTestedFingerprint: checkRecovered.testedFingerprint,
       })
 
       writeFileSync(
-        path.join(repoRoot, 'first.test.ts'),
+        path.join(repoRoot, 'src/first.test.ts'),
         "test('first changed baseline', () => {})\ntest('new passing case', () => {})\n",
       )
       const recovered = await waitForWatcherStatus(
@@ -575,7 +656,10 @@ describe('watched result validation', () => {
         (watched) => watched.generation > failedCase.generation && watched.state === 'passed',
       )
       expect(recovered).toMatchObject({
-        commandResults: [{ status: 'passed', testFiles: 2 }],
+        commandResults: [
+          { label: 'frontend check', status: 'passed' },
+          { status: 'passed', testFiles: 2 },
+        ],
         executionMode: 'full',
       })
       expect(recovered.reusedTestedFingerprint).toBeUndefined()
@@ -585,7 +669,7 @@ describe('watched result validation', () => {
       await stopWatcherProcess(child)
       watcherProcesses.splice(watcherProcesses.indexOf(child), 1)
     }
-  }, 20_000)
+  }, 30_000)
 
   it('runs one complete watcher generation and leaves an untrusted stopped marker', async () => {
     const repoRoot = initializedRepository()
@@ -595,7 +679,7 @@ describe('watched result validation', () => {
     expect(exitCode).toBe(0)
     expect(watched).toMatchObject({
       changedPaths: [],
-      commandResults: [],
+      commandResults: [{ label: 'frontend check', status: 'passed' }],
       generation: 1,
       state: 'stopped',
     })
@@ -604,13 +688,17 @@ describe('watched result validation', () => {
 
   it('waits for configuration changes to be committed instead of running test:all', async () => {
     const repoRoot = initializedRepository()
-    writeFileSync(path.join(repoRoot, 'package.json'), '{}\n')
+    const packageJson = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as Record<string, unknown>
+    writeFileSync(
+      path.join(repoRoot, 'package.json'),
+      `${JSON.stringify({ ...packageJson, description: 'changed' }, null, 2)}\n`,
+    )
 
     const watcherPromise = runTestWatchCli(['--once', '--debounce-ms=10'], repoRoot)
     const waiting = await waitForWatcherState(repoRoot, 'waiting-for-commit')
 
     expect(waiting).toMatchObject({
-      changedPaths: [{ path: 'package.json', status: 'A' }],
+      changedPaths: [{ path: 'package.json', status: 'M' }],
       commandResults: [],
       commands: [{ command: 'pnpm "test:all"', label: 'full quality suite' }],
       generation: 1,
@@ -623,7 +711,7 @@ describe('watched result validation', () => {
     expect(await watcherPromise).toBe(0)
     expect(readTestWatchStatus(testWatchPaths(repoRoot).status)).toMatchObject({
       changedPaths: [],
-      commandResults: [],
+      commandResults: [{ label: 'frontend check', status: 'passed' }],
       generation: 2,
       state: 'stopped',
     })

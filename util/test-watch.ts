@@ -35,6 +35,8 @@ export const TEST_WATCH_LOG_FILE = 'latest.log'
 export const TEST_WATCH_HEARTBEAT_MS = 5_000
 export const TEST_WATCH_HEARTBEAT_STALE_MS = 20_000
 
+const FRONTEND_CHECK_COMMAND: TestCommand = { label: 'frontend check', args: ['check:watch'] }
+
 const SNAPSHOT_RETRIES = 5
 const DEFAULT_DEBOUNCE_MS = 400
 const IGNORED_WATCH_DIRECTORIES = new Set([
@@ -80,6 +82,17 @@ export interface TestWatchCommandResult {
   label: string
   status: 'passed' | 'failed'
   testFiles?: number
+}
+
+export interface SvelteCheckWatchResult {
+  durationMs: number
+  errors: number
+  failure?: string
+  output: string
+  passed: boolean
+  sequence: number
+  version: number
+  warnings: number
 }
 
 export interface TestWatchStatus {
@@ -545,6 +558,237 @@ export class TestWatchLog {
   }
 }
 
+interface PendingSvelteCheckCycle {
+  lines: string[]
+  startedAt: number
+  version: number
+}
+
+export class SvelteCheckWatchOutputParser {
+  private buffer = ''
+  private readonly cycles: PendingSvelteCheckCycle[] = []
+  private sequence = 0
+
+  push(chunk: string | Buffer, version: number): SvelteCheckWatchResult[] {
+    this.buffer += String(chunk)
+    const results: SvelteCheckWatchResult[] = []
+    while (true) {
+      const newline = this.buffer.indexOf('\n')
+      if (newline < 0) break
+      const line = this.buffer.slice(0, newline).replace(/\r$/, '')
+      this.buffer = this.buffer.slice(newline + 1)
+      const result = this.pushLine(line, version)
+      if (result) results.push(result)
+    }
+    return results
+  }
+
+  private pushLine(line: string, version: number): SvelteCheckWatchResult | undefined {
+    const machineLine = /^(\d+)\s+(.+)$/.exec(line)
+    if (!machineLine) return undefined
+    const timestamp = Number(machineLine[1])
+    const message = machineLine[2]
+    if (message.startsWith('START ')) {
+      this.cycles.push({ lines: [line], startedAt: timestamp, version })
+      return undefined
+    }
+    for (const cycle of this.cycles) cycle.lines.push(line)
+
+    const completed =
+      /^COMPLETED\s+(\d+)\s+FILES\s+(\d+)\s+ERRORS\s+(\d+)\s+WARNINGS\s+(\d+)\s+FILES_WITH_PROBLEMS$/.exec(message)
+    if (completed) {
+      const cycle = this.cycles.shift()
+      if (!cycle) return undefined
+      this.sequence += 1
+      const errors = Number(completed[2])
+      return {
+        durationMs: Math.max(0, timestamp - cycle.startedAt),
+        errors,
+        output: `${cycle.lines.join('\n')}\n`,
+        passed: errors === 0,
+        sequence: this.sequence,
+        version: cycle.version,
+        warnings: Number(completed[3]),
+      }
+    }
+
+    const failed = /^FAILURE\s+(.+)$/.exec(message)
+    if (failed) {
+      const cycle = this.cycles.shift()
+      if (!cycle) return undefined
+      this.sequence += 1
+      let detail = failed[1]
+      try {
+        const parsed = JSON.parse(detail)
+        if (typeof parsed === 'string') detail = parsed
+      } catch {
+        // Keep the machine output when the checker did not emit JSON.
+      }
+      return {
+        durationMs: Math.max(0, timestamp - cycle.startedAt),
+        errors: 1,
+        failure: detail,
+        output: `${cycle.lines.join('\n')}\n`,
+        passed: false,
+        sequence: this.sequence,
+        version: cycle.version,
+        warnings: 0,
+      }
+    }
+    return undefined
+  }
+}
+
+export function isFrontendCheckWatchPath(filename: string | null): boolean {
+  if (!filename) return true
+  const normalized = filename.replaceAll('\\', '/').replace(/^\.\//, '')
+  if (['.npmrc', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml'].includes(normalized)) return true
+  if (normalized === 'tsconfig.json' || normalized === 'tsconfig.node.json' || normalized === 'vite.config.ts') {
+    return true
+  }
+  if (normalized === 'version.json' || (/^src\//.test(normalized) && normalized.endsWith('.json'))) return true
+  if (normalized === 'public/service-worker.js') return true
+  if (/^packages\/protocol\/src\/.+\.ts$/.test(normalized)) return true
+  if (!/^src\//.test(normalized) || !/\.(?:svelte|d\.ts|[cm]?[jt]sx?)$/.test(normalized)) return false
+  return !/^src\/(?:.*\/)?web\/.*\.ts$/.test(normalized)
+}
+
+class WarmSvelteCheckLane {
+  private child?: ChildProcess
+  private closed = false
+  private closing = false
+  private latest?: SvelteCheckWatchResult
+  private lastReportedSequence = 0
+  private parser = new SvelteCheckWatchOutputParser()
+  private restartAfterClose = false
+  private stderr = ''
+  private version = 0
+  private readonly waiters = new Set<(result: SvelteCheckWatchResult) => void>()
+
+  constructor(
+    private readonly repoRoot: string,
+    private readonly log: TestWatchLog,
+  ) {}
+
+  invalidate(filename: string | null): void {
+    if (!isFrontendCheckWatchPath(filename)) return
+    this.version += 1
+    if (!filename || requiresFrontendCheckRestart(filename)) {
+      this.restart()
+    }
+  }
+
+  warm(): void {
+    this.start()
+  }
+
+  async close(): Promise<void> {
+    this.closed = true
+    this.closing = true
+    this.restartAfterClose = false
+    const child = this.child
+    this.child = undefined
+    if (!child || child.exitCode !== null || child.signalCode !== null) return
+    child.kill('SIGTERM')
+    await new Promise<void>((resolve) => child.once('close', () => resolve()))
+  }
+
+  async run(): Promise<{ failure?: string; passed: boolean }> {
+    this.start()
+    const cached = this.latest?.version === this.version ? this.latest : undefined
+    const result = cached ?? (await new Promise<SvelteCheckWatchResult>((resolve) => this.waiters.add(resolve)))
+    if (result.sequence === this.lastReportedSequence) {
+      this.log.stdout.write(
+        `[test:watch] frontend check reused warm diagnostic cycle ${result.sequence} (${result.errors} error(s), ${result.warnings} warning(s))\n`,
+      )
+    } else {
+      this.lastReportedSequence = result.sequence
+      if (result.output) this.log.stdout.write(result.output)
+    }
+    return {
+      failure: result.failure ?? (result.errors > 0 ? `frontend check found ${result.errors} error(s)` : undefined),
+      passed: result.passed,
+    }
+  }
+
+  private start(): void {
+    if (this.child || this.closed) return
+    this.closing = false
+    this.stderr = ''
+    this.parser = new SvelteCheckWatchOutputParser()
+    const executable = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      `../node_modules/.bin/svelte-check${process.platform === 'win32' ? '.cmd' : ''}`,
+    )
+    const child = spawn(executable, ['--tsconfig', './tsconfig.json', '--watch', '--output', 'machine'], {
+      cwd: this.repoRoot,
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    this.child = child
+    child.stdout?.on('data', (chunk) => {
+      for (const result of this.parser.push(chunk, this.version)) this.publish(result)
+    })
+    child.stderr?.on('data', (chunk) => {
+      this.stderr += String(chunk)
+    })
+    let spawnFailure: string | undefined
+    child.once('error', (error) => {
+      spawnFailure = error.message
+    })
+    child.once('close', (code, signal) => {
+      if (this.child === child) this.child = undefined
+      if (this.restartAfterClose && !this.closed) {
+        this.restartAfterClose = false
+        this.closing = false
+        this.start()
+        return
+      }
+      if (this.closing) return
+      const detail =
+        spawnFailure ||
+        this.stderr.trim() ||
+        (signal ? `frontend check watch terminated by ${signal}` : `frontend check watch exited with code ${code ?? 1}`)
+      this.publish({
+        durationMs: 0,
+        errors: 1,
+        failure: detail,
+        output: this.stderr,
+        passed: false,
+        sequence: (this.latest?.sequence ?? 0) + 1,
+        version: this.version,
+        warnings: 0,
+      })
+    })
+  }
+
+  private publish(result: SvelteCheckWatchResult): void {
+    if (result.version !== this.version) return
+    this.latest = result
+    for (const resolve of this.waiters) resolve(result)
+    this.waiters.clear()
+  }
+
+  private restart(): void {
+    const child = this.child
+    if (!child || child.exitCode !== null || child.signalCode !== null) {
+      this.latest = undefined
+      return
+    }
+    this.restartAfterClose = true
+    this.closing = true
+    child.kill('SIGTERM')
+  }
+}
+
+function requiresFrontendCheckRestart(filename: string): boolean {
+  const normalized = filename.replaceAll('\\', '/').replace(/^\.\//, '')
+  return (
+    ['.npmrc', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'vite.config.ts'].includes(normalized) ||
+    normalized.endsWith('.json')
+  )
+}
+
 interface VitestCommandResult {
   failure?: string
   passed: boolean
@@ -692,6 +936,7 @@ class TestCommandRunner {
   private activeChild?: ChildProcess
   private readonly frontend: WarmVitestLane
   private readonly server: WarmVitestLane
+  private readonly svelte: WarmSvelteCheckLane
 
   constructor(
     private readonly repoRoot: string,
@@ -699,14 +944,20 @@ class TestCommandRunner {
   ) {
     this.frontend = new WarmVitestLane(repoRoot, 'vitest.config.ts', log)
     this.server = new WarmVitestLane(repoRoot, 'server/fastify/vitest.config.ts', log)
+    this.svelte = new WarmSvelteCheckLane(repoRoot, log)
   }
 
   async close(): Promise<void> {
     if (this.activeChild && this.activeChild.exitCode === null) this.activeChild.kill('SIGTERM')
-    await Promise.all([this.frontend.close(), this.server.close()])
+    await Promise.all([this.frontend.close(), this.server.close(), this.svelte.close()])
+  }
+
+  invalidate(filename: string | null): void {
+    this.svelte.invalidate(filename)
   }
 
   async warm(): Promise<boolean> {
+    this.svelte.warm()
     const results = await Promise.allSettled([this.frontend.warm(), this.server.warm()])
     const labels = ['frontend', 'server']
     let warmed = true
@@ -752,7 +1003,9 @@ class TestCommandRunner {
     let outcome: { failure?: string; passed: boolean; testFiles?: number }
     const filters = extractVitestFileFilters(command)
 
-    if (command.label === 'affected frontend tests') {
+    if (command.label === FRONTEND_CHECK_COMMAND.label) {
+      outcome = await this.svelte.run()
+    } else if (command.label === 'affected frontend tests') {
       outcome = await this.frontend.runRelated(changes)
     } else if (command.label === 'changed frontend tests') {
       outcome = await this.frontend.runDirect(filters, changes)
@@ -810,15 +1063,19 @@ function statusFromPlan(
   executionMode: TestWatchStatus['executionMode'],
   reusedTestedFingerprint?: string,
 ): TestWatchStatus {
+  const frontendCheckCommands = affectedPlan.notes.includes(FULL_QUALITY_CHANGE_NOTE) ? [] : [FRONTEND_CHECK_COMMAND]
   return {
     ...current,
-    affectedCommands: affectedPlan.commands.map((command) => ({
+    affectedCommands: [...frontendCheckCommands, ...affectedPlan.commands].map((command) => ({
       command: displayTestCommand(command),
       label: command.label,
     })),
     changedPaths: snapshot.changes,
     commandResults: [],
-    commands: executionPlan.commands.map((command) => ({ command: displayTestCommand(command), label: command.label })),
+    commands: [...frontendCheckCommands, ...executionPlan.commands].map((command) => ({
+      command: displayTestCommand(command),
+      label: command.label,
+    })),
     durationMs: undefined,
     executionChangedPaths,
     executionMode,
@@ -1051,7 +1308,7 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
     let passed = true
     let failure: string | undefined
     try {
-      for (const command of executionPlan.commands) {
+      for (const command of [FRONTEND_CHECK_COMMAND, ...executionPlan.commands]) {
         log.stdout.write(`[test:watch] ${command.label}: ${displayTestCommand(command)}\n`)
         const result = await runner.run(command, executionChangedPaths)
         commandResults.push(result)
@@ -1150,6 +1407,7 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
 
   filesystemWatcher = watch(repoRoot, { encoding: 'utf8', recursive: true }, (_eventType, filename) => {
     if (shouldIgnoreWatchEvent(filename)) return
+    runner.invalidate(filename)
     scheduleRun(options.debounceMs)
   })
   filesystemWatcher.on('error', (error) => requestShutdown(undefined, error.message))
@@ -1163,9 +1421,11 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
     `[test:watch] watching ${repoRoot} (base ${options.base}, debounce ${options.debounceMs}ms${options.includeSmoke ? ', smoke enabled' : ''})`,
   )
   if (!options.once) {
-    log.stdout.write('[test:watch] warming frontend and server Vitest contexts\n')
+    log.stdout.write('[test:watch] warming Svelte diagnostics and frontend/server Vitest contexts\n')
     void runner.warm().then((warmed) => {
-      if (warmed && !shutdownRequested) log.stdout.write('[test:watch] frontend and server Vitest contexts are warm\n')
+      if (warmed && !shutdownRequested) {
+        log.stdout.write('[test:watch] frontend and server Vitest contexts are warm\n')
+      }
     })
   }
   scheduleRun(0)
@@ -1197,7 +1457,7 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
 function printHelp(): void {
   console.log(`Usage: pnpm test:watch:agent [options]
 
-Continuously validates the affected test plan with passing-baseline incremental reruns.
+Continuously validates warm Svelte diagnostics and the affected test plan with incremental reruns.
 
 Options:
   --base <git-ref>       Compare branch changes with this ref (default: HEAD)

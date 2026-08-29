@@ -17,6 +17,7 @@
     "verify:fast-bootstrap:phase7": "pnpm measure:fast-bootstrap && playwright test -c playwright.fastify-smoke.config.ts server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
+    "check:watch": "svelte-check --tsconfig ./tsconfig.json --watch --output machine",
     "check:protocol": "tsc -p packages/protocol/tsconfig.json --noEmit",
     "check:server": "tsx util/check-server.ts",
     "format": "prettier --write .",
