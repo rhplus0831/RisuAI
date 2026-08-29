@@ -1,6 +1,6 @@
 # Phase 3: Deterministic Prompt Retrieval
 
-Status: in progress.
+Status: complete.
 
 Goal: select and inject committed BardWiki content into prompt assembly using a
 local, deterministic, budgeted path with no provider calls or autonomous writes.
@@ -36,6 +36,11 @@ reason without provider dispatch. A 2,000-document representative run scored
 the bounded 512-candidate set, selected 32 rows, and measured 8.53 ms; timing is
 recorded diagnostically rather than enforced as a flaky wall-clock threshold.
 
+Slice 4 ran the complete selector/adapter/assembly/memory/template/generation
+regression, every server-facing typecheck, the production browser build, and
+all 37 Playwright smoke scenarios. The feature remains a separate server-side
+prompt concern and did not add a browser eager-load boundary.
+
 Validation on 2026-08-29:
 
 ```text
@@ -70,6 +75,9 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts \
   server/fastify/__tests__/generation.chat.test.ts \
   server/fastify/__tests__/memoryBudgetAllocator.test.ts
 # 7 files, 408 tests passed; representative 2,000-document selection: 8.53 ms
+
+pnpm smoke:fastify-browser
+# production browser build passed; 37 Playwright smoke tests passed
 ```
 
 ## Depends On
