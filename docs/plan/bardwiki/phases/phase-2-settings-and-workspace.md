@@ -17,6 +17,13 @@ controls remain visibly disabled. English and Korean define the complete new
 language contract, and the settings resource manifest owns the component's
 provider, memory, and prompt-preset dependencies.
 
+Slice 2 added a named BardWiki action to the active-chat overflow menu and a
+lazy modal workspace. Opening it reads only the selected chat's document index;
+document Markdown and version history stay behind their respective user
+actions. The responsive index/detail layout exposes source metadata, linked
+document aliases, Markdown, and version provenance, handles unavailable and
+retry states, and closes instead of crossing a chat switch.
+
 Validation on 2026-08-29:
 
 ```text
@@ -35,6 +42,24 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts \
 
 pnpm check:server
 # protocol, client-library, browser-smoke, and Fastify typechecks passed
+
+pnpm exec vitest run --project frontend-dom \
+  src/lib/ChatScreens/BardWikiWorkspace.svelte.test.ts
+# 1 file, 2 tests passed
+
+pnpm exec vitest run \
+  src/lib/ChatScreens/BardWikiWorkspace.lazy.test.ts \
+  src/ts/server/resourceManifest.test.ts \
+  src/lang/index.test.ts
+# 3 files, 57 tests passed
+
+pnpm exec vitest run --project frontend-dom \
+  src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts \
+  -t 'exposes a named menu'
+# focused overflow-menu test passed
+
+pnpm exec svelte-check --tsconfig ./tsconfig.json --output machine
+# 6,627 files, zero errors and warnings
 ```
 
 ## Depends On

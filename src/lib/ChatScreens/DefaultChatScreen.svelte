@@ -25,6 +25,7 @@
     TriangleAlertIcon,
     EyeOffIcon,
     PencilLineIcon,
+    BookOpenIcon,
   } from '@lucide/svelte'
   import {
     selectedCharID,
@@ -217,6 +218,7 @@
     route?: AppRoute
     openModuleList?: boolean
     openChatList?: boolean
+    openBardWiki?: boolean
     customStyle?: string
   }
 
@@ -261,7 +263,13 @@
   let transcriptWindowConfigurationRun = 0
   let activeBgmObserverIdentity: string | null = $state(null)
   let activeScreenshotOperation: ScreenshotOperation | null = null
-  let { route, openModuleList = $bindable(false), openChatList = $bindable(false), customStyle = '' }: Props = $props()
+  let {
+    route,
+    openModuleList = $bindable(false),
+    openChatList = $bindable(false),
+    openBardWiki = $bindable(false),
+    customStyle = '',
+  }: Props = $props()
   let visibleRoute = $derived(route ?? $currentRoute)
 
   const unregisterComposerDraftStorageFailure = registerDefaultChatComposerDraftStorageFailureListener(() => {
@@ -3147,6 +3155,21 @@
               <span class="ml-2">{language.chatList}</span>
             </button>
           {/if}
+
+          <button
+            type="button"
+            role="menuitem"
+            data-testid="default-chat-open-bardwiki"
+            data-default-chat-menu-item
+            disabled={!currentChatId}
+            class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors disabled:cursor-not-allowed disabled:text-textcolor2"
+            onclick={() => {
+              openBardWiki = true
+              closeChatMenu()
+            }}>
+            <BookOpenIcon />
+            <span class="ml-2">{language.bardWiki.workspaceTitle}</span>
+          </button>
 
           {#if getDatabase().enableRisuaiProTools}
             <button

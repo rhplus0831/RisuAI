@@ -9,9 +9,9 @@ are implemented; prompt, worker, and UI behavior has not started.
 ## Snapshot
 
 - Plan state: runtime implementation in progress.
-- Current phase: Phase 2, slice 1 complete.
-- Current implementation cursor: add the chat entry point and read-only lazy
-  document/index/version workspace.
+- Current phase: Phase 2, slices 1-2 complete.
+- Current implementation cursor: add durable per-chat settings and manual
+  create/edit/rename/delete with explicit conflict recovery.
 - Blockers: none.
 - Runtime changes in this workstream: schema v33, low-level repository,
   revisioned settings/manual-document commands, shared wire schemas, targeted
@@ -27,8 +27,10 @@ are implemented; prompt, worker, and UI behavior has not started.
 - Phase 2 slice 1 validation: settings/localization/manifest passed 4 files,
   77 tests; defaults/parity/routes passed 3 files, 35 tests; server-facing
   typechecks passed on 2026-08-29.
-- Residual risk: no chat-scoped document workspace exists until the remaining
-  Phase 2 slices.
+- Phase 2 slice 2 validation: focused workspace/lazy/manifest/localization
+  passed 4 files, 59 tests; overflow-menu regression passed; Svelte diagnostics
+  passed 6,627 files with zero errors or warnings on 2026-08-29.
+- Residual risk: the workspace is read-only until the remaining Phase 2 slices.
 - Source investigation: complete for RisuBard semantics and the local settings,
   finalization, jobs/events, storage/API, and prompt-retrieval boundaries.
 
@@ -54,7 +56,7 @@ are implemented; prompt, worker, and UI behavior has not started.
 | --- | --- | --- |
 | [0. Contract and architecture](phases/phase-0-contract-and-architecture.md) | Complete | Exact types, states, routes, events, inheritance, errors, and test matrix are locked in [`CONTRACT.md`](CONTRACT.md). |
 | [1. Persistence and resources](phases/phase-1-persistence-and-resources.md) | Complete | Authoritative persistence, manual commands/resources, cascade lifecycle, and backup/restore recovery are proven. |
-| [2. Settings and workspace](phases/phase-2-settings-and-workspace.md) | In progress (1/4) | Global BardWiki settings are usable; the chat workspace remains. |
+| [2. Settings and workspace](phases/phase-2-settings-and-workspace.md) | In progress (2/4) | Global settings and the lazy read-only chat workspace are usable; manual mutations remain. |
 | [3. Prompt retrieval](phases/phase-3-prompt-retrieval.md) | Pending | Committed documents are selected and injected deterministically under budget. |
 | [4. Jobs and explicit confirmation](phases/phase-4-jobs-and-explicit-confirmation.md) | Pending | Separate durable worker execution and explicit event-document generation are reliable. |
 | [5. Automatic and canonical updates](phases/phase-5-automatic-and-canonical-updates.md) | Pending | Prior-turn automatic confirmation, canonical patches, and stale reconciliation land. |
@@ -63,8 +65,8 @@ are implemented; prompt, worker, and UI behavior has not started.
 
 ## Next Action
 
-Execute Phase 2, slice 2: add an active-chat entry point and a lazy read-only
-index/detail/version workspace without eager document-body hydration.
+Execute Phase 2, slice 3: add durable per-chat overrides and manual document
+mutations with accepted, queued, failed, and conflict recovery states.
 
 ## Maintenance Rules
 

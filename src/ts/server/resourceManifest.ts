@@ -200,6 +200,13 @@ export const RESOURCE_SURFACE_MANIFEST = {
       collection('translatorPresets', ['render', 'interact']),
     ],
   },
+  'overlay:bardwiki-workspace': {
+    family: 'overlay',
+    owners: ['src/lib/ChatScreens/BardWikiWorkspace.svelte'],
+    requirements: [],
+    notes:
+      'The lazy chat-scoped workspace owns its focused BardWiki API reads; document bodies and versions remain demand-loaded.',
+  },
   'route:inlay': {
     family: 'route',
     owners: ['src/lib/Playground/PlaygroundInlayExplorer.svelte', 'src/ts/process/files/inlays.ts'],

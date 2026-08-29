@@ -13,18 +13,39 @@
   import LazyComponent from '../UI/LazyComponent.svelte'
   import CharacterShellHydrationGate from './CharacterShellHydrationGate.svelte'
   import { currentRoute, type AppRoute } from 'src/ts/router'
+  import { language } from 'src/lang'
 
   let { route }: { route?: AppRoute } = $props()
   let visibleRoute = $derived(route ?? $currentRoute)
 
   const loadChatList = () => import('../Others/ChatList.svelte')
   const loadModuleChatMenu = () => import('../Setting/Pages/Module/ModuleChatMenu.svelte')
+  const loadBardWikiWorkspace = () => import('./BardWikiWorkspace.svelte')
   let openChatList = $state(false)
   let openModuleList = $state(false)
+  let openBardWiki = $state(false)
+  let bardWikiChatId = $state<string | null>(null)
   let selectedCharacter = $derived($selectedCharID >= 0 ? getDatabase().characters?.[$selectedCharID] : undefined)
+  let selectedChatId = $derived(selectedCharacter?.chats?.[selectedCharacter.chatPage]?.id ?? null)
   let selectedCharacterShellId = $derived(
     isServerCharacterShell(selectedCharacter) ? (selectedCharacter?.chaId ?? null) : null,
   )
+
+  $effect(() => {
+    if (!openBardWiki) {
+      bardWikiChatId = null
+      return
+    }
+    if (!selectedChatId) {
+      openBardWiki = false
+      return
+    }
+    if (bardWikiChatId === null) {
+      bardWikiChatId = selectedChatId
+      return
+    }
+    if (bardWikiChatId !== selectedChatId) openBardWiki = false
+  })
 
   const wallPaper = `background: url(${defaultWallpaper})`
   const externalStyles = $derived.by(() => {
@@ -76,7 +97,8 @@
         route={visibleRoute}
         customStyle={`${externalStyles}backdrop-filter: blur(4px);`}
         bind:openChatList
-        bind:openModuleList />
+        bind:openModuleList
+        bind:openBardWiki />
     </div>
   </div>
 {:else if getDatabase().theme === 'waifuMobile'}
@@ -91,7 +113,8 @@
         route={visibleRoute}
         customStyle={`${externalStyles}backdrop-filter: blur(4px);`}
         bind:openChatList
-        bind:openModuleList />
+        bind:openModuleList
+        bind:openBardWiki />
     </div>
     {#if $selectedCharID >= 0}
       {#if getDatabase().characters[$selectedCharID].viewScreen !== 'none'}
@@ -115,7 +138,8 @@
         route={visibleRoute}
         customStyle={bgImg.length > 2 ? `${externalStyles}` : ''}
         bind:openChatList
-        bind:openModuleList />
+        bind:openModuleList
+        bind:openBardWiki />
     </div>
   </div>
 {/if}
@@ -133,6 +157,14 @@
     modal
     onDismiss={() => (openModuleList = false)}
     testId="module-chat-menu" />
+{:else if openBardWiki && bardWikiChatId}
+  <LazyComponent
+    loader={loadBardWikiWorkspace}
+    componentProps={{ chatId: bardWikiChatId, close: () => (openBardWiki = false) }}
+    modal
+    label={language.bardWiki.workspaceTitle}
+    onDismiss={() => (openBardWiki = false)}
+    testId="bardwiki-workspace" />
 {/if}
 
 <style>

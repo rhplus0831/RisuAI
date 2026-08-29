@@ -117,15 +117,17 @@ vi.mock('../../lang', () => ({
                         progressActiveSteps: (names: string) => names,
                         progressWaiting: 'waiting',
                       }
-                    : property === 'chatPostGenerationProgressModuleScript'
-                      ? (name: string) => name
-                      : property === 'chatPostGenerationProgressCharacterScript'
+                    : property === 'bardWiki'
+                      ? { workspaceTitle: 'BardWiki workspace' }
+                      : property === 'chatPostGenerationProgressModuleScript'
                         ? (name: string) => name
-                        : property === 'chatPostGenerationProgressWithComment'
-                          ? (owner: string) => owner
-                          : property === 'chatPostGenerationProgressLabel'
+                        : property === 'chatPostGenerationProgressCharacterScript'
+                          ? (name: string) => name
+                          : property === 'chatPostGenerationProgressWithComment'
                             ? (owner: string) => owner
-                            : String(property),
+                            : property === 'chatPostGenerationProgressLabel'
+                              ? (owner: string) => owner
+                              : String(property),
     },
   ),
 }))
@@ -1139,6 +1141,9 @@ describe('DefaultChatScreen overflow menu accessibility', () => {
     expect(items.every((item) => item.tagName === 'BUTTON')).toBe(true)
     expect(items.every((item) => item.textContent?.trim())).toBe(true)
     expect(items.every((item) => item.getAttribute('role')?.startsWith('menuitem'))).toBe(true)
+    expect(target.querySelector('[data-testid="default-chat-open-bardwiki"]')?.textContent).toContain(
+      'BardWiki workspace',
+    )
     const pinItem = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-pin-button"]')
     expect(pinItem?.getAttribute('role')).toBe('menuitemcheckbox')
     expect(pinItem?.getAttribute('aria-checked')).toBe('false')
