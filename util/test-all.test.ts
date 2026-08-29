@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { uiCoverageSupportFiles, uiCoverageTestFiles } from '../vitest.ui-coverage-tests.js'
 import { performanceTestFiles } from '../vitest.performance-tests.js'
@@ -22,7 +22,7 @@ describe('test:all orchestration', () => {
     const byId = new Map(qualityLanes.map((lane) => [lane.id, lane]))
 
     expect(byId.get('browser-smoke')).toMatchObject({ after: ['server-check'], isolated: true })
-    expect(byId.get('frontend-routing')?.args).toEqual(['check:test-inventories'])
+    expect(byId.get('frontend-routing')?.args).toEqual(['check:frontend-test-inventory'])
     expect(byId.get('frontend-tests')?.args).toEqual(['test:frontend:run'])
     expect(byId.get('frontend-tests')?.env).toEqual({ RISU_TEST_EXCLUDE_UI_MAP: 'true' })
     expect(byId.get('ui-coverage')?.after).toContain('frontend-tests')
@@ -98,7 +98,7 @@ describe('test:all orchestration', () => {
   it('keeps every local aggregate owner required by CI', () => {
     const workflow = readFileSync('.github/workflows/quality.yml', 'utf8')
     const ciOwners = new Map([
-      ['frontend-routing', ['frontend-routing', 'pnpm check:test-inventories']],
+      ['frontend-routing', ['frontend-routing', 'pnpm check:frontend-test-inventory']],
       ['server-check', ['check-server', 'pnpm check:server']],
       ['frontend-tests', ['frontend', 'pnpm test:frontend:run']],
       ['server-tests', ['server', 'pnpm test:server']],
@@ -127,19 +127,8 @@ describe('test:all orchestration', () => {
     expect(uiUpload).toContain('if-no-files-found: error')
   })
 
-  it('excludes every checked UI test harness from coverage denominators', () => {
-    const support = JSON.parse(
-      readFileSync(
-        '.archived-docs/performance-and-stability/test-suite-effectiveness-audit/support-artifacts.json',
-        'utf8',
-      ),
-    ) as { groups: Array<{ role: string; files: string[] }> }
-    const uiRoots = /^(?:src\/lib\/(?:ChatScreens|Others|SideBars)|src\/ts\/server)\//
-    const expected = support.groups
-      .find((group) => group.role === 'shared-helper-harness')!
-      .files.filter((file) => uiRoots.test(file))
-      .sort()
-
-    expect([...uiCoverageSupportFiles].sort()).toEqual(expected)
+  it('keeps configured UI coverage support exclusions unique and present', () => {
+    expect(new Set(uiCoverageSupportFiles).size).toBe(uiCoverageSupportFiles.length)
+    for (const file of uiCoverageSupportFiles) expect(existsSync(file), file).toBe(true)
   })
 })

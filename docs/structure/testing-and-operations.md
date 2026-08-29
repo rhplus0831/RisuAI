@@ -17,9 +17,10 @@ truth for the resulting commands, routing, setup, and lane behavior.
 
 The completed
 [Test Suite Effectiveness Audit](../../.archived-docs/performance-and-stability/test-suite-effectiveness-audit/status.md)
-is historical narrative, but its four machine-readable manifests remain live
-inputs to the inventory commands. Update those archived manifests only through
-the reviewed `update:*inventory` scripts; current commands and behavior stay
+is historical. Its case-count, effectiveness, and support manifests are frozen
+records rather than live gates. The separate frontend capability-routing
+manifest remains operational and is updated through the reviewed
+`update:frontend-test-inventory` script; current commands and behavior stay
 authoritative here.
 
 ## Scripts
@@ -228,7 +229,7 @@ coverage when frontend tests fail, then exits non-zero if either side failed.
 Others, and SideBars UI test files, enforces line `8%`, statement `7%`, function
 `5%`, and branch `4%` thresholds, and emits `text` and `json-summary` reports
 under `coverage/ui-map`. Its denominator excludes the exact test-only UI hosts,
-stubs, and harnesses checked in the support manifest. `pnpm coverage:ui-map:html`
+stubs, and harnesses listed in `vitest.ui-coverage-tests.ts`. `pnpm coverage:ui-map:html`
 additionally emits HTML on demand. The repository ignores `coverage/`; keep all
 coverage reports local unless a plan slice explicitly asks for extracted
 results.

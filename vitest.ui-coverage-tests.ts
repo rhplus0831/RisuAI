@@ -11,8 +11,8 @@ export const uiCoverageTestFiles = [
 ] as const
 
 // Keep production-facing UI coverage denominators free of test-only hosts,
-// stubs, and harnesses. util/test-all.test.ts checks this exact list against the
-// shared-helper-harness group in the support-artifact manifest.
+// stubs, and harnesses. util/test-all.test.ts verifies that this reviewed list
+// stays unique and points to files that still exist.
 export const uiCoverageSupportFiles = [
   'src/lib/ChatScreens/Chat.parserDependenciesHarness.svelte',
   'src/lib/ChatScreens/DefaultChatScreen.shellGreetingStub.svelte',

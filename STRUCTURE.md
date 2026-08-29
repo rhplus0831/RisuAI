@@ -44,7 +44,7 @@ records past decisions and is not authoritative.
 | `STRUCTURE.md`, `docs/structure/`, `src/docs/` | Current architecture and implementation guides. Start at the [Architecture Index](docs/structure/README.md). |
 | `docs/plan/` | Active multi-phase workstreams, including live status, phase boundaries, and verification records. These plans do not supersede current runtime documentation until their phases land. |
 | `docs/tests/` | Test-discovery guides organized by product and domain area. |
-| `.archived-docs/` | Closed or retired workstreams and dated reports, including the test-suite effectiveness audit, Fast Bootstrap execution guide, August Fastify audits, upstream-sync sweep, data-driven UI inventory, and message-generation parity audit. Its test-audit manifests remain operational inputs to current inventory gates; narrative records are historical. |
+| `.archived-docs/` | Closed or retired workstreams and dated reports, including the test-suite effectiveness audit, Fast Bootstrap execution guide, August Fastify audits, upstream-sync sweep, data-driven UI inventory, and message-generation parity audit. The frontend capability-routing manifest remains an operational input; the other test-audit manifests and narrative records are historical. |
 | `test/compat-harness/` | Opt-in golden compatibility comparison against the pinned pre-Fastify worktree; it is not part of `pnpm test:all`. |
 | `public/` | Static application sources copied or served by Vite, including the service worker and vendor/tokenizer payloads. |
 | `resources/` | Retained packaging artwork; the current Vite/Fastify build does not consume it. |

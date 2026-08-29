@@ -4,6 +4,11 @@ Date: 2026-08-29
 
 Status: Complete; all 15 phases are closed and the intact workstream is archived.
 
+Retirement note: the case-count, effectiveness, and support inventory tooling
+was retired after closeout. Their JSON manifests remain frozen historical
+evidence. `frontend-routing-inventory.tsv` remains an operational capability
+routing input.
+
 This workstream audits the complete test system for effectiveness, not merely
 for presence or coverage percentage. It asks whether each test can catch a
 plausible defect, protect a user-visible behavior or durable contract, enforce a

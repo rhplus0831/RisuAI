@@ -38,9 +38,6 @@ const browserSmokePattern = /^server\/fastify\/browser-smoke\/.+\.spec\.ts$/
 const performanceTestFileSet = new Set<string>(performanceTestFiles)
 const rootRunnerFiles = new Set([
   '.archived-docs/performance-and-stability/test-suite-effectiveness-audit/frontend-routing-inventory.tsv',
-  '.archived-docs/performance-and-stability/test-suite-effectiveness-audit/case-counts.json',
-  '.archived-docs/performance-and-stability/test-suite-effectiveness-audit/inventory.json',
-  '.archived-docs/performance-and-stability/test-suite-effectiveness-audit/support-artifacts.json',
   'package.json',
   'pnpm-lock.yaml',
   'pnpm-workspace.yaml',
@@ -49,9 +46,6 @@ const rootRunnerFiles = new Set([
   'vitest.setup.ts',
   'vitest.setup.test.ts',
   'util/frontend-test-inventory.ts',
-  'util/test-case-counts.ts',
-  'util/test-effectiveness-inventory.ts',
-  'util/test-support-inventory.ts',
 ])
 const fullQualityRunnerFiles = new Set(['util/affected-tests.ts', 'util/test-all.ts', 'util/test-watch.ts'])
 
@@ -177,7 +171,7 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
     directGateTests.length > 0
 
   if (frontendRoutingRelevant) {
-    commands.push({ label: 'test inventory and routing', args: ['check:test-inventories'] })
+    commands.push({ label: 'frontend test routing', args: ['check:frontend-test-inventory'] })
   }
 
   if (protocolSourceChanged || deletedProtocolSource) {
