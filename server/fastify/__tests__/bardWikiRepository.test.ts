@@ -223,10 +223,19 @@ describe('BardWiki document persistence', () => {
       ) VALUES ('job-a', 'instance-a', 'chat-a', 'receipt-a', 'apply_turn', 'completed', '{}')`,
     ).run()
     db.prepare(
+      `INSERT INTO bardwiki_document_sources (
+        document_id, document_version, receipt_id, message_id, role, content_hash
+      ) VALUES (?, 1, 'receipt-a', 'assistant-a', 'assistant', 'hash-a')`,
+    ).run(document.id)
+    db.prepare(
       `INSERT INTO bardwiki_change_manifest (
         receipt_id, document_id, after_version, after_hash
       ) VALUES ('receipt-a', ?, 1, ?)`,
     ).run(document.id, document.contentHash)
+    db.prepare(
+      `INSERT INTO bardwiki_rebuild_staging (rebuild_job_id, ordinal, change_json)
+       VALUES ('job-a', 0, '{}')`,
+    ).run()
     db.prepare("DELETE FROM chats WHERE id = 'chat-a'").run()
 
     for (const table of [
@@ -235,6 +244,7 @@ describe('BardWiki document persistence', () => {
       'bardwiki_document_versions',
       'bardwiki_turn_receipts',
       'bardwiki_jobs',
+      'bardwiki_document_sources',
       'bardwiki_links',
       'bardwiki_change_manifest',
       'bardwiki_document_search',

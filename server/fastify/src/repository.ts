@@ -7,6 +7,7 @@ import {
   type ServerCharacterSummary,
 } from '../../../src/ts/server/characterSummaryProtocol.js'
 import { createInitialDatabase } from './databaseDefaults.js'
+import { rebuildAllBardWikiDerivedState } from './bardWikiRepository.js'
 import { repairStoredChatGenerationSettings } from './chatGenerationSettingsStorage.js'
 import { DEFAULT_AUTOMATIC_BACKUP_RETENTION } from './config.js'
 import { getSchemaState } from './db.js'
@@ -3008,7 +3009,18 @@ function saveDir(dataDir: string): string {
 //   - request_history: device-local diagnostic telemetry; restore clears it when
 //     rotating lineage.
 //   - schema_version: live schema metadata; only the snapshot revision is copied.
+//   - bardwiki_document_search: derived lexical projection rebuilt from restored
+//     authoritative documents before the restore transaction commits.
 export const SQLITE_BACKUP_TABLES = [
+  'bardwiki_rebuild_staging',
+  'bardwiki_change_manifest',
+  'bardwiki_document_sources',
+  'bardwiki_links',
+  'bardwiki_document_versions',
+  'bardwiki_jobs',
+  'bardwiki_turn_receipts',
+  'bardwiki_documents',
+  'bardwiki_chat_settings',
   'command_events',
   'generation_finalization_retries',
   'generation_operation_projection_state',
@@ -3043,6 +3055,7 @@ export const SQLITE_BACKUP_TABLES = [
 ] as const
 
 export const SQLITE_BACKUP_EXCLUDED_TABLES = {
+  bardwiki_document_search: 'Derived lexical projection rebuilt from authoritative BardWiki documents on restore.',
   push_subscriptions: 'Origin/device registrations bound to the live VAPID identity.',
   database_metadata: 'Live lineage and writer ownership; restore rotates lineage.',
   command_mutation_receipts: 'Lineage-scoped idempotency records; restore clears them.',
@@ -3758,6 +3771,7 @@ function restoreSqliteFromBackup(
       for (const table of SQLITE_BACKUP_TABLES) {
         db.exec(`DELETE FROM ${table}`)
       }
+      rebuildAllBardWikiDerivedState(db)
       db.exec('DELETE FROM request_history')
       databaseLineage = rotateDatabaseLineage(db)
       rewriteRestoredGenerationOperationLineage(db, databaseLineage)
@@ -3824,6 +3838,7 @@ function restoreSqliteFromBackup(
           }
         }
       }
+      rebuildAllBardWikiDerivedState(db)
       db.exec('DELETE FROM request_history')
       repairPersistedGlobalLorebookIdsInSqlite(db)
       databaseLineage = rotateDatabaseLineage(db)

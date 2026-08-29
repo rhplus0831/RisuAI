@@ -1,6 +1,6 @@
 # Phase 1: Persistence and Server Resources
 
-Status: in progress. Slices 1-3 are complete.
+Status: complete.
 
 Goal: establish authoritative BardWiki storage, narrow repositories, targeted
 reads, revisioned settings/document commands, and complete backup ownership
@@ -70,6 +70,28 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts \
 pnpm check:server
 # protocol, client-library, browser-smoke, and Fastify typechecks passed
 ```
+
+Slice 4 classified all nine authoritative/operational BardWiki tables as
+restore-owned and the lexical search table as explicitly derived. Restore now
+rebuilds search terms and link resolution from authoritative documents before
+commit. Coverage poisons the snapshot projections, deletes the live chat, then
+proves the restored settings, documents, versions, receipts, jobs, sources,
+links, manifests, staging rows, and rebuilt projections.
+
+Final Phase 1 validation on 2026-08-29:
+
+```text
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/bardWikiRepository.test.ts \
+  server/fastify/__tests__/backups.test.ts
+# 2 files, 63 tests passed
+
+pnpm check:server
+# protocol, client-library, browser-smoke, and Fastify typechecks passed
+```
+
+All exit criteria are satisfied. Phase 2 owns global settings UI and the
+chat-scoped manual workspace; no prompt or autonomous behavior changed here.
 
 ## Depends On
 

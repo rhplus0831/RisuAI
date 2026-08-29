@@ -926,6 +926,15 @@ export function rebuildBardWikiSearchForChat(db: DatabaseSync, chatId: string): 
   resolveBardWikiLinksForChat(db, chatId)
 }
 
+/** Recreate every derived BardWiki projection after a database replacement. */
+export function rebuildAllBardWikiDerivedState(db: DatabaseSync): void {
+  db.exec('DELETE FROM bardwiki_document_search')
+  const chats = db.prepare('SELECT DISTINCT chat_id FROM bardwiki_documents ORDER BY chat_id').all() as Array<{
+    chat_id: string
+  }>
+  for (const { chat_id: chatId } of chats) rebuildBardWikiSearchForChat(db, chatId)
+}
+
 export function resolveBardWikiLinksForChat(db: DatabaseSync, chatId: string): void {
   const documents = listBardWikiDocuments(db, chatId)
   const targets = new Map<string, string | null>()
@@ -941,10 +950,16 @@ export function resolveBardWikiLinksForChat(db: DatabaseSync, chatId: string): v
   const update = db.prepare(
     'UPDATE bardwiki_links SET resolved_document_id = ? WHERE source_document_id = ? AND source_version = ? AND ordinal = ?',
   )
-  for (const document of documents) {
-    for (const link of listBardWikiLinks(db, document.id, document.version)) {
-      update.run(targets.get(link.normalizedTarget) ?? null, document.id, document.version, link.ordinal)
-    }
+  const links = db
+    .prepare(
+      `SELECT links.* FROM bardwiki_links AS links
+       JOIN bardwiki_documents AS documents ON documents.id = links.source_document_id
+       WHERE documents.chat_id = ?
+       ORDER BY links.source_document_id, links.source_version, links.ordinal`,
+    )
+    .all(chatId) as unknown as BardWikiLinkRow[]
+  for (const link of links.map(mapLinkRow)) {
+    update.run(targets.get(link.normalizedTarget) ?? null, link.sourceDocumentId, link.sourceVersion, link.ordinal)
   }
 }
 

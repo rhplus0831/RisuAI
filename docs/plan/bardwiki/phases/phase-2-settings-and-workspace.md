@@ -1,6 +1,6 @@
 # Phase 2: Settings and Manual Workspace
 
-Status: pending.
+Status: in progress.
 
 Goal: make BardWiki manually usable through global settings and a chat-scoped
 document workspace while autonomous model updates remain disabled.
