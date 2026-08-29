@@ -7,6 +7,12 @@ supported toolchain is Node.js 24 or newer with pnpm. Choose the guide for your
 task below; each guide is self-contained. [Archived documentation](.archived-docs/README.md)
 records past decisions and is not authoritative.
 
+Upstream synchronization uses
+`f3f0242fba297d82e0efcc2c31ca1428569b70f2` as the behavioral sync cursor:
+upstream changes through that commit were dispositioned and, where applicable,
+ported into this fork's architecture. It is not the Git fork point or a
+source-equivalent ancestor; compatibility work remains pinned to `71c476e9c`.
+
 ## Choose By Task
 
 | Task area | Read next |
