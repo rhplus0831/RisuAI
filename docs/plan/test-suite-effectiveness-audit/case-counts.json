@@ -23,7 +23,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/agentDataSandbox.test.ts": {
-      "cases": 12,
+      "cases": 16,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -58,7 +58,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/auth.test.ts": {
-      "cases": 8,
+      "cases": 10,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -153,7 +153,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/config.test.ts": {
-      "cases": 19,
+      "cases": 21,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -218,7 +218,7 @@
       "parameterizedRows": 32
     },
     "server/fastify/__tests__/generation.completion.test.ts": {
-      "cases": 93,
+      "cases": 95,
       "skipped": 0,
       "parameterizedRows": 7
     },
@@ -588,9 +588,9 @@
       "parameterizedRows": 14
     },
     "server/fastify/__tests__/realmImport.test.ts": {
-      "cases": 30,
-      "skipped": 1,
-      "parameterizedRows": 1
+      "cases": 29,
+      "skipped": 0,
+      "parameterizedRows": 0
     },
     "server/fastify/__tests__/repositoryWriterKit.test.ts": {
       "cases": 11,
@@ -638,12 +638,12 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/risuSaveBundleImportRoute.test.ts": {
-      "cases": 29,
+      "cases": 30,
       "skipped": 0,
       "parameterizedRows": 5
     },
     "server/fastify/__tests__/risuSaveCodec.test.ts": {
-      "cases": 39,
+      "cases": 40,
       "skipped": 0,
       "parameterizedRows": 8
     },
@@ -658,7 +658,7 @@
       "parameterizedRows": 11
     },
     "server/fastify/__tests__/routeProtection.test.ts": {
-      "cases": 14,
+      "cases": 16,
       "skipped": 0,
       "parameterizedRows": 0
     },
@@ -728,7 +728,7 @@
       "parameterizedRows": 0
     },
     "server/fastify/__tests__/streamJobs.test.ts": {
-      "cases": 65,
+      "cases": 70,
       "skipped": 0,
       "parameterizedRows": 28
     },
@@ -1883,7 +1883,7 @@
       "parameterizedRows": 0
     },
     "src/ts/globalApi.proxy.test.ts": {
-      "cases": 18,
+      "cases": 21,
       "skipped": 0,
       "parameterizedRows": 7
     },
@@ -2098,9 +2098,9 @@
       "parameterizedRows": 0
     },
     "src/ts/network/proxyJobWs.test.ts": {
-      "cases": 7,
+      "cases": 15,
       "skipped": 0,
-      "parameterizedRows": 0
+      "parameterizedRows": 7
     },
     "src/ts/nonSecurityUuid.test.ts": {
       "cases": 3,

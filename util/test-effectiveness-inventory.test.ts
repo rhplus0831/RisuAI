@@ -97,6 +97,7 @@ describe('test effectiveness inventory', () => {
       ['src/ts/process/mcp/mcp.test.ts', 'J'],
       ['server/fastify/__tests__/realmImport.test.ts', 'K'],
       ['server/fastify/__tests__/localBackupDatabase.test.ts', 'K'],
+      ['server/fastify/__tests__/echo.test.ts', 'G'],
       ['server/fastify/__tests__/auth.test.ts', 'L'],
     ])
 

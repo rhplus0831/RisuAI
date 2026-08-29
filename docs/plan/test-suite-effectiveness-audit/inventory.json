@@ -43,6 +43,14 @@
       ]
     },
     {
+      "id": "reviewed-runtime-adjacent-generation-boundaries",
+      "category": "G",
+      "description": "First matching rule wins. Reviewed runtime-shaped owners whose dominant contract is provider and generation compatibility behavior.",
+      "pathPatterns": [
+        "/^server\\/fastify\\/__tests__\\/echo\\.test\\.ts$/"
+      ]
+    },
+    {
       "id": "api-security-runtime",
       "category": "L",
       "description": "First matching rule wins. Authentication, authorization, egress and body limits, tracing, startup/shutdown, service workers, and platform routes.",
@@ -576,28 +584,29 @@
         "database"
       ],
       "caseCounts": {
-        "cases": 12,
+        "cases": 16,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (16 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "disposable agent-data sandbox isolation and failure-safe replacement",
+        "plausibleDefect": "Canonical path or symlink mistakes can overwrite or expose the live user database during agent startup.",
+        "risk": "Critical local data-loss and credential-exposure risk.",
+        "companionEvidence": "Real SQLite, WAL, filesystem, symlink, and rollback cases complement startup/config guards.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner exercises the authoritative filesystem boundary with real files and distinct failure modes.",
+        "findingId": "TSA-P12-002",
+        "severity": "Critical",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -876,28 +885,29 @@
         "globals"
       ],
       "caseCounts": {
-        "cases": 8,
+        "cases": 10,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (10 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "authentication, reviewed route exceptions, loopback-only development bypass, and runtime configuration",
+        "plausibleDefect": "Malformed credentials, an unreviewed public route, or a widened bypass bind can expose protected APIs before domain work.",
+        "risk": "Critical authentication and authorization bypass risk.",
+        "companionEvidence": "Helper-level crypto/session checks, live Fastify route sweeps, exact exception allowlists, and setup/login smoke fail for different defects.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner supplies distinct denial, no-side-effect, configuration, or end-to-end auth evidence.",
+        "findingId": "TSA-P12-001",
+        "severity": "Critical",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -1717,28 +1727,29 @@
         "database"
       ],
       "caseCounts": {
-        "cases": 19,
+        "cases": 21,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (21 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "authentication, reviewed route exceptions, loopback-only development bypass, and runtime configuration",
+        "plausibleDefect": "Malformed credentials, an unreviewed public route, or a widened bypass bind can expose protected APIs before domain work.",
+        "risk": "Critical authentication and authorization bypass risk.",
+        "companionEvidence": "Helper-level crypto/session checks, live Fastify route sweeps, exact exception allowlists, and setup/login smoke fail for different defects.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner supplies distinct denial, no-side-effect, configuration, or end-to-end auth evidence.",
+        "findingId": "TSA-P12-001",
+        "severity": "Critical",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -2047,9 +2058,11 @@
       "specializedOwnership": [
         "server"
       ],
-      "primaryCategory": "L",
-      "categoryRule": "api-security-runtime",
-      "seamTags": [],
+      "primaryCategory": "G",
+      "categoryRule": "reviewed-runtime-adjacent-generation-boundaries",
+      "seamTags": [
+        "category-L"
+      ],
       "kind": "pure unit",
       "dependencySignals": [
         "timers"
@@ -2061,22 +2074,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (8 cases)",
         "valueClasses": [
-          "pending"
+          "compatibility",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "legacy echo completion compatibility at the generation/provider boundary",
+        "plausibleDefect": "Runtime-shaped naming can hide that the owner primarily protects generation response and stream compatibility.",
+        "risk": "Medium audit blind spot and misleading overlap analysis.",
+        "companionEvidence": "Provider/generation suites own dispatch semantics while the Fastify route supplies the compatibility boundary.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "The complete owner protects echo completion compatibility, not general platform runtime behavior.",
+        "findingId": "TSA-P12-009",
+        "severity": "Medium",
+        "action": "Route the owner from L to G and preserve its compatibility cases unchanged.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-reclassified"
       }
     },
     {
@@ -2287,7 +2301,7 @@
         "globals"
       ],
       "caseCounts": {
-        "cases": 93,
+        "cases": 95,
         "skipped": 0,
         "parameterizedRows": 7,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
@@ -2378,22 +2392,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (6 cases)",
         "valueClasses": [
-          "pending"
+          "performance and capacity",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "request, decompression, completion-output, stream lifetime, and durable snapshot budgets",
+        "plausibleDefect": "Accepted input or provider output can accumulate without a byte, time, or backpressure ceiling.",
+        "risk": "High process-memory, disk, socket, and availability risk.",
+        "companionEvidence": "Boundary unit tests, Fastify route caps, abort helpers, and stream-job lifecycle tests prove different budget stages.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner enforces an explicit measurable budget at its authoritative transport or storage layer.",
+        "findingId": "TSA-P12-004",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -2634,22 +2649,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (1 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "diagnostic oracle"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "bounded, redacted request traces, generation sidecars, and startup telemetry",
+        "plausibleDefect": "Diagnostics can retain credentials or content, grow without cleanup, or misreport browser startup state.",
+        "risk": "High secret-exposure and operational-diagnosis risk.",
+        "companionEvidence": "Schema/unit checks, browser queues, Fastify ingestion, disk sidecars, and retention tests cover distinct leak paths.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner proves a distinct redaction, omission, bounded-retention, or telemetry-delivery contract.",
+        "findingId": "TSA-P12-005",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -2793,22 +2809,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (2 cases)",
         "valueClasses": [
-          "pending"
+          "architecture policy",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Fastify composition, static/runtime surfaces, shutdown, and browser platform fallbacks",
+        "plausibleDefect": "Platform composition can serve the wrong surface, leak a timer/process, or lose required compatibility fallbacks.",
+        "risk": "High deployment, lifecycle, and compatibility risk.",
+        "companionEvidence": "Focused utility tests, real Fastify composition, process-signal tests, and built-browser smoke fail at different boundaries.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner protects a distinct startup, static-serving, shutdown, browser-surface, or compatibility contract.",
+        "findingId": "TSA-P12-006",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -2924,22 +2941,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "architecture policy",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Fastify composition, static/runtime surfaces, shutdown, and browser platform fallbacks",
+        "plausibleDefect": "Platform composition can serve the wrong surface, leak a timer/process, or lose required compatibility fallbacks.",
+        "risk": "High deployment, lifecycle, and compatibility risk.",
+        "companionEvidence": "Focused utility tests, real Fastify composition, process-signal tests, and built-browser smoke fail at different boundaries.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner protects a distinct startup, static-serving, shutdown, browser-surface, or compatibility contract.",
+        "findingId": "TSA-P12-006",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -4766,22 +4784,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (2 cases)",
         "valueClasses": [
-          "pending"
+          "performance and capacity",
+          "security and safety"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "request, decompression, completion-output, stream lifetime, and durable snapshot budgets",
+        "plausibleDefect": "Accepted input or provider output can accumulate without a byte, time, or backpressure ceiling.",
+        "risk": "High process-memory, disk, socket, and availability risk.",
+        "companionEvidence": "Boundary unit tests, Fastify route caps, abort helpers, and stream-job lifecycle tests prove different budget stages.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner enforces an explicit measurable budget at its authoritative transport or storage layer.",
+        "findingId": "TSA-P12-004",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -5253,22 +5272,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (32 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "generic and local proxy egress policy, DNS/redirect pinning, client cancellation, and WebSocket frame validation",
+        "plausibleDefect": "A classifier, redirect, DNS answer, malformed frame, or abandoned consumer can cross a network boundary or leak a live job.",
+        "risk": "High SSRF, request-confusion, and resource-leak risk.",
+        "companionEvidence": "Client classifiers/parsers, Fastify inject tests, pinned-address upstreams, and live stream lifecycle cases cover independent layers.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner protects a distinct browser, protocol, DNS, redirect, or upstream-execution failure mode.",
+        "findingId": "TSA-P12-003",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -5298,22 +5318,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (7 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Web Push subscription, retry, service-worker, notification, and teardown lifecycle",
+        "plausibleDefect": "A stale subscription, lost retry, unsafe payload, or incomplete teardown can leak work or silently lose notifications.",
+        "risk": "High lifecycle and user-notification reliability risk.",
+        "companionEvidence": "Server send/prune cases, browser persistence, service-worker messaging, and process teardown own separate transitions.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner protects a distinct durable, browser, server, or teardown portion of the notification lifecycle.",
+        "findingId": "TSA-P12-007",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -5381,9 +5402,9 @@
         "globals"
       ],
       "caseCounts": {
-        "cases": 30,
-        "skipped": 1,
-        "parameterizedRows": 1,
+        "cases": 29,
+        "skipped": 0,
+        "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
@@ -5601,22 +5622,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (12 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "diagnostic oracle"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "bounded, redacted request traces, generation sidecars, and startup telemetry",
+        "plausibleDefect": "Diagnostics can retain credentials or content, grow without cleanup, or misreport browser startup state.",
+        "risk": "High secret-exposure and operational-diagnosis risk.",
+        "companionEvidence": "Schema/unit checks, browser queues, Fastify ingestion, disk sidecars, and retention tests cover distinct leak paths.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner proves a distinct redaction, omission, bounded-retention, or telemetry-delivery contract.",
+        "findingId": "TSA-P12-005",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -5812,7 +5834,7 @@
         "globals"
       ],
       "caseCounts": {
-        "cases": 29,
+        "cases": 30,
         "skipped": 0,
         "parameterizedRows": 5,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
@@ -5854,7 +5876,7 @@
         "database"
       ],
       "caseCounts": {
-        "cases": 39,
+        "cases": 40,
         "skipped": 0,
         "parameterizedRows": 8,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
@@ -5994,28 +6016,29 @@
         "browser"
       ],
       "caseCounts": {
-        "cases": 14,
+        "cases": 16,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (16 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "authentication, reviewed route exceptions, loopback-only development bypass, and runtime configuration",
+        "plausibleDefect": "Malformed credentials, an unreviewed public route, or a widened bypass bind can expose protected APIs before domain work.",
+        "risk": "Critical authentication and authorization bypass risk.",
+        "companionEvidence": "Helper-level crypto/session checks, live Fastify route sweeps, exact exception allowlists, and setup/login smoke fail for different defects.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner supplies distinct denial, no-side-effect, configuration, or end-to-end auth evidence.",
+        "findingId": "TSA-P12-001",
+        "severity": "Critical",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -6291,22 +6314,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "authentication, reviewed route exceptions, loopback-only development bypass, and runtime configuration",
+        "plausibleDefect": "Malformed credentials, an unreviewed public route, or a widened bypass bind can expose protected APIs before domain work.",
+        "risk": "Critical authentication and authorization bypass risk.",
+        "companionEvidence": "Helper-level crypto/session checks, live Fastify route sweeps, exact exception allowlists, and setup/login smoke fail for different defects.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner supplies distinct denial, no-side-effect, configuration, or end-to-end auth evidence.",
+        "findingId": "TSA-P12-001",
+        "severity": "Critical",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -6422,22 +6446,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "diagnostic oracle"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "bounded, redacted request traces, generation sidecars, and startup telemetry",
+        "plausibleDefect": "Diagnostics can retain credentials or content, grow without cleanup, or misreport browser startup state.",
+        "risk": "High secret-exposure and operational-diagnosis risk.",
+        "companionEvidence": "Schema/unit checks, browser queues, Fastify ingestion, disk sidecars, and retention tests cover distinct leak paths.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner proves a distinct redaction, omission, bounded-retention, or telemetry-delivery contract.",
+        "findingId": "TSA-P12-005",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -6464,22 +6489,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (12 cases)",
         "valueClasses": [
-          "pending"
+          "architecture policy",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Fastify composition, static/runtime surfaces, shutdown, and browser platform fallbacks",
+        "plausibleDefect": "Platform composition can serve the wrong surface, leak a timer/process, or lose required compatibility fallbacks.",
+        "risk": "High deployment, lifecycle, and compatibility risk.",
+        "companionEvidence": "Focused utility tests, real Fastify composition, process-signal tests, and built-browser smoke fail at different boundaries.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner protects a distinct startup, static-serving, shutdown, browser-surface, or compatibility contract.",
+        "findingId": "TSA-P12-006",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -6581,7 +6607,7 @@
         "browser"
       ],
       "caseCounts": {
-        "cases": 65,
+        "cases": 70,
         "skipped": 0,
         "parameterizedRows": 28,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
@@ -16242,22 +16268,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (1 cases)",
         "valueClasses": [
-          "pending"
+          "architecture policy",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Fastify composition, static/runtime surfaces, shutdown, and browser platform fallbacks",
+        "plausibleDefect": "Platform composition can serve the wrong surface, leak a timer/process, or lose required compatibility fallbacks.",
+        "risk": "High deployment, lifecycle, and compatibility risk.",
+        "companionEvidence": "Focused utility tests, real Fastify composition, process-signal tests, and built-browser smoke fail at different boundaries.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner protects a distinct startup, static-serving, shutdown, browser-surface, or compatibility contract.",
+        "findingId": "TSA-P12-006",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -17171,22 +17198,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (7 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "generic and local proxy egress policy, DNS/redirect pinning, client cancellation, and WebSocket frame validation",
+        "plausibleDefect": "A classifier, redirect, DNS answer, malformed frame, or abandoned consumer can cross a network boundary or leak a live job.",
+        "risk": "High SSRF, request-confusion, and resource-leak risk.",
+        "companionEvidence": "Client classifiers/parsers, Fastify inject tests, pinned-address upstreams, and live stream lifecycle cases cover independent layers.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner protects a distinct browser, protocol, DNS, redirect, or upstream-execution failure mode.",
+        "findingId": "TSA-P12-003",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -17258,28 +17286,29 @@
         "globals"
       ],
       "caseCounts": {
-        "cases": 18,
+        "cases": 21,
         "skipped": 0,
         "parameterizedRows": 7,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (21 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "generic and local proxy egress policy, DNS/redirect pinning, client cancellation, and WebSocket frame validation",
+        "plausibleDefect": "A classifier, redirect, DNS answer, malformed frame, or abandoned consumer can cross a network boundary or leak a live job.",
+        "risk": "High SSRF, request-confusion, and resource-leak risk.",
+        "companionEvidence": "Client classifiers/parsers, Fastify inject tests, pinned-address upstreams, and live stream lifecycle cases cover independent layers.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner protects a distinct browser, protocol, DNS, redirect, or upstream-execution failure mode.",
+        "findingId": "TSA-P12-003",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -19147,22 +19176,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (7 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "generic and local proxy egress policy, DNS/redirect pinning, client cancellation, and WebSocket frame validation",
+        "plausibleDefect": "A classifier, redirect, DNS answer, malformed frame, or abandoned consumer can cross a network boundary or leak a live job.",
+        "risk": "High SSRF, request-confusion, and resource-leak risk.",
+        "companionEvidence": "Client classifiers/parsers, Fastify inject tests, pinned-address upstreams, and live stream lifecycle cases cover independent layers.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner protects a distinct browser, protocol, DNS, redirect, or upstream-execution failure mode.",
+        "findingId": "TSA-P12-003",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -19181,28 +19211,29 @@
       "kind": "pure unit",
       "dependencySignals": [],
       "caseCounts": {
-        "cases": 7,
+        "cases": 15,
         "skipped": 0,
-        "parameterizedRows": 0,
+        "parameterizedRows": 7,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (15 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "generic and local proxy egress policy, DNS/redirect pinning, client cancellation, and WebSocket frame validation",
+        "plausibleDefect": "A classifier, redirect, DNS answer, malformed frame, or abandoned consumer can cross a network boundary or leak a live job.",
+        "risk": "High SSRF, request-confusion, and resource-leak risk.",
+        "companionEvidence": "Client classifiers/parsers, Fastify inject tests, pinned-address upstreams, and live stream lifecycle cases cover independent layers.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner protects a distinct browser, protocol, DNS, redirect, or upstream-execution failure mode.",
+        "findingId": "TSA-P12-003",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -19230,22 +19261,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "architecture policy",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Fastify composition, static/runtime surfaces, shutdown, and browser platform fallbacks",
+        "plausibleDefect": "Platform composition can serve the wrong surface, leak a timer/process, or lose required compatibility fallbacks.",
+        "risk": "High deployment, lifecycle, and compatibility risk.",
+        "companionEvidence": "Focused utility tests, real Fastify composition, process-signal tests, and built-browser smoke fail at different boundaries.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner protects a distinct startup, static-serving, shutdown, browser-surface, or compatibility contract.",
+        "findingId": "TSA-P12-006",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -20741,22 +20773,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "architecture policy",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Fastify composition, static/runtime surfaces, shutdown, and browser platform fallbacks",
+        "plausibleDefect": "Platform composition can serve the wrong surface, leak a timer/process, or lose required compatibility fallbacks.",
+        "risk": "High deployment, lifecycle, and compatibility risk.",
+        "companionEvidence": "Focused utility tests, real Fastify composition, process-signal tests, and built-browser smoke fail at different boundaries.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner protects a distinct startup, static-serving, shutdown, browser-surface, or compatibility contract.",
+        "findingId": "TSA-P12-006",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -21757,22 +21790,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (8 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Web Push subscription, retry, service-worker, notification, and teardown lifecycle",
+        "plausibleDefect": "A stale subscription, lost retry, unsafe payload, or incomplete teardown can leak work or silently lose notifications.",
+        "risk": "High lifecycle and user-notification reliability risk.",
+        "companionEvidence": "Server send/prune cases, browser persistence, service-worker messaging, and process teardown own separate transitions.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner protects a distinct durable, browser, server, or teardown portion of the notification lifecycle.",
+        "findingId": "TSA-P12-007",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -23275,22 +23309,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (2 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Web Push subscription, retry, service-worker, notification, and teardown lifecycle",
+        "plausibleDefect": "A stale subscription, lost retry, unsafe payload, or incomplete teardown can leak work or silently lose notifications.",
+        "risk": "High lifecycle and user-notification reliability risk.",
+        "companionEvidence": "Server send/prune cases, browser persistence, service-worker messaging, and process teardown own separate transitions.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner protects a distinct durable, browser, server, or teardown portion of the notification lifecycle.",
+        "findingId": "TSA-P12-007",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -28838,22 +28873,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Web Push subscription, retry, service-worker, notification, and teardown lifecycle",
+        "plausibleDefect": "A stale subscription, lost retry, unsafe payload, or incomplete teardown can leak work or silently lose notifications.",
+        "risk": "High lifecycle and user-notification reliability risk.",
+        "companionEvidence": "Server send/prune cases, browser persistence, service-worker messaging, and process teardown own separate transitions.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner protects a distinct durable, browser, server, or teardown portion of the notification lifecycle.",
+        "findingId": "TSA-P12-007",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -28880,22 +28916,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (27 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Web Push subscription, retry, service-worker, notification, and teardown lifecycle",
+        "plausibleDefect": "A stale subscription, lost retry, unsafe payload, or incomplete teardown can leak work or silently lose notifications.",
+        "risk": "High lifecycle and user-notification reliability risk.",
+        "companionEvidence": "Server send/prune cases, browser persistence, service-worker messaging, and process teardown own separate transitions.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner protects a distinct durable, browser, server, or teardown portion of the notification lifecycle.",
+        "findingId": "TSA-P12-007",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -28926,22 +28963,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (26 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Web Push subscription, retry, service-worker, notification, and teardown lifecycle",
+        "plausibleDefect": "A stale subscription, lost retry, unsafe payload, or incomplete teardown can leak work or silently lose notifications.",
+        "risk": "High lifecycle and user-notification reliability risk.",
+        "companionEvidence": "Server send/prune cases, browser persistence, service-worker messaging, and process teardown own separate transitions.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner protects a distinct durable, browser, server, or teardown portion of the notification lifecycle.",
+        "findingId": "TSA-P12-007",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -29606,22 +29644,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (6 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Web Push subscription, retry, service-worker, notification, and teardown lifecycle",
+        "plausibleDefect": "A stale subscription, lost retry, unsafe payload, or incomplete teardown can leak work or silently lose notifications.",
+        "risk": "High lifecycle and user-notification reliability risk.",
+        "companionEvidence": "Server send/prune cases, browser persistence, service-worker messaging, and process teardown own separate transitions.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner protects a distinct durable, browser, server, or teardown portion of the notification lifecycle.",
+        "findingId": "TSA-P12-007",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -29997,22 +30036,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (5 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "diagnostic oracle"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "bounded, redacted request traces, generation sidecars, and startup telemetry",
+        "plausibleDefect": "Diagnostics can retain credentials or content, grow without cleanup, or misreport browser startup state.",
+        "risk": "High secret-exposure and operational-diagnosis risk.",
+        "companionEvidence": "Schema/unit checks, browser queues, Fastify ingestion, disk sidecars, and retention tests cover distinct leak paths.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner proves a distinct redaction, omission, bounded-retention, or telemetry-delivery contract.",
+        "findingId": "TSA-P12-005",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -30037,22 +30077,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "security and safety",
+          "diagnostic oracle"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "bounded, redacted request traces, generation sidecars, and startup telemetry",
+        "plausibleDefect": "Diagnostics can retain credentials or content, grow without cleanup, or misreport browser startup state.",
+        "risk": "High secret-exposure and operational-diagnosis risk.",
+        "companionEvidence": "Schema/unit checks, browser queues, Fastify ingestion, disk sidecars, and retention tests cover distinct leak paths.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner proves a distinct redaction, omission, bounded-retention, or telemetry-delivery contract.",
+        "findingId": "TSA-P12-005",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {
@@ -30351,22 +30392,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "architecture policy",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Fastify composition, static/runtime surfaces, shutdown, and browser platform fallbacks",
+        "plausibleDefect": "Platform composition can serve the wrong surface, leak a timer/process, or lose required compatibility fallbacks.",
+        "risk": "High deployment, lifecycle, and compatibility risk.",
+        "companionEvidence": "Focused utility tests, real Fastify composition, process-signal tests, and built-browser smoke fail at different boundaries.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "The owner protects a distinct startup, static-serving, shutdown, browser-surface, or compatibility contract.",
+        "findingId": "TSA-P12-006",
+        "severity": "High",
+        "action": "Retain the complete owner and land the Phase 12 hardening or oracle improvements where its review found a material gap.",
+        "validation": "Exact Phase 12 slices, focused remediation suites, complete lanes, typechecks, smoke, and checked manifests provide the final evidence set.",
+        "state": "phase12-kept"
       }
     },
     {

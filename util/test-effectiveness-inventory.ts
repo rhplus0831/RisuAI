@@ -201,6 +201,13 @@ export const categoryRules: readonly CategoryRule[] = [
     ],
   },
   {
+    id: 'reviewed-runtime-adjacent-generation-boundaries',
+    category: 'G',
+    description:
+      'Reviewed runtime-shaped owners whose dominant contract is provider and generation compatibility behavior.',
+    patterns: [/^server\/fastify\/__tests__\/echo\.test\.ts$/],
+  },
+  {
     id: 'api-security-runtime',
     category: 'L',
     description:
