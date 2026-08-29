@@ -1,12 +1,57 @@
 # Phase 14: Verification And Closeout
 
-Status: In progress; Phases 0-13 are complete.
+Status: Complete; all phases and the archive handoff are closed.
 
 ## Objective
 
 Prove that the final test system provides stronger, explicitly justified
 regression protection; explain every count and ownership change; close current
 documentation; and archive the intact workstream.
+
+## Closeout Result
+
+- Independent filesystem, Vitest, Playwright, support, and effectiveness
+  discovery agree on 700 live owners: 538 frontend (194 N / 17 S / 327 D), 155
+  Fastify, and seven built-browser specs.
+- The checked case inventory contains 10,212 cases, one intentional direct-only
+  Realm skip, and 1,332 parameterized rows. All owners have one A-L category
+  and a final disposition: 617 Keep / 83 Reclassify / zero Pending.
+- The 698-file planning anchor moved to 700 through the Phase 0 inventory owner
+  plus three recorded additions and two proof-backed removals. No Merge was
+  approved; the apparent duplicate pairs retained distinct failure layers.
+- Support remains 252 standalone artifacts and 64 mixed production seams. No
+  fixture, helper, golden, snapshot, or dense-suite split met the removal or
+  consolidation proof.
+- Current documentation reflects the landed contracts. The intact narrative
+  and its still-operational manifests are archived at
+  `.archived-docs/performance-and-stability/test-suite-effectiveness-audit/`.
+
+## Stability And Coverage Evidence
+
+- Twelve changed shared-harness/Fastify owners passed 611/611 under shuffled
+  order (`--sequence.seed=130829`), one worker, and no file parallelism.
+- The owning browser spec passed 12/12 with `--repeat-each=2 --workers=1`,
+  executing the complete visible backup-restore/resync/reload journey twice.
+- Broad frontend coverage passed 6,777/6,777 at 71.20% lines, 68.05%
+  statements, 65.80% functions, and 61.21% branches, up from Phase 0's
+  70.56% / 67.48% / 65.23% / 60.75% report-only baseline.
+- Broad backend coverage passed 3,398 cases plus the intentional skip at 87.67%
+  lines, 85.21% statements, 93.19% functions, and 74.94% branches, up from
+  87.55% / 85.13% / 92.95% / 74.89%.
+- Current-only compatibility passed 18/18. Full historical comparison remains
+  blocked only by the absent exact pinned baseline; no substitute or golden
+  refresh was used.
+
+## Accepted Residual Verdict
+
+`TSA-P13-008` is the final supported-claim boundary. Deterministic provider,
+media, Push, MCP, browser, memory/script, import/export, and compatibility
+owners remain valuable, but they do not claim sanitized external-service
+conformance, Firefox/WebKit or browser fault injection, a streaming legacy
+export architecture, or historical equivalence without the pinned baseline.
+The owner, reason, and revisit conditions are recorded in `../status.md` and
+the finding ledger. No correctness, security, or data-loss blocker remains
+within the repository-controlled scope.
 
 ## Final Inventory And Effectiveness Proof
 
@@ -84,3 +129,12 @@ documentation; and archive the intact workstream.
 - `pnpm format:check`
 - `pnpm test:all`
 - `git diff --check`
+
+All required lanes passed. The final post-archive `pnpm test:all` completed in
+3m 42.7s: inventory/routing 7.3s; server/browser typecheck 18.2s; partitioned
+frontend 6,565/6,565 in 1m 20.0s; Fastify 3,398 plus one intentional skip in
+19.2s; direct Realm 1/1 in 2.9s; Chromium 36/36 in 1m 21.2s; zero-diagnostic
+frontend check in 31.1s; UI coverage 206/206 at 14.43% lines, 14.83%
+statements, 18.12% functions, and 9.45% branches in 20.0s; format in 31.1s;
+and performance 6/6 in 12.1s. The ordinary/UI/performance partition accounts
+for all 6,777 frontend cases exactly once.

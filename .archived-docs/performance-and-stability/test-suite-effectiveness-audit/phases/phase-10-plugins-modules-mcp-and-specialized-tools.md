@@ -24,8 +24,8 @@ boundaries without relying on permissive mocks or obsolete developer surfaces.
 
 Primary discovery guides:
 
-- [`plugins-modules-and-mcp.md`](../../../tests/plugins-modules-and-mcp.md)
-- [`playground-and-specialized-tools.md`](../../../tests/playground-and-specialized-tools.md)
+- [`plugins-modules-and-mcp.md`](../../../../docs/tests/plugins-modules-and-mcp.md)
+- [`playground-and-specialized-tools.md`](../../../../docs/tests/playground-and-specialized-tools.md)
 
 ## Audit Questions
 

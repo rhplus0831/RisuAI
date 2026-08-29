@@ -37,10 +37,10 @@ const frontendTestPattern = /(?:^|\/).+\.test\.[cm]?[jt]sx?$/
 const browserSmokePattern = /^server\/fastify\/browser-smoke\/.+\.spec\.ts$/
 const performanceTestFileSet = new Set<string>(performanceTestFiles)
 const rootRunnerFiles = new Set([
-  'docs/plan/test-suite-effectiveness-audit/frontend-routing-inventory.tsv',
-  'docs/plan/test-suite-effectiveness-audit/case-counts.json',
-  'docs/plan/test-suite-effectiveness-audit/inventory.json',
-  'docs/plan/test-suite-effectiveness-audit/support-artifacts.json',
+  '.archived-docs/performance-and-stability/test-suite-effectiveness-audit/frontend-routing-inventory.tsv',
+  '.archived-docs/performance-and-stability/test-suite-effectiveness-audit/case-counts.json',
+  '.archived-docs/performance-and-stability/test-suite-effectiveness-audit/inventory.json',
+  '.archived-docs/performance-and-stability/test-suite-effectiveness-audit/support-artifacts.json',
   'package.json',
   'pnpm-lock.yaml',
   'pnpm-workspace.yaml',

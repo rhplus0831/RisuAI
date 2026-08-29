@@ -23,8 +23,8 @@ secret loss, and overbroad rollback.
 
 Primary discovery guides:
 
-- [`persistence-commands-and-events.md`](../../../tests/persistence-commands-and-events.md)
-- [`domain-mutations-and-editing-bridges.md`](../../../tests/domain-mutations-and-editing-bridges.md)
+- [`persistence-commands-and-events.md`](../../../../docs/tests/persistence-commands-and-events.md)
+- [`domain-mutations-and-editing-bridges.md`](../../../../docs/tests/domain-mutations-and-editing-bridges.md)
 
 ## Audit Questions
 

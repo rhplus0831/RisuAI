@@ -129,7 +129,10 @@ describe('test:all orchestration', () => {
 
   it('excludes every checked UI test harness from coverage denominators', () => {
     const support = JSON.parse(
-      readFileSync('docs/plan/test-suite-effectiveness-audit/support-artifacts.json', 'utf8'),
+      readFileSync(
+        '.archived-docs/performance-and-stability/test-suite-effectiveness-audit/support-artifacts.json',
+        'utf8',
+      ),
     ) as { groups: Array<{ role: string; files: string[] }> }
     const uiRoots = /^(?:src\/lib\/(?:ChatScreens|Others|SideBars)|src\/ts\/server)\//
     const expected = support.groups

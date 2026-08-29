@@ -377,11 +377,11 @@ describe('test effectiveness inventory', () => {
     const root = temporaryGitRepository({
       ...Object.fromEntries(
         [
-          'docs/plan/test-suite-effectiveness-audit/frontend-routing-inventory.tsv',
+          '.archived-docs/performance-and-stability/test-suite-effectiveness-audit/frontend-routing-inventory.tsv',
           '.github/workflows/quality.yml',
-          'docs/plan/test-suite-effectiveness-audit/inventory.json',
-          'docs/plan/test-suite-effectiveness-audit/case-counts.json',
-          'docs/plan/test-suite-effectiveness-audit/support-artifacts.json',
+          '.archived-docs/performance-and-stability/test-suite-effectiveness-audit/inventory.json',
+          '.archived-docs/performance-and-stability/test-suite-effectiveness-audit/case-counts.json',
+          '.archived-docs/performance-and-stability/test-suite-effectiveness-audit/support-artifacts.json',
           'package.json',
           'playwright.fastify-smoke.config.ts',
           'server/fastify/tsconfig.json',
@@ -436,10 +436,16 @@ describe('test effectiveness inventory', () => {
     expect(document.mixedProductionTestSeams).toContain('server/fastify/src/memoryEmbedJobHandler.ts')
     expect(document.groups.flatMap((group) => group.files)).not.toContain('src/example.test.ts')
 
-    writeTestSupportInventory(root, 'docs/plan/test-suite-effectiveness-audit/support-artifacts.json')
-    expect(checkTestSupportInventory(root, 'docs/plan/test-suite-effectiveness-audit/support-artifacts.json')).toEqual(
-      document,
+    writeTestSupportInventory(
+      root,
+      '.archived-docs/performance-and-stability/test-suite-effectiveness-audit/support-artifacts.json',
     )
+    expect(
+      checkTestSupportInventory(
+        root,
+        '.archived-docs/performance-and-stability/test-suite-effectiveness-audit/support-artifacts.json',
+      ),
+    ).toEqual(document)
   })
 
   it('separates collected parameterized rows from ordinary source registrations', () => {

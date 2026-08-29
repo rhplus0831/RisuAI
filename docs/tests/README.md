@@ -18,6 +18,12 @@ explains the completed migration to explicit Node, Svelte+Node, DOM, and
 built-browser capability ownership. The commands and routing documented below
 are authoritative.
 
+The completed
+[Test Suite Effectiveness Audit](../../.archived-docs/performance-and-stability/test-suite-effectiveness-audit/status.md)
+preserves the review decisions and verification history. Its routing,
+case-count, effectiveness, and support manifests remain checked operational
+inputs even though the narrative workstream is archived.
+
 ## Index
 
 ### Product flows and UI

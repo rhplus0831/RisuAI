@@ -21,7 +21,7 @@ transcript finalization across client, protocol, Fastify, and browser layers.
 - Shared generation protocol and the opt-in compatibility matrix.
 
 Primary discovery guide:
-[`prompting-generation-and-streaming.md`](../../../tests/prompting-generation-and-streaming.md).
+[`prompting-generation-and-streaming.md`](../../../../docs/tests/prompting-generation-and-streaming.md).
 
 ## Audit Questions
 

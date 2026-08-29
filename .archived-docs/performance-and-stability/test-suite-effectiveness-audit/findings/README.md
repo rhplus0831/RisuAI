@@ -2,13 +2,12 @@
 
 Date: 2026-08-29
 
-Status: Active; 130 findings are done and 11 are deferred with concrete revisit
-triggers.
+Status: Complete; 148 findings are done and 13 are accepted deferred records
+with concrete revisit triggers.
 
-This directory owns durable finding and decision records for the audit. Phase 0
-will decide whether the working ledger remains in this index, splits into
-per-phase files, or is generated from the exhaustive inventory. In every shape,
-finding IDs and decisions must remain stable and reviewable after closeout.
+This directory owns the durable finding and decision records for the completed
+audit. The ledger remains in this index so finding IDs and decisions stay stable
+and reviewable after closeout.
 
 ## Finding ID Format
 
@@ -3955,8 +3954,10 @@ Every finding records:
   remain useful but do not authorize broader claims.
 - Action and rollback: retain current owners; never substitute the baseline,
   refresh goldens, call paid services, or set a data-loss-prone export ceiling.
-- Validation: Phase 14 records the final supported-claim boundary and current
-  lane evidence.
+- Validation: Phase 14 ratified this as the final supported-claim boundary after
+  shuffled shared-harness proof, repeated browser restore journeys, broad
+  frontend/backend coverage, current-only compatibility, and the complete
+  post-archive aggregate all passed.
 - Count delta: none.
 - Revisit condition: product authority plus sanitized infrastructure for each
   canary; Firefox/WebKit CI and fault-injection harnesses; a streaming envelope

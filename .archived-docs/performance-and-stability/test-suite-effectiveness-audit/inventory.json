@@ -391,9 +391,9 @@
     }
   ],
   "supportArtifacts": {
-    "manifest": "docs/plan/test-suite-effectiveness-audit/support-artifacts.json",
+    "manifest": ".archived-docs/performance-and-stability/test-suite-effectiveness-audit/support-artifacts.json",
     "standaloneArtifactCount": 252,
-    "mixedProductionSeamCount": 65,
+    "mixedProductionSeamCount": 64,
     "state": "linked"
   },
   "rows": [

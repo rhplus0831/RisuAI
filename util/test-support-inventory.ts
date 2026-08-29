@@ -29,11 +29,11 @@ export interface TestSupportInventoryDocument {
 }
 
 const runnerConfigFiles = [
-  'docs/plan/test-suite-effectiveness-audit/frontend-routing-inventory.tsv',
+  '.archived-docs/performance-and-stability/test-suite-effectiveness-audit/frontend-routing-inventory.tsv',
   '.github/workflows/quality.yml',
-  'docs/plan/test-suite-effectiveness-audit/inventory.json',
-  'docs/plan/test-suite-effectiveness-audit/case-counts.json',
-  'docs/plan/test-suite-effectiveness-audit/support-artifacts.json',
+  '.archived-docs/performance-and-stability/test-suite-effectiveness-audit/inventory.json',
+  '.archived-docs/performance-and-stability/test-suite-effectiveness-audit/case-counts.json',
+  '.archived-docs/performance-and-stability/test-suite-effectiveness-audit/support-artifacts.json',
   'package.json',
   'playwright.fastify-smoke.config.ts',
   'server/fastify/tsconfig.json',

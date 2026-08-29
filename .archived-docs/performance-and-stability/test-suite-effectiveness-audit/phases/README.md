@@ -2,8 +2,9 @@
 
 Date: 2026-08-29
 
-This active index owns phase scope, dependencies, exit criteria, validation, and
-slice rules. [`../status.md`](../status.md) is the live execution cursor.
+This completed index preserves phase scope, dependencies, exit criteria,
+validation, and slice rules. [`../status.md`](../status.md) records the final
+execution state.
 
 | Phase | State   | Scope |
 | ----: | ------- | ----- |
@@ -21,7 +22,7 @@ slice rules. [`../status.md`](../status.md) is the live execution cursor.
 | [11](phase-11-assets-import-export-and-backups.md) | Complete | Assets, saves, imports, exports, Realm/CharX, backup and restore. |
 | [12](phase-12-api-security-runtime-and-observability.md) | Complete | Auth, route protection, network limits, tracing, startup, operations. |
 | [13](phase-13-cross-suite-consolidation-and-remediation.md) | Complete | Cross-category duplication, replacements, shared harnesses, parity, gaps. |
-| [14](phase-14-verification-and-closeout.md) | In progress | Final count/effectiveness proof, quality aggregate, docs, archive handoff. |
+| [14](phase-14-verification-and-closeout.md) | Complete | Final count/effectiveness proof, quality aggregate, docs, archive handoff. |
 
 ## Slice Rules
 

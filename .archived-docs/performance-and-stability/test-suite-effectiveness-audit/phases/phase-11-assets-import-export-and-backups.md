@@ -24,7 +24,7 @@ destructive operations using realistic bytes, archives, files, and SQLite state.
   lifecycle are the primary risk.
 
 Primary discovery guide:
-[`assets-import-export-and-backups.md`](../../../tests/assets-import-export-and-backups.md).
+[`assets-import-export-and-backups.md`](../../../../docs/tests/assets-import-export-and-backups.md).
 
 ## Audit Questions
 

@@ -22,7 +22,7 @@ against the failures users can actually experience.
   intent/recovery; entity mutation semantics belong to Phase 3.
 
 Primary discovery guide:
-[`docs/tests/browser-state-sync-and-recovery.md`](../../../tests/browser-state-sync-and-recovery.md).
+[`docs/tests/browser-state-sync-and-recovery.md`](../../../../docs/tests/browser-state-sync-and-recovery.md).
 
 ## Audit Questions
 

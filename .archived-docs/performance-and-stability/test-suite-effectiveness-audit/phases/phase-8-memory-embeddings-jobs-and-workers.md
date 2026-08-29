@@ -20,7 +20,7 @@ partial failure and permanent-stall defects.
   behavior.
 
 Primary discovery guide:
-[`memory-and-embeddings.md`](../../../tests/memory-and-embeddings.md).
+[`memory-and-embeddings.md`](../../../../docs/tests/memory-and-embeddings.md).
 
 ## Audit Questions
 

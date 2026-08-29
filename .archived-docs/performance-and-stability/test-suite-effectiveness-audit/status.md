@@ -2,18 +2,16 @@
 
 Date: 2026-08-29
 
-This is the live execution router for the test-suite effectiveness workstream.
+This is the final execution record for the test-suite effectiveness workstream.
 Keep durable scope and decision rules in [`plan.md`](plan.md), phase gates under
 [`phases/`](phases/), findings under [`findings/`](findings/), and command proof
 in [`latest-verification.md`](latest-verification.md).
 
 ## Current Snapshot
 
-- Plan state: Active; Phases 0-13 complete and Phase 14 in progress.
-- Current phase: Phase 14 — Verification And Closeout.
-- Active slice: final independent discovery/count reconciliation, stability and
-  broad coverage proof, current-document updates, accepted-residual verdicts,
-  and intact archive handoff. No owner remains Pending.
+- Plan state: Complete; all 15 phases are closed and the workstream is archived.
+- Current phase: None — verification and closeout are complete.
+- Active slice: None. No owner remains Pending.
 - Implementation state: exhaustive test/case/support manifests and their local,
   affected, aggregate, coverage, and CI checks are live. The protocol import
   policy uses recursive AST evidence and the Realm scale case has isolated local
@@ -46,13 +44,15 @@ in [`latest-verification.md`](latest-verification.md).
   fixed legacy preset parameter parity, centralized the narrow persisted
   asset-owner vocabulary, streamed local-backup asset staging, added visible
   settings-backup-restore-reload proof, and rejected every unproven Merge,
-  orphan cleanup, and mechanical mega-suite split.
-- Blockers: the full differential compatibility harness cannot run because its
+  orphan cleanup, and mechanical mega-suite split. Phase 14 reconciled every
+  final count, ran shuffled/repeated stability and broad coverage proof,
+  refreshed current guidance, preserved the checked manifests in the archive,
+  and passed the complete post-archive aggregate.
+- Accepted external blocker: the full differential compatibility harness cannot run because its
   pinned external worktree is absent. The new current-only owner is green; the
   blocker applies only to historical baseline claims.
-- Next action: execute Phase 14 final discovery, repeated/order-sensitive and
-  broad coverage proof; reconcile current guidance and accepted residuals; then
-  archive the intact workstream and remove its active-plan entry.
+- Next action: none. Reopen only under a recorded residual's concrete revisit
+  condition or when an inventory update is intentionally reviewed.
 
 ## Planning Baseline
 
@@ -94,7 +94,7 @@ manifests and verification record.
 | [11](phases/phase-11-assets-import-export-and-backups.md) | Complete | Audited assets, imports, exports, saves, and backups. |
 | [12](phases/phase-12-api-security-runtime-and-observability.md) | Complete | Audited API security, runtime, limits, tracing, and operations. |
 | [13](phases/phase-13-cross-suite-consolidation-and-remediation.md) | Complete | Resolve cross-suite duplication, removals, replacements, and gaps. |
-| [14](phases/phase-14-verification-and-closeout.md) | In progress | Verify final effectiveness, counts, documentation, and closeout. |
+| [14](phases/phase-14-verification-and-closeout.md) | Complete | Verified final effectiveness, counts, documentation, and closeout. |
 
 See [`phases/README.md`](phases/README.md) for links and shared slice rules.
 
@@ -130,8 +130,8 @@ Kei owners are no longer live rows.
 5. Do not remove a test solely because it is narrow, implementation-aware,
    duplicated at another evidence layer, slow, flaky, or outside a coverage
    threshold. Apply the complete removal proof first.
-6. Keep current testing and architecture documents authoritative until accepted
-   findings land.
+6. Keep current testing and architecture documents authoritative. The archived
+   narrative preserves decisions; its machine manifests remain operational.
 7. Keep the routing TSV separate from the effectiveness inventory; the former
    enforces capability placement, while the latter preserves reviewed audit
    metadata and cross-lane ownership.
@@ -139,7 +139,35 @@ Kei owners are no longer live rows.
    reviewed. Larger files with selected pilot cases remain Pending and record a
    `pilot-partial` state.
 
-## Blockers And Accepted Gaps
+## Final Accepted Residuals
+
+- **Historical compatibility (`TSA-P13-008`).** Owner: compatibility harness
+  maintainers. Reason: `/home/codex/risu-baseline-71c476e9c` and its pinned
+  dependencies are absent. Revisit only when that exact worktree is restored;
+  never substitute a checkout or refresh goldens.
+- **External-service fidelity (`TSA-P07-013`, `TSA-P10-011`,
+  `TSA-P12-012`, consolidated by `TSA-P13-008`).** Owner: provider, media,
+  Push, MCP, and plugin maintainers with product/security approval. Reason: no
+  sanitized recorded/live infrastructure or paid-call authority exists.
+  Revisit when bounded, secret-safe, cost-safe infrastructure is approved.
+- **Cross-browser and browser fault injection (`TSA-P02-009`,
+  `TSA-P03-008`, `TSA-P04-019`, consolidated by `TSA-P13-008`).** Owner:
+  browser-smoke/CI maintainers. Reason: required CI owns Chromium only and has
+  no Firefox/WebKit, quota/upgrade, Web Locks, crash, or persistent multi-page
+  fault harness. Revisit when those lanes and deterministic controls exist.
+- **Streaming export policy and remaining deep composition (`TSA-P05-013`,
+  `TSA-P06-013`, `TSA-P08-012`, `TSA-P09-011`, `TSA-P11-012`, consolidated by
+  `TSA-P13-008`).** Owner: export/runtime product owners. Reason: current
+  imports are bounded, but streaming ordinary/legacy export requires a new
+  cursor/writer design and an approved compatibility policy; imposing a cap
+  could strand existing user data. Revisit with that design authority and
+  bounded browser composition infrastructure.
+
+The 13 deferred findings retain their original evidence provenance below. The
+phase-routing language is historical; the four bullets above are Phase 14's
+final supported-claim boundary.
+
+## Deferred Finding Provenance
 
 - Blocker: `/home/codex/risu-baseline-71c476e9c` is absent, so the compatibility
   harness cannot execute. Revisit when the exact pinned worktree and its

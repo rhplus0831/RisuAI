@@ -1405,3 +1405,103 @@ cluster-10 regressions. `pnpm test:compat-harness` stopped before execution at
 the unchanged missing prerequisite:
 `/home/codex/risu-baseline-71c476e9c`. This is the only Phase 13 validation
 blocker and applies only to historical comparison claims.
+
+## Phase 14 Evidence
+
+### Final discovery and stability
+
+The checked filesystem/runner manifests were regenerated at their archived
+operational location and then independently checked. They agree on 700 owners:
+538 frontend (194 N / 17 S / 327 D), 155 Fastify, and seven browser specs.
+Categories remain A=21, B=39, C=62, D=111, E=101, F=84, G=109, H=26, I=39,
+J=42, K=25, and L=41. The frozen case manifest remains 10,212 cases, one
+direct-only Realm skip, and 1,332 parameterized rows. Decisions are 617 Keep /
+83 Reclassify / zero Pending; support is 252 standalone / 64 mixed.
+
+The first post-move `pnpm check:test-inventories` failed closed because the
+effectiveness document's linked support-manifest metadata still named the old
+active-plan path. Updating that single link and its already-ratified mixed-seam
+count made all three independent checks pass. This red attempt proves the move
+did not silently detach the operational manifests.
+
+Stability commands:
+
+```sh
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/bootstrap.test.ts \
+  server/fastify/__tests__/routeProtection.test.ts \
+  server/fastify/__tests__/resourceReads.test.ts \
+  server/fastify/__tests__/risuSaveBundleImportRoute.test.ts \
+  server/fastify/__tests__/backups.test.ts \
+  server/fastify/__tests__/risuSaveImportRoute.test.ts \
+  server/fastify/__tests__/commands.test.ts \
+  server/fastify/__tests__/commandSettingsAndPluginStorageRange.test.ts \
+  server/fastify/__tests__/generation.chat.test.ts \
+  server/fastify/__tests__/localBackupDatabase.test.ts \
+  server/fastify/__tests__/risuSaveAssetReferences.test.ts \
+  server/fastify/__tests__/assetGc.test.ts \
+  --sequence.shuffle --sequence.seed=130829 \
+  --no-file-parallelism --maxWorkers=1
+
+VITE_FASTIFY_BROWSER_SMOKE=TRUE pnpm exec playwright test \
+  -c playwright.fastify-smoke.config.ts \
+  server/fastify/browser-smoke/fastifyBrowserSmoke.spec.ts \
+  --repeat-each=2 --workers=1
+```
+
+The shuffled Fastify selection passed 611/611 in 35.36s. The repeated browser
+owner passed 12/12 in 30.9s, including two complete visible settings authoring,
+local-backup restore, authoritative resynchronization, and reload-durability
+journeys. No order leak, retry-dependent success, unhandled network request,
+stale golden, or orphaned staged artifact appeared.
+
+### Broad coverage and compatibility
+
+`pnpm coverage:frontend` passed all 538 files / 6,777 cases in 99.54s. The
+report-only map measured 71.20% lines, 68.05% statements, 65.80% functions, and
+61.21% branches versus the Phase 0 baseline's 70.56% / 67.48% / 65.23% /
+60.75%.
+
+`pnpm coverage:backend` passed all 155 files / 3,398 cases plus the intentional
+skip in 29.99s. It measured 87.67% lines, 85.21% statements, 93.19% functions,
+and 74.94% branches versus 87.55% / 85.13% / 92.95% / 74.89% at Phase 0. The
+small increases are informational; no test was retained or removed to optimize
+the percentages.
+
+`pnpm test:compat-current` passed 18/18 and matched all 16 current-stack cells
+plus the healthy cluster-10 regressions. Full `pnpm test:compat-harness` remains
+prerequisite-blocked by the absent exact
+`/home/codex/risu-baseline-71c476e9c` worktree. No substitute checkout was used
+and no fixture or golden was refreshed.
+
+### Post-archive aggregate and handoff
+
+The intact workstream moved to
+`.archived-docs/performance-and-stability/test-suite-effectiveness-audit/`.
+Package scripts, affected selection, aggregate tests, support/effectiveness
+oracles, archive indexes, active-plan index, current test guidance, and every
+moved live-doc link were updated. Historical commands remain historical text;
+the four machine manifests remain checked operational inputs.
+
+Final command:
+
+```sh
+pnpm test:all
+```
+
+Result: every lane passed in 3m 42.7s. Inventory/routing took 7.3s;
+server/browser typecheck 18.2s; partitioned frontend passed 6,565/6,565 in
+1m 20.0s; Fastify passed 3,398 plus one intentional skip in 19.2s; direct Realm
+passed 1/1 in 2.9s; Chromium passed 36/36 in 1m 21.2s; frontend check reported
+zero diagnostics in 31.1s; UI coverage passed 206/206 at 14.43% lines, 14.83%
+statements, 18.12% functions, and 9.45% branches in 20.0s; format passed in
+31.1s; and isolated performance passed 6/6 in 12.1s. The printed protected
+bundle-boundary `FAIL` is the expected negative-fixture body inside a passing
+test. The ordinary/UI/performance partition accounts for all 6,777 frontend
+cases exactly once.
+
+Phase 14 ratifies `TSA-P13-008` as the accepted final boundary for claims that
+require external-service/product authority, Firefox/WebKit or browser fault
+injection, a streaming legacy export design, or the unavailable historical
+baseline. No repository-controlled correctness, security, or data-loss blocker
+remains. All phases are complete and the active-plan entry has been removed.

@@ -2,7 +2,7 @@
 
 Date: 2026-08-29
 
-Status: Active; Phases 0-13 are complete and Phase 14 is in progress.
+Status: Complete; all 15 phases are closed and the intact workstream is archived.
 
 This workstream audits the complete test system for effectiveness, not merely
 for presence or coverage percentage. It asks whether each test can catch a
@@ -71,13 +71,13 @@ discovery and fixture cleanup, and the complete owning validation lane.
 
 ## Authority Boundary
 
-This is an active investigation and remediation plan. Current behavior,
+This is a completed investigation and remediation record. Current behavior,
 commands, routing, and test ownership remain authoritative in:
 
 - [`package.json`](../../../package.json);
 - the root Vitest and Playwright configuration files;
-- [`docs/structure/testing-and-operations.md`](../../structure/testing-and-operations.md);
-- [`docs/tests/README.md`](../../tests/README.md);
+- [`docs/structure/testing-and-operations.md`](../../../docs/structure/testing-and-operations.md);
+- [`docs/tests/README.md`](../../../docs/tests/README.md);
 - [`server/fastify/__tests__/README.md`](../../../server/fastify/__tests__/README.md).
 
 This plan does not supersede those sources. Update them only when an accepted

@@ -23,7 +23,7 @@ duplicated option tables to create false confidence.
   browser media fakes.
 
 Primary discovery guide:
-[`providers-models-and-media.md`](../../../tests/providers-models-and-media.md).
+[`providers-models-and-media.md`](../../../../docs/tests/providers-models-and-media.md).
 
 ## Audit Questions
 

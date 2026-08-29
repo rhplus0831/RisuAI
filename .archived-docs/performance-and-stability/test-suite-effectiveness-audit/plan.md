@@ -383,7 +383,11 @@ recorded.
 
 ## Execution Cursor
 
-Phase 0 is complete. The frozen 698-file anchor, live 699-file inventory,
-support universe, formal baseline, and representative rubric pilot are recorded
-in the Phase 0 slice. Phase 1 is ready to begin with frontend discovery,
-capability routing, and live-manifest assurance; no removal has been approved.
+All 15 phases are complete. The frozen 698-file anchor reconciles to 700 live
+owners, 10,212 cases, one direct-only skip, 1,332 parameterized rows, 252
+standalone supports, and 64 mixed production seams. Every owner has a final
+category and disposition; the proof-backed action ledger records three
+additions and two removals, with no approved Merge. Phase 14 passed shuffled,
+repeated-browser, broad-coverage, compatibility-current, and post-archive
+aggregate proof, ratified `TSA-P13-008` as the accepted external-authority
+boundary, updated current docs, and archived the intact workstream.

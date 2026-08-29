@@ -23,8 +23,8 @@ editing outcomes across the application's largest UI families.
 
 Primary discovery guides:
 
-- [`settings-profiles-and-extensions.md`](../../../tests/settings-profiles-and-extensions.md)
-- [`character-content-memory-and-catalogs.md`](../../../tests/character-content-memory-and-catalogs.md)
+- [`settings-profiles-and-extensions.md`](../../../../docs/tests/settings-profiles-and-extensions.md)
+- [`character-content-memory-and-catalogs.md`](../../../../docs/tests/character-content-memory-and-catalogs.md)
 
 ## Audit Questions
 

@@ -23,7 +23,7 @@ than mirroring implementation details or accepting unsafe untrusted content.
   primary.
 
 Primary discovery guide:
-[`scripting-parsing-and-automation.md`](../../../tests/scripting-parsing-and-automation.md).
+[`scripting-parsing-and-automation.md`](../../../../docs/tests/scripting-parsing-and-automation.md).
 
 ## Audit Questions
 

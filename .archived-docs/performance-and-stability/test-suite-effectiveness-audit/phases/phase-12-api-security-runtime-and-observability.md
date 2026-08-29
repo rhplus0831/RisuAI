@@ -24,7 +24,7 @@ operational behavior at the authoritative Fastify layer.
 - Legacy storage/route behavior where platform compatibility is primary.
 
 Primary discovery guide:
-[`api-security-and-runtime.md`](../../../tests/api-security-and-runtime.md).
+[`api-security-and-runtime.md`](../../../../docs/tests/api-security-and-runtime.md).
 
 ## Completed Audit Record
 

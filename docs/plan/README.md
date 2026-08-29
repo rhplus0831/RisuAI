@@ -7,8 +7,6 @@ plan, status, phase, slice, decision, and verification structure intact.
 
 ## Workstreams
 
-- [Test Suite Effectiveness Audit](test-suite-effectiveness-audit/README.md) —
-  evaluate the regression value of the complete test system, remove or
-  consolidate tests that provide no meaningful protection, strengthen weak
-  contracts, and close material coverage gaps without optimizing for a lower
-  test count.
+There are no active multi-phase workstreams. The completed test-suite
+effectiveness audit is preserved under
+[Performance and stability](../../.archived-docs/performance-and-stability/README.md).

@@ -23,8 +23,8 @@ accessibility rather than markup or implementation shape alone.
 
 Primary discovery guides:
 
-- [`app-navigation-and-chat.md`](../../../tests/app-navigation-and-chat.md)
-- [`shared-ui-feedback-and-accessibility.md`](../../../tests/shared-ui-feedback-and-accessibility.md)
+- [`app-navigation-and-chat.md`](../../../../docs/tests/app-navigation-and-chat.md)
+- [`shared-ui-feedback-and-accessibility.md`](../../../../docs/tests/shared-ui-feedback-and-accessibility.md)
 
 ## Audit Questions
 

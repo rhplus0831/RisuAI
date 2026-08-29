@@ -15,6 +15,13 @@ explains the rollout and benchmarks behind the settled frontend project
 ownership. This document and the current runner configuration are the source of
 truth for the resulting commands, routing, setup, and lane behavior.
 
+The completed
+[Test Suite Effectiveness Audit](../../.archived-docs/performance-and-stability/test-suite-effectiveness-audit/status.md)
+is historical narrative, but its four machine-readable manifests remain live
+inputs to the inventory commands. Update those archived manifests only through
+the reviewed `update:*inventory` scripts; current commands and behavior stay
+authoritative here.
+
 ## Scripts
 
 | Command                            | Purpose                                                                                                                                                                       |
