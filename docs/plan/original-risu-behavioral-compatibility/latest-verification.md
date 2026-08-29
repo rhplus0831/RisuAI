@@ -4,15 +4,17 @@ Date: 2026-08-30
 
 ## Current Verdict
 
-Phases 0 through 3 and Phase 5 are complete. Phase 2 state/recovery implementation
+Phases 0 through 5 are complete. Phase 2 state/recovery implementation
 closes through `3ce85c1f034b3afc493e291f8a8f5e9227064463` and the partial-object projection
 correction `f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74`. Phase 3 closed-world durable
 ownership is at `958f8585138ec817fe5d134563df585434ed5821`, with exact BardWiki eventless
 receipt handling at `3f20a80b780f2538fd1e38aa6514d9a9f894985a`. Phase 5 closes settings and
 authoring ownership at `b34b7a78f28cb5903ece3880073fbb9e46392cb8`, with visible character reload
 evidence at `5eca30f4872e865efee2c86f4dde7ae71e915f9a`. Focused production, structural,
-browser, register, and pinned differential evidence pass. This is not yet a
-whole-product compatibility verdict; Phase 4 remains independently in progress.
+browser, register, and pinned differential evidence pass. Phase 4 closes its
+visible route/control and responsive-shell contract through
+`6487cba00e3cc435a3c4f57f8121663bcdccc57e`. This is not yet a whole-product
+compatibility verdict; Phase 6 is in progress.
 
 ## Phase 0 Environment And Baseline Evidence
 
@@ -154,10 +156,10 @@ fields, and the owning 251-test lane then passed.
 
 Runtime use of profile options remains cross-owned by Phases 6 and 7; Hypa V3,
 module/plugin lifecycle, and portable artifact bytes remain cross-owned by
-Phases 8, 10, and 11. Proposed character/module conversion
-`ORC-DECISION-058` remains Category J Phase 10/13 work. Phase 5 neither relies
-on nor adjudicates that unsupported boundary or Phase 4's independently pending
-responsive/mobile comparison.
+Phases 8, 10, and 11. Signed character/module conversion
+`ORC-DECISION-058` remains Category J Phase 10 verification work. Phase 5
+neither relies on that unsupported boundary nor on Phase 4's independently
+governed responsive-shell decision.
 
 ## Phase 5 Validation
 
@@ -173,6 +175,28 @@ responsive/mobile comparison.
 | `pnpm check:server` | Passed at the Phase 5 structural anchor |
 | `pnpm validate:compat-registers` and fail-closed register Vitest | Passed; 96 inventory rows, 59 decisions, 15 findings, 85 upstream units, all 75 historical raw reports mapped, and 12 fail-closed validator tests |
 | Phase 5 Prettier check and `git diff --check` | Passed |
+
+## Phase 4 Evidence
+
+| Check | Result |
+| --- | --- |
+| Closed route/control inventory | `e9901b0f68acc405cef8a8af642eb40f83e8affb` |
+| Visible pre-token provider failure and Retry | `477a3aece1fffc159b0354fef5b21ecddf60cab5` |
+| Signed responsive-shell classification | `6487cba00e3cc435a3c4f57f8121663bcdccc57e` |
+| Category D inventory | New verified rows `ORC-SURFACE-097` through `ORC-SURFACE-099`; total inventory 99 rows |
+| Decision authority | `ORC-DECISION-060` is signed from RH+ commit `2073b5fb6a755516b80e48509c6e0a322f062677`; the four previously proposed historical decisions also have reconstructed individual maintainer commits and are now signed |
+| Visible lifecycle | Real production bundle, Fastify routes, SQLite, SSE, error modal, recovery banner, Retry confirmation, partial/final transcript, reload, concurrent chat, and reroll persistence |
+
+## Phase 4 Validation
+
+| Command/check | Result |
+| --- | --- |
+| Focused route/App/sidebar/composer/reroll/hotkey Vitest selection | Passed; 8 files and 156 tests |
+| `pnpm exec playwright test -c playwright.fastify-smoke.config.ts server/fastify/browser-smoke/acceptedSendProtocol.spec.ts` | Passed; 11 tests |
+| `pnpm exec playwright test -c playwright.fastify-smoke.config.ts server/fastify/browser-smoke/rerollSwipePersistence.spec.ts` | Passed; 1 test |
+| `pnpm validate:compat-registers` | Passed with 99 inventory rows, 60 signed decisions, 15 findings, 85 upstream units, and all 75 historical raw reports mapped |
+| Fail-closed register Vitest | Passed; 1 file and 12 tests |
+| Formatting and `git diff --check` | Passed |
 
 ## Update Rules
 

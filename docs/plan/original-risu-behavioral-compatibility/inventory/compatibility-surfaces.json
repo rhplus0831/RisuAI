@@ -6097,6 +6097,246 @@
         "residual": "Live third-party Realm availability is deterministically stubbed; portable CharX/package byte equivalence and backup/export ownership remain in Phase 11."
       },
       "notes": "This Category E row owns catalog acquisition, confirmation, navigation, and user-visible import/upload outcomes; Category K owns the underlying portable codecs and complete round-trip matrix."
+    },
+    {
+      "id": "ORC-SURFACE-097",
+      "title": "Closed route and visible primary-control ownership",
+      "primaryCategory": "D",
+      "seamTags": [
+        "B",
+        "C",
+        "E"
+      ],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "Every route kind, root segment, settings slug, and playground slug has an exact parser classification.",
+        "Every stable primary route, sidebar, chat-list, grid, message, generation, input-hook, translation, speech, export, and local control marker has one explicit owner.",
+        "Unsupported or unmounted controls cannot silently reappear without extending the closed inventory."
+      ],
+      "variants": [
+        "home, settings, playground, inlay, grid, character, and not-found route",
+        "direct link, browser history, sidebar selection, dialog, and resource load/error",
+        "character, chat, folder, bookmark, message, composer, and generation control"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/App.svelte",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/lib/ChatScreens",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/lib/SideBars"
+        ],
+        "browser": [
+          "src/ts/routerRoute.ts",
+          "src/ts/uiCompatibilityInventory.ts",
+          "src/App.svelte",
+          "src/lib/ChatScreens",
+          "src/lib/SideBars"
+        ],
+        "protocol": [
+          "src/ts/server/commands.ts",
+          "src/ts/process/acceptedSendCoordinator.svelte.ts"
+        ],
+        "fastify": [
+          "server/fastify/src/routes/commands.ts",
+          "server/fastify/src/routes/generationOperations.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/repository.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "CSS classes and layout pixels may differ; route reachability, stable targets, control availability, action owner, enabled/loading/error state, focus, and durable outcome remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66"
+        ],
+        "current": [
+          "e9901b0f68acc405cef8a8af642eb40f83e8affb",
+          "6487cba00e3cc435a3c4f57f8121663bcdccc57e"
+        ],
+        "tests": [
+          "src/ts/uiCompatibilityInventory.test.ts",
+          "src/App.routeEffect.dom.test.ts",
+          "src/lib/UI/GUI/SideBarArrow.svelte.test.ts",
+          "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts",
+          "src/lib/ChatScreens/DefaultChatScreen.composerDrafts.test.ts",
+          "src/ts/hotkey.navigation.test.ts",
+          "src/ts/hotkey.resourceGuard.test.ts"
+        ],
+        "fixtures": [
+          "src/ts/uiCompatibilityInventory.ts#phase4RouteInventory",
+          "src/ts/uiCompatibilityInventory.ts#phase4ControlInventory"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "6487cba00e3cc435a3c4f57f8121663bcdccc57e",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "The semantic markers are test and accessibility surfaces on real production controls, not alternate mutation hooks."
+    },
+    {
+      "id": "ORC-SURFACE-098",
+      "title": "Visible chat generation, recovery, concurrency, and reroll lifecycle",
+      "primaryCategory": "D",
+      "seamTags": [
+        "B",
+        "C",
+        "F"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Send, stream, reload, response loss, reconnect, server restart, retry, Stop, queued finalization, and concurrent-chat transitions keep the visible transcript aligned with authoritative persistence.",
+        "A provider failure before tokens shows the error and durable recovery controls; billing-aware Retry reuses the accepted user row and performs exactly one new provider attempt.",
+        "Reroll candidates remain chat-scoped, survive reload, and remain swipe-recoverable without changing the stable target."
+      ],
+      "variants": [
+        "desktop and Pixel narrow viewport",
+        "pre-token failure, partial stream, terminal success, Stop, response loss, reconnect, and restart",
+        "two concurrent chats and queued finalization",
+        "reroll candidate reload and swipe"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/lib/ChatScreens",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process"
+        ],
+        "browser": [
+          "src/lib/ChatScreens/DefaultChatScreen.svelte",
+          "src/lib/ChatScreens/Chat.svelte",
+          "src/ts/process/acceptedSendCoordinator.svelte.ts",
+          "src/ts/process/reattach.ts",
+          "src/ts/process/rerollNavigation.svelte.ts"
+        ],
+        "protocol": [
+          "packages/protocol/src/generation.ts"
+        ],
+        "fastify": [
+          "server/fastify/src/routes/generationOperations.ts",
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/generationOperations.ts",
+          "server/fastify/src/generationFinalizationRetry.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Operation/job ids and timestamps may be normalized; visible row count/order/content, stable message identity, retry confirmation, provider-call count, terminal state, and post-reload persistence remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66"
+        ],
+        "current": [
+          "e9901b0f68acc405cef8a8af642eb40f83e8affb",
+          "477a3aece1fffc159b0354fef5b21ecddf60cab5",
+          "19ba37af26df7db60d7393976d61b520a785076b"
+        ],
+        "tests": [
+          "server/fastify/browser-smoke/acceptedSendProtocol.spec.ts",
+          "server/fastify/browser-smoke/rerollSwipePersistence.spec.ts",
+          "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts",
+          "src/lib/ChatScreens/RerollList.svelte.test.ts",
+          "src/ts/process/acceptedSendCoordinator.test.ts",
+          "src/ts/process/serverBackedSendChat.findMessage.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/browser-smoke/acceptedSendProtocol.spec.ts#lifecycleFixtureDatabase",
+          "test/compat-harness/fixture.ts"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": "Prompt contents and provider wire semantics remain cross-owned by Phases 6 and 7; this row closes the visible transcript and recovery lifecycle."
+      },
+      "notes": "The built-browser harness uses the production bundle, real Fastify routes, SQLite, SSE, modal controls, and visible transcript."
+    },
+    {
+      "id": "ORC-SURFACE-099",
+      "title": "Shared responsive App shell replaces the legacy beta-mobile shell",
+      "primaryCategory": "D",
+      "seamTags": [
+        "A",
+        "B"
+      ],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "The baseline MobileHeader, MobileBody, and MobileFooter tree is unmounted in Fastify.",
+        "The live shared shell retains responsive sidebar/dialog navigation, chat, focus trapping, Escape, and primary mutation controls at the current breakpoint."
+      ],
+      "variants": [
+        "desktop viewport",
+        "Pixel narrow viewport",
+        "sidebar open/close, focus restore, Escape, reload, Stop, and reconnect"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/App.svelte",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/bootstrap.ts"
+        ],
+        "browser": [
+          "src/App.svelte",
+          "src/ts/stores.svelte.ts",
+          "src/ts/uiCompatibilityInventory.ts"
+        ],
+        "protocol": [],
+        "fastify": [],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Component names and layout structure differ by decision; retained action reachability, focus, modal ownership, narrow-viewport feedback, and mutation outcome remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/App.svelte",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/bootstrap.ts"
+        ],
+        "current": [
+          "2073b5fb6a755516b80e48509c6e0a322f062677",
+          "e9901b0f68acc405cef8a8af642eb40f83e8affb",
+          "6487cba00e3cc435a3c4f57f8121663bcdccc57e"
+        ],
+        "tests": [
+          "src/ts/uiCompatibilityInventory.test.ts",
+          "src/App.routeEffect.dom.test.ts",
+          "server/fastify/browser-smoke/acceptedSendProtocol.spec.ts",
+          "server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts"
+        ],
+        "fixtures": [
+          "src/ts/uiCompatibilityInventory.ts#phase4ResponsiveShellClassification"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "6487cba00e3cc435a3c4f57f8121663bcdccc57e",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-060",
+        "residual": null
+      },
+      "notes": "Commit 2073b5fb6 is individual maintainer authority: it removed tests for the unmounted legacy components and names the mounted App plus responsive Chromium journeys as the current product contract."
     }
   ]
 }

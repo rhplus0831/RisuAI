@@ -123,13 +123,11 @@ all-or-nothing staging, and a separately revisioned inlay catalog.
 - Phase 8 owns Hypa V3 preset runtime behavior; Phase 10 owns module/plugin host
   lifecycle; Phase 11 owns portable bytes, imports/exports, and complete
   round-trip equivalence.
-- Proposed `ORC-DECISION-058` and `ORC-SURFACE-062` concern post-fork
-  character/module conversion and remain Category J work for Phase 10/13. They
-  do not describe a retained Phase 5 character-authoring path and are not
-  adjudicated here.
-- Phase 4 remains independently routed until its visible responsive/mobile
-  comparison and any required maintainer decision are closed. Phase 5's
-  evidence does not change that status.
+- Signed `ORC-DECISION-058` and `ORC-SURFACE-062` concern post-fork
+  character/module conversion and remain Category J verification work for Phase
+  10. They do not describe a retained Phase 5 character-authoring path.
+- Phase 4's independently governed responsive/mobile comparison is recorded in
+  `ORC-DECISION-060`; it does not change Phase 5's settings/authoring evidence.
 
 No Phase 5 production defect, new divergence, or new decision was found. The
 structural gate and focused suites close all Category E rows with high

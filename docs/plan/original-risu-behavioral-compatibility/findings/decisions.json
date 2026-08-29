@@ -1719,6 +1719,39 @@
         "The unsupported boundary must be hidden, rejected, or visibly diagnosed; silent partial behavior is forbidden."
       ],
       "revisitTrigger": "Revisit if users request unlisted OpenAI models."
+    },
+    {
+      "id": "ORC-DECISION-060",
+      "state": "signed",
+      "title": "Responsive navigation uses the shared App shell",
+      "baselineBehavior": "The baseline conditionally mounted MobileHeader, MobileBody, and MobileFooter when betaMobileGUI was enabled at a narrow viewport or in lite mode.",
+      "decidedBehavior": "Fastify keeps those legacy components unmounted and uses the shared App sidebar/dialog shell for responsive navigation and chat.",
+      "observables": [
+        "Narrow viewports retain the live route, sidebar, chat, focus, Escape, and mutation controls through the shared responsive shell rather than the legacy beta-mobile component tree."
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-099"
+      ],
+      "rationale": "The maintainer explicitly removed tests for the unmounted legacy shell and documented the mounted App plus responsive Chromium journeys as the current product contract.",
+      "parityAlternative": "Restore betaMobileGUI selection and mount the baseline MobileHeader, MobileBody, and MobileFooter component tree.",
+      "authority": "RH+ (RisuAI Fastify maintainer)",
+      "authorityDate": "2026-08-29",
+      "source": "commit 2073b5fb6a755516b80e48509c6e0a322f062677; docs/tests/app-navigation-and-chat.md:70-81",
+      "implementationOwners": [
+        "src/App.svelte",
+        "src/ts/stores.svelte.ts",
+        "src/ts/uiCompatibilityInventory.ts"
+      ],
+      "regressionOwners": [
+        "src/ts/uiCompatibilityInventory.test.ts",
+        "src/App.routeEffect.dom.test.ts",
+        "server/fastify/browser-smoke/acceptedSendProtocol.spec.ts",
+        "server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts"
+      ],
+      "diagnostics": [
+        "The live responsive shell exposes a stable marker and owns modal focus trapping, Escape, sidebar, and chat controls; unmounted legacy controls cannot be advertised as supported."
+      ],
+      "revisitTrigger": "Revisit if a separately designed mobile-only shell is mounted in production again."
     }
   ]
 }

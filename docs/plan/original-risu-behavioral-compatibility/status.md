@@ -12,8 +12,8 @@ findings under [`findings/`](findings/); inventory ownership under
 ## Current Snapshot
 
 - Plan state: Active.
-- Current phase: Phase 4 — navigation, chat, shared UI, and presentation.
-- Active slice: [Phase 4 navigation, chat, shared UI, and presentation](phases/phase-4-navigation-chat-and-shared-ui.md).
+- Current phase: Phase 6 — prompting, generation, and streaming.
+- Active slice: [Phase 6 prompting, generation, and streaming](phases/phase-6-prompting-generation-and-streaming.md).
 - Planning audit anchor: `1933c43ff7b4d35b57b0852013d95f3881a8cb28`.
 - Compatibility baseline: `71c476e9c86263fe907105b011ca4dde0a619d66`.
 - Behavioral sync cursor: `f3f0242fba297d82e0efcc2c31ca1428569b70f2`.
@@ -23,7 +23,7 @@ findings under [`findings/`](findings/); inventory ownership under
   `/home/codex/risu-baseline-71c476e9c`; its exact commit, dependency state, and
   cleanliness are enforced by `pnpm prepare:compat-baseline` and the harness
   preflight.
-- Current compatibility state: Phases 0 through 3 and Phase 5 are complete.
+- Current compatibility state: Phases 0 through 5 are complete.
   Phase 5 closes settings/default/preset/collection ownership at
   `b34b7a78f28cb5903ece3880073fbb9e46392cb8` and visible character-authoring
   reload evidence at `5eca30f4872e865efee2c86f4dde7ae71e915f9a`.
@@ -31,13 +31,15 @@ findings under [`findings/`](findings/); inventory ownership under
   `7ba933fe6f1c3338bd9cce2ef308b2b216ac8e8d`, the required pinned differential
   passes with 16 baseline cells, 18
   current/cluster tests, 15 governed divergences, and healthy cluster 10.
+- Phase 4 closes route/control ownership, visible chat lifecycle, and the signed
+  shared responsive-shell decision through
+  `6487cba00e3cc435a3c4f57f8121663bcdccc57e`.
 - Canonical findings: 15 resolved findings: 14 historical imports with exact raw
   mappings plus the Phase 1 lossless-normalizer finding `ORC-A-015`.
-- Open maintainer decisions: four historical unsupported statements remain
-  `proposed` because their sources do not identify individual authority.
-- Next action: finish the Phase 4 navigation/chat/shared-UI comparison and its
-  decision-pending responsive/mobile boundary. Phase 5 was independently
-  evidenced without adjudicating or changing that Phase 4 blocker.
+- Open maintainer decisions: none. Individual RH+ commits reconstruct authority
+  for the four historical boundaries and the responsive-shell divergence.
+- Next action: complete Phase 6 prompt, generation, stream, and finalization
+  evidence using the closed Phase 4/5 visible and authoring contracts.
 
 ## Phase Router
 
@@ -47,9 +49,9 @@ findings under [`findings/`](findings/); inventory ownership under
 | [1. Harness and assurance architecture](phases/phase-1-harness-and-assurance-architecture.md) | Complete | Made baselines, fixtures, differential/expected-difference ownership, affected selection, CI, and release gates reproducible. |
 | [2. Browser state synchronization and recovery](phases/phase-2-browser-state-sync-and-recovery.md) | Complete | Re-verified bootstrap projections, writer/observer boundaries, outbox/receipts, replay, reconnect, reload, and recovery lineage. |
 | [3. Persistence, commands, events, and bridges](phases/phase-3-persistence-commands-events-and-bridges.md) | Complete | Closed command, durable-field, SQLite, event/resource, replay, and editing-bridge ownership. |
-| [4. Navigation, chat, shared UI, and presentation](phases/phase-4-navigation-chat-and-shared-ui.md) | In progress | Verify visible navigation, chat, composer, transcript, hotkey, focus, feedback, and responsive behavior. |
+| [4. Navigation, chat, shared UI, and presentation](phases/phase-4-navigation-chat-and-shared-ui.md) | Complete | Closed route/control ownership, built-browser generation/recovery/reroll journeys, and the signed shared responsive shell. |
 | [5. Settings, profiles, authoring, and catalogs](phases/phase-5-settings-profiles-authoring-and-catalogs.md) | Complete | Closed settings/default/preset and collection ownership, visible character reload, Realm/catalog failure behavior, and upload atomicity. |
-| [6. Prompting, generation, and streaming](phases/phase-6-prompting-generation-and-streaming.md) | Pending | Verify model-visible assembly, transcript mutation, stream/cancel/retry/reattach, and finalization. |
+| [6. Prompting, generation, and streaming](phases/phase-6-prompting-generation-and-streaming.md) | In progress | Verify model-visible assembly, transcript mutation, stream/cancel/retry/reattach, and finalization. |
 | [7. Providers, models, translation, and media](phases/phase-7-providers-models-translation-and-media.md) | Pending | Verify capability/resolution, credentials, endpoints, provider wire contracts, translation, and media behavior. |
 | [8. Memory, embeddings, jobs, and workers](phases/phase-8-memory-embeddings-jobs-and-workers.md) | Pending | Verify retained memory selection, context truncation, jobs, retries, cancellation, and reconciliation. |
 | [9. Scripting, parsing, triggers, and automation](phases/phase-9-scripting-parsing-triggers-and-automation.md) | Pending | Verify CBS, regex, Lua, trigger/script ordering and state, transformations, and explicit unsupported effects. |
@@ -149,10 +151,27 @@ findings under [`findings/`](findings/); inventory ownership under
 - New verified Category E rows `ORC-SURFACE-094` through `ORC-SURFACE-096` own
   these surfaces; pilot row `ORC-SURFACE-001` is re-verified. No new finding or
   decision was required, and the inventory now contains 96 rows.
-- Proposed character/module conversion `ORC-DECISION-058` remains Category J
-  Phase 10/13 work. Phase 4 remains in progress for its independent visible
-  responsive/mobile decision boundary; neither is silently settled by this
-  out-of-order evidence closure.
+- Signed character/module conversion `ORC-DECISION-058` remains Category J
+  Phase 10 verification work. Phase 4's separately signed responsive-shell
+  decision does not alter this Phase 5 evidence.
+
+## Phase 4 Completion Record
+
+- `e9901b0f68acc405cef8a8af642eb40f83e8affb` closes every route family and
+  stable primary control marker across route, sidebar, chat, message,
+  generation, input-hook, translation, speech, export, and local owners.
+- The focused route/App/sidebar/composer/reroll/hotkey selection passes all 156
+  tests. The production-bundle accepted-send matrix passes all eleven desktop
+  and Pixel journeys; the reload/swipe reroll journey also passes.
+- `477a3aece1fffc159b0354fef5b21ecddf60cab5` proves the visible pre-token
+  provider error and exact billing-aware Retry without duplicating the accepted
+  user row.
+- RH+ commit `2073b5fb6a755516b80e48509c6e0a322f062677` explicitly establishes the
+  mounted shared App shell as the current responsive product contract in place
+  of the baseline's unmounted beta-mobile components. `ORC-DECISION-060` and
+  `ORC-SURFACE-099` govern the signed difference.
+- Category D rows `ORC-SURFACE-097` through `ORC-SURFACE-099` own the closed
+  surfaces. The inventory now contains 99 rows and all 60 decisions are signed.
 
 ## Locked Planning Decisions
 
