@@ -272,8 +272,8 @@ const DURABLE_DELETE_CASES: DeleteCase[] = [
     name: 'translator presets',
     url: '/api/v1/commands/translator-presets/translator-delete',
     body: { selectPresetId: 'translator-stay' },
-    event: { type: 'translatorPreset.deleted', resource: 'translatorPreset', id: 'translator-delete' },
-    extra: { selectedPresetId: 'translator-stay' },
+    event: { type: 'translatorPreset.deleted', resource: 'state', id: 'translator-delete' },
+    extra: { selectedPresetId: 'translator-stay', cascadedChatIds: [] },
   },
   {
     name: 'modules',
@@ -368,10 +368,10 @@ describe('durable DELETE idempotency', () => {
       body: { selectPresetId: 'missing-replacement' },
       event: {
         type: 'translatorPreset.deleted',
-        resource: 'translatorPreset',
+        resource: 'state',
         id: 'missing-translator',
       },
-      extra: { selectedPresetId: 'only-translator' },
+      extra: { selectedPresetId: 'only-translator', cascadedChatIds: [] },
     },
     {
       name: 'chat',

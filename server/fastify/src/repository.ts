@@ -762,6 +762,21 @@ export function writeSingleChatRowExact(db: DatabaseSync, chatId: string, chat: 
   writeSingleChatRowData(db, chatId, chat, false)
 }
 
+export function clearChatTranslatorPresetBindings(db: DatabaseSync, presetId: string): string[] {
+  const rows = db
+    .prepare("SELECT id, data_json FROM chats WHERE json_extract(data_json, '$.translatorPresetId') = ? ORDER BY id")
+    .all(presetId) as unknown as Array<Pick<ChatRow, 'id' | 'data_json'>>
+  const clearedChatIds: string[] = []
+  for (const row of rows) {
+    const chat = JSON.parse(row.data_json)
+    if (!isRecord(chat) || chat.translatorPresetId !== presetId) continue
+    delete chat.translatorPresetId
+    writeSingleChatRowExact(db, row.id, chat)
+    clearedChatIds.push(row.id)
+  }
+  return clearedChatIds
+}
+
 function writeSingleChatRowData(
   db: DatabaseSync,
   chatId: string,

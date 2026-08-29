@@ -351,6 +351,7 @@ import {
 } from '../messageStore.js'
 import {
   deleteCharacterChatRow,
+  clearChatTranslatorPresetBindings,
   deleteCharacterRow,
   deletePluginStorageKey,
   deleteInlayCatalogEntry,
@@ -5053,6 +5054,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.translatorPresets,
         mutate(database, innerDb) {
           const target = ensureTranslatorPresetDatabaseObject(database)
           const presets = ensureTranslatorPresetCollection(target)
@@ -5168,13 +5170,14 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.translatorPresets,
         mutate(database, innerDb) {
           const target = ensureTranslatorPresetDatabaseObject(database)
           const presets = ensureTranslatorPresetCollection(target)
           const deletedIndex = findTranslatorPresetIndex(presets, presetId)
           if (deletedIndex === -1) {
             return {
-              event: { ...COMMAND_EVENT_CATALOG.translatorPresetDeleted, id: presetId },
+              event: { ...COMMAND_EVENT_CATALOG.translatorPresetDeleted, resource: 'state', id: presetId },
               extra: {
                 presetId,
                 selectedPresetId: selectedTranslatorPresetId(target, presets),
@@ -5199,15 +5202,7 @@ export function registerCommandRoutes(
           const selectedIndex = nextSelectedId ? requireTranslatorPresetIndex(presets, nextSelectedId) : 0
           target.translatorPresetId = selectedIndex
           syncSelectedTranslatorPresetToLegacyFields(target, presets)
-          const cascadedChatIds: string[] = []
-          for (const character of normalizeAllCharacterChats(target)) {
-            for (const chat of ensureCharacterChats(character)) {
-              if (chat.translatorPresetId !== presetId) continue
-              delete chat.translatorPresetId
-              writeSingleChatRow(innerDb, chat.id, chat)
-              cascadedChatIds.push(chat.id)
-            }
-          }
+          const cascadedChatIds = clearChatTranslatorPresetBindings(innerDb, presetId)
           writeTranslatorPresetMutation(innerDb, target, presets)
 
           return {
