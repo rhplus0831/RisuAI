@@ -2617,12 +2617,15 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
     stopSending: false,
     prompt: {
       messages: formated.map((row) => ({ role: row.role, content: row.content })),
-      promptInfo: {
-        ...state.promptInfo,
-        ...(state.promptText !== undefined ? { promptText: state.promptText } : {}),
-        inputTokens: state.inputTokens,
-        outputTokens: state.outputTokens,
-      },
+      promptInfo:
+        state.database.promptInfoInsideChat === true
+          ? {
+              ...state.promptInfo,
+              ...(state.promptText !== undefined ? { promptText: state.promptText } : {}),
+              inputTokens: state.inputTokens,
+              outputTokens: state.outputTokens,
+            }
+          : {},
       lorebookActivation: state.report,
       // Carry the full rows on the wire so preview clients can inspect the
       // dispatch payload, not just the lossy `messages` projection.
@@ -3111,7 +3114,7 @@ function allAgentOutputsRequiredByKey(plan: AgentPresetExecutionPlan): Record<st
 }
 
 function attachAgentPresetDiagnostics(generationInfo: Record<string, unknown> | undefined, state: AssemblyState): void {
-  if (!generationInfo || !state.agentPreset) return
+  if (!generationInfo || !state.agentPreset || state.agentPreset.resolution.status === 'none') return
   generationInfo.agentPreset = buildAgentPresetGenerationDiagnostics(state.agentPreset)
 }
 

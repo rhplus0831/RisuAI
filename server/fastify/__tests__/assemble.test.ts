@@ -3723,8 +3723,24 @@ describe('renderAndBudget + assemblePrompt', () => {
     expect(result.formated?.length).toBeGreaterThan(0)
     expect(result.biases).toEqual([])
     expect(result.prompt?.biases).toEqual([])
+    expect(result.prompt?.promptInfo).toEqual({})
     // The lorebook activation report rides along on the prompt event.
     expect(result.prompt?.lorebookActivation).toBeDefined()
+  })
+
+  it('does not persist inactive Agent Preset diagnostics', async () => {
+    const assembled = await assemblePrompt(baseInput(), depsFor(fullDb()))
+    expect(assembled.stopSending).toBe(false)
+    if (assembled.stopSending) return
+
+    const generationInfo: Record<string, unknown> = {}
+    await runServerPostGeneration(assembled.state!, {
+      completionText: 'assistant reply',
+      generationId: 'generation-without-agent-preset',
+      generationInfo,
+    })
+
+    expect(generationInfo).not.toHaveProperty('agentPreset')
   })
 
   it('uses format order and produces prompt rows when promptTemplate is null', async () => {
