@@ -197,6 +197,17 @@ function assembleBlockDatabase(blocks: ReturnType<typeof decodeRisuSaveBlockEnve
   const database: JsonRecord = {}
   const skippedBlocks: RisuSaveImportSkippedBlock[] = []
   let sawRoot = false
+  const singletonTypes = new Set<RisuSaveBlockType>()
+  const singletonBlockTypes = new Set([
+    RisuSaveBlockType.ROOT,
+    RisuSaveBlockType.BOTPRESET,
+    RisuSaveBlockType.MODULES,
+    RisuSaveBlockType.PLUGINS,
+    RisuSaveBlockType.LOADOUTS,
+    RisuSaveBlockType.PLUGIN_STORAGE,
+    RisuSaveBlockType.CONFIG,
+  ])
+  const rootComponentKeys = new Set<string>()
 
   for (const block of blocks) {
     if (block.unsupportedReference) continue
@@ -206,6 +217,12 @@ function assembleBlockDatabase(blocks: ReturnType<typeof decodeRisuSaveBlockEnve
     }
     if (block.content === null) {
       throw new ValidationError(`RISUSAVE block ${block.name} has no content`)
+    }
+    if (singletonBlockTypes.has(block.type)) {
+      if (singletonTypes.has(block.type)) {
+        throw new ValidationError(`RISUSAVE save contains duplicate singleton block type ${block.type}`)
+      }
+      singletonTypes.add(block.type)
     }
 
     const parsed = parseBlockJson(block.name, block.content)
@@ -248,6 +265,10 @@ function assembleBlockDatabase(blocks: ReturnType<typeof decodeRisuSaveBlockEnve
         if (ROOT_COMPONENT_RESERVED_KEYS.has(component.key)) {
           throw new ValidationError(`${block.name} block key ${component.key} is reserved for resource blocks`)
         }
+        if (rootComponentKeys.has(component.key)) {
+          throw new ValidationError(`${block.name} block key ${component.key} duplicates another root component`)
+        }
+        rootComponentKeys.add(component.key)
         database[component.key] = cloneJson(component.data)
         break
       }

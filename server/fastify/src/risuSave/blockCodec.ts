@@ -49,6 +49,7 @@ const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 
 export const RISUSAVE_BLOCK_NAME_MAX_BYTES = 255
+export const RISUSAVE_BLOCK_MAX_COUNT = 65_536
 // A valid export normally has one directory entry per resource block. This
 // generous ceiling prevents a small ROOT block from expanding into an
 // unbounded synthetic block list while remaining far above realistic saves.
@@ -87,8 +88,13 @@ export function decodeRisuSaveBlockEnvelope(
   const loadedNames = new Set<string>()
   let offset = RISUSAVE_BLOCK_HEADER.length
   let expandedBytes = 0
+  let blockCount = 0
 
   while (offset < data.length) {
+    blockCount += 1
+    if (blockCount > RISUSAVE_BLOCK_MAX_COUNT) {
+      throw new Error(`RISUSAVE envelope exceeds ${RISUSAVE_BLOCK_MAX_COUNT} blocks`)
+    }
     if (offset + 7 > data.length) {
       throw new Error(`Malformed RISUSAVE block header at offset ${offset}`)
     }
@@ -108,6 +114,9 @@ export function decodeRisuSaveBlockEnvelope(
 
     const name = decoder.decode(data.subarray(offset, offset + nameLength))
     offset += nameLength
+    if (loadedNames.has(name)) {
+      throw new Error(`RISUSAVE envelope contains a duplicate block name: ${name}`)
+    }
 
     const byteLength = new DataView(data.buffer, data.byteOffset + offset, 4).getUint32(0, true)
     offset += 4

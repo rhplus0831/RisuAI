@@ -8,6 +8,7 @@ import {
   decodeRisuSaveBlockEnvelope,
   encodeRisuSaveBlockEnvelope,
   RISUSAVE_BLOCK_DIRECTORY_MAX_ENTRIES,
+  RISUSAVE_BLOCK_MAX_COUNT,
   RISUSAVE_BLOCK_NAME_MAX_BYTES,
   RisuSaveBlockType,
 } from '../src/risuSave/blockCodec.js'
@@ -233,6 +234,49 @@ describe('server .risu fixture harness', () => {
     expect(decodeRisuSaveBlockEnvelope(encoded).unsupportedReferences).toEqual([
       { name: 'missing', type: RisuSaveBlockType.REMOTE, kind: 'cache-only' },
     ])
+  })
+
+  it('rejects duplicate physical block names and excessive physical block cardinality', () => {
+    const duplicate = encodeRisuSaveBlockEnvelope([
+      { name: 'root', type: RisuSaveBlockType.ROOT, data: JSON.stringify({ version: 1 }) },
+      { name: 'root', type: RisuSaveBlockType.CONFIG, data: JSON.stringify({ version: 1 }) },
+    ])
+    expect(() => decodeRisuSaveBlockEnvelope(duplicate)).toThrow('duplicate block name: root')
+
+    const excessive = encodeRisuSaveBlockEnvelope(
+      Array.from({ length: RISUSAVE_BLOCK_MAX_COUNT + 1 }, (_, index) => ({
+        name: index.toString(36),
+        type: RisuSaveBlockType.CHAT,
+        data: '',
+      })),
+    )
+    expect(() => decodeRisuSaveBlockEnvelope(excessive)).toThrow(
+      `RISUSAVE envelope exceeds ${RISUSAVE_BLOCK_MAX_COUNT} blocks`,
+    )
+  })
+
+  it('rejects duplicate singleton resource types and root component keys', () => {
+    const duplicateSingleton = encodeRisuSaveBlockEnvelope([
+      { name: 'root', type: RisuSaveBlockType.ROOT, data: JSON.stringify({ version: 1 }) },
+      { name: 'config-a', type: RisuSaveBlockType.CONFIG, data: JSON.stringify({ version: 1 }) },
+      { name: 'config-b', type: RisuSaveBlockType.CONFIG, data: JSON.stringify({ version: 1 }) },
+    ])
+    expect(() => decodeRisuSaveImportSnapshot(duplicateSingleton)).toThrow('duplicate singleton block type')
+
+    const duplicateComponent = encodeRisuSaveBlockEnvelope([
+      { name: 'root', type: RisuSaveBlockType.ROOT, data: JSON.stringify({ version: 1 }) },
+      {
+        name: 'component-a',
+        type: RisuSaveBlockType.ROOT_COMPONENT,
+        data: JSON.stringify({ key: 'custom', data: { first: true } }),
+      },
+      {
+        name: 'component-b',
+        type: RisuSaveBlockType.ROOT_COMPONENT,
+        data: JSON.stringify({ key: 'custom', data: { second: true } }),
+      },
+    ])
+    expect(() => decodeRisuSaveImportSnapshot(duplicateComponent)).toThrow('duplicates another root component')
   })
 
   it('bounds cache-only directory expansion by entry count and encoded block-name size', () => {
