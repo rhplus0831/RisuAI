@@ -12,8 +12,8 @@ findings under [`findings/`](findings/); inventory ownership under
 ## Current Snapshot
 
 - Plan state: Active.
-- Current phase: Phase 2 — browser state synchronization and recovery.
-- Active slice: [Phase 2 bootstrap, writer, outbox, and recovery](phases/slices/phase-2-browser-state-sync-and-recovery/phase-2-bootstrap-writer-outbox-recovery.md).
+- Current phase: Phase 4 — navigation, chat, shared UI, and presentation.
+- Active slice: [Phase 4 navigation, chat, shared UI, and presentation](phases/phase-4-navigation-chat-and-shared-ui.md).
 - Planning audit anchor: `1933c43ff7b4d35b57b0852013d95f3881a8cb28`.
 - Compatibility baseline: `71c476e9c86263fe907105b011ca4dde0a619d66`.
 - Behavioral sync cursor: `f3f0242fba297d82e0efcc2c31ca1428569b70f2`.
@@ -23,16 +23,16 @@ findings under [`findings/`](findings/); inventory ownership under
   `/home/codex/risu-baseline-71c476e9c`; its exact commit, dependency state, and
   cleanliness are enforced by `pnpm prepare:compat-baseline` and the harness
   preflight.
-- Current compatibility state: Phase 1 assurance architecture is complete at
-  `546ea5aaee78144176043971fdd2c13c9e7c6079`; the full pinned differential
-  passed with 16 baseline cells, 18 current and cluster tests, 15 governed
-  baseline/current divergences, and healthy cluster 10.
+- Current compatibility state: Phases 2 and 3 are complete at
+  `f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74`; the post-correction full pinned
+  differential passed with 16 baseline cells, 18 current and cluster tests, 15
+  governed baseline/current divergences, and healthy cluster 10.
 - Canonical findings: 15 resolved findings: 14 historical imports with exact raw
   mappings plus the Phase 1 lossless-normalizer finding `ORC-A-015`.
 - Open maintainer decisions: four historical unsupported statements remain
   `proposed` because their sources do not identify individual authority.
-- Next action: execute the Phase 2 bootstrap/writer/outbox recovery slice using
-  the Phase 1 evidence contract and gates.
+- Next action: execute the Phase 4 navigation/chat/shared-UI audit using the
+  completed state, command, event, and bridge ownership gates.
 
 ## Phase Router
 
@@ -40,9 +40,9 @@ findings under [`findings/`](findings/); inventory ownership under
 | ---: | --- | --- |
 | [0. Cursors, contract, inventory, and pilot](phases/phase-0-cursors-contract-and-inventory.md) | Complete | Frozen references, exact authority import, fail-closed registers, reproducible baseline, and four verified pilots. |
 | [1. Harness and assurance architecture](phases/phase-1-harness-and-assurance-architecture.md) | Complete | Made baselines, fixtures, differential/expected-difference ownership, affected selection, CI, and release gates reproducible. |
-| [2. Browser state synchronization and recovery](phases/phase-2-browser-state-sync-and-recovery.md) | In progress | Verify bootstrap, writer, outbox, hydration, invalidation, reload, and recovery behavior. |
-| [3. Persistence, commands, events, and bridges](phases/phase-3-persistence-commands-events-and-bridges.md) | Pending | Verify logical durable state, mutation semantics, ordering, identity, receipts, and editing bridges. |
-| [4. Navigation, chat, shared UI, and presentation](phases/phase-4-navigation-chat-and-shared-ui.md) | Pending | Verify visible navigation, chat, composer, transcript, hotkey, focus, feedback, and responsive behavior. |
+| [2. Browser state synchronization and recovery](phases/phase-2-browser-state-sync-and-recovery.md) | Complete | Re-verified bootstrap projections, writer/observer boundaries, outbox/receipts, replay, reconnect, reload, and recovery lineage. |
+| [3. Persistence, commands, events, and bridges](phases/phase-3-persistence-commands-events-and-bridges.md) | Complete | Closed command, durable-field, SQLite, event/resource, replay, and editing-bridge ownership. |
+| [4. Navigation, chat, shared UI, and presentation](phases/phase-4-navigation-chat-and-shared-ui.md) | In progress | Verify visible navigation, chat, composer, transcript, hotkey, focus, feedback, and responsive behavior. |
 | [5. Settings, profiles, authoring, and catalogs](phases/phase-5-settings-profiles-authoring-and-catalogs.md) | Pending | Verify defaults, legacy shapes, presets, personas, characters, lorebooks, catalogs, and authoring workflows. |
 | [6. Prompting, generation, and streaming](phases/phase-6-prompting-generation-and-streaming.md) | Pending | Verify model-visible assembly, transcript mutation, stream/cancel/retry/reattach, and finalization. |
 | [7. Providers, models, translation, and media](phases/phase-7-providers-models-translation-and-media.md) | Pending | Verify capability/resolution, credentials, endpoints, provider wire contracts, translation, and media behavior. |
@@ -90,6 +90,40 @@ findings under [`findings/`](findings/); inventory ownership under
   `328a70787c26051525a713fc86311fe672dd7b8b`.
 - Category A inventory rows `ORC-SURFACE-078` through `ORC-SURFACE-085` own the
   eight assurance surfaces and their exact implementation and test evidence.
+
+## Phase 2 Completion Record
+
+- Shared projection normalization across shell, full-settings, cache, and group
+  reads, legacy `pip` migration, selection repair, and lineage-preserving
+  response/SSE parsing landed at
+  `3ce85c1f034b3afc493e291f8a8f5e9227064463`.
+- The audit caught a valid partial-object fallback regression in that change;
+  `f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74` preserves persisted partial values
+  while still defaulting invalid shell fields.
+- Durable writer, observer, outbox, receipt, replay, response-loss, reconnect,
+  takeover, and reload owners were re-verified through focused and built-browser
+  evidence.
+- Category B rows `ORC-SURFACE-086` through `ORC-SURFACE-088` own the new
+  assurance surfaces; historical rows `ORC-SURFACE-023` and `ORC-SURFACE-072`
+  are verified with no residual.
+
+## Phase 3 Completion Record
+
+- `958f8585138ec817fe5d134563df585434ed5821` pins all 161 command routes, 422
+  retained Database fields, 46 SQLite tables and exact columns, 146 command
+  events, browser resource reconciliation, replay ordering, and six built-in
+  durable editing bridges.
+- The same change restored six retained legacy-memory settings to the writable
+  command catalog and represented both retained auto-continue interchange fields
+  in the current Database type.
+- `3f20a80b780f2538fd1e38aa6514d9a9f894985a` accepts only exact BardWiki
+  preview/dry-run eventless receipts while keeping mutating receipts event-bound.
+- Category C rows `ORC-SURFACE-089` through `ORC-SURFACE-093` own the new
+  structural surfaces; historical rows `ORC-SURFACE-024`, `ORC-SURFACE-025`,
+  `ORC-SURFACE-061`, and `ORC-SURFACE-073` are verified.
+- Focused production, structural, browser event, and recovery lanes passed at
+  `f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74`, followed by the required full
+  pinned differential. The canonical inventory now contains 93 rows.
 
 ## Locked Planning Decisions
 

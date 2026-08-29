@@ -564,7 +564,8 @@
         "Persisted generationInfo carries durable protocol metadata"
       ],
       "inventoryIds": [
-        "ORC-SURFACE-024"
+        "ORC-SURFACE-024",
+        "ORC-SURFACE-087"
       ],
       "rationale": "The maintainer signed all Tier-3 compatibility rows after reviewing their user-visible impact.",
       "parityAlternative": "Restore the baseline behavior described for cluster-28.",
@@ -573,10 +574,14 @@
       "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139",
       "implementationOwners": [
         "server/fastify/src/routes/commands.ts",
-        "server/fastify/src/repository.ts"
+        "server/fastify/src/repository.ts",
+        "src/ts/server/commands.ts",
+        "src/ts/server/events.ts"
       ],
       "regressionOwners": [
-        "server/fastify/__tests__/commands.test.ts"
+        "server/fastify/__tests__/commands.test.ts",
+        "src/ts/server/commands.test.ts",
+        "src/ts/server/events.test.ts"
       ],
       "diagnostics": [
         "The owning workflow and regression evidence expose the decided outcome."

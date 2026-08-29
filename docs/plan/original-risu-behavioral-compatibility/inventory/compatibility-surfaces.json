@@ -1426,11 +1426,20 @@
         ],
         "browser": [
           "src/ts/bootstrap.ts",
-          "src/ts/server/chatMessageHydration.svelte.ts"
+          "src/ts/server/chatMessageHydration.svelte.ts",
+          "src/ts/server/lifecycleRecovery.ts",
+          "src/ts/server/pendingMutationOutbox.ts"
         ],
-        "protocol": [],
-        "fastify": [],
-        "persistence": []
+        "protocol": [
+          "src/ts/server/commands.ts#CommandEvent"
+        ],
+        "fastify": [
+          "server/fastify/src/commands/events.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/db.ts#command_events",
+          "server/fastify/src/db.ts#command_mutation_receipts"
+        ]
       },
       "upstream": {
         "commits": [],
@@ -1444,25 +1453,30 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
         ],
-        "current": [
-          "src/ts/bootstrap.ts",
-          "src/ts/server/chatMessageHydration.svelte.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "src/ts/server/chatMessageHydration.test.ts"
+      "current": [
+        "src/ts/bootstrap.ts",
+        "src/ts/server/chatMessageHydration.svelte.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "3ce85c1f034b3afc493e291f8a8f5e9227064463"
+      ],
+      "tests": [
+        "src/ts/server/chatMessageHydration.test.ts",
+        "src/ts/server/lifecycleRecovery.test.ts",
+        "src/ts/server/pendingMutationOutbox.test.ts",
+        "src/ts/server/pendingMutationOutbox.crossTab.test.ts",
+        "server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts"
         ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "state": "verified",
+      "confidence": "high",
+      "lastFastifyCommit": "3ce85c1f034b3afc493e291f8a8f5e9227064463",
         "findingIds": [],
         "decisionId": "ORC-DECISION-019",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
-      },
-      "notes": "Imported from explicit dated maintainer authority."
+      "residual": null
+    },
+    "notes": "Imported from explicit dated maintainer authority and re-verified through durable replay, response-loss, reconnect, and observer/writer recovery owners in Phase 2."
     },
     {
       "id": "ORC-SURFACE-024",
@@ -1502,25 +1516,31 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
         ],
-        "current": [
-          "server/fastify/src/routes/commands.ts",
-          "server/fastify/src/repository.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/commands.test.ts"
+      "current": [
+        "server/fastify/src/routes/commands.ts",
+        "server/fastify/src/repository.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "3ce85c1f034b3afc493e291f8a8f5e9227064463",
+        "958f8585138ec817fe5d134563df585434ed5821",
+        "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74"
+      ],
+      "tests": [
+        "server/fastify/__tests__/commands.test.ts",
+        "server/fastify/__tests__/phase3CompatibilityStructure.test.ts",
+        "src/ts/server/commands.test.ts",
+        "src/ts/server/events.test.ts"
         ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "state": "verified",
+      "confidence": "high",
+      "lastFastifyCommit": "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74",
         "findingIds": [],
         "decisionId": "ORC-DECISION-020",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
-      },
-      "notes": "Imported from explicit dated maintainer authority."
+      "residual": null
+    },
+    "notes": "Imported from explicit dated maintainer authority and re-verified through generation persistence, lineage projection, event parsing, and closed-world durable-state evidence in Phases 2-3."
     },
     {
       "id": "ORC-SURFACE-025",
@@ -1560,25 +1580,29 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
         ],
-        "current": [
-          "server/fastify/src/routes/commands.ts",
-          "server/fastify/src/repository.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/commands.test.ts"
+      "current": [
+        "server/fastify/src/routes/commands.ts",
+        "server/fastify/src/repository.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "958f8585138ec817fe5d134563df585434ed5821",
+        "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74"
+      ],
+      "tests": [
+        "server/fastify/__tests__/commands.test.ts",
+        "server/fastify/__tests__/phase3CompatibilityStructure.test.ts",
+        "test/compat-harness/current.runner.ts"
         ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "state": "verified",
+      "confidence": "high",
+      "lastFastifyCommit": "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74",
         "findingIds": [],
         "decisionId": "ORC-DECISION-021",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
-      },
-      "notes": "Imported from explicit dated maintainer authority."
+      "residual": null
+    },
+    "notes": "Imported from explicit dated maintainer authority and re-verified through the governed multisend compatibility cell plus Phase 3 command and persistence ownership."
     },
     {
       "id": "ORC-SURFACE-026",
@@ -3676,25 +3700,30 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:29-34,97-103"
         ],
-        "current": [
-          "server/fastify/src/routes/commands.ts",
-          "server/fastify/src/repository.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/commands.test.ts"
+      "current": [
+        "server/fastify/src/routes/commands.ts",
+        "server/fastify/src/repository.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "958f8585138ec817fe5d134563df585434ed5821",
+        "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74"
+      ],
+      "tests": [
+        "server/fastify/__tests__/commands.test.ts",
+        "server/fastify/__tests__/phase3CompatibilityStructure.test.ts",
+        "src/ts/server/lorebookBridge.svelte.test.ts",
+        "src/ts/server/scriptDefinitionBridge.svelte.test.ts"
         ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "state": "verified",
+      "confidence": "high",
+      "lastFastifyCommit": "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74",
         "findingIds": [],
         "decisionId": "ORC-DECISION-057",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
-      },
-      "notes": "Imported from explicit dated maintainer authority."
+      "residual": null
+    },
+    "notes": "Imported from explicit dated maintainer authority and re-verified through server command, owner-scoped bridge rollback, lifecycle flush, and closed-world bridge evidence in Phase 3."
     },
     {
       "id": "ORC-SURFACE-062",
@@ -4324,11 +4353,20 @@
         ],
         "browser": [
           "src/ts/bootstrap.ts",
-          "src/ts/server/chatMessageHydration.svelte.ts"
+          "src/ts/server/chatMessageHydration.svelte.ts",
+          "src/ts/server/lifecycleRecovery.ts",
+          "src/ts/server/pendingMutationOutbox.ts"
         ],
-        "protocol": [],
-        "fastify": [],
-        "persistence": []
+        "protocol": [
+          "src/ts/server/commands.ts#CommandEvent"
+        ],
+        "fastify": [
+          "server/fastify/src/commands/events.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/db.ts#command_events",
+          "server/fastify/src/db.ts#command_mutation_receipts"
+        ]
       },
       "upstream": {
         "commits": [],
@@ -4342,26 +4380,31 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
         ],
-        "current": [
-          "0e46fed68c4c387788135d5232d2761c3f978d28",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "src/ts/server/chatMessageHydration.test.ts"
+      "current": [
+        "0e46fed68c4c387788135d5232d2761c3f978d28",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "3ce85c1f034b3afc493e291f8a8f5e9227064463"
+      ],
+      "tests": [
+        "src/ts/server/chatMessageHydration.test.ts",
+        "src/ts/server/lifecycleRecovery.test.ts",
+        "src/ts/server/pendingMutationOutbox.test.ts",
+        "src/ts/server/pendingMutationOutbox.crossTab.test.ts",
+        "server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts"
         ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "high",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "state": "verified",
+      "confidence": "high",
+      "lastFastifyCommit": "3ce85c1f034b3afc493e291f8a8f5e9227064463",
         "findingIds": [
           "ORC-B-009"
         ],
         "decisionId": null,
-        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
-      },
-      "notes": "Canonical import of a resolved 2026-08 compatibility finding."
+      "residual": null
+    },
+    "notes": "Canonical import of a resolved 2026-08 compatibility finding, re-verified through replay-gap, response-loss, reconnect, and observer/writer recovery evidence in Phase 2."
     },
     {
       "id": "ORC-SURFACE-073",
@@ -4401,26 +4444,31 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
         ],
-        "current": [
-          "0cf091c2511d52171629124cdb9df3a4212e0823",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/commands.test.ts"
+      "current": [
+        "0cf091c2511d52171629124cdb9df3a4212e0823",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "958f8585138ec817fe5d134563df585434ed5821",
+        "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74"
+      ],
+      "tests": [
+        "server/fastify/__tests__/commands.test.ts",
+        "server/fastify/__tests__/phase3CompatibilityStructure.test.ts",
+        "src/ts/server/lorebookBridge.svelte.test.ts",
+        "src/ts/server/scriptDefinitionBridge.svelte.test.ts"
         ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "high",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "state": "verified",
+      "confidence": "high",
+      "lastFastifyCommit": "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74",
         "findingIds": [
           "ORC-C-010"
         ],
         "decisionId": "ORC-DECISION-057",
-        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
-      },
-      "notes": "Canonical import of a resolved 2026-08 compatibility finding."
+      "residual": null
+    },
+    "notes": "Canonical import of a resolved 2026-08 compatibility finding, re-verified through server command, per-entry lorebook bridge, conflict rollback, and lifecycle flush evidence in Phase 3."
     },
     {
       "id": "ORC-SURFACE-074",
@@ -5179,6 +5227,590 @@
         "residual": null
       },
       "notes": "Quality CI owns always-on register/current proof; the separate workflow owns the environment-heavy pinned proof and 14-day evidence retention."
+    },
+    {
+      "id": "ORC-SURFACE-086",
+      "title": "Bootstrap shell projection normalization and selection repair",
+      "primaryCategory": "B",
+      "seamTags": [
+        "C"
+      ],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "Shell, full-settings, cache, and grouped-settings reads preserve the same defaults and valid persisted values for missing, null, empty, malformed, and legacy settings shapes.",
+        "Legacy keepSessionAlive pip projects as sound, empty custom CSS stays empty, invalid characterOrder becomes an empty array, and an out-of-range currentChar becomes -1.",
+        "Valid partial object settings survive projection while standalone-setting present/absent semantics remain raw."
+      ],
+      "variants": [
+        "missing and null scalar settings",
+        "empty string and valid partial object settings",
+        "legacy keepSessionAlive pip",
+        "malformed typed shell values",
+        "missing or invalid character order and selection",
+        "shell, full, cache, group, and standalone reads"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage/database.svelte.ts",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/bootstrap.ts"
+        ],
+        "browser": [
+          "src/ts/bootstrap.ts",
+          "src/ts/server/shellProtocol.ts"
+        ],
+        "protocol": [
+          "src/ts/server/shellProtocol.ts#ServerShellSettings"
+        ],
+        "fastify": [
+          "server/fastify/src/routes/resourceReads.ts#normalizeSettingsForRead",
+          "server/fastify/src/routes/resourceReads.ts#projectShellSettings"
+        ],
+        "persistence": [
+          "server/fastify/src/repository.ts#loadSettingsFromSqlite",
+          "server/fastify/src/db.ts#settings",
+          "server/fastify/src/db.ts#characters"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only invalid or absent values may fall back to the baseline-compatible default; a valid empty string or valid partial object value cannot be replaced by a default."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage/database.svelte.ts#updateDatabase",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/bootstrap.ts"
+        ],
+        "current": [
+          "3ce85c1f034b3afc493e291f8a8f5e9227064463",
+          "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74"
+        ],
+        "tests": [
+          "server/fastify/__tests__/resourceReads.test.ts",
+          "server/fastify/__tests__/commands.test.ts",
+          "server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "Phase 2 found and corrected both the initial legacy/malformed projection gap at 3ce85c1f0 and the partial-object fallback regression at f25376ef3."
+    },
+    {
+      "id": "ORC-SURFACE-087",
+      "title": "Recovery lineage through command responses and server-sent events",
+      "primaryCategory": "B",
+      "seamTags": [
+        "C",
+        "F"
+      ],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Command-response and SSE event parsing preserve databaseLineage, operationId, sourceMessageId, jobId, id, parentId, and writer origin without changing their values.",
+        "Malformed optional lineage or origin fields reject the entire event instead of silently dropping recovery identity."
+      ],
+      "variants": [
+        "direct command receipt",
+        "server-sent command event",
+        "all lineage fields present",
+        "optional lineage fields absent",
+        "wrong-typed lineage field or blank writer origin"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "browser": [
+          "src/ts/server/commands.ts#CommandEvent",
+          "src/ts/server/events.ts#parseCommandEvent"
+        ],
+        "protocol": [
+          "src/ts/server/commands.ts#CommandEvent"
+        ],
+        "fastify": [
+          "server/fastify/src/commands/events.ts",
+          "server/fastify/src/routes/commands.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/db.ts#command_events",
+          "server/fastify/src/db.ts#generation_operations",
+          "server/fastify/src/db.ts#messages"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Durable lineage and writer-origin fields are semantic identity and may not be normalized away."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "current": [
+          "3ce85c1f034b3afc493e291f8a8f5e9227064463",
+          "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74"
+        ],
+        "tests": [
+          "src/ts/server/commands.test.ts",
+          "src/ts/server/events.test.ts",
+          "server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-020",
+        "residual": null
+      },
+      "notes": "The additive durable metadata is individually signed; Phase 2 verifies that neither response nor SSE projection strips it."
+    },
+    {
+      "id": "ORC-SURFACE-088",
+      "title": "Writer, observer, outbox, receipt, and replay recovery lifecycle",
+      "primaryCategory": "B",
+      "seamTags": [
+        "C",
+        "D"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Only the active writer mutates; observers consume ordered invalidations and can promote only through the explicit takeover lifecycle.",
+        "Queued offline work and committed work whose response was lost converge through stable mutation receipts without loss or duplicate application.",
+        "Missing, duplicated, reordered, or ahead replay revisions trigger authoritative recovery instead of partial application."
+      ],
+      "variants": [
+        "active writer and observer tab",
+        "offline-before-send",
+        "response-lost-after-commit",
+        "duplicate receipt and reconnect replay",
+        "event gap, reorder, duplicate, and ahead revision",
+        "writer takeover and reload"
+      ],
+      "owners": {
+        "baseline": [],
+        "browser": [
+          "src/ts/bootstrap.ts",
+          "src/ts/server/activeWriterSession.ts",
+          "src/ts/server/durableMutationDispatch.ts",
+          "src/ts/server/pendingMutationOutbox.ts",
+          "src/ts/server/lifecycleRecovery.ts",
+          "src/ts/server/resourceInvalidation.ts"
+        ],
+        "protocol": [
+          "src/ts/server/commands.ts",
+          "src/ts/server/events.ts"
+        ],
+        "fastify": [
+          "server/fastify/src/commands/events.ts",
+          "server/fastify/src/routes/commands.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/db.ts#command_events",
+          "server/fastify/src/db.ts#command_mutation_receipts",
+          "server/fastify/src/db.ts#database_metadata"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Receipt identity, revision order, writer ownership, queued versus accepted status, and reload outcome are semantic and may not be normalized."
+      ],
+      "evidence": {
+        "baseline": [],
+        "current": [
+          "3ce85c1f034b3afc493e291f8a8f5e9227064463",
+          "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74"
+        ],
+        "tests": [
+          "src/ts/server/activeWriterSession.test.ts",
+          "src/ts/server/chatMessageHydration.test.ts",
+          "src/ts/server/lifecycleRecovery.test.ts",
+          "src/ts/server/pendingMutationOutbox.test.ts",
+          "src/ts/server/pendingMutationOutbox.crossTab.test.ts",
+          "server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "The Original baseline had browser-local authority rather than this Fastify lifecycle; this row owns the replacement architecture's convergence and visibility contract, not a physical-architecture parity claim."
+    },
+    {
+      "id": "ORC-SURFACE-089",
+      "title": "Closed command route vocabulary and mutation policy",
+      "primaryCategory": "C",
+      "seamTags": [
+        "B"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Every production command route belongs to one reviewed logical domain and one receipt/revision policy.",
+        "The exact 161-route method/path vocabulary and policy distribution fail closed on addition, deletion, duplication, or drift."
+      ],
+      "variants": [
+        "156 revisioned mutations",
+        "asynchronous revisioned translation",
+        "conditional preview or revisioned mutation",
+        "initialization",
+        "receipt acknowledgement",
+        "new or duplicate route"
+      ],
+      "owners": {
+        "baseline": [],
+        "browser": [
+          "src/ts/server/commands.ts"
+        ],
+        "protocol": [
+          "src/ts/server/commands.ts#ServerCommandResult"
+        ],
+        "fastify": [
+          "server/fastify/src/routes/commands.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/repository.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "HTTP method, route path, domain assignment, and receipt/revision policy are exact structural inputs."
+      ],
+      "evidence": {
+        "baseline": [],
+        "current": [
+          "958f8585138ec817fe5d134563df585434ed5821",
+          "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase3CompatibilityStructure.test.ts",
+          "server/fastify/__tests__/commands.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "The route digest is an assurance gate for the Fastify replacement architecture; individual logical behavior remains owned by domain tests and inventory rows."
+    },
+    {
+      "id": "ORC-SURFACE-090",
+      "title": "Closed durable Database-field and SQLite ownership",
+      "primaryCategory": "C",
+      "seamTags": [
+        "E",
+        "H",
+        "K"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "All 422 retained logical Database fields belong to exactly one collection, writable-settings, dedicated-command, preset-owned, or opaque-round-trip owner.",
+        "Browser and Fastify writable-settings catalogs remain identical.",
+        "All 46 SQLite tables and their exact column schemas belong to a reviewed logical, durability, lifecycle, memory, BardWiki, or operational owner."
+      ],
+      "variants": [
+        "collection and scalar settings fields",
+        "dedicated command and preset-owned fields",
+        "retained opaque round-trip fields",
+        "shared logical and command-durability tables",
+        "generation, memory, BardWiki, and operational tables",
+        "new field, table, or column"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage/database.svelte.ts#Database"
+        ],
+        "browser": [
+          "src/ts/storage/database.svelte.ts#Database",
+          "src/ts/server/settingsGroups.ts#SERVER_SETTINGS_GROUP_BY_KEY"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/commands.ts#SETTINGS_GROUP_KEYS",
+          "server/fastify/src/repository.ts#COLLECTION_FIELDS"
+        ],
+        "persistence": [
+          "server/fastify/src/db.ts",
+          "server/fastify/src/repository.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "A retained field, table, or column cannot be omitted as implementation detail; every addition must select an explicit owner before the structural digest is updated."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/storage/database.svelte.ts#Database"
+        ],
+        "current": [
+          "958f8585138ec817fe5d134563df585434ed5821",
+          "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase3CompatibilityStructure.test.ts",
+          "server/fastify/__tests__/commandSettingsAndPluginStorageRange.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "The structural gate also restored six retained legacy-memory settings to the writable memory group and added the two retained auto-continue interchange fields to the current Database type."
+    },
+    {
+      "id": "ORC-SURFACE-091",
+      "title": "Closed command-event and browser reconciliation vocabulary",
+      "primaryCategory": "C",
+      "seamTags": [
+        "B",
+        "F"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "The exact 146 command-event type/resource pairs, every server-emitted resource, and every browser reconciliation branch remain classified.",
+        "Five retained legacy Agent Preset step events are replay-only and cannot silently regain a live producer.",
+        "Replay gaps, duplicates, reorder, or an ahead client revision fail closed."
+      ],
+      "variants": [
+        "targeted read, complete refresh, and revision-only resource",
+        "live producer and replay-only legacy event",
+        "contiguous replay",
+        "missing, duplicated, reordered, and ahead replay revision"
+      ],
+      "owners": {
+        "baseline": [],
+        "browser": [
+          "src/ts/server/events.ts",
+          "src/ts/server/resourceInvalidation.ts"
+        ],
+        "protocol": [
+          "src/ts/server/commands.ts#CommandEvent"
+        ],
+        "fastify": [
+          "server/fastify/src/commands/events.ts#COMMAND_EVENT_CATALOG"
+        ],
+        "persistence": [
+          "server/fastify/src/db.ts#command_events"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Event type, resource, producer status, refresh class, and revision order are exact structural and behavioral inputs."
+      ],
+      "evidence": {
+        "baseline": [],
+        "current": [
+          "3ce85c1f034b3afc493e291f8a8f5e9227064463",
+          "958f8585138ec817fe5d134563df585434ed5821",
+          "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase3CompatibilityStructure.test.ts",
+          "src/ts/server/events.test.ts",
+          "src/ts/server/resourceInvalidation.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "This closed-world gate prevents a new event or resource from shipping without a reviewed browser reconciliation owner."
+    },
+    {
+      "id": "ORC-SURFACE-092",
+      "title": "Editing bridge durable staging, rollback, and lifecycle flush ownership",
+      "primaryCategory": "C",
+      "seamTags": [
+        "B",
+        "E",
+        "I",
+        "J"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Every built-in settings, character, chat, lorebook, prompt-template, and script-definition bridge stages through the durable mutation lane.",
+        "Accepted, queued-retained, and failed owner-scoped rollback outcomes are explicit, and every bridge exposes a lifecycle flusher."
+      ],
+      "variants": [
+        "settings and character profile patch",
+        "chat metadata and folder patch",
+        "global, character, chat, and module lorebook mutation",
+        "prompt item and prompt settings mutation",
+        "character and module script or trigger mutation",
+        "accepted, queued, rejected, rollback, and lifecycle flush"
+      ],
+      "owners": {
+        "baseline": [],
+        "browser": [
+          "src/ts/server/settingsBridge.svelte.ts",
+          "src/ts/server/characterBridge.svelte.ts",
+          "src/ts/server/chatBridge.svelte.ts",
+          "src/ts/server/lorebookBridge.svelte.ts",
+          "src/ts/server/promptTemplateBridge.svelte.ts",
+          "src/ts/server/scriptDefinitionBridge.svelte.ts",
+          "src/ts/server/bridgeFlush.ts"
+        ],
+        "protocol": [
+          "src/ts/server/durableMutationDispatch.ts"
+        ],
+        "fastify": [
+          "server/fastify/src/routes/commands.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/repository.ts",
+          "server/fastify/src/db.ts#command_mutation_receipts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Queued intent cannot be normalized to accepted success, and an owner-scoped rollback cannot be widened to overwrite unrelated state."
+      ],
+      "evidence": {
+        "baseline": [],
+        "current": [
+          "958f8585138ec817fe5d134563df585434ed5821",
+          "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase3CompatibilityStructure.test.ts",
+          "src/ts/server/settingsBridge.svelte.test.ts",
+          "src/ts/server/characterBridge.svelte.test.ts",
+          "src/ts/server/chatBridge.svelte.test.ts",
+          "src/ts/server/lorebookBridge.svelte.test.ts",
+          "src/ts/server/promptTemplateBridge.svelte.test.ts",
+          "src/ts/server/scriptDefinitionBridge.svelte.test.ts",
+          "src/ts/server/bridgeFlush.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "The Original baseline mutated browser-local state directly; this row owns the replacement bridge architecture's durability and rollback contract."
+    },
+    {
+      "id": "ORC-SURFACE-093",
+      "title": "Exact eventless BardWiki preview and dry-run receipts",
+      "primaryCategory": "C",
+      "seamTags": [
+        "H"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "BardWiki rebuild preview and vault dry-run commands accept only their exact non-mutating eventless receipt shapes.",
+        "Mutating vault imports and queued rebuilds still require command events.",
+        "Malformed, contradictory, cross-target, or extra-key eventless receipts fail without advancing cached revision or invoking success reconciliation."
+      ],
+      "variants": [
+        "rebuild preview",
+        "vault import dry run",
+        "mutating vault import",
+        "queued rebuild",
+        "wrong chat, policy, strategy, count, action, event, or extra key"
+      ],
+      "owners": {
+        "baseline": [],
+        "browser": [
+          "src/ts/server/commands.ts#previewBardWikiRebuildCommand",
+          "src/ts/server/commands.ts#importBardWikiVaultCommand"
+        ],
+        "protocol": [
+          "src/ts/server/commands.ts#requestCommandJson"
+        ],
+        "fastify": [
+          "server/fastify/src/routes/commands.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/db.ts#bardwiki_documents",
+          "server/fastify/src/db.ts#bardwiki_jobs"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "The eventless exception is endpoint-, request-, and shape-specific; no generic successful 2xx body may inherit it."
+      ],
+      "evidence": {
+        "baseline": [],
+        "current": [
+          "3f20a80b780f2538fd1e38aa6514d9a9f894985a",
+          "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74"
+        ],
+        "tests": [
+          "src/ts/server/commands.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "Phase 3 found the server's intentional non-mutating eventless receipts were rejected by the otherwise fail-closed generic browser adapter; the correction is narrow and mutation receipts remain event-required."
     }
   ]
 }

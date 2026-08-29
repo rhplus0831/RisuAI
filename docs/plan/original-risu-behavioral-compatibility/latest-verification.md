@@ -4,16 +4,14 @@ Date: 2026-08-30
 
 ## Current Verdict
 
-Phases 0 and 1 are complete. Phase 1 assurance evidence closes at
-`546ea5aaee78144176043971fdd2c13c9e7c6079`, with selection ownership at
-`6ddc82431230ee40cf9c4151d3388baab0162998`, CI ownership at
-`328a70787c26051525a713fc86311fe672dd7b8b`, and the production semantic fix at
-`c33dac56811c3c6c6bdf72f8ad3faac796abfe59`. Follow-up
-`5b6a9d492beb399a58d9695097171a9c3edf1b4d` preserves prompt-preview diagnostics
-while keeping persisted transcript metadata governed separately. The pinned
-baseline, current-only harness, governed differential, register validation,
-affected selection, and aggregate graph pass. This is an assurance-architecture
-verdict, not yet a whole-product compatibility verdict; Phase 2 is in progress.
+Phases 0 through 3 are complete. Phase 2 state/recovery implementation closes
+through `3ce85c1f034b3afc493e291f8a8f5e9227064463` and the partial-object projection
+correction `f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74`. Phase 3 closed-world durable
+ownership is at `958f8585138ec817fe5d134563df585434ed5821`, with exact BardWiki eventless
+receipt handling at `3f20a80b780f2538fd1e38aa6514d9a9f894985a`. Focused production, structural,
+browser event/recovery, built-browser, register, and post-correction pinned
+differential evidence pass. This is not yet a whole-product compatibility
+verdict; Phase 4 is in progress.
 
 ## Phase 0 Environment And Baseline Evidence
 
@@ -84,6 +82,60 @@ specific residual/revisit condition rather than claiming unrun proof.
 The failed baseline command is retained because it corrected the command
 contract: use the package script for prepare mode and the direct CLI for check
 mode. It did not weaken or bypass baseline verification.
+
+## Phase 2 Evidence
+
+| Check | Result |
+| --- | --- |
+| Bootstrap projection and recovery-lineage implementation | `3ce85c1f034b3afc493e291f8a8f5e9227064463` |
+| Partial-object projection correction and completion commit | `f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74` |
+| Category B inventory | New verified rows `ORC-SURFACE-086` through `ORC-SURFACE-088`; historical rows `ORC-SURFACE-023` and `ORC-SURFACE-072` re-verified |
+| Projection coverage | Shell, full-settings, cache, settings-group, and standalone reads; missing/null/empty/malformed/legacy values; selected-character bounds |
+| Recovery coverage | Command response and SSE lineage; offline-before-send; response-lost-after-commit; replay gap; reload; observer denial and writer takeover |
+
+## Phase 2 Validation
+
+| Command/check | Result |
+| --- | --- |
+| Initial `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commands.test.ts` | Failed before `f25376ef3`: 229 passed, 1 failed; a valid partial `customTextTheme` object was replaced by its default during later bootstrap projection |
+| `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/resourceReads.test.ts server/fastify/__tests__/commands.test.ts` | Passed after the correction; 2 files and 251 tests |
+| `pnpm exec vitest run src/ts/server/commands.test.ts src/ts/server/events.test.ts` | Passed; 2 files and 176 tests, including lineage preservation/rejection and exact BardWiki eventless receipts |
+| `pnpm exec vitest run src/ts/server/chatMessageHydration.test.ts src/ts/server/lifecycleRecovery.test.ts src/ts/server/pendingMutationOutbox.test.ts src/ts/server/pendingMutationOutbox.crossTab.test.ts src/ts/server/lorebookBridge.svelte.test.ts` | Passed; 5 files and 415 tests |
+| `pnpm build:smoke && pnpm exec playwright test -c playwright.fastify-smoke.config.ts server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts` | Passed on current re-verification commit `5eca30f4872e865efee2c86f4dde7ae71e915f9a`; all 8 built-browser recovery tests, including direct-link hydration, legacy/null shell repair, response loss, replay gap, observer takeover, and background-runtime failure |
+| `pnpm check:server` | Passed for the Phase 2 implementation and projection correction |
+| `pnpm test:compat-harness` | Passed after the correction at `f25376ef3`: 16 baseline tests, 18 current/cluster tests, 16 compared cells, 15 governed divergences, cluster 10 healthy |
+
+The failed server command run is retained because it exposed a Phase 2
+production regression rather than a harness-only issue. The correction preserves
+valid partial object values while continuing to default malformed strict-shell
+fields, and the owning 251-test lane then passed.
+
+## Phase 3 Evidence
+
+| Check | Result |
+| --- | --- |
+| Closed-world command, field, schema, event, replay, and bridge ownership | `958f8585138ec817fe5d134563df585434ed5821` |
+| Exact BardWiki eventless receipt correction | `3f20a80b780f2538fd1e38aa6514d9a9f894985a` |
+| Completion verification commit | `f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74` |
+| Command vocabulary | 161 unique production command routes with an exact digest and five reviewed mutation policies |
+| Durable state vocabulary | 422 logical Database fields; identical browser/server writable-setting catalogs; 46 SQLite tables with exact column digest |
+| Event vocabulary | 146 event type/resource pairs; every browser reconciliation branch classified; five legacy Agent Preset step events replay-only |
+| Bridge vocabulary | Six built-in editing bridges with durable staging, rollback, lifecycle flush, and focused regression owners |
+| Category C inventory | New verified rows `ORC-SURFACE-089` through `ORC-SURFACE-093`; historical rows `ORC-SURFACE-024`, `ORC-SURFACE-025`, `ORC-SURFACE-061`, and `ORC-SURFACE-073` re-verified |
+
+## Phase 3 Validation
+
+| Command/check | Result |
+| --- | --- |
+| `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/phase3CompatibilityStructure.test.ts server/fastify/__tests__/commandSettingsAndPluginStorageRange.test.ts` | Passed; 2 files and 22 tests |
+| `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/resourceReads.test.ts server/fastify/__tests__/commands.test.ts` | Passed; 2 production owner files and 251 tests |
+| `pnpm exec vitest run src/ts/server/commands.test.ts src/ts/server/events.test.ts` | Passed; 2 browser command/event files and 176 tests |
+| `pnpm check:server` | Passed after the structural and receipt corrections |
+| `pnpm test:compat-harness` | Passed at the completion commit; exact differential counts are recorded in Phase 2 Validation above |
+| `pnpm validate:compat-registers` | Passed with 93 inventory rows, 59 linked decisions, 15 findings, 85 upstream units, and all 75 raw reports mapped exactly once |
+| `pnpm exec vitest run util/validate-original-risu-compatibility-registers.test.ts` | Passed; 1 file and 12 fail-closed register tests |
+| `pnpm exec prettier --check` for the Phase 2-3 closure files | Passed |
+| `git diff --check` | Passed |
 
 ## Update Rules
 
