@@ -26,6 +26,16 @@ Preview and send assembly share the same committed snapshot and rows. Routine
 metrics and request history receive hashes, ids, paths, reasons, headings,
 counts, and token costs but no raw document bodies or query text.
 
+Slice 3 closed the parity and observability boundary. Route tests compare the
+same BardWiki rows across one-shot preview, the prompt SSE event, and provider
+dispatch, while prompt-summary hashes remain authoritative. Request-history
+metadata and routine metrics contain only privacy-safe selector fields and now
+distinguish selected, retained, and final-trimmed rows. Preview maps pinned
+allocation overflow to HTTP 409 and generation emits the same stable terminal
+reason without provider dispatch. A 2,000-document representative run scored
+the bounded 512-candidate set, selected 32 rows, and measured 8.53 ms; timing is
+recorded diagnostically rather than enforced as a flaky wall-clock threshold.
+
 Validation on 2026-08-29:
 
 ```text
@@ -50,6 +60,16 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts \
 
 pnpm check:server
 # protocol, client-library, browser-smoke, and Fastify typechecks passed
+
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/bardWikiSelection.test.ts \
+  server/fastify/__tests__/bardWikiPrompt.test.ts \
+  server/fastify/__tests__/assemble.test.ts \
+  server/fastify/__tests__/memory.test.ts \
+  server/fastify/__tests__/templates.test.ts \
+  server/fastify/__tests__/generation.chat.test.ts \
+  server/fastify/__tests__/memoryBudgetAllocator.test.ts
+# 7 files, 408 tests passed; representative 2,000-document selection: 8.53 ms
 ```
 
 ## Depends On

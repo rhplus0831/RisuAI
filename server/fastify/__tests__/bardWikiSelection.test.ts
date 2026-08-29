@@ -185,4 +185,53 @@ describe('BardWiki prompt snapshot and selection', () => {
     expect(first.rows.map(({ documentId }) => documentId)).toEqual(['a-id', 'z-id'])
     expect(second).toEqual(first)
   })
+
+  it('keeps a Phase 0-sized corpus behind the 512-candidate and 32-selection bounds', () => {
+    const insertDocument = db.prepare(
+      `INSERT INTO bardwiki_documents (
+        id, chat_id, kind, title, logical_path, normalized_path, aliases_json,
+        context_policy, review_state, markdown, content_hash, version
+      ) VALUES (?, 'chat-a', 'other', ?, ?, ?, '[]', 'relevant', 'active', ?, ?, 1)`,
+    )
+    const insertSearch = db.prepare(
+      `INSERT INTO bardwiki_document_search (
+        document_id, chat_id, title_terms, alias_terms, heading_terms, body_terms
+      ) VALUES (?, 'chat-a', ?, '', '', ?)`,
+    )
+    db.exec('BEGIN IMMEDIATE')
+    try {
+      for (let index = 0; index < 2_000; index++) {
+        const id = `bulk-${index.toString().padStart(4, '0')}`
+        const title = `Archive ${index}`
+        const logicalPath = `Bulk/${index.toString().padStart(4, '0')}`
+        const body = `needle record ${index}`
+        insertDocument.run(id, title, logicalPath, logicalPath.toLowerCase(), body, `hash-${id}`)
+        insertSearch.run(id, title.toLowerCase(), body)
+      }
+      db.exec('COMMIT')
+    } catch (error) {
+      db.exec('ROLLBACK')
+      throw error
+    }
+
+    const startedAt = performance.now()
+    const query = buildBardWikiQuery({ currentInput: 'needle', recentMessages: [], recentMessageCount: 12 })
+    const snapshot = loadBardWikiPromptSnapshot(db, { chatId: 'chat-a', query, maxLinkHops: 1 })
+    const selection = selectBardWikiPromptRows({
+      snapshot,
+      query,
+      maxDocuments: 32,
+      maxLinkHops: 1,
+      tokenBudget: 32_768,
+      countRowTokens: (content) => Math.ceil(content.length / 4),
+    })
+    const elapsedMs = Math.round((performance.now() - startedAt) * 100) / 100
+
+    console.info(
+      `[bardwiki-benchmark] documents=2000 candidates=${selection.diagnostics.candidateCount} selected=${selection.rows.length} elapsedMs=${elapsedMs}`,
+    )
+    expect(snapshot.directCandidateIds).toHaveLength(512)
+    expect(selection.diagnostics.candidateCount).toBe(512)
+    expect(selection.rows).toHaveLength(32)
+  })
 })

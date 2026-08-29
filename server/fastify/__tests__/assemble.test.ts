@@ -2592,6 +2592,21 @@ describe('fillMemoryAndPostHistory', () => {
       expect(JSON.stringify(preview.state?.bardWikiPromptDiagnostics)).not.toContain('Alice is a ranger')
       expect(preview.state?.promptMemoryRows).toEqual([])
       expect(listMemoryJobs(memoryDb)).toEqual([])
+
+      const trimDb = structuredClone(db)
+      trimDb.maxContext = Math.max(1, (preview.inputTokens ?? 100) - 1)
+      if (trimDb.modelPresets?.[0]) trimDb.modelPresets[0].maxContext = trimDb.maxContext
+      const trimmed = await assemblePrompt(
+        baseInput({ mode: 'preview_prompt', userMessage: 'Where is Alice?' }),
+        depsFor(trimDb, { loadMemoryDatabase: () => memoryDb }),
+      )
+      expect(trimmed.stopSending).toBe(false)
+      expect(trimmed.formated?.some(({ memo }) => memo === 'bardWiki')).toBe(false)
+      expect(trimmed.state?.bardWikiPromptDiagnostics).toMatchObject({
+        selectedCount: 1,
+        retainedCount: 0,
+        trimmedCount: 1,
+      })
     } finally {
       memoryDb.close()
     }

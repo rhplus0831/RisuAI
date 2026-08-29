@@ -86,6 +86,7 @@ import { tokenize } from '../prompt/tokens.js'
 import { tokenizerEncodingFromDb } from '../prompt/tokenizerConfig.js'
 import { promptSummaryMetricFields, summarizePromptRows, type PromptRowsSummary } from '../prompt/promptSummary.js'
 import { triggerSourceMetricFields } from '../prompt/triggerSource.js'
+import { bardWikiRequestHistoryMetadata } from '../prompt/bardWiki.js'
 import {
   formatPromptChatFrame,
   type PostGenerationFrame,
@@ -1215,18 +1216,7 @@ function chatDispatchHistory(db: DatabaseSync, context: ChatProviderDispatchCont
     metadata: {
       mode: context.input.mode,
       inputTokens: context.result.inputTokens,
-      ...(bardWiki
-        ? {
-            bardWikiReason: bardWiki.reason,
-            bardWikiQueryHash: bardWiki.queryHash,
-            bardWikiCandidateCount: bardWiki.candidateCount,
-            bardWikiSelectedCount: bardWiki.selectedCount,
-            bardWikiSelectedDocumentIds: bardWiki.selected.map(({ documentId }) => documentId),
-            bardWikiSelectedContentHashes: bardWiki.selected.map(({ contentHash }) => contentHash),
-            bardWikiSelection: bardWiki.selected,
-            bardWikiConsumedTokens: bardWiki.consumedTokens,
-          }
-        : {}),
+      ...bardWikiRequestHistoryMetadata(bardWiki),
       ...context.historyMetadata,
     },
   }
@@ -1330,6 +1320,8 @@ function assemblyDiagnosticMetricFields(result: AssembleResult): Record<string, 
     bardWikiQueryHash: result.state?.bardWikiPromptDiagnostics?.queryHash,
     bardWikiCandidateCount: result.state?.bardWikiPromptDiagnostics?.candidateCount ?? 0,
     bardWikiSelectedCount: result.state?.bardWikiPromptDiagnostics?.selectedCount ?? 0,
+    bardWikiRetainedCount: result.state?.bardWikiPromptDiagnostics?.retainedCount ?? 0,
+    bardWikiTrimmedCount: result.state?.bardWikiPromptDiagnostics?.trimmedCount ?? 0,
     bardWikiLinkedCandidateCount: result.state?.bardWikiPromptDiagnostics?.linkedCandidateCount ?? 0,
     bardWikiUnresolvedLinkCount: result.state?.bardWikiPromptDiagnostics?.unresolvedLinkCount ?? 0,
     bardWikiConsumedTokens: result.state?.bardWikiPromptDiagnostics?.consumedTokens ?? 0,

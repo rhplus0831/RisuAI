@@ -8,7 +8,7 @@ import type { Database } from '../../../src/ts/storage/database.svelte'
 import { createBardWikiDocument, updateBardWikiChatSettings } from '../src/bardWikiRepository.js'
 import { resolveBardWikiMemoryBudgets } from '../src/bardWikiSettings.js'
 import { openDatabase } from '../src/db.js'
-import { buildBardWikiPromptRows } from '../src/prompt/bardWiki.js'
+import { bardWikiRequestHistoryMetadata, buildBardWikiPromptRows } from '../src/prompt/bardWiki.js'
 
 let dataDir: string
 let db: DatabaseSync
@@ -96,6 +96,20 @@ describe('BardWiki prompt adapter', () => {
       selectedCount: 1,
     })
     expect(JSON.stringify(result.diagnostics)).not.toContain('PRIVATE_BODY_SENTINEL')
+    const historyMetadata = bardWikiRequestHistoryMetadata(result.diagnostics)
+    expect(historyMetadata).toMatchObject({
+      bardWikiQueryHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      bardWikiSelectedDocumentIds: ['document-a'],
+      bardWikiSelection: [
+        expect.objectContaining({
+          documentId: 'document-a',
+          logicalPath: 'Characters/Alice',
+          contentHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          tokens: expect.any(Number),
+        }),
+      ],
+    })
+    expect(JSON.stringify(historyMetadata)).not.toContain('PRIVATE_BODY_SENTINEL')
     expect(after.count).toBe(before.count)
   })
 

@@ -30,6 +30,8 @@ import { runServerMessageTranslation } from '../src/translation/serverMessageTra
 import type { ServerMessageTranslationRunner } from '../src/translation/generationCompletionTranslation.js'
 import { injectComposedResourceDatabase } from './helpers/resourceDatabase.js'
 import { createMemoryChunk, createMemoryEmbedding, createMemorySummary } from '../src/memoryRepository.js'
+import { createBardWikiDocument } from '../src/bardWikiRepository.js'
+import { DEFAULT_BARDWIKI_GLOBAL_SETTINGS } from '@risuai/protocol'
 
 vi.mock('../src/generation/horde.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/generation/horde.js')>()
@@ -354,6 +356,26 @@ function seedSimilarMemoryRows(): void {
   }
 }
 
+function seedBardWikiDocument(input: { contextPolicy?: 'relevant' | 'pinned'; markdown?: string } = {}): void {
+  const db = openDatabase(harness.dataDir)
+  try {
+    createBardWikiDocument(db, {
+      id: 'bardwiki-alice',
+      chatId: 'chat-1',
+      kind: 'character',
+      title: 'Alice',
+      logicalPath: 'Characters/Alice',
+      aliases: [],
+      contextPolicy: input.contextPolicy ?? 'relevant',
+      reviewState: 'active',
+      markdown: input.markdown ?? '## Alice\n\nAlice is a ranger. BARDWIKI_PRIVATE_BODY',
+      commandRevision: 1,
+    })
+  } finally {
+    db.close()
+  }
+}
+
 function similarityMemoryDatabase(): unknown {
   return {
     ...fixtureDatabase,
@@ -480,6 +502,16 @@ interface ProtocolMetric {
   promptEventHasMessages?: boolean
   promptEventHasLorebookActivation?: boolean
   promptEventHasPromptInfo?: boolean
+  bardWikiReason?: string
+  bardWikiQueryHash?: string
+  bardWikiCandidateCount?: number
+  bardWikiSelectedCount?: number
+  bardWikiRetainedCount?: number
+  bardWikiTrimmedCount?: number
+  bardWikiConsumedTokens?: number
+  bardWikiSelectedDocumentIds?: string[]
+  bardWikiSelectedContentHashes?: string[]
+  bardWikiFinalPromptRowCount?: number
   fullPromptSidecar?: GenerationTraceSidecarEntry
   bodySidecar?: GenerationTraceSidecarEntry
   runCount?: number
@@ -7558,6 +7590,155 @@ describe('POST /api/v1/generate/preview-prompt', () => {
     expect(Array.isArray(body.formated)).toBe(true)
     expect(body.formated.length).toBe(body.messages.length)
     expect((body as Record<string, unknown>).biases).toEqual([])
+  })
+
+  it('keeps BardWiki preview, prompt event, metrics, and provider dispatch in parity', async () => {
+    const providerRows: unknown[][] = []
+    await restartHarness({
+      dispatchProvider: (context) => {
+        providerRows.push(structuredClone(context.result.formated ?? []))
+        return (async function* (): AsyncGenerator<CompletionStreamFrame> {
+          yield { kind: 'token', content: 'provider reply' }
+          yield { kind: 'done', finishReason: 'stop' }
+        })()
+      },
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      bardWiki: {
+        ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
+        enabledByDefault: true,
+        memoryMode: 'bardwiki',
+      },
+    })
+    seedBardWikiDocument()
+
+    await withProtocolMetrics(async (metrics) => {
+      const preview = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/preview-prompt',
+        headers: { 'risu-auth': assertion },
+        payload: { ...previewPayload, userMessage: 'Where is Alice?' },
+      })
+      expect(preview.statusCode).toBe(200)
+
+      const generation = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: { ...basePayload, userMessage: 'Where is Alice?' },
+      })
+      expect(generation.statusCode).toBe(200)
+      const prompt = parseEvents(generation.body).find((event) => event.type === 'prompt')
+
+      const bardRows = (rows: unknown[]): unknown[] =>
+        rows.filter((row) => isJsonRecord(row) && row.memo === 'bardWiki')
+      const previewRows = bardRows(preview.json().formated)
+      const eventRows = bardRows((prompt?.data.formated ?? []) as unknown[])
+      const dispatchedRows = bardRows(providerRows[0] ?? [])
+      expect(previewRows).toEqual(eventRows)
+      expect(eventRows).toEqual(dispatchedRows)
+      expect(eventRows).toEqual([
+        expect.objectContaining({
+          content: expect.stringContaining('BARDWIKI_PRIVATE_BODY'),
+          memo: 'bardWiki',
+        }),
+      ])
+
+      const assembly = metrics.find((entry) => entry.metric === 'generation_prompt_assembly' && entry.mode === 'send')
+      expect(assembly).toMatchObject({
+        bardWikiReason: 'selected',
+        bardWikiCandidateCount: 1,
+        bardWikiSelectedCount: 1,
+        bardWikiRetainedCount: 1,
+        bardWikiTrimmedCount: 0,
+        bardWikiSelectedDocumentIds: ['bardwiki-alice'],
+        bardWikiSelectedContentHashes: [expect.stringMatching(/^[a-f0-9]{64}$/)],
+        bardWikiConsumedTokens: expect.any(Number),
+        bardWikiFinalPromptRowCount: 1,
+      })
+      expect(JSON.stringify(metrics)).not.toContain('BARDWIKI_PRIVATE_BODY')
+      expect(assembly?.bardWikiQueryHash).toMatch(/^[a-f0-9]{64}$/u)
+    })
+  })
+
+  it('returns the stable pinned-budget error for preview and terminal generation', async () => {
+    const dispatchProvider = vi.fn()
+    await restartHarness({ dispatchProvider })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      bardWiki: {
+        ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
+        enabledByDefault: true,
+        memoryMode: 'bardwiki',
+        totalTokenBudget: 16,
+      },
+    })
+    seedBardWikiDocument({
+      contextPolicy: 'pinned',
+      markdown: `Pinned reference ${'that cannot be truncated '.repeat(20)}`,
+    })
+
+    const preview = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/preview-prompt',
+      headers: { 'risu-auth': assertion },
+      payload: previewPayload,
+    })
+    expect(preview.statusCode).toBe(409)
+    expect(preview.json()).toMatchObject({
+      stopSending: true,
+      abortReason: 'bardwiki_pinned_budget_exceeded',
+      message: expect.stringContaining('Pinned BardWiki references'),
+    })
+
+    const generation = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    const error = parseEvents(generation.body).find((event) => event.type === 'error')
+    expect(error?.data).toMatchObject({
+      reason: 'bardwiki_pinned_budget_exceeded',
+      error: 'Pinned BardWiki references exceed the effective BardWiki prompt budget.',
+    })
+    expect(dispatchProvider).not.toHaveBeenCalled()
+  })
+
+  it('performs no Hypa query-embedding prefetch in BardWiki-only mode', async () => {
+    const embedPromptMemoryQueryTexts = vi.fn(async () => ({
+      model: 'unused',
+      vectors: [new Float32Array([1, 0])],
+      dim: 2,
+    }))
+    await restartHarness({ embedPromptMemoryQueryTexts })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...(similarityMemoryDatabase() as Record<string, unknown>),
+      maxContext: 100_000,
+      bardWiki: {
+        ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
+        enabledByDefault: true,
+        memoryMode: 'bardwiki',
+      },
+    })
+    seedSimilarMemoryRows()
+    seedBardWikiDocument()
+
+    const preview = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/preview-prompt',
+      headers: { 'risu-auth': assertion },
+      payload: { ...previewPayload, userMessage: 'Alice' },
+    })
+
+    expect(preview.statusCode).toBe(200)
+    expect(embedPromptMemoryQueryTexts).not.toHaveBeenCalled()
+    expect(preview.json().formated).toContainEqual(expect.objectContaining({ memo: 'bardWiki' }))
+    expect(preview.json().formated).not.toContainEqual(expect.objectContaining({ memo: 'hypaMemory' }))
   })
 
   it('keeps @@inject transcript rewrites read-only while returning stripped preview rows', async () => {

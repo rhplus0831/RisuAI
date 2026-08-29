@@ -2489,6 +2489,14 @@ export async function renderAndBudget(state: AssemblyState): Promise<void> {
   }
 
   state.formated = budget.formated
+  if (state.bardWikiPromptDiagnostics) {
+    const retainedCount = budget.formated.filter(({ memo }) => memo === 'bardWiki').length
+    state.bardWikiPromptDiagnostics.retainedCount = retainedCount
+    state.bardWikiPromptDiagnostics.trimmedCount = Math.max(
+      0,
+      state.bardWikiPromptDiagnostics.selectedCount - retainedCount,
+    )
+  }
   state.historyTruncated = state.historyTruncated === true || budget.historyTruncated === true
   state.promptSummary = summarizePromptRows(budget.formated)
   state.inputTokens = budget.inputTokens

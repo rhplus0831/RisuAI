@@ -26,6 +26,8 @@ export interface BardWikiPromptDiagnostics {
   queryHash: string | null
   candidateCount: number
   selectedCount: number
+  retainedCount: number
+  trimmedCount: number
   linkedCandidateCount: number
   unresolvedLinkCount: number
   consumedTokens: number
@@ -39,6 +41,24 @@ export interface BardWikiPromptAssembly {
   budgets: BardWikiMemoryBudgets
   rows: OpenAIChat[]
   diagnostics: BardWikiPromptDiagnostics
+}
+
+export function bardWikiRequestHistoryMetadata(
+  diagnostics: BardWikiPromptDiagnostics | undefined,
+): Record<string, unknown> {
+  if (!diagnostics) return {}
+  return {
+    bardWikiReason: diagnostics.reason,
+    bardWikiQueryHash: diagnostics.queryHash,
+    bardWikiCandidateCount: diagnostics.candidateCount,
+    bardWikiSelectedCount: diagnostics.selectedCount,
+    bardWikiRetainedCount: diagnostics.retainedCount,
+    bardWikiTrimmedCount: diagnostics.trimmedCount,
+    bardWikiSelectedDocumentIds: diagnostics.selected.map(({ documentId }) => documentId),
+    bardWikiSelectedContentHashes: diagnostics.selected.map(({ contentHash }) => contentHash),
+    bardWikiSelection: diagnostics.selected,
+    bardWikiConsumedTokens: diagnostics.consumedTokens,
+  }
 }
 
 /** Build committed BardWiki rows for the shared memory_bridge stage. */
@@ -98,6 +118,8 @@ export function buildBardWikiPromptRows(input: {
       queryHash: selection.diagnostics.queryHash,
       candidateCount: selection.diagnostics.candidateCount,
       selectedCount: selection.diagnostics.selectedCount,
+      retainedCount: selection.diagnostics.selectedCount,
+      trimmedCount: 0,
       linkedCandidateCount: selection.diagnostics.linkedCandidateCount,
       unresolvedLinkCount: selection.diagnostics.unresolvedLinkCount,
       consumedTokens: selection.diagnostics.consumedTokens,
@@ -125,6 +147,8 @@ function emptyAssembly(
       queryHash: null,
       candidateCount: 0,
       selectedCount: 0,
+      retainedCount: 0,
+      trimmedCount: 0,
       linkedCandidateCount: 0,
       unresolvedLinkCount: 0,
       consumedTokens: 0,
