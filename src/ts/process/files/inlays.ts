@@ -522,7 +522,9 @@ export async function getInlayAssetBlob(id: string) {
   if (typeof img.data === 'string') {
     // Migrate to Blob
     data = base64ToBlob(img.data)
-    setInlayAsset(id, { ...img, data })
+    void setInlayAsset(id, { ...img, data }).catch((error) => {
+      console.warn('Unable to migrate the browser-local inlay asset', error)
+    })
   } else {
     data = img.data
   }

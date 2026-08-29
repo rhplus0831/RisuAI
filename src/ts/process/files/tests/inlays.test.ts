@@ -13,6 +13,7 @@ import {
   writeInlayImage,
 } from '../inlays'
 import { getImageType } from 'src/ts/media'
+import { uploadServerAssetBytes } from 'src/ts/server/assets'
 
 //#region module mocks
 
@@ -409,6 +410,46 @@ describe('getInlayAssetBlob', () => {
 
     const result = await getInlayAssetBlob('legacy-id')
     expect(result!.data).toBeInstanceOf(Blob)
+  })
+
+  test('returns a legacy Blob without an unhandled rejection when background migration fails', async () => {
+    const id = 'b'.repeat(64)
+    const b64 = 'data:image/png;base64,aGVsbG8='
+    store.set(id, {
+      data: b64,
+      ext: 'png',
+      height: 32,
+      width: 32,
+      name: 'legacy.png',
+      type: 'image',
+    } satisfies InlayAsset)
+    vi.mocked(uploadServerAssetBytes).mockRejectedValueOnce(new Error('migration unavailable'))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const unhandledRejection = vi.fn()
+    process.on('unhandledRejection', unhandledRejection)
+
+    try {
+      const result = await getInlayAssetBlob(id)
+
+      expect(result).toMatchObject({
+        ext: 'png',
+        height: 32,
+        name: 'legacy.png',
+        type: 'image',
+        width: 32,
+      })
+      expect(result!.data).toBeInstanceOf(Blob)
+      expect(await (result!.data as Blob).text()).toBe('hello')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(unhandledRejection).not.toHaveBeenCalled()
+      expect(warn).toHaveBeenCalledWith(
+        'Unable to migrate the browser-local inlay asset',
+        expect.objectContaining({ message: 'migration unavailable' }),
+      )
+    } finally {
+      process.off('unhandledRejection', unhandledRejection)
+      warn.mockRestore()
+    }
   })
 })
 
