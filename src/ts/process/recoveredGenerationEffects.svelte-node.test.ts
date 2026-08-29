@@ -61,13 +61,18 @@ vi.mock('./postGeneration/emotionFallbackLlm', () => ({ runEmotionLlmFallback: v
 vi.mock('./postGeneration/imggenStableDiff', () => ({ runImggenStableDiff: vi.fn() }))
 vi.mock('./postGeneration/stableTarget', () => ({ stablePostGenerationMessageTarget: vi.fn() }))
 
-const ledger = vi.hoisted(() => ({ calls: [] as string[], receipts: new Set<string>() }))
+const ledger = vi.hoisted(() => ({
+  calls: [] as string[],
+  receipts: new Set<string>(),
+  unavailableKinds: new Set<string>(),
+}))
 vi.mock('./generationEffectLedger', async (importOriginal) => {
   const original = await importOriginal<typeof import('./generationEffectLedger')>()
   return {
     ...original,
     runLedgeredGenerationEffect: vi.fn(async (_ref, kind, delivery, effect) => {
       ledger.calls.push(`${delivery}:${kind}`)
+      if (ledger.unavailableKinds.has(kind)) return { executed: false, status: 'unavailable' }
       if (kind === 'notification' || kind === 'tts' || kind === 'completion_sound') {
         return { executed: false, status: 'already_receipted' }
       }
@@ -102,13 +107,17 @@ beforeEach(() => {
   state.pluginRuntimeReady = true
   ledger.calls = []
   ledger.receipts.clear()
+  ledger.unavailableKinds.clear()
   hydration.hydrateChatMessages.mockReset()
   hydration.hydrateChatMessages.mockResolvedValue(undefined)
 })
 
 describe('late recovered generation effects', () => {
   it('replays durable automation in live order, skips ephemerals, and recomputes emotion state', async () => {
-    await expect(reconcileRecoveredGenerationEffects(ref)).resolves.toEqual({ durableEffectsReconciled: true })
+    await expect(reconcileRecoveredGenerationEffects(ref)).resolves.toEqual({
+      durableEffectsReconciled: true,
+      allEffectsReconciled: true,
+    })
 
     expect(state.order).toEqual(['plugin_output', 'igp', 'emotion_image_state'])
     expect(ledger.calls).toEqual(
@@ -122,14 +131,20 @@ describe('late recovered generation effects', () => {
       ]),
     )
 
-    await expect(reconcileRecoveredGenerationEffects(ref)).resolves.toEqual({ durableEffectsReconciled: true })
+    await expect(reconcileRecoveredGenerationEffects(ref)).resolves.toEqual({
+      durableEffectsReconciled: true,
+      allEffectsReconciled: true,
+    })
     expect(state.order).toEqual(['plugin_output', 'igp', 'emotion_image_state'])
   })
 
   it('runs only missing durable effects when one already has a receipt', async () => {
     ledger.receipts.add('igp')
 
-    await expect(reconcileRecoveredGenerationEffects(ref)).resolves.toEqual({ durableEffectsReconciled: true })
+    await expect(reconcileRecoveredGenerationEffects(ref)).resolves.toEqual({
+      durableEffectsReconciled: true,
+      allEffectsReconciled: true,
+    })
 
     expect(state.order).toEqual(['plugin_output', 'emotion_image_state'])
   })
@@ -171,13 +186,43 @@ describe('late recovered generation effects', () => {
     expect(hydration.hydrateChatMessages).toHaveBeenLastCalledWith('chat-a', { force: true, strict: true })
   })
 
+  it('retains pending bootstrap effects when a ledger claim is temporarily unavailable', async () => {
+    setPendingRecoveredGenerationEffects([
+      {
+        ledgerVersion: 1,
+        databaseLineage: 'lineage-a',
+        keyType: 'operation',
+        keyId: 'operation-a',
+        kind: 'plugin_output',
+        effectClass: 'durable',
+        operationId: 'operation-a',
+        generationId: 'generation-a',
+        characterId: 'character-a',
+        chatId: 'chat-a',
+        messageId: 'message-a',
+        status: 'pending',
+        createdAt: '2026-08-25T00:00:00.000Z',
+        updatedAt: '2026-08-25T00:00:00.000Z',
+      },
+    ])
+    ledger.unavailableKinds.add('plugin_output')
+
+    await expect(reconcilePendingRecoveredGenerationEffects()).rejects.toThrow(
+      'Generation effects remain unavailable for generation-a',
+    )
+
+    ledger.unavailableKinds.clear()
+    await expect(reconcilePendingRecoveredGenerationEffects()).resolves.toBeUndefined()
+    expect(ledger.receipts.has('plugin_output')).toBe(true)
+  })
+
   it('derives a generation-keyed ledger reference for pre-ref compatibility transcripts', async () => {
     await expect(
       reconcileAcceptedSendGenerationEffects(
         { selectedCharID: 0, chatPage: 0, characterId: 'character-a', chatId: 'chat-a' },
         'user-a',
       ),
-    ).resolves.toEqual({ durableEffectsReconciled: true })
+    ).resolves.toEqual({ durableEffectsReconciled: true, allEffectsReconciled: true })
 
     expect(state.order).toEqual(['plugin_output', 'igp', 'emotion_image_state'])
   })

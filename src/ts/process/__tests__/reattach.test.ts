@@ -800,6 +800,18 @@ describe('reattach open-chat generation', () => {
     })
   })
 
+  it('retries a terminal hydration invalidated by a newer transcript projection', async () => {
+    setActiveGenerationJobs([{ chatId: 'chat-stale', jobId: 'job-stale' }])
+    h.fetchRuntimeJobs.mockResolvedValueOnce({ status: 'ok', bootstrap: { activeGenerationJobs: [] } })
+    h.hydrateChatMessages.mockRejectedValueOnce(new Error('Chat hydration incomplete for: chat-stale'))
+
+    await refreshActiveGenerationJobsFromBootstrap()
+
+    expect(h.hydrateChatMessages).toHaveBeenCalledTimes(2)
+    expect(get(activeGenerationJobs)).toEqual([])
+    expect(get(generationJobLifecycles)['job-stale']?.status).toBe('completed')
+  })
+
   it('retires a stale foreground observer before a terminal transcript hydration settles', async () => {
     openChat('chat-1')
     const job = {

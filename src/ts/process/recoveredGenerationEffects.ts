@@ -32,6 +32,7 @@ interface RecoveredGenerationResolution {
 
 export interface RecoveredGenerationEffectResult {
   durableEffectsReconciled: boolean
+  allEffectsReconciled: boolean
 }
 
 export function setPendingRecoveredGenerationEffects(effects: readonly PendingGenerationEffect[]): void {
@@ -46,7 +47,10 @@ export async function reconcilePendingRecoveredGenerationEffects(): Promise<void
   }
   for (const ref of refs.values()) {
     await hydrateChatMessages(ref.chatId, { force: true, strict: true })
-    await reconcileRecoveredGenerationEffects(ref)
+    const result = await reconcileRecoveredGenerationEffects(ref)
+    if (!result.allEffectsReconciled) {
+      throw new Error(`Generation effects remain unavailable for ${ref.generationId}`)
+    }
   }
   bootstrapPendingEffects = []
 }
@@ -59,7 +63,7 @@ export async function reconcileAcceptedSendGenerationEffects(
   const ref = resolution
     ? (generationEffectRefFromMessage(resolution.message) ?? legacyGenerationEffectRef(resolution))
     : undefined
-  if (!ref) return { durableEffectsReconciled: false }
+  if (!ref) return { durableEffectsReconciled: false, allEffectsReconciled: false }
   return reconcileRecoveredGenerationEffects(ref)
 }
 
@@ -69,14 +73,14 @@ export async function reconcileRecoveredGenerationEffects(
   // Late delivery never invokes these callbacks: the server atomically turns
   // each pending ephemeral row into a permanent late_recovery skip.
   const unexpectedEphemeral = () => completedGenerationEffect(undefined)
-  await Promise.all([
+  const ephemeral = await Promise.all([
     runLedgeredGenerationEffect(ref, 'notification', 'late_recovery', unexpectedEphemeral),
     runLedgeredGenerationEffect(ref, 'tts', 'late_recovery', unexpectedEphemeral),
     runLedgeredGenerationEffect(ref, 'completion_sound', 'late_recovery', unexpectedEphemeral),
   ])
 
   const initial = resolveGeneration(ref)
-  if (!initial) return { durableEffectsReconciled: false }
+  if (!initial) return { durableEffectsReconciled: false, allEffectsReconciled: false }
   const completionText = initial.message.data
 
   // Match the uninterrupted ordering: plugin automation observes the terminal
@@ -117,7 +121,7 @@ export async function reconcileRecoveredGenerationEffects(
     return updated ? completedGenerationEffect(undefined) : skippedGenerationEffect('target_changed')
   })
 
-  await runLedgeredGenerationEffect(ref, 'emotion_image_state', 'late_recovery', async () => {
+  const emotion = await runLedgeredGenerationEffect(ref, 'emotion_image_state', 'late_recovery', async () => {
     const resolution = resolveGeneration(ref)
     if (!resolution || resolution.character.inlayViewScreen) {
       return skippedGenerationEffect('current_state_not_applicable')
@@ -160,6 +164,7 @@ export async function reconcileRecoveredGenerationEffects(
 
   return {
     durableEffectsReconciled: terminalReceipt(plugin.status) && terminalReceipt(igp.status),
+    allEffectsReconciled: [...ephemeral, plugin, igp, emotion].every((effect) => terminalReceipt(effect.status)),
   }
 }
 

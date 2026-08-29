@@ -356,9 +356,12 @@ describe('generation finalization persistence projection', () => {
         pendingGenerationEffects: [],
       },
     })
-    persistenceStateMocks.reconcilePendingRecoveredGenerationEffects.mockRejectedValueOnce(
-      new Error('effect runtime is not ready'),
-    )
+    persistenceStateMocks.reconcilePendingRecoveredGenerationEffects.mockImplementationOnce(async () => {
+      // Strict hydration inside effect recovery acknowledges the committed
+      // assistant before the later effect work reports a transient failure.
+      clearGenerationPersistence('chat-a', 'generation-a')
+      throw new Error('effect runtime is not ready')
+    })
 
     startGenerationFinalizationPersistenceRefresh()
     await vi.advanceTimersByTimeAsync(5_000)

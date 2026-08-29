@@ -804,16 +804,27 @@ async function hydrateReconciledChats(
 ): Promise<boolean> {
   if (jobs.length === 0) return true
   const { hydrateChatMessages } = getChatHydrationRuntime()
-  const results = await Promise.allSettled(
-    [...new Set(jobs.map((job) => job.chatId))].map((chatId) =>
-      hydrateChatMessages(chatId, {
-        force: true,
-        strict: options.strict,
-        ...(options.signal ? { signal: options.signal } : {}),
-      }),
-    ),
-  )
-  return results.every((result) => result.status === 'fulfilled')
+  let pendingChatIds = [...new Set(jobs.map((job) => job.chatId))]
+  // A terminal resource event can apply a newer transcript while this forced
+  // read is in flight. Strict hydration truthfully rejects the now-stale read,
+  // but one bounded replacement read should win against that settled
+  // projection instead of publishing a permanent dead-observer warning.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const results = await Promise.allSettled(
+      pendingChatIds.map((chatId) =>
+        hydrateChatMessages(chatId, {
+          force: true,
+          strict: options.strict,
+          ...(options.signal ? { signal: options.signal } : {}),
+        }),
+      ),
+    )
+    const failedChatIds = pendingChatIds.filter((_chatId, index) => results[index].status === 'rejected')
+    if (failedChatIds.length === 0) return true
+    if (options.signal?.aborted) return false
+    pendingChatIds = failedChatIds
+  }
+  return false
 }
 
 /** Reconcile and retry only the requested job against authoritative bootstrap state. */

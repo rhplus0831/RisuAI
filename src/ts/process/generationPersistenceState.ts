@@ -147,6 +147,9 @@ function scheduleGenerationFinalizationRefresh(entries: readonly QueuedGeneratio
 async function refreshGenerationFinalizationPersistences(): Promise<void> {
   if (!refreshEnabled || refreshInFlight) return
   refreshInFlight = true
+  const retryTriggers = get(generationFinalizationPersistences).filter(
+    (entry) => entry.state === undefined || entry.state === 'queued' || entry.state === 'stalled',
+  )
   try {
     const { fetchServerBootstrapReadOnly } = await import('../server/bootstrap')
     const result = await fetchServerBootstrapReadOnly(null, { cacheRevision: false })
@@ -162,6 +165,19 @@ async function refreshGenerationFinalizationPersistences(): Promise<void> {
       setGenerationFinalizationPersistences(result.bootstrap.generationFinalizations)
     }
   } catch {
+    // Recovered-effect reconciliation force-hydrates the committed transcript.
+    // That hydration can acknowledge and clear the provisional row before a
+    // transient effect failure is reported. Restore only missing trigger rows
+    // so the bounded refresh loop retains an owner for the next retry without
+    // overwriting any newer finalization projection.
+    const current = get(generationFinalizationPersistences)
+    const missingRetryTriggers = retryTriggers.filter(
+      (trigger) =>
+        !current.some((entry) => entry.chatId === trigger.chatId && entry.generationId === trigger.generationId),
+    )
+    if (missingRetryTriggers.length > 0) {
+      setGenerationFinalizationPersistences([...current, ...missingRetryTriggers])
+    }
     // Keep the last truthful projection; the next bounded refresh can retry.
   } finally {
     refreshInFlight = false
