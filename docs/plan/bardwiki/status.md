@@ -2,19 +2,21 @@
 
 Date: 2026-08-29
 
-The workstream is open. Phases 0-5 are complete and Phase 6 is current.
+The workstream is open. Phases 0-6 are complete and Phase 7 is current.
 BardWiki persistence, manual commands, targeted resources, backup recovery,
 global settings, and the chat-scoped manual workspace are implemented; prompt
 retrieval, explicit and automatic confirmation, isolated durable execution,
-atomic event/canonical change sets, stale-source reconciliation, and workspace
-operational controls are implemented.
+atomic event/canonical change sets, stale-source reconciliation, resumable
+historical rebuild, deterministic vault interchange, and workspace operational
+controls are implemented.
 
 ## Snapshot
 
 - Plan state: runtime implementation in progress.
-- Current phase: Phase 6, implementation starting.
-- Current implementation cursor: close lifecycle/interchange behavior with
-  explicit rebuild and deterministic vault import/export.
+- Current phase: Phase 7, verification and closeout starting.
+- Current implementation cursor: run the aggregate affected/smoke and owning
+  matrices, audit current documentation, record `latest-verification.md`, and
+  archive the closed workstream.
 - Blockers: none.
 - Runtime changes in this workstream: schema v33, low-level repository,
   revisioned settings/manual-document commands, shared wire schemas, targeted
@@ -76,8 +78,18 @@ operational controls are implemented.
   the client command/invalidation/settings/workspace matrix passed 5 files and
   317 tests; client-library declarations, all server-facing typechecks, and
   Svelte diagnostics passed with zero errors or warnings on 2026-08-29.
-- Residual risk: Phase 6 must keep import/export/rebuild bounded and preserve
-  user-authored documents across every restore and publish path.
+- Phase 6 commits: `f6c20c2af` deterministic bounded vault interchange;
+  `dea6634f3` resumable staged rebuild and progress; `c0a3e0e77` lifecycle
+  workspace controls and fork isolation proof; `9847925d2` transport bounds
+  and rollback proof.
+- Phase 6 validation: backup/commands/generation/memory/lifecycle/rebuild/vault/
+  routes/repository/jobs/fork passed 11 server files and 550 tests;
+  fork/chat commands/client commands/events/workspace/protocol passed 8 files
+  and 382 tests; client-library declarations, all server-facing typechecks, and
+  Svelte diagnostics passed with zero errors or warnings on 2026-08-29.
+- Residual risk: Phase 7 must complete aggregate affected/browser proof and
+  ensure the shipped architecture and user-facing cost/destructive warnings
+  are documented before archive.
 - Source investigation: complete for RisuBard semantics and the local settings,
   finalization, jobs/events, storage/API, and prompt-retrieval boundaries.
 
@@ -107,14 +119,14 @@ operational controls are implemented.
 | [3. Prompt retrieval](phases/phase-3-prompt-retrieval.md) | Complete | Committed documents are selected and injected deterministically under budget. |
 | [4. Jobs and explicit confirmation](phases/phase-4-jobs-and-explicit-confirmation.md) | Complete | Separate durable worker execution, explicit event generation, status, and operational recovery are reliable. |
 | [5. Automatic and canonical updates](phases/phase-5-automatic-and-canonical-updates.md) | Complete | Successful sends confirm only their exact prior turn; bounded canonical change sets and safe stale-source reconciliation are live. |
-| [6. Lifecycle and interchange](phases/phase-6-lifecycle-and-interchange.md) | In progress | Edit/delete/fork/import/export/restore/rebuild and operational edges are complete. |
-| [7. Verification and closeout](phases/phase-7-verification-and-closeout.md) | Pending | Full regression, recovery, performance, browser, docs, and rollout proof closes the workstream. |
+| [6. Lifecycle and interchange](phases/phase-6-lifecycle-and-interchange.md) | Complete | Bounded rebuild, fork/delete lifecycle, deterministic vault interchange, exact restore, derived recovery, and operational controls are proven. |
+| [7. Verification and closeout](phases/phase-7-verification-and-closeout.md) | In progress | Full regression, recovery, performance, browser, docs, and rollout proof closes the workstream. |
 
 ## Next Action
 
-Start Phase 6 with deterministic vault export/import and an explicit rebuild
-job that stages derived output before one atomic publish while preserving every
-user-authored document.
+Run Phase 7's aggregate affected/smoke and owning matrices, audit the shipped
+architecture and UI warnings, write `latest-verification.md`, then close and
+archive the intact plan.
 
 ## Maintenance Rules
 

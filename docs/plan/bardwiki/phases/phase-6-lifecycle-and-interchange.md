@@ -1,6 +1,6 @@
 # Phase 6: Lifecycle, Rebuild, and Interchange
 
-Status: pending.
+Status: complete.
 
 Goal: complete transcript/chat lifecycle handling, historical rebuild, Markdown
 vault interchange, backup/restore recovery, and large-corpus operational tools.
@@ -128,3 +128,37 @@ for it.
   future-fact leakage.
 - Vault import is an attack surface for paths, archive expansion, and oversized
   content; validate before mutation and cap every dimension.
+
+## Completion Note
+
+Completed on 2026-08-29 in four reviewable commits:
+
+- `f6c20c2af` adds deterministic Obsidian-compatible ZIP export, strict
+  manifest/frontmatter/hash validation, bounded streaming inflate, dry-run
+  create/noop/conflict plans, skip/rename/fenced-replace strategies, foreign
+  provenance removal, derived link/search repair, and one revisioned import.
+- `dea6634f3` adds explicit rebuild preview and confirmation, stable
+  oldest-first source enumeration, at-most-eight-turn staging checkpoints,
+  processed/total observations, cancellation/retry/restart recovery, and one
+  atomic publish. Full rebuild soft-deletes latest-model/system event and
+  canonical documents, preserves every latest-user document, and regenerates
+  the eligible event corpus; missing-only policy merges without replacement.
+- `c0a3e0e77` adds workspace rebuild/vault/progress/bulk-retry controls, durable
+  client command adapters, and fork proof that the rekeyed transcript is copied
+  while BardWiki rows are not.
+- `9847925d2` corrects the per-route import parser ceiling, enforces the 16 MiB
+  archive bound on export and import, and proves a multi-document import rolls
+  back completely after an injected later-write failure.
+
+Lifecycle proof covers source edit/delete/truncate/active replacement,
+safe-inverse versus `needs_review`, pending/running cancellation, transcript
+change during staged rebuild, restart from a durable cursor, full versus
+missing publish, chat/character cascade, fork isolation, exact backup restore,
+derived-index reconstruction, terminal job/staging retention, and vault path,
+UTF-8, count, size, hash, id, path, and version-fence validation. Provider
+calls occur outside SQLite transactions; cancelled/failed staging is never
+visible and is removed when its terminal job is retained then pruned.
+
+Validation passed 11 owning server files/550 tests and 8 client/protocol
+files/382 tests. Client-library declarations, all server-facing typechecks,
+and Svelte diagnostics passed with zero errors or warnings on 2026-08-29.
