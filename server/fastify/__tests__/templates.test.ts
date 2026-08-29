@@ -264,6 +264,22 @@ describe('buildFormatOrder', () => {
 })
 
 describe('coalesceRows', () => {
+  it('keeps BardWiki reference rows independently removable on coalescing models', () => {
+    const out: OpenAIChat[] = []
+    coalesceRows(
+      out,
+      [
+        row({ content: 'first', memo: 'bardWiki', removable: true }),
+        row({ content: 'second', memo: 'bardWiki', removable: false }),
+      ],
+      'gpt-4o',
+    )
+    expect(out.map(({ content, removable }) => ({ content, removable }))).toEqual([
+      { content: 'first', removable: true },
+      { content: 'second', removable: false },
+    ])
+  })
+
   it('drops empty / whitespace rows but keeps a multimodal row with empty content', () => {
     const out: OpenAIChat[] = []
     coalesceRows(

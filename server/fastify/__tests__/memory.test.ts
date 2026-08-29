@@ -123,7 +123,7 @@ describe('buildMemoryWindow (non-Hypa)', () => {
       unformated: createEmptyUnformatedSlots(),
       db,
     })
-    expect(result).toEqual({ stopSending: true })
+    expect(result).toEqual({ stopSending: true, reason: 'history_context_overflow' })
   })
 
   it('captures memory-memo rows into memories when a memory card is used', () => {
@@ -160,5 +160,73 @@ describe('buildMemoryWindow (non-Hypa)', () => {
       db,
     })
     expect(unformated.chats.map((r) => r.content)).toEqual(['<Previous Conversation>summary</Previous Conversation>'])
+  })
+
+  it('preserves BardWiki reference wrappers and captures them through a memory card', () => {
+    const inlineSlots = createEmptyUnformatedSlots()
+    buildMemoryWindow({
+      chats: [{ role: 'system', content: '<bardwiki-reference>lore</bardwiki-reference>', memo: 'bardWiki' }],
+      currentTokens: 5,
+      maxContextTokens: 1000,
+      currentChat: makeChat(),
+      memoryCardUsed: false,
+      promptTemplate: [{ type: 'chat' }] as unknown as PromptItem[],
+      unformated: inlineSlots,
+      db,
+    })
+    expect(inlineSlots.chats[0]?.content).toBe('<bardwiki-reference>lore</bardwiki-reference>')
+
+    const cardSlots = createEmptyUnformatedSlots()
+    const result = buildMemoryWindow({
+      chats: [
+        { role: 'system', content: '<bardwiki-reference>lore</bardwiki-reference>', memo: 'bardWiki' },
+        row('live', 'm2'),
+      ],
+      currentTokens: 5,
+      maxContextTokens: 1000,
+      currentChat: makeChat(),
+      memoryCardUsed: true,
+      promptTemplate: [{ type: 'memory' }] as unknown as PromptItem[],
+      unformated: cardSlots,
+      db,
+    })
+    expect(result.stopSending === false ? result.memories.map(({ memo }) => memo) : []).toEqual(['bardWiki'])
+  })
+
+  it('drops removable BardWiki rows first but reports pinned-only overflow', () => {
+    const removable = {
+      role: 'system' as const,
+      content: 'optional reference',
+      memo: 'bardWiki',
+      removable: true,
+    }
+    const { encoding, options } = tokenizerOptionsFromDb(db)
+    const result = buildMemoryWindow({
+      chats: [removable, row('live', 'm2')],
+      currentTokens: 1000 + tokenizeChat(removable, encoding, options),
+      maxContextTokens: 1000,
+      currentChat: makeChat(),
+      memoryCardUsed: false,
+      promptTemplate: [{ type: 'chat' }] as unknown as PromptItem[],
+      unformated: createEmptyUnformatedSlots(),
+      db,
+    })
+    expect(result.stopSending).toBe(false)
+
+    expect(
+      buildMemoryWindow({
+        chats: [
+          { role: 'system', content: 'required reference', memo: 'bardWiki', removable: false },
+          row('live', 'm2'),
+        ],
+        currentTokens: 1_000_000,
+        maxContextTokens: 10,
+        currentChat: makeChat(),
+        memoryCardUsed: false,
+        promptTemplate: [{ type: 'chat' }] as unknown as PromptItem[],
+        unformated: createEmptyUnformatedSlots(),
+        db,
+      }),
+    ).toEqual({ stopSending: true, reason: 'bardwiki_pinned_budget_exceeded' })
   })
 })

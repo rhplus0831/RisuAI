@@ -1,9 +1,56 @@
 # Phase 3: Deterministic Prompt Retrieval
 
-Status: pending.
+Status: in progress.
 
 Goal: select and inject committed BardWiki content into prompt assembly using a
 local, deterministic, budgeted path with no provider calls or autonomous writes.
+
+## Progress
+
+Slice 1 added a bounded query/snapshot/selection pipeline. Queries use bounded
+NFKC/lowercase lexical terms and privacy-safe hashes. The repository hydrates
+only the selected chat's committed active candidates, current search
+projection, and bounded resolved-link closure; versions, jobs, receipts,
+deleted/review documents, and sibling chats stay out of the prompt path. The
+pure selector implements the locked score classes, stable path/id ties,
+one/two-hop deduplication, heading-aware complete-paragraph excerpts, reference
+wrappers, token/document shares, degraded-index behavior, and pinned overflow.
+
+Slice 2 integrated those rows beside Hypa at `memory_bridge`. BardWiki-only
+suppresses Hypa selection, follow-up work, and query-embedding prefetch; Hybrid
+caps each mode and reduces BardWiki first when their sum exceeds the total.
+Rows pass through both inline and prompt-template memory paths without
+coalescing away independent removability. Pinned rows survive memory/final
+budget trimming, while non-pinned rows may be removed before live history.
+Preview and send assembly share the same committed snapshot and rows. Routine
+metrics and request history receive hashes, ids, paths, reasons, headings,
+counts, and token costs but no raw document bodies or query text.
+
+Validation on 2026-08-29:
+
+```text
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/bardWikiRepository.test.ts \
+  server/fastify/__tests__/bardWikiSelection.test.ts
+# 2 files, 20 tests passed
+
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/assemble.test.ts \
+  server/fastify/__tests__/memory.test.ts \
+  server/fastify/__tests__/templates.test.ts \
+  server/fastify/__tests__/bardWikiSelection.test.ts \
+  server/fastify/__tests__/bardWikiPrompt.test.ts \
+  server/fastify/__tests__/bardWikiRoutes.test.ts
+# 6 files, 229 tests passed
+
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/generation.chat.test.ts \
+  server/fastify/__tests__/memoryBudgetAllocator.test.ts
+# 2 files, 181 tests passed
+
+pnpm check:server
+# protocol, client-library, browser-smoke, and Fastify typechecks passed
+```
 
 ## Depends On
 
@@ -61,6 +108,15 @@ local, deterministic, budgeted path with no provider calls or autonomous writes.
 
 Exact names may follow Phase 0, but repository access, selection, and prompt
 formatting should remain separable for tests.
+
+## Implementation Slices
+
+1. Bounded query/repository snapshot and pure rank/link/excerpt/budget selector.
+2. Memory-bridge adapter, effective settings, mode partitioning, wrappers, and
+   privacy-safe diagnostics.
+3. Preview/SSE/request-history/provider parity, pinned HTTP/terminal errors,
+   final-trim reconciliation, and representative large-corpus timing.
+4. Full prompt/memory/generation regressions and phase closeout.
 
 ## Invariants
 

@@ -3,8 +3,6 @@ import type { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import {
   BARDWIKI_PROTOCOL_VERSION,
-  DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
-  isBardWikiGlobalSettings,
   type BardWikiChatResource,
   type BardWikiDocumentIndex,
   type BardWikiDocumentResource,
@@ -12,6 +10,7 @@ import {
   type BardWikiVersionsResource,
 } from '@risuai/protocol'
 import type { AuthState } from '../auth.js'
+import { readBardWikiGlobalSettings, resolveEffectiveBardWikiSettings } from '../bardWikiSettings.js'
 import {
   getBardWikiChatSettings,
   getBardWikiDocument,
@@ -20,7 +19,6 @@ import {
   listBardWikiJobSummaries,
   listBardWikiLinks,
   listBardWikiReceiptSummaries,
-  type BardWikiChatSettings,
 } from '../bardWikiRepository.js'
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
@@ -45,7 +43,7 @@ export function registerBardWikiReadRoutes(app: FastifyInstance, db: DatabaseSyn
       chatId,
       globalSettings,
       chatSettings,
-      effectiveSettings: resolveEffectiveSettings(globalSettings, chatSettings),
+      effectiveSettings: resolveEffectiveBardWikiSettings(globalSettings, chatSettings),
       documents: listBardWikiDocuments(db, chatId).map(toDocumentIndex),
       receipts: listBardWikiReceiptSummaries(db, chatId),
       jobs: listBardWikiJobSummaries(db, chatId),
@@ -150,31 +148,9 @@ function toDocumentIndex(document: ReturnType<typeof listBardWikiDocuments>[numb
 function loadGlobalSettings(db: DatabaseSync): BardWikiGlobalSettings {
   const settings = loadSettingsFromSqlite(db)
   if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
-    return { ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS }
+    return readBardWikiGlobalSettings(undefined)
   }
-  const value = (settings as Record<string, unknown>).bardWiki
-  return isBardWikiGlobalSettings(value) ? { ...value } : { ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS }
-}
-
-function resolveEffectiveSettings(
-  global: BardWikiGlobalSettings,
-  chat: BardWikiChatSettings | null,
-): BardWikiGlobalSettings {
-  if (!chat) return { ...global }
-  return {
-    enabledByDefault: chat.enabledOverride ?? global.enabledByDefault,
-    memoryMode: chat.memoryModeOverride ?? global.memoryMode,
-    confirmationPolicy: chat.confirmationPolicyOverride ?? global.confirmationPolicy,
-    modelProfileId: chat.modelProfileIdIsSet ? chat.modelProfileIdOverride : global.modelProfileId,
-    promptPresetId: chat.promptPresetIdIsSet ? chat.promptPresetIdOverride : global.promptPresetId,
-    canonicalUpdates: chat.canonicalUpdatesOverride ?? global.canonicalUpdates,
-    totalTokenBudget: chat.totalTokenBudgetOverride ?? global.totalTokenBudget,
-    hybridHypaTokenBudget: chat.hybridHypaTokenBudgetOverride ?? global.hybridHypaTokenBudget,
-    hybridBardWikiTokenBudget: chat.hybridBardWikiTokenBudgetOverride ?? global.hybridBardWikiTokenBudget,
-    maxDocuments: chat.maxDocumentsOverride ?? global.maxDocuments,
-    maxLinkHops: chat.maxLinkHopsOverride ?? global.maxLinkHops,
-    recentMessageCount: chat.recentMessageCountOverride ?? global.recentMessageCount,
-  }
+  return readBardWikiGlobalSettings((settings as Record<string, unknown>).bardWiki)
 }
 
 function sendEtagJson<T>(req: FastifyRequest, reply: FastifyReply, payload: T): T | undefined {

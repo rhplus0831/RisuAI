@@ -60,6 +60,8 @@ import { getPromptAssetTableInstrumentation, resetPromptAssetTableInstrumentatio
 import { promptSummaryMetricFields, summarizePromptRows } from '../src/prompt/promptSummary.js'
 import { getTriggerCloneInstrumentation, resetTriggerCloneInstrumentation } from '../src/prompt/triggers.js'
 import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer } from '../../../src/ts/model/types'
+import { DEFAULT_BARDWIKI_GLOBAL_SETTINGS } from '@risuai/protocol'
+import { createBardWikiDocument } from '../src/bardWikiRepository.js'
 
 beforeAll(() => {
   bootPromptVariables()
@@ -2535,6 +2537,131 @@ describe('fillMemoryAndPostHistory', () => {
     expect(state.unformated.chats.every((r) => r.removable === true)).toBe(true)
     // This fixture has no server memory rows, so no memory cards are split out.
     expect(state.memories).toEqual([])
+  })
+
+  it('injects BardWiki through the same template memory card in preview and send assembly', async () => {
+    const memoryDb = openDatabase(makeDataDir())
+    try {
+      memoryDb.prepare('INSERT INTO characters (id, position, data_json) VALUES (?, 0, ?)').run('char-tess', '{}')
+      memoryDb
+        .prepare('INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, 0, ?)')
+        .run('chat-1', 'char-tess', '{}')
+      createBardWikiDocument(memoryDb, {
+        id: 'document-alice',
+        chatId: 'chat-1',
+        kind: 'character',
+        title: 'Alice',
+        logicalPath: 'Characters/Alice',
+        aliases: [],
+        contextPolicy: 'relevant',
+        reviewState: 'active',
+        markdown: '## Alice\n\nAlice is a ranger.',
+        commandRevision: 1,
+      })
+      const db = makeDatabase({
+        maxResponse: 10,
+        maxContext: 100_000,
+        bardWiki: {
+          ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
+          enabledByDefault: true,
+          memoryMode: 'bardwiki',
+        },
+        promptTemplate: [
+          { type: 'memory', innerFormat: 'Memory card: {{slot}}' },
+          { type: 'chat', rangeStart: 0, rangeEnd: 'end' },
+        ],
+        characters: [historyChar()],
+      } as unknown as Partial<Database>)
+      const deps = depsFor(db, { loadMemoryDatabase: () => memoryDb })
+      const preview = await assemblePrompt(baseInput({ mode: 'preview_prompt', userMessage: 'Where is Alice?' }), deps)
+      const send = await assemblePrompt(baseInput({ mode: 'send', userMessage: 'Where is Alice?' }), deps)
+
+      expect(preview.stopSending).toBe(false)
+      expect(send.stopSending).toBe(false)
+      const previewRows = preview.formated?.filter(({ memo }) => memo === 'bardWiki') ?? []
+      const sendRows = send.formated?.filter(({ memo }) => memo === 'bardWiki') ?? []
+      expect(previewRows).toEqual(sendRows)
+      expect(previewRows).toEqual([
+        expect.objectContaining({ content: expect.stringContaining('Memory card: <bardwiki-reference') }),
+      ])
+      expect(preview.state?.bardWikiPromptDiagnostics).toMatchObject({
+        reason: 'selected',
+        selectedCount: 1,
+        consumedTokens: expect.any(Number),
+      })
+      expect(JSON.stringify(preview.state?.bardWikiPromptDiagnostics)).not.toContain('Alice is a ranger')
+      expect(preview.state?.promptMemoryRows).toEqual([])
+      expect(listMemoryJobs(memoryDb)).toEqual([])
+    } finally {
+      memoryDb.close()
+    }
+  })
+
+  it('keeps disabled BardWiki assembly byte-compatible and partitions Hybrid memory', async () => {
+    const memoryDb = openDatabase(makeDataDir())
+    try {
+      memoryDb.prepare('INSERT INTO characters (id, position, data_json) VALUES (?, 0, ?)').run('char-tess', '{}')
+      memoryDb
+        .prepare('INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, 0, ?)')
+        .run('chat-1', 'char-tess', '{}')
+      createBardWikiDocument(memoryDb, {
+        id: 'document-alice',
+        chatId: 'chat-1',
+        kind: 'character',
+        title: 'Alice',
+        logicalPath: 'Characters/Alice',
+        aliases: [],
+        contextPolicy: 'relevant',
+        reviewState: 'active',
+        markdown: 'Alice is a ranger.',
+        commandRevision: 1,
+      })
+      const disabledDb = makeDatabase({
+        maxResponse: 10,
+        maxContext: 100_000,
+        bardWiki: DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
+        characters: [historyChar()],
+      } as Partial<Database>)
+      const withoutSqlite = await assemblePrompt(baseInput({ userMessage: 'Alice?' }), depsFor(disabledDb))
+      const withDisabledBardWiki = await assemblePrompt(
+        baseInput({ userMessage: 'Alice?' }),
+        depsFor(disabledDb, { loadMemoryDatabase: () => memoryDb }),
+      )
+      expect(withDisabledBardWiki.formated).toEqual(withoutSqlite.formated)
+
+      seedPromptMemory(memoryDb, { summaryId: 'summary-a', chunkId: 'chunk-a', text: 'selected summary' })
+      const hybridDb = memoryEnabledDatabase({
+        bardWiki: {
+          ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
+          enabledByDefault: true,
+          memoryMode: 'hybrid',
+          totalTokenBudget: 1_000,
+          hybridHypaTokenBudget: 800,
+          hybridBardWikiTokenBudget: 800,
+        },
+      } as Partial<Database>)
+      const hybrid = beginAssembly(
+        baseInput({ userMessage: 'Alice?' }),
+        depsFor(hybridDb, {
+          loadMemoryDatabase: () => memoryDb,
+          loadPromptMemoryQueryVectors: () => [[1, 0]],
+        }),
+      )
+      fillStaticSlots(hybrid)
+      fillLorebookSlots(hybrid)
+      await fillHistoryAndBias(hybrid)
+      fillMemoryAndPostHistory(hybrid)
+
+      expect(hybrid.bardWikiPromptDiagnostics).toMatchObject({
+        memoryMode: 'hybrid',
+        hypaTokenBudget: 800,
+        bardWikiTokenBudget: 200,
+      })
+      expect(hybrid.unformated.chats.some(({ memo }) => memo === 'bardWiki')).toBe(true)
+      expect(hybrid.unformated.chats.some(({ memo }) => memo === 'hypaMemory')).toBe(true)
+    } finally {
+      memoryDb.close()
+    }
   })
 
   it('captures assembled Hypa memory rows into template memory cards', async () => {

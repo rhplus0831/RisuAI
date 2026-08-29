@@ -146,7 +146,7 @@ export function coalesceRows(formated: OpenAIChat[], rows: OpenAIChat[], aiModel
       formated.push(chat)
       continue
     }
-    if (chat.role === 'system') {
+    if (chat.role === 'system' && chat.memo !== 'bardWiki') {
       const endf = formated.at(-1)
       if (endf && endf.role === 'system' && endf.memo === chat.memo && endf.name === chat.name) {
         endf.content += '\n\n' + chat.content

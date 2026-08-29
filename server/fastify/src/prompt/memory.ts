@@ -32,7 +32,7 @@ export interface MemoryWindowInput {
 }
 
 export type MemoryWindowResult =
-  | { stopSending: true }
+  | { stopSending: true; reason: 'history_context_overflow' | 'bardwiki_pinned_budget_exceeded' }
   | {
       stopSending: false
       currentTokens: number
@@ -65,14 +65,21 @@ export function buildMemoryWindow(input: MemoryWindowInput): MemoryWindowResult 
 
   // Non-Hypa budget trim (SPA `buildMemoryWindow.ts`).
   while (currentTokens > maxContextTokens) {
-    if (chats.length <= 1) {
-      return { stopSending: true }
+    const trimIndex = memoryWindowTrimIndex(chats)
+    if (trimIndex === -1) {
+      return {
+        stopSending: true,
+        reason: chats.some((chat) => chat.memo === 'bardWiki' && chat.removable === false)
+          ? 'bardwiki_pinned_budget_exceeded'
+          : 'history_context_overflow',
+      }
     }
-    if (typeof chats[0].memo === 'string' && stableMessageIds.has(chats[0].memo)) {
+    const candidate = chats[trimIndex]
+    if (typeof candidate.memo === 'string' && stableMessageIds.has(candidate.memo)) {
       trimmedStableMessage = true
     }
-    currentTokens -= tokenizeChat(chats[0], encoding, options)
-    chats.splice(0, 1)
+    currentTokens -= tokenizeChat(candidate, encoding, options)
+    chats.splice(trimIndex, 1)
   }
   const survivingMessageId = chats.find(
     (chat): chat is OpenAIChat & { memo: string } => typeof chat.memo === 'string' && stableMessageIds.has(chat.memo),
@@ -97,12 +104,12 @@ export function buildMemoryWindow(input: MemoryWindowInput): MemoryWindowResult 
   // inline; everything else is marked `removable`. Empty rows drop out.
   unformated.chats = chats
     .map((v) => {
-      if (v.memo !== 'supaMemory' && v.memo !== 'hypaMemory') {
+      if (v.memo !== 'supaMemory' && v.memo !== 'hypaMemory' && v.memo !== 'bardWiki') {
         v.removable = true
       } else if (memoryCardUsed) {
         memories.push(v)
         return { role: 'system', content: '' } as OpenAIChat
-      } else {
+      } else if (v.memo !== 'bardWiki') {
         v.content = `<Previous Conversation>${v.content}</Previous Conversation>`
       }
       return v
@@ -116,4 +123,22 @@ export function buildMemoryWindow(input: MemoryWindowInput): MemoryWindowResult 
     memories,
     ...(trimmedStableMessage ? { historyTruncated: true as const } : {}),
   }
+}
+
+function memoryWindowTrimIndex(chats: readonly OpenAIChat[]): number {
+  const nonPinnedBardWiki = chats.findIndex((chat) => chat.memo === 'bardWiki' && chat.removable === true)
+  if (nonPinnedBardWiki >= 0) return nonPinnedBardWiki
+
+  let newestHistoryIndex = -1
+  for (let index = chats.length - 1; index >= 0; index--) {
+    if (!isMemoryRow(chats[index])) {
+      newestHistoryIndex = index
+      break
+    }
+  }
+  return chats.findIndex((chat, index) => !isMemoryRow(chat) && index !== newestHistoryIndex)
+}
+
+function isMemoryRow(chat: OpenAIChat): boolean {
+  return chat.memo === 'supaMemory' || chat.memo === 'hypaMemory' || chat.memo === 'bardWiki'
 }

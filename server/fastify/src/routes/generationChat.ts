@@ -123,6 +123,8 @@ import { REQUEST_UID_HEADER } from '../requestTrace.js'
 import type { ChatCompletionNotificationContext, PushNotificationService } from '../pushNotifications.js'
 import type { MessageTranslationJobRegistry } from '../messageTranslationJobs.js'
 import type { MemoryJob } from '../memoryRepository.js'
+import { getBardWikiChatSettings } from '../bardWikiRepository.js'
+import { readBardWikiGlobalSettings, resolveEffectiveBardWikiSettings } from '../bardWikiSettings.js'
 import {
   emptyPromptMemoryQueryDiagnostics,
   prefetchPromptMemoryQueryVectors,
@@ -986,7 +988,7 @@ async function assemblePromptWithMetrics(
     const database = deps.loadDatabase()
     const promptMemoryPrefetchStartedAt = protocolNowMs()
     deps.setPromptMemoryQueryPrefetch(
-      database
+      database && !suppressesHypaPromptWork(db, database, input.chatId)
         ? await prefetchPromptMemoryQueryVectors({
             db,
             database,
@@ -1039,6 +1041,14 @@ async function assemblePromptWithMetrics(
     })
     throw err
   }
+}
+
+function suppressesHypaPromptWork(db: DatabaseSync, database: Database, chatId: string): boolean {
+  const settings = resolveEffectiveBardWikiSettings(
+    readBardWikiGlobalSettings(database.bardWiki),
+    getBardWikiChatSettings(db, chatId),
+  )
+  return settings.enabledByDefault && settings.memoryMode === 'bardwiki'
 }
 
 function inspectChatGenerationSettings(
@@ -1190,6 +1200,7 @@ function createGenerationInfo(
 function chatDispatchHistory(db: DatabaseSync, context: ChatProviderDispatchContext): ChatDispatchHistoryInput {
   const state = context.result.state
   const toggles = state?.currentChat.generationSettings?.sidebarToggles
+  const bardWiki = state?.bardWikiPromptDiagnostics
   return {
     db,
     source: 'chat',
@@ -1204,6 +1215,18 @@ function chatDispatchHistory(db: DatabaseSync, context: ChatProviderDispatchCont
     metadata: {
       mode: context.input.mode,
       inputTokens: context.result.inputTokens,
+      ...(bardWiki
+        ? {
+            bardWikiReason: bardWiki.reason,
+            bardWikiQueryHash: bardWiki.queryHash,
+            bardWikiCandidateCount: bardWiki.candidateCount,
+            bardWikiSelectedCount: bardWiki.selectedCount,
+            bardWikiSelectedDocumentIds: bardWiki.selected.map(({ documentId }) => documentId),
+            bardWikiSelectedContentHashes: bardWiki.selected.map(({ contentHash }) => contentHash),
+            bardWikiSelection: bardWiki.selected,
+            bardWikiConsumedTokens: bardWiki.consumedTokens,
+          }
+        : {}),
       ...context.historyMetadata,
     },
   }
@@ -1237,6 +1260,11 @@ function assemblyStopError(
       return {
         reason: 'history_context_overflow',
         error: `Chat history could not fit within the model context window after trimming older messages${detail}`,
+      }
+    case 'bardwiki_pinned_budget_exceeded':
+      return {
+        reason: 'bardwiki_pinned_budget_exceeded',
+        error: 'Pinned BardWiki references exceed the effective BardWiki prompt budget.',
       }
     case 'overflow':
       return {
@@ -1297,6 +1325,19 @@ function assemblyDiagnosticMetricFields(result: AssembleResult): Record<string, 
     promptMemoryQueryTextCount: result.state?.promptMemoryQueryDiagnostics?.queryTexts ?? 0,
     promptMemoryQueryVectorCount: result.state?.promptMemoryQueryDiagnostics?.vectors ?? 0,
     promptMemoryQueryError: result.state?.promptMemoryQueryDiagnostics?.error,
+    bardWikiReason: result.state?.bardWikiPromptDiagnostics?.reason,
+    bardWikiMemoryMode: result.state?.bardWikiPromptDiagnostics?.memoryMode,
+    bardWikiQueryHash: result.state?.bardWikiPromptDiagnostics?.queryHash,
+    bardWikiCandidateCount: result.state?.bardWikiPromptDiagnostics?.candidateCount ?? 0,
+    bardWikiSelectedCount: result.state?.bardWikiPromptDiagnostics?.selectedCount ?? 0,
+    bardWikiLinkedCandidateCount: result.state?.bardWikiPromptDiagnostics?.linkedCandidateCount ?? 0,
+    bardWikiUnresolvedLinkCount: result.state?.bardWikiPromptDiagnostics?.unresolvedLinkCount ?? 0,
+    bardWikiConsumedTokens: result.state?.bardWikiPromptDiagnostics?.consumedTokens ?? 0,
+    bardWikiSelectedDocumentIds: result.state?.bardWikiPromptDiagnostics?.selected.map(({ documentId }) => documentId),
+    bardWikiSelectedContentHashes: result.state?.bardWikiPromptDiagnostics?.selected.map(
+      ({ contentHash }) => contentHash,
+    ),
+    bardWikiFinalPromptRowCount: result.formated?.filter(({ memo }) => memo === 'bardWiki').length ?? 0,
   }
 }
 
@@ -5879,6 +5920,7 @@ export function registerGenerationChatRoutes(
           options,
         )
         if (result.stopSending) {
+          if (result.abortReason === 'bardwiki_pinned_budget_exceeded') reply.code(409)
           return {
             stopSending: true,
             abortReason: result.abortReason,

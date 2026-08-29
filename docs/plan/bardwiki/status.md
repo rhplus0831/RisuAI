@@ -10,9 +10,10 @@ retrieval and autonomous worker behavior have not started.
 ## Snapshot
 
 - Plan state: runtime implementation in progress.
-- Current phase: Phase 3, foundation not yet implemented.
-- Current implementation cursor: add the bounded repository snapshot and pure
-  query/selection primitives for committed active documents.
+- Current phase: Phase 3, slices 1-2 complete.
+- Current implementation cursor: prove preview/SSE/request-history/provider
+  parity, pinned error mapping, final-trim reconciliation, and bounded
+  large-corpus timing.
 - Blockers: none.
 - Runtime changes in this workstream: schema v33, low-level repository,
   revisioned settings/manual-document commands, shared wire schemas, targeted
@@ -39,6 +40,10 @@ retrieval and autonomous worker behavior have not started.
   allowlist passed 229 tests; Svelte and server-facing typechecks passed; the
   production browser build and all 37 Playwright smoke tests passed on
   2026-08-29.
+- Phase 3 slices 1-2 validation: repository/selector passed 20 tests; prompt,
+  memory/template, routes, and assembly passed 6 files, 229 tests; generation
+  and allocation passed 2 files, 181 tests; all server-facing typechecks passed
+  on 2026-08-29.
 - Residual risk: Phase 3 must preserve byte-compatible non-BardWiki prompt
   assembly while adding deterministic, budgeted selection and privacy-safe
   diagnostics.
@@ -68,7 +73,7 @@ retrieval and autonomous worker behavior have not started.
 | [0. Contract and architecture](phases/phase-0-contract-and-architecture.md) | Complete | Exact types, states, routes, events, inheritance, errors, and test matrix are locked in [`CONTRACT.md`](CONTRACT.md). |
 | [1. Persistence and resources](phases/phase-1-persistence-and-resources.md) | Complete | Authoritative persistence, manual commands/resources, cascade lifecycle, and backup/restore recovery are proven. |
 | [2. Settings and workspace](phases/phase-2-settings-and-workspace.md) | Complete | Global/per-chat settings and conflict-safe durable manual document editing are usable. |
-| [3. Prompt retrieval](phases/phase-3-prompt-retrieval.md) | In progress | Committed documents are selected and injected deterministically under budget. |
+| [3. Prompt retrieval](phases/phase-3-prompt-retrieval.md) | In progress (2/4) | Committed documents are selected and injected deterministically under budget. |
 | [4. Jobs and explicit confirmation](phases/phase-4-jobs-and-explicit-confirmation.md) | Pending | Separate durable worker execution and explicit event-document generation are reliable. |
 | [5. Automatic and canonical updates](phases/phase-5-automatic-and-canonical-updates.md) | Pending | Prior-turn automatic confirmation, canonical patches, and stale reconciliation land. |
 | [6. Lifecycle and interchange](phases/phase-6-lifecycle-and-interchange.md) | Pending | Edit/delete/fork/import/export/restore/rebuild and operational edges are complete. |
@@ -76,8 +81,8 @@ retrieval and autonomous worker behavior have not started.
 
 ## Next Action
 
-Add a bounded Phase 3 prompt-time repository snapshot plus pure deterministic
-query, ranking, link-expansion, excerpt, and budget helpers.
+Execute Phase 3 slice 3: close route-level preview/provider parity, pinned error,
+final-trim diagnostic, and bounded large-corpus timing coverage.
 
 ## Maintenance Rules
 

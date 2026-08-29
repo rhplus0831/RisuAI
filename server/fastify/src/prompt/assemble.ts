@@ -104,6 +104,8 @@ import {
 } from '../memoryRepository.js'
 import { filterMemorySummariesForModel } from '../memorySummaryCompatibility.js'
 import { tokenize, tokenizeChat } from './tokens.js'
+import { buildBardWikiPromptRows, type BardWikiPromptDiagnostics } from './bardWiki.js'
+import { BardWikiPinnedBudgetError } from './bardWikiSelection.js'
 import { tokenizeHypaV3PrefixChat } from './prefixTokenMemo.js'
 import { ensureTokenizerLoadedForDb, tokenizerOptionsFromDb } from './tokenizerConfig.js'
 import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
@@ -413,7 +415,11 @@ export interface AssembleRestorationPayload {
   scriptstate?: Record<string, string | number | boolean>
 }
 
-export type AssembleAbortReason = 'trigger_stop' | 'history_context_overflow' | 'overflow'
+export type AssembleAbortReason =
+  | 'trigger_stop'
+  | 'history_context_overflow'
+  | 'bardwiki_pinned_budget_exceeded'
+  | 'overflow'
 
 /**
  * The full assembler output. `prompt` is the `prompt` SSE event payload; the
@@ -592,6 +598,8 @@ export interface AssemblyState {
   promptMemorySelectionDiagnostics?: PromptMemoryAdapterDiagnostics
   promptMemoryRowAssemblyDiagnostics?: PromptMemoryRowAssemblyDiagnostics
   promptMemoryFollowUpDiagnostics?: PromptMemoryFollowUpDiagnostics
+  bardWikiPromptDiagnostics?: BardWikiPromptDiagnostics
+  bardWikiRows?: OpenAIChat[]
   recordAssemblyStageTiming?: (stage: PromptAssemblyStage, durationMs: number) => void
   promptMemoryRows?: OpenAIChat[]
   /** Stored-summary boundary applied only when the Hypa V3 prompt-memory path is enabled. */
@@ -1994,14 +2002,44 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
 
   const { ctx, currentChar, unformated } = state
   const db = state.database
-  const promptMemoryRows = buildPromptMemoryRowsForAssembly(state)
+  let bardWikiRows: OpenAIChat[] = []
+  let hypaTokenBudget: number | null = null
+  if (state.memoryDatabase) {
+    try {
+      const bardWiki = buildBardWikiPromptRows({
+        db: state.memoryDatabase,
+        database: state.database,
+        querySource: {
+          chatId: state.input.chatId,
+          characterId: state.input.characterId,
+          mode: state.input.mode,
+          regenerateMessageId: state.input.regenerateMessageId,
+          userMessage: state.input.userMessage,
+        },
+      })
+      bardWikiRows = bardWiki.rows
+      hypaTokenBudget = bardWiki.budgets.hypaTokenBudget
+      state.bardWikiPromptDiagnostics = bardWiki.diagnostics
+      state.bardWikiRows = bardWiki.rows
+    } catch (error) {
+      if (!(error instanceof BardWikiPinnedBudgetError)) throw error
+      state.stopSending = true
+      state.abortReason = 'bardwiki_pinned_budget_exceeded'
+      state.inputTokens = error.requiredTokens
+      return
+    }
+  }
+  const promptMemoryRows = buildPromptMemoryRowsForAssembly(state, hypaTokenBudget)
   const historyStartIndex = state.promptMemoryHistoryStartIndex ?? 0
   const promptHistory = (state.historyMessages ?? []).slice(historyStartIndex)
-  const currentTokens = (state.currentTokens ?? 0) - (state.promptMemorySummarizedHistoryTokens ?? 0)
+  const currentTokens =
+    (state.currentTokens ?? 0) -
+    (state.promptMemorySummarizedHistoryTokens ?? 0) +
+    (state.bardWikiPromptDiagnostics?.consumedTokens ?? 0)
   state.currentTokens = currentTokens
 
   const mem = buildMemoryWindow({
-    chats: [...promptMemoryRows, ...promptHistory],
+    chats: [...bardWikiRows, ...promptMemoryRows, ...promptHistory],
     currentTokens,
     maxContextTokens: db.maxContext ?? 0,
     currentChat: state.currentChat,
@@ -2013,7 +2051,7 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
 
   if (mem.stopSending === true) {
     state.stopSending = true
-    state.abortReason = 'history_context_overflow'
+    state.abortReason = mem.reason
     state.inputTokens = state.currentTokens
     return
   }
@@ -2077,7 +2115,7 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
   }
 }
 
-function buildPromptMemoryRowsForAssembly(state: AssemblyState): OpenAIChat[] {
+function buildPromptMemoryRowsForAssembly(state: AssemblyState, hypaTokenBudget: number | null): OpenAIChat[] {
   const memoryDb = state.memoryDatabase
   if (!memoryDb) {
     state.promptMemoryRows = []
@@ -2087,7 +2125,7 @@ function buildPromptMemoryRowsForAssembly(state: AssemblyState): OpenAIChat[] {
     state.promptMemoryFollowUpDiagnostics = emptyPromptMemoryFollowUpDiagnostics()
     return []
   }
-  const enabled = shouldSelectPromptMemory(state)
+  const enabled = shouldSelectPromptMemory(state, hypaTokenBudget)
   const { settings } = normalizeHypaV3Settings(
     resolveHypaV3PresetSettings(state.database) as Partial<HypaV3Settings> | null | undefined,
   )
@@ -2110,7 +2148,10 @@ function buildPromptMemoryRowsForAssembly(state: AssemblyState): OpenAIChat[] {
     summaryModel: settings.summarizationModel,
     embeddingModel,
     queryVectors: state.promptMemoryQueryVectors ?? [],
-    availableTokens: Math.floor((state.database.maxContext ?? 0) * settings.memoryTokensRatio),
+    availableTokens: clampHypaTokenBudget(
+      Math.floor((state.database.maxContext ?? 0) * settings.memoryTokensRatio),
+      hypaTokenBudget,
+    ),
     settings: {
       recentMemoryRatio: settings.recentMemoryRatio,
       similarMemoryRatio: settings.similarMemoryRatio,
@@ -2267,8 +2308,17 @@ function errorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
-function shouldSelectPromptMemory(state: AssemblyState): boolean {
-  return state.memoryDatabase !== null && state.database.hypaV3 === true && state.currentChar.supaMemory === true
+function shouldSelectPromptMemory(state: AssemblyState, hypaTokenBudget: number | null): boolean {
+  return (
+    hypaTokenBudget !== 0 &&
+    state.memoryDatabase !== null &&
+    state.database.hypaV3 === true &&
+    state.currentChar.supaMemory === true
+  )
+}
+
+function clampHypaTokenBudget(legacyBudget: number, hypaTokenBudget: number | null): number {
+  return hypaTokenBudget === null ? legacyBudget : Math.min(legacyBudget, hypaTokenBudget)
 }
 
 function resolveHypaV3PresetSettings(database: Database): unknown {
@@ -2426,7 +2476,14 @@ export async function renderAndBudget(state: AssemblyState): Promise<void> {
   )
   if (!budget.ok) {
     state.stopSending = true
-    state.abortReason = 'overflow'
+    const { encoding, options } = tokenizerOptionsFromDb(db)
+    const pinnedBardWikiTokens = render.formated
+      .filter((row) => row.memo === 'bardWiki' && row.removable === false)
+      .reduce((tokens, row) => tokens + tokenizeChat(row, encoding, options), 0)
+    state.abortReason =
+      pinnedBardWikiTokens > 0 && budget.inputTokens - pinnedBardWikiTokens <= (db.maxContext ?? 0)
+        ? 'bardwiki_pinned_budget_exceeded'
+        : 'overflow'
     state.inputTokens = budget.inputTokens
     return
   }
