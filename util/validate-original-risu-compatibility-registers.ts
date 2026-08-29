@@ -50,6 +50,10 @@ type JsonObject = Record<string, unknown>
 interface InventoryRow extends JsonObject {
   id: string
   sourceObligation: string
+  evidence: JsonObject & {
+    current: string[]
+    tests: string[]
+  }
   upstream: JsonObject & {
     commits: string[]
     disposition: string
@@ -57,9 +61,11 @@ interface InventoryRow extends JsonObject {
   }
   verification: JsonObject & {
     state: string
+    confidence: string
     lastFastifyCommit: string | null
     findingIds: string[]
     decisionId: string | null
+    residual: string | null
   }
 }
 
@@ -69,7 +75,9 @@ interface Finding extends JsonObject {
   inventoryIds: string[]
   decisionId: string | null
   implementationCommit: string | null
+  regressionEvidence: string[]
   verificationCommit: string | null
+  residualRisk: string | null
 }
 
 interface RawMapping extends JsonObject {
@@ -90,7 +98,19 @@ interface UpstreamUnit extends JsonObject {
   upstreamCommit: string
   historicalDisposition: unknown
   decisionId: string | null
-  currentVerification: JsonObject & { state: unknown; inventoryIds: string[] }
+  currentVerification: JsonObject & {
+    state: unknown
+    lastFastifyCommit: string | null
+    evidence: string[]
+    inventoryIds: string[]
+  }
+}
+
+interface RegisterLifecycleDocuments {
+  inventory: { state: string; rows: InventoryRow[] }
+  findings: { state: string; findings: Finding[] }
+  decisions: { state: string; decisions: Decision[] }
+  upstreamUnits?: { state: string; units: UpstreamUnit[] }
 }
 
 function isObject(value: unknown): value is JsonObject {
@@ -157,6 +177,94 @@ function validateCommitFields(value: unknown, location: string, errors: string[]
       }
     }
     validateCommitFields(child, childLocation, errors)
+  }
+}
+
+function hasClosurePlaceholder(value: string | null): boolean {
+  return (
+    value !== null &&
+    /owning (?:domain )?phase must|must (?:independently )?re-verify current|must re-run current regression/i.test(
+      value,
+    )
+  )
+}
+
+function validateRegisterLifecycle(documents: CompatibilityRegisterDocuments, errors: string[]): void {
+  const registers = documents as RegisterLifecycleDocuments
+  const expectedState =
+    registers.inventory.state === 'phase-0-initialization' ? 'historical-import-pending' : registers.inventory.state
+  const states: Array<[string, string | undefined]> = [
+    ['findings', registers.findings.state],
+    ['decisions', registers.decisions.state],
+    ['upstreamUnits', registers.upstreamUnits?.state],
+  ]
+
+  for (const [label, state] of states) {
+    if (state === undefined) {
+      if (expectedState === 'closed') errors.push(`closed inventory requires the ${label} register`)
+    } else if (state !== expectedState) {
+      errors.push(
+        `${label} register state ${JSON.stringify(state)} must match inventory lifecycle ${JSON.stringify(expectedState)}`,
+      )
+    }
+  }
+  if (expectedState !== 'closed') return
+
+  for (const row of registers.inventory.rows) {
+    const label = `closed inventory row ${row.id}`
+    if (!['verified', 'retired'].includes(row.verification.state)) {
+      errors.push(`${label} cannot remain ${row.verification.state}`)
+    }
+    if (row.verification.state === 'verified') {
+      if (row.verification.confidence !== 'high') errors.push(`${label} must have high confidence`)
+      if (row.verification.lastFastifyCommit === null) errors.push(`${label} must record a verification commit`)
+      if (row.evidence.current.length === 0) errors.push(`${label} must record current implementation evidence`)
+      if (row.evidence.tests.length === 0) errors.push(`${label} must record current regression evidence`)
+    }
+    if (row.verification.state === 'retired' && !row.verification.residual?.trim()) {
+      errors.push(`${label} must explain why the surface is retired`)
+    }
+    if (hasClosurePlaceholder(row.verification.residual)) {
+      errors.push(`${label} retains a phase-owned re-verification placeholder`)
+    }
+  }
+
+  for (const finding of registers.findings.findings) {
+    const label = `closed finding ${finding.id}`
+    if (finding.verificationState === 'pending') errors.push(`${label} cannot remain pending`)
+    if (['fix', 'decide'].includes(finding.disposition))
+      errors.push(`${label} cannot retain ${finding.disposition} disposition`)
+    if (finding.disposition === 'resolved') {
+      if (finding.verificationCommit === null) errors.push(`${label} must record a verification commit`)
+      if (finding.regressionEvidence.length === 0) errors.push(`${label} must record regression evidence`)
+    }
+    if (finding.disposition === 'deferred' && !finding.residualRisk?.trim()) {
+      errors.push(`${label} must record the accepted residual risk`)
+    }
+    if (hasClosurePlaceholder(finding.residualRisk)) {
+      errors.push(`${label} retains a phase-owned re-verification placeholder`)
+    }
+  }
+
+  for (const decision of registers.decisions.decisions) {
+    if (decision.state === 'proposed') errors.push(`closed decision ${decision.id} cannot remain proposed`)
+  }
+
+  for (const unit of registers.upstreamUnits?.units ?? []) {
+    const label = `closed upstream unit ${unit.id}`
+    if (!['verified', 'not-applicable'].includes(String(unit.currentVerification.state))) {
+      errors.push(`${label} cannot remain ${String(unit.currentVerification.state)}`)
+    }
+    if (unit.currentVerification.evidence.length === 0) errors.push(`${label} must record current evidence`)
+    if (unit.currentVerification.state === 'verified' && unit.currentVerification.lastFastifyCommit === null) {
+      errors.push(`${label} must record a verification commit`)
+    }
+    if (unit.decisionId !== null) {
+      const decision = registers.decisions.decisions.find((candidate) => candidate.id === unit.decisionId)
+      if (decision && decision.state !== 'signed') {
+        errors.push(`${label} requires signed decision ${unit.decisionId}`)
+      }
+    }
   }
 }
 
@@ -429,7 +537,10 @@ export function validateOriginalRisuCompatibilityRegisterDocuments(
     upstreamSchemaValid = upstreamErrors.length === 0
   }
 
-  if (coreSchemasValid) validateCoreRelationships(input.documents, errors)
+  if (coreSchemasValid) {
+    validateCoreRelationships(input.documents, errors)
+    if (!hasUpstreamDocument || upstreamSchemaValid) validateRegisterLifecycle(input.documents, errors)
+  }
   if (coreSchemasValid && upstreamSchemaValid) {
     validateUpstreamUnits(
       input.documents.upstreamUnits,

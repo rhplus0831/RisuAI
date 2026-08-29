@@ -109,6 +109,7 @@ function coreDocuments(): CompatibilityRegisterDocuments {
     findings: {
       $schema: './findings.schema.json',
       schemaVersion: 1,
+      state: 'active',
       rawMappings: [],
       findings: [],
     },
@@ -248,6 +249,7 @@ function upstreamFixture(expectedCommits: readonly string[]) {
   return {
     $schema: './upstream-units.schema.json',
     schemaVersion: 1,
+    state: 'active',
     references: {
       startExclusive: commit(1001),
       endInclusive: expectedCommits.at(-1),
@@ -300,6 +302,59 @@ describe('upstream unit coverage', () => {
     expect(reordered.ok).toBe(false)
     expect(reordered.errors).toEqual(
       expect.arrayContaining([expect.stringContaining('does not match first-parent commit order')]),
+    )
+  })
+
+  it('rejects unfinished and stale evidence when the registers declare closure', () => {
+    const expectedCommits = Array.from({ length: 85 }, (_, index) => commit(index + 1))
+    const documents = coreDocuments()
+    documents.upstreamUnits = upstreamFixture(expectedCommits)
+    ;(documents.inventory as { state: string; rows: unknown[] }).state = 'closed'
+    ;(documents.findings as { state: string; findings: unknown[] }).state = 'closed'
+    ;(documents.decisions as { state: string; decisions: unknown[] }).state = 'closed'
+    ;(documents.upstreamUnits as { state: string }).state = 'closed'
+
+    const row = inventoryRow()
+    row.verification.residual = 'The owning domain phase must independently re-verify current behavior.'
+    ;(documents.inventory as { rows: unknown[] }).rows.push(row)
+    ;(documents.findings as { findings: unknown[] }).findings.push({
+      ...finding(),
+      residualRisk: 'The owning phase must re-run current regression evidence.',
+    })
+    ;(documents.decisions as { decisions: unknown[] }).decisions.push(decision())
+
+    const units = (
+      documents.upstreamUnits as {
+        units: Array<{
+          currentVerification: { state: string; lastFastifyCommit: string | null; evidence: string[] }
+        }>
+      }
+    ).units
+    for (const unit of units) {
+      unit.currentVerification.state = 'not-applicable'
+      unit.currentVerification.evidence = ['current exclusion evidence']
+    }
+    units[0].currentVerification.state = 'pending'
+    units[0].currentVerification.evidence = []
+
+    const result = validateOriginalRisuCompatibilityRegisterDocuments({
+      documents,
+      schemas: { ...coreSchemas, upstreamUnits: upstreamSchema() },
+      expectedUpstreamCommits: expectedCommits,
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        'closed inventory row ORC-SURFACE-001 cannot remain candidate',
+        'closed inventory row ORC-SURFACE-001 retains a phase-owned re-verification placeholder',
+        'closed finding ORC-A-001 cannot remain pending',
+        'closed finding ORC-A-001 cannot retain fix disposition',
+        'closed finding ORC-A-001 retains a phase-owned re-verification placeholder',
+        'closed decision ORC-DECISION-001 cannot remain proposed',
+        'closed upstream unit ORC-UPSTREAM-001 cannot remain pending',
+        'closed upstream unit ORC-UPSTREAM-001 must record current evidence',
+      ]),
     )
   })
 

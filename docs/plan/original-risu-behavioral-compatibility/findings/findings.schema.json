@@ -6,6 +6,7 @@
   "additionalProperties": false,
   "required": [
     "schemaVersion",
+    "state",
     "rawMappings",
     "findings"
   ],
@@ -15,6 +16,13 @@
     },
     "schemaVersion": {
       "const": 1
+    },
+    "state": {
+      "enum": [
+        "historical-import-pending",
+        "active",
+        "closed"
+      ]
     },
     "rawMappings": {
       "type": "array",

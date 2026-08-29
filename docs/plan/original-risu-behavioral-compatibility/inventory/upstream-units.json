@@ -1,6 +1,7 @@
 {
   "$schema": "./upstream-units.schema.json",
   "schemaVersion": 1,
+  "state": "active",
   "references": {
     "startExclusive": "71c476e9c86263fe907105b011ca4dde0a619d66",
     "endInclusive": "f3f0242fba297d82e0efcc2c31ca1428569b70f2"
