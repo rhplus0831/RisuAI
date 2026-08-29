@@ -2588,12 +2588,17 @@ export async function applyImport(
     cloneBeforeMessageSplit?: boolean
     automaticBackupRetention?: number
     greetingTranslations?: readonly GreetingTranslationRow[]
+    signal?: AbortSignal
   } = {},
 ): Promise<{ revision: number; event: CommandEvent; databaseLineage: string; writerEpoch: number }> {
   if (database === null || database === undefined) {
     throw new ValidationError('database payload missing')
   }
+  throwIfImportAborted(options.signal)
   await createAutomaticSafetyBackup(db, dataDir, options.automaticBackupRetention)
+  // Creating the safety snapshot can yield to the event loop. Do not begin the
+  // destructive transaction if the requesting client disconnected meanwhile.
+  throwIfImportAborted(options.signal)
   // The imported payload carries embedded `message[]`; split them into the
   // messages table and persist the message-free domain tables. By default we
   // persist a *clone* so the caller's `database` object is left fully hydrated —
@@ -2643,6 +2648,13 @@ export async function applyImport(
     }
     throw err
   }
+}
+
+function throwIfImportAborted(signal: AbortSignal | undefined): void {
+  if (!signal?.aborted) return
+  const error = new Error('Database import aborted')
+  error.name = 'AbortError'
+  throw error
 }
 
 /**

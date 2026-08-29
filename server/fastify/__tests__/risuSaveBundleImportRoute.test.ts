@@ -26,7 +26,11 @@ import { encodeRisuSaveBlockEnvelope, RisuSaveBlockType } from '../src/risuSave/
 import { RISUSAVE_EMPTY_DATABASE_ERROR, RISUSAVE_INCOMPLETE_BLOCKS_ERROR } from '../src/risuSave/importSnapshot.js'
 import { decodeRisuSaveImportSnapshot } from '../src/risuSave/importSnapshot.js'
 import { RISU_SERVER_DATA_KEY } from '../src/risuSave/portableMetadata.js'
-import { LOCAL_BACKUP_ZIP_MAX_ENTRIES, LOCAL_BACKUP_ZIP_MAX_NAME_BYTES } from '../src/risuSave/localBackupImport.js'
+import {
+  decodeLocalBackup,
+  LOCAL_BACKUP_ZIP_MAX_ENTRIES,
+  LOCAL_BACKUP_ZIP_MAX_NAME_BYTES,
+} from '../src/risuSave/localBackupImport.js'
 
 interface Harness {
   app: FastifyInstance
@@ -332,6 +336,17 @@ function failCommandEventPersistence(dataDir: string): void {
 }
 
 describe('repository .risu bundle import route', () => {
+  it('stops local-backup decoding before staging when the request is already aborted', async () => {
+    const bundlePath = path.join(harness.dataDir, 'aborted-before-decode.risu.zip')
+    writeFileSync(bundlePath, buildBundleZip(encodeLegacyRisuSaveEnvelope({ characters: [] })))
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(
+      decodeLocalBackup(bundlePath, { maxExpandedBytes: Infinity, signal: controller.signal }),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
   it('isolates staged-asset cleanup failures and continues through every eligible file', () => {
     const preExisting = path.join(harness.dataDir, 'pre-existing-asset')
     const firstNew = path.join(harness.dataDir, 'first-new-asset')

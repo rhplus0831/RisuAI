@@ -24,6 +24,8 @@ interface LocalBackupAssetUpload {
 export interface DecodeLocalBackupOptions {
   /** Reject once the cumulative expanded (uncompressed) payload exceeds this. */
   maxExpandedBytes?: number
+  /** Stop post-upload decode/staging when the requesting client goes away. */
+  signal?: AbortSignal
 }
 
 export interface LocalBackupStagedAsset {
@@ -93,8 +95,19 @@ export async function decodeLocalBackup(
   filePath: string,
   options: DecodeLocalBackupOptions,
 ): Promise<DecodedLocalBackup> {
+  throwIfLocalBackupAborted(options.signal)
   const format = sniffLocalBackupFormat(readHead(filePath, ZIP_MAGIC.length))
   return format === 'risu-bundle-zip' ? decodeBundleZip(filePath, options) : decodeLegacyLocalBackup(filePath, options)
+}
+
+function localBackupAbortError(): Error {
+  const error = new Error('Local backup import aborted')
+  error.name = 'AbortError'
+  return error
+}
+
+function throwIfLocalBackupAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw localBackupAbortError()
 }
 
 function readHead(filePath: string, length: number): Uint8Array {
@@ -180,11 +193,13 @@ function decodeBundleZip(filePath: string, options: DecodeLocalBackupOptions): P
   return new Promise<DecodedLocalBackup>((resolve, reject) => {
     let settled = false
     const stream = fs.createReadStream(filePath)
+    const onAbort = (): void => fail(localBackupAbortError())
     const fail = (err: unknown): void => {
       if (settled) return
       settled = true
       stream.destroy()
       stager.cleanup()
+      options.signal?.removeEventListener('abort', onAbort)
       reject(asValidationError(err, 'Malformed .risu bundle archive'))
     }
 
@@ -225,6 +240,7 @@ function decodeBundleZip(filePath: string, options: DecodeLocalBackupOptions): P
       const chunks: Uint8Array[] = []
       file.ondata = (err, chunk, final) => {
         if (settled) return
+        if (options.signal?.aborted) return fail(localBackupAbortError())
         if (err) return fail(err)
         if (chunk && chunk.length > 0) {
           try {
@@ -247,6 +263,7 @@ function decodeBundleZip(filePath: string, options: DecodeLocalBackupOptions): P
 
     stream.on('data', (chunk: Buffer | string) => {
       if (settled) return
+      if (options.signal?.aborted) return fail(localBackupAbortError())
       try {
         unzip.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk, false)
       } catch (err) {
@@ -264,6 +281,7 @@ function decodeBundleZip(filePath: string, options: DecodeLocalBackupOptions): P
           throw new ValidationError('.risu bundle is missing its database.risu file')
         }
         settled = true
+        options.signal?.removeEventListener('abort', onAbort)
         resolve({
           format: 'risu-bundle-zip',
           databaseBytes,
@@ -275,6 +293,8 @@ function decodeBundleZip(filePath: string, options: DecodeLocalBackupOptions): P
         fail(err)
       }
     })
+    options.signal?.addEventListener('abort', onAbort, { once: true })
+    if (options.signal?.aborted) onAbort()
   })
 }
 
@@ -350,6 +370,7 @@ async function decodeLegacyLocalBackup(
     }
 
     while (pos < size) {
+      throwIfLocalBackupAborted(options.signal)
       const nameLength = readChunk(4, 'name length').readUInt32LE(0)
       const name = readChunk(nameLength, 'name').toString('utf8')
       const dataLength = readChunk(4, 'data length').readUInt32LE(0)
@@ -413,7 +434,8 @@ function concatChunks(chunks: readonly Uint8Array[]): Uint8Array {
   return out
 }
 
-function asValidationError(err: unknown, fallback: string): ValidationError {
+function asValidationError(err: unknown, fallback: string): Error {
+  if (err instanceof Error && err.name === 'AbortError') return err
   if (err instanceof ValidationError) return err
   return new ValidationError(err instanceof Error ? err.message : fallback)
 }

@@ -9,6 +9,7 @@ import type { AuthState } from '../auth.js'
 import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
+import { attachAbort } from '../requestAbort.js'
 import {
   AutomaticBackupError,
   ValidationError,
@@ -104,11 +105,15 @@ export function registerSaveRoutes(
     : (options.maxExpandedImportBytes ?? DEFAULT_BUNDLE_INNER_RISU_MAX_EXPANDED_BYTES)
   app.post('/api/v1/import/risusave', { config: { rateLimit: importRateLimit } }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
+    const requestAbort = attachAbort(req, reply)
     try {
       if (req.isMultipart()) {
-        const snapshot = decodeRisuSaveImportSnapshot(await readUploadedRisuSave(req), {
+        const uploaded = await readUploadedRisuSave(req)
+        throwIfImportRequestAborted(requestAbort.signal)
+        const snapshot = decodeRisuSaveImportSnapshot(uploaded, {
           maxExpandedBytes: options.maxExpandedImportBytes,
         })
+        throwIfImportRequestAborted(requestAbort.signal)
         const { revision, event, databaseLineage, writerEpoch, assetReport, memoryLegacyReport } =
           await applyImportedDatabase(
             db,
@@ -116,7 +121,7 @@ export function registerSaveRoutes(
             snapshot.database,
             snapshot.portableMetadata,
             snapshot.greetingTranslations,
-            { automaticBackupRetention: options.automaticBackupRetention },
+            { automaticBackupRetention: options.automaticBackupRetention, signal: requestAbort.signal },
           )
         eventSink.emit(event)
         return {
@@ -149,6 +154,7 @@ export function registerSaveRoutes(
           {
             automaticBackupRetention: options.automaticBackupRetention,
             cloneBeforeMessageSplit: false,
+            signal: requestAbort.signal,
           },
         )
       eventSink.emit(event)
@@ -161,6 +167,10 @@ export function registerSaveRoutes(
         ...(memoryLegacyReport ? { memoryLegacyReport } : {}),
       }
     } catch (err) {
+      if (isAbortError(err)) {
+        reply.code(499)
+        return { error: 'import_aborted' }
+      }
       if (err instanceof UnsupportedStandaloneChatBlocksError) {
         reply.code(422)
         return unsupportedStandaloneChatBlockImportResponse(err)
@@ -178,6 +188,8 @@ export function registerSaveRoutes(
         return { error: err.code }
       }
       throw err
+    } finally {
+      requestAbort.cleanup()
     }
   })
 
@@ -188,20 +200,25 @@ export function registerSaveRoutes(
       return { error: 'backup import requires a multipart .risu.zip or .bin upload' }
     }
 
+    const requestAbort = attachAbort(req, reply)
     let uploadPath: string | null = null
     try {
       // Stream the (potentially very large) upload to a temp file instead of
       // buffering it in memory, then stream-decode it; assets stage into temp
       // files first so malformed embedded DB bytes cannot leak live side effects.
       uploadPath = await streamUploadToTempFile(req, importMaxBytes)
+      throwIfImportRequestAborted(requestAbort.signal)
 
       const decoded = await decodeLocalBackup(uploadPath, {
         maxExpandedBytes: importMaxBytes,
+        signal: requestAbort.signal,
       })
 
+      throwIfImportRequestAborted(requestAbort.signal)
       const snapshot = decodeRisuSaveImportSnapshot(decoded.databaseBytes, {
         maxExpandedBytes: bundleInnerRisuMaxExpandedBytes,
       })
+      throwIfImportRequestAborted(requestAbort.signal)
       let assetsCreated = false
       const copiedAssetFiles: StagedAssetLiveFileCopy[] = []
       const importedDatabase =
@@ -217,6 +234,7 @@ export function registerSaveRoutes(
           snapshot.greetingTranslations,
           {
             automaticBackupRetention: options.automaticBackupRetention,
+            signal: requestAbort.signal,
             beforeRevision: () => {
               const assetResults = persistStagedAssetsInTransaction(db, dataDir, decoded.stagedAssets, copiedAssetFiles)
               assetsCreated = assetResults.some((result) => result.created)
@@ -262,6 +280,10 @@ export function registerSaveRoutes(
         },
       }
     } catch (err) {
+      if (isAbortError(err)) {
+        reply.code(499)
+        return { error: 'import_aborted' }
+      }
       if (err instanceof UnsupportedStandaloneChatBlocksError) {
         reply.code(422)
         return unsupportedStandaloneChatBlockImportResponse(err)
@@ -280,6 +302,7 @@ export function registerSaveRoutes(
       }
       throw err
     } finally {
+      requestAbort.cleanup()
       if (uploadPath) {
         await fs.promises.rm(path.dirname(uploadPath), { recursive: true, force: true }).catch(() => {})
       }
@@ -584,6 +607,7 @@ async function applyImportedDatabase(
   options: {
     cloneBeforeMessageSplit?: boolean
     automaticBackupRetention?: number
+    signal?: AbortSignal
     beforeRevision?: (db: DatabaseSync) => void
     onImportRollback?: () => void
   } = {},
@@ -601,6 +625,7 @@ async function applyImportedDatabase(
     result = await applyImport(db, dataDir, database, {
       greetingTranslations,
       automaticBackupRetention: options.automaticBackupRetention,
+      signal: options.signal,
       cloneBeforeMessageSplit: options.cloneBeforeMessageSplit,
       beforeRevision: () => {
         const backfill = replaceLegacyHypaV3MemoryRowsInTransaction(
@@ -621,6 +646,17 @@ async function applyImportedDatabase(
     assetReport: summarizeRisuSaveAssetReport(buildRepositoryRisuSaveAssetReport(dataDir, db)),
     ...(memoryLegacyReport ? { memoryLegacyReport } : {}),
   }
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError'
+}
+
+function throwIfImportRequestAborted(signal: AbortSignal): void {
+  if (!signal.aborted) return
+  const error = new Error('Import request aborted')
+  error.name = 'AbortError'
+  throw error
 }
 
 function loadPortableMetadata(db: DatabaseSync): RisuServerPortableMetadata {

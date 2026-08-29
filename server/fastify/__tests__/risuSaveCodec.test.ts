@@ -31,7 +31,7 @@ import {
   encodeRepositoryRisuSaveLegacyExport,
 } from '../src/risuSave/exportSnapshot.js'
 import { RISU_SERVER_DATA_KEY } from '../src/risuSave/portableMetadata.js'
-import { applyImport, writePersistedWithMessages } from '../src/repository.js'
+import { applyImport, listBackups, loadPersistedWithMessages, writePersistedWithMessages } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 import {
   getGreetingTranslation,
@@ -77,6 +77,30 @@ function encodePortableFixture(envelope: 'legacy' | 'blocks', database: Record<s
 }
 
 describe('server .risu fixture harness', () => {
+  it('does not create a safety backup or replace live data when import is already aborted', async () => {
+    const dataDir = makeDataDir()
+    const db = openDatabase(dataDir)
+    try {
+      writePersistedWithMessages(db, dataDir, {
+        _version: 1,
+        database: { version: 1, tag: 'live-before-abort', characters: [] },
+        assets: [],
+      })
+      const before = loadPersistedWithMessages(db, dataDir)
+      const controller = new AbortController()
+      controller.abort()
+
+      await expect(
+        applyImport(db, dataDir, { version: 1, tag: 'must-not-import', characters: [] }, { signal: controller.signal }),
+      ).rejects.toMatchObject({ name: 'AbortError' })
+
+      expect(loadPersistedWithMessages(db, dataDir)).toEqual(before)
+      expect(listBackups(dataDir)).toEqual([])
+    } finally {
+      db.close()
+    }
+  })
+
   it('classifies legacy raw, compressed, stream, block, and malformed envelopes', () => {
     for (const fixture of risuSaveFixtureCases) {
       expect(classifyRisuSaveEnvelope(fixture.bytes), fixture.name).toBe(fixture.expectedEnvelope)
