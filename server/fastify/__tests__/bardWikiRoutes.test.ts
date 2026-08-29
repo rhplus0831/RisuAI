@@ -354,6 +354,53 @@ describe('BardWiki revisioned commands', () => {
     expect(wrongChat.statusCode).toBe(404)
   })
 
+  it('keeps a Phase 0-sized workspace index body-free and records its route timing', async () => {
+    const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      const insert = db.prepare(
+        `INSERT INTO bardwiki_documents (
+          id, chat_id, kind, title, logical_path, normalized_path, aliases_json,
+          context_policy, review_state, markdown, content_hash, version
+        ) VALUES (?, 'chat-a', 'other', ?, ?, ?, '[]', 'relevant', 'active', ?, ?, 1)`,
+      )
+      db.exec('BEGIN IMMEDIATE')
+      try {
+        for (let index = 0; index < 2_000; index++) {
+          const suffix = index.toString().padStart(4, '0')
+          const logicalPath = `Workspace/${suffix}`
+          insert.run(
+            `workspace-${suffix}`,
+            `Workspace ${suffix}`,
+            logicalPath,
+            logicalPath.toLowerCase(),
+            `private body ${suffix}`,
+            index.toString(16).padStart(64, '0'),
+          )
+        }
+        db.exec('COMMIT')
+      } catch (error) {
+        db.exec('ROLLBACK')
+        throw error
+      }
+    } finally {
+      db.close()
+    }
+
+    const startedAt = performance.now()
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/bardwiki/chats/chat-a',
+      headers: authHeaders(),
+    })
+    const elapsedMs = Math.round((performance.now() - startedAt) * 100) / 100
+    const body = response.json()
+
+    console.info(`[bardwiki-workspace-benchmark] documents=2000 elapsedMs=${elapsedMs}`)
+    expect(response.statusCode).toBe(200)
+    expect(body.documents).toHaveLength(2_000)
+    expect(body.documents.every((document: Record<string, unknown>) => !('markdown' in document))).toBe(true)
+  })
+
   it('persists strict global defaults through the canonical memory settings group', async () => {
     const bardWiki = {
       ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
