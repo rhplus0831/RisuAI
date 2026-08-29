@@ -4,7 +4,7 @@ Date: 2026-08-30
 
 ## Current Verdict
 
-Phases 0 through 5 are complete. Phase 2 state/recovery implementation
+Phases 0 through 6 are complete. Phase 2 state/recovery implementation
 closes through `3ce85c1f034b3afc493e291f8a8f5e9227064463` and the partial-object projection
 correction `f25376ef369cc4c74a38c992f2e2aaa9b7fd7d74`. Phase 3 closed-world durable
 ownership is at `958f8585138ec817fe5d134563df585434ed5821`, with exact BardWiki eventless
@@ -13,8 +13,11 @@ authoring ownership at `b34b7a78f28cb5903ece3880073fbb9e46392cb8`, with visible 
 evidence at `5eca30f4872e865efee2c86f4dde7ae71e915f9a`. Focused production, structural,
 browser, register, and pinned differential evidence pass. Phase 4 closes its
 visible route/control and responsive-shell contract through
-`6487cba00e3cc435a3c4f57f8121663bcdccc57e`. This is not yet a whole-product
-compatibility verdict; Phase 6 is in progress.
+`6487cba00e3cc435a3c4f57f8121663bcdccc57e`. Phase 6 closes prompt and durable
+generation ownership through `19ba37af26df7db60d7393976d61b520a785076b`,
+with exact visible failure/Retry evidence at
+`477a3aece1fffc159b0354fef5b21ecddf60cab5`. This is not yet a whole-product
+compatibility verdict; Phase 7 is in progress.
 
 ## Phase 0 Environment And Baseline Evidence
 
@@ -197,6 +200,35 @@ governed responsive-shell decision.
 | `pnpm validate:compat-registers` | Passed with 99 inventory rows, 60 signed decisions, 15 findings, 85 upstream units, and all 75 historical raw reports mapped |
 | Fail-closed register Vitest | Passed; 1 file and 12 tests |
 | Formatting and `git diff --check` | Passed |
+
+## Phase 6 Evidence
+
+| Check | Result |
+| --- | --- |
+| Closed prompt and lifecycle structure plus durable fault regressions | `19ba37af26df7db60d7393976d61b520a785076b` |
+| Visible pre-token provider failure and billing-aware Retry | `477a3aece1fffc159b0354fef5b21ecddf60cab5` |
+| Category F inventory | New verified rows `ORC-SURFACE-100` through `ORC-SURFACE-102`; all 25 historical Category F decision/finding rows re-verified; 28 verified Category F rows and 102 total inventory rows |
+| Prompt structure | Nine assembly stages; every effective-config, transform, Agent Preset, template/role, static, history, lore, memory, CBS, script, bias, stop, asset, provider-ready, and budget contributor has a production owner |
+| Generation structure | Five actions, nine styles, twelve durable operation states, five finalization projections, seven effect kinds, and thirteen protocol stream events are closed over production owners |
+| Durable lifecycle | Send/continue/regenerate identity, append/extend styles, multi-result, cancellation, disconnect, reattach, restart, stale/deleted targets, queued finalization, and exact effect application are pinned |
+| Signed boundary | `ORC-DECISION-061` is signed from RH+ commit `ec124302cbe49e718228322ca22b32a2ddf74d6e`: imported `Character.additionalText` remains preserved/read-only and omitted from prompts |
+| Visible lifecycle | The production-bundle accepted-send matrix retains one accepted user row through pre-token failure and Retry, shows billing confirmation, and makes exactly two provider calls |
+
+## Phase 6 Validation
+
+| Command/check | Result |
+| --- | --- |
+| `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/phase6CompatibilityStructure.test.ts server/fastify/__tests__/durableGeneration.test.ts` | Passed; 2 files and 71 tests |
+| `pnpm exec vitest run --config server/fastify/vitest.config.ts` over generation chat, assembly, effects, and finalization-retry owners | Passed; 4 files and 328 tests |
+| Auto-routed group prompt-preflight owner | Passed; 1 file and 37 tests |
+| `pnpm exec vitest run --project frontend-dom` over storage and character-config owners | Passed; 2 files and 169 tests, including group rejection plus preserved/read-only additional information |
+| Focused Fastify retired-additional-information prompt omission | Passed; 1 selected test |
+| `pnpm exec playwright test -c playwright.fastify-smoke.config.ts server/fastify/browser-smoke/acceptedSendProtocol.spec.ts` | Passed at the browser anchor; 11 tests |
+| `pnpm check:server` | Passed at the Phase 6 structural anchor and on closure |
+| `pnpm test:compat-harness` | Passed; 16 baseline tests, 18 current/cluster tests, 16 compared cells, 15 governed divergences, cluster 10 healthy |
+| Category F closure check | Passed; zero Category F rows remain mapped-only |
+| `pnpm validate:compat-registers` and fail-closed register Vitest | Passed; 102 inventory rows, 61 signed decisions, 15 findings, 85 upstream units, all 75 historical raw reports mapped, and 12 validator tests |
+| Phase 6 Prettier check and `git diff --check` | Passed |
 
 ## Update Rules
 

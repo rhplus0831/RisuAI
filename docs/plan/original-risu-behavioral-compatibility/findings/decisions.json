@@ -1752,6 +1752,38 @@
         "The live responsive shell exposes a stable marker and owns modal focus trapping, Escape, sidebar, and chat controls; unmounted legacy controls cannot be advertised as supported."
       ],
       "revisitTrigger": "Revisit if a separately designed mobile-only shell is mounted in production again."
+    },
+    {
+      "id": "ORC-DECISION-061",
+      "state": "signed",
+      "title": "Character additional-information editing and retrieval remain retired",
+      "baselineBehavior": "The baseline exposed an additional-information editor, split Character.additionalText into paragraph blocks, selected the top three embedding-similar blocks from recent chat context, and inserted the result into the character description before personality and scenario.",
+      "decidedBehavior": "Fastify preserves imported additionalText but keeps editing retired behind a read-only unsupported notice and omits the field from model-visible prompt assembly.",
+      "observables": [
+        "Nonempty imported additionalText remains stored and visible as unsupported compatibility data, no editor is exposed, and none of the field reaches prompt rows or provider-ready messages.",
+        "Empty additionalText exposes neither an editor nor the imported-data notice."
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-102"
+      ],
+      "rationale": "The maintainer explicitly retired the partially disconnected editor and embedding retrieval boundary, preserving imported data and diagnosing the unsupported field rather than silently accepting edits that do not affect generation.",
+      "parityAlternative": "Restore the character editor and baseline embedding-ranked additional-information insertion before model dispatch.",
+      "authority": "RH+ (RisuAI Fastify maintainer)",
+      "authorityDate": "2026-08-02",
+      "source": "commit ec124302cbe49e718228322ca22b32a2ddf74d6e; .archived-docs/audit/WORK-INDEX.md:99; docs/structure/prompt-assembly-and-scripting.md:253-255",
+      "implementationOwners": [
+        "src/lib/SideBars/CharConfig.svelte",
+        "server/fastify/src/prompt/staticSections.ts",
+        "docs/structure/prompt-assembly-and-scripting.md"
+      ],
+      "regressionOwners": [
+        "src/lib/SideBars/CharConfig.svelte.test.ts",
+        "server/fastify/__tests__/generation.chat.test.ts"
+      ],
+      "diagnostics": [
+        "Nonempty imported data surfaces a read-only unsupported notice; the prompt regression fails if the compatibility data enters any generated prompt row."
+      ],
+      "revisitTrigger": "Revisit if server-owned embedding retrieval is restored with an explicit authoring, persistence, prompt-budget, and provider-visible contract."
     }
   ]
 }

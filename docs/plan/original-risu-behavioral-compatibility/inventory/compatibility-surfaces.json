@@ -604,8 +604,10 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:102-110"
         ],
-        "browser": [
-          "src/ts/process/serverBackedSendChat.ts"
+    "browser": [
+      "src/ts/process/request/serverPromptAssembly.ts",
+      "src/ts/process/serverBackedSendChat.ts",
+      "src/ts/storage/database.svelte.ts"
         ],
         "protocol": [],
         "fastify": [
@@ -625,23 +627,27 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:102-110"
         ],
-        "current": [
-          "server/fastify/src/routes/generationChat.ts",
-          "src/ts/process/serverBackedSendChat.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
+      "current": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/request/serverPromptAssembly.ts",
+        "src/ts/process/serverBackedSendChat.ts",
+        "src/ts/storage/database.svelte.ts",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "src/ts/process/request/tests/serverPromptAssembly.test.ts",
+        "src/ts/storage/database.svelte.test.ts"
         ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "high",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "state": "verified",
+      "confidence": "high",
+      "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [],
         "decisionId": "ORC-DECISION-005",
-        "residual": "Individual maintainer authority is reconstructed from commit 11da314a83e144ae3cc58f3f524e0d98e153ef3c; Phase 6 must independently re-verify the live rejection boundary."
+      "residual": null
       },
       "notes": "The maintainer explicitly removed legacy group-chat UI branches while preserving server and browser rejection defenses."
     },
@@ -743,23 +749,26 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:14-24,132-139"
         ],
-        "current": [
-          "server/fastify/src/routes/generationChat.ts",
-          "src/ts/process/serverBackedSendChat.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
+        "server/fastify/__tests__/durableGeneration.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [],
         "decisionId": "ORC-DECISION-007",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -802,23 +811,26 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:25-40,132-139"
         ],
-        "current": [
-          "server/fastify/src/routes/generationChat.ts",
-          "src/ts/process/serverBackedSendChat.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
+        "server/fastify/__tests__/durableGeneration.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [],
         "decisionId": "ORC-DECISION-008",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -861,23 +873,26 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:25-40,132-139"
         ],
-        "current": [
-          "server/fastify/src/routes/generationChat.ts",
-          "src/ts/process/serverBackedSendChat.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
+        "server/fastify/__tests__/durableGeneration.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [],
         "decisionId": "ORC-DECISION-009",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -920,23 +935,26 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:25-40,132-139"
         ],
-        "current": [
-          "server/fastify/src/routes/generationChat.ts",
-          "src/ts/process/serverBackedSendChat.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
+        "server/fastify/__tests__/durableGeneration.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [],
         "decisionId": "ORC-DECISION-010",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -979,23 +997,26 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:25-40,132-139"
         ],
-        "current": [
-          "server/fastify/src/routes/generationChat.ts",
-          "src/ts/process/serverBackedSendChat.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
+        "server/fastify/__tests__/assemble.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [],
         "decisionId": "ORC-DECISION-011",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -1212,23 +1233,26 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
         ],
-        "current": [
-          "server/fastify/src/routes/generationChat.ts",
-          "src/ts/process/serverBackedSendChat.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
+        "server/fastify/__tests__/durableGeneration.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [],
         "decisionId": "ORC-DECISION-015",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -1329,23 +1353,28 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
         ],
-        "current": [
-          "server/fastify/src/routes/generationChat.ts",
-          "src/ts/process/serverBackedSendChat.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b",
+        "477a3aece1fffc159b0354fef5b21ecddf60cab5"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
+        "server/fastify/__tests__/durableGeneration.test.ts",
+        "server/fastify/browser-smoke/acceptedSendProtocol.spec.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [],
         "decisionId": "ORC-DECISION-017",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -1388,23 +1417,29 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
         ],
-        "current": [
-          "server/fastify/src/routes/generationChat.ts",
-          "src/ts/process/serverBackedSendChat.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b",
+        "477a3aece1fffc159b0354fef5b21ecddf60cab5"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
+        "server/fastify/__tests__/durableGeneration.test.ts",
+        "server/fastify/__tests__/generationFinalizationRetry.test.ts",
+        "server/fastify/browser-smoke/acceptedSendProtocol.spec.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [],
         "decisionId": "ORC-DECISION-018",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -1645,23 +1680,26 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
         ],
-        "current": [
-          "server/fastify/src/routes/generationChat.ts",
-          "src/ts/process/serverBackedSendChat.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
+        "server/fastify/__tests__/generationEffects.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [],
         "decisionId": "ORC-DECISION-022",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -1996,23 +2034,26 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
         ],
-        "current": [
-          "server/fastify/src/routes/generationChat.ts",
-          "src/ts/process/serverBackedSendChat.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
+        "server/fastify/__tests__/durableGeneration.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [],
         "decisionId": "ORC-DECISION-028",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -2114,23 +2155,25 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
         ],
-        "current": [
-          "server/fastify/src/routes/generationChat.ts",
-          "src/ts/process/serverBackedSendChat.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [],
         "decisionId": "ORC-DECISION-030",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -2231,23 +2274,26 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
         ],
-        "current": [
-          "server/fastify/src/routes/generationChat.ts",
-          "src/ts/process/serverBackedSendChat.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
+        "server/fastify/__tests__/assemble.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [],
         "decisionId": "ORC-DECISION-032",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -2408,23 +2454,25 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
         ],
-        "current": [
-          "server/fastify/src/routes/generationChat.ts",
-          "src/ts/process/serverBackedSendChat.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [],
         "decisionId": "ORC-DECISION-035",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -2467,23 +2515,26 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
         ],
-        "current": [
-          "server/fastify/src/routes/generationChat.ts",
-          "src/ts/process/serverBackedSendChat.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
+        "server/fastify/__tests__/assemble.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [],
         "decisionId": "ORC-DECISION-036",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -2526,23 +2577,26 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
         ],
-        "current": [
-          "server/fastify/src/routes/generationChat.ts",
-          "src/ts/process/serverBackedSendChat.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
+        "server/fastify/__tests__/assemble.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [],
         "decisionId": "ORC-DECISION-037",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -2585,23 +2639,26 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
         ],
-        "current": [
-          "server/fastify/src/routes/generationChat.ts",
-          "src/ts/process/serverBackedSendChat.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
+        "server/fastify/__tests__/assemble.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [],
         "decisionId": "ORC-DECISION-038",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -2703,23 +2760,26 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
         ],
-        "current": [
-          "server/fastify/src/routes/generationChat.ts",
-          "src/ts/process/serverBackedSendChat.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
+        "server/fastify/__tests__/assemble.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [],
         "decisionId": "ORC-DECISION-040",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -2762,23 +2822,26 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
         ],
-        "current": [
-          "server/fastify/src/routes/generationChat.ts",
-          "src/ts/process/serverBackedSendChat.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
+        "server/fastify/__tests__/assemble.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [],
         "decisionId": "ORC-DECISION-041",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -2821,23 +2884,26 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
         ],
-        "current": [
-          "server/fastify/src/routes/generationChat.ts",
-          "src/ts/process/serverBackedSendChat.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
+        "server/fastify/__tests__/durableGeneration.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [],
         "decisionId": "ORC-DECISION-042",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -2880,23 +2946,26 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
         ],
-        "current": [
-          "server/fastify/src/routes/generationChat.ts",
-          "src/ts/process/serverBackedSendChat.ts",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
+        "server/fastify/__tests__/durableGeneration.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "medium",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [],
         "decisionId": "ORC-DECISION-043",
-        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+        "residual": null
       },
       "notes": "Imported from explicit dated maintainer authority."
     },
@@ -3897,24 +3966,26 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
         ],
-        "current": [
-          "9ce5df9fa5702b10441baa41b7acd693c253d2d9",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "9ce5df9fa5702b10441baa41b7acd693c253d2d9",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
+        "state": "verified",
         "confidence": "high",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [
           "ORC-F-001"
         ],
         "decisionId": null,
-        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+        "residual": null
       },
       "notes": "Canonical import of a resolved 2026-08 compatibility finding."
     },
@@ -4135,24 +4206,27 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
         ],
-        "current": [
-          "f256dd250d537e224e130a6a93c84878bba3d27c",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "f256dd250d537e224e130a6a93c84878bba3d27c",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
+        "server/fastify/__tests__/durableGeneration.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
+        "state": "verified",
         "confidence": "high",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [
           "ORC-F-005"
         ],
         "decisionId": null,
-        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+        "residual": null
       },
       "notes": "Canonical import of a resolved 2026-08 compatibility finding."
     },
@@ -4195,24 +4269,27 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
         ],
-        "current": [
-          "f256dd250d537e224e130a6a93c84878bba3d27c",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "f256dd250d537e224e130a6a93c84878bba3d27c",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
+        "server/fastify/__tests__/durableGeneration.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
+        "state": "verified",
         "confidence": "high",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [
           "ORC-F-006"
         ],
         "decisionId": null,
-        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+        "residual": null
       },
       "notes": "Canonical import of a resolved 2026-08 compatibility finding."
     },
@@ -4511,24 +4588,28 @@
         "baseline": [
           ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
         ],
-        "current": [
-          "f256dd250d537e224e130a6a93c84878bba3d27c",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "server/fastify/__tests__/generation.chat.test.ts"
-        ],
+      "current": [
+        "f256dd250d537e224e130a6a93c84878bba3d27c",
+        "be74a491b954478a2719f38e85d061ca87bb562a",
+        "19ba37af26df7db60d7393976d61b520a785076b"
+      ],
+      "tests": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
+        "server/fastify/__tests__/durableGeneration.test.ts",
+        "server/fastify/__tests__/generationFinalizationRetry.test.ts"
+      ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
+        "state": "verified",
         "confidence": "high",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
         "findingIds": [
           "ORC-F-011"
         ],
         "decisionId": null,
-        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+        "residual": null
       },
       "notes": "Canonical import of a resolved 2026-08 compatibility finding."
     },
@@ -6337,6 +6418,241 @@
         "residual": null
       },
       "notes": "Commit 2073b5fb6 is individual maintainer authority: it removed tests for the unmounted legacy components and names the mounted App plus responsive Chromium journeys as the current product contract."
+    },
+    {
+      "id": "ORC-SURFACE-100",
+      "title": "Closed prompt assembly contributors and provider-ready message ownership",
+      "primaryCategory": "F",
+      "seamTags": [
+        "E",
+        "G",
+        "H",
+        "I"
+      ],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "Every model-visible template, role, static row, history row, lorebook row, memory row, CBS expansion, script transform, bias, stop value, asset row, provider-ready message, and final budget has one explicit production owner and ordered assembly stage.",
+        "Shared semantic fixtures preserve prompt-row content and order, request-ready messages, transcript roles and identity, and buffered/streamed terminal output across the pinned baseline and Fastify.",
+        "Prompt preview remains read-only and uses the same assembly contributors as generation without persisting a transcript mutation."
+      ],
+      "variants": [
+        "send, continue, regenerate, preview, and preview_prompt",
+        "default/custom templates, roles, lore, memory, CBS, scripts, biases, stops, assets, and budget",
+        "buffered, streamed, half-streamed, and multi-result dispatch"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/index.svelte.ts",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/buildDescription.ts"
+        ],
+        "browser": [
+          "src/ts/process/request/serverPromptAssembly.ts",
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [
+          "packages/protocol/src/generation.ts"
+        ],
+        "fastify": [
+          "server/fastify/src/prompt/assemble.ts",
+          "server/fastify/src/prompt/chatDispatch.ts",
+          "server/fastify/src/generation/providerMessages.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/repository.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Generated identifiers and timestamps may be normalized; prompt-row order, role, content, named template placement, provider-ready text, stop order, transcript identity, and terminal output remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66",
+          "test/compat-harness/golden/baseline.json"
+        ],
+        "current": [
+          "19ba37af26df7db60d7393976d61b520a785076b"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
+          "server/fastify/__tests__/assemble.test.ts",
+          "server/fastify/__tests__/generation.chat.test.ts",
+          "test/compat-harness/current.runner.ts"
+        ],
+        "fixtures": [
+          "test/compat-harness/fixture.ts",
+          "test/compat-harness/golden/manifest.json",
+          "server/fastify/__tests__/phase6CompatibilityStructure.test.ts#PROMPT_CONTRIBUTOR_OWNERS"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": "Provider-specific request bodies, credentials, capabilities, and translation/media dispatch remain Phase 7 ownership; this row closes shared model-visible and provider-ready message construction."
+      },
+      "notes": "The structural catalog fails when an assembly stage, action, style, operation state, effect, or stream event is added without an explicit owner."
+    },
+    {
+      "id": "ORC-SURFACE-101",
+      "title": "Durable generation action, cancellation, recovery, and finalization lifecycle",
+      "primaryCategory": "F",
+      "seamTags": [
+        "B",
+        "C",
+        "D"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Send, continue-append, continue-extend, regenerate, multi-result, and edit-then-generate retain the intended transcript row identity and durable terminal content.",
+        "Pre-output failure, partial failure, streamed cancellation, disconnect, response loss, restart, reattach, retry, stale completion, and target deletion cannot duplicate, silently lose, recreate, or mis-target a transcript row.",
+        "Durable and ephemeral completion effects are classified and finalization commits or queues each authoritative effect exactly once."
+      ],
+      "variants": [
+        "inline and durable-detached generation",
+        "buffered, streamed, half-streamed, multi-result, continue-append, continue-extend, and regenerate",
+        "cancel before output, cancel after partial output, provider failure, disconnect, restart, reattach, stale target, and deleted target",
+        "committed cleanup pending, queued, stalled, legacy stalled, and terminal finalization"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/index.svelte.ts",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/lib/ChatScreens"
+        ],
+        "browser": [
+          "src/ts/process/acceptedSendCoordinator.svelte.ts",
+          "src/ts/process/serverBackedSendChat.ts",
+          "src/ts/process/reattach.ts"
+        ],
+        "protocol": [
+          "packages/protocol/src/generation.ts"
+        ],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts",
+          "server/fastify/src/routes/generationOperations.ts",
+          "server/fastify/src/generationEffects.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/generationOperations.ts",
+          "server/fastify/src/generationJobs.ts",
+          "server/fastify/src/generationFinalizationRetry.ts",
+          "server/fastify/src/repository.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Operation/job ids, timestamps, and heartbeat count may be normalized; accepted user count, target identity, candidate order/content, partial/final text, operation disposition, provider-attempt count, and effect cardinality remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66",
+          "test/compat-harness/golden/baseline.json"
+        ],
+        "current": [
+          "19ba37af26df7db60d7393976d61b520a785076b",
+          "477a3aece1fffc159b0354fef5b21ecddf60cab5"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
+          "server/fastify/__tests__/durableGeneration.test.ts",
+          "server/fastify/__tests__/generationEffects.test.ts",
+          "server/fastify/__tests__/generationFinalizationRetry.test.ts",
+          "server/fastify/browser-smoke/acceptedSendProtocol.spec.ts"
+        ],
+        "fixtures": [
+          "server/fastify/browser-smoke/acceptedSendProtocol.spec.ts#lifecycleFixtureDatabase",
+          "test/compat-harness/fixture.ts"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": null
+      },
+      "notes": "The Phase 4 visible lifecycle row owns rendered recovery feedback; this row owns the durable transcript, job, fault, and finalization semantics beneath it."
+    },
+    {
+      "id": "ORC-SURFACE-102",
+      "title": "Character additional-information retrieval remains retired with preserved imported data",
+      "primaryCategory": "F",
+      "seamTags": [
+        "E",
+        "H"
+      ],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "The baseline split Character.additionalText into blocks, selected the top embedding-similar blocks, and inserted them into the character description before model dispatch.",
+        "Fastify preserves nonempty imported additionalText, exposes it through a read-only unsupported notice rather than an editor, and omits it from model-visible prompt rows.",
+        "Empty additionalText exposes neither an editor nor an unsupported-data notice."
+      ],
+      "variants": [
+        "nonempty imported additionalText",
+        "empty additionalText",
+        "prompt assembly and visible character authoring"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/embedding/addinfo.ts",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/index.svelte.ts",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/lib/SideBars/CharConfig.svelte"
+        ],
+        "browser": [
+          "src/lib/SideBars/CharConfig.svelte"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/staticSections.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/repository.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "No normalization may erase imported additionalText or allow any substring of it into model-visible prompt rows."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/embedding/addinfo.ts",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/index.svelte.ts",
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/lib/SideBars/CharConfig.svelte"
+        ],
+        "current": [
+          "ec124302cbe49e718228322ca22b32a2ddf74d6e",
+          "docs/structure/prompt-assembly-and-scripting.md:253-255"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts",
+          "src/lib/SideBars/CharConfig.svelte.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "19ba37af26df7db60d7393976d61b520a785076b",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-061",
+        "residual": null
+      },
+      "notes": "RH+ commit ec124302c explicitly retires editing and retrieval while requiring preserved imported data, visible read-only diagnosis, and a pinned prompt omission."
     }
   ]
 }
