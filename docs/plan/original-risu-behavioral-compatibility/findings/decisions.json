@@ -1694,11 +1694,13 @@
       "authorityDate": "2026-08-07",
       "source": "commit eee00871f8c994b9ee3ce3c2dbafb067991d43e2; .archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md:18-35,128-149",
       "implementationOwners": [
-        "src/ts/plugins/apiV3/v3.svelte.ts",
+        "src/ts/process/modules.ts",
+        "src/lib/Setting/Pages/Module/ModuleSettings.svelte",
+        "src/lib/SideBars/CharConfig.svelte",
         "docs/structure/plugins-and-mcp.md"
       ],
       "regressionOwners": [
-        "src/ts/plugins/apiV3/v3.svelte.test.ts"
+        "server/fastify/__tests__/phase10CompatibilityStructure.test.ts"
       ],
       "diagnostics": [
         "The unsupported boundary must be hidden, rejected, or visibly diagnosed; silent partial behavior is forbidden."

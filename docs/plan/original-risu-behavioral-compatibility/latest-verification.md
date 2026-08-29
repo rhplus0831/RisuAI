@@ -21,7 +21,9 @@ compatibility verdict; Phase 7 closes its provider and media matrices at
 `fe7825f3da4bdd2aceb090fc6eaaa9b2cf5a6050`. Phase 8 closes memory/worker
 ownership at `a77f47c9f79b0233e147456e73ded69e1869d192`. Phase 9 closes scripting,
 parsing, trigger, regex, and Lua ownership through
-`3963a1278b5f15175c295e3707d25fbf07bdcb56`, and Phase 10 is in progress.
+`3963a1278b5f15175c295e3707d25fbf07bdcb56`. Phase 10 closes extension, module,
+MCP, OAuth, and specialized-tool ownership through
+`e8bbbeea6ad400234aa4d0abad330356265c3c23`, and Phase 11 is in progress.
 
 ## Phase 0 Environment And Baseline Evidence
 
@@ -313,6 +315,38 @@ observable difference.
 | Category I closure | Passed; 18 of 18 Category I rows verified and zero remain mapped-only |
 | Register gates | Passed; 117 surfaces, 67 signed decisions, 15 findings, and 12 fail-closed validator tests |
 | Phase 9 Prettier and `git diff --check` | Passed |
+
+## Phase 10 Evidence
+
+| Check | Result |
+| --- | --- |
+| Specialized-tool hardening | `397e06c67694f59d96a087ea1974802e5e0bd4c6` |
+| Closed Plugin/module/MCP/tool structure | `e8bbbeea6ad400234aa4d0abad330356265c3c23` |
+| Category J inventory | Historical no-port row `ORC-SURFACE-062` re-verified; new verified rows `ORC-SURFACE-118` through `ORC-SURFACE-121`; 5 verified Category J rows and 121 total inventory rows |
+| Plugin V3 vocabulary | 85 direct API keys, nine permissions, four runtime phases, seven RPC message types, V3-only client/server gate, and iframe CSP |
+| Module vocabulary | Seven activation sources plus create/import/edit/enable/reorder/select/delete/reload/export and MCP-restriction owners |
+| MCP vocabulary | Four identifier classes, six internal clients, call-only/duplicate/cancel rules, OAuth refresh, DNS-pinned egress, and exact specialized/Risu-access tool catalogs |
+| Concrete corrections | Bounded/strict Dice notation, bounded/fail-closed GraphMem, and an advertised file-system recovery path |
+| Signed no-port | `ORC-DECISION-058` retains absent character/module conversion and CharX module interchange while `.risum` import/export remains supported |
+
+Trusted Plugin V3/CSP behavior, module lifecycle, remote MCP protocol seams, and
+specialized-tool authority are deterministic. Normal CI does not execute
+hostile third-party code, a real remote OAuth MCP server, paid services, or an
+operating-system directory picker; these are explicit residuals rather than
+unowned surfaces.
+
+## Phase 10 Validation
+
+| Check | Result |
+| --- | --- |
+| Phase 10 structural gate | Passed; 1 file and 4 tests |
+| Specialized-tool and file-system regressions | Passed; 2 files and 12 tests |
+| Browser Plugin/module/MCP lane | Passed; 23 files and 426 tests |
+| Fastify command/module/plugin-network/OAuth lane | Passed; 7 files and 308 tests |
+| `pnpm check` and `pnpm check:server` | Passed with 0 frontend errors/warnings and all server/browser-smoke typechecks |
+| Category J closure | Passed; 5 of 5 Category J rows verified and zero remain mapped-only |
+| Register gates | Passed; 121 surfaces, 67 signed decisions, 15 findings, and 12 fail-closed validator tests |
+| Phase 10 Prettier and `git diff --check` | Passed |
 
 ## Update Rules
 

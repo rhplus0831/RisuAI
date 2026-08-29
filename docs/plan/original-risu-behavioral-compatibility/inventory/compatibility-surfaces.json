@@ -3839,8 +3839,10 @@
         "baseline": [
           ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md:18-35,128-149"
         ],
-        "browser": [
-          "src/ts/plugins/apiV3/v3.svelte.ts"
+    "browser": [
+      "src/ts/process/modules.ts",
+      "src/lib/Setting/Pages/Module/ModuleSettings.svelte",
+      "src/lib/SideBars/CharConfig.svelte"
         ],
         "protocol": [],
         "fastify": [],
@@ -3871,23 +3873,25 @@
         "baseline": [
           ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md:18-35,128-149"
         ],
-        "current": [
-          "src/ts/plugins/apiV3/v3.svelte.ts",
-          "docs/structure/plugins-and-mcp.md",
-          "be74a491b954478a2719f38e85d061ca87bb562a"
-        ],
-        "tests": [
-          "src/ts/plugins/apiV3/v3.svelte.test.ts"
+    "current": [
+      "src/ts/process/modules.ts",
+      "src/lib/Setting/Pages/Module/ModuleSettings.svelte",
+      "src/lib/SideBars/CharConfig.svelte",
+      "docs/structure/plugins-and-mcp.md",
+      "e8bbbeea6ad400234aa4d0abad330356265c3c23"
+    ],
+    "tests": [
+      "server/fastify/__tests__/phase10CompatibilityStructure.test.ts"
         ],
         "fixtures": []
       },
       "verification": {
-        "state": "mapped",
-        "confidence": "high",
-        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
-        "findingIds": [],
-        "decisionId": "ORC-DECISION-058",
-        "residual": "Individual maintainer authority is reconstructed from commit eee00871f8c994b9ee3ce3c2dbafb067991d43e2; Phase 10 must independently re-verify the visible no-port boundary."
+      "state": "verified",
+      "confidence": "high",
+      "lastFastifyCommit": "e8bbbeea6ad400234aa4d0abad330356265c3c23",
+      "findingIds": [],
+      "decisionId": "ORC-DECISION-058",
+      "residual": null
       },
       "notes": "The maintainer explicitly accepted that upstream CharX module exports will not import and recorded a user-pain revisit trigger."
     },
@@ -7796,6 +7800,319 @@
         "residual": null
       },
       "notes": "Signed Lua state and failure differences remain independently governed; this row owns the closed supported API and transformation surface."
+    },
+    {
+      "id": "ORC-SURFACE-118",
+      "title": "Closed Plugin V3 API, permission, RPC, runtime, and sandbox boundary",
+      "primaryCategory": "J",
+      "seamTags": [
+        "C",
+        "G",
+        "L"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Every one of the 85 direct V3 API keys has exactly one capability classification and the browser/server gate accepts only API version 3.0.",
+        "All nine permissions, four runtime phases, and seven RPC message types have a production owner.",
+        "Plugin network, storage, host-DOM, callback, abort, and iframe CSP boundaries cannot silently bypass their permission or lifecycle owner."
+      ],
+      "variants": [
+        "install, load, ready, error, unload, and reload",
+        "granted, denied, missing, and revoked permissions",
+        "direct API, instance API, callbacks, abort signals, storage, network, and DOM access"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/plugins"
+        ],
+        "browser": [
+          "src/ts/plugins/plugins.svelte.ts",
+          "src/ts/plugins/apiV3/v3.svelte.ts",
+          "src/ts/plugins/apiV3/factory.ts",
+          "src/ts/plugins/pluginPermissions.ts"
+        ],
+        "protocol": [
+          "src/ts/server/commands.ts"
+        ],
+        "fastify": [
+          "server/fastify/src/commands/plugins.ts",
+          "server/fastify/src/pluginNetwork.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/repository.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Generated plugin instance/callback ids may be normalized; API key, permission, phase, RPC type, call order, result/error, abort, storage mutation, and network target remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/plugins"
+        ],
+        "current": [
+          "e8bbbeea6ad400234aa4d0abad330356265c3c23"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase10CompatibilityStructure.test.ts",
+          "src/ts/plugins/apiV3/v3.svelte.test.ts",
+          "src/ts/plugins/apiV3/factory.test.ts",
+          "server/fastify/__tests__/commandPluginStorage.test.ts",
+          "server/fastify/__tests__/pluginNetwork.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/phase10CompatibilityStructure.test.ts#PLUGIN_V3_DIRECT_API_CLASSIFICATION"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "e8bbbeea6ad400234aa4d0abad330356265c3c23",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": "The V3 runtime is a trusted DOM-compatible extension boundary, not a hostile-code security sandbox; deterministic tests own API/CSP/permission behavior, while no real-browser V3 iframe journey is currently tracked."
+      },
+      "notes": "The closed API catalog fails when any key, permission, runtime phase, or RPC type is added without classification."
+    },
+    {
+      "id": "ORC-SURFACE-119",
+      "title": "Module artifact, activation, command, persistence, and import/export lifecycle",
+      "primaryCategory": "J",
+      "seamTags": [
+        "C",
+        "E",
+        "K"
+      ],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "All seven module activation sources resolve enablement and order through one shared lifecycle.",
+        "Create, import, edit, enable, disable, reorder, character selection, delete, reload, and .risum export preserve identity, metadata, references, and persistence.",
+        "Module import rejects non-importable MCP identifiers before durable mutation."
+      ],
+      "variants": [
+        "global, chat, character, persona, prompt-preset, agent-preset, and legacy integration",
+        "json, lorebook, and risum import plus risum export",
+        "create, patch, enable, reorder, select, delete, reload, and MCP validation"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/modules.ts"
+        ],
+        "browser": [
+          "src/ts/process/modules.ts",
+          "src/ts/moduleActivation.ts",
+          "src/ts/moduleCommands.ts",
+          "src/lib/Setting/Pages/Module/ModuleSettings.svelte"
+        ],
+        "protocol": [
+          "src/ts/server/commands.ts"
+        ],
+        "fastify": [
+          "server/fastify/src/commands/modules.ts",
+          "server/fastify/src/routes/commands.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/repository.ts#modules"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Generated module ids and timestamps may be normalized; name, metadata, content, enabled state, source, order, references, selected character, MCP identifiers, bytes, and reload result remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/modules.ts"
+        ],
+        "current": [
+          "e8bbbeea6ad400234aa4d0abad330356265c3c23"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase10CompatibilityStructure.test.ts",
+          "src/ts/process/modules.test.ts",
+          "src/ts/moduleActivation.test.ts",
+          "src/ts/moduleCommands.test.ts",
+          "server/fastify/__tests__/commands.test.ts",
+          "server/fastify/__tests__/modules.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/phase10CompatibilityStructure.test.ts#MODULE_LIFECYCLE_OWNER_ANCHORS"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "e8bbbeea6ad400234aa4d0abad330356265c3c23",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": "Deterministic browser/server suites own module lifecycle and bytes; a production-bundle module-picker/import journey is not separately tracked."
+      },
+      "notes": "Character/module conversion is excluded here and remains independently governed by ORC-SURFACE-062."
+    },
+    {
+      "id": "ORC-SURFACE-120",
+      "title": "MCP identifier, registry, transport, OAuth, egress, aggregation, and cancellation ownership",
+      "primaryCategory": "J",
+      "seamTags": [
+        "C",
+        "G",
+        "L"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Internal, plugin, stdio-wrapper, and remote HTTP identifier classes have explicit import and runtime dispositions.",
+        "Six internal clients, remote discovery, duplicate-tool aggregation, call-only restrictions, cancellation, OAuth refresh, and DNS-pinned egress have one owner each.",
+        "Unsupported command-based stdio use and invalid identifiers fail visibly before registration or tool execution."
+      ],
+      "variants": [
+        "internal, plugin, stdio wrapper, localhost HTTP, and remote HTTPS identifiers",
+        "discovery, initialize, list tools, duplicate names, call, cancel, close, and reconnect",
+        "OAuth refresh success/failure and public/private/mixed DNS resolution"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/mcp"
+        ],
+        "browser": [
+          "src/ts/process/mcp/mcp.ts",
+          "src/ts/process/mcp/mcplib.ts",
+          "src/ts/process/mcp/mcpIdentifier.ts",
+          "src/ts/server/mcpOAuthRefresh.ts"
+        ],
+        "protocol": [
+          "src/ts/server/commands.ts"
+        ],
+        "fastify": [
+          "server/fastify/src/routes/mcpOAuthRefresh.ts",
+          "server/fastify/src/mcpOAuthRefreshEgress.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/repository.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Session ids, request ids, timestamps, and OAuth expiry wall time may be normalized; identifier, server capabilities, tool names/order, arguments, results/errors, call cardinality, cancellation, token replacement, and resolved address class remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/mcp"
+        ],
+        "current": [
+          "e8bbbeea6ad400234aa4d0abad330356265c3c23"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase10CompatibilityStructure.test.ts",
+          "src/ts/process/mcp/mcp.test.ts",
+          "src/ts/process/mcp/mcplib.test.ts",
+          "server/fastify/__tests__/mcpOAuthRefresh.test.ts",
+          "server/fastify/__tests__/mcpOAuthRefreshEgress.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/phase10CompatibilityStructure.test.ts#MCP_IDENTIFIER_OWNERS"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "e8bbbeea6ad400234aa4d0abad330356265c3c23",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": "No deterministic CI case uses a real remote standards-conformant MCP server across discovery, OAuth, streaming/SSE, result, cancellation, and reconnect; protocol and egress seams are covered independently."
+      },
+      "notes": "The structural catalog fails when a new identifier class or internal client lacks an explicit disposition."
+    },
+    {
+      "id": "ORC-SURFACE-121",
+      "title": "Specialized and Risu-access tool catalogs, validation, authority, and durable failure behavior",
+      "primaryCategory": "J",
+      "seamTags": [
+        "C",
+        "G",
+        "L"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "File System, AI access, Google Search, GraphMem, Dice, and Risu-access advertise exact non-duplicated tool catalogs.",
+        "Tool arguments, permissions, file authority, browser/server availability, cancellation, and mutation staging fail before partial durable changes.",
+        "Dice work is bounded, corrupt GraphMem state is never overwritten, and a missing file-system directory points only to an advertised recovery path."
+      ],
+      "variants": [
+        "exact tool catalogs and clone isolation",
+        "valid, missing, malformed, unsafe, oversized, cancelled, and unsupported calls",
+        "file, character, chat, module, graph-memory, dice, search, and model authority"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/mcp"
+        ],
+        "browser": [
+          "src/ts/process/mcp/filesystemclient.ts",
+          "src/ts/process/mcp/aiaccess.ts",
+          "src/ts/process/mcp/googlesearchclient.ts",
+          "src/ts/process/mcp/graphmem.ts",
+          "src/ts/process/mcp/dice.ts",
+          "src/ts/process/mcp/risuaccess"
+        ],
+        "protocol": [
+          "src/ts/server/commands.ts"
+        ],
+        "fastify": [
+          "server/fastify/src/routes/commands.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/repository.ts",
+          "src/ts/parser/chatVar.svelte.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Random dice values and generated ids may be controlled/normalized; tool name, schema, arguments, authority, result/error, limits, cancellation, durable state, and mutation cardinality remain semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c86263fe907105b011ca4dde0a619d66:src/ts/process/mcp"
+        ],
+        "current": [
+          "397e06c67694f59d96a087ea1974802e5e0bd4c6",
+          "e8bbbeea6ad400234aa4d0abad330356265c3c23"
+        ],
+        "tests": [
+          "server/fastify/__tests__/phase10CompatibilityStructure.test.ts",
+          "src/ts/process/mcp/specializedTools.test.ts",
+          "src/ts/process/mcp/filesystemclient.test.ts",
+          "src/ts/process/mcp/mcp.test.ts",
+          "src/ts/process/mcp/risuaccess"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/phase10CompatibilityStructure.test.ts#SPECIALIZED_TOOL_CATALOG",
+          "src/ts/process/mcp/specializedTools.test.ts (bounded Dice and fail-closed GraphMem fixtures)"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "e8bbbeea6ad400234aa4d0abad330356265c3c23",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": "Normal CI does not invoke paid model/search services or exercise an operating-system directory picker; deterministic authority, schema, mutation, and failure seams remain covered."
+      },
+      "notes": "The Phase 10 implementation fixed the concrete validation and diagnostic gaps found during catalog closure."
     }
   ]
 }

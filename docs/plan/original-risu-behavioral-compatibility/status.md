@@ -12,8 +12,8 @@ findings under [`findings/`](findings/); inventory ownership under
 ## Current Snapshot
 
 - Plan state: Active.
-- Current phase: Phase 10 — plugins, modules, MCP, and specialized tools.
-- Active slice: [Phase 10 plugins, modules, MCP, and specialized tools](phases/phase-10-plugins-modules-mcp-and-specialized-tools.md).
+- Current phase: Phase 11 — assets, imports, exports, saves, and backups.
+- Active slice: [Phase 11 assets, imports, exports, saves, and backups](phases/phase-11-assets-import-export-and-backups.md).
 - Planning audit anchor: `1933c43ff7b4d35b57b0852013d95f3881a8cb28`.
 - Compatibility baseline: `71c476e9c86263fe907105b011ca4dde0a619d66`.
 - Behavioral sync cursor: `f3f0242fba297d82e0efcc2c31ca1428569b70f2`.
@@ -23,7 +23,7 @@ findings under [`findings/`](findings/); inventory ownership under
   `/home/codex/risu-baseline-71c476e9c`; its exact commit, dependency state, and
   cleanliness are enforced by `pnpm prepare:compat-baseline` and the harness
   preflight.
-- Current compatibility state: Phases 0 through 9 are complete.
+- Current compatibility state: Phases 0 through 10 are complete.
   Phase 5 closes settings/default/preset/collection ownership at
   `b34b7a78f28cb5903ece3880073fbb9e46392cb8` and visible character-authoring
   reload evidence at `5eca30f4872e865efee2c86f4dde7ae71e915f9a`.
@@ -44,6 +44,10 @@ findings under [`findings/`](findings/); inventory ownership under
   `3963a1278b5f15175c295e3707d25fbf07bdcb56`, with baseline parity restoration
   for malformed `firstmsgindex` and whole-trigger abort handling at
   `08d04efbf6bcc0f64c706bafe454a8649f9971be`.
+  Phase 10 closes Plugin V3, module lifecycle/no-port, MCP/OAuth, and specialized
+  tool ownership at `e8bbbeea6ad400234aa4d0abad330356265c3c23`, with
+  bounded/fail-closed specialized tool corrections at
+  `397e06c67694f59d96a087ea1974802e5e0bd4c6`.
   After the independent Phase 2 governance-link correction
   `7ba933fe6f1c3338bd9cce2ef308b2b216ac8e8d`, the required pinned differential
   passes with 16 baseline cells, 18
@@ -57,8 +61,8 @@ findings under [`findings/`](findings/); inventory ownership under
   commits reconstruct authority for the four historical boundaries, responsive
   shell, retired character additional-information retrieval, and the six
   Phase 9 parser/runtime differences.
-- Next action: complete Phase 10 extension API, module lifecycle, MCP/OAuth,
-  specialized-tool, and character/module no-port evidence.
+- Next action: complete Phase 11 portable formats, asset integrity, staged
+  import/restore, salvage, and backup lifecycle evidence.
 
 ## Phase Router
 
@@ -74,8 +78,8 @@ findings under [`findings/`](findings/); inventory ownership under
 | [7. Providers, models, translation, and media](phases/phase-7-providers-models-translation-and-media.md) | Complete | Closed format/adapter/profile/option/operation ownership, provider-wire fixtures, persisted translation routing, and media dispatch. |
 | [8. Memory, embeddings, jobs, and workers](phases/phase-8-memory-embeddings-jobs-and-workers.md) | Complete | Closed retained-memory/embedding selection, budgets, memory/BardWiki job states, retry/cancel/restart, stale-target, and reconciliation ownership. |
 | [9. Scripting, parsing, triggers, and automation](phases/phase-9-scripting-parsing-triggers-and-automation.md) | Complete | Closed CBS/parser parity, individually signed runtime differences, trigger/effect ordering, explicit unsupported effects, regex bounds, and Lua API/failure ownership. |
-| [10. Plugins, modules, MCP, and specialized tools](phases/phase-10-plugins-modules-mcp-and-specialized-tools.md) | In progress | Verify retained extension data/APIs/lifecycle, permissions, tools, and no-port boundaries. |
-| [11. Assets, imports, exports, saves, and backups](phases/phase-11-assets-import-export-and-backups.md) | Pending | Verify references, codecs, salvage, staged assets, historical formats, and bidirectional round trips. |
+| [10. Plugins, modules, MCP, and specialized tools](phases/phase-10-plugins-modules-mcp-and-specialized-tools.md) | Complete | Closed Plugin V3 API/permission/runtime ownership, module lifecycle/no-port, MCP/OAuth/egress, and specialized-tool catalogs and failure behavior. |
+| [11. Assets, imports, exports, saves, and backups](phases/phase-11-assets-import-export-and-backups.md) | In progress | Verify references, codecs, salvage, staged assets, historical formats, and bidirectional round trips. |
 | [12. Runtime, platform, limits, and diagnostics](phases/phase-12-runtime-platform-and-diagnostics.md) | Pending | Verify shared platform behavior, visible rejection/diagnostics, browser/server environment, startup/shutdown, and Push. |
 | [13. Consolidation, adjudication, and remediation](phases/phase-13-consolidation-adjudication-and-remediation.md) | Pending | Deduplicate findings, settle decisions, land shared gates and fix waves, and close cross-domain ownership. |
 | [14. Verification and closeout](phases/phase-14-verification-and-closeout.md) | Pending | Prove zero unexplained differences, complete decisions, final quality/release gates, current docs, and archive handoff. |
@@ -290,6 +294,25 @@ findings under [`findings/`](findings/); inventory ownership under
 - The 359-test Fastify lane, shared browser corpus, 29-test pinned baseline,
   current differential, register gates, browser/server checks, formatting, and
   diff checks pass.
+
+## Phase 10 Completion Record
+
+- `e8bbbeea6ad400234aa4d0abad330356265c3c23` closes the 85-key
+  Plugin V3 API, nine permissions, four runtime phases, seven RPC types, exact
+  module activation/lifecycle owners, four MCP identifier classes, six internal
+  clients, OAuth refresh/DNS-pinned egress, and every specialized/Risu-access
+  tool catalog.
+- `397e06c67694f59d96a087ea1974802e5e0bd4c6` makes Dice bounded and
+  fail-closed, validates/bounds GraphMem without overwriting malformed durable
+  state, and replaces an unadvertised file-system recovery instruction.
+- Historical character/module interchangeability row `ORC-SURFACE-062` is
+  independently re-verified at its actual module picker/editor owners and
+  remains governed by signed `ORC-DECISION-058`.
+- Category J rows `ORC-SURFACE-118` through `ORC-SURFACE-121` own Plugin V3,
+  module, MCP/OAuth, and specialized-tool surfaces. Category J is 5/5 verified
+  and the total inventory is 121 rows.
+- The 426-test browser lane, 308-test Fastify lane, specialized regressions,
+  server/browser checks, registers, formatting, and diff checks pass.
 
 ## Locked Planning Decisions
 
