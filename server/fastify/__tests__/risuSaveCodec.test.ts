@@ -7,9 +7,15 @@ import { classifyRisuSaveEnvelope, inspectRisuSaveBlockFixtureEnvelope } from '.
 import {
   decodeRisuSaveBlockEnvelope,
   encodeRisuSaveBlockEnvelope,
+  RISUSAVE_BLOCK_DIRECTORY_MAX_ENTRIES,
+  RISUSAVE_BLOCK_NAME_MAX_BYTES,
   RisuSaveBlockType,
 } from '../src/risuSave/blockCodec.js'
-import { decodeLegacyRisuSaveEnvelope, encodeLegacyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
+import {
+  decodeLegacyRisuSaveEnvelope,
+  encodeLegacyRisuSaveEnvelope,
+  RISUSAVE_BLOCK_HEADER,
+} from '../src/risuSave/legacyEnvelopeCodec.js'
 import {
   RISUSAVE_INCOMPLETE_BLOCKS_ERROR,
   UnsupportedGroupCharactersError,
@@ -200,6 +206,60 @@ describe('server .risu fixture harness', () => {
         content: blocks[2].data,
       },
     ])
+  })
+
+  it('rejects invalid block compression markers instead of treating them as uncompressed', () => {
+    const encoded = encodeRisuSaveBlockEnvelope([
+      {
+        name: 'root',
+        type: RisuSaveBlockType.ROOT,
+        data: JSON.stringify({ version: 1, __directory: [] }),
+      },
+    ])
+    encoded[RISUSAVE_BLOCK_HEADER.length + 1] = 2
+
+    expect(() => decodeRisuSaveBlockEnvelope(encoded)).toThrow(/Invalid RISUSAVE block compression marker/)
+  })
+
+  it('deduplicates cache-only directory references', () => {
+    const encoded = encodeRisuSaveBlockEnvelope([
+      {
+        name: 'root',
+        type: RisuSaveBlockType.ROOT,
+        data: JSON.stringify({ version: 1, __directory: ['missing', 'missing', 'root'] }),
+      },
+    ])
+
+    expect(decodeRisuSaveBlockEnvelope(encoded).unsupportedReferences).toEqual([
+      { name: 'missing', type: RisuSaveBlockType.REMOTE, kind: 'cache-only' },
+    ])
+  })
+
+  it('bounds cache-only directory expansion by entry count and encoded block-name size', () => {
+    const oversizedDirectory = encodeRisuSaveBlockEnvelope([
+      {
+        name: 'root',
+        type: RisuSaveBlockType.ROOT,
+        data: JSON.stringify({
+          version: 1,
+          __directory: Array.from({ length: RISUSAVE_BLOCK_DIRECTORY_MAX_ENTRIES + 1 }, () => 'missing'),
+        }),
+      },
+    ])
+    expect(() => decodeRisuSaveBlockEnvelope(oversizedDirectory)).toThrow(
+      `RISUSAVE block directory exceeds ${RISUSAVE_BLOCK_DIRECTORY_MAX_ENTRIES} entries`,
+    )
+
+    const oversizedName = encodeRisuSaveBlockEnvelope([
+      {
+        name: 'root',
+        type: RisuSaveBlockType.ROOT,
+        data: JSON.stringify({ version: 1, __directory: ['x'.repeat(RISUSAVE_BLOCK_NAME_MAX_BYTES + 1)] }),
+      },
+    ])
+    expect(() => decodeRisuSaveBlockEnvelope(oversizedName)).toThrow(
+      `RISUSAVE directory block name exceeds ${RISUSAVE_BLOCK_NAME_MAX_BYTES} bytes`,
+    )
   })
 
   it('represents remote and cache-only blocks as unsupported server decode inputs', () => {
