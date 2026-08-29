@@ -1,10 +1,12 @@
-import { readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   canonicalizeCompatibilityObservable,
   compatibilityRegisterPaths,
+  validateCompatibilityDocumentationLinks,
   validateOriginalRisuCompatibilityRegisterDocuments,
   validateOriginalRisuCompatibilityRegisters,
   type CompatibilityRegisterDocuments,
@@ -136,6 +138,43 @@ describe('original RisuAI compatibility register validator', () => {
 
     expect(result.ok).toBe(false)
     expect(result.errors).toEqual(expect.arrayContaining([expect.stringContaining('inventory could not be loaded')]))
+  })
+
+  it('fails closed on broken archive-local Markdown paths and anchors', () => {
+    const fixtureRoot = mkdtempSync(path.join(tmpdir(), 'risu-compat-docs-'))
+    try {
+      const workstreamRoot = path.join(fixtureRoot, 'workstream')
+      mkdirSync(path.join(workstreamRoot, 'nested'), { recursive: true })
+      writeFileSync(
+        path.join(workstreamRoot, 'README.md'),
+        [
+          '# Root',
+          '',
+          '[valid](child.md#child-heading)',
+          '[valid directory](nested/)',
+          '[missing path](absent.md)',
+          '[missing anchor](child.md#absent-heading)',
+          '[external](https://example.test/not-checked)',
+          '',
+          '```md',
+          '[example only](also-absent.md)',
+          '```',
+        ].join('\n'),
+      )
+      writeFileSync(path.join(workstreamRoot, 'child.md'), '# Child Heading\n')
+      writeFileSync(path.join(workstreamRoot, 'nested', 'README.md'), '# Nested\n')
+
+      const result = validateCompatibilityDocumentationLinks(fixtureRoot, 'workstream')
+      expect(result).toHaveLength(2)
+      expect(result).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('links to missing path "absent.md"'),
+          expect.stringContaining('links to missing anchor "child.md#absent-heading"'),
+        ]),
+      )
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true })
+    }
   })
 
   it('preserves the schema distinction between a required nullable field and a missing field', () => {

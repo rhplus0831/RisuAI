@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import Ajv2020, { type ErrorObject } from 'ajv/dist/2020.js'
@@ -9,21 +9,18 @@ const COMMIT_PATTERN = /^[0-9a-f]{40}$/
 const UPSTREAM_UNIT_ID_PATTERN = /^ORC-UPSTREAM-[0-9]{3}$/
 const EXPECTED_UPSTREAM_UNIT_COUNT = 85
 
+export const compatibilityWorkstreamRoot =
+  '.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility'
+
 export const compatibilityRegisterPaths = {
-  inventory:
-    '.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/inventory/compatibility-surfaces.json',
-  inventorySchema:
-    '.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/inventory/inventory.schema.json',
-  findings: '.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/findings/findings.json',
-  findingsSchema:
-    '.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/findings/findings.schema.json',
-  decisions: '.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/findings/decisions.json',
-  decisionsSchema:
-    '.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/findings/decisions.schema.json',
-  upstreamUnits:
-    '.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/inventory/upstream-units.json',
-  upstreamUnitsSchema:
-    '.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/inventory/upstream-units.schema.json',
+  inventory: `${compatibilityWorkstreamRoot}/inventory/compatibility-surfaces.json`,
+  inventorySchema: `${compatibilityWorkstreamRoot}/inventory/inventory.schema.json`,
+  findings: `${compatibilityWorkstreamRoot}/findings/findings.json`,
+  findingsSchema: `${compatibilityWorkstreamRoot}/findings/findings.schema.json`,
+  decisions: `${compatibilityWorkstreamRoot}/findings/decisions.json`,
+  decisionsSchema: `${compatibilityWorkstreamRoot}/findings/decisions.schema.json`,
+  upstreamUnits: `${compatibilityWorkstreamRoot}/inventory/upstream-units.json`,
+  upstreamUnitsSchema: `${compatibilityWorkstreamRoot}/inventory/upstream-units.schema.json`,
 } as const
 
 export interface CompatibilityRegisterDocuments {
@@ -595,6 +592,107 @@ function readExpectedUpstreamCommits(repoRoot: string, inventory: unknown, error
   }
 }
 
+function listMarkdownFiles(root: string): string[] {
+  const files: string[] = []
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const entryPath = path.join(root, entry.name)
+    if (entry.isDirectory()) files.push(...listMarkdownFiles(entryPath))
+    else if (entry.isFile() && entry.name.endsWith('.md')) files.push(entryPath)
+  }
+  return files.sort()
+}
+
+function markdownAnchorIds(markdown: string): Set<string> {
+  const anchors = new Set<string>()
+  const duplicateCounts = new Map<string, number>()
+  for (const line of markdown.split(/\r?\n/)) {
+    const heading = /^ {0,3}#{1,6}\s+(.+?)\s*#*\s*$/.exec(line)
+    if (!heading) continue
+    const base = heading[1]
+      .replace(/`([^`]*)`/g, '$1')
+      .replace(/<[^>]*>/g, '')
+      .replace(/\[([^\]]+)]\([^)]*\)/g, '$1')
+      .toLowerCase()
+      .trim()
+      .replace(/[^\p{L}\p{N}\s_-]/gu, '')
+      .replace(/\s+/g, '-')
+    const duplicateCount = duplicateCounts.get(base) ?? 0
+    duplicateCounts.set(base, duplicateCount + 1)
+    anchors.add(duplicateCount === 0 ? base : `${base}-${duplicateCount}`)
+  }
+  for (const match of markdown.matchAll(/\bid=["']([^"']+)["']/g)) anchors.add(match[1])
+  return anchors
+}
+
+function localMarkdownLinkTarget(rawTarget: string): string | undefined {
+  const trimmed = rawTarget.trim()
+  const target = trimmed.startsWith('<') ? /^<([^>]+)>/.exec(trimmed)?.[1] : /^\S+/.exec(trimmed)?.[0]
+  if (!target || target.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(target)) return undefined
+  return target
+}
+
+export function validateCompatibilityDocumentationLinks(
+  repoRoot = process.cwd(),
+  workstreamRoot = compatibilityWorkstreamRoot,
+): string[] {
+  const absoluteRoot = path.resolve(repoRoot, workstreamRoot)
+  if (!existsSync(absoluteRoot)) return [`compatibility documentation root is missing: ${workstreamRoot}`]
+
+  const errors: string[] = []
+  for (const sourcePath of listMarkdownFiles(absoluteRoot)) {
+    const sourceLabel = path.relative(repoRoot, sourcePath).replaceAll(path.sep, '/')
+    const markdown = readFileSync(sourcePath, 'utf8')
+    let fence: '`' | '~' | undefined
+    for (const [lineIndex, line] of markdown.split(/\r?\n/).entries()) {
+      const fenceMarker = /^\s*(`{3,}|~{3,})/.exec(line)?.[1]?.[0] as '`' | '~' | undefined
+      if (fenceMarker) {
+        fence = fence === fenceMarker ? undefined : (fence ?? fenceMarker)
+        continue
+      }
+      if (fence) continue
+
+      for (const match of line.matchAll(/!?\[[^\]]*]\(([^)\n]+)\)/g)) {
+        const target = localMarkdownLinkTarget(match[1])
+        if (!target) continue
+        const hashIndex = target.indexOf('#')
+        const rawPath = hashIndex === -1 ? target : target.slice(0, hashIndex)
+        const rawAnchor = hashIndex === -1 ? '' : target.slice(hashIndex + 1)
+        let decodedPath: string
+        let decodedAnchor: string
+        try {
+          decodedPath = decodeURIComponent(rawPath)
+          decodedAnchor = decodeURIComponent(rawAnchor)
+        } catch {
+          errors.push(`${sourceLabel}:${lineIndex + 1} has an invalid percent-encoded link ${JSON.stringify(target)}`)
+          continue
+        }
+
+        let targetPath = decodedPath
+          ? decodedPath.startsWith('/')
+            ? path.resolve(repoRoot, `.${decodedPath}`)
+            : path.resolve(path.dirname(sourcePath), decodedPath)
+          : sourcePath
+        if (!existsSync(targetPath)) {
+          errors.push(`${sourceLabel}:${lineIndex + 1} links to missing path ${JSON.stringify(target)}`)
+          continue
+        }
+        if (decodedAnchor) {
+          if (statSync(targetPath).isDirectory()) targetPath = path.join(targetPath, 'README.md')
+          if (!existsSync(targetPath) || path.extname(targetPath).toLowerCase() !== '.md') {
+            errors.push(`${sourceLabel}:${lineIndex + 1} links to an anchor outside Markdown ${JSON.stringify(target)}`)
+            continue
+          }
+          const anchors = markdownAnchorIds(readFileSync(targetPath, 'utf8'))
+          if (!anchors.has(decodedAnchor)) {
+            errors.push(`${sourceLabel}:${lineIndex + 1} links to missing anchor ${JSON.stringify(target)}`)
+          }
+        }
+      }
+    }
+  }
+  return errors
+}
+
 export function validateOriginalRisuCompatibilityRegisters(
   repoRoot = process.cwd(),
 ): CompatibilityRegisterValidationResult {
@@ -648,7 +746,9 @@ export function validateOriginalRisuCompatibilityRegisters(
     },
     expectedUpstreamCommits,
   })
-  return { ok: loadErrors.length === 0 && result.ok, errors: [...loadErrors, ...result.errors] }
+  const documentationErrors = validateCompatibilityDocumentationLinks(repoRoot)
+  const errors = [...loadErrors, ...result.errors, ...documentationErrors]
+  return { ok: errors.length === 0, errors }
 }
 
 function encodeObservable(value: unknown, ancestors: Set<object>): unknown {
