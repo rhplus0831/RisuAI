@@ -2617,15 +2617,12 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
     stopSending: false,
     prompt: {
       messages: formated.map((row) => ({ role: row.role, content: row.content })),
-      promptInfo:
-        state.database.promptInfoInsideChat === true
-          ? {
-              ...state.promptInfo,
-              ...(state.promptText !== undefined ? { promptText: state.promptText } : {}),
-              inputTokens: state.inputTokens,
-              outputTokens: state.outputTokens,
-            }
-          : {},
+      promptInfo: {
+        ...state.promptInfo,
+        ...(state.promptText !== undefined ? { promptText: state.promptText } : {}),
+        inputTokens: state.inputTokens,
+        outputTokens: state.outputTokens,
+      },
       lorebookActivation: state.report,
       // Carry the full rows on the wire so preview clients can inspect the
       // dispatch payload, not just the lossy `messages` projection.
@@ -2868,6 +2865,7 @@ function appendAssistantRow(
     bumpHistoryCallbackMemo(state)
     return
   }
+  const promptInfo = promptInfoForPersistence(state, input.promptInfo)
   const message = {
     role: 'char',
     data: editedText,
@@ -2875,7 +2873,7 @@ function appendAssistantRow(
     time: Date.now(),
     chatId: input.generationId,
     ...(input.generationInfo ? { generationInfo: input.generationInfo } : {}),
-    ...(input.promptInfo ? { promptInfo: input.promptInfo } : {}),
+    ...(promptInfo !== undefined ? { promptInfo } : {}),
   } as Message
   if (
     isContinue &&
@@ -2888,6 +2886,13 @@ function appendAssistantRow(
     messages.push(message)
   }
   bumpHistoryCallbackMemo(state)
+}
+
+function promptInfoForPersistence(
+  state: AssemblyState,
+  promptInfo: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  return state.database.promptInfoInsideChat === true ? promptInfo : {}
 }
 
 /**

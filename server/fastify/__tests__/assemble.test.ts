@@ -3723,7 +3723,10 @@ describe('renderAndBudget + assemblePrompt', () => {
     expect(result.formated?.length).toBeGreaterThan(0)
     expect(result.biases).toEqual([])
     expect(result.prompt?.biases).toEqual([])
-    expect(result.prompt?.promptInfo).toEqual({})
+    expect(result.prompt?.promptInfo).toMatchObject({
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+    })
     // The lorebook activation report rides along on the prompt event.
     expect(result.prompt?.lorebookActivation).toBeDefined()
   })
@@ -3738,9 +3741,11 @@ describe('renderAndBudget + assemblePrompt', () => {
       completionText: 'assistant reply',
       generationId: 'generation-without-agent-preset',
       generationInfo,
+      promptInfo: assembled.prompt?.promptInfo,
     })
 
     expect(generationInfo).not.toHaveProperty('agentPreset')
+    expect(assembled.state?.currentChat.message?.at(-1)?.promptInfo).toEqual({})
   })
 
   it('uses format order and produces prompt rows when promptTemplate is null', async () => {

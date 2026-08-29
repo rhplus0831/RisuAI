@@ -2090,6 +2090,8 @@ async function resolvePostGenerationResult(args: {
   targetSnapshot?: GenerationFinalizationTargetSnapshot
   postGenMetricError?: string
 }> {
+  const persistedPromptInfo =
+    args.state.database.promptInfoInsideChat === true ? args.promptInfo : ({} as Record<string, unknown>)
   const targetSnapshot = captureGenerationFinalizationTargetSnapshot(args.input, args.state)
   // Capture the continue target BEFORE post-gen mutates the row in place.
   const continueRow = args.input.mode === 'continue' ? findContinueRow(args.state) : undefined
@@ -2101,7 +2103,7 @@ async function resolvePostGenerationResult(args: {
       completionText: args.completionText,
       generationId: args.generationId,
       generationInfo: args.generationInfo,
-      promptInfo: args.promptInfo,
+      promptInfo: persistedPromptInfo,
       luaTrace,
       luaProgress,
       ...(args.partial ? { partial: true } : {}),
@@ -2131,7 +2133,7 @@ async function resolvePostGenerationResult(args: {
       generationId: args.generationId,
       finalText: postGen.finalText,
       generationInfo: args.generationInfo,
-      promptInfo: args.promptInfo,
+      promptInfo: persistedPromptInfo,
     })
     return {
       postGen,
@@ -2185,7 +2187,7 @@ async function resolvePostGenerationResult(args: {
       text: args.completionText,
       generationId: args.generationId,
       generationInfo: args.generationInfo,
-      promptInfo: args.promptInfo,
+      promptInfo: persistedPromptInfo,
       removeIncompleteResponse: args.state.database.removeIncompleteResponse,
     })
     emitProtocolMetric('generation_post_generation_fallback', {
