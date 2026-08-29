@@ -4858,6 +4858,7 @@ export interface Chat {
   bindedPersona?: string
   fmIndex?: number
   selectedDraftHookId?: string
+  translatorPresetId?: string
   autoTranslate?: boolean
   autoTranslateBotOnly?: boolean
   bilingualDisplay?: boolean

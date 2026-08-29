@@ -13,7 +13,10 @@
   import SelectInput from '../UI/GUI/SelectInput.svelte'
 
   type PersistenceStatus = 'pending' | 'queued' | 'failed'
-  type BooleanChatTranslationSettingField = Exclude<ChatTranslationSettingField, 'bilingualEmphasis'>
+  type BooleanChatTranslationSettingField = Exclude<
+    ChatTranslationSettingField,
+    'bilingualEmphasis' | 'translatorPresetId'
+  >
 
   let saveOperation = 0
   let saveStates = $state<
@@ -26,6 +29,15 @@
 
   function persistenceStatus(field: ChatTranslationSettingField): PersistenceStatus | 'idle' {
     return saveStates[field]?.status ?? 'idle'
+  }
+
+  function globalTranslatorPresetName(): string {
+    const database = getDatabase()
+    return database.translatorPresets?.[database.translatorPresetId]?.name ?? language.presets
+  }
+
+  function translatorPresetExists(presetId: string | undefined): boolean {
+    return !!presetId && (getDatabase().translatorPresets ?? []).some((preset) => preset.id === presetId)
   }
 
   async function saveSetting<Field extends ChatTranslationSettingField>(
@@ -93,6 +105,36 @@
 
 {#if getDatabase().translator !== ''}
   <div class="mt-2 flex w-full flex-col gap-2" data-risu-chat-translation-settings>
+    {#if getDatabase().translatorType === 'llm'}
+      <div
+        class="flex w-full items-end gap-2"
+        data-risu-chat-translation-setting="translatorPresetId"
+        data-risu-persistence-status={persistenceStatus('translatorPresetId')}
+        aria-busy={persistenceStatus('translatorPresetId') === 'pending'}>
+        <label class="flex min-w-0 flex-1 flex-col gap-1 text-left text-sm">
+          <span class="text-xs font-medium text-textcolor2">{language.translatorPreset}</span>
+          <SelectInput
+            value={currentChat?.translatorPresetId ?? ''}
+            className="w-full"
+            ariaLabel={language.translatorPreset}
+            disabled={!currentChat || persistenceStatus('translatorPresetId') === 'pending'}
+            onchange={(event) => void saveSetting('translatorPresetId', event.currentTarget.value || null)}>
+            <OptionInput value="">{language.useGlobalSettings} ({globalTranslatorPresetName()})</OptionInput>
+            {#if currentChat?.translatorPresetId && !translatorPresetExists(currentChat.translatorPresetId)}
+              <OptionInput value={currentChat.translatorPresetId}>
+                {language.translatorPresetUnavailable(currentChat.translatorPresetId)}
+              </OptionInput>
+            {/if}
+            {#each getDatabase().translatorPresets ?? [] as preset}
+              {#if preset.id}
+                <OptionInput value={preset.id}>{preset.name}</OptionInput>
+              {/if}
+            {/each}
+          </SelectInput>
+        </label>
+        {@render persistenceMessage('translatorPresetId')}
+      </div>
+    {/if}
     {@render setting('autoTranslate', language.autoTranslation)}
     {@render setting('autoTranslateBotOnly', language.autoTranslateBotOnly)}
     {@render setting('bilingualDisplay', language.bilingualDisplay)}

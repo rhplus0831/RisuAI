@@ -32,6 +32,7 @@ export interface ChatRecord extends JsonRecord {
   folderId?: string | null
   hypaContextTruncationAcknowledged?: boolean
   selectedDraftHookId?: string
+  translatorPresetId?: string
   autoTranslate?: boolean
   autoTranslateBotOnly?: boolean
   bilingualDisplay?: boolean
@@ -82,6 +83,7 @@ const ALLOWED_CHAT_PATCH_KEYS = new Set([
   'bindedPersona',
   'fmIndex',
   'selectedDraftHookId',
+  'translatorPresetId',
   'autoTranslate',
   'autoTranslateBotOnly',
   'bilingualDisplay',
@@ -851,6 +853,14 @@ function validateChatRecord(record: JsonRecord, label: string, options: { partia
     (typeof record.selectedDraftHookId !== 'string' || record.selectedDraftHookId.trim() === '')
   ) {
     throw new ValidationError(`${label}.selectedDraftHookId must be a non-empty string, null, or undefined`)
+  }
+  if (
+    'translatorPresetId' in record &&
+    record.translatorPresetId !== undefined &&
+    record.translatorPresetId !== null &&
+    (typeof record.translatorPresetId !== 'string' || record.translatorPresetId.trim() === '')
+  ) {
+    throw new ValidationError(`${label}.translatorPresetId must be a non-empty string, null, or undefined`)
   }
   for (const field of [
     'hypaContextTruncationAcknowledged',

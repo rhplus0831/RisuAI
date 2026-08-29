@@ -17,6 +17,7 @@ import {
   decodeTranslatorPresetFile,
   encodeTranslatorPresetFile,
   getCurrentTranslatorPresetFromState,
+  getTranslatorPresetFromState,
   getTranslatorPresetDownloadName,
   normalizeTranslatorPresetState,
   TRANSLATOR_PRESET_MAX_STEPS,
@@ -168,6 +169,41 @@ describe('getCurrentTranslatorPresetFromState', () => {
     expect(state.translatorPresets).toBe(presets)
     expect(state.translatorPrompt).toBe('Detailed prompt')
     expect(state.translatorMaxResponse).toBe(256)
+  })
+
+  it('resolves a stable chat binding without changing the global legacy mirrors', () => {
+    const presets = [
+      createTranslatorPreset('Global', { id: 'global', prompt: 'Global prompt', maxResponse: 128 }),
+      createTranslatorPreset('Bound', { id: 'bound', prompt: 'Bound prompt', maxResponse: 256 }),
+    ]
+    const state: TranslatorPresetStateLike = {
+      translatorPrompt: 'Global prompt',
+      translatorMaxResponse: 128,
+      translatorPresets: presets,
+      translatorPresetId: 0,
+    }
+
+    expect(getTranslatorPresetFromState(state, 'bound')).toBe(presets[1])
+    expect(state.translatorPresetId).toBe(0)
+    expect(state.translatorPrompt).toBe('Global prompt')
+    expect(state.translatorMaxResponse).toBe(128)
+  })
+
+  it('falls back to the global preset for a missing chat binding', () => {
+    const presets = [
+      createTranslatorPreset('Global', { id: 'global', prompt: 'Global prompt', maxResponse: 128 }),
+      createTranslatorPreset('Other', { id: 'other', prompt: 'Other prompt', maxResponse: 256 }),
+    ]
+    const state: TranslatorPresetStateLike = {
+      translatorPrompt: 'legacy',
+      translatorMaxResponse: 1000,
+      translatorPresets: presets,
+      translatorPresetId: 0,
+    }
+
+    expect(getTranslatorPresetFromState(state, 'missing')).toBe(presets[0])
+    expect(state.translatorPrompt).toBe('Global prompt')
+    expect(state.translatorMaxResponse).toBe(128)
   })
 })
 

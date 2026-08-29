@@ -800,16 +800,51 @@ describe('chat command projection helpers', () => {
     })
     expect(
       sanitizeChatPatch({
+        translatorPresetId: 'translator-preset-a',
         autoTranslate: false,
         autoTranslateBotOnly: true,
         bilingualDisplay: true,
         bilingualEmphasis: 'translation',
       }),
     ).toEqual({
+      translatorPresetId: 'translator-preset-a',
       autoTranslate: false,
       autoTranslateBotOnly: true,
       bilingualDisplay: true,
       bilingualEmphasis: 'translation',
+    })
+  })
+
+  it('sets and clears a stable chat translator preset binding', async () => {
+    const calls = stubCommandFetch()
+    setResourceWriteGuardEnabled(true)
+
+    const selected = setCurrentChatTranslationSettingWithOutcome('translatorPresetId', 'translator-preset-a')
+    expect(getDatabase().characters[0].chats[0].translatorPresetId).toBe('translator-preset-a')
+    await expect(selected).resolves.toMatchObject({ status: 'accepted' })
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a',
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: { translatorPresetId: 'translator-preset-a' },
+        select: false,
+      },
+    })
+
+    const cleared = setCurrentChatTranslationSettingWithOutcome('translatorPresetId', null)
+    expect(getDatabase().characters[0].chats[0]).not.toHaveProperty('translatorPresetId')
+    await expect(cleared).resolves.toMatchObject({ status: 'accepted' })
+    await waitForCallCount(calls, 3)
+    expect(calls[2]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a',
+      method: 'PATCH',
+      body: {
+        baseRevision: expect.any(Number),
+        patch: { translatorPresetId: null },
+        select: false,
+      },
     })
   })
 

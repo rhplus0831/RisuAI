@@ -244,6 +244,27 @@ export function syncCurrentTranslatorPresetToLegacyFields<T extends TranslatorPr
 }
 
 export function getCurrentTranslatorPresetFromState<T extends TranslatorPresetStateLike>(state: T): TranslatorPreset {
+  return getTranslatorPresetFromState(state)
+}
+
+export function getTranslatorPresetFromState<T extends TranslatorPresetStateLike>(
+  state: T,
+  boundPresetId?: string | null,
+): TranslatorPreset {
+  if (typeof boundPresetId === 'string' && boundPresetId.trim()) {
+    const preset = Array.isArray(state.translatorPresets)
+      ? state.translatorPresets.find(
+          (candidate) => isTranslatorPresetValue(candidate) && candidate.id === boundPresetId,
+        )
+      : undefined
+    if (isTranslatorPresetValue(preset)) {
+      const firstStep = preset.steps[0]
+      preset.prompt = firstStep.prompt
+      preset.maxResponse = firstStep.maxResponse
+      return preset
+    }
+  }
+
   const presetId =
     typeof state.translatorPresetId === 'number' && Number.isInteger(state.translatorPresetId)
       ? state.translatorPresetId

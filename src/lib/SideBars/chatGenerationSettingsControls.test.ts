@@ -270,6 +270,12 @@ function seedDb(): void {
     lastLoadedLoadoutName: '',
     hypaV3: false,
     translator: '',
+    translatorType: 'llm',
+    translatorPresetId: 0,
+    translatorPresets: [
+      { id: 'translator-a', name: 'Translator Alpha', prompt: 'Alpha', maxResponse: 128, steps: [] },
+      { id: 'translator-b', name: 'Translator Beta', prompt: 'Beta', maxResponse: 256, steps: [] },
+    ],
     personas: [
       {
         id: 'persona-a',
@@ -1749,7 +1755,7 @@ describe('sidebar chat generation settings controls', () => {
     })
   })
 
-  it('shows and persists the three active-chat translation settings only when translation is configured', async () => {
+  it('shows and persists the active-chat translation settings only when translation is configured', async () => {
     const calls = stubCommandFetch()
     mountToggles()
     await tick()
@@ -1765,7 +1771,7 @@ describe('sidebar chat generation settings controls', () => {
       '[data-risu-chat-translation-settings]',
       'chat translation settings',
     )
-    expect(settings.querySelectorAll('[data-risu-chat-translation-setting]')).toHaveLength(3)
+    expect(settings.querySelectorAll('[data-risu-chat-translation-setting]')).toHaveLength(4)
     const autoTranslate = elementBySelector<HTMLElement>(
       '[data-risu-chat-translation-setting="autoTranslate"]',
       'auto-translate setting',
@@ -1783,6 +1789,41 @@ describe('sidebar chat generation settings controls', () => {
       },
     })
     await vi.waitFor(() => expect(autoTranslate.dataset.risuPersistenceStatus).toBe('idle'))
+  })
+
+  it('binds and clears an LLM translator preset for the active chat', async () => {
+    const calls = stubCommandFetch()
+    testDatabaseState().translator = 'ko'
+    mountToggles()
+    await tick()
+
+    const control = elementBySelector<HTMLElement>(
+      '[data-risu-chat-translation-setting="translatorPresetId"]',
+      'chat translator preset setting',
+    )
+    const select = control.querySelector<HTMLSelectElement>('select')!
+    expect(select.value).toBe('')
+    expect(select.options[0].textContent).toContain(`${language.useGlobalSettings} (Translator Alpha)`)
+
+    select.value = 'translator-b'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    await vi.waitFor(() => expect(activeChat().translatorPresetId).toBe('translator-b'))
+    await waitForFetchCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a',
+      method: 'PATCH',
+      body: { patch: { translatorPresetId: 'translator-b' }, select: false },
+    })
+
+    select.value = ''
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    await vi.waitFor(() => expect(activeChat()).not.toHaveProperty('translatorPresetId'))
+    await waitForFetchCount(calls, 3)
+    expect(calls[2]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a',
+      method: 'PATCH',
+      body: { patch: { translatorPresetId: null }, select: false },
+    })
   })
 
   it('derives the Saved Toggles button label with unlinked and mismatch precedence', async () => {

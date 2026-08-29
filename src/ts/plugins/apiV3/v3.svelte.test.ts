@@ -221,6 +221,7 @@ vi.mock('src/ts/chatCommands', () => ({
     'suggestMessages',
     'bindedPersona',
     'fmIndex',
+    'translatorPresetId',
     'autoTranslate',
     'autoTranslateBotOnly',
     'bilingualDisplay',

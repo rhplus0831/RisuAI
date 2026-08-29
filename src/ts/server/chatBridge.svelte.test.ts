@@ -96,6 +96,7 @@ vi.mock('../chatCommands', () => {
       'bindedPersona',
       'fmIndex',
       'selectedDraftHookId',
+      'translatorPresetId',
       'autoTranslate',
       'autoTranslateBotOnly',
       'bilingualDisplay',

@@ -2063,6 +2063,8 @@ export const languageEnglish = {
   trailingSingleQuote: 'Trailing Single Quote',
   trailingDoubleQuote: 'Trailing Double Quote',
   translatorNote: "Translator's Note",
+  translatorPreset: 'Translator Preset',
+  translatorPresetUnavailable: (presetId: string) => `Unavailable preset (${presetId}) — using global settings`,
   formatGroupInSingle: 'Format Group in Single',
   defineCustomGUI: 'Define Custom GUI',
   chatHTML: 'Chat HTML',

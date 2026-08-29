@@ -9293,6 +9293,7 @@ describe('chat record and folder commands', () => {
           note: 'metadata only',
           autoTranslate: true,
           autoTranslateBotOnly: true,
+          translatorPresetId: 'translator-preset-a',
           bilingualDisplay: true,
           bilingualEmphasis: 'translation',
           bookmarks: ['msg-a'],
@@ -9328,6 +9329,7 @@ describe('chat record and folder commands', () => {
       note: 'metadata only',
       autoTranslate: true,
       autoTranslateBotOnly: true,
+      translatorPresetId: 'translator-preset-a',
       bilingualDisplay: true,
       bilingualEmphasis: 'translation',
       bookmarks: ['msg-a'],
@@ -9391,6 +9393,57 @@ describe('chat record and folder commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
+  })
+
+  it('validates, persists, and clears stable translator preset chat bindings', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    let revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [{ id: 'chat-a', name: 'A chat', note: '', message: [], localLore: [] }],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const selected = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/chats/chat-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { translatorPresetId: 'translator-preset-a' } },
+    })
+    expect(selected.statusCode).toBe(200)
+    revision = selected.json().revision
+    expect((loadPersistedFromDir(harness.dataDir) as any).database.characters[0].chats[0].translatorPresetId).toBe(
+      'translator-preset-a',
+    )
+
+    const cleared = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/chats/chat-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { translatorPresetId: null } },
+    })
+    expect(cleared.statusCode).toBe(200)
+    revision = cleared.json().revision
+    expect((loadPersistedFromDir(harness.dataDir) as any).database.characters[0].chats[0]).not.toHaveProperty(
+      'translatorPresetId',
+    )
+
+    for (const value of ['', 1, false]) {
+      const rejected = await harness.app.inject({
+        method: 'PATCH',
+        url: '/api/v1/commands/chats/chat-a',
+        headers: { 'risu-auth': assertion },
+        payload: { baseRevision: revision, patch: { translatorPresetId: value } },
+      })
+      expect(rejected.statusCode).toBe(400)
+      expect(rejected.json().error).toBe('patch.translatorPresetId must be a non-empty string, null, or undefined')
+    }
   })
 
   it('persists chat generation settings with explicit off values and prunes stale toggles', async () => {

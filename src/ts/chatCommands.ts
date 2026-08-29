@@ -95,6 +95,7 @@ import {
   chatResourceOwnerMutationKey,
 } from './server/resourceOwnerMutationKeys'
 import { chatGenerationSettingsMutationDependencyKeys } from './server/chatGenerationSettingsMutationKeys'
+import { translatorPresetOwnerMutationKey } from './server/translatorPresetMutationKeys'
 import { registerRetainedChatProjection, type RetainedChatProjectionTarget } from './server/chatRetainedProjection'
 import { alertError } from './alert'
 import { language } from '../lang'
@@ -172,6 +173,7 @@ export const CHAT_PATCH_ALLOWED_KEYS = new Set([
   'bindedPersona',
   'fmIndex',
   'selectedDraftHookId',
+  'translatorPresetId',
   'autoTranslate',
   'autoTranslateBotOnly',
   'bilingualDisplay',
@@ -230,10 +232,12 @@ function durableChatMutationIntent(
   method: 'DELETE' | 'PATCH' | 'POST' | 'PUT',
   path: string,
   body: DurableChatRequestBody,
+  dependencyKeys: string[] = [],
 ): DurableMutationIntent {
   return {
     version: 1,
     requests: [{ method, path, body }],
+    ...(dependencyKeys.length > 0 ? { dependencyKeys } : {}),
   }
 }
 
@@ -2794,7 +2798,16 @@ export function dispatchUpdateChatRow(
   }
   if (!canUseServerCommands()) return null
   const body = freezeDurableChatRequestBody({ patch: commandPatch, select: false })
-  const intent = durableChatMutationIntent('PATCH', `/chats/${encodeURIComponent(chatId)}`, body)
+  const translatorPresetDependencyKeys =
+    typeof commandPatch.translatorPresetId === 'string' && commandPatch.translatorPresetId.trim()
+      ? [translatorPresetOwnerMutationKey(commandPatch.translatorPresetId)]
+      : []
+  const intent = durableChatMutationIntent(
+    'PATCH',
+    `/chats/${encodeURIComponent(chatId)}`,
+    body,
+    translatorPresetDependencyKeys,
+  )
   const projectionTargets = Object.prototype.hasOwnProperty.call(commandPatch, 'modules')
     ? moduleEnabledProjectionTargets(rollback.metadata.modules, commandPatch.modules)
     : []
@@ -3077,13 +3090,18 @@ export function setCurrentChatSelectedDraftHookId(
 }
 
 export type ChatTranslationSettingField =
+  | 'translatorPresetId'
   | 'autoTranslate'
   | 'autoTranslateBotOnly'
   | 'bilingualDisplay'
   | 'bilingualEmphasis'
 
 export type ChatTranslationSettingValueByField = {
-  [Field in ChatTranslationSettingField]-?: Exclude<Chat[Field], undefined>
+  translatorPresetId: string | null
+  autoTranslate: boolean
+  autoTranslateBotOnly: boolean
+  bilingualDisplay: boolean
+  bilingualEmphasis: 'original' | 'translation'
 }
 
 export function setCurrentChatTranslationSettingWithOutcome<Field extends ChatTranslationSettingField>(
@@ -3108,8 +3126,12 @@ export function setCurrentChatTranslationSettingWithOutcome<Field extends ChatTr
     const liveCharacter = getDatabase().characters?.[selectedChar]
     const liveChat = liveCharacter?.chats?.[selectedChat]
     if (!liveChat || liveCharacter?.chaId !== character.chaId || liveChat.id !== chatId) return
-    const liveTranslationSettings = liveChat as ChatTranslationSettingValueByField
-    liveTranslationSettings[field] = value
+    if (field === 'translatorPresetId' && value === null) {
+      delete liveChat.translatorPresetId
+    } else {
+      const liveTranslationSettings = liveChat as unknown as Record<ChatTranslationSettingField, unknown>
+      liveTranslationSettings[field] = value
+    }
     applied = true
   })
   if (!applied) return

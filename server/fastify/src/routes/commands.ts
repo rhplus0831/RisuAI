@@ -6160,11 +6160,13 @@ export function registerCommandRoutes(
             }
           }
           const chats = ensureCharacterChats(character)
-          chats[chatIndex] = {
+          const updatedChat = {
             ...chats[chatIndex],
             ...patch,
             id: chatId,
           }
+          if (patch.translatorPresetId === null) delete updatedChat.translatorPresetId
+          chats[chatIndex] = updatedChat
           writeSingleChatRow(innerDb, chatId, chats[chatIndex])
           // The parent character row is rewritten only when `select:true` moves
           // its `chatPage` pointer.
