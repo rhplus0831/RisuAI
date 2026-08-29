@@ -1,7 +1,7 @@
 {
   "$schema": "./findings.schema.json",
   "schemaVersion": 1,
-  "state": "active",
+  "state": "closed",
   "rawMappings": [
     {
       "sourceId": "A-1.claude",

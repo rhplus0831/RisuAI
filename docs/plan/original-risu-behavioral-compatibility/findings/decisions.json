@@ -1,7 +1,7 @@
 {
   "$schema": "./decisions.schema.json",
   "schemaVersion": 1,
-  "state": "active",
+  "state": "closed",
   "decisions": [
     {
       "id": "ORC-DECISION-001",
