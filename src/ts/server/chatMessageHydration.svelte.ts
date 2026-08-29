@@ -139,6 +139,12 @@ function activeChatMessageArray(): Message[] | undefined {
   return chat?.message
 }
 
+function chatMessageArray(chatId: string): Message[] | undefined {
+  return getDatabase()
+    .characters?.flatMap((character) => character.chats ?? [])
+    .find((chat) => chat.id === chatId)?.message
+}
+
 function rerollTargetForChatId(chatId: string): ActiveChatTarget | null {
   const characters = getDatabase().characters ?? []
   for (let selectedCharID = 0; selectedCharID < characters.length; selectedCharID += 1) {
@@ -574,21 +580,31 @@ export async function hydrateActiveChat(options: { force?: boolean; loadPages?: 
 export async function hydrateActiveChatWindow(loadPages: number, options: { force?: boolean } = {}): Promise<boolean> {
   const chatId = activeChatId()
   if (!chatId) return false
+  const hydrated = await hydrateChatMessageWindow(chatId, loadPages, options)
+  return activeChatId() === chatId && hydrated
+}
+
+/** Ensure a specific route target's visible transcript window is resident before selection changes. */
+export async function hydrateChatMessageWindow(
+  chatId: string,
+  loadPages: number,
+  options: { force?: boolean } = {},
+): Promise<boolean> {
+  if (!chatId) return false
   if (!Number.isFinite(loadPages)) {
     await hydrateChat(chatId, { force: options.force, seedReroll: true })
-    return activeChatId() === chatId && hydratedChatIds.has(chatId)
+    return hydratedChatIds.has(chatId)
   }
 
-  const messages = activeChatMessageArray()
+  const messages = chatMessageArray(chatId)
   if (!messages || messages.length === 0 || options.force) {
     await hydrateChat(chatId, {
       force: options.force,
       range: { tail: requestedTailSize(loadPages) },
       seedReroll: true,
     })
-    const hydratedMessages = activeChatMessageArray()
+    const hydratedMessages = chatMessageArray(chatId)
     return (
-      activeChatId() === chatId &&
       !failedChatIds.has(chatId) &&
       Boolean(hydratedMessages) &&
       (hydratedChatIds.has(chatId) || unloadedRangesForTail(hydratedMessages!, loadPages).length === 0)
@@ -602,9 +618,8 @@ export async function hydrateActiveChatWindow(loadPages: number, options: { forc
       seedReroll: range.start + range.limit >= messages.length,
     })
   }
-  const hydratedMessages = activeChatMessageArray()
+  const hydratedMessages = chatMessageArray(chatId)
   return (
-    activeChatId() === chatId &&
     !failedChatIds.has(chatId) &&
     Boolean(hydratedMessages) &&
     unloadedRangesForTail(hydratedMessages!, loadPages).length === 0

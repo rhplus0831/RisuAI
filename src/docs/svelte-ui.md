@@ -162,13 +162,19 @@ groups, collections, standalone values, and detail projections it owns. The
 shared application shell is inherited; settings and Playground add their shared
 navigation shells, while chat generation and optional overlays remain separate
 runtime/first-use surfaces. `applyRouteToStores()` calls
-`prepareRouteResources()` before mutating route-backed stores and
-`finishRouteResources()` after selection exposes any remaining chat/prompt
-target. Newer navigation aborts older route work. The App render switch owns the
-route-local loading/error/Retry UI. It keeps the last coherent route content
-mounted and inert while the target settles, leaves navigation available to
-supersede the request, suppresses warm-transition flashes with a short delay,
-and shows a compact pending or Retry status instead of replacing the shell.
+`prepareRouteResources()` while the memoized loaders in
+`src/ts/routeComponentPreload.ts` resolve the target route shell/page, before
+mutating route-backed stores, and calls
+`finishRouteResources()` after selection to revalidate the already-resident chat
+window and apply its prompt compatibility projection. Newer navigation aborts
+older route work. The App render switch owns the
+route-local loading/error/Retry UI. URL intent and the committed render route
+are separate, so it keeps the last coherent route content mounted and inert
+while target data and code settle. Navigation remains available to supersede
+the request. Transitions that settle within one second show no loading status;
+longer work shows a compact pending or Retry status instead of replacing the
+shell. Intent prefetch and rendering share the exact component promises, so a
+prefetched or revisited route cannot remount into a cold lazy fallback.
 
 `src/App.svelte` has two load-bearing effects. Both wait for
 `$startupCoordinatorStore.capabilities.canApplyRoutes`. The URL-to-store effect

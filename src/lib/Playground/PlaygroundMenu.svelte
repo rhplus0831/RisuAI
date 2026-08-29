@@ -3,47 +3,29 @@
   import { language } from 'src/lang'
   import { PlaygroundStore, SizeStore } from 'src/ts/stores.svelte'
   import { navigate } from 'src/ts/router'
-  import { prefetchRouteIntent, type RouteModuleLoader } from 'src/ts/routeIntentPrefetch'
+  import { prefetchRouteIntent } from 'src/ts/routeIntentPrefetch'
+  import {
+    loadPlaygroundDocs,
+    loadPlaygroundEmbedding,
+    loadPlaygroundImageGen,
+    loadPlaygroundImageTrans,
+    loadPlaygroundInlayExplorer,
+    loadPlaygroundJinja,
+    loadPlaygroundMcp,
+    loadPlaygroundParser,
+    loadPlaygroundSubtitle,
+    loadPlaygroundSyntax,
+    loadPlaygroundTokenizer,
+    loadPlaygroundTranslation,
+    loadToolConversion,
+  } from 'src/ts/routeComponentPreload'
   import LazyComponent from '../UI/LazyComponent.svelte'
-
-  const loadPlaygroundEmbedding = () => import('./PlaygroundEmbedding.svelte')
-  const loadPlaygroundTokenizer = () => import('./PlaygroundTokenizer.svelte')
-  const loadPlaygroundSyntax = () => import('./PlaygroundSyntax.svelte')
-  const loadPlaygroundJinja = () => import('./PlaygroundJinja.svelte')
-  const loadPlaygroundImageGen = () => import('./PlaygroundImageGen.svelte')
-  const loadPlaygroundParser = () => import('./PlaygroundParser.svelte')
-  const loadPlaygroundSubtitle = () => import('./PlaygroundSubtitle.svelte')
-  const loadPlaygroundImageTrans = () => import('./PlaygroundImageTrans.svelte')
-  const loadPlaygroundTranslation = () => import('./PlaygroundTranslation.svelte')
-  const loadPlaygroundMcp = () => import('./PlaygroundMCP.svelte')
-  const loadPlaygroundDocs = () => import('./PlaygroundDocs.svelte')
-  const loadPlaygroundInlayExplorer = () => import('./PlaygroundInlayExplorer.svelte')
-  const loadToolConversion = () => import('./ToolConversion.svelte')
-
-  const playgroundRouteLoaders: Record<string, RouteModuleLoader | undefined> = {
-    '/playground/chat': undefined,
-    '/playground/cbs': loadPlaygroundDocs,
-    '/playground/embedding': loadPlaygroundEmbedding,
-    '/playground/tokenizer': loadPlaygroundTokenizer,
-    '/playground/syntax': loadPlaygroundSyntax,
-    '/playground/jinja': loadPlaygroundJinja,
-    '/playground/image-gen': loadPlaygroundImageGen,
-    '/playground/parser': loadPlaygroundParser,
-    '/playground/subtitles': loadPlaygroundSubtitle,
-    '/playground/image-trans': loadPlaygroundImageTrans,
-    '/playground/translation': loadPlaygroundTranslation,
-    '/playground/mcp': loadPlaygroundMcp,
-    '/inlay': loadPlaygroundInlayExplorer,
-    '/playground/tools': loadToolConversion,
-  }
 
   function preloadPlaygroundRouteFromEvent(event: Event): void {
     if (!(event.target instanceof Element)) return
     const target = event.target.closest<HTMLElement>('[data-risu-route-intent]')
     const path = target?.dataset.risuRouteIntent
-    if (!path || !Object.prototype.hasOwnProperty.call(playgroundRouteLoaders, path)) return
-    const loader = playgroundRouteLoaders[path]
-    prefetchRouteIntent(path, loader ? [loader] : [])
+    if (path) prefetchRouteIntent(path)
   }
 
   let easterEggTouch = $state(0)

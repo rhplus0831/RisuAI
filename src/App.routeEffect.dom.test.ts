@@ -21,6 +21,14 @@ const characterRoute: AppRoute = {
   chatId: 'chat-a',
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
+
 const appRouteDomMocks = vi.hoisted(() => {
   type RouteMockExports = Record<string, unknown> & {
     currentRoute: ReturnType<typeof writable>
@@ -552,7 +560,7 @@ describe('App route/refreeze mounted DOM behavior', () => {
 
       routeResourceLoadState.set({ error: null, routeKey: 'character:char-b:', status: 'ready' })
       await tick()
-      await vi.advanceTimersByTimeAsync(200)
+      await vi.advanceTimersByTimeAsync(1_001)
 
       expect(content?.hasAttribute('inert')).toBe(false)
       expect(target.querySelector('[data-testid="route-resource-loading"]')).toBeNull()
@@ -562,12 +570,41 @@ describe('App route/refreeze mounted DOM behavior', () => {
     }
   })
 
+  it('keeps rendering the committed route until a new route application succeeds', async () => {
+    const routeApplication = deferred<boolean>()
+    const router = appRouteDomMocks.state.exports
+    const applyRoute = vi.mocked(router?.applyRouteToStores as (route: AppRoute) => Promise<boolean>)
+    applyRoute.mockReturnValueOnce(routeApplication.promise)
+    const settingsRoute: AppRoute = {
+      kind: 'settings',
+      path: '/settings/display',
+      section: 'display',
+      index: 3,
+    }
+
+    router?.currentRoute.set(settingsRoute)
+    await tick()
+
+    expect(target.querySelector('[data-rendered-route="/character/char-a/chat-a"]')).not.toBeNull()
+
+    routeApplication.resolve(true)
+    await vi.waitFor(() => {
+      expect(target.querySelector('[data-rendered-route="/character/char-a/chat-a"]')).toBeNull()
+    })
+    expect(applyRoute).toHaveBeenCalledWith(settingsRoute)
+  })
+
   it('shows a compact delayed pending status without unmounting route content', async () => {
     vi.useFakeTimers()
     try {
       routeResourceLoadState.set({ error: null, routeKey: 'character:char-b:', status: 'loading' })
       await tick()
-      await vi.advanceTimersByTimeAsync(151)
+      await vi.advanceTimersByTimeAsync(999)
+      await tick()
+
+      expect(target.querySelector('[data-testid="route-resource-loading"]')).toBeNull()
+
+      await vi.advanceTimersByTimeAsync(2)
       await tick()
 
       expect(target.querySelector('[data-testid="route-resource-loading"]')?.textContent).toContain('Loading')

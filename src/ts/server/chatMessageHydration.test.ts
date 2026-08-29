@@ -37,6 +37,7 @@ import {
   hydrateActiveChat,
   hydrateActiveChatWindow,
   hydrateActiveChatFully,
+  hydrateChatMessageWindow,
   hydrateChatMessages,
   reconcileAcceptedSendCompletion,
   applyServerChatMessagesResource,
@@ -278,6 +279,21 @@ describe('chat message hydration bridge', () => {
     // Second call is deduped (no refetch).
     await hydrateActiveChat()
     expect(projectionState.fetchChat).toHaveBeenCalledTimes(1)
+  })
+
+  it('hydrates an unselected route target without changing the active chat', async () => {
+    projectionState.fetchChat.mockResolvedValue(
+      okResult('chat-2', [{ role: 'char', data: 'next route', chatId: 'm-route' }]),
+    )
+
+    await expect(hydrateChatMessageWindow('chat-2', ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW)).resolves.toBe(true)
+
+    expect(projectionState.fetchChat).toHaveBeenCalledWith('chat-2', {
+      tail: ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW,
+    })
+    expect(db().characters[0].chatPage).toBe(0)
+    expect(db().characters[0].chats[0].message).toEqual([])
+    expect(db().characters[0].chats[1].message).toEqual([{ role: 'char', data: 'next route', chatId: 'm-route' }])
   })
 
   it('uses the configured initial chat load count for the active window size', async () => {

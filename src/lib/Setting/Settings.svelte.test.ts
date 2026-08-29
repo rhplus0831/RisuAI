@@ -230,8 +230,8 @@ describe('Settings supporter tab', () => {
     modelButton?.dispatchEvent(new Event('pointerover', { bubbles: true }))
     promptButton?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
 
-    expect(routeIntentSpies.prefetch).toHaveBeenNthCalledWith(1, '/settings/model', [expect.any(Function)])
-    expect(routeIntentSpies.prefetch).toHaveBeenNthCalledWith(2, '/settings/prompt-settings', [expect.any(Function)])
+    expect(routeIntentSpies.prefetch).toHaveBeenNthCalledWith(1, '/settings/model')
+    expect(routeIntentSpies.prefetch).toHaveBeenNthCalledWith(2, '/settings/prompt-settings')
   })
 
   it('updates a selected settings page layout across the responsive breakpoint', async () => {

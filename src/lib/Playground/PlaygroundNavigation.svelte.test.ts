@@ -130,8 +130,8 @@ describe('Playground and main-menu navigation', () => {
     embedding?.dispatchEvent(new Event('pointerover', { bubbles: true }))
     inlay?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
 
-    expect(routeIntentMocks.prefetch).toHaveBeenNthCalledWith(1, '/playground/embedding', [expect.any(Function)])
-    expect(routeIntentMocks.prefetch).toHaveBeenNthCalledWith(2, '/inlay', [expect.any(Function)])
+    expect(routeIntentMocks.prefetch).toHaveBeenNthCalledWith(1, '/playground/embedding')
+    expect(routeIntentMocks.prefetch).toHaveBeenNthCalledWith(2, '/inlay')
   })
 
   it('names the Realm icon-only back control and preserves its store transition', () => {

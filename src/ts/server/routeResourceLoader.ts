@@ -1,7 +1,8 @@
 import { get, writable } from 'svelte/store'
 import { characterRoutePath, parseRoute, type AppRoute } from '../routerRoute'
 import { routeKey } from '../routerRoute'
-import { hydrateActiveChat } from './chatMessageHydration.svelte'
+import { hydrateActiveChat, hydrateChatMessageWindow } from './chatMessageHydration.svelte'
+import { getInitialChatLoadPages } from '../chatLoadPages'
 import { peekAppliedServerResourceRevision } from './commands'
 import { getServerInlayCatalogResource } from './inlayCatalog'
 import { SERVER_CHARACTER_SHELL_MARKER } from './characterSummaryProtocol'
@@ -35,6 +36,8 @@ export type RouteResourceLoadStatus = 'idle' | 'loading' | 'ready' | 'error'
 
 export interface RouteResourceLoadState {
   error: string | null
+  errorKind?: 'component'
+  offline?: boolean
   routeKey: string | null
   status: RouteResourceLoadStatus
 }
@@ -108,10 +111,11 @@ export async function prepareRouteResources(route: AppRoute): Promise<boolean> {
     })
     return false
   }
+  if (!(await prepareRouteTargetResources(route, load, minimumRevision))) return false
   return true
 }
 
-/** Finish projections whose target is only knowable after route selection is applied. */
+/** Revalidate the selected target and apply compatibility projections after route stores commit. */
 export async function finishRouteResources(route: AppRoute): Promise<boolean> {
   const load = activeRouteLoad
   if (!load || load.key !== routeKey(route) || load.controller.signal.aborted) return false
@@ -142,6 +146,20 @@ export async function finishRouteResources(route: AppRoute): Promise<boolean> {
   if (!isCurrentRouteLoad(load)) return false
   routeResourceLoadState.set({ error: null, routeKey: load.key, status: 'ready' })
   scheduleNextBackgroundCharacterWarmup()
+  return true
+}
+
+/** Publish a non-resource preparation failure only when this route still owns the active transition. */
+export function failActiveRouteLoad(route: AppRoute, error: unknown): boolean {
+  const load = activeRouteLoad
+  if (!load || load.key !== routeKey(route) || load.controller.signal.aborted) return false
+  routeResourceLoadState.set({
+    error: error instanceof Error ? error.message : String(error),
+    errorKind: 'component',
+    offline: typeof navigator !== 'undefined' && navigator.onLine === false,
+    routeKey: load.key,
+    status: 'error',
+  })
   return true
 }
 
@@ -577,6 +595,41 @@ function activePromptTemplateOwnerId(chatId: string): string | null {
     if (typeof ownerId === 'string' && ownerId.trim() !== '') return ownerId.trim()
   }
   return currentPromptTemplateOwnerId()
+}
+
+async function prepareRouteTargetResources(
+  route: AppRoute,
+  load: ActiveRouteLoad,
+  minimumRevision: number | undefined,
+): Promise<boolean> {
+  if (route.kind !== 'character' || !route.chatId) return true
+  const routeCharacter = getResourceDatabase().characters?.find((character) => character?.chaId === route.chaId)
+  if (!routeCharacter?.chats?.some((chat) => chat.id === route.chatId)) return true
+
+  try {
+    if (!(await hydrateChatMessageWindow(route.chatId, getInitialChatLoadPages(getResourceDatabase())))) {
+      throw new Error('Selected chat hydration failed')
+    }
+    if (!isCurrentRouteLoad(load)) return false
+
+    const ownerId = activePromptTemplateOwnerId(route.chatId)
+    const hydrated = await ensurePromptTemplateHydrated({
+      applyProjection: false,
+      minimumRevision,
+      promptPresetId: ownerId,
+    })
+    if (!hydrated) throw new Error('Selected prompt-template hydration failed')
+  } catch (error) {
+    if (!isCurrentRouteLoad(load)) return false
+    routeResourceLoadState.set({
+      error: error instanceof Error ? error.message : String(error),
+      routeKey: load.key,
+      status: 'error',
+    })
+    return false
+  }
+
+  return isCurrentRouteLoad(load)
 }
 
 function requirementRequestKey(requirement: ResourceRequirement, route: AppRoute | null): string {

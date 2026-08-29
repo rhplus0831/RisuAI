@@ -12,7 +12,8 @@ import {
   settingsOpen,
 } from './stores.svelte'
 import { hasActiveModuleEditorLeaveGuard, requestActiveModuleEditorLeave } from './moduleEditorLeaveGuard'
-import { finishRouteResources, prepareRouteResources } from './server/routeResourceLoader'
+import { failActiveRouteLoad, finishRouteResources, prepareRouteResources } from './server/routeResourceLoader'
+import { preloadRouteComponents } from './routeComponentPreload'
 import {
   characterRoutePath,
   normalizePath,
@@ -276,7 +277,23 @@ export async function applyRouteToStores(route: AppRoute): Promise<boolean> {
   const isFreshRouteApplication = () => applicationEpoch === routeApplicationEpoch
   applyingRoute = true
   try {
-    if (!(await prepareRouteResources(route)) || !isFreshRouteApplication()) return false
+    let componentLoadError: unknown
+    const [resourcesReady, componentsReady] = await Promise.all([
+      prepareRouteResources(route),
+      preloadRouteComponents(route).then(
+        () => true,
+        (error: unknown) => {
+          componentLoadError = error
+          return false
+        },
+      ),
+    ])
+    if (!isFreshRouteApplication()) return false
+    if (!resourcesReady) return false
+    if (!componentsReady) {
+      failActiveRouteLoad(route, componentLoadError ?? new Error('Route component preload failed'))
+      return false
+    }
     closeRouteBlockingViews()
     switch (route.kind) {
       case 'home': {

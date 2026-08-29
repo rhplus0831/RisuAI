@@ -12,6 +12,10 @@
   import { createLatestBackgroundLoader } from './ChatScreenBackground'
   import LazyComponent from '../UI/LazyComponent.svelte'
   import CharacterShellHydrationGate from './CharacterShellHydrationGate.svelte'
+  import { currentRoute, type AppRoute } from 'src/ts/router'
+
+  let { route }: { route?: AppRoute } = $props()
+  let visibleRoute = $derived(route ?? $currentRoute)
 
   const loadChatList = () => import('../Others/ChatList.svelte')
   const loadModuleChatMenu = () => import('../Setting/Pages/Module/ModuleChatMenu.svelte')
@@ -69,6 +73,7 @@
       style:width="{42 * (getDatabase().waifuWidth / 100)}rem"
       class:halfwp={$selectedCharID >= 0 && getDatabase().characters[$selectedCharID].viewScreen !== 'none'}>
       <DefaultChatScreen
+        route={visibleRoute}
         customStyle={`${externalStyles}backdrop-filter: blur(4px);`}
         bind:openChatList
         bind:openModuleList />
@@ -83,6 +88,7 @@
       class:per33={$selectedCharID >= 0 && getDatabase().characters[$selectedCharID].viewScreen !== 'none'}
       class:h-full={!($selectedCharID >= 0 && getDatabase().characters[$selectedCharID].viewScreen !== 'none')}>
       <DefaultChatScreen
+        route={visibleRoute}
         customStyle={`${externalStyles}backdrop-filter: blur(4px);`}
         bind:openChatList
         bind:openModuleList />
@@ -106,6 +112,7 @@
         {/if}
       {/if}
       <DefaultChatScreen
+        route={visibleRoute}
         customStyle={bgImg.length > 2 ? `${externalStyles}` : ''}
         bind:openChatList
         bind:openModuleList />

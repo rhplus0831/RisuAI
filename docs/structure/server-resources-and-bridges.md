@@ -80,15 +80,20 @@ capabilities consumed by the shell and protocol adapters:
   surfaces with `render`, `interact`, `mutate`, `generate`, or `editor-prefill`
   purposes. Routes inherit only the shared shell plus their declared surface;
   optional runtimes use the same manifest without becoming render barriers.
-- `prepareRouteResources()` loads pre-route requirements before URL state may
-  persist, while `finishRouteResources()` hydrates targets knowable only after
-  selection. Requirement reads are deduplicated, minimum-revision fenced, and
+- `prepareRouteResources()` loads pre-route requirements plus the exact routed
+  chat window/prompt owner before URL state may persist, while
+  `finishRouteResources()` revalidates the selected target and applies its
+  compatibility projection. Requirement reads are deduplicated,
+  minimum-revision fenced, and
   aborted when superseded by newer navigation. A route-local failure leaves the
   mounted shell and prior route content intact and exposes a compact Retry
   status. Intent prefetch uses the same request registry so matching navigation
   can join rather than restart it; bounded post-startup character warming remains
-  idle-only and data-saver aware. Only the root shell has a cross-field atomic
-  barrier; granular route resources apply independently behind the write guard.
+  idle-only and data-saver aware. Route component promises are independently
+  memoized and joined by intent, navigation, and rendering; route stores do not
+  switch until both pre-route resources and target code are ready. Only the root
+  shell has a cross-field atomic barrier; granular route resources apply
+  independently behind the write guard.
 - Generation recovery treats SQLite `generation_operations`,
   `generation_operation_attempts`, and `generation_effects` as durable
   authority. Active jobs are live attachment hints and local activities are

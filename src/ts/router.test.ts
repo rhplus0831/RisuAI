@@ -8,12 +8,19 @@ const routerMocks = vi.hoisted(() => ({
   findCharacterIndexbyId: vi.fn<(characterId: string) => number>(() => -1),
   openPlaygroundChat: vi.fn(),
   finishRouteResources: vi.fn(async () => true),
+  failActiveRouteLoad: vi.fn(),
+  preloadRouteComponents: vi.fn(async () => undefined),
   prepareRouteResources: vi.fn(async () => true),
 }))
 
 vi.mock('./server/routeResourceLoader', () => ({
   finishRouteResources: routerMocks.finishRouteResources,
+  failActiveRouteLoad: routerMocks.failActiveRouteLoad,
   prepareRouteResources: routerMocks.prepareRouteResources,
+}))
+
+vi.mock('./routeComponentPreload', () => ({
+  preloadRouteComponents: routerMocks.preloadRouteComponents,
 }))
 
 vi.mock('./characters', () => ({
@@ -87,6 +94,8 @@ beforeEach(() => {
   routerMocks.findCharacterIndexbyId.mockReturnValue(-1)
   routerMocks.openPlaygroundChat.mockReset()
   routerMocks.finishRouteResources.mockReset().mockResolvedValue(true)
+  routerMocks.failActiveRouteLoad.mockReset()
+  routerMocks.preloadRouteComponents.mockReset().mockResolvedValue(undefined)
   routerMocks.prepareRouteResources.mockReset().mockResolvedValue(true)
 })
 
@@ -97,6 +106,41 @@ afterEach(async () => {
 })
 
 describe('router initial application', () => {
+  it('keeps route stores unchanged until the target component chunks are ready', async () => {
+    const router = await importRouterAt('/')
+    const stores = await import('./stores.svelte')
+    const componentLoad = deferred()
+    routerMocks.preloadRouteComponents.mockReturnValueOnce(componentLoad.promise)
+    const route = { kind: 'settings', path: '/settings/display', section: 'display', index: 3 } as const
+
+    const applying = router.applyRouteToStores(route)
+    await vi.waitFor(() => expect(routerMocks.preloadRouteComponents).toHaveBeenCalledWith(route))
+
+    expect(get(stores.settingsOpen)).toBe(false)
+    expect(get(stores.SettingsMenuIndex)).toBe(1)
+
+    componentLoad.resolve()
+    await expect(applying).resolves.toBe(true)
+    expect(get(stores.settingsOpen)).toBe(true)
+    expect(get(stores.SettingsMenuIndex)).toBe(3)
+  })
+
+  it('keeps the previous route stores and exposes a local error when a target chunk fails', async () => {
+    const router = await importRouterAt('/')
+    const stores = await import('./stores.svelte')
+    const error = new Error('missing route chunk')
+    routerMocks.preloadRouteComponents.mockRejectedValueOnce(error)
+    const route = { kind: 'grid', path: '/grid' } as const
+    const previousSelection = get(stores.selectedCharID)
+    const previousSettingsOpen = get(stores.settingsOpen)
+
+    await expect(router.applyRouteToStores(route)).resolves.toBe(false)
+
+    expect(get(stores.selectedCharID)).toBe(previousSelection)
+    expect(get(stores.settingsOpen)).toBe(previousSettingsOpen)
+    expect(routerMocks.failActiveRouteLoad).toHaveBeenCalledWith(route, error)
+  })
+
   it('opens a direct route for a bot left in retired Mood Light metadata', async () => {
     const router = await importRouterAt('/character/char-private/chat-a')
     const stores = await import('./stores.svelte')

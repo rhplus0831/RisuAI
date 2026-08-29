@@ -292,8 +292,10 @@ test('smoke manifest accounts for every lazy boundary', async () => {
     expect(chunk.isDynamicEntry, `${source} must remain a first-use entry`).toBe(true)
   }
 
-  const playgroundMenu = manifest['src/lib/Playground/PlaygroundMenu.svelte']
-  expect(new Set(playgroundMenu.dynamicImports)).toEqual(new Set(playgroundCases.map((entry) => entry.source)))
+  const dynamicImportSources = new Set(Object.values(manifest).flatMap((chunk) => chunk.dynamicImports ?? []))
+  for (const source of playgroundCases.map((entry) => entry.source)) {
+    expect(dynamicImportSources, `${source} must remain reachable from the shared route loader`).toContain(source)
+  }
 })
 
 test('every Settings and Playground route opens its real first-use chunk', async ({ page }) => {
@@ -406,8 +408,10 @@ test('grid, route handlers, Sidebar panels, and chat dialogs open only on first 
   )
 })
 
-test('a delayed emitted stylesheet keeps the route visible and applies before ready', async ({ page }) => {
+test('a delayed emitted stylesheet keeps the previous route mounted until the new route is ready', async ({ page }) => {
   await openLoadedHome(page)
+  const previousRoute = page.locator('[data-risu-route-content]')
+  await previousRoute.evaluate((node) => node.setAttribute('data-previous-route-sentinel', 'true'))
   const settingsChunk = manifest['src/lib/Setting/Settings.svelte']
   const cssFile = settingsChunk.css?.[0]
   expect(cssFile).toBeDefined()
@@ -416,7 +420,8 @@ test('a delayed emitted stylesheet keeps the route visible and applies before re
   await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.navigateTo('/settings/display'))
   await delayed.requested
 
-  await expect(page.getByTestId('settings-pending')).toBeVisible()
+  await expect(page.locator('[data-previous-route-sentinel="true"]')).toBeVisible()
+  await expect(lazySurface(page, 'settings')).toHaveCount(0)
   await expect(page.locator('[data-risu-visual-viewport-shell]')).toBeVisible()
   await expect(page.locator('body')).not.toHaveText('')
 
@@ -424,6 +429,7 @@ test('a delayed emitted stylesheet keeps the route visible and applies before re
   await delayed.finished
   await page.unroute(`**/${cssFile!}`)
   await expect(lazySurface(page, 'settings-display')).toHaveAttribute('data-risu-lazy-state', 'ready')
+  await expect(page.locator('[data-previous-route-sentinel="true"]')).toHaveCount(0)
   await expect.poll(() => stylesheetIsLoaded(page, `/${cssFile!}`)).toBe(true)
   await expect
     .poll(() => page.locator('.setting-bg').evaluate((node) => getComputedStyle(node).backgroundImage))
@@ -513,15 +519,18 @@ test('an offline first open shows local Retry and succeeds when connectivity ret
   const failedPaths: string[] = []
   page.on('requestfailed', (request) => failedPaths.push(new URL(request.url()).pathname))
   await openLoadedHome(page)
+  const previousRoute = page.locator('[data-risu-route-content]')
+  await previousRoute.evaluate((node) => node.setAttribute('data-previous-route-sentinel', 'true'))
 
   await context.setOffline(true)
   await expect.poll(() => page.evaluate(() => navigator.onLine)).toBe(false)
   await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.navigateTo('/grid'))
 
-  const grid = lazySurface(page, 'character-grid')
-  await expect(grid).toHaveAttribute('data-risu-lazy-state', 'error')
-  await expect(grid).toContainText(languageEnglish.preloadOfflineError)
-  const retry = grid.getByRole('button', { name: languageEnglish.retry })
+  const routeError = page.getByTestId('route-resource-error')
+  await expect(routeError).toContainText(languageEnglish.preloadOfflineError)
+  await expect(page.locator('[data-previous-route-sentinel="true"]')).toBeVisible()
+  await expect(lazySurface(page, 'character-grid')).toHaveCount(0)
+  const retry = routeError.getByRole('button', { name: languageEnglish.retry })
   await expect(retry).toBeFocused()
   expect(failedPaths.includes(assetPath('src/lib/Others/GridCatalog.svelte'))).toBe(true)
 
@@ -531,11 +540,13 @@ test('an offline first open shows local Retry and succeeds when connectivity ret
   await retry.click()
   await reloaded
   await waitForLoaded(page)
-  await expect(grid).toHaveAttribute('data-risu-lazy-state', 'ready')
+  await expect(lazySurface(page, 'character-grid')).toHaveAttribute('data-risu-lazy-state', 'ready')
 })
 
 test('a stale emitted stylesheet shows local recovery and reloads the current route', async ({ page }) => {
   await openLoadedHome(page)
+  const previousRoute = page.locator('[data-risu-route-content]')
+  await previousRoute.evaluate((node) => node.setAttribute('data-previous-route-sentinel', 'true'))
   const settingsChunk = manifest['src/lib/Setting/Settings.svelte']
   const cssFile = settingsChunk.css?.[0]
   expect(cssFile).toBeDefined()
@@ -556,13 +567,14 @@ test('a stale emitted stylesheet shows local recovery and reloads the current ro
   })
 
   await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.navigateTo('/settings/display'))
-  const settings = lazySurface(page, 'settings')
-  await expect(settings).toHaveAttribute('data-risu-lazy-state', 'error')
-  await expect(settings).toContainText(languageEnglish.preloadStaleError)
-  await expect(settings.getByRole('button', { name: languageEnglish.retry })).toBeFocused()
+  const routeError = page.getByTestId('route-resource-error')
+  await expect(routeError).toContainText(languageEnglish.preloadStaleError)
+  await expect(routeError.getByRole('button', { name: languageEnglish.retry })).toBeFocused()
+  await expect(page.locator('[data-previous-route-sentinel="true"]')).toBeVisible()
+  await expect(lazySurface(page, 'settings')).toHaveCount(0)
 
   const reloaded = page.waitForNavigation({ waitUntil: 'domcontentloaded' })
-  await settings.getByRole('button', { name: languageEnglish.preloadReload }).click()
+  await routeError.getByRole('button', { name: languageEnglish.preloadReload }).click()
   await reloaded
   await waitForLoaded(page)
   await expect(lazySurface(page, 'settings-display')).toHaveAttribute('data-risu-lazy-state', 'ready')

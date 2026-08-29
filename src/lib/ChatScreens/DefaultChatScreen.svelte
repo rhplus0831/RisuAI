@@ -120,7 +120,7 @@
   import { buildTranscriptWindowIdentity, getLoadPagesForMessageJump } from './DefaultChatScreen.loadPages'
   import { getAdditionalChatLoadPages, getInitialChatLoadPages } from 'src/ts/chatLoadPages'
   import { guardActiveChatGenerationSettingsForSend } from 'src/ts/activeChatGenerationSettings'
-  import { characterRoutePath, currentRoute, navigate } from 'src/ts/router'
+  import { characterRoutePath, currentRoute, navigate, type AppRoute } from 'src/ts/router'
   import { createLatestOperationGuard } from 'src/ts/server/staleStateGuards'
   import { preflightChatSendBeforeMutation } from 'src/ts/process/sendChatPreflight'
   import PostGenerationScriptProgress from './PostGenerationScriptProgress.svelte'
@@ -175,7 +175,7 @@
     refreshGreetingTranslationProjection,
   } from 'src/ts/server/greetingTranslations.svelte'
 
-  const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte')
+  import { loadPlaygroundMenu } from 'src/ts/routeComponentPreload'
   const composerFileOperationGuard = createLatestOperationGuard<string>()
   const composerOperationGuard = createLatestOperationGuard<string>()
 
@@ -214,6 +214,7 @@
   }
 
   interface Props {
+    route?: AppRoute
     openModuleList?: boolean
     openChatList?: boolean
     customStyle?: string
@@ -260,7 +261,8 @@
   let transcriptWindowConfigurationRun = 0
   let activeBgmObserverIdentity: string | null = $state(null)
   let activeScreenshotOperation: ScreenshotOperation | null = null
-  let { openModuleList = $bindable(false), openChatList = $bindable(false), customStyle = '' }: Props = $props()
+  let { route, openModuleList = $bindable(false), openChatList = $bindable(false), customStyle = '' }: Props = $props()
+  let visibleRoute = $derived(route ?? $currentRoute)
 
   const unregisterComposerDraftStorageFailure = registerDefaultChatComposerDraftStorageFailureListener(() => {
     reportComposerDraftPersistenceError(language.composerDraftRecovery.storageFailed)
@@ -324,9 +326,9 @@
       return $PlaygroundStore === 2 && Array.isArray(activePlaygroundChat?.message)
     }
     return (
-      $currentRoute.kind === 'character' &&
-      $currentRoute.chaId === character?.chaId &&
-      typeof $currentRoute.chatId === 'string'
+      visibleRoute.kind === 'character' &&
+      visibleRoute.chaId === character?.chaId &&
+      typeof visibleRoute.chatId === 'string'
     )
   })
   let currentChat = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.message ?? [])

@@ -31,51 +31,29 @@
   import { alertConfirm } from 'src/ts/alert'
   import { closeSettingsRoute, navigate } from 'src/ts/router'
   import { pluginRuntimeStateStore } from 'src/ts/plugins/plugins.svelte'
-  import { prefetchRouteIntent, type RouteModuleLoader } from 'src/ts/routeIntentPrefetch'
-
-  const loadUserSettings = () => import('./Pages/UserSettings.svelte')
-  const loadBotSettings = () => import('./Pages/BotSettings.svelte')
-  const loadOtherBotSettings = () => import('./Pages/OtherBotSettings.svelte')
-  const loadDisplaySettings = () => import('./Pages/DisplaySettings.svelte')
-  const loadPluginSettings = () => import('./Pages/PluginSettings.svelte')
-  const loadAdvancedSettings = () => import('./Pages/AdvancedSettings.svelte')
-  const loadCommunities = () => import('./Pages/Communities.svelte')
-  const loadGlobalLoreBookSettings = () => import('./Pages/LazyGlobalLoreBookSettings.svelte')
-  const loadGlobalRegex = () => import('./Pages/GlobalRegex.svelte')
-  const loadLanguageSettings = () => import('./Pages/LanguageSettings.svelte')
-  const loadAccessibilitySettings = () => import('./Pages/AccessibilitySettings.svelte')
-  const loadPersonaSettings = () => import('./Pages/PersonaSettings.svelte')
-  const loadModuleSettings = () => import('./Pages/Module/ModuleSettings.svelte')
-  const loadPromptSettings = () => import('./Pages/PromptSettings.svelte')
-  const loadHotkeySettings = () => import('./Pages/HotkeySettings.svelte')
-  const loadAgentPresetSettings = () => import('./Pages/AgentPresetSettings.svelte')
-  const loadInputHookSettings = () => import('./Pages/InputHookSettings.svelte')
-  const loadRequestHistorySettings = () => import('./Pages/RequestHistorySettings.svelte')
-  const loadSourceCode = () => import('./Pages/SourceCode.svelte')
-  const loadThanksPage = () => import('./Pages/ThanksPage.svelte')
-
-  const settingsRouteLoaders: Record<string, RouteModuleLoader> = {
-    '/settings/backup': loadUserSettings,
-    '/settings/model': loadBotSettings,
-    '/settings/prompt-settings': loadBotSettings,
-    '/settings/bot-preset': loadBotSettings,
-    '/settings/other-bots': loadOtherBotSettings,
-    '/settings/display': loadDisplaySettings,
-    '/settings/plugins': loadPluginSettings,
-    '/settings/advanced': loadAdvancedSettings,
-    '/settings/global-lorebook': loadGlobalLoreBookSettings,
-    '/settings/global-regex': loadGlobalRegex,
-    '/settings/language': loadLanguageSettings,
-    '/settings/accessibility': loadAccessibilitySettings,
-    '/settings/persona': loadPersonaSettings,
-    '/settings/modules': loadModuleSettings,
-    '/settings/hotkeys': loadHotkeySettings,
-    '/settings/agent-presets': loadAgentPresetSettings,
-    '/settings/input-hooks': loadInputHookSettings,
-    '/settings/request-history': loadRequestHistorySettings,
-    '/settings/source-code': loadSourceCode,
-    '/settings/supporter': loadThanksPage,
-  }
+  import { prefetchRouteIntent } from 'src/ts/routeIntentPrefetch'
+  import {
+    loadAccessibilitySettings,
+    loadAdvancedSettings,
+    loadAgentPresetSettings,
+    loadBotSettings,
+    loadCommunities,
+    loadDisplaySettings,
+    loadGlobalLoreBookSettings,
+    loadGlobalRegex,
+    loadHotkeySettings,
+    loadInputHookSettings,
+    loadLanguageSettings,
+    loadModuleSettings,
+    loadOtherBotSettings,
+    loadPersonaSettings,
+    loadPluginSettings,
+    loadPromptSettings,
+    loadRequestHistorySettings,
+    loadSourceCode,
+    loadThanksPage,
+    loadUserSettings,
+  } from 'src/ts/routeComponentPreload'
 
   let supporterConfirmOpen = $state(false)
   let viewportWidth = $state(window.innerWidth)
@@ -129,8 +107,7 @@
     if (!(event.target instanceof Element)) return
     const target = event.target.closest<HTMLElement>('[data-risu-route-intent]')
     const path = target?.dataset.risuRouteIntent
-    const loader = path ? settingsRouteLoaders[path] : undefined
-    if (path && loader) prefetchRouteIntent(path, [loader])
+    if (path) prefetchRouteIntent(path)
   }
 </script>
 

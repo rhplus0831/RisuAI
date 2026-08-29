@@ -59,12 +59,11 @@
   import { alertError } from './ts/alert'
   import { hasDragType, RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes'
   import { consumeObserverRouteIntent, peekObserverRouteIntent } from './ts/observerRouteIntent'
+  import { loadGrid, loadSettings } from './ts/routeComponentPreload'
 
   const loadAlert = () => import('./lib/Others/AlertComp.svelte')
   const loadRealmPopup = () => import('./lib/UI/Realm/LazyRealmPopUp.svelte')
-  const loadGrid = () => import('./lib/Others/GridCatalog.svelte')
   const loadBookmarkList = () => import('./lib/Others/BookmarkList.svelte')
-  const loadSettings = () => import('./lib/Setting/Settings.svelte')
   const loadBotPreset = () => import('./lib/Setting/botpreset.svelte')
   const loadPersonaList = () => import('./lib/Setting/listedPersona.svelte')
   const loadChatGenerationTogglePresetDialog = () => import('./lib/SideBars/ChatGenerationTogglePresetDialog.svelte')
@@ -78,14 +77,10 @@
   const loadIrisModal = () => import('./lib/Others/IrisModal.svelte')
   const loadCustomSidebarConfig = () => import('./lib/Others/CustomSidebarConfig.svelte')
 
-  const preloadSettingsRoute = () =>
-    prefetchRouteIntent('/settings', [loadSettings, () => import('./ts/routeHandlers/settings')])
-  const preloadGridRoute = () => prefetchRouteIntent('/grid', [loadGrid])
+  const preloadSettingsRoute = () => prefetchRouteIntent('/settings', [() => import('./ts/routeHandlers/settings')])
+  const preloadGridRoute = () => prefetchRouteIntent('/grid')
   const preloadPlaygroundRoute = () =>
-    prefetchRouteIntent('/playground', [
-      () => import('./lib/Playground/PlaygroundMenu.svelte'),
-      () => import('./ts/routeHandlers/playground'),
-    ])
+    prefetchRouteIntent('/playground', [() => import('./ts/routeHandlers/playground')])
 
   let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
   let aprilFoolsPage = $state(0)
@@ -99,10 +94,21 @@
       $startupCoordinatorStore.capabilities.canRenderShell &&
       !$startupCoordinatorStore.capabilities.canApplyRoutes,
   )
-  let renderedRouteKind = $state($currentRoute.kind)
+  let renderedRoute = $state($currentRoute)
   let routeLoadingVisible = $state(false)
+  let routeRetryButton = $state<HTMLButtonElement | null>(null)
   let routeContentBlocked = $derived(
     $routeResourceLoadState.status === 'loading' || $routeResourceLoadState.status === 'error',
+  )
+  let routeComponentLoadFailed = $derived(
+    $routeResourceLoadState.status === 'error' && $routeResourceLoadState.errorKind === 'component',
+  )
+  let routeLoadErrorMessage = $derived(
+    routeComponentLoadFailed
+      ? $routeResourceLoadState.offline
+        ? language.preloadOfflineError
+        : language.preloadStaleError
+      : ($routeResourceLoadState.error ?? 'This route could not be loaded.'),
   )
 
   $effect(() => {
@@ -112,9 +118,24 @@
     }
     const timer = window.setTimeout(() => {
       routeLoadingVisible = true
-    }, 150)
+    }, 1_000)
     return () => window.clearTimeout(timer)
   })
+
+  $effect(() => {
+    if ($routeResourceLoadState.status !== 'error' || !routeRetryButton) return
+    queueMicrotask(() => {
+      if ($routeResourceLoadState.status === 'error' && routeRetryButton?.isConnected) routeRetryButton.focus()
+    })
+  })
+
+  function retryRouteLoad(): void {
+    if (routeComponentLoadFailed && $routeResourceLoadState.offline && navigator.onLine !== false) {
+      window.location.reload()
+      return
+    }
+    void retryCurrentRouteApplication()
+  }
 
   async function retryPlugins(): Promise<void> {
     if (retryingPluginRuntime) return
@@ -168,13 +189,13 @@
     const observerIntent = peekObserverRouteIntent()
     const route = observerIntent?.route ?? $currentRoute
     if (consumeStateDrivenRouteUpdate()) {
-      renderedRouteKind = route.kind
+      renderedRoute = route
       return
     }
     untrack(() => {
       void applyRouteToStores(route).then((applied) => {
         if (!applied) return
-        renderedRouteKind = route.kind
+        renderedRoute = route
         if (observerIntent) consumeObserverRouteIntent(observerIntent.sequence)
       })
     })
@@ -413,7 +434,7 @@
       aria-busy={$routeResourceLoadState.status === 'loading'}>
       <LazyComponent loader={loadCustomGUISettingMenu} fill testId="custom-gui-settings" />
     </div>
-  {:else if $settingsOpen}
+  {:else if renderedRoute.kind === 'settings'}
     <div
       class="flex h-full min-w-0 grow"
       data-risu-route-content
@@ -421,7 +442,7 @@
       aria-busy={$routeResourceLoadState.status === 'loading'}>
       <LazyComponent loader={loadSettings} fill label={language.settings} testId="settings" />
     </div>
-  {:else if renderedRouteKind === 'grid'}
+  {:else if renderedRoute.kind === 'grid'}
     <div
       class="flex h-full min-w-0 grow"
       data-risu-route-content
@@ -467,7 +488,7 @@
       data-risu-route-content
       inert={routeContentBlocked}
       aria-busy={$routeResourceLoadState.status === 'loading'}>
-      <ChatScreen />
+      <ChatScreen route={renderedRoute} />
     </div>
   {/if}
   {#if routeLoadingVisible}
@@ -484,12 +505,18 @@
       class="fixed top-3 left-1/2 z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-3 rounded-md border border-darkborderc bg-bgcolor px-4 py-3 text-sm text-textcolor shadow-lg"
       data-testid="route-resource-error"
       role="alert">
-      <span>{$routeResourceLoadState.error ?? 'This route could not be loaded.'}</span>
+      <span>{routeLoadErrorMessage}</span>
       <button
+        bind:this={routeRetryButton}
         class="shrink-0 rounded border border-textcolor2 px-3 py-1.5"
-        onclick={() => void retryCurrentRouteApplication()}>
+        onclick={retryRouteLoad}>
         {language.retry}
       </button>
+      {#if routeComponentLoadFailed}
+        <button class="shrink-0 rounded border border-textcolor2 px-3 py-1.5" onclick={() => window.location.reload()}>
+          {language.preloadReload}
+        </button>
+      {/if}
     </div>
   {/if}
   {#if $alertStore.type !== 'none'}

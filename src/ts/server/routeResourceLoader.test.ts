@@ -4,6 +4,7 @@ import type { ResourceRequirement } from './resourceManifest'
 
 const loaderMocks = vi.hoisted(() => ({
   activeChat: vi.fn(async () => true),
+  routeChat: vi.fn(async () => true),
   prompt: vi.fn(async () => true),
   promptOwner: vi.fn((): string | null => null),
   refresh: vi.fn(),
@@ -39,6 +40,7 @@ vi.mock('./resourceReads', () => ({
 
 vi.mock('./chatMessageHydration.svelte', () => ({
   hydrateActiveChat: loaderMocks.activeChat,
+  hydrateChatMessageWindow: loaderMocks.routeChat,
 }))
 
 vi.mock('./promptTemplateHydration', () => ({
@@ -50,6 +52,7 @@ import { clearAppliedServerResourceRevision, setAppliedServerResourceRevision } 
 import {
   currentRouteResourceLoadState,
   ensureResourceSurfaces,
+  failActiveRouteLoad,
   finishRouteResources,
   prefetchCharacterRouteResource,
   prefetchRoutePathResources,
@@ -93,6 +96,7 @@ beforeEach(() => {
     state: { present: true, value: 0 },
   })
   loaderMocks.activeChat.mockReset().mockResolvedValue(true)
+  loaderMocks.routeChat.mockReset().mockResolvedValue(true)
   loaderMocks.prompt.mockReset().mockResolvedValue(true)
   loaderMocks.promptOwner.mockReset().mockReturnValue(null)
 })
@@ -171,6 +175,39 @@ describe('route resource loader', () => {
     expect(settingsResourceState.groupErrors.display).toBeUndefined()
   })
 
+  it('reuses a ready resident route requirement on later navigation', async () => {
+    loaderMocks.requirements = [requirement({ kind: 'settings-group', group: 'display', purposes: ['render'] })]
+    loaderMocks.refresh.mockImplementationOnce(async () => {
+      withTrustedResourceWrite(() =>
+        applySettingsGroupResource({ revision: 5, group: 'display', settings: { theme: 'dark' } }, ['theme']),
+      )
+      return { status: 'ok', revision: 5, scope: 'targeted' as const }
+    })
+    const route = { kind: 'settings', path: '/settings/display', section: 'display', index: 3 } as const
+
+    await expect(prepareRouteResources(route)).resolves.toBe(true)
+    await expect(finishRouteResources(route)).resolves.toBe(true)
+    await expect(prepareRouteResources(route)).resolves.toBe(true)
+    await expect(finishRouteResources(route)).resolves.toBe(true)
+
+    expect(loaderMocks.refresh).toHaveBeenCalledOnce()
+  })
+
+  it('accepts a component failure only from the active route transition', async () => {
+    const route = { kind: 'grid', path: '/grid' } as const
+    await expect(prepareRouteResources(route)).resolves.toBe(true)
+
+    expect(failActiveRouteLoad({ kind: 'home', path: '/' }, new Error('stale'))).toBe(false)
+    expect(failActiveRouteLoad(route, new Error('missing route chunk'))).toBe(true)
+    expect(currentRouteResourceLoadState()).toEqual({
+      error: 'missing route chunk',
+      errorKind: 'component',
+      offline: false,
+      routeKey: 'grid',
+      status: 'error',
+    })
+  })
+
   it('deduplicates concurrent deferred consumers per surface', async () => {
     loaderMocks.requirements = [requirement({ kind: 'settings-group', group: 'providers', purposes: ['interact'] })]
     const read = deferred<{ status: 'ok'; revision: number; scope: 'targeted' }>()
@@ -234,6 +271,7 @@ describe('route resource loader', () => {
 
     await expect(prepareRouteResources(route)).resolves.toBe(true)
     await expect(finishRouteResources(route)).resolves.toBe(true)
+    expect(loaderMocks.routeChat).toHaveBeenCalledWith('chat-b', expect.any(Number))
     expect(loaderMocks.prompt).toHaveBeenCalledWith({
       applyProjection: false,
       minimumRevision: 4,
@@ -475,7 +513,7 @@ describe('route resource loader', () => {
     expect(getResourceDatabase().selectedPersona).toBeUndefined()
   })
 
-  it('reports selected-chat failure locally and retries the post-route detail', async () => {
+  it('reports selected-chat failure locally and retries the pre-commit detail', async () => {
     loaderMocks.requirements = [
       requirement({ kind: 'projection', projection: 'selected-chat', purposes: ['render'] }),
       requirement({ kind: 'projection', projection: 'selected-prompt-template', purposes: ['generate'] }),
@@ -486,15 +524,33 @@ describe('route resource loader', () => {
       chaId: 'char-a',
       chatId: 'chat-a',
     } as const
-    loaderMocks.activeChat.mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    withTrustedResourceWrite(() =>
+      applyCharactersResource({
+        version: 1,
+        revision: 4,
+        characters: [
+          {
+            chaId: 'char-a',
+            type: 'character',
+            name: 'Ada',
+            chats: [{ id: 'chat-a', name: 'Chat A', message: [] }],
+            chatPage: 0,
+            chatFolders: [],
+          } as never,
+        ],
+        characterOrder: ['char-a'],
+        currentChar: 0,
+      }),
+    )
+    loaderMocks.routeChat.mockResolvedValueOnce(false).mockResolvedValueOnce(true)
 
-    await expect(prepareRouteResources(route)).resolves.toBe(true)
-    await expect(finishRouteResources(route)).resolves.toBe(false)
+    await expect(prepareRouteResources(route)).resolves.toBe(false)
     expect(currentRouteResourceLoadState()).toMatchObject({ status: 'error', error: 'Selected chat hydration failed' })
 
     await expect(prepareRouteResources(route)).resolves.toBe(true)
     await expect(finishRouteResources(route)).resolves.toBe(true)
-    expect(loaderMocks.prompt).toHaveBeenCalledOnce()
+    expect(loaderMocks.routeChat).toHaveBeenCalledTimes(2)
+    expect(loaderMocks.prompt).toHaveBeenCalledTimes(2)
     expect(currentRouteResourceLoadState()).toMatchObject({ status: 'ready' })
   })
 })
