@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "baselineCommit": "71c476e9c86263fe907105b011ca4dde0a619d66",
-  "decisionRegister": "docs/plan/original-risu-behavioral-compatibility/findings/decisions.json",
-  "inventoryRegister": "docs/plan/original-risu-behavioral-compatibility/inventory/compatibility-surfaces.json",
+  "decisionRegister": ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/findings/decisions.json",
+  "inventoryRegister": ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/inventory/compatibility-surfaces.json",
   "mappings": [
     {
       "cellId": "send__buffered__say-off",

@@ -2,18 +2,19 @@
 
 Date: 2026-08-30
 
-This is the live execution router. Keep stable scope, taxonomy, evidence rules,
+This is the final execution record. Stable scope, taxonomy, evidence rules,
 and stopping gates in [`PLAN.md`](PLAN.md); semantic and decision rules in
-[`CONTRACT.md`](CONTRACT.md); phase details under [`phases/`](phases/); canonical
-findings under [`findings/`](findings/); inventory ownership under
-[`inventory/`](inventory/); and command proof in
+[`CONTRACT.md`](CONTRACT.md); phase details under
+[`phases/`](phases/README.md); canonical findings under
+[`findings/`](findings/README.md); inventory ownership under
+[`inventory/`](inventory/README.md); and command proof in
 [`latest-verification.md`](latest-verification.md).
 
 ## Current Snapshot
 
-- Plan state: Active.
-- Current phase: Phase 14 — verification and closeout.
-- Active slice: [Phase 14 verification and closeout](phases/phase-14-verification-and-closeout.md).
+- Plan state: Complete and archived.
+- Current phase: None; Phase 14 is complete.
+- Final phase: [Phase 14 verification and closeout](phases/phase-14-verification-and-closeout.md).
 - Planning audit anchor: `1933c43ff7b4d35b57b0852013d95f3881a8cb28`.
 - Compatibility baseline: `71c476e9c86263fe907105b011ca4dde0a619d66`.
 - Behavioral sync cursor: `f3f0242fba297d82e0efcc2c31ca1428569b70f2`.
@@ -23,7 +24,7 @@ findings under [`findings/`](findings/); inventory ownership under
   `/home/codex/risu-baseline-71c476e9c`; its exact commit, dependency state, and
   cleanliness are enforced by `pnpm prepare:compat-baseline` and the harness
   preflight.
-- Current compatibility state: Phases 0 through 13 are complete.
+- Current compatibility state: Phases 0 through 14 are complete.
   Phase 5 closes settings/default/preset/collection ownership at
   `b34b7a78f28cb5903ece3880073fbb9e46392cb8` and visible character-authoring
   reload evidence at `5eca30f4872e865efee2c86f4dde7ae71e915f9a`.
@@ -78,8 +79,8 @@ findings under [`findings/`](findings/); inventory ownership under
   shell, retired character additional-information retrieval, and the six
   Phase 9 parser/runtime differences, and four cohesive Phase 12 no-port
   products.
-- Next action: close all four registers, synchronize current documentation, and
-  archive the intact workstream now that the exact Phase 14 manifest passes.
+- Next action: none. Permanent current-only, pinned differential, register,
+  affected-selection, aggregate, and release gates own future regressions.
 
 ## Phase Router
 
@@ -99,7 +100,7 @@ findings under [`findings/`](findings/); inventory ownership under
 | [11. Assets, imports, exports, saves, and backups](phases/phase-11-assets-import-export-and-backups.md) | Complete | Closed portable envelopes/blocks/tables, asset reference and stream integrity, staged import/restore/salvage, historical formats, and supported round trips. |
 | [12. Runtime, platform, limits, and diagnostics](phases/phase-12-runtime-platform-and-diagnostics.md) | Complete | Closed route policy, shared limits, recovery ordering, diagnostic secrecy, supported runtime/polyfills, Web Push, and four individually signed no-port products. |
 | [13. Consolidation, adjudication, and remediation](phases/phase-13-consolidation-adjudication-and-remediation.md) | Complete | Closed historical evidence, made lifecycle closure fail closed, and independently adjudicated all 85 upstream units. |
-| [14. Verification and closeout](phases/phase-14-verification-and-closeout.md) | In progress | Prove zero unexplained differences, complete decisions, final quality/release gates, current docs, and archive handoff. |
+| [14. Verification and closeout](phases/phase-14-verification-and-closeout.md) | Complete | Proved zero unexplained differences, closed all registers, passed final quality/release gates, synchronized current docs, and archived the intact workstream. |
 
 ## Phase 0 Completion Record
 
@@ -403,6 +404,26 @@ findings under [`findings/`](findings/); inventory ownership under
   13-test fail-closed register suite, schema validation, formatting, and diff
   checks pass.
 
+## Phase 14 Completion Record
+
+- `309823d6d3551638ce63888569f0a8790bf2fe3a` is the final behavioral candidate.
+  The pinned differential compares all 16 cells, governs all 15 expected
+  differences with signed decisions, and reports cluster 10 healthy.
+- The exact aggregate passes 544 frontend files/6,685 tests, 178 Fastify
+  files/3,648 tests plus one skip, all 41 production-bundle browser journeys,
+  the Realm scale gate, UI coverage, frontend performance, typecheck, register,
+  current-harness, formatting, and frontend-check lanes.
+- The standalone browser, initial-preload, frontend, server, protocol, baseline,
+  affected-selection, schema, formatting, and diff gates all pass. Exact command
+  evidence and the two corrected test-infrastructure failures are preserved in
+  [`latest-verification.md`](latest-verification.md).
+- All four registers are closed: 134 verified surfaces, 15 resolved findings,
+  71 signed decisions, 75 uniquely mapped historical reports, and 85 currently
+  dispositioned upstream units.
+- Current architecture and test guides were synchronized. The intact workstream
+  was moved under Architecture and migration, and its register/harness/affected
+  consumers remain permanent repository gates.
+
 ## Locked Planning Decisions
 
 - The fork point and behavioral sync cursor remain separate authorities.
@@ -420,14 +441,11 @@ findings under [`findings/`](findings/); inventory ownership under
   substitute for baseline proof.
 - No phase closes with unowned pending rows or unsigned expected differences.
 
-## Maintenance Rules
+## Historical Record Rules
 
-- This file is the only live phase/slice router.
-- Update it whenever a slice changes state, a finding is confirmed, a decision is
-  signed, a blocker changes, or validation runs.
-- Record the current Fastify verification commit for every completed domain
-  phase; do not imply that the planning anchor covers later implementation.
-- Keep durable rules in `PLAN.md`/`CONTRACT.md` and detailed evidence in the
-  owning phase, inventory, finding, or verification file.
-- Do not mark a phase complete while tests fail, a required baseline is absent,
-  or a correctness gap lacks an explicit owner and revisit condition.
+- This file records the completed router; it is not an active backlog.
+- Preserve detailed evidence in the owning phase, inventory, finding, decision,
+  or verification file.
+- Reopen the workstream only through a new active plan with an explicit cursor
+  and scope. Current behavior belongs in `STRUCTURE.md`, `docs/structure/`, the
+  code, and its tests.

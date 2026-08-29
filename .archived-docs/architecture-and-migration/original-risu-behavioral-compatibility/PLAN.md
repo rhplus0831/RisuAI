@@ -2,6 +2,12 @@
 
 Date: 2026-08-30
 
+> **ARCHIVED — workstream complete.** The final behavioral candidate is
+> `309823d6d3551638ce63888569f0a8790bf2fe3a`; the complete verification manifest
+> passed, all four registers closed, and the intact workstream moved here on
+> 2026-08-30. Prefer [`STRUCTURE.md`](../../../STRUCTURE.md) and the code for
+> current behavior.
+
 ## Goal
 
 Systematically establish whether every retained shared RisuAI feature preserves
@@ -16,7 +22,7 @@ journeys, or narrowly scoped production fixes when the finding and expected
 behavior are fully verified. Broader production changes require a focused slice
 with an explicit compatibility decision and regression proof.
 
-[`status.md`](status.md) is the live execution router. This file owns stable
+[`status.md`](status.md) is the final execution record. This file owns stable
 scope, cursor semantics, compatibility rules, taxonomy, evidence requirements,
 phase order, and stopping gates.
 

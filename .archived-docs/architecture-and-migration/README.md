@@ -9,6 +9,7 @@ transfer of chat-process ownership from the browser to the server.
 | [`client-thinning-closeout/`](client-thinning-closeout/README.md) | Later rewritten client-thinning workstream: server prompt assembly, provider capability routing, Lua/A2 processing, and final ownership closeout. |
 | [`risuai-fastify-behavior-differences.md`](risuai-fastify-behavior-differences.md) | Dated 2026-07-11 comparison with the original RisuAI and the remediation state recorded after that audit. |
 | [`upstream-sync/`](upstream-sync/README.md) | Closed 2026-08-07 behavior-porting sweep, fork conventions, and disposition ledger. |
+| [`original-risu-behavioral-compatibility/`](original-risu-behavioral-compatibility/README.md) | Closed 2026-08-30 exhaustive fork-point and upstream behavioral audit, signed difference registry, remediation record, and permanent compatibility gates. |
 
 The `fastify-migration/client-thinning/` subtree and the later
 `client-thinning-closeout/` record overlap in subject but are not duplicates.

@@ -10,14 +10,20 @@ const UPSTREAM_UNIT_ID_PATTERN = /^ORC-UPSTREAM-[0-9]{3}$/
 const EXPECTED_UPSTREAM_UNIT_COUNT = 85
 
 export const compatibilityRegisterPaths = {
-  inventory: 'docs/plan/original-risu-behavioral-compatibility/inventory/compatibility-surfaces.json',
-  inventorySchema: 'docs/plan/original-risu-behavioral-compatibility/inventory/inventory.schema.json',
-  findings: 'docs/plan/original-risu-behavioral-compatibility/findings/findings.json',
-  findingsSchema: 'docs/plan/original-risu-behavioral-compatibility/findings/findings.schema.json',
-  decisions: 'docs/plan/original-risu-behavioral-compatibility/findings/decisions.json',
-  decisionsSchema: 'docs/plan/original-risu-behavioral-compatibility/findings/decisions.schema.json',
-  upstreamUnits: 'docs/plan/original-risu-behavioral-compatibility/inventory/upstream-units.json',
-  upstreamUnitsSchema: 'docs/plan/original-risu-behavioral-compatibility/inventory/upstream-units.schema.json',
+  inventory:
+    '.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/inventory/compatibility-surfaces.json',
+  inventorySchema:
+    '.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/inventory/inventory.schema.json',
+  findings: '.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/findings/findings.json',
+  findingsSchema:
+    '.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/findings/findings.schema.json',
+  decisions: '.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/findings/decisions.json',
+  decisionsSchema:
+    '.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/findings/decisions.schema.json',
+  upstreamUnits:
+    '.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/inventory/upstream-units.json',
+  upstreamUnitsSchema:
+    '.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/inventory/upstream-units.schema.json',
 } as const
 
 export interface CompatibilityRegisterDocuments {

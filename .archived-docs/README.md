@@ -10,7 +10,7 @@ codebase whenever an archived line number or contract has drifted.
 
 | Topic                                                                        | Contents                                                                                                                                           |
 | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Architecture and migration](architecture-and-migration/README.md)           | Fastify migration history, client-thinning closeout, upstream-sync sweep, and dated original-versus-Fastify behavior audit.                        |
+| [Architecture and migration](architecture-and-migration/README.md)           | Fastify migration history, client-thinning closeout, upstream-sync sweep, dated comparison, and the exhaustive Original RisuAI behavioral compatibility workstream. |
 | [Protocol and persistence](protocol-and-persistence/README.md)               | Server/client protocol audits, SQLite migration, projection work, asset coercion, mutation narrowing, and writer takeover.                         |
 | [Performance and stability](performance-and-stability/README.md)             | Frontend test/runtime and clone narrowing, the exhaustive test-suite effectiveness audit, chat multitasking regressions, and four chronological stability/performance audits. |
 | [Fast Bootstrap](fast-bootstrap/README.md)                                   | Historical startup-performance execution guide, phase runbooks, and Phase 7 rollout ledger.                                                        |

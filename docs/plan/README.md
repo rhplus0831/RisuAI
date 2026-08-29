@@ -7,13 +7,12 @@ plan, status, phase, slice, decision, and verification structure intact.
 
 ## Workstreams
 
-The [Original RisuAI behavioral compatibility audit](original-risu-behavioral-compatibility/PLAN.md)
-systematically compares retained shared behavior against the immutable fork
-point, separately verifies upstream work through the recorded behavioral sync
-cursor, and turns confirmed differences into decision-backed remediation and
-permanent regression gates. See its [live status](original-risu-behavioral-compatibility/status.md).
+There are no active multi-phase workstreams.
 
 The completed test-suite effectiveness audit is preserved under
 [Performance and stability](../../.archived-docs/performance-and-stability/README.md).
 The completed BardWiki workstream is preserved under
 [Memory and context](../../.archived-docs/memory-and-context/README.md).
+The completed [Original RisuAI behavioral compatibility audit](../../.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/README.md)
+is preserved under Architecture and migration with its closed registers and
+final verification record intact.

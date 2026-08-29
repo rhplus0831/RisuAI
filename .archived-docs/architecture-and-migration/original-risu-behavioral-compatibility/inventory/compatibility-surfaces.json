@@ -5112,14 +5112,14 @@
       ],
       "owners": {
         "baseline": [
-          "docs/plan/original-risu-behavioral-compatibility/inventory/upstream-units.json"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/inventory/upstream-units.json"
         ],
         "browser": [],
         "protocol": [
-          "docs/plan/original-risu-behavioral-compatibility/inventory/inventory.schema.json",
-          "docs/plan/original-risu-behavioral-compatibility/inventory/upstream-units.schema.json",
-          "docs/plan/original-risu-behavioral-compatibility/findings/findings.schema.json",
-          "docs/plan/original-risu-behavioral-compatibility/findings/decisions.schema.json"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/inventory/inventory.schema.json",
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/inventory/upstream-units.schema.json",
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/findings/findings.schema.json",
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/findings/decisions.schema.json"
         ],
         "fastify": [
           "util/validate-original-risu-compatibility-registers.ts#validateOriginalRisuCompatibilityRegisters",
@@ -5137,7 +5137,7 @@
       ],
       "evidence": {
         "baseline": [
-          "docs/plan/original-risu-behavioral-compatibility/inventory/upstream-units.json"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/inventory/upstream-units.json"
         ],
         "current": [
           "6ddc82431230ee40cf9c4151d3388baab0162998"
@@ -5146,9 +5146,9 @@
           "util/validate-original-risu-compatibility-registers.test.ts"
         ],
         "fixtures": [
-          "docs/plan/original-risu-behavioral-compatibility/inventory/compatibility-surfaces.json",
-          "docs/plan/original-risu-behavioral-compatibility/findings/findings.json",
-          "docs/plan/original-risu-behavioral-compatibility/findings/decisions.json"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/inventory/compatibility-surfaces.json",
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/findings/findings.json",
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/findings/decisions.json"
         ]
       },
       "verification": {

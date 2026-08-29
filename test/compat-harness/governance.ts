@@ -15,9 +15,10 @@ import {
 export const EXPECTED_DIFFERENCES_PATH = 'test/compat-harness/expected-differences.json'
 export const FIXTURE_PROVENANCE_PATH = 'test/compat-harness/fixture-provenance.json'
 export const GOLDEN_MANIFEST_PATH = 'test/compat-harness/golden/manifest.json'
-export const DECISION_REGISTER_PATH = 'docs/plan/original-risu-behavioral-compatibility/findings/decisions.json'
+export const DECISION_REGISTER_PATH =
+  '.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/findings/decisions.json'
 export const INVENTORY_REGISTER_PATH =
-  'docs/plan/original-risu-behavioral-compatibility/inventory/compatibility-surfaces.json'
+  '.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/inventory/compatibility-surfaces.json'
 
 const GOLDEN_ARTIFACT_PATHS = [
   'test/compat-harness/golden/baseline.json',

@@ -27,7 +27,7 @@
         "lastFastifyCommit": null,
         "evidence": [
           "docs/structure/generated-and-legacy.md",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -56,7 +56,7 @@
         "lastFastifyCommit": "50b24164f06c93b425c65ae14dad034c1af01715",
         "evidence": [
           "src/ts/plugins/apiV3/v3.svelte.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -87,7 +87,7 @@
         "evidence": [
           "src/ts/server/chatMessageHydration.test.ts",
           "server/fastify/__tests__/serverLoadCostHarness.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -113,7 +113,7 @@
         "lastFastifyCommit": null,
         "evidence": [
           "docs/structure/generated-and-legacy.md",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -143,7 +143,7 @@
         "evidence": [
           "src/ts/parser/tests/cbs/phase9BaselineDrifts.dom.test.ts",
           "server/fastify/__tests__/phase9CompatibilityStructure.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -173,7 +173,7 @@
         "evidence": [
           "server/fastify/__tests__/openai.test.ts",
           "server/fastify/__tests__/chatDispatchProfileOptions.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -199,7 +199,7 @@
         "lastFastifyCommit": null,
         "evidence": [
           ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -225,7 +225,7 @@
         "lastFastifyCommit": null,
         "evidence": [
           "docs/structure/generated-and-legacy.md",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -251,7 +251,7 @@
         "lastFastifyCommit": null,
         "evidence": [
           "docs/structure/generated-and-legacy.md",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -281,7 +281,7 @@
         "evidence": [
           "server/fastify/__tests__/openai.test.ts",
           "server/fastify/__tests__/chatDispatchProfileOptions.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -311,7 +311,7 @@
         "evidence": [
           "server/fastify/__tests__/anthropic.test.ts",
           "server/fastify/__tests__/chatDispatchProfileOptions.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -345,7 +345,7 @@
           "server/fastify/browser-smoke/lazyFirstOpen.spec.ts",
           "src/lib/UI/LazyComponent.svelte.test.ts",
           "src/ts/server/backups.svelte-node.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -379,7 +379,7 @@
           "server/fastify/__tests__/chatDispatchProfileOptions.test.ts",
           "server/fastify/__tests__/commands.test.ts",
           "src/lib/Setting/Pages/BotSettings.accessibility.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": [
           "ORC-SURFACE-001"
@@ -409,7 +409,7 @@
         "lastFastifyCommit": "50b24164f06c93b425c65ae14dad034c1af01715",
         "evidence": [
           "src/ts/plugins/apiV3/v3.svelte.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -439,7 +439,7 @@
         "evidence": [
           "server/fastify/__tests__/openaiResponses.test.ts",
           "server/fastify/__tests__/chatDispatchProfileOptions.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": [
           "ORC-SURFACE-003"
@@ -467,7 +467,7 @@
         "lastFastifyCommit": null,
         "evidence": [
           "docs/structure/generated-and-legacy.md",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -493,7 +493,7 @@
         "lastFastifyCommit": null,
         "evidence": [
           "docs/structure/generated-and-legacy.md",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -521,7 +521,7 @@
         "evidence": [
           "package.json",
           "version.json",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -551,7 +551,7 @@
         "evidence": [
           "server/fastify/__tests__/openaiResponses.test.ts",
           "server/fastify/__tests__/chatDispatchProfileOptions.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": [
           "ORC-SURFACE-003"
@@ -579,7 +579,7 @@
         "lastFastifyCommit": null,
         "evidence": [
           "docs/structure/generated-and-legacy.md",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -605,7 +605,7 @@
         "lastFastifyCommit": "50b24164f06c93b425c65ae14dad034c1af01715",
         "evidence": [
           "server/fastify/__tests__/phase10CompatibilityStructure.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": [
           "ORC-SURFACE-062"
@@ -633,7 +633,7 @@
         "lastFastifyCommit": "50b24164f06c93b425c65ae14dad034c1af01715",
         "evidence": [
           "server/fastify/__tests__/phase10CompatibilityStructure.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": [
           "ORC-SURFACE-062"
@@ -661,7 +661,7 @@
         "lastFastifyCommit": "50b24164f06c93b425c65ae14dad034c1af01715",
         "evidence": [
           "server/fastify/__tests__/phase10CompatibilityStructure.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": [
           "ORC-SURFACE-062"
@@ -689,7 +689,7 @@
         "lastFastifyCommit": "50b24164f06c93b425c65ae14dad034c1af01715",
         "evidence": [
           "server/fastify/__tests__/phase10CompatibilityStructure.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": [
           "ORC-SURFACE-062"
@@ -717,7 +717,7 @@
         "lastFastifyCommit": "50b24164f06c93b425c65ae14dad034c1af01715",
         "evidence": [
           "server/fastify/__tests__/phase10CompatibilityStructure.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": [
           "ORC-SURFACE-062"
@@ -745,7 +745,7 @@
         "lastFastifyCommit": "50b24164f06c93b425c65ae14dad034c1af01715",
         "evidence": [
           "server/fastify/__tests__/phase10CompatibilityStructure.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": [
           "ORC-SURFACE-062"
@@ -773,7 +773,7 @@
         "lastFastifyCommit": "50b24164f06c93b425c65ae14dad034c1af01715",
         "evidence": [
           "server/fastify/__tests__/phase10CompatibilityStructure.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": [
           "ORC-SURFACE-062"
@@ -801,7 +801,7 @@
         "lastFastifyCommit": "50b24164f06c93b425c65ae14dad034c1af01715",
         "evidence": [
           "server/fastify/__tests__/phase10CompatibilityStructure.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": [
           "ORC-SURFACE-062"
@@ -829,7 +829,7 @@
         "lastFastifyCommit": "50b24164f06c93b425c65ae14dad034c1af01715",
         "evidence": [
           "server/fastify/__tests__/phase10CompatibilityStructure.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": [
           "ORC-SURFACE-062"
@@ -859,7 +859,7 @@
         "evidence": [
           "package.json",
           "version.json",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -885,7 +885,7 @@
         "lastFastifyCommit": null,
         "evidence": [
           ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -913,7 +913,7 @@
         "evidence": [
           "package.json",
           "version.json",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -939,7 +939,7 @@
         "lastFastifyCommit": null,
         "evidence": [
           "docs/structure/generated-and-legacy.md",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -965,7 +965,7 @@
         "lastFastifyCommit": null,
         "evidence": [
           "docs/structure/generated-and-legacy.md",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -991,7 +991,7 @@
         "lastFastifyCommit": null,
         "evidence": [
           "docs/structure/generated-and-legacy.md",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1019,7 +1019,7 @@
         "evidence": [
           "package.json",
           "version.json",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1045,7 +1045,7 @@
         "lastFastifyCommit": "50b24164f06c93b425c65ae14dad034c1af01715",
         "evidence": [
           "server/fastify/__tests__/phase10CompatibilityStructure.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": [
           "ORC-SURFACE-062"
@@ -1075,7 +1075,7 @@
         "evidence": [
           "package.json",
           "version.json",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1101,7 +1101,7 @@
         "lastFastifyCommit": "50b24164f06c93b425c65ae14dad034c1af01715",
         "evidence": [
           "server/fastify/__tests__/phase10CompatibilityStructure.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": [
           "ORC-SURFACE-062"
@@ -1129,7 +1129,7 @@
         "lastFastifyCommit": null,
         "evidence": [
           "docs/structure/generated-and-legacy.md",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1155,7 +1155,7 @@
         "lastFastifyCommit": null,
         "evidence": [
           "docs/structure/generated-and-legacy.md",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1181,7 +1181,7 @@
         "lastFastifyCommit": null,
         "evidence": [
           "docs/structure/generated-and-legacy.md",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1209,7 +1209,7 @@
         "evidence": [
           "package.json",
           "version.json",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1235,7 +1235,7 @@
         "lastFastifyCommit": null,
         "evidence": [
           "docs/structure/generated-and-legacy.md",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1263,7 +1263,7 @@
         "evidence": [
           "package.json",
           "version.json",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1293,7 +1293,7 @@
         "evidence": [
           "src/ts/process/request/tests/pluginProviderModelId.test.ts",
           "src/ts/process/__tests__/dispatchRequest.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1319,7 +1319,7 @@
         "lastFastifyCommit": null,
         "evidence": [
           "docs/structure/generated-and-legacy.md",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1347,7 +1347,7 @@
         "evidence": [
           "package.json",
           "version.json",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1379,7 +1379,7 @@
           "server/fastify/__tests__/additionalParams.test.ts",
           "server/fastify/__tests__/chatDispatchProfileOptions.test.ts",
           "server/fastify/__tests__/commands.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": [
           "ORC-SURFACE-001"
@@ -1409,7 +1409,7 @@
         "evidence": [
           "package.json",
           "version.json",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1441,7 +1441,7 @@
           "server/fastify/__tests__/additionalParams.test.ts",
           "server/fastify/__tests__/chatDispatchProfileOptions.test.ts",
           "server/fastify/__tests__/commands.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": [
           "ORC-SURFACE-001"
@@ -1470,7 +1470,7 @@
         "evidence": [
           "server/fastify/__tests__/phase10CompatibilityStructure.test.ts",
           "src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": [
           "ORC-SURFACE-062"
@@ -1500,7 +1500,7 @@
         "evidence": [
           "package.json",
           "version.json",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1526,7 +1526,7 @@
         "lastFastifyCommit": null,
         "evidence": [
           "docs/structure/generated-and-legacy.md",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1552,7 +1552,7 @@
         "lastFastifyCommit": null,
         "evidence": [
           "docs/structure/generated-and-legacy.md",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1580,7 +1580,7 @@
         "evidence": [
           "package.json",
           "version.json",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1606,7 +1606,7 @@
         "lastFastifyCommit": null,
         "evidence": [
           "docs/structure/generated-and-legacy.md",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1641,7 +1641,7 @@
           "server/fastify/__tests__/templates.test.ts",
           "server/fastify/__tests__/assemble.test.ts",
           "server/fastify/__tests__/phase10CompatibilityStructure.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1669,7 +1669,7 @@
         "evidence": [
           "package.json",
           "version.json",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1700,7 +1700,7 @@
         "evidence": [
           "src/ts/process/promptTemplateNormalization.test.ts",
           "server/fastify/__tests__/assemble.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1731,7 +1731,7 @@
         "evidence": [
           "src/ts/process/promptTemplateNormalization.test.ts",
           "server/fastify/__tests__/assemble.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1759,7 +1759,7 @@
         "evidence": [
           "package.json",
           "version.json",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1790,7 +1790,7 @@
         "evidence": [
           "src/ts/process/promptTemplateNormalization.test.ts",
           "server/fastify/__tests__/assemble.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1818,7 +1818,7 @@
         "evidence": [
           "package.json",
           "version.json",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1849,7 +1849,7 @@
         "evidence": [
           "src/ts/process/promptTemplateNormalization.test.ts",
           "server/fastify/__tests__/assemble.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1877,7 +1877,7 @@
         "evidence": [
           "package.json",
           "version.json",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1905,7 +1905,7 @@
         "lastFastifyCommit": "50b24164f06c93b425c65ae14dad034c1af01715",
         "evidence": [
           "src/ts/plugins/apiV3/v3.svelte.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1931,7 +1931,7 @@
         "lastFastifyCommit": null,
         "evidence": [
           "docs/structure/generated-and-legacy.md",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1961,7 +1961,7 @@
         "evidence": [
           "src/ts/plugins/apiV3/factory.test.ts",
           "src/ts/plugins/apiV3/v3.svelte.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -1991,7 +1991,7 @@
         "evidence": [
           "server/fastify/__tests__/lorebook.test.ts",
           "server/fastify/__tests__/phase6CompatibilityStructure.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -2017,7 +2017,7 @@
         "lastFastifyCommit": "50b24164f06c93b425c65ae14dad034c1af01715",
         "evidence": [
           "src/ts/process/__tests__/streamCoalescer.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -2043,7 +2043,7 @@
         "lastFastifyCommit": null,
         "evidence": [
           "docs/structure/generated-and-legacy.md",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -2070,7 +2070,7 @@
         "evidence": [
           ".github/workflows/quality.yml",
           "util/test-all.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -2100,7 +2100,7 @@
         "evidence": [
           "src/lib/SideBars/sidebarDrag.test.ts",
           "src/ts/dragTypes.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -2129,7 +2129,7 @@
         "lastFastifyCommit": "50b24164f06c93b425c65ae14dad034c1af01715",
         "evidence": [
           "src/ts/plugins/apiV3/factory.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -2159,7 +2159,7 @@
         "evidence": [
           "src/ts/plugins/apiV3/factory.test.ts",
           "src/ts/plugins/apiV3/v3.svelte.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -2185,7 +2185,7 @@
         "lastFastifyCommit": null,
         "evidence": [
           "docs/structure/generated-and-legacy.md",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -2215,7 +2215,7 @@
         "evidence": [
           "server/fastify/__tests__/providerCapabilityRoute.test.ts",
           "server/fastify/__tests__/gemini.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -2241,7 +2241,7 @@
         "lastFastifyCommit": "50b24164f06c93b425c65ae14dad034c1af01715",
         "evidence": [
           "src/ts/characterCommands.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -2271,7 +2271,7 @@
         "evidence": [
           "server/fastify/__tests__/gemini.test.ts",
           "server/fastify/__tests__/chatDispatchProfileOptions.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -2306,7 +2306,7 @@
           "src/ts/parser/tests/renderFastPaths.test.ts",
           "src/ts/model/modelProfileResolver.test.ts",
           "server/fastify/__tests__/chatDispatchProfileOptions.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": [
           "ORC-SURFACE-063"
@@ -2339,7 +2339,7 @@
           "src/lib/Setting/Pages/Display/ColorSettingsAccessibility.svelte.test.ts",
           "src/ts/gui/colorscheme.test.ts",
           "src/ts/storage/database.svelte.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -2369,7 +2369,7 @@
         "evidence": [
           "src/ts/process/serverBackedSendChat.findMessage.test.ts",
           "src/ts/plugins/apiV3/v3.svelte.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },
@@ -2400,7 +2400,7 @@
         "evidence": [
           "server/fastify/__tests__/openaiResponses.test.ts",
           "server/fastify/__tests__/chatDispatchProfileOptions.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": [
           "ORC-SURFACE-003"
@@ -2437,7 +2437,7 @@
           "src/ts/process/scriptings.test.ts",
           "server/fastify/__tests__/luaRuntime.test.ts",
           "server/fastify/__tests__/triggers.test.ts",
-          "docs/plan/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
+          ".archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/phases/phase-13-consolidation-adjudication-and-remediation.md (Upstream Current-Verification Audit)"
         ],
         "inventoryIds": []
       },

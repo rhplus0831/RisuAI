@@ -196,8 +196,8 @@ describe('affected test planning', () => {
 
   it('selects fail-closed register validation and its focused tests', () => {
     for (const file of [
-      'docs/plan/original-risu-behavioral-compatibility/inventory/upstream-units.schema.json',
-      'docs/plan/original-risu-behavioral-compatibility/findings/findings.json',
+      '.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/inventory/upstream-units.schema.json',
+      '.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/findings/findings.json',
       'util/validate-original-risu-compatibility-registers.ts',
       'util/validate-original-risu-compatibility-registers.test.ts',
     ]) {

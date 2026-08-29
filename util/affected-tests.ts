@@ -54,7 +54,7 @@ const compatibilityRegisterValidatorFiles = new Set([
   'util/validate-original-risu-compatibility-registers.ts',
   'util/validate-original-risu-compatibility-registers.test.ts',
 ])
-const compatibilityRegisterRoot = 'docs/plan/original-risu-behavioral-compatibility/'
+const compatibilityRegisterRoot = '.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/'
 const compatibilityBaselineTest = 'util/compat-baseline.test.ts'
 const compatibilityRegisterValidatorTest = 'util/validate-original-risu-compatibility-registers.test.ts'
 

@@ -1,15 +1,14 @@
 # Phase Guide
 
-The phase files translate [`PLAN.md`](../PLAN.md) into bounded outcomes. Live
-state and the active slice belong only in [`status.md`](../status.md).
+The phase files translate [`PLAN.md`](../PLAN.md) into bounded outcomes. Final
+state and completion evidence live in [`status.md`](../status.md).
 
 ## Execution Order
 
-Phase 0 establishes authority and proves the audit method. Phase 1 makes its
+Phase 0 established authority and proved the audit method. Phase 1 made its
 evidence reproducible. Phases 2-12 then audit product domains in dependency-aware
-order. A later domain may start early only when its inputs are stable and the
-status router records the overlap. Phase 13 consolidates verified findings and
-decisions; Phase 14 runs the final gates and archives the workstream.
+order. Phase 13 consolidated verified findings and decisions; Phase 14 ran the
+final gates and archived the workstream.
 
 ## Slice Template
 

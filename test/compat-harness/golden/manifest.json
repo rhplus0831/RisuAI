@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "baselineCommit": "71c476e9c86263fe907105b011ca4dde0a619d66",
-  "updateReason": "Link recovery lineage to signed metadata decision",
+  "updateReason": "Archive completed Original RisuAI compatibility workstream",
   "updateCommand": "pnpm test:compat-harness -- --update-goldens --reason \"<review reason>\"",
   "files": [
     {
@@ -22,7 +22,7 @@
     },
     {
       "path": "test/compat-harness/expected-differences.json",
-      "sha256": "9997759b065bab1abbb4a5fce0e8ef284344573f30a335435729aefec4bd68fd"
+      "sha256": "09dc69d9936192b283ad3bc5786282045b8ea9d9d7f5a5b3567f3f13dc36b2f1"
     },
     {
       "path": "test/compat-harness/fixture-provenance.json",

@@ -1,6 +1,6 @@
 # Phase 14 — Verification And Closeout
 
-Status: In progress
+Status: Complete
 Depends on: Phase 13
 
 ## Objective
@@ -11,7 +11,8 @@ archive the intact workstream.
 
 The final behavioral candidate is
 `309823d6d3551638ce63888569f0a8790bf2fe3a`. Its exact manifest passes; register
-closure, current-document synchronization, and intact archival remain.
+all four registers closed, current documentation was synchronized, and the
+intact workstream was archived under Architecture and migration.
 
 ## Required Work
 
