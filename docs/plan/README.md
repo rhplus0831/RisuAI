@@ -7,9 +7,9 @@ plan, status, phase, slice, decision, and verification structure intact.
 
 ## Workstreams
 
-- [BardWiki memory](bardwiki/README.md): Phases 0-5 complete. The per-chat,
-  server-owned Markdown wiki now has durable automatic/canonical updates and
-  deterministic prompt retrieval; lifecycle/interchange is current.
+There are no active multi-phase workstreams.
 
 The completed test-suite effectiveness audit is preserved under
 [Performance and stability](../../.archived-docs/performance-and-stability/README.md).
+The completed BardWiki workstream is preserved under
+[Memory and context](../../.archived-docs/memory-and-context/README.md).
