@@ -23,6 +23,12 @@ but files should be read and split by these ownership buckets:
 | Assets, saves, imports, backups | `assets.test.ts`, `asset*.test.ts`, `risuSave*.test.ts`, `realmImport.test.ts`, `backups.test.ts` |
 | Platform, routes, database, auth | `auth.test.ts`, `bootstrap.test.ts`, `config.test.ts`, `databaseDefaults.test.ts`, `databaseInitialization.test.ts`, `db.test.ts`, `missingDatabaseGuard.test.ts`, `events.test.ts`, `index.test.ts`, `legacyStorage.test.ts`, `resourceReads.test.ts`, `proxy.test.ts`, `hub.test.ts`, `pushNotifications.test.ts`, `static.test.ts`, `routeProtection.test.ts` |
 
+Asset/save owners include shared persisted-asset catalog parity, bounded
+`.part` staging and incremental hashing for current and legacy backup imports,
+abort/hash-failure cleanup, and the direct-only 7,000-asset Realm scale case.
+Tests that need a composed resource database inject it explicitly; production
+bootstrap is never patched with a legacy database payload.
+
 ## Cleanup Rule
 
 Prefer splitting a hotspot file before adding another large `describe` block.

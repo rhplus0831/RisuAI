@@ -1,6 +1,6 @@
 # Testing And Operations
 
-Last audited: 2026-08-28.
+Last audited: 2026-08-29.
 
 Use `pnpm` for package scripts. Node.js is declared as `>=24.0.0`. The package
 is root-only; there is no `server/fastify/package.json`. `package.json` does not
@@ -201,13 +201,12 @@ live in `server/fastify/__fixtures__/risuSave/`. Explicit performance gates live
 in `src/ts/__tests__/`, while cross-cutting UI audit probes live in
 `src/lib/_audit/` and run in the ordinary frontend lane. Keep those specialized
 probes in their current locations instead of mixing them into feature folders.
-Some legacy Fastify suites install
-`installResourceDatabaseBootstrapAdapter` to compose settings, collections, and
-character resources into a read-after-write snapshot. Those assertions protect
-the composed public resource state, not the production bootstrap wire shape;
-production `/api/v1/bootstrap` remains runtime-only. New tests must call the
-resource reader directly, and owning audit phases migrate the remaining adapter
-consumers before the helper is removed.
+Fastify suites that need an assembled read-after-write snapshot call
+`injectComposedResourceDatabase` explicitly. The helper composes settings,
+collections, and character resources for the requesting test only; it does not
+patch production bootstrap behavior. Production `/api/v1/bootstrap` remains
+runtime-only and has no legacy `database` property. New tests should use the
+narrow resource reader unless composed state is the behavior under test.
 Closed
 client-thinning and v1-v4 stability audits under `.archived-docs/` are
 historical records, not test fixtures; current behavior is protected directly
