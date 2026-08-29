@@ -9,7 +9,7 @@
       "aspect": "transcript",
       "differenceDigest": "bef707354649cd94e9e99433cc6f55e7e6a96c1409ad73361241acf1a74c0948",
       "decisionIds": ["ORC-DECISION-020"],
-      "inventoryIds": ["ORC-SURFACE-024"],
+      "inventoryIds": ["ORC-SURFACE-024", "ORC-SURFACE-087"],
       "rationale": "Fastify persists signed durable generation protocol metadata."
     },
     {
@@ -17,7 +17,7 @@
       "aspect": "transcript",
       "differenceDigest": "dbbe2a91453785125c74f0642d5be4ca3cf6b26df1f413a440819c8089678e5c",
       "decisionIds": ["ORC-DECISION-020"],
-      "inventoryIds": ["ORC-SURFACE-024"],
+      "inventoryIds": ["ORC-SURFACE-024", "ORC-SURFACE-087"],
       "rationale": "Fastify persists signed durable generation protocol metadata."
     },
     {
@@ -25,7 +25,7 @@
       "aspect": "transcript",
       "differenceDigest": "bef707354649cd94e9e99433cc6f55e7e6a96c1409ad73361241acf1a74c0948",
       "decisionIds": ["ORC-DECISION-020"],
-      "inventoryIds": ["ORC-SURFACE-024"],
+      "inventoryIds": ["ORC-SURFACE-024", "ORC-SURFACE-087"],
       "rationale": "Fastify persists signed durable generation protocol metadata."
     },
     {
@@ -33,7 +33,7 @@
       "aspect": "transcript",
       "differenceDigest": "dbbe2a91453785125c74f0642d5be4ca3cf6b26df1f413a440819c8089678e5c",
       "decisionIds": ["ORC-DECISION-020"],
-      "inventoryIds": ["ORC-SURFACE-024"],
+      "inventoryIds": ["ORC-SURFACE-024", "ORC-SURFACE-087"],
       "rationale": "Fastify persists signed durable generation protocol metadata."
     },
     {
@@ -41,7 +41,7 @@
       "aspect": "transcript",
       "differenceDigest": "bc0a060f6469e5dd8b3c26f885371461b6d0ebdd8c580eb42fc1c600b4a73240",
       "decisionIds": ["ORC-DECISION-020"],
-      "inventoryIds": ["ORC-SURFACE-024"],
+      "inventoryIds": ["ORC-SURFACE-024", "ORC-SURFACE-087"],
       "rationale": "Fastify persists signed durable generation protocol metadata."
     },
     {
@@ -49,7 +49,7 @@
       "aspect": "transcript",
       "differenceDigest": "bc0a060f6469e5dd8b3c26f885371461b6d0ebdd8c580eb42fc1c600b4a73240",
       "decisionIds": ["ORC-DECISION-020"],
-      "inventoryIds": ["ORC-SURFACE-024"],
+      "inventoryIds": ["ORC-SURFACE-024", "ORC-SURFACE-087"],
       "rationale": "Fastify persists signed durable generation protocol metadata."
     },
     {
@@ -57,7 +57,7 @@
       "aspect": "transcript",
       "differenceDigest": "bc0a060f6469e5dd8b3c26f885371461b6d0ebdd8c580eb42fc1c600b4a73240",
       "decisionIds": ["ORC-DECISION-020"],
-      "inventoryIds": ["ORC-SURFACE-024"],
+      "inventoryIds": ["ORC-SURFACE-024", "ORC-SURFACE-087"],
       "rationale": "Fastify persists signed durable generation protocol metadata."
     },
     {
@@ -65,7 +65,7 @@
       "aspect": "transcript",
       "differenceDigest": "bc0a060f6469e5dd8b3c26f885371461b6d0ebdd8c580eb42fc1c600b4a73240",
       "decisionIds": ["ORC-DECISION-020"],
-      "inventoryIds": ["ORC-SURFACE-024"],
+      "inventoryIds": ["ORC-SURFACE-024", "ORC-SURFACE-087"],
       "rationale": "Fastify persists signed durable generation protocol metadata."
     },
     {
@@ -81,7 +81,7 @@
       "aspect": "transcript",
       "differenceDigest": "bef707354649cd94e9e99433cc6f55e7e6a96c1409ad73361241acf1a74c0948",
       "decisionIds": ["ORC-DECISION-020"],
-      "inventoryIds": ["ORC-SURFACE-024"],
+      "inventoryIds": ["ORC-SURFACE-024", "ORC-SURFACE-087"],
       "rationale": "Fastify persists signed durable generation protocol metadata."
     },
     {
@@ -105,7 +105,7 @@
       "aspect": "transcript",
       "differenceDigest": "af1a0abe0b758e876deef8b59a43f6f53cc2e42f1032edfa6dcd70115ef8760a",
       "decisionIds": ["ORC-DECISION-013", "ORC-DECISION-020", "ORC-DECISION-021"],
-      "inventoryIds": ["ORC-SURFACE-017", "ORC-SURFACE-024", "ORC-SURFACE-025"],
+      "inventoryIds": ["ORC-SURFACE-017", "ORC-SURFACE-024", "ORC-SURFACE-025", "ORC-SURFACE-087"],
       "rationale": "The signed multisend workflow emits every turn with durable protocol metadata, client IDs, and timestamps."
     },
     {
@@ -129,7 +129,7 @@
       "aspect": "transcript",
       "differenceDigest": "af1a0abe0b758e876deef8b59a43f6f53cc2e42f1032edfa6dcd70115ef8760a",
       "decisionIds": ["ORC-DECISION-013", "ORC-DECISION-020", "ORC-DECISION-021"],
-      "inventoryIds": ["ORC-SURFACE-017", "ORC-SURFACE-024", "ORC-SURFACE-025"],
+      "inventoryIds": ["ORC-SURFACE-017", "ORC-SURFACE-024", "ORC-SURFACE-025", "ORC-SURFACE-087"],
       "rationale": "The signed multisend workflow emits every turn with durable protocol metadata, client IDs, and timestamps."
     },
     {
@@ -153,7 +153,7 @@
       "aspect": "transcript",
       "differenceDigest": "af1a0abe0b758e876deef8b59a43f6f53cc2e42f1032edfa6dcd70115ef8760a",
       "decisionIds": ["ORC-DECISION-013", "ORC-DECISION-020", "ORC-DECISION-021"],
-      "inventoryIds": ["ORC-SURFACE-017", "ORC-SURFACE-024", "ORC-SURFACE-025"],
+      "inventoryIds": ["ORC-SURFACE-017", "ORC-SURFACE-024", "ORC-SURFACE-025", "ORC-SURFACE-087"],
       "rationale": "The signed multisend workflow emits every turn with durable protocol metadata, client IDs, and timestamps."
     },
     {
@@ -177,7 +177,7 @@
       "aspect": "transcript",
       "differenceDigest": "af1a0abe0b758e876deef8b59a43f6f53cc2e42f1032edfa6dcd70115ef8760a",
       "decisionIds": ["ORC-DECISION-013", "ORC-DECISION-020", "ORC-DECISION-021"],
-      "inventoryIds": ["ORC-SURFACE-017", "ORC-SURFACE-024", "ORC-SURFACE-025"],
+      "inventoryIds": ["ORC-SURFACE-017", "ORC-SURFACE-024", "ORC-SURFACE-025", "ORC-SURFACE-087"],
       "rationale": "The signed multisend workflow emits every turn with durable protocol metadata, client IDs, and timestamps."
     },
     {

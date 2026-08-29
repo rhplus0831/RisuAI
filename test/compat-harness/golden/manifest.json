@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "baselineCommit": "71c476e9c86263fe907105b011ca4dde0a619d66",
-  "updateReason": "Classify the synthetic compatibility fixture provenance",
+  "updateReason": "Link recovery lineage to signed metadata decision",
   "updateCommand": "pnpm test:compat-harness -- --update-goldens --reason \"<review reason>\"",
   "files": [
     {
@@ -22,7 +22,7 @@
     },
     {
       "path": "test/compat-harness/expected-differences.json",
-      "sha256": "2ea71ef0f9ddd6416081060a8c55e103b8c86560e2c2cbca040c20447740a000"
+      "sha256": "9997759b065bab1abbb4a5fce0e8ef284344573f30a335435729aefec4bd68fd"
     },
     {
       "path": "test/compat-harness/fixture-provenance.json",
