@@ -425,9 +425,9 @@ async function waitForActiveMessageTranslation(
 async function waitForActiveGreetingTranslation(
   app: FastifyInstance,
   assertion: string,
-  expected: { characterId: string; greetingIndex: number },
+  expected: { characterId: string; chatId: string; greetingIndex: number },
   timeoutMs = 2_000,
-): Promise<{ characterId: string; greetingIndex: number; settingsHash: string; jobId: string }> {
+): Promise<{ characterId: string; chatId: string; greetingIndex: number; settingsHash: string; jobId: string }> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     const bootstrap = await injectComposedResourceDatabase(app, {
@@ -437,12 +437,16 @@ async function waitForActiveGreetingTranslation(
     })
     const active = bootstrap.json().activeGreetingTranslations as Array<{
       characterId: string
+      chatId: string
       greetingIndex: number
       settingsHash: string
       jobId: string
     }>
     const matching = active.find(
-      (entry) => entry.characterId === expected.characterId && entry.greetingIndex === expected.greetingIndex,
+      (entry) =>
+        entry.characterId === expected.characterId &&
+        entry.chatId === expected.chatId &&
+        entry.greetingIndex === expected.greetingIndex,
     )
     if (matching) return matching
     await sleep(10)
@@ -454,6 +458,7 @@ async function waitForProjectedGreetingTranslation(
   app: FastifyInstance,
   assertion: string,
   characterId: string,
+  chatId: string,
   expectedText: string,
   timeoutMs = 2_000,
 ): Promise<Record<string, unknown>> {
@@ -461,7 +466,7 @@ async function waitForProjectedGreetingTranslation(
   while (Date.now() < deadline) {
     const projection = await app.inject({
       method: 'GET',
-      url: `/api/v1/characters/${encodeURIComponent(characterId)}/greeting-translations`,
+      url: `/api/v1/characters/${encodeURIComponent(characterId)}/greeting-translations?chatId=${encodeURIComponent(chatId)}`,
       headers: { 'risu-auth': assertion },
     })
     const translations = projection.json().translations as Array<{ translation?: Record<string, unknown> }>
@@ -6972,6 +6977,24 @@ describe('translator preset commands', () => {
       translatorPresetId: 0,
       translatorPrompt: 'translate to A',
       translatorMaxResponse: 100,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'Bound chat',
+              note: '',
+              message: [],
+              localLore: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
     })
 
     const created = await harness.app.inject({
@@ -7000,6 +7023,17 @@ describe('translator preset commands', () => {
       },
       presetId: 'translator-b',
     })
+    const bindingDb = openDatabase(harness.dataDir)
+    try {
+      const row = bindingDb.prepare('SELECT data_json FROM chats WHERE id = ?').get('chat-a') as {
+        data_json: string
+      }
+      const chat = JSON.parse(row.data_json)
+      chat.translatorPresetId = 'translator-b'
+      bindingDb.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(JSON.stringify(chat), 'chat-a')
+    } finally {
+      bindingDb.close()
+    }
 
     const updated = await harness.app.inject({
       method: 'PATCH',
@@ -7064,11 +7098,12 @@ describe('translator preset commands', () => {
       event: {
         type: 'translatorPreset.deleted',
         revision: 5,
-        resource: 'translatorPreset',
+        resource: 'state',
         id: 'translator-b',
       },
       presetId: 'translator-b',
       selectedPresetId: 'translator-a',
+      cascadedChatIds: ['chat-a'],
     })
 
     const bootstrap = await injectComposedResourceDatabase(harness.app, {
@@ -7097,6 +7132,7 @@ describe('translator preset commands', () => {
         model: { mode: 'inheritTranslate' },
       },
     ])
+    expect(bootstrap.resourceDatabase.characters[0].chats[0]).not.toHaveProperty('translatorPresetId')
   })
 
   it('syncs legacy translator fields when updating the selected preset', async () => {
@@ -11806,7 +11842,7 @@ describe('message history commands', () => {
       method: 'POST',
       url: '/api/v1/commands/characters/char-a/greetings/-1/translate',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: revision, jobId: 'greeting-job-a' },
+      payload: { baseRevision: revision, chatId: 'chat-a', jobId: 'greeting-job-a' },
     })
     expect(translated.statusCode).toBe(200)
     expect(translated.json()).toMatchObject({
@@ -11818,6 +11854,7 @@ describe('message history commands', () => {
       },
       jobId: 'greeting-job-a',
       characterId: 'char-a',
+      chatId: 'chat-a',
       greetingIndex: -1,
       translation: { text: 'translated primary greeting', source: 'raw', translatorType: 'llm' },
     })
@@ -11825,13 +11862,14 @@ describe('message history commands', () => {
 
     const projected = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/characters/char-a/greeting-translations',
+      url: '/api/v1/characters/char-a/greeting-translations?chatId=chat-a',
       headers: { 'risu-auth': assertion },
     })
     expect(projected.statusCode).toBe(200)
     expect(projected.json()).toEqual({
       revision: revision + 1,
       characterId: 'char-a',
+      chatId: 'chat-a',
       settingsHash: translated.json().settingsHash,
       translations: [{ greetingIndex: -1, translation: translated.json().translation }],
     })
@@ -11841,7 +11879,7 @@ describe('message history commands', () => {
       method: 'POST',
       url: '/api/v1/commands/characters/char-a/greetings/1/translate',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: revision + 1, jobId: 'invalid-job' },
+      payload: { baseRevision: revision + 1, chatId: 'chat-a', jobId: 'invalid-job' },
     })
     expect(invalid.statusCode).toBe(404)
     expect(invalid.json().error).toBe('Greeting not found: char-a/1')
@@ -11855,7 +11893,7 @@ describe('message history commands', () => {
     expect(disabled.statusCode).toBe(200)
     const disabledProjection = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/characters/char-a/greeting-translations',
+      url: '/api/v1/characters/char-a/greeting-translations?chatId=chat-a',
       headers: { 'risu-auth': assertion },
     })
     expect(disabledProjection.json()).toMatchObject({ settingsHash: null, translations: [] })
@@ -11871,9 +11909,13 @@ describe('message history commands', () => {
       method: 'POST',
       url: '/api/v1/commands/characters/char-a/greetings/-1/translate',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: revision, jobId: 'stale-greeting-job' },
+      payload: { baseRevision: revision, chatId: 'chat-a', jobId: 'stale-greeting-job' },
     })
-    await waitForActiveGreetingTranslation(harness.app, assertion, { characterId: 'char-a', greetingIndex: -1 })
+    await waitForActiveGreetingTranslation(harness.app, assertion, {
+      characterId: 'char-a',
+      chatId: 'chat-a',
+      greetingIndex: -1,
+    })
 
     const edited = await harness.app.inject({
       method: 'PATCH',
@@ -11903,10 +11945,11 @@ describe('message history commands', () => {
       method: 'POST',
       url: '/api/v1/commands/characters/char-a/greetings/-1/translate',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: revision, jobId: 'stale-prior-greeting-job' },
+      payload: { baseRevision: revision, chatId: 'chat-a', jobId: 'stale-prior-greeting-job' },
     })
     const active = await waitForActiveGreetingTranslation(harness.app, assertion, {
       characterId: 'char-a',
+      chatId: 'chat-a',
       greetingIndex: -1,
     })
     const manualTranslation = {
@@ -11947,7 +11990,7 @@ describe('message history commands', () => {
     await postAndDisconnect(
       `${appBaseUrl(harness.app)}/api/v1/commands/characters/char-a/greetings/-1/translate`,
       assertion,
-      { baseRevision: revision, jobId: 'disconnected-greeting-job' },
+      { baseRevision: revision, chatId: 'chat-a', jobId: 'disconnected-greeting-job' },
     )
 
     const during = await injectComposedResourceDatabase(harness.app, {
@@ -11959,13 +12002,20 @@ describe('message history commands', () => {
     expect(during.json().activeGreetingTranslations).toEqual([
       expect.objectContaining({
         characterId: 'char-a',
+        chatId: 'chat-a',
         greetingIndex: -1,
         jobId: 'disconnected-greeting-job',
         status: 'running',
       }),
     ])
     await expect(
-      waitForProjectedGreetingTranslation(harness.app, assertion, 'char-a', 'greeting translated after disconnect'),
+      waitForProjectedGreetingTranslation(
+        harness.app,
+        assertion,
+        'char-a',
+        'chat-a',
+        'greeting translated after disconnect',
+      ),
     ).resolves.toMatchObject({ text: 'greeting translated after disconnect', source: 'raw' })
   })
 

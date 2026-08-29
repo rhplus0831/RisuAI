@@ -55,7 +55,7 @@ describe('greeting translation projection', () => {
     vi.stubGlobal('fetch', fetchMock)
     mocks.auth.mockRejectedValueOnce(new Error('auth unavailable'))
 
-    await expect(refreshGreetingTranslationProjection('char-a')).resolves.toEqual({
+    await expect(refreshGreetingTranslationProjection('char-a', 'chat-a')).resolves.toEqual({
       status: 'error',
       error: 'Network error: auth unavailable',
     })
@@ -67,6 +67,7 @@ describe('greeting translation projection', () => {
       applyGreetingTranslationProjection({
         revision: 2,
         characterId: 'char-a',
+        chatId: 'chat-a',
         settingsHash: 'server-a',
         clientSettingsSignature: 'client-a',
         translations: [{ greetingIndex: -1, translation: translation('primary') }],
@@ -75,6 +76,7 @@ describe('greeting translation projection', () => {
     expect(
       findGreetingTranslation({
         characterId: 'char-a',
+        chatId: 'chat-a',
         greetingIndex: -1,
         source: 'primary',
         clientSettingsSignature: 'client-a',
@@ -83,6 +85,7 @@ describe('greeting translation projection', () => {
     expect(
       findGreetingTranslation({
         characterId: 'char-a',
+        chatId: 'chat-a',
         greetingIndex: -1,
         source: 'edited',
         clientSettingsSignature: 'client-a',
@@ -93,17 +96,19 @@ describe('greeting translation projection', () => {
       applyGreetingTranslationCommandReceipt({
         revision: 3,
         characterId: 'char-a',
+        chatId: 'chat-a',
         greetingIndex: 0,
         settingsHash: 'server-a',
         clientSettingsSignature: 'client-a',
         translation: translation('alternate'),
       }),
     ).toBe(true)
-    expect(getGreetingTranslationProjection('char-a')?.translations).toHaveLength(2)
+    expect(getGreetingTranslationProjection('char-a', 'chat-a')?.translations).toHaveLength(2)
     expect(
       applyGreetingTranslationCommandReceipt({
         revision: 4,
         characterId: 'char-a',
+        chatId: 'chat-a',
         greetingIndex: 0,
         settingsHash: 'other-server',
         clientSettingsSignature: 'client-a',
@@ -116,6 +121,7 @@ describe('greeting translation projection', () => {
     applyGreetingTranslationProjection({
       revision: 5,
       characterId: 'char-a',
+      chatId: 'chat-a',
       settingsHash: 'server-a',
       clientSettingsSignature: 'client-a',
       translations: [{ greetingIndex: -1, translation: translation('primary') }],
@@ -124,17 +130,18 @@ describe('greeting translation projection', () => {
     const fetchMock = vi.fn(() => new Promise<Response>((resolve) => (resolveFetch = resolve)))
     vi.stubGlobal('fetch', fetchMock)
 
-    const pending = refreshGreetingTranslationProjection('char-a', {
+    const pending = refreshGreetingTranslationProjection('char-a', 'chat-a', {
       clientSettingsSignature: 'client-b',
       minimumRevision: 9,
     })
-    expect(getGreetingTranslationProjection('char-a')).toBeNull()
+    expect(getGreetingTranslationProjection('char-a', 'chat-a')).toBeNull()
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
     resolveFetch(
       new Response(
         JSON.stringify({
           revision: 8,
           characterId: 'char-a',
+          chatId: 'chat-a',
           settingsHash: 'server-b',
           translations: [],
         }),
@@ -145,7 +152,7 @@ describe('greeting translation projection', () => {
       status: 'error',
       error: 'Greeting translation projection is older than the invalidating event',
     })
-    expect(getGreetingTranslationProjection('char-a')).toBeNull()
+    expect(getGreetingTranslationProjection('char-a', 'chat-a')).toBeNull()
   })
 
   it('does not let an older overlapping read replace the latest projection', async () => {
@@ -159,14 +166,15 @@ describe('greeting translation projection', () => {
           }),
       ),
     )
-    const older = refreshGreetingTranslationProjection('char-a')
-    const newer = refreshGreetingTranslationProjection('char-a')
+    const older = refreshGreetingTranslationProjection('char-a', 'chat-a')
+    const newer = refreshGreetingTranslationProjection('char-a', 'chat-a')
     await vi.waitFor(() => expect(resolvers).toHaveLength(2))
     resolvers[1](
       new Response(
         JSON.stringify({
           revision: 4,
           characterId: 'char-a',
+          chatId: 'chat-a',
           settingsHash: 'server-new',
           translations: [],
         }),
@@ -179,6 +187,7 @@ describe('greeting translation projection', () => {
         JSON.stringify({
           revision: 3,
           characterId: 'char-a',
+          chatId: 'chat-a',
           settingsHash: 'server-old',
           translations: [],
         }),
@@ -186,6 +195,9 @@ describe('greeting translation projection', () => {
       ),
     )
     await expect(older).resolves.toMatchObject({ status: 'ok', revision: 3 })
-    expect(getGreetingTranslationProjection('char-a')).toMatchObject({ revision: 4, settingsHash: 'server-new' })
+    expect(getGreetingTranslationProjection('char-a', 'chat-a')).toMatchObject({
+      revision: 4,
+      settingsHash: 'server-new',
+    })
   })
 })

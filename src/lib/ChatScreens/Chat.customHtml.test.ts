@@ -70,7 +70,13 @@ const customHtmlMocks = vi.hoisted(() => {
       },
     })),
     translateGreetingCommand: vi.fn(
-      async (input: { baseRevision: number; characterId: string; greetingIndex: number; jobId: string }) => ({
+      async (input: {
+        baseRevision: number
+        characterId: string
+        chatId: string
+        greetingIndex: number
+        jobId: string
+      }) => ({
         status: 'ok',
         revision: 2,
         event: {
@@ -80,6 +86,7 @@ const customHtmlMocks = vi.hoisted(() => {
           id: input.characterId,
         },
         characterId: input.characterId,
+        chatId: input.chatId,
         greetingIndex: input.greetingIndex,
         jobId: input.jobId,
         settingsHash: 'greeting-settings',
@@ -323,6 +330,7 @@ vi.mock('src/ts/server/greetingTranslations.svelte', () => ({
   getGreetingTranslationProjection: () => ({
     revision: 1,
     characterId: 'custom-html-character',
+    chatId: 'custom-html-chat',
     settingsHash: 'greeting-settings',
     clientSettingsSignature: 'client-settings',
     translations: [],
@@ -339,9 +347,16 @@ vi.mock('src/ts/server/greetingTranslations.svelte', () => ({
     greetingProjectionMocks.active.update((jobs) => [...jobs, job])
     return true
   },
-  isCurrentGreetingTranslationJob: (characterId: string, greetingIndex: number, settingsHash: string, jobId: string) =>
+  isCurrentGreetingTranslationJob: (
+    characterId: string,
+    chatId: string,
+    greetingIndex: number,
+    settingsHash: string,
+    jobId: string,
+  ) =>
     (greetingProjectionMocks.active as any) &&
     characterId === 'custom-html-character' &&
+    chatId === 'custom-html-chat' &&
     greetingIndex === -1 &&
     settingsHash === 'greeting-settings' &&
     typeof jobId === 'string',
@@ -2010,6 +2025,7 @@ describe('server raw translation controls', () => {
           id: input.characterId,
         },
         characterId: input.characterId,
+        chatId: input.chatId,
         greetingIndex: input.greetingIndex,
         jobId: input.jobId,
         settingsHash: 'greeting-settings',

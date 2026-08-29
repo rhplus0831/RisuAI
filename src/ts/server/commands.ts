@@ -1265,6 +1265,7 @@ export interface MutateAlternateGreetingsCommandInput extends CharacterCommandIn
 
 export interface TranslateGreetingCommandInput extends CharacterCommandInput {
   characterId: string
+  chatId: string
   greetingIndex: number
   jobId: string
 }
@@ -3799,6 +3800,7 @@ export async function translateGreetingCommand(
 ): Promise<
   ServerCommandResult<{
     characterId: string
+    chatId: string
     greetingIndex: number
     jobId: string
     settingsHash: string
@@ -3811,6 +3813,7 @@ export async function translateGreetingCommand(
       method: 'POST',
       body: {
         baseRevision: input.baseRevision,
+        chatId: input.chatId,
         jobId: input.jobId,
       },
       signal,

@@ -99,32 +99,45 @@ describe('GreetingTranslationJobRegistry', () => {
     const registry = new GreetingTranslationJobRegistry()
     const first = registry.register({
       characterId: 'char-a',
+      chatId: 'chat-a',
       greetingIndex: 0,
       settingsHash: 'settings-a',
       jobId: 'first',
     })
     const other = registry.register({
       characterId: 'char-a',
+      chatId: 'chat-a',
       greetingIndex: 1,
       settingsHash: 'settings-a',
       jobId: 'other',
     })
     const latest = registry.register({
       characterId: 'char-a',
+      chatId: 'chat-a',
       greetingIndex: 0,
       settingsHash: 'settings-a',
       jobId: 'latest',
+    })
+    const otherChat = registry.register({
+      characterId: 'char-a',
+      chatId: 'chat-b',
+      greetingIndex: 0,
+      settingsHash: 'settings-a',
+      jobId: 'other-chat',
     })
 
     expect(first.isCurrent()).toBe(false)
     expect(other.isCurrent()).toBe(true)
     expect(latest.isCurrent()).toBe(true)
+    expect(otherChat.isCurrent()).toBe(true)
     first.succeed()
     other.succeed()
     latest.fail(new Error('provider key secret'))
+    otherChat.succeed()
     expect(registry.translations()).toEqual([
       expect.objectContaining({ greetingIndex: 1, jobId: 'other', status: 'succeeded' }),
       expect.objectContaining({ greetingIndex: 0, jobId: 'latest', status: 'failed' }),
+      expect.objectContaining({ chatId: 'chat-b', jobId: 'other-chat', status: 'succeeded' }),
     ])
   })
 
@@ -132,13 +145,25 @@ describe('GreetingTranslationJobRegistry', () => {
     const registry = new GreetingTranslationJobRegistry()
     const primary = registry.register({
       characterId: 'char-a',
+      chatId: 'chat-a',
       greetingIndex: -1,
       settingsHash: 'settings-a',
     })
-    const before = registry.register({ characterId: 'char-a', greetingIndex: 0, settingsHash: 'settings-a' })
-    const shifted = registry.register({ characterId: 'char-a', greetingIndex: 2, settingsHash: 'settings-a' })
+    const before = registry.register({
+      characterId: 'char-a',
+      chatId: 'chat-a',
+      greetingIndex: 0,
+      settingsHash: 'settings-a',
+    })
+    const shifted = registry.register({
+      characterId: 'char-a',
+      chatId: 'chat-a',
+      greetingIndex: 2,
+      settingsHash: 'settings-a',
+    })
     const otherCharacter = registry.register({
       characterId: 'char-b',
+      chatId: 'chat-b',
       greetingIndex: 2,
       settingsHash: 'settings-a',
     })
@@ -152,10 +177,21 @@ describe('GreetingTranslationJobRegistry', () => {
 
   it('bounds retained terminal jobs without evicting a running target', () => {
     const registry = new GreetingTranslationJobRegistry()
-    const running = registry.register({ characterId: 'char-running', greetingIndex: -1, settingsHash: 'settings-a' })
+    const running = registry.register({
+      characterId: 'char-running',
+      chatId: 'chat-running',
+      greetingIndex: -1,
+      settingsHash: 'settings-a',
+    })
     for (let greetingIndex = 0; greetingIndex < 130; greetingIndex += 1) {
       registry
-        .register({ characterId: 'char-a', greetingIndex, settingsHash: 'settings-a', jobId: `job-${greetingIndex}` })
+        .register({
+          characterId: 'char-a',
+          chatId: 'chat-a',
+          greetingIndex,
+          settingsHash: 'settings-a',
+          jobId: `job-${greetingIndex}`,
+        })
         .succeed()
     }
 

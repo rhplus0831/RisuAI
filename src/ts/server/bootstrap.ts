@@ -44,6 +44,7 @@ export interface ActiveMessageTranslation {
 
 export interface ActiveGreetingTranslation {
   characterId: string
+  chatId: string
   greetingIndex: number
   settingsHash: string
   jobId: string
@@ -707,6 +708,7 @@ function parseActiveGreetingTranslations(value: unknown): ActiveGreetingTranslat
     const record = entry as Record<string, unknown>
     if (
       typeof record.characterId !== 'string' ||
+      typeof record.chatId !== 'string' ||
       !Number.isInteger(record.greetingIndex) ||
       (record.greetingIndex as number) < -1 ||
       typeof record.settingsHash !== 'string' ||
@@ -721,6 +723,7 @@ function parseActiveGreetingTranslations(value: unknown): ActiveGreetingTranslat
         : 'running'
     const job: ActiveGreetingTranslation = {
       characterId: record.characterId,
+      chatId: record.chatId,
       greetingIndex: record.greetingIndex as number,
       settingsHash: record.settingsHash,
       jobId: record.jobId,

@@ -515,9 +515,10 @@
   $effect(() => {
     if (!currentCharacter || isServerCharacterShell(currentCharacter)) return
     const characterId = currentCharacter.chaId
+    const chatId = currentChatId
     const clientSettingsSignature = greetingTranslatorSettingsSignature
-    if (typeof characterId !== 'string' || characterId.length === 0) return
-    void refreshGreetingTranslationProjection(characterId, { clientSettingsSignature })
+    if (typeof characterId !== 'string' || characterId.length === 0 || !chatId) return
+    void refreshGreetingTranslationProjection(characterId, chatId, { clientSettingsSignature })
   })
 
   async function retryActiveChatHydration() {

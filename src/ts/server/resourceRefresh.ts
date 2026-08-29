@@ -82,7 +82,11 @@ export const serverResourceInvalidationHooks: ServerResourceInvalidationHooks = 
   triggerOpenChatGenerationReattach,
   clearActiveMessageTranslation,
   refreshGreetingTranslations: async (characterId, minimumRevision) => {
-    const result = await refreshGreetingTranslationProjection(characterId, { minimumRevision })
+    clearGreetingTranslationProjection(characterId)
+    const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
+    const chatId = character?.chats?.[character.chatPage]?.id
+    if (!chatId) return true
+    const result = await refreshGreetingTranslationProjection(characterId, chatId, { minimumRevision })
     return result.status === 'ok'
   },
 }

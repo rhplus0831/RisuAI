@@ -1103,7 +1103,7 @@
         return
       }
     } else {
-      const projection = getGreetingTranslationProjection(target.characterId)
+      const projection = getGreetingTranslationProjection(target.characterId, target.chatId)
       greetingSettingsHash =
         projection?.clientSettingsSignature === target.clientSettingsSignature ? projection.settingsHash : null
       if (!greetingSettingsHash) {
@@ -1113,6 +1113,7 @@
       if (
         !beginActiveGreetingTranslation({
           characterId: target.characterId,
+          chatId: target.chatId,
           greetingIndex: target.greetingIndex,
           settingsHash: greetingSettingsHash,
           jobId,
@@ -1165,16 +1166,26 @@
       const result = await translateGreetingCommand({
         baseRevision,
         characterId: target.characterId,
+        chatId: target.chatId,
         greetingIndex: target.greetingIndex,
         jobId,
       })
-      if (!isCurrentGreetingTranslationJob(target.characterId, target.greetingIndex, greetingSettingsHash!, jobId)) {
+      if (
+        !isCurrentGreetingTranslationJob(
+          target.characterId,
+          target.chatId,
+          target.greetingIndex,
+          greetingSettingsHash!,
+          jobId,
+        )
+      ) {
         return
       }
       if (result.status === 'ok') {
         if (
           result.jobId !== jobId ||
           result.characterId !== target.characterId ||
+          result.chatId !== target.chatId ||
           result.greetingIndex !== target.greetingIndex ||
           result.settingsHash !== greetingSettingsHash
         ) {
@@ -1183,6 +1194,7 @@
         applyGreetingTranslationCommandReceipt({
           revision: result.revision,
           characterId: target.characterId,
+          chatId: target.chatId,
           greetingIndex: target.greetingIndex,
           settingsHash: result.settingsHash,
           clientSettingsSignature: target.clientSettingsSignature,
@@ -1568,13 +1580,14 @@
         (job) => job.messageId === target.messageId && job.chatId === target.chatId,
       )
     }
-    const projection = getGreetingTranslationProjection(target.characterId)
+    const projection = getGreetingTranslationProjection(target.characterId, target.chatId)
     if (!projection?.settingsHash || projection.clientSettingsSignature !== target.clientSettingsSignature) {
       return undefined
     }
     return $activeGreetingTranslations.find(
       (job) =>
         job.characterId === target.characterId &&
+        job.chatId === target.chatId &&
         job.greetingIndex === target.greetingIndex &&
         job.settingsHash === projection.settingsHash,
     )
@@ -1671,6 +1684,7 @@
       job.jobId === jobId &&
       job.status === 'succeeded' &&
       job.characterId === target.characterId &&
+      job.chatId === target.chatId &&
       job.greetingIndex === target.greetingIndex &&
       job.settingsHash === settingsHash &&
       isRenderingRawTranslationTarget(target)
@@ -1714,7 +1728,7 @@
   ): Promise<void> {
     if (!ownsSucceededGreetingTranslation(jobId, target, settingsHash, isCancelled)) return
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const refreshed = await refreshGreetingTranslationProjection(target.characterId, {
+      const refreshed = await refreshGreetingTranslationProjection(target.characterId, target.chatId, {
         clientSettingsSignature: target.clientSettingsSignature,
       })
       if (!ownsSucceededGreetingTranslation(jobId, target, settingsHash, isCancelled)) return

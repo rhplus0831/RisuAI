@@ -454,12 +454,20 @@ function normalizeImportDatabaseShape(database: unknown): JsonRecord {
 function normalizeImportedChatGenerationSettings(database: JsonRecord): number {
   if (!Array.isArray(database.characters)) return 0
 
+  const translatorPresetIds = new Set(
+    (Array.isArray(database.translatorPresets) ? database.translatorPresets : []).flatMap((preset) =>
+      isJsonRecord(preset) && typeof preset.id === 'string' && preset.id.trim() ? [preset.id] : [],
+    ),
+  )
   let chatCount = 0
   for (const character of database.characters) {
     if (!isJsonRecord(character) || !Array.isArray(character.chats)) continue
     for (const chat of character.chats) {
       if (!isJsonRecord(chat)) continue
       chatCount += 1
+      if (typeof chat.translatorPresetId !== 'string' || !translatorPresetIds.has(chat.translatorPresetId)) {
+        delete chat.translatorPresetId
+      }
       if (!hasOwn(chat, CHAT_GENERATION_SETTINGS_FIELD)) continue
 
       const normalized = normalizeStoredChatGenerationSettings(chat[CHAT_GENERATION_SETTINGS_FIELD])

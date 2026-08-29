@@ -1120,6 +1120,7 @@ interface ChatFolderCommandBody {
 
 interface MessageCommandBody {
   baseRevision?: unknown
+  chatId?: unknown
   message?: unknown
   patch?: unknown
   messages?: unknown
@@ -5052,7 +5053,6 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
-        collectionScopedRead: COLLECTION_SCOPED_READS.translatorPresets,
         mutate(database, innerDb) {
           const target = ensureTranslatorPresetDatabaseObject(database)
           const presets = ensureTranslatorPresetCollection(target)
@@ -5161,13 +5161,13 @@ export function registerCommandRoutes(
       const result = applyTargetedCommandMutation<{
         presetId: string
         selectedPresetId: string | null
+        cascadedChatIds: string[]
       }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
-        collectionScopedRead: COLLECTION_SCOPED_READS.translatorPresets,
         mutate(database, innerDb) {
           const target = ensureTranslatorPresetDatabaseObject(database)
           const presets = ensureTranslatorPresetCollection(target)
@@ -5178,6 +5178,7 @@ export function registerCommandRoutes(
               extra: {
                 presetId,
                 selectedPresetId: selectedTranslatorPresetId(target, presets),
+                cascadedChatIds: [],
               },
             }
           }
@@ -5198,13 +5199,23 @@ export function registerCommandRoutes(
           const selectedIndex = nextSelectedId ? requireTranslatorPresetIndex(presets, nextSelectedId) : 0
           target.translatorPresetId = selectedIndex
           syncSelectedTranslatorPresetToLegacyFields(target, presets)
+          const cascadedChatIds: string[] = []
+          for (const character of normalizeAllCharacterChats(target)) {
+            for (const chat of ensureCharacterChats(character)) {
+              if (chat.translatorPresetId !== presetId) continue
+              delete chat.translatorPresetId
+              writeSingleChatRow(innerDb, chat.id, chat)
+              cascadedChatIds.push(chat.id)
+            }
+          }
           writeTranslatorPresetMutation(innerDb, target, presets)
 
           return {
-            event: { ...COMMAND_EVENT_CATALOG.translatorPresetDeleted, id: presetId },
+            event: { ...COMMAND_EVENT_CATALOG.translatorPresetDeleted, resource: 'state', id: presetId },
             extra: {
               presetId,
               selectedPresetId: selectedTranslatorPresetId(target, presets),
+              cascadedChatIds,
             },
           }
         },
@@ -5707,12 +5718,14 @@ export function registerCommandRoutes(
       const greetingIndex = readGreetingTranslationIndex(params.greetingIndex)
       const body = (req.body ?? {}) as MessageCommandBody
       readBaseRevision(body)
+      const chatId = readChatId(body.chatId)
       const requestedJobId = readOptionalMessageTranslationJobId(body.jobId)
       return await runServerGreetingTranslation({
         db,
         dataDir,
         greetingTranslationJobs,
         characterId,
+        chatId,
         greetingIndex,
         ...(requestedJobId ? { jobId: requestedJobId } : {}),
         ...commandMutationContext(req, eventSink),

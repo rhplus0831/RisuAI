@@ -955,6 +955,14 @@ function normalizeImportedChatGenerationSettings(chat: unknown): void {
   } else {
     delete chat[CHAT_GENERATION_SETTINGS_FIELD]
   }
+  const translatorPresetId = chat.translatorPresetId
+  if (
+    typeof translatorPresetId !== 'string' ||
+    !translatorPresetId.trim() ||
+    !(getDatabase().translatorPresets ?? []).some((preset) => preset.id === translatorPresetId)
+  ) {
+    delete chat.translatorPresetId
+  }
 }
 
 function normalizeImportedGenerationSettingsValue(value: unknown): ChatGenerationSettings | undefined {

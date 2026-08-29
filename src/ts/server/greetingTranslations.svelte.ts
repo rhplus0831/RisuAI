@@ -16,6 +16,7 @@ export interface GreetingTranslationProjectionEntry {
 export interface GreetingTranslationProjection {
   revision: number
   characterId: string
+  chatId: string
   settingsHash: string | null
   clientSettingsSignature: string
   translations: GreetingTranslationProjectionEntry[]
@@ -26,8 +27,8 @@ export type GreetingTranslationProjectionReadResult =
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
 
-const projectionByCharacter = new Map<string, GreetingTranslationProjection>()
-const requestEpochByCharacter = new Map<string, number>()
+const projectionByTarget = new Map<string, GreetingTranslationProjection>()
+const requestEpochByTarget = new Map<string, number>()
 export const greetingTranslationProjectionVersion = writable(0)
 
 export const activeGreetingTranslations = writable<ActiveGreetingTranslation[]>([])
@@ -58,21 +59,34 @@ export function currentGreetingTranslatorSettingsSignature(): string {
   return getTranslatorSettingsSignatureKey()
 }
 
-export function getGreetingTranslationProjection(characterId: string): GreetingTranslationProjection | null {
-  const projection = projectionByCharacter.get(characterId)
+function greetingTranslationTargetKey(characterId: string, chatId: string): string {
+  return JSON.stringify([characterId, chatId])
+}
+
+export function getGreetingTranslationProjection(
+  characterId: string,
+  chatId: string,
+): GreetingTranslationProjection | null {
+  const projection = projectionByTarget.get(greetingTranslationTargetKey(characterId, chatId))
   return projection ? cloneProjection(projection) : null
 }
 
-export function clearGreetingTranslationProjection(characterId?: string): void {
+export function clearGreetingTranslationProjection(characterId?: string, chatId?: string): void {
   if (characterId === undefined) {
-    const hadProjection = projectionByCharacter.size > 0
-    projectionByCharacter.clear()
-    for (const [key, epoch] of requestEpochByCharacter) requestEpochByCharacter.set(key, epoch + 1)
+    const hadProjection = projectionByTarget.size > 0
+    projectionByTarget.clear()
+    for (const [key, epoch] of requestEpochByTarget) requestEpochByTarget.set(key, epoch + 1)
     if (hadProjection) bumpProjectionVersion()
     return
   }
-  requestEpochByCharacter.set(characterId, (requestEpochByCharacter.get(characterId) ?? 0) + 1)
-  if (projectionByCharacter.delete(characterId)) bumpProjectionVersion()
+  let changed = false
+  for (const [key, projection] of projectionByTarget) {
+    if (projection.characterId !== characterId || (chatId !== undefined && projection.chatId !== chatId)) continue
+    requestEpochByTarget.set(key, (requestEpochByTarget.get(key) ?? 0) + 1)
+    projectionByTarget.delete(key)
+    changed = true
+  }
+  if (changed) bumpProjectionVersion()
 }
 
 export function applyGreetingTranslationProjection(
@@ -80,9 +94,10 @@ export function applyGreetingTranslationProjection(
   options: { force?: boolean } = {},
 ): boolean {
   if (!isGreetingTranslationProjection(projection)) return false
-  const current = projectionByCharacter.get(projection.characterId)
+  const key = greetingTranslationTargetKey(projection.characterId, projection.chatId)
+  const current = projectionByTarget.get(key)
   if (!options.force && current && projection.revision < current.revision) return false
-  projectionByCharacter.set(projection.characterId, cloneProjection(projection))
+  projectionByTarget.set(key, cloneProjection(projection))
   bumpProjectionVersion()
   return true
 }
@@ -90,13 +105,14 @@ export function applyGreetingTranslationProjection(
 export function applyGreetingTranslationCommandReceipt(input: {
   revision: number
   characterId: string
+  chatId: string
   greetingIndex: number
   settingsHash: string
   clientSettingsSignature: string
   translation: MessageTranslation
 }): boolean {
   if (!isMessageTranslation(input.translation) || input.translation.settingsHash !== input.settingsHash) return false
-  const current = projectionByCharacter.get(input.characterId)
+  const current = projectionByTarget.get(greetingTranslationTargetKey(input.characterId, input.chatId))
   if (
     !current ||
     current.clientSettingsSignature !== input.clientSettingsSignature ||
@@ -117,12 +133,13 @@ export function applyGreetingTranslationCommandReceipt(input: {
 
 export function findGreetingTranslation(input: {
   characterId: string
+  chatId: string
   greetingIndex: number
   source: string
   clientSettingsSignature: string
 }): MessageTranslation | null {
   get(greetingTranslationProjectionVersion)
-  const projection = projectionByCharacter.get(input.characterId)
+  const projection = projectionByTarget.get(greetingTranslationTargetKey(input.characterId, input.chatId))
   if (
     !projection ||
     projection.clientSettingsSignature !== input.clientSettingsSignature ||
@@ -137,27 +154,29 @@ export function findGreetingTranslation(input: {
 
 export async function refreshGreetingTranslationProjection(
   characterId: string,
+  chatId: string,
   options: { clientSettingsSignature?: string; clearBeforeFetch?: boolean; minimumRevision?: number } = {},
 ): Promise<GreetingTranslationProjectionReadResult> {
   if (typeof characterId !== 'string' || characterId.trim() === '') {
     return { status: 'error', error: 'Character id is required' }
   }
+  if (typeof chatId !== 'string' || chatId.trim() === '') {
+    return { status: 'error', error: 'Chat id is required' }
+  }
   const clientSettingsSignature = options.clientSettingsSignature ?? currentGreetingTranslatorSettingsSignature()
-  const current = projectionByCharacter.get(characterId)
+  const key = greetingTranslationTargetKey(characterId, chatId)
+  const current = projectionByTarget.get(key)
   if (
     options.clearBeforeFetch ||
     (current !== undefined && current.clientSettingsSignature !== clientSettingsSignature)
   ) {
-    clearGreetingTranslationProjection(characterId)
+    clearGreetingTranslationProjection(characterId, chatId)
   }
-  const requestEpoch = (requestEpochByCharacter.get(characterId) ?? 0) + 1
-  requestEpochByCharacter.set(characterId, requestEpoch)
-  const result = await fetchGreetingTranslationProjection(characterId, clientSettingsSignature)
+  const requestEpoch = (requestEpochByTarget.get(key) ?? 0) + 1
+  requestEpochByTarget.set(key, requestEpoch)
+  const result = await fetchGreetingTranslationProjection(characterId, chatId, clientSettingsSignature)
   if (result.status !== 'ok') return result
-  if (
-    requestEpochByCharacter.get(characterId) !== requestEpoch ||
-    result.clientSettingsSignature !== clientSettingsSignature
-  ) {
+  if (requestEpochByTarget.get(key) !== requestEpoch || result.clientSettingsSignature !== clientSettingsSignature) {
     return result
   }
   if (options.minimumRevision !== undefined && result.revision < options.minimumRevision) {
@@ -169,13 +188,15 @@ export async function refreshGreetingTranslationProjection(
 
 export async function fetchGreetingTranslationProjection(
   characterId: string,
+  chatId: string,
   clientSettingsSignature = currentGreetingTranslatorSettingsSignature(),
   signal?: AbortSignal | null,
 ): Promise<GreetingTranslationProjectionReadResult> {
   let response: Response
   try {
     const auth = await getNodeServerProxyAuth()
-    response = await fetch(`${CHARACTERS_ENDPOINT}/${encodeURIComponent(characterId)}/greeting-translations`, {
+    const url = `${CHARACTERS_ENDPOINT}/${encodeURIComponent(characterId)}/greeting-translations?chatId=${encodeURIComponent(chatId)}`
+    response = await fetch(url, {
       method: 'GET',
       signal: signal ?? undefined,
       headers: { 'risu-auth': auth },
@@ -197,9 +218,9 @@ export async function fetchGreetingTranslationProjection(
 }
 
 function greetingJobKey(
-  job: Pick<ActiveGreetingTranslation, 'characterId' | 'greetingIndex' | 'settingsHash'>,
+  job: Pick<ActiveGreetingTranslation, 'characterId' | 'chatId' | 'greetingIndex' | 'settingsHash'>,
 ): string {
-  return JSON.stringify([job.characterId, job.greetingIndex, job.settingsHash])
+  return JSON.stringify([job.characterId, job.chatId, job.greetingIndex, job.settingsHash])
 }
 
 export function setActiveGreetingTranslations(jobs: readonly ActiveGreetingTranslation[]): void {
@@ -243,6 +264,7 @@ export function publishSettledGreetingTranslation(
 
 export function isCurrentGreetingTranslationJob(
   characterId: string,
+  chatId: string,
   greetingIndex: number,
   settingsHash: string,
   jobId: string,
@@ -250,6 +272,7 @@ export function isCurrentGreetingTranslationJob(
   return get(activeGreetingTranslations).some(
     (job) =>
       job.characterId === characterId &&
+      job.chatId === chatId &&
       job.greetingIndex === greetingIndex &&
       job.settingsHash === settingsHash &&
       job.jobId === jobId &&
@@ -322,6 +345,7 @@ function parseGreetingTranslationProjection(
     !Number.isSafeInteger(record.revision) ||
     (record.revision as number) < 0 ||
     typeof record.characterId !== 'string' ||
+    typeof record.chatId !== 'string' ||
     (record.settingsHash !== null && typeof record.settingsHash !== 'string') ||
     !Array.isArray(record.translations)
   ) {
@@ -350,6 +374,7 @@ function parseGreetingTranslationProjection(
   return {
     revision: record.revision as number,
     characterId: record.characterId,
+    chatId: record.chatId,
     settingsHash: record.settingsHash as string | null,
     clientSettingsSignature,
     translations,
@@ -363,6 +388,7 @@ function isGreetingTranslationProjection(value: unknown): value is GreetingTrans
     Number.isSafeInteger(record.revision) &&
     (record.revision as number) >= 0 &&
     typeof record.characterId === 'string' &&
+    typeof record.chatId === 'string' &&
     (record.settingsHash === null || typeof record.settingsHash === 'string') &&
     typeof record.clientSettingsSignature === 'string' &&
     Array.isArray(record.translations) &&

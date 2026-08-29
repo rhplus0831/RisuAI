@@ -264,6 +264,15 @@ beforeEach(() => {
         customPromptTemplateToggle: '',
       },
     ],
+    translatorPresets: [
+      {
+        id: 'translator-a',
+        name: 'Translator A',
+        prompt: 'Translate',
+        maxResponse: 128,
+        steps: [],
+      },
+    ],
     characters: [
       {
         chaId: 'char-a',
@@ -814,6 +823,27 @@ describe('chat import projection helpers', () => {
         generationSettings: expectedGenerationSettings,
       },
     })
+  })
+
+  it('keeps valid standalone chat translator bindings and clears missing ones', async () => {
+    const calls = stubCommandFetch()
+    selectJsonFile('chats.json', {
+      type: 'risuAllChats',
+      ver: 1,
+      data: [
+        importedChat({ name: 'Valid binding', translatorPresetId: 'translator-a' }),
+        importedChat({ name: 'Missing binding', translatorPresetId: 'translator-missing' }),
+      ],
+    })
+
+    await importChat()
+
+    const imported = testDatabaseState.db.characters[0].chats.slice(0, 2)
+    expect(imported.find((chat) => chat.name === 'Valid binding')?.translatorPresetId).toBe('translator-a')
+    expect(imported.find((chat) => chat.name === 'Missing binding')).not.toHaveProperty('translatorPresetId')
+    const createCalls = await waitForCreateChatCalls(calls, 2)
+    expect((createCalls[0].body as any).chat.translatorPresetId).toBe('translator-a')
+    expect((createCalls[1].body as any).chat).not.toHaveProperty('translatorPresetId')
   })
 
   it('normalizes v2 all-chat imports and drops invalid generation settings', async () => {

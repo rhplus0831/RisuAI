@@ -5,6 +5,7 @@ export type GreetingTranslationJobStatus = 'running' | 'succeeded' | 'failed'
 
 export interface GreetingTranslationJob {
   characterId: string
+  chatId: string
   greetingIndex: number
   settingsHash: string
   jobId: string
@@ -28,8 +29,10 @@ export interface GreetingTranslationJobHandle {
 const TERMINAL_RETENTION_MS = 10 * 60_000
 const MAX_TERMINAL_JOBS = 128
 
-function targetKey(target: Pick<GreetingTranslationJob, 'characterId' | 'greetingIndex' | 'settingsHash'>): string {
-  return JSON.stringify([target.characterId, target.greetingIndex, target.settingsHash])
+function targetKey(
+  target: Pick<GreetingTranslationJob, 'characterId' | 'chatId' | 'greetingIndex' | 'settingsHash'>,
+): string {
+  return JSON.stringify([target.characterId, target.chatId, target.greetingIndex, target.settingsHash])
 }
 
 /** Detached greeting translations plus bounded terminal reattachment history. */
@@ -38,7 +41,9 @@ export class GreetingTranslationJobRegistry {
   private readonly terminalByTarget = new Map<string, GreetingTranslationJob>()
 
   register(
-    input: Pick<GreetingTranslationJob, 'characterId' | 'greetingIndex' | 'settingsHash'> & { jobId?: string },
+    input: Pick<GreetingTranslationJob, 'characterId' | 'chatId' | 'greetingIndex' | 'settingsHash'> & {
+      jobId?: string
+    },
   ): GreetingTranslationJobHandle {
     const key = targetKey(input)
     const token = randomUUID()
@@ -46,6 +51,7 @@ export class GreetingTranslationJobRegistry {
     this.terminalByTarget.delete(key)
     this.activeByTarget.set(key, {
       characterId: input.characterId,
+      chatId: input.chatId,
       greetingIndex: input.greetingIndex,
       settingsHash: input.settingsHash,
       jobId,
@@ -92,6 +98,7 @@ export class GreetingTranslationJobRegistry {
     this.activeByTarget.delete(key)
     this.terminalByTarget.set(key, {
       characterId: active.characterId,
+      chatId: active.chatId,
       greetingIndex: active.greetingIndex,
       settingsHash: active.settingsHash,
       jobId: active.jobId,

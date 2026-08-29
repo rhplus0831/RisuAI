@@ -40,6 +40,8 @@ import {
 } from '../repository.js'
 import { listSourceValidGreetingTranslations } from '../translation/greetingTranslationStore.js'
 import { resolveRawMessageTranslatorIdentity } from '../translation/rawMessageTranslation.js'
+import { ensureCharacterChats, readChatId } from '../commands/chats.js'
+import type { CharacterRecord } from '../commands/characters.js'
 
 const PLUGIN_STORAGE_COLLECTION = 'pluginCustomStorage' as const
 const READABLE_COLLECTION_NAMES = [...COLLECTION_FIELDS, PLUGIN_STORAGE_COLLECTION] as const
@@ -71,6 +73,10 @@ interface ChatMessageRangeQuery {
   limit?: string
   tail?: string
   generationMessageId?: string
+}
+
+interface GreetingTranslationQuery {
+  chatId?: string
 }
 
 interface ParsedResourceCacheRequest {
@@ -492,7 +498,7 @@ export function registerResourceReadRoutes(
     )
   })
 
-  app.get<{ Params: { characterId: string } }>(
+  app.get<{ Params: { characterId: string }; Querystring: GreetingTranslationQuery }>(
     '/api/v1/characters/:characterId/greeting-translations',
     { exposeHeadRoute: false },
     async (req, reply) => {
@@ -505,12 +511,24 @@ export function registerResourceReadRoutes(
         })
         return
       }
+      let chatId: string
+      try {
+        chatId = readChatId(req.query.chatId)
+      } catch (error) {
+        reply.code(400).send({ error: error instanceof Error ? error.message : String(error) })
+        return
+      }
+      const chat = ensureCharacterChats(character as CharacterRecord).find((candidate) => candidate.id === chatId)
+      if (!chat) {
+        reply.code(404).send({ error: 'chat_not_found', reason: `Chat not found for character: ${chatId}` })
+        return
+      }
       const { revision } = getSchemaState(db)
       const settings = loadSettingsWithTranslatorPresetsFromSqlite(db)
       let settingsHash: string | null = null
       if (settings !== null) {
         try {
-          settingsHash = resolveRawMessageTranslatorIdentity({ settings, character }).settingsHash
+          settingsHash = resolveRawMessageTranslatorIdentity({ settings, character, chat }).settingsHash
         } catch (error) {
           if (!(error instanceof ValidationError)) throw error
         }
@@ -529,6 +547,7 @@ export function registerResourceReadRoutes(
         {
           revision,
           characterId: req.params.characterId,
+          chatId,
           settingsHash,
           translations,
         },

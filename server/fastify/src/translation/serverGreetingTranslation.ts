@@ -7,10 +7,12 @@ import type { GreetingTranslationJobHandle, GreetingTranslationJobRegistry } fro
 import {
   EntityNotFoundError,
   ValidationError,
-  loadCharacterSelectionRows,
   loadSettingsWithTranslatorPresetsFromSqlite,
+  loadSingleCharacterRowForRead,
 } from '../repository.js'
 import { createDetachedAbort } from '../requestAbort.js'
+import { ensureCharacterChats, type ChatRecord } from '../commands/chats.js'
+import type { CharacterRecord } from '../commands/characters.js'
 import { getGreetingTranslation, greetingSourceAtIndex, upsertGreetingTranslation } from './greetingTranslationStore.js'
 import {
   resolveRawMessageTranslatorIdentity,
@@ -24,22 +26,25 @@ export interface RunServerGreetingTranslationInput {
   eventSink: CommandEventSink
   greetingTranslationJobs?: GreetingTranslationJobRegistry
   characterId: string
+  chatId: string
   greetingIndex: number
   jobId?: string
   eventOrigin?: CommandEventOrigin
   mutationReceiptKey?: CommandMutationReceiptKey
 }
 
-function readCharacter(db: DatabaseSync, characterId: string): Record<string, unknown> {
+function readCharacter(db: DatabaseSync, dataDir: string, characterId: string): CharacterRecord {
   try {
-    return loadCharacterSelectionRows(db, characterId).character
+    const character = loadSingleCharacterRowForRead(db, dataDir, characterId)
+    if (!character) throw new EntityNotFoundError(`Character not found: ${characterId}`)
+    return character as CharacterRecord
   } catch (error) {
     if (error instanceof EntityNotFoundError) throw error
     throw new ValidationError(`Character could not be loaded: ${characterId}`)
   }
 }
 
-function readGreetingSource(character: Record<string, unknown>, characterId: string, greetingIndex: number): string {
+function readGreetingSource(character: CharacterRecord, characterId: string, greetingIndex: number): string {
   const source = greetingSourceAtIndex(character, greetingIndex)
   if (source === null) {
     throw new EntityNotFoundError(`Greeting not found: ${characterId}/${greetingIndex}`)
@@ -47,18 +52,26 @@ function readGreetingSource(character: Record<string, unknown>, characterId: str
   return source
 }
 
+function readCharacterChat(character: CharacterRecord, chatId: string): ChatRecord {
+  const chat = ensureCharacterChats(character).find((candidate) => candidate.id === chatId)
+  if (!chat) throw new EntityNotFoundError(`Chat not found for character: ${chatId}`)
+  return chat
+}
+
 export async function runServerGreetingTranslation(input: RunServerGreetingTranslationInput) {
   const { signal, cleanup } = createDetachedAbort()
   let translationJob: GreetingTranslationJobHandle | undefined
   try {
-    const character = readCharacter(input.db, input.characterId)
+    const character = readCharacter(input.db, input.dataDir, input.characterId)
+    const chat = readCharacterChat(character, input.chatId)
     const source = readGreetingSource(character, input.characterId, input.greetingIndex)
     const settings = loadSettingsWithTranslatorPresetsFromSqlite(input.db)
     if (settings === null) throw new ValidationError('database is not initialized')
-    const identity = resolveRawMessageTranslatorIdentity({ settings, character })
+    const identity = resolveRawMessageTranslatorIdentity({ settings, character, chat })
     const priorRow = getGreetingTranslation(input.db, input.characterId, input.greetingIndex, identity.settingsHash)
     translationJob = input.greetingTranslationJobs?.register({
       characterId: input.characterId,
+      chatId: input.chatId,
       greetingIndex: input.greetingIndex,
       settingsHash: identity.settingsHash,
       ...(input.jobId ? { jobId: input.jobId } : {}),
@@ -67,12 +80,14 @@ export async function runServerGreetingTranslation(input: RunServerGreetingTrans
     const translation = await translateRawMessageData({
       settings,
       character,
+      chat,
       text: source,
       signal,
       requestHistory: {
         db: input.db,
         context: {
           characterId: input.characterId,
+          chatId: input.chatId,
           ...(typeof character.name === 'string' ? { characterName: character.name } : {}),
         },
         metadata: { greetingIndex: input.greetingIndex },
@@ -81,6 +96,7 @@ export async function runServerGreetingTranslation(input: RunServerGreetingTrans
 
     const result = applyTargetedCommandMutation<{
       characterId: string
+      chatId: string
       greetingIndex: number
       settingsHash: string
       translation: RawMessageTranslation
@@ -94,7 +110,8 @@ export async function runServerGreetingTranslation(input: RunServerGreetingTrans
       mutationPath: 'targeted-greeting-translation',
       skipDatabaseLoad: true,
       mutate(_database, targetDb) {
-        const liveCharacter = readCharacter(targetDb, input.characterId)
+        const liveCharacter = readCharacter(targetDb, input.dataDir, input.characterId)
+        readCharacterChat(liveCharacter, input.chatId)
         const liveSource = readGreetingSource(liveCharacter, input.characterId, input.greetingIndex)
         if (translationJob && !translationJob.isCurrent()) {
           throw new ValidationError(
@@ -122,6 +139,7 @@ export async function runServerGreetingTranslation(input: RunServerGreetingTrans
           event: { ...COMMAND_EVENT_CATALOG.greetingTranslationUpdated, id: input.characterId },
           extra: {
             characterId: input.characterId,
+            chatId: input.chatId,
             greetingIndex: input.greetingIndex,
             settingsHash: identity.settingsHash,
             translation,

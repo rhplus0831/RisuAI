@@ -21,6 +21,7 @@ import {
   RISUSAVE_INCOMPLETE_BLOCKS_ERROR,
   UnsupportedGroupCharactersError,
   decodeRisuSaveImportSnapshot,
+  normalizeRisuSaveImportDatabase,
 } from '../src/risuSave/importSnapshot.js'
 import {
   buildRisuSaveExportBlocks,
@@ -40,6 +41,46 @@ import {
 } from '../src/translation/greetingTranslationStore.js'
 
 const dataDirs: string[] = []
+
+describe('translator preset chat binding import normalization', () => {
+  it('keeps bindings backed by the imported collection and clears missing ids', () => {
+    const normalized = normalizeRisuSaveImportDatabase({
+      translatorPresets: [{ id: 'translator-a', name: 'A', prompt: 'Translate', maxResponse: 128 }],
+      translatorPresetId: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-valid',
+              name: 'Valid',
+              note: '',
+              message: [],
+              localLore: [],
+              translatorPresetId: 'translator-a',
+            },
+            {
+              id: 'chat-missing',
+              name: 'Missing',
+              note: '',
+              message: [],
+              localLore: [],
+              translatorPresetId: 'translator-missing',
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+    const chats = (normalized.characters as Array<{ chats: Array<Record<string, unknown>> }>)[0].chats
+
+    expect(chats[0].translatorPresetId).toBe('translator-a')
+    expect(chats[1]).not.toHaveProperty('translatorPresetId')
+  })
+})
 
 function makeDataDir(): string {
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-risu-export-'))

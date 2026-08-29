@@ -416,7 +416,13 @@ function runtimeBootstrap(overrides: Record<string, unknown> = {}) {
       ],
       activeMessageTranslations: [{ chatId: 'chat-a', messageId: 'message-a' }],
       activeGreetingTranslations: [
-        { characterId: 'char-a', greetingIndex: -1, settingsHash: 'settings-a', jobId: 'greeting-job-a' },
+        {
+          characterId: 'char-a',
+          chatId: 'chat-a',
+          greetingIndex: -1,
+          settingsHash: 'settings-a',
+          jobId: 'greeting-job-a',
+        },
       ],
       ...overrides,
     },
@@ -1365,7 +1371,13 @@ describe('API-backed client bootstrap', () => {
     expect(get(selectedCharID)).toBe(1)
     expect(runtimeApi.setActiveMessageTranslations).toHaveBeenCalledWith([{ chatId: 'chat-a', messageId: 'message-a' }])
     expect(runtimeApi.setActiveGreetingTranslations).toHaveBeenCalledWith([
-      { characterId: 'char-a', greetingIndex: -1, settingsHash: 'settings-a', jobId: 'greeting-job-a' },
+      {
+        characterId: 'char-a',
+        chatId: 'chat-a',
+        greetingIndex: -1,
+        settingsHash: 'settings-a',
+        jobId: 'greeting-job-a',
+      },
     ])
     expect(hydrationApi.startChatMessageHydration).not.toHaveBeenCalled()
     expect(characterHydrationApi.startSelected).not.toHaveBeenCalled()
@@ -1497,7 +1509,13 @@ describe('API-backed client bootstrap', () => {
     )
     expect(runtimeApi.setActiveMessageTranslations).toHaveBeenCalledWith([{ chatId: 'chat-a', messageId: 'message-a' }])
     expect(runtimeApi.setActiveGreetingTranslations).toHaveBeenCalledWith([
-      { characterId: 'char-a', greetingIndex: -1, settingsHash: 'settings-a', jobId: 'greeting-job-a' },
+      {
+        characterId: 'char-a',
+        chatId: 'chat-a',
+        greetingIndex: -1,
+        settingsHash: 'settings-a',
+        jobId: 'greeting-job-a',
+      },
     ])
   })
 

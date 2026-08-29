@@ -6705,6 +6705,7 @@ describe('server command API adapter', () => {
         id: 'char a',
       },
       characterId: 'char a',
+      chatId: 'chat-a',
       greetingIndex: -1,
       jobId: 'greeting-job-a',
       settingsHash: 'b'.repeat(64),
@@ -6716,6 +6717,7 @@ describe('server command API adapter', () => {
       translateGreetingCommand({
         baseRevision: 1,
         characterId: 'char a',
+        chatId: 'chat-a',
         greetingIndex: -1,
         jobId: 'greeting-job-a',
       }),
@@ -6725,7 +6727,7 @@ describe('server command API adapter', () => {
       expect.objectContaining({
         url: '/api/v1/commands/characters/char%20a/greetings/-1/translate',
         method: 'POST',
-        body: { baseRevision: 1, jobId: 'greeting-job-a' },
+        body: { baseRevision: 1, chatId: 'chat-a', jobId: 'greeting-job-a' },
       }),
     ])
   })
