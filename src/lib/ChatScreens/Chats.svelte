@@ -559,6 +559,10 @@
       return
     }
     if (transcriptIsAtLatestPosition()) {
+      if (currentTranscriptAnchor() === 'end') {
+        recomputeLatestMessageGeometry()
+        return
+      }
       setTranscriptAnchor('start')
       recomputeLatestMessageGeometry()
       if (latestMessageDerivedSpacerHeight <= latestMessageSpacerEpsilon) {

@@ -1642,6 +1642,11 @@ describe('DefaultChatScreen latest-message alignment', () => {
       expect(transcript.scrollTop).toBe(0)
     })
 
+    transcript.dispatchEvent(new Event('scroll'))
+    await settle()
+    expect(spacer.style.height).toBe('0px')
+    expect(transcript.scrollTop).toBe(0)
+
     getResourceDatabase().characters[0].chats[0].message[2].data = 'Partial streamed response'
     await settle()
     placeholderHeight = 180
@@ -1649,6 +1654,11 @@ describe('DefaultChatScreen latest-message alignment', () => {
     resizeObservers.notify(placeholderRow)
     await settle()
 
+    expect(spacer.style.height).toBe('0px')
+    expect(transcript.scrollTop).toBe(0)
+
+    transcript.dispatchEvent(new Event('scroll'))
+    await settle()
     expect(spacer.style.height).toBe('0px')
     expect(transcript.scrollTop).toBe(0)
     expect(generation).toBeTruthy()
