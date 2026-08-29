@@ -261,6 +261,7 @@ describe('authenticated resource read routes', () => {
       settings.keepSessionAlive = 'pip'
       settings.animationSpeed = 'fast'
       settings.colorScheme = {}
+      settings.customTextTheme = { FontColorStandard: '#ffffff' }
       settings.doNotWarnExternalServers = 1
       settings.characterOrder = null
       settings.currentChar = 99
@@ -283,6 +284,10 @@ describe('authenticated resource read routes', () => {
       keepSessionAlive: 'sound',
       animationSpeed: 0.4,
       colorScheme: expect.objectContaining({ type: 'dark' }),
+      customTextTheme: expect.objectContaining({
+        FontColorStandard: '#ffffff',
+        FontColorBold: '#f8f8f2',
+      }),
       doNotWarnExternalServers: false,
     })
     expect(response.json().characters).toMatchObject({ characterOrder: [], currentChar: -1 })
@@ -300,6 +305,10 @@ describe('authenticated resource read routes', () => {
       keepSessionAlive: 'sound',
       animationSpeed: 0.4,
       colorScheme: expect.objectContaining({ type: 'dark' }),
+      customTextTheme: expect.objectContaining({
+        FontColorStandard: '#ffffff',
+        FontColorBold: '#f8f8f2',
+      }),
       doNotWarnExternalServers: false,
       characterOrder: [],
       currentChar: -1,

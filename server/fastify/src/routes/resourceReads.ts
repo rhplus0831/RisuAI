@@ -77,12 +77,13 @@ function normalizeSettingsForRead(db: DatabaseSync): Record<string, unknown> {
   ) as ServerShellSettings
   for (const key of SERVER_SHELL_SETTINGS_KEYS) {
     const persisted = persistedSettings[key]
-    const value =
+    const persistedOrDefault =
       key === 'keepSessionAlive'
         ? persisted === 'pip' || persisted === 'sound'
           ? 'sound'
           : 'off'
         : (persisted ?? structuredClone(DEFAULT_SHELL_DATABASE[key]))
+    const value = mergePartialShellRecordWithDefaults(key, persistedOrDefault)
     const candidate = { ...shellSettings, [key]: value }
     if (isServerShellSettings(candidate)) shellSettings[key] = value as never
   }
@@ -99,6 +100,13 @@ function normalizeSettingsForRead(db: DatabaseSync): Record<string, unknown> {
     normalizedSettings.currentChar = -1
   }
   return normalizedSettings
+}
+
+function mergePartialShellRecordWithDefaults(key: string, value: unknown): unknown {
+  if (key !== 'colorScheme' && key !== 'customTextTheme') return value
+  const fallback = DEFAULT_SHELL_DATABASE[key]
+  if (!isRecord(fallback) || !isRecord(value)) return value
+  return { ...structuredClone(fallback), ...structuredClone(value) }
 }
 
 function projectShellSettings(normalizedSettings: Record<string, unknown>): ServerShellSettings {
