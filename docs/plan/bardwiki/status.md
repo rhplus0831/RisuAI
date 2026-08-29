@@ -2,16 +2,17 @@
 
 Date: 2026-08-29
 
-The workstream is open. Phases 0-1 are complete and Phase 2 is current.
-BardWiki persistence, manual commands, targeted resources, and backup recovery
-are implemented; prompt, worker, and UI behavior has not started.
+The workstream is open. Phases 0-2 are complete and Phase 3 is current.
+BardWiki persistence, manual commands, targeted resources, backup recovery,
+global settings, and the chat-scoped manual workspace are implemented; prompt
+retrieval and autonomous worker behavior have not started.
 
 ## Snapshot
 
 - Plan state: runtime implementation in progress.
-- Current phase: Phase 2, slices 1-3 complete.
-- Current implementation cursor: complete the Phase 2 responsive,
-  accessibility, lazy-loading, localization, and route regression gate.
+- Current phase: Phase 3, foundation not yet implemented.
+- Current implementation cursor: add the bounded repository snapshot and pure
+  query/selection primitives for committed active documents.
 - Blockers: none.
 - Runtime changes in this workstream: schema v33, low-level repository,
   revisioned settings/manual-document commands, shared wire schemas, targeted
@@ -33,8 +34,14 @@ are implemented; prompt, worker, and UI behavior has not started.
 - Phase 2 slice 3 validation: workspace passed 7 tests; durable bridge/command
   adapters passed 4 focused tests; all 120 durable route allowlist cases and 6
   server BardWiki route tests passed on 2026-08-29.
-- Residual risk: Phase 2 still needs its complete regression and browser-smoke
-  gate before prompt retrieval begins.
+- Phase 2 slice 4 validation: UI regressions passed 8 files, 268 tests; server
+  settings/commands/routes passed 3 files, 237 tests; the complete durable
+  allowlist passed 229 tests; Svelte and server-facing typechecks passed; the
+  production browser build and all 37 Playwright smoke tests passed on
+  2026-08-29.
+- Residual risk: Phase 3 must preserve byte-compatible non-BardWiki prompt
+  assembly while adding deterministic, budgeted selection and privacy-safe
+  diagnostics.
 - Source investigation: complete for RisuBard semantics and the local settings,
   finalization, jobs/events, storage/API, and prompt-retrieval boundaries.
 
@@ -60,8 +67,8 @@ are implemented; prompt, worker, and UI behavior has not started.
 | --- | --- | --- |
 | [0. Contract and architecture](phases/phase-0-contract-and-architecture.md) | Complete | Exact types, states, routes, events, inheritance, errors, and test matrix are locked in [`CONTRACT.md`](CONTRACT.md). |
 | [1. Persistence and resources](phases/phase-1-persistence-and-resources.md) | Complete | Authoritative persistence, manual commands/resources, cascade lifecycle, and backup/restore recovery are proven. |
-| [2. Settings and workspace](phases/phase-2-settings-and-workspace.md) | In progress (3/4) | Global/per-chat settings and conflict-safe durable manual document editing are usable. |
-| [3. Prompt retrieval](phases/phase-3-prompt-retrieval.md) | Pending | Committed documents are selected and injected deterministically under budget. |
+| [2. Settings and workspace](phases/phase-2-settings-and-workspace.md) | Complete | Global/per-chat settings and conflict-safe durable manual document editing are usable. |
+| [3. Prompt retrieval](phases/phase-3-prompt-retrieval.md) | In progress | Committed documents are selected and injected deterministically under budget. |
 | [4. Jobs and explicit confirmation](phases/phase-4-jobs-and-explicit-confirmation.md) | Pending | Separate durable worker execution and explicit event-document generation are reliable. |
 | [5. Automatic and canonical updates](phases/phase-5-automatic-and-canonical-updates.md) | Pending | Prior-turn automatic confirmation, canonical patches, and stale reconciliation land. |
 | [6. Lifecycle and interchange](phases/phase-6-lifecycle-and-interchange.md) | Pending | Edit/delete/fork/import/export/restore/rebuild and operational edges are complete. |
@@ -69,8 +76,8 @@ are implemented; prompt, worker, and UI behavior has not started.
 
 ## Next Action
 
-Execute Phase 2, slice 4: run responsive/accessibility/lazy/localization/route
-regressions plus browser smoke and close the phase.
+Add a bounded Phase 3 prompt-time repository snapshot plus pure deterministic
+query, ranking, link-expansion, excerpt, and budget helpers.
 
 ## Maintenance Rules
 

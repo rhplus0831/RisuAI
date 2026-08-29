@@ -189,6 +189,18 @@ describe('BardWiki workspace', () => {
     expect(target.querySelector('[aria-label="Open Old Tavern"]')).toBeTruthy()
   })
 
+  it('closes a clean workspace with Escape from the trapped dialog', async () => {
+    const close = vi.fn()
+    component = mount(BardWikiWorkspace, { target, props: { chatId: 'chat-a', close } })
+    await settle()
+
+    target
+      .querySelector<HTMLElement>('[role="dialog"]')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+
+    expect(close).toHaveBeenCalledOnce()
+  })
+
   it('offers discard/reload and preserves a retrying draft behind the refreshed fence', async () => {
     component = mount(BardWikiWorkspace, { target, props: { chatId: 'chat-a' } })
     await settle()

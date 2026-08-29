@@ -1,6 +1,6 @@
 # Phase 2: Settings and Manual Workspace
 
-Status: in progress.
+Status: complete.
 
 Goal: make BardWiki manually usable through global settings and a chat-scoped
 document workspace while autonomous model updates remain disabled.
@@ -33,6 +33,14 @@ distinct. Queued drafts stay guarded until settlement, while conflicts offer
 both discard/reload and an explicit retry of the preserved draft against a
 fresh version/hash fence. Per-chat automatic confirmation and canonical
 updates remain rejected until Phase 5.
+
+Slice 4 closed the responsive, accessibility, localization, lazy-loading, and
+route/resource regression gate. The workspace has explicit modal semantics,
+keyboard dismissal, responsive index/detail behavior, and chat-switch cleanup.
+Document and per-chat-settings settlements use independent generation fences,
+so one mutation domain cannot suppress the other domain's completion state.
+The production browser build continues to emit the workspace as a separate
+lazy chunk.
 
 Validation on 2026-08-29:
 
@@ -89,6 +97,36 @@ pnpm exec vitest run --project frontend-dom \
 pnpm exec vitest run --config server/fastify/vitest.config.ts \
   server/fastify/__tests__/bardWikiRoutes.test.ts
 # 1 file, 6 tests passed
+
+pnpm exec vitest run \
+  src/lib/Setting/Pages/OtherBotSettings.svelte.test.ts \
+  src/lib/Setting/Settings.svelte.test.ts \
+  src/lib/ChatScreens/BardWikiWorkspace.svelte.test.ts \
+  src/lib/ChatScreens/BardWikiWorkspace.lazy.test.ts \
+  src/ts/server/resourceManifest.test.ts \
+  src/ts/server/commands.test.ts \
+  src/ts/server/bardWikiCommands.test.ts \
+  src/lang/index.test.ts
+# 8 files, 268 tests passed
+
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/settingsGroupParity.test.ts \
+  server/fastify/__tests__/commands.test.ts \
+  server/fastify/__tests__/bardWikiRoutes.test.ts
+# 3 files, 237 tests passed
+
+pnpm exec vitest run --project frontend-dom \
+  src/ts/server/pendingMutationOutbox.test.ts
+# 1 file, 229 tests passed
+
+pnpm exec svelte-check --tsconfig ./tsconfig.json --output machine
+# 6,629 files, zero errors and warnings
+
+pnpm check:server
+# protocol, client-library, browser-smoke, and Fastify typechecks passed
+
+pnpm smoke:fastify-browser
+# production browser build passed; 37 Playwright smoke tests passed
 ```
 
 ## Depends On

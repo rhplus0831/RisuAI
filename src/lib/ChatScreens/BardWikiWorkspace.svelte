@@ -79,7 +79,8 @@
   let chatRequest = 0
   let documentRequest = 0
   let versionsRequest = 0
-  let mutationSequence = 0
+  let documentMutationSequence = 0
+  let settingsMutationSequence = 0
 
   let chatResource = $derived($bardWikiResource.chats[chatId] ?? null)
   let documentKey = $derived(
@@ -261,14 +262,14 @@
     final: BardWikiMutationFinalOutcome,
     preferredDocumentId: string | null,
   ): Promise<void> {
-    if (sequence !== mutationSequence) return
+    if (sequence !== documentMutationSequence) return
     if (final.status === 'failed') {
       documentMutationState = 'failed'
       documentMutationError = mutationFailureMessage(final.result)
       return
     }
     const loaded = await loadChat(false)
-    if (sequence !== mutationSequence || !loaded) return
+    if (sequence !== documentMutationSequence || !loaded) return
     const targetId =
       preferredDocumentId ??
       chatResource?.documents.find(
@@ -277,7 +278,7 @@
       null
     if (targetId) await selectDocument(targetId, true)
     else resetEditor()
-    if (sequence === mutationSequence) documentMutationState = 'accepted'
+    if (sequence === documentMutationSequence) documentMutationState = 'accepted'
   }
 
   function trackQueuedDocumentMutation(
@@ -297,7 +298,7 @@
       documentMutationError = language.bardWiki.requiredFields
       return
     }
-    const sequence = ++mutationSequence
+    const sequence = ++documentMutationSequence
     const payload = {
       kind: documentDraft.kind,
       title: documentDraft.title.trim(),
@@ -331,7 +332,7 @@
       documentMutationError = language.bardWiki.documentLoadFailed
       return
     }
-    if (sequence !== mutationSequence) return
+    if (sequence !== documentMutationSequence) return
     if (outcome.status === 'accepted') {
       await settleDocumentMutation(sequence, { status: 'accepted' }, outcome.result.document.id)
     } else if (outcome.status === 'queued') {
@@ -348,7 +349,7 @@
   async function deleteDocument(): Promise<void> {
     if (!selectedDocumentId || !documentResource || documentMutationPending) return
     if (!globalThis.confirm(language.bardWiki.deleteConfirm(documentResource.document.title))) return
-    const sequence = ++mutationSequence
+    const sequence = ++documentMutationSequence
     const targetDocumentId = selectedDocumentId
     documentMutationState = 'saving'
     documentMutationError = ''
@@ -356,7 +357,7 @@
       expectedVersion: documentResource.document.version,
       expectedContentHash: documentResource.document.contentHash,
     })
-    if (sequence !== mutationSequence) return
+    if (sequence !== documentMutationSequence) return
     if (outcome.status === 'accepted') {
       await settleDocumentMutation(sequence, { status: 'accepted' }, null)
     } else if (outcome.status === 'queued') {
@@ -401,7 +402,7 @@
       settingsMutationError = language.bardWiki.invalidBudget
       return
     }
-    const sequence = ++mutationSequence
+    const sequence = ++settingsMutationSequence
     settingsMutationState = 'saving'
     settingsMutationError = ''
     const outcome = await saveBardWikiChatSettings(chatId, {
@@ -409,14 +410,14 @@
       memoryModeOverride: memoryModeOverrideDraft === 'inherit' ? null : memoryModeOverrideDraft,
       totalTokenBudgetOverride: totalBudget === '' ? null : Number(totalBudget),
     })
-    if (sequence !== mutationSequence) return
+    if (sequence !== settingsMutationSequence) return
     if (outcome.status === 'accepted') {
       await loadChat(false)
       settingsMutationState = 'accepted'
     } else if (outcome.status === 'queued') {
       settingsMutationState = 'queued'
       void outcome.settlement.then(async (final) => {
-        if (sequence !== mutationSequence) return
+        if (sequence !== settingsMutationSequence) return
         if (final.status === 'accepted') {
           await loadChat(false)
           settingsMutationState = 'accepted'
@@ -452,7 +453,8 @@
 
   $effect(() => {
     chatId
-    mutationSequence += 1
+    documentMutationSequence += 1
+    settingsMutationSequence += 1
     settingsMutationState = 'idle'
     void loadChat()
   })
