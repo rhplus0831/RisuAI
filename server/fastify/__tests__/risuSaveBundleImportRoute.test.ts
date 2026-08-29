@@ -242,6 +242,44 @@ function buildBundleZipEntries(entries: ReadonlyArray<{ name: string; data?: Uin
   return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)))
 }
 
+function localAssetStageDirectories(parent: string): string[] {
+  return fs
+    .readdirSync(parent, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith('assets-stage-'))
+    .map((entry) => path.join(parent, entry.name))
+}
+
+function trackExplicitBufferMaterialization(): {
+  maxBytes(): number
+  restore(): void
+} {
+  const alloc = vi.spyOn(Buffer, 'alloc')
+  const allocUnsafe = vi.spyOn(Buffer, 'allocUnsafe')
+  const from = vi.spyOn(Buffer, 'from')
+  const concat = vi.spyOn(Buffer, 'concat')
+  return {
+    maxBytes: () => {
+      const allocationSizes = [...alloc.mock.calls, ...allocUnsafe.mock.calls].map(([size]) => size)
+      const copySizes = from.mock.calls.map(([value]) => {
+        if (ArrayBuffer.isView(value)) return value.byteLength
+        if (value instanceof ArrayBuffer) return value.byteLength
+        return 0
+      })
+      const concatSizes = concat.mock.calls.map(([chunks, totalLength]) => {
+        if (totalLength !== undefined) return totalLength
+        return chunks.reduce((total, chunk) => total + chunk.byteLength, 0)
+      })
+      return Math.max(0, ...allocationSizes, ...copySizes, ...concatSizes)
+    },
+    restore: () => {
+      concat.mockRestore()
+      from.mockRestore()
+      allocUnsafe.mockRestore()
+      alloc.mockRestore()
+    },
+  }
+}
+
 function multipartBundle(bytes: Uint8Array, filename = 'database.risu.zip') {
   const boundary = `risu-bundle-boundary-${ASSET_ID.slice(0, 8)}`
   const head = Buffer.from(
@@ -352,6 +390,211 @@ describe('repository .risu bundle import route', () => {
     await expect(
       decodeLocalBackup(bundlePath, { maxExpandedBytes: Infinity, signal: controller.signal }),
     ).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('streams a multi-megabyte ZIP asset to its stage file without explicitly materializing or concatenating it', async () => {
+    const assetBytes = Buffer.alloc(3 * 1024 * 1024, 0x5a)
+    const assetId = createHash('sha256').update(assetBytes).digest('hex')
+    const databaseBytes = encodeLegacyRisuSaveEnvelope({ characters: [] })
+    const bundlePath = path.join(harness.dataDir, 'streamed-zip-asset.risu.zip')
+    writeFileSync(
+      bundlePath,
+      buildBundleZipEntries([
+        { name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify({ version: 1 })) },
+        { name: `assets/${assetId}.png`, data: assetBytes },
+        { name: 'database.risu', data: databaseBytes },
+      ]),
+    )
+
+    const buffers = trackExplicitBufferMaterialization()
+    let decoded: Awaited<ReturnType<typeof decodeLocalBackup>>
+    try {
+      decoded = await decodeLocalBackup(bundlePath, {
+        maxExpandedBytes: Infinity,
+        maxDatabaseBytes: Infinity,
+      })
+      expect(buffers.maxBytes()).toBeLessThan(assetBytes.length)
+    } finally {
+      buffers.restore()
+    }
+
+    expect(decoded.stagedAssets).toHaveLength(1)
+    expect(decoded.stagedAssets[0]).toMatchObject({ id: assetId, size: assetBytes.length })
+    expect(fs.readFileSync(decoded.stagedAssets[0].filePath)).toEqual(assetBytes)
+  })
+
+  it('reads legacy media in bounded chunks and skips an unrelated multi-megabyte record without allocating it', async () => {
+    const unrelatedBytes = Buffer.alloc(4 * 1024 * 1024, 0x3c)
+    const assetBytes = Buffer.alloc(3 * 1024 * 1024, 0xa5)
+    const assetId = createHash('sha256').update(assetBytes).digest('hex')
+    const databaseBytes = encodeLegacyRisuSaveEnvelope({ characters: [] })
+    const bundlePath = path.join(harness.dataDir, 'streamed-legacy-asset.bin')
+    writeFileSync(
+      bundlePath,
+      buildLegacyBin([
+        { name: 'cold-storage.json', data: unrelatedBytes },
+        { name: `${assetId}.png`, data: assetBytes },
+        { name: 'database.risudat', data: databaseBytes },
+      ]),
+    )
+
+    const buffers = trackExplicitBufferMaterialization()
+    let decoded: Awaited<ReturnType<typeof decodeLocalBackup>>
+    try {
+      decoded = await decodeLocalBackup(bundlePath, {
+        maxExpandedBytes: Infinity,
+        maxDatabaseBytes: Infinity,
+      })
+      expect(buffers.maxBytes()).toBeLessThan(assetBytes.length)
+    } finally {
+      buffers.restore()
+    }
+
+    expect(decoded.stagedAssets).toHaveLength(1)
+    expect(decoded.stagedAssets[0]).toMatchObject({ id: assetId, size: assetBytes.length })
+    expect(fs.readFileSync(decoded.stagedAssets[0].filePath)).toEqual(assetBytes)
+  })
+
+  it.each(['risu-bundle-zip', 'legacy-local-backup'] as const)(
+    'enforces maxDatabaseBytes before buffering a %s database and cleans earlier staged assets',
+    async (format) => {
+      const databaseBytes = Buffer.alloc(2 * 1024 * 1024, 0x7d)
+      const bundlePath = path.join(
+        harness.dataDir,
+        format === 'risu-bundle-zip' ? 'database-cap.zip' : 'database-cap.bin',
+      )
+      const bytes =
+        format === 'risu-bundle-zip'
+          ? buildBundleZipEntries([
+              { name: `assets/${ASSET_ID}.png`, data: ASSET_BYTES },
+              { name: 'database.risu', data: databaseBytes },
+              { name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify({ version: 1 })) },
+            ])
+          : buildLegacyBin([
+              { name: `${ASSET_ID}.png`, data: ASSET_BYTES },
+              { name: 'database.risudat', data: databaseBytes },
+            ])
+      writeFileSync(bundlePath, bytes)
+
+      await expect(
+        decodeLocalBackup(bundlePath, {
+          maxExpandedBytes: Infinity,
+          maxDatabaseBytes: 128 * 1024,
+        }),
+      ).rejects.toThrow('Local backup database exceeds size limit')
+      expect(localAssetStageDirectories(harness.dataDir)).toEqual([])
+    },
+  )
+
+  it.each(['risu-bundle-zip', 'legacy-local-backup'] as const)(
+    'rejects a %s asset hash mismatch and removes every staged file',
+    async (format) => {
+      const databaseBytes = encodeLegacyRisuSaveEnvelope({ characters: [] })
+      const bundlePath = path.join(
+        harness.dataDir,
+        format === 'risu-bundle-zip' ? 'hash-mismatch.zip' : 'hash-mismatch.bin',
+      )
+      const bytes =
+        format === 'risu-bundle-zip'
+          ? buildBundleZipEntries([
+              { name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify({ version: 1 })) },
+              { name: `assets/${ASSET_ID}.png`, data: SECOND_ASSET_BYTES },
+              { name: 'database.risu', data: databaseBytes },
+            ])
+          : buildLegacyBin([
+              { name: `${ASSET_ID}.png`, data: SECOND_ASSET_BYTES },
+              { name: 'database.risudat', data: databaseBytes },
+            ])
+      writeFileSync(bundlePath, bytes)
+
+      await expect(
+        decodeLocalBackup(bundlePath, { maxExpandedBytes: Infinity, maxDatabaseBytes: Infinity }),
+      ).rejects.toThrow('content hash check')
+      expect(localAssetStageDirectories(harness.dataDir)).toEqual([])
+    },
+  )
+
+  it.each(['risu-bundle-zip', 'legacy-local-backup'] as const)(
+    'closes and removes an in-progress %s stage file when decoding is aborted',
+    async (format) => {
+      const assetBytes = Buffer.alloc(3 * 1024 * 1024, 0x66)
+      const assetId = createHash('sha256').update(assetBytes).digest('hex')
+      const databaseBytes = encodeLegacyRisuSaveEnvelope({ characters: [] })
+      const bundlePath = path.join(
+        harness.dataDir,
+        format === 'risu-bundle-zip' ? 'aborted-stage.zip' : 'aborted-stage.bin',
+      )
+      const bytes =
+        format === 'risu-bundle-zip'
+          ? buildBundleZipEntries([
+              { name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify({ version: 1 })) },
+              { name: `assets/${assetId}.png`, data: assetBytes },
+              { name: 'database.risu', data: databaseBytes },
+            ])
+          : buildLegacyBin([
+              { name: `${assetId}.png`, data: assetBytes },
+              { name: 'database.risudat', data: databaseBytes },
+            ])
+      writeFileSync(bundlePath, bytes)
+      const controller = new AbortController()
+      const originalWriteSync = fs.writeSync
+      const writeSync = vi.spyOn(fs, 'writeSync').mockImplementation(((...args: Parameters<typeof fs.writeSync>) => {
+        const written = Reflect.apply(originalWriteSync, fs, args) as number
+        controller.abort()
+        return written
+      }) as typeof fs.writeSync)
+
+      try {
+        await expect(
+          decodeLocalBackup(bundlePath, {
+            maxExpandedBytes: Infinity,
+            maxDatabaseBytes: Infinity,
+            signal: controller.signal,
+          }),
+        ).rejects.toMatchObject({ name: 'AbortError' })
+      } finally {
+        writeSync.mockRestore()
+      }
+      expect(localAssetStageDirectories(harness.dataDir)).toEqual([])
+    },
+  )
+
+  it('forwards the route inner-database ceiling into local-backup decoding', async () => {
+    const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-database-cap-'))
+    const { app } = await buildApp({
+      config: {
+        host: '127.0.0.1',
+        port: 0,
+        dataDir,
+        bodyLimit: 1024,
+        importMaxBytes: Infinity,
+        trustProxy: false,
+        hubUrl: 'https://sv.risuai.xyz',
+      },
+      memoryWorker: false,
+      commandEvents: createCommandEventSink(),
+    })
+    try {
+      const { assertion: cappedAssertion } = await setupAuthedClient(app)
+      const upload = multipartBundle(
+        buildBundleZipEntries([
+          { name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify({ version: 1 })) },
+          { name: 'database.risu', data: Buffer.alloc(2048, 0x2a) },
+        ]),
+      )
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/import/bundle',
+        headers: { 'risu-auth': cappedAssertion, 'content-type': upload.contentType },
+        payload: upload.payload,
+      })
+
+      expect(response.statusCode).toBe(400)
+      expect(response.json()).toEqual({ error: 'Local backup database exceeds size limit' })
+    } finally {
+      await app.close()
+      rmSync(dataDir, { recursive: true, force: true })
+    }
   })
 
   it('isolates staged-asset cleanup failures and continues through every eligible file', () => {

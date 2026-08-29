@@ -211,6 +211,7 @@ export function registerSaveRoutes(
 
       const decoded = await decodeLocalBackup(uploadPath, {
         maxExpandedBytes: importMaxBytes,
+        maxDatabaseBytes: bundleInnerRisuMaxExpandedBytes,
         signal: requestAbort.signal,
       })
 
