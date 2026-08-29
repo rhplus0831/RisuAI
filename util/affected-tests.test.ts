@@ -86,6 +86,22 @@ describe('affected test planning', () => {
     ])
   })
 
+  it('runs complete lanes when a live archived test inventory changes', () => {
+    const result = plan([
+      {
+        path: '.archived-docs/performance-and-stability/test-suite-effectiveness-audit/frontend-routing-inventory.tsv',
+        status: 'M',
+      },
+    ])
+
+    expect(result.commands).toEqual([
+      { label: 'test inventory and routing', args: ['check:test-inventories'] },
+      { label: 'frontend tests', args: ['test:frontend:run'] },
+      { label: 'frontend performance gates', args: ['test:gates:perf'] },
+      { label: 'server tests', args: ['test:server'] },
+    ])
+  })
+
   it('escalates dependency and CI changes to the full quality suite', () => {
     const result = plan([{ path: 'package.json', status: 'M' }])
 
@@ -195,6 +211,9 @@ describe('affected test planning', () => {
       { label: 'full quality suite', args: ['test:all'] },
     ])
     expect(plan([{ path: 'util/affected-tests.ts', status: 'M' }]).commands).toEqual([
+      { label: 'full quality suite', args: ['test:all'] },
+    ])
+    expect(plan([{ path: 'util/test-watch.ts', status: 'M' }]).commands).toEqual([
       { label: 'full quality suite', args: ['test:all'] },
     ])
   })

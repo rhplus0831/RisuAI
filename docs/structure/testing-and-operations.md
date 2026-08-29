@@ -43,6 +43,8 @@ authoritative here.
 | `pnpm check:server`                | Check protocol types, emit client-library declarations, then typecheck strict Fastify and Playwright browser-smoke projects concurrently without emitting server code.        |
 | `pnpm test`                        | Alias for `pnpm test:frontend`; runs the default root/browser Vitest lane, including UI audit probes but excluding explicit performance gates.                                |
 | `pnpm test:quick`, `pnpm test:affected` | Run changed test files directly or use Vitest dependency selection for changed source files; defaults to the uncommitted diff against `HEAD`.                            |
+| `pnpm test:watch:agent`            | Watch the worktree, run each affected-test plan automatically, keep ordinary frontend/server Vitest contexts warm, and publish ignored status/log artifacts under `.test-watch/`. |
+| `pnpm test:watch:status`           | Validate the watched result's live heartbeat and exact worktree fingerprint; exits `0` for a fresh pass, `1` for a fresh failure, and `2` when running, stale, stopped, or unavailable. |
 | `pnpm check:frontend-test-inventory`, `pnpm update:frontend-test-inventory` | Verify or intentionally regenerate the final exhaustive/disjoint frontend capability manifest and routing registrations. |
 | `pnpm test:frontend`               | Check frontend routing, then run default root/browser Vitest tests outside `server/**`, excluding explicit performance gates.                                                  |
 | `pnpm test:frontend:all`           | Check frontend routing, then run all root/browser Vitest tests, including explicit performance gates.                                                                         |
@@ -95,6 +97,48 @@ CI changes widen to `test:all`. On a fresh machine, run
 `server/fastify/__tests__/README.md` is the maintained topical map for the flat
 Fastify test directory; use it to find command/persistence, generation, memory,
 provider, job, asset/import, and platform/route coverage.
+
+### Background affected-test watcher
+
+Run `pnpm test:watch:agent` in the task's integrated terminal to move the
+affected-test feedback loop into a persistent process. It debounces edit bursts,
+captures the complete Git diff plus untracked files, hashes the contents and
+metadata of every changed path, and builds the same plan as
+`pnpm test:affected`. Ordinary direct/dependency-aware frontend and server runs
+reuse long-lived Vitest/Vite contexts. Inventory, protocol, performance,
+browser-smoke, compatibility, Realm-scale, and full-quality commands retain
+their package-script process and environment behavior. Full-lane runs recreate
+their warm context first so deleted files or runner changes cannot use an old
+module graph.
+
+The watcher writes `.test-watch/status.json` atomically and streams the latest
+generation to both the terminal and `.test-watch/latest.log`. Every relevant
+filesystem event marks the current result stale. A run is published as `passed`
+or `failed` only when a second worktree fingerprint taken after the commands
+exactly matches the fingerprint taken before them; otherwise the result is
+discarded and a new generation is queued. The status includes the watcher
+PID/heartbeat, base ref, generation, target and tested fingerprints, selected
+commands, notes, per-command results, timings, and changed paths.
+
+Use `pnpm test:watch:status` as the trust boundary. It independently fingerprints
+the current worktree and requires a live watcher heartbeat. Its exit statuses
+mean:
+
+- `0`: the watched affected plan passed for the exact current worktree. This may
+  replace a redundant `pnpm test:affected` run with the same watcher options.
+- `1`: the watched affected plan failed for the exact current worktree. Read
+  `.test-watch/latest.log`; rerunning is needed only for additional diagnostics.
+- `2`: the watcher is still running, the worktree/result differs, the watcher
+  stopped, or status is unavailable. Wait for it or run the normal test command.
+
+Raw status JSON is not sufficient evidence. A watched pass replaces only the
+affected plan it records; browser-smoke/compatibility notes and broader owning
+lane or final-handoff requirements still apply. Pass `--base <git-ref>` to use a
+branch base and pass that same base to the status command. Use
+`--debounce-ms <ms>` to tune coalescing, or `--include-smoke` to let relevant
+browser changes trigger the smoke lane automatically; pass `--include-smoke` to
+the status command when smoke coverage is required. Stop the watcher when the
+task is complete.
 
 `pnpm test:compat-current` validates current-stack and cluster goldens without
 external prerequisites. The full compatibility harness additionally requires

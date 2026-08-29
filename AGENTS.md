@@ -44,6 +44,23 @@ Start by reading `STRUCTURE.md` to understand the project structure.
 
 # Test Workflow
 
+- When a background affected-test watcher is running, call
+  `pnpm test:watch:status` before starting `pnpm test:affected`. A zero exit
+  means its passing result is live, matches the exact current worktree
+  fingerprint, and may be used instead of rerunning `test:affected`. A one exit
+  is a fresh watched failure; inspect `.test-watch/latest.log` and fix it rather
+  than rerunning merely to reproduce it. A two exit means the result is running,
+  stale, stopped, or unavailable, so wait for the watcher or use the normal test
+  command. Never trust `.test-watch/status.json` without the validating status
+  command.
+- A watched result substitutes only for the affected-test scope recorded in its
+  status. Continue to follow any reported smoke/compatibility notes and the
+  broader owning-lane or handoff rules below. Start the watcher in the task's
+  integrated terminal with `pnpm test:watch:agent`; add `--include-smoke` only
+  when automatic browser-smoke reruns are desired, and stop it when the task is
+  done. When the watcher uses a non-default `--base`, pass the same base to the
+  status command; pass `--include-smoke` to the status command when that coverage
+  is required.
 - During implementation, prefer `pnpm test:affected` for the current uncommitted
   diff or pass `--base <git-ref>` for a branch diff. Use `--dry-run` to inspect
   the selected lanes and `--include-smoke` when browser-smoke files changed.

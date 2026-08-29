@@ -53,7 +53,7 @@ const rootRunnerFiles = new Set([
   'util/test-effectiveness-inventory.ts',
   'util/test-support-inventory.ts',
 ])
-const fullQualityRunnerFiles = new Set(['util/affected-tests.ts', 'util/test-all.ts'])
+const fullQualityRunnerFiles = new Set(['util/affected-tests.ts', 'util/test-all.ts', 'util/test-watch.ts'])
 
 function normalizeRepoPath(file: string): string {
   return file.replaceAll('\\', '/').replace(/^\.\//, '')
@@ -256,8 +256,8 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
   return { commands, notes }
 }
 
-function gitOutput(args: string[]): string {
-  const result = spawnSync('git', args, { encoding: 'utf8' })
+function gitOutput(args: string[], cwd = process.cwd()): string {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf8' })
   if (result.status !== 0) {
     const detail = result.stderr.trim() || result.stdout.trim() || `git ${args.join(' ')} failed`
     throw new Error(detail)
@@ -286,22 +286,22 @@ export function parseNameStatus(output: string): ChangedPath[] {
   return changes
 }
 
-export function collectChangedPaths(base: string): ChangedPath[] {
-  gitOutput(['rev-parse', '--verify', `${base}^{commit}`])
+export function collectChangedPaths(base: string, cwd = process.cwd()): ChangedPath[] {
+  gitOutput(['rev-parse', '--verify', `${base}^{commit}`], cwd)
   const byPath = new Map<string, ChangedPath>()
   const record = (change: ChangedPath): void => {
     byPath.set(normalizeRepoPath(change.path), { ...change, path: normalizeRepoPath(change.path) })
   }
 
   for (const change of parseNameStatus(
-    gitOutput(['diff', '--name-status', '-z', '--find-renames', `${base}...HEAD`]),
+    gitOutput(['diff', '--name-status', '-z', '--find-renames', `${base}...HEAD`], cwd),
   )) {
     record(change)
   }
-  for (const change of parseNameStatus(gitOutput(['diff', '--name-status', '-z', '--find-renames', 'HEAD']))) {
+  for (const change of parseNameStatus(gitOutput(['diff', '--name-status', '-z', '--find-renames', 'HEAD'], cwd))) {
     record(change)
   }
-  for (const file of gitOutput(['ls-files', '--others', '--exclude-standard', '-z']).split('\0').filter(Boolean)) {
+  for (const file of gitOutput(['ls-files', '--others', '--exclude-standard', '-z'], cwd).split('\0').filter(Boolean)) {
     record({ path: file, status: 'A' })
   }
 

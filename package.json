@@ -24,6 +24,8 @@
     "test": "pnpm test:frontend",
     "test:quick": "tsx util/affected-tests.ts",
     "test:affected": "tsx util/affected-tests.ts",
+    "test:watch:agent": "tsx util/test-watch.ts",
+    "test:watch:status": "tsx util/test-watch.ts --status",
     "check:frontend-test-inventory": "tsx util/frontend-test-inventory.ts --check .archived-docs/performance-and-stability/test-suite-effectiveness-audit/frontend-routing-inventory.tsv",
     "update:frontend-test-inventory": "tsx util/frontend-test-inventory.ts --write .archived-docs/performance-and-stability/test-suite-effectiveness-audit/frontend-routing-inventory.tsv",
     "check:test-support-inventory": "tsx util/test-support-inventory.ts --check .archived-docs/performance-and-stability/test-suite-effectiveness-audit/support-artifacts.json",
