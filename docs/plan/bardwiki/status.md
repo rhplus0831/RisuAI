@@ -2,18 +2,21 @@
 
 Date: 2026-08-29
 
-The workstream is planned and open. No BardWiki runtime, schema, route, prompt,
-worker, or UI implementation has started. Phase 0 is the next phase.
+The workstream is open. Phase 0 is complete; no BardWiki runtime, schema, route,
+prompt, worker, or UI implementation has started. Phase 1 is current.
 
 ## Snapshot
 
-- Plan state: planning complete; implementation not started.
-- Current phase: Phase 0, pending.
-- Current implementation cursor: lock exact contracts before creating schema or
-  runtime code.
+- Plan state: implementation contract locked; runtime implementation not started.
+- Current phase: Phase 1, schema/repository slice pending.
+- Current implementation cursor: add schema migration, constraints, row types,
+  and focused low-level repository tests from [`CONTRACT.md`](CONTRACT.md).
 - Blockers: none.
 - Runtime changes in this workstream: none.
-- Verification runs for implementation: none required yet; planning files only.
+- Validation: Phase 0 Prettier contract check passed on 2026-08-29.
+- Phase 0 commit: the contract/status commit that records this completion.
+- Residual risk: runtime feasibility is proven only by architecture inspection;
+  every locked behavior still requires its owning implementation-phase tests.
 - Source investigation: complete for RisuBard semantics and the local settings,
   finalization, jobs/events, storage/API, and prompt-retrieval boundaries.
 
@@ -37,7 +40,7 @@ worker, or UI implementation has started. Phase 0 is the next phase.
 
 | Phase | Status | Outcome |
 | --- | --- | --- |
-| [0. Contract and architecture](phases/phase-0-contract-and-architecture.md) | Pending | Exact types, states, routes, events, inheritance, errors, and test matrix are locked. |
+| [0. Contract and architecture](phases/phase-0-contract-and-architecture.md) | Complete | Exact types, states, routes, events, inheritance, errors, and test matrix are locked in [`CONTRACT.md`](CONTRACT.md). |
 | [1. Persistence and resources](phases/phase-1-persistence-and-resources.md) | Pending | SQLite schema, repositories, resources, commands, versions, sources, links, and backup ownership land. |
 | [2. Settings and workspace](phases/phase-2-settings-and-workspace.md) | Pending | Global BardWiki settings and a chat-scoped manual document workspace are usable. |
 | [3. Prompt retrieval](phases/phase-3-prompt-retrieval.md) | Pending | Committed documents are selected and injected deterministically under budget. |
@@ -48,18 +51,9 @@ worker, or UI implementation has started. Phase 0 is the next phase.
 
 ## Next Action
 
-Execute Phase 0 only:
-
-1. Resolve the exact shared type and wire names.
-2. Lock settings inheritance and initial defaults.
-3. Lock receipt/job/document state machines and error codes.
-4. Lock command/read/event/resource contracts.
-5. Lock the confirmation source-selection algorithm against send, continue,
-   regenerate, explicit confirmation, edits, deletes, and replay.
-6. Record the final contract and focused test fixtures in the Phase 0 file.
-
-Do not create SQLite tables or production routes until those decisions are
-recorded and Phase 0 exit criteria are met.
+Execute Phase 1, slice 1 only: implement the locked schema migration,
+constraints, row types, low-level repository, and focused repository tests.
+Do not register production routes until that slice passes.
 
 ## Maintenance Rules
 

@@ -1,10 +1,26 @@
 # Phase 0: Contract and Architecture
 
-Status: pending. Contract work only; do not add production tables, routes,
-workers, prompt rows, or visible UI in this phase.
+Status: complete. Contract work only; no production tables, routes, workers,
+prompt rows, or visible UI were added in this phase.
 
 Goal: remove ambiguity from the BardWiki data, confirmation, job, resource,
 prompt, and lifecycle contracts before implementation begins.
+
+## Completion record
+
+The exact contract is locked in [`../CONTRACT.md`](../CONTRACT.md). It defines
+the shared names and defaults, inheritance, lexical-search decision, limits,
+schema/backup matrix, routes/resources/events, error codes, confirmation truth
+table, receipt/job/crash states, model-output schemas, prompt budgeting,
+lifecycle/interchange behavior, and named focused tests required by the
+deliverables below.
+
+The architecture cross-check covered shared protocol and commands, persistence
+and backup ownership, prompt assembly, settings/chat UI, memory workers and
+generation finalization, and the original RisuBard semantics. The resulting
+contract keeps RisuBard's event/canonical/wikilink/lexical behavior while using
+Fastify SQLite, revisioned commands, targeted resources, and independent
+durable workers.
 
 ## Depends On
 
@@ -124,6 +140,9 @@ prompt, and lifecycle contracts before implementation begins.
   Phase 1.
 - [`../status.md`](../status.md) records Phase 0 as complete and points to the
   first Phase 1 slice.
+
+All exit criteria are satisfied by the linked contract. Phase 1 must implement
+the names as written rather than silently choosing alternatives.
 
 ## Validation
 
