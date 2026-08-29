@@ -72,7 +72,12 @@ import { JobRegistry, PROXY_STREAM_GC_INTERVAL_MS } from './streamJobs.js'
 import { GenerationJobRegistry } from './generationJobs.js'
 import { MessageTranslationJobRegistry } from './messageTranslationJobs.js'
 import { GreetingTranslationJobRegistry } from './greetingTranslationJobs.js'
-import { buildMemoryJobEvent, createMemoryEventBus, type MemoryEventSink } from './memoryEvents.js'
+import {
+  buildBardWikiJobEvent,
+  buildMemoryJobEvent,
+  createMemoryEventBus,
+  type MemoryEventSink,
+} from './memoryEvents.js'
 import { backfillLegacyHypaV3MemoryRows } from './memoryLegacyImport.js'
 import { MemoryWorker, type MemoryWorkerOptions } from './memoryWorker.js'
 import { BardWikiWorker, type BardWikiWorkerOptions } from './bardWikiWorker.js'
@@ -280,6 +285,15 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
           },
         })
   bardWikiWorker?.start()
+  const onBardWikiJobEnqueued = (job: Parameters<typeof buildBardWikiJobEvent>[0]): void => {
+    emitMemoryEvent(buildBardWikiJobEvent(job))
+    bardWikiWorker?.wake()
+    try {
+      opts.generationChat?.onBardWikiJobEnqueued?.(job)
+    } catch (error) {
+      app.log.warn({ err: error, bardWikiJobId: job.id }, 'BardWiki job observer failed')
+    }
+  }
   const authState = createAuthState(config.dataDir, {
     agentDevAuthBypass: config.agentDevAuthBypass === true,
   })
@@ -439,6 +453,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
           app.log.warn({ err: error, memoryJobId: job.id }, 'prompt memory job observer failed')
         }
       },
+      onBardWikiJobEnqueued,
     },
     config.generationTrace,
   )
@@ -457,6 +472,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
           app.log.warn({ err: error, memoryJobId: job.id }, 'prompt memory job observer failed')
         }
       },
+      onBardWikiJobEnqueued,
     },
     generationTrace: config.generationTrace,
   })
@@ -485,6 +501,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
         pushNotifications,
         messageTranslationJobs: messageTranslationJobRegistry,
         runMessageTranslation: opts.generationChat?.runMessageTranslation,
+        onBardWikiJobEnqueued,
       })
     } catch (err) {
       app.log.error({ err }, 'generation finalization retry sweep failed')

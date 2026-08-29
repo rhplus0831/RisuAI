@@ -6965,6 +6965,8 @@ describe('POST /api/v1/generate/chat', () => {
   ])(
     '$persistence finalization atomically confirms only the exact prior turn after a later successful send',
     async ({ durable }) => {
+      const onBardWikiJobEnqueued = vi.fn()
+      await restartHarness({ onBardWikiJobEnqueued })
       const { assertion } = await setupAuthedClient(harness.app)
       await seedDatabase(harness.app, assertion, {
         ...fixtureDatabase,
@@ -7049,6 +7051,8 @@ describe('POST /api/v1/generate/chat', () => {
         expect(db.prepare('SELECT kind, status FROM bardwiki_jobs').all()).toEqual([
           { kind: 'apply_turn', status: 'pending' },
         ])
+        expect(onBardWikiJobEnqueued).toHaveBeenCalledOnce()
+        expect(onBardWikiJobEnqueued).toHaveBeenCalledWith(expect.objectContaining({ kind: 'apply_turn' }))
         expect(listPersistedCommandEventHistory(db).filter((event) => event.type.startsWith('bardwiki.'))).toEqual([])
       } finally {
         db.close()

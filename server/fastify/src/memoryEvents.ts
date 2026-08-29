@@ -126,7 +126,7 @@ export function buildMemoryJobEvent(job: MemoryJob): MemoryJobEvent {
   return event
 }
 
-export function buildBardWikiJobEvent(job: BardWikiJob): BardWikiJobEvent {
+export function buildBardWikiJobEvent(job: BardWikiJobSummary): BardWikiJobEvent {
   const event: BardWikiJobEvent = {
     type: 'bardwiki.job',
     chatId: job.chatId,

@@ -88,6 +88,7 @@ import { promptSummaryMetricFields, summarizePromptRows, type PromptRowsSummary 
 import { triggerSourceMetricFields } from '../prompt/triggerSource.js'
 import { bardWikiRequestHistoryMetadata } from '../prompt/bardWiki.js'
 import { createOrReuseAutomaticBardWikiConfirmation } from '../bardWikiReceipts.js'
+import type { BardWikiJobSummary } from '../bardWikiRepository.js'
 import {
   formatPromptChatFrame,
   type PostGenerationFrame,
@@ -251,6 +252,7 @@ export interface GenerationChatRouteOptions {
   pushNotifications?: false | PushNotificationService
   runMessageTranslation?: ServerMessageTranslationRunner
   onPromptMemoryJobEnqueued?: (job: MemoryJob) => void
+  onBardWikiJobEnqueued?: (job: BardWikiJobSummary) => void
   finalizationRetry?:
     | false
     | {
@@ -2431,6 +2433,7 @@ async function buildPostGenerationFrame(args: {
   pushNotifications?: false | PushNotificationService
   messageTranslationJobs: MessageTranslationJobRegistry
   runMessageTranslation?: ServerMessageTranslationRunner
+  onBardWikiJobEnqueued?: (job: BardWikiJobSummary) => void
   generationTrace?: GenerationTraceOptions
   metricContext?: PromptAssemblyMetricContext
 }): Promise<ProviderPostGenerationResult | undefined> {
@@ -2495,6 +2498,7 @@ async function buildPostGenerationFrame(args: {
     // and terminate cleanly (no frame).
     return { primary: message.data, alternates: alternateTexts }
   }
+  if (persistence.bardWikiJobEnqueued) args.onBardWikiJobEnqueued?.(persistence.bardWikiJobEnqueued)
 
   emitProtocolMetric('generation_persistence', {
     status: postGen ? 'inline_ok' : 'inline_raw_fallback',
@@ -2792,6 +2796,7 @@ async function streamAssembly(
                       pushNotifications: options.pushNotifications,
                       messageTranslationJobs,
                       runMessageTranslation: options.runMessageTranslation,
+                      onBardWikiJobEnqueued: options.onBardWikiJobEnqueued,
                       generationTrace,
                       metricContext,
                     })
@@ -3293,6 +3298,7 @@ interface GenerationFinalizationPersistenceResult extends AppliedGenerationScrip
   droppedScriptMutations: GenerationScriptMutationConflict[]
   bookkeepingErrors: Array<{ phase: 'event_emission'; error: string }>
   effectLedger?: GenerationEffectLedgerRef
+  bardWikiJobEnqueued?: BardWikiJobSummary
 }
 
 function applyGenerationChatVarMutationsDroppingConflicts(args: {
@@ -3548,6 +3554,7 @@ function persistServerGenerationResult(args: {
     acceptedMessageId?: string
   }
 }): GenerationFinalizationPersistenceResult {
+  let bardWikiJobEnqueued: BardWikiJobSummary | undefined
   if (args.targetSnapshot) {
     const replayRevision = readAlreadyPersistedGenerationFinalizationRevision({
       db: args.db,
@@ -3678,12 +3685,13 @@ function persistServerGenerationResult(args: {
         const effectiveFinalizationMode = args.mode ?? args.targetSnapshot?.mode ?? 'send'
         if (effectiveFinalizationMode === 'send' && args.automaticConfirmationEligible === true) {
           const acceptedUserMessageId = automaticConfirmationAcceptedUserMessageId(args)
-          createOrReuseAutomaticBardWikiConfirmation(targetDb, {
+          const confirmation = createOrReuseAutomaticBardWikiConfirmation(targetDb, {
             chatId: args.chatId,
             resultAssistantMessageId: write.messageId,
             ...(acceptedUserMessageId ? { acceptedUserMessageId } : {}),
             fallbackMessages: chat.message,
           })
+          if (confirmation?.created) bardWikiJobEnqueued = confirmation.job
         }
         if (hasScriptstateWrite || hasLocalLoreWrite) {
           if (hasLocalLoreWrite) {
@@ -3766,6 +3774,7 @@ function persistServerGenerationResult(args: {
       droppedScriptMutations: result.extra.droppedScriptMutations,
       bookkeepingErrors,
       ...(result.extra.effectLedger ? { effectLedger: result.extra.effectLedger } : {}),
+      ...(bardWikiJobEnqueued ? { bardWikiJobEnqueued } : {}),
     }
     if (persistence.droppedScriptMutations.length > 0) {
       emitProtocolMetric('generation_script_mutation_conflict', {
@@ -4042,6 +4051,7 @@ export function retryQueuedGenerationFinalizations(args: {
   pushNotifications?: false | PushNotificationService
   messageTranslationJobs: MessageTranslationJobRegistry
   runMessageTranslation?: ServerMessageTranslationRunner
+  onBardWikiJobEnqueued?: (job: BardWikiJobSummary) => void
 }): { attempted: number; persisted: number; terminal: number; retryable: number } {
   // Shutdown guard a sweep that fires while `onClose` is tearing
   // down must not touch the closed handle.
@@ -4117,6 +4127,7 @@ export function retryQueuedGenerationFinalizations(args: {
     if (outcome.kind === 'persisted' || outcome.kind === 'committed_cleanup_pending') {
       const { persistence } = outcome
       persisted += 1
+      if (persistence.bardWikiJobEnqueued) args.onBardWikiJobEnqueued?.(persistence.bardWikiJobEnqueued)
       void handlePersistedGenerationCompletion({
         db: args.db,
         dataDir: args.dataDir,
@@ -4289,6 +4300,7 @@ async function buildDurablePostGeneration(args: {
   pushNotifications?: false | PushNotificationService
   messageTranslationJobs: MessageTranslationJobRegistry
   runMessageTranslation?: ServerMessageTranslationRunner
+  onBardWikiJobEnqueued?: (job: BardWikiJobSummary) => void
   generationTrace?: GenerationTraceOptions
   metricContext?: PromptAssemblyMetricContext
 }): Promise<ProviderPostGenerationResult | undefined> {
@@ -4413,6 +4425,7 @@ async function buildDurablePostGeneration(args: {
     return { primary: message.data, alternates: alternateTexts, terminalStatus: 'error' }
   }
   persistence = finalization.persistence
+  if (persistence.bardWikiJobEnqueued) args.onBardWikiJobEnqueued?.(persistence.bardWikiJobEnqueued)
   if (finalization.kind === 'committed_cleanup_pending') {
     persistenceDisposition = 'committed_cleanup_pending'
   }
@@ -5183,6 +5196,7 @@ async function runGenerationJob(args: {
                   pushNotifications: options.pushNotifications,
                   messageTranslationJobs,
                   runMessageTranslation: options.runMessageTranslation,
+                  onBardWikiJobEnqueued: options.onBardWikiJobEnqueued,
                   generationTrace,
                   metricContext,
                 })
