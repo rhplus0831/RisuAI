@@ -5758,6 +5758,7 @@ export async function previewBardWikiRebuildCommand(
     method: 'POST',
     body: { preview: true, policy },
     signal,
+    allowEventlessSuccess: (body) => isExactBardWikiRebuildPreviewReceipt(body, chatId, policy),
   })
 }
 
@@ -5792,7 +5793,110 @@ export async function importBardWikiVaultCommand(
       expectedTargets: input.expectedTargets ?? [],
     },
     signal,
+    allowEventlessSuccess:
+      input.dryRun === true ? (body) => isExactBardWikiVaultDryRunReceipt(body, input.strategy) : undefined,
   })
+}
+
+function isExactBardWikiRebuildPreviewReceipt(
+  body: Record<string, unknown>,
+  expectedChatId: string,
+  expectedPolicy: BardWikiRebuildPolicy,
+): boolean {
+  if (!isJsonValueEqual(Object.keys(body).sort(), ['preview', 'revision'])) return false
+  if (!isPlainJsonRecord(body.preview)) return false
+  const preview = body.preview
+  if (
+    !isJsonValueEqual(Object.keys(preview).sort(), [
+      'activeJobId',
+      'chatId',
+      'policy',
+      'preserveUserDocumentCount',
+      'replaceDerivedDocumentCount',
+      'sourceCount',
+    ]) ||
+    preview.chatId !== expectedChatId ||
+    preview.policy !== expectedPolicy ||
+    !isNonNegativeInteger(preview.sourceCount) ||
+    !isNonNegativeInteger(preview.replaceDerivedDocumentCount) ||
+    !isNonNegativeInteger(preview.preserveUserDocumentCount) ||
+    (preview.activeJobId !== null && !nonEmptyString(preview.activeJobId))
+  ) {
+    return false
+  }
+  return true
+}
+
+function isExactBardWikiVaultDryRunReceipt(
+  body: Record<string, unknown>,
+  expectedStrategy: BardWikiVaultConflictStrategy,
+): boolean {
+  if (!isJsonValueEqual(Object.keys(body).sort(), ['dryRun', 'plan', 'revision']) || body.dryRun !== true) return false
+  if (!isPlainJsonRecord(body.plan)) return false
+  const plan = body.plan
+  if (
+    !isJsonValueEqual(Object.keys(plan).sort(), [
+      'actions',
+      'applicable',
+      'creates',
+      'format',
+      'noops',
+      'renames',
+      'replacements',
+      'skips',
+      'strategy',
+      'version',
+    ]) ||
+    plan.format !== 'risu-bardwiki-vault' ||
+    plan.version !== 1 ||
+    plan.strategy !== expectedStrategy ||
+    !isNonNegativeInteger(plan.creates) ||
+    !isNonNegativeInteger(plan.replacements) ||
+    !isNonNegativeInteger(plan.noops) ||
+    !isNonNegativeInteger(plan.skips) ||
+    !isNonNegativeInteger(plan.renames) ||
+    typeof plan.applicable !== 'boolean' ||
+    !Array.isArray(plan.actions) ||
+    !plan.actions.every(isExactBardWikiVaultImportAction)
+  ) {
+    return false
+  }
+
+  const actionCounts = { create: 0, replace: 0, noop: 0, skip: 0 }
+  for (const action of plan.actions as BardWikiVaultImportAction[]) actionCounts[action.action] += 1
+  return (
+    plan.creates === actionCounts.create &&
+    plan.replacements === actionCounts.replace &&
+    plan.noops === actionCounts.noop &&
+    plan.skips === actionCounts.skip &&
+    (plan.renames as number) <= actionCounts.create
+  )
+}
+
+function isExactBardWikiVaultImportAction(value: unknown): value is BardWikiVaultImportAction {
+  if (!isPlainJsonRecord(value)) return false
+  return (
+    isJsonValueEqual(Object.keys(value).sort(), [
+      'action',
+      'conflict',
+      'logicalPath',
+      'sourceDocumentId',
+      'targetDocumentId',
+    ]) &&
+    nonEmptyString(value.sourceDocumentId) &&
+    nonEmptyString(value.targetDocumentId) &&
+    nonEmptyString(value.logicalPath) &&
+    (value.action === 'create' || value.action === 'replace' || value.action === 'noop' || value.action === 'skip') &&
+    (value.conflict === null ||
+      value.conflict === 'id' ||
+      value.conflict === 'path' ||
+      value.conflict === 'id_and_path' ||
+      value.conflict === 'ambiguous')
+  )
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0
 }
 
 export async function upsertServerInlayCatalogCommand(

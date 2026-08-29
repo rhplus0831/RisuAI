@@ -398,6 +398,178 @@ describe('server command API adapter', () => {
     ])
   })
 
+  it('accepts exact eventless BardWiki rebuild previews and vault dry runs', async () => {
+    const preview = {
+      chatId: 'chat/a',
+      policy: 'full',
+      sourceCount: 4,
+      replaceDerivedDocumentCount: 2,
+      preserveUserDocumentCount: 1,
+      activeJobId: null,
+    }
+    const plan = {
+      format: 'risu-bardwiki-vault',
+      version: 1,
+      strategy: 'rename',
+      creates: 1,
+      replacements: 0,
+      noops: 0,
+      skips: 0,
+      renames: 0,
+      applicable: true,
+      actions: [
+        {
+          sourceDocumentId: 'source-a',
+          targetDocumentId: 'target-a',
+          action: 'create',
+          logicalPath: 'Imported/Arrival',
+          conflict: null,
+        },
+      ],
+    }
+    const responses = [
+      { revision: 7, preview },
+      { revision: 7, dryRun: true, plan },
+    ]
+    const commandFetch = makeCommandFetch(() => responses.shift())
+    const reconciler = vi.fn()
+    setServerCommandSuccessReconciler(reconciler)
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(previewBardWikiRebuildCommand('chat/a', 'full')).resolves.toEqual({
+      status: 'ok',
+      revision: 7,
+      preview,
+    })
+    await expect(
+      importBardWikiVaultCommand({
+        chatId: 'chat/a',
+        dryRun: true,
+        strategy: 'rename',
+        archiveBase64: 'UEs=',
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 7, dryRun: true, plan })
+    expect(reconciler).not.toHaveBeenCalled()
+    expect(peekCachedServerCommandRevision()).toBe(7)
+  })
+
+  it('rejects malformed or incorrect eventless BardWiki receipts', async () => {
+    const preview = {
+      chatId: 'chat/a',
+      policy: 'full',
+      sourceCount: 4,
+      replaceDerivedDocumentCount: 2,
+      preserveUserDocumentCount: 1,
+      activeJobId: null,
+    }
+    const plan = {
+      format: 'risu-bardwiki-vault',
+      version: 1,
+      strategy: 'rename',
+      creates: 1,
+      replacements: 0,
+      noops: 0,
+      skips: 0,
+      renames: 0,
+      applicable: true,
+      actions: [
+        {
+          sourceDocumentId: 'source-a',
+          targetDocumentId: 'target-a',
+          action: 'create',
+          logicalPath: 'Imported/Arrival',
+          conflict: null,
+        },
+      ],
+    }
+    const previewCommand = () => previewBardWikiRebuildCommand('chat/a', 'full')
+    const dryRunCommand = () =>
+      importBardWikiVaultCommand({
+        chatId: 'chat/a',
+        dryRun: true,
+        strategy: 'rename',
+        archiveBase64: 'UEs=',
+      })
+    const cases: Array<{ label: string; response: unknown; command: () => Promise<unknown> }> = [
+      {
+        label: 'preview for another chat',
+        response: { revision: 7, preview: { ...preview, chatId: 'chat/b' } },
+        command: previewCommand,
+      },
+      {
+        label: 'preview with a malformed count',
+        response: { revision: 7, preview: { ...preview, sourceCount: 1.5 } },
+        command: previewCommand,
+      },
+      {
+        label: 'preview with an explicit null event',
+        response: { revision: 7, event: null, preview },
+        command: previewCommand,
+      },
+      {
+        label: 'dry run with the wrong strategy',
+        response: { revision: 7, dryRun: true, plan: { ...plan, strategy: 'skip' } },
+        command: dryRunCommand,
+      },
+      {
+        label: 'dry run with inconsistent action counts',
+        response: { revision: 7, dryRun: true, plan: { ...plan, creates: 0 } },
+        command: dryRunCommand,
+      },
+      {
+        label: 'dry run with a malformed action',
+        response: {
+          revision: 7,
+          dryRun: true,
+          plan: { ...plan, actions: [{ ...plan.actions[0], unexpected: true }] },
+        },
+        command: dryRunCommand,
+      },
+      {
+        label: 'dry run response marked as a mutation',
+        response: { revision: 7, dryRun: false, plan },
+        command: dryRunCommand,
+      },
+      {
+        label: 'mutating import without an event',
+        response: { revision: 8, dryRun: false, plan },
+        command: () =>
+          importBardWikiVaultCommand({
+            baseRevision: 7,
+            chatId: 'chat/a',
+            dryRun: false,
+            strategy: 'rename',
+            archiveBase64: 'UEs=',
+          }),
+      },
+      {
+        label: 'queued rebuild without an event',
+        response: { revision: 8, job: { id: 'job-a' } },
+        command: () =>
+          queueBardWikiRebuildCommand({
+            baseRevision: 7,
+            chatId: 'chat/a',
+            policy: 'full',
+            expectedSourceCount: 4,
+          }),
+      },
+    ]
+
+    for (const testCase of cases) {
+      setCachedServerCommandRevision(6)
+      const reconciler = vi.fn()
+      setServerCommandSuccessReconciler(reconciler)
+      vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(testCase.response)) as unknown as typeof fetch)
+
+      await expect(testCase.command(), testCase.label).resolves.toEqual({
+        status: 'error',
+        error: 'Invalid command response',
+      })
+      expect(reconciler, testCase.label).not.toHaveBeenCalled()
+      expect(peekCachedServerCommandRevision(), testCase.label).toBe(6)
+    }
+  })
+
   it('blocks ordinary APIs before writer readiness while allowing only initialization and pending replay', async () => {
     resetStartupReadinessForTests()
     const command = vi.fn()
