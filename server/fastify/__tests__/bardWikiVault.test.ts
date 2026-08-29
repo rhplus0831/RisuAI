@@ -4,7 +4,11 @@ import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import * as fflate from 'fflate'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { createBardWikiDocument, listBardWikiDocumentVersions, listBardWikiDocuments } from '../src/bardWikiRepository.js'
+import {
+  createBardWikiDocument,
+  listBardWikiDocumentVersions,
+  listBardWikiDocuments,
+} from '../src/bardWikiRepository.js'
 import {
   applyBardWikiVaultImport,
   decodeBardWikiVault,
@@ -160,14 +164,38 @@ describe('BardWiki Markdown vault import', () => {
     expect(listBardWikiDocuments(db, 'chat-a')[0].markdown).toBe('## Imported\nValue.')
   })
 
+  it('rolls back every planned document when any import write fails', () => {
+    createDocument('document-a', 'Lore/A')
+    createDocument('document-b', 'Lore/B')
+    const decoded = decodeBardWikiVault(encodeBardWikiVault(db, 'chat-a'))
+    db.prepare('DELETE FROM bardwiki_documents WHERE chat_id = ?').run('chat-a')
+    db.exec(`
+      CREATE TRIGGER fail_second_bardwiki_import
+      BEFORE INSERT ON bardwiki_documents
+      WHEN NEW.id = 'document-b'
+      BEGIN
+        SELECT RAISE(FAIL, 'injected import failure');
+      END;
+      BEGIN IMMEDIATE;
+    `)
+    try {
+      expect(() => applyBardWikiVaultImport(db, 'chat-a', decoded, 'skip', [], 2)).toThrow(/injected import failure/u)
+      db.exec('ROLLBACK')
+    } catch (error) {
+      db.exec('ROLLBACK')
+      throw error
+    }
+    expect(listBardWikiDocuments(db, 'chat-a')).toEqual([])
+    expect(db.prepare('SELECT COUNT(*) AS count FROM bardwiki_document_versions').get()).toEqual({ count: 0 })
+    expect(db.prepare('SELECT COUNT(*) AS count FROM bardwiki_document_search').get()).toEqual({ count: 0 })
+  })
+
   it.each(['../escape.md', '/absolute.md', 'safe\\escape.md'])('rejects unsafe archive path %s', (entryName) => {
     const archive = fflate.zipSync({
       'manifest.json': new TextEncoder().encode('{"format":"risu-bardwiki-vault","version":1,"documents":[]}'),
       [entryName]: new Uint8Array(),
     })
-    expect(() => decodeBardWikiVault(archive)).toThrowError(
-      expect.objectContaining({ code: 'bardwiki_invalid_vault' }),
-    )
+    expect(() => decodeBardWikiVault(archive)).toThrowError(expect.objectContaining({ code: 'bardwiki_invalid_vault' }))
   })
 
   it('rejects duplicate normalized paths, malformed UTF-8, and content hash mismatches before mutation', () => {

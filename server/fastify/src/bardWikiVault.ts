@@ -140,7 +140,18 @@ export function encodeBardWikiVault(db: DatabaseSync, chatId: string): Uint8Arra
     entries[record.exportPath] = encoder.encode(`---\n${JSON.stringify(frontmatter)}\n---\n${document.markdown}`)
   }
   entries[BARDWIKI_VAULT_MANIFEST] = encoder.encode(`${JSON.stringify(manifest)}\n`)
-  return fflate.zipSync(sortZippable(entries), { level: 0, mtime: ZIP_EPOCH })
+  const rawBytes = Object.values(entries).reduce((total, entry) => {
+    if (!(entry instanceof Uint8Array)) throw new Error('Unexpected BardWiki vault entry shape')
+    return total + entry.byteLength
+  }, 0)
+  if (rawBytes > BARDWIKI_VAULT_MAX_COMPRESSED_BYTES) {
+    throw vaultError('bardwiki_limit_exceeded', 'BardWiki vault exceeds the archive-size limit')
+  }
+  const archive = fflate.zipSync(sortZippable(entries), { level: 0, mtime: ZIP_EPOCH })
+  if (archive.byteLength > BARDWIKI_VAULT_MAX_COMPRESSED_BYTES) {
+    throw vaultError('bardwiki_limit_exceeded', 'BardWiki vault exceeds the archive-size limit')
+  }
+  return archive
 }
 
 /** Decode and validate the entire archive before callers start a mutation. */
@@ -253,9 +264,9 @@ function buildImportPlan(
   const byPath = new Map(liveDocuments.map((document) => [document.normalizedPath, document]))
   const foreignIds = new Set(
     (
-      db
-        .prepare('SELECT id FROM bardwiki_documents WHERE chat_id <> ? ORDER BY id')
-        .all(chatId) as Array<{ id: string }>
+      db.prepare('SELECT id FROM bardwiki_documents WHERE chat_id <> ? ORDER BY id').all(chatId) as Array<{
+        id: string
+      }>
     ).map(({ id }) => id),
   )
   const fences = new Map(expectedTargets.map((target) => [target.documentId, target]))
@@ -312,7 +323,13 @@ function buildImportPlan(
       mutations.push({
         source,
         target: idTarget ?? pathTarget,
-        action: importAction(source, (idTarget ?? pathTarget)?.id ?? source.bardwikiId, 'skip', source.logicalPath, conflict),
+        action: importAction(
+          source,
+          (idTarget ?? pathTarget)?.id ?? source.bardwikiId,
+          'skip',
+          source.logicalPath,
+          conflict,
+        ),
       })
       continue
     }
@@ -329,10 +346,14 @@ function buildImportPlan(
       continue
     }
     const target = idTarget ?? pathTarget
-    const unambiguous = target && (!idTarget || !pathTarget || idTarget.id === pathTarget.id) && target.deletedAt === null
+    const unambiguous =
+      target && (!idTarget || !pathTarget || idTarget.id === pathTarget.id) && target.deletedAt === null
     const fence = target ? fences.get(target.id) : undefined
     const fenceMatches =
-      unambiguous && fence?.version === target.version && fence.contentHash === target.contentHash && fence.documentId === target.id
+      unambiguous &&
+      fence?.version === target.version &&
+      fence.contentHash === target.contentHash &&
+      fence.documentId === target.id
     if (!target || !fenceMatches) applicable = false
     mutations.push({
       source,
@@ -427,12 +448,17 @@ function allocateExportPaths(documents: readonly BardWikiDocument[]): Map<string
   const paths = new Map<string, string>()
   const used = new Set<string>()
   for (const document of documents) {
-    const base = document.logicalPath.toLowerCase().endsWith('.md') ? document.logicalPath : `${document.logicalPath}.md`
+    const base = document.logicalPath.toLowerCase().endsWith('.md')
+      ? document.logicalPath
+      : `${document.logicalPath}.md`
     let candidate = base
     if (used.has(candidate.toLowerCase())) candidate = withPathSuffix(base, document.id.slice(0, 8))
     let attempt = 0
     while (used.has(candidate.toLowerCase())) {
-      candidate = withPathSuffix(base, createHash('sha256').update(`${document.id}\0${attempt}`).digest('hex').slice(0, 8))
+      candidate = withPathSuffix(
+        base,
+        createHash('sha256').update(`${document.id}\0${attempt}`).digest('hex').slice(0, 8),
+      )
       attempt += 1
     }
     assertSafeArchivePath(candidate)
@@ -505,7 +531,7 @@ function inspectZipCentralDirectory(archive: Uint8Array): string[] {
       throw vaultError('bardwiki_invalid_vault', 'Unsupported vault ZIP entry')
     }
     const unixMode = (externalAttributes >>> 16) & 0xf000
-    if ((madeBy >>> 8) === 3 && unixMode === 0xa000) {
+    if (madeBy >>> 8 === 3 && unixMode === 0xa000) {
       throw vaultError('bardwiki_invalid_vault', 'Vault ZIP symlinks are not allowed')
     }
     const name = decodeUtf8(buffer.subarray(offset + 46, offset + 46 + nameLength), 'ZIP entry name')
@@ -520,7 +546,8 @@ function inspectZipCentralDirectory(archive: Uint8Array): string[] {
     }
     offset = end
   }
-  if (offset !== centralOffset + centralSize) throw vaultError('bardwiki_invalid_vault', 'Malformed vault ZIP directory')
+  if (offset !== centralOffset + centralSize)
+    throw vaultError('bardwiki_invalid_vault', 'Malformed vault ZIP directory')
   return names
 }
 
@@ -585,7 +612,11 @@ function readManifest(text: string): BardWikiVaultManifest {
     throw vaultError('bardwiki_invalid_vault', 'Vault manifest.json is not valid JSON')
   }
   const object = requireObject(parsed, 'manifest')
-  if (object.format !== BARDWIKI_VAULT_FORMAT || object.version !== BARDWIKI_VAULT_VERSION || !Array.isArray(object.documents)) {
+  if (
+    object.format !== BARDWIKI_VAULT_FORMAT ||
+    object.version !== BARDWIKI_VAULT_VERSION ||
+    !Array.isArray(object.documents)
+  ) {
     throw vaultError('bardwiki_invalid_vault', 'Unsupported BardWiki vault manifest')
   }
   rejectFields(object, ['format', 'version', 'documents'], 'manifest')
@@ -600,7 +631,19 @@ function readDocumentRecord(value: unknown, label: string): BardWikiVaultDocumen
   const object = requireObject(value, label)
   rejectFields(
     object,
-    ['bardwikiId', 'kind', 'title', 'logicalPath', 'aliases', 'contextPolicy', 'reviewState', 'version', 'contentHash', 'exportPath', 'provenance'],
+    [
+      'bardwikiId',
+      'kind',
+      'title',
+      'logicalPath',
+      'aliases',
+      'contextPolicy',
+      'reviewState',
+      'version',
+      'contentHash',
+      'exportPath',
+      'provenance',
+    ],
     label,
   )
   const bardwikiId = readId(object.bardwikiId)
@@ -652,7 +695,8 @@ function readProvenance(value: unknown): BardWikiVaultDocumentRecord['provenance
   rejectFields(object, ['receiptId', 'jobId'], 'provenance')
   const receiptId = object.receiptId === undefined ? undefined : readId(object.receiptId)
   const jobId = object.jobId === undefined ? undefined : readId(object.jobId)
-  if (object.receiptId !== undefined && !receiptId) throw vaultError('bardwiki_invalid_vault', 'Invalid receipt provenance')
+  if (object.receiptId !== undefined && !receiptId)
+    throw vaultError('bardwiki_invalid_vault', 'Invalid receipt provenance')
   if (object.jobId !== undefined && !jobId) throw vaultError('bardwiki_invalid_vault', 'Invalid job provenance')
   return { ...(receiptId ? { receiptId } : {}), ...(jobId ? { jobId } : {}) }
 }

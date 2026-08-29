@@ -174,6 +174,21 @@ describe('BardWiki revisioned commands', () => {
     expect(inspectRows('SELECT COUNT(*) AS count FROM bardwiki_document_versions')).toEqual([{ count: 1 }])
   })
 
+  it('accepts a bounded import body above the app default parser ceiling', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/bardwiki/chats/chat-a/imports',
+      headers: authHeaders(),
+      payload: {
+        dryRun: true,
+        strategy: 'skip',
+        archiveBase64: Buffer.alloc(800 * 1024).toString('base64'),
+      },
+    })
+    expect(response.statusCode).toBe(400)
+    expect(response.json()).toEqual({ error: 'bardwiki_invalid_vault' })
+  })
+
   it('requires an exact rebuild preview before queuing observable work', async () => {
     const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
     try {

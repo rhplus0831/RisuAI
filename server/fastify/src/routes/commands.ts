@@ -9494,52 +9494,48 @@ export function registerCommandRoutes(
     }
   })
 
-  app.post(
-    '/api/v1/commands/bardwiki/chats/:chatId/imports',
-    { config: { bodyLimit: 24 * 1024 * 1024 } },
-    async (req, reply) => {
-      if (!(await requireAuth(authState, req, reply))) return
+  app.post('/api/v1/commands/bardwiki/chats/:chatId/imports', { bodyLimit: 24 * 1024 * 1024 }, async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
 
-      try {
-        const chatId = readBardWikiId((req.params as { chatId?: unknown }).chatId, 'chatId')
-        const body = readBardWikiImportCommandBody(req.body)
-        const vault = decodeBardWikiVault(body.archive)
-        if (body.dryRun) {
-          return {
-            revision: getSchemaState(db).revision,
-            dryRun: true,
-            plan: planBardWikiVaultImport(db, chatId, vault, body.strategy, body.expectedTargets),
-          }
+    try {
+      const chatId = readBardWikiId((req.params as { chatId?: unknown }).chatId, 'chatId')
+      const body = readBardWikiImportCommandBody(req.body)
+      const vault = decodeBardWikiVault(body.archive)
+      if (body.dryRun) {
+        return {
+          revision: getSchemaState(db).revision,
+          dryRun: true,
+          plan: planBardWikiVaultImport(db, chatId, vault, body.strategy, body.expectedTargets),
         }
-        const baseRevision = readBaseRevision(body)
-        const result = applyTargetedCommandMutation({
-          db,
-          dataDir,
-          baseRevision,
-          ...commandMutationContext(req, eventSink),
-          mutationPath: TARGETED_MUTATION_PATHS.bardWiki,
-          skipDatabaseLoad: true,
-          mutate(_database, innerDb) {
-            const plan = applyBardWikiVaultImport(
-              innerDb,
-              chatId,
-              vault,
-              body.strategy,
-              body.expectedTargets,
-              baseRevision + 1,
-            )
-            return {
-              event: { ...COMMAND_EVENT_CATALOG.bardWikiVaultImported, id: chatId },
-              extra: { dryRun: false, plan },
-            }
-          },
-        })
-        return { revision: result.revision, event: result.event, ...result.extra }
-      } catch (err) {
-        return sendCommandError(reply, err)
       }
-    },
-  )
+      const baseRevision = readBaseRevision(body)
+      const result = applyTargetedCommandMutation({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.bardWiki,
+        skipDatabaseLoad: true,
+        mutate(_database, innerDb) {
+          const plan = applyBardWikiVaultImport(
+            innerDb,
+            chatId,
+            vault,
+            body.strategy,
+            body.expectedTargets,
+            baseRevision + 1,
+          )
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.bardWikiVaultImported, id: chatId },
+            extra: { dryRun: false, plan },
+          }
+        },
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
 
   app.post('/api/v1/commands/bardwiki/chats/:chatId/rebuilds', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
