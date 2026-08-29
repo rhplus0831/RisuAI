@@ -3,13 +3,19 @@ import { DatabaseSync } from 'node:sqlite'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import Fastify from 'fastify'
 import { buildApp } from '../src/app.js'
+import { createAuthState } from '../src/auth.js'
 import { openDatabase } from '../src/db.js'
 import {
   createPushNotificationService,
   listPushSubscriptions,
+  normalizePushEndpoint,
+  normalizePushSubscription,
+  PUSH_DELIVERY_TIMEOUT_MS,
   type PushNotificationTransport,
 } from '../src/pushNotifications.js'
+import { PUSH_SUBSCRIPTION_BODY_LIMIT, registerPushNotificationRoutes } from '../src/routes/pushNotifications.js'
 import { setupAuthedClient } from './helpers/auth.js'
 
 const dataDirs: string[] = []
@@ -47,10 +53,10 @@ afterEach(() => {
 describe('push notification service', () => {
   it('stores subscriptions and sends chat completion payloads when notifications are enabled', async () => {
     const db = openDatabase(makeDataDir())
-    const sent: Array<{ endpoint: string; payload?: string | Buffer | null; topic?: string }> = []
+    const sent: Array<{ endpoint: string; payload?: string | Buffer | null; timeout?: number; topic?: string }> = []
     const transport: PushNotificationTransport = {
       sendNotification: vi.fn(async (subscription, payload, options) => {
-        sent.push({ endpoint: subscription.endpoint, payload, topic: options?.topic })
+        sent.push({ endpoint: subscription.endpoint, payload, timeout: options?.timeout, topic: options?.topic })
       }),
     }
     try {
@@ -64,6 +70,7 @@ describe('push notification service', () => {
         {
           endpoint: 'https://push.example.test/subscription',
           payload: expect.any(String),
+          timeout: PUSH_DELIVERY_TIMEOUT_MS,
           topic: 'chat-completion',
         },
       ])
@@ -221,6 +228,30 @@ describe('push notification service', () => {
     }
   })
 
+  it('reuses its persisted VAPID identity and subscriptions after a database reopen', () => {
+    const dataDir = makeDataDir()
+    const firstDb = openDatabase(dataDir)
+    let firstPublicKey: string | null = null
+    try {
+      const firstService = createPushNotificationService(firstDb, dataDir)
+      firstPublicKey = firstService.publicKey()
+      firstService.upsertSubscription(sampleSubscription())
+    } finally {
+      firstDb.close()
+    }
+
+    const reopenedDb = openDatabase(dataDir)
+    try {
+      const reopenedService = createPushNotificationService(reopenedDb, dataDir)
+      expect(reopenedService.publicKey()).toBe(firstPublicKey)
+      expect(listPushSubscriptions(reopenedDb)).toEqual([
+        { endpoint: sampleSubscription().endpoint, subscription: sampleSubscription() },
+      ])
+    } finally {
+      reopenedDb.close()
+    }
+  })
+
   it('prunes expired push subscriptions after a 410 response', async () => {
     const db = openDatabase(makeDataDir())
     const transport: PushNotificationTransport = {
@@ -240,9 +271,74 @@ describe('push notification service', () => {
       db.close()
     }
   })
+
+  it('rejects malformed, insecure, credential-bearing, and oversized subscription fields', () => {
+    expect(normalizePushEndpoint('not a URL')).toBeNull()
+    expect(normalizePushEndpoint('http://push.example.test/subscription')).toBeNull()
+    expect(normalizePushEndpoint('https://user:secret@push.example.test/subscription')).toBeNull()
+    expect(normalizePushEndpoint('https://push.example.test/subscription#fragment')).toBeNull()
+    expect(normalizePushSubscription(sampleSubscription('http://push.example.test/subscription'))).toBeNull()
+    expect(
+      normalizePushSubscription({
+        ...sampleSubscription(),
+        keys: { p256dh: 'x'.repeat(4097), auth: 'auth-key' },
+      }),
+    ).toBeNull()
+  })
 })
 
 describe('push notification routes', () => {
+  it('authenticates before body parsing and caps subscription bodies before mutation', async () => {
+    const dataDir = makeDataDir()
+    const upsertSubscription = vi.fn()
+    const pushNotifications = {
+      publicKey: () => null,
+      upsertSubscription,
+      deleteSubscription: vi.fn(),
+      sendChatCompletionNotification: vi.fn(async () => {}),
+    }
+    const oversizedPayload = {
+      subscription: {
+        ...sampleSubscription(),
+        keys: { p256dh: 'x'.repeat(PUSH_SUBSCRIPTION_BODY_LIMIT), auth: 'auth-key' },
+      },
+    }
+
+    const unauthenticatedApp = Fastify({ bodyLimit: 1024 * 1024 })
+    registerPushNotificationRoutes(unauthenticatedApp, createAuthState(dataDir), pushNotifications)
+    await unauthenticatedApp.ready()
+    try {
+      const response = await unauthenticatedApp.inject({
+        method: 'POST',
+        url: '/api/v1/push/subscriptions',
+        payload: oversizedPayload,
+      })
+      expect(response.statusCode).toBe(401)
+      expect(upsertSubscription).not.toHaveBeenCalled()
+    } finally {
+      await unauthenticatedApp.close()
+    }
+
+    const authenticatedApp = Fastify({ bodyLimit: 1024 * 1024 })
+    registerPushNotificationRoutes(
+      authenticatedApp,
+      createAuthState(dataDir, { agentDevAuthBypass: true }),
+      pushNotifications,
+    )
+    await authenticatedApp.ready()
+    try {
+      const response = await authenticatedApp.inject({
+        method: 'POST',
+        url: '/api/v1/push/subscriptions',
+        payload: oversizedPayload,
+      })
+      expect(response.statusCode).toBe(413)
+      expect(upsertSubscription).not.toHaveBeenCalled()
+    } finally {
+      await authenticatedApp.close()
+    }
+  })
+
   it('exposes the public VAPID key and protects subscription mutations', async () => {
     process.env.LOG_LEVEL = 'silent'
     const dataDir = makeDataDir()
@@ -279,6 +375,14 @@ describe('push notification routes', () => {
         payload: { subscription: { endpoint: '' } },
       })
       expect(invalid.statusCode).toBe(400)
+
+      const insecure = await app.inject({
+        method: 'POST',
+        url: '/api/v1/push/subscriptions',
+        headers: { 'risu-auth': assertion },
+        payload: { subscription: sampleSubscription('http://push.example.test/subscription') },
+      })
+      expect(insecure.statusCode).toBe(400)
 
       const stored = await app.inject({
         method: 'POST',

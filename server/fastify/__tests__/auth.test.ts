@@ -197,6 +197,19 @@ describe('password setup', () => {
 })
 
 describe('fallback session authentication', () => {
+  it('accepts an unexpired fallback token after reopening persisted auth state', async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-auth-session-reopen-'))
+    try {
+      const token = registerSessionToken(createAuthState(dataDir))
+      const reopenedState = createAuthState(dataDir)
+
+      await expect(verifyAssertion(reopenedState, token)).resolves.toEqual({ ok: true })
+      expect(reopenedState.knownSessionTokenHashes.size).toBe(1)
+    } finally {
+      fs.rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
+
   it('expires server-issued fallback tokens and removes their stored hash', async () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-auth-session-'))
     const now = Date.UTC(2026, 0, 1)

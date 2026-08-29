@@ -8,9 +8,13 @@ const DEFAULT_VAPID_SUBJECT = 'mailto:risuai@example.invalid'
 const DEFAULT_NOTIFICATION_BODY = 'Chat processing complete.'
 const RISU_NOTIFICATION_ICON = '/logo_192.png'
 const MAX_NOTIFICATION_BODY_BYTES = 1024
+const MAX_PUSH_ENDPOINT_LENGTH = 4096
+const MAX_PUSH_KEY_LENGTH = 4096
 const NOTIFICATION_BODY_TRUNCATION_MARKER = '...'
 const SERVER_ASSET_ID_RE = /^[0-9a-fA-F]{64}$/
 const LOCAL_ASSET_PATH_RE = /^assets\/([0-9a-fA-F]{64})\.[a-z0-9]+$/i
+
+export const PUSH_DELIVERY_TIMEOUT_MS = 10_000
 
 export interface StoredPushSubscription {
   endpoint: string
@@ -169,15 +173,28 @@ export function normalizePushSubscription(value: unknown): PushSubscription | nu
   const record = value as Record<string, unknown>
   const endpoint = record.endpoint
   const keys = record.keys
-  if (typeof endpoint !== 'string' || endpoint.length === 0 || endpoint.length > 4096) return null
+  const normalizedEndpoint = normalizePushEndpoint(endpoint)
+  if (!normalizedEndpoint) return null
   if (!keys || typeof keys !== 'object' || Array.isArray(keys)) return null
   const keyRecord = keys as Record<string, unknown>
-  if (typeof keyRecord.p256dh !== 'string' || keyRecord.p256dh.length === 0) return null
-  if (typeof keyRecord.auth !== 'string' || keyRecord.auth.length === 0) return null
+  if (
+    typeof keyRecord.p256dh !== 'string' ||
+    keyRecord.p256dh.length === 0 ||
+    keyRecord.p256dh.length > MAX_PUSH_KEY_LENGTH
+  ) {
+    return null
+  }
+  if (
+    typeof keyRecord.auth !== 'string' ||
+    keyRecord.auth.length === 0 ||
+    keyRecord.auth.length > MAX_PUSH_KEY_LENGTH
+  ) {
+    return null
+  }
 
   const expirationTime = record.expirationTime
   const subscription: PushSubscription = {
-    endpoint,
+    endpoint: normalizedEndpoint,
     keys: {
       p256dh: keyRecord.p256dh,
       auth: keyRecord.auth,
@@ -194,7 +211,13 @@ export function normalizePushSubscription(value: unknown): PushSubscription | nu
 export function normalizePushEndpoint(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const endpoint = value.trim()
-  if (endpoint.length === 0 || endpoint.length > 4096) return null
+  if (endpoint.length === 0 || endpoint.length > MAX_PUSH_ENDPOINT_LENGTH) return null
+  try {
+    const parsed = new URL(endpoint)
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.hash) return null
+  } catch {
+    return null
+  }
   return endpoint
 }
 
@@ -360,6 +383,7 @@ async function sendPushNotificationToAll(
           TTL: 60 * 60,
           urgency: 'normal',
           topic: 'chat-completion',
+          timeout: PUSH_DELIVERY_TIMEOUT_MS,
         })
         clearPushSubscriptionFailure(db, endpoint)
       } catch (err) {
