@@ -51,6 +51,17 @@ function rewriteKnownAssetReferences(database: JsonRecord, rewrite: AssetReferen
   rewriteField(database, 'userIcon', rewrite)
   rewriteField(database, 'customBackground', rewrite)
 
+  const naiImgConfig = readRecord(database.NAIImgConfig)
+  if (naiImgConfig) {
+    rewriteField(naiImgConfig, 'image', rewrite)
+    rewriteField(naiImgConfig, 'character_image', rewrite)
+  }
+
+  const wavespeedImage = readRecord(database.wavespeedImage)
+  if (wavespeedImage) {
+    rewriteField(wavespeedImage, 'reference_image', rewrite)
+  }
+
   for (const persona of readRecords(database.personas)) {
     rewriteField(persona, 'icon', rewrite)
   }
@@ -80,7 +91,10 @@ function rewriteKnownAssetReferences(database: JsonRecord, rewrite: AssetReferen
     rewriteVitsReferences(character.vits, rewrite)
     rewriteReferenceList(character, 'prebuiltAssetExclude', rewrite)
     rewriteGptSoVitsReference(character.gptSoVitsConfig, rewrite)
+    rewriteCharacterTextInlayReferences(character, rewrite)
   }
+
+  rewriteDeepAssetReferences(database.pluginCustomStorage, rewrite)
 }
 
 function rewriteField(record: JsonRecord, key: string, rewrite: AssetReferenceRewriter): void {
@@ -101,13 +115,71 @@ function rewriteTupleReferences(value: unknown, rewrite: AssetReferenceRewriter)
 function rewriteChatInlayReferences(value: unknown, rewrite: AssetReferenceRewriter): void {
   for (const chat of readRecords(value)) {
     for (const message of readRecords(chat.message)) {
-      if (typeof message.data !== 'string') continue
-      message.data = message.data.replace(INLAY_TOKEN_RE, (match, tag: string, reference: string) => {
-        const rewritten = rewrite(reference)
-        return rewritten === reference ? match : `{{${tag}::${rewritten}}}`
-      })
+      rewriteInlayField(message, 'data', rewrite)
     }
   }
+}
+
+function rewriteCharacterTextInlayReferences(character: JsonRecord, rewrite: AssetReferenceRewriter): void {
+  const textFields = [
+    'firstMessage',
+    'backgroundHTML',
+    'creatorNotes',
+    'name',
+    'nickname',
+    'desc',
+    'personality',
+    'scenario',
+    'exampleMessage',
+  ] as const
+  for (const field of textFields) {
+    rewriteInlayField(character, field, rewrite)
+  }
+
+  const greetings = character.alternateGreetings
+  if (!Array.isArray(greetings)) return
+  character.alternateGreetings = greetings.map((greeting) =>
+    typeof greeting === 'string' ? rewriteInlayReferences(greeting, rewrite) : greeting,
+  )
+}
+
+function rewriteInlayField(record: JsonRecord, key: string, rewrite: AssetReferenceRewriter): void {
+  const value = record[key]
+  if (typeof value === 'string') {
+    record[key] = rewriteInlayReferences(value, rewrite)
+  }
+}
+
+function rewriteInlayReferences(value: string, rewrite: AssetReferenceRewriter): string {
+  return value.replace(INLAY_TOKEN_RE, (match, tag: string, reference: string) => {
+    const rewritten = rewrite(reference)
+    return rewritten === reference ? match : `{{${tag}::${rewritten}}}`
+  })
+}
+
+function rewriteDeepAssetReferences(value: unknown, rewrite: AssetReferenceRewriter): void {
+  if (!value || typeof value !== 'object') return
+  const seen = new WeakSet<object>()
+
+  const visit = (candidate: unknown): void => {
+    if (!candidate || typeof candidate !== 'object' || seen.has(candidate)) return
+    seen.add(candidate)
+
+    if (Array.isArray(candidate)) {
+      candidate.forEach((entry, index) => {
+        if (typeof entry === 'string') candidate[index] = rewrite(entry)
+        else visit(entry)
+      })
+      return
+    }
+
+    for (const [key, entry] of Object.entries(candidate as JsonRecord)) {
+      if (typeof entry === 'string') (candidate as JsonRecord)[key] = rewrite(entry)
+      else visit(entry)
+    }
+  }
+
+  visit(value)
 }
 
 function rewriteCcAssetReferences(value: unknown, rewrite: AssetReferenceRewriter): void {
