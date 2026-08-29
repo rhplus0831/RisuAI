@@ -38,6 +38,14 @@ import {
   type ServerStandaloneSettingName,
   type ServerStandaloneSettingPayload,
 } from './standaloneSettingsProtocol'
+import {
+  isBardWikiChatResource,
+  isBardWikiDocumentResource,
+  isBardWikiVersionsResource,
+  type BardWikiChatResource,
+  type BardWikiDocumentResource,
+  type BardWikiVersionsResource,
+} from '@risuai/protocol/bardwiki'
 
 const SETTINGS_ENDPOINT = '/api/v1/settings'
 const COLLECTIONS_ENDPOINT = '/api/v1/collections'
@@ -46,6 +54,7 @@ const INLAY_CATALOG_ENDPOINT = '/api/v1/inlay-assets'
 const SHELL_ENDPOINT = '/api/v1/resources/shell'
 const STANDALONE_SETTINGS_ENDPOINT = '/api/v1/resources/settings'
 const CHARACTER_ORDER_ENDPOINT = `${CHARACTERS_ENDPOINT}/order`
+const BARDWIKI_ENDPOINT = '/api/v1/bardwiki/chats'
 const SETTINGS_CACHE_KEY = 'settings:all'
 const CHARACTERS_CACHE_KEY = `characters:summary:v${SERVER_CHARACTER_SUMMARY_VERSION}`
 
@@ -115,6 +124,70 @@ export async function fetchServerStandaloneSetting(
       ? { present: true, value: structuredClone(result.body.state.value) }
       : { present: false },
   }
+}
+
+export async function fetchServerBardWikiChat(
+  chatId: string,
+  signal?: AbortSignal | null,
+): Promise<ServerResourceReadResult<BardWikiChatResource>> {
+  if (!nonEmptyString(chatId)) return { status: 'error', error: 'Chat id is required' }
+  const result = await requestServerResourceJson(`${BARDWIKI_ENDPOINT}/${encodeURIComponent(chatId)}`, signal)
+  if (result.status !== 'ok') return resourceReadFailure(result)
+  if (!isBardWikiChatResource(result.body) || result.body.chatId !== chatId) {
+    return { status: 'error', error: 'Invalid BardWiki chat response' }
+  }
+  return { status: 'ok', ...structuredClone(result.body) }
+}
+
+export async function fetchServerBardWikiDocument(
+  chatId: string,
+  documentId: string,
+  signal?: AbortSignal | null,
+): Promise<ServerResourceReadResult<BardWikiDocumentResource>> {
+  if (!nonEmptyString(chatId) || !nonEmptyString(documentId)) {
+    return { status: 'error', error: 'Chat and document ids are required' }
+  }
+  const result = await requestServerResourceJson(
+    `${BARDWIKI_ENDPOINT}/${encodeURIComponent(chatId)}/documents/${encodeURIComponent(documentId)}`,
+    signal,
+  )
+  if (result.status !== 'ok') return resourceReadFailure(result)
+  if (
+    !isBardWikiDocumentResource(result.body) ||
+    result.body.chatId !== chatId ||
+    result.body.document.id !== documentId ||
+    result.body.document.chatId !== chatId
+  ) {
+    return { status: 'error', error: 'Invalid BardWiki document response' }
+  }
+  return { status: 'ok', ...structuredClone(result.body) }
+}
+
+export async function fetchServerBardWikiVersions(
+  chatId: string,
+  documentId: string,
+  options: { limit?: number; beforeVersion?: number; signal?: AbortSignal | null } = {},
+): Promise<ServerResourceReadResult<BardWikiVersionsResource>> {
+  if (!nonEmptyString(chatId) || !nonEmptyString(documentId)) {
+    return { status: 'error', error: 'Chat and document ids are required' }
+  }
+  const query = new URLSearchParams()
+  if (options.limit !== undefined) query.set('limit', String(options.limit))
+  if (options.beforeVersion !== undefined) query.set('beforeVersion', String(options.beforeVersion))
+  const suffix = query.size === 0 ? '' : `?${query.toString()}`
+  const result = await requestServerResourceJson(
+    `${BARDWIKI_ENDPOINT}/${encodeURIComponent(chatId)}/documents/${encodeURIComponent(documentId)}/versions${suffix}`,
+    options.signal,
+  )
+  if (result.status !== 'ok') return resourceReadFailure(result)
+  if (
+    !isBardWikiVersionsResource(result.body) ||
+    result.body.chatId !== chatId ||
+    result.body.documentId !== documentId
+  ) {
+    return { status: 'error', error: 'Invalid BardWiki versions response' }
+  }
+  return { status: 'ok', ...structuredClone(result.body) }
 }
 
 export async function fetchServerInlayCatalog(

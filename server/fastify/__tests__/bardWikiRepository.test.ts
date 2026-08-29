@@ -5,8 +5,6 @@ import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { openDatabase } from '../src/db.js'
 import {
-  BardWikiConflictError,
-  BardWikiValidationError,
   createBardWikiDocument,
   deleteBardWikiDocument,
   extractBardWikiLinks,
@@ -73,7 +71,7 @@ describe('BardWiki validation', () => {
     'rejects unsafe logical path %s',
     (logicalPath) => {
       expect(() => normalizeBardWikiPath(logicalPath)).toThrowError(
-        expect.objectContaining<BardWikiValidationError>({ code: 'bardwiki_invalid_path' }),
+        expect.objectContaining({ code: 'bardwiki_invalid_path' }),
       )
     },
   )
@@ -104,7 +102,7 @@ describe('BardWiki document persistence', () => {
       maxLinkHopsOverride: 2,
     })
     expect(() => updateBardWikiChatSettings(db, 'chat-a', { recentMessageCountOverride: 51 })).toThrowError(
-      expect.objectContaining<BardWikiValidationError>({ code: 'bardwiki_limit_exceeded' }),
+      expect.objectContaining({ code: 'bardwiki_limit_exceeded' }),
     )
   })
 
@@ -164,14 +162,14 @@ describe('BardWiki document persistence', () => {
         markdown: 'stale overwrite',
         commandRevision: 3,
       }),
-    ).toThrowError(expect.objectContaining<BardWikiConflictError>({ code: 'bardwiki_document_conflict' }))
+    ).toThrowError(expect.objectContaining({ code: 'bardwiki_document_conflict' }))
     expect(getBardWikiDocument(db, 'chat-a', created.id)?.markdown).toBe('## New Tavern\nNow bustling.')
   })
 
   it('enforces live normalized paths per chat while allowing cross-chat reuse and deleted-path reuse', () => {
     const created = createDocument()
     expect(() => createDocument({ id: 'duplicate', logicalPath: 'places/old tavern' })).toThrowError(
-      expect.objectContaining<BardWikiConflictError>({ code: 'bardwiki_path_conflict' }),
+      expect.objectContaining({ code: 'bardwiki_path_conflict' }),
     )
     expect(createDocument({ id: 'other-chat', chatId: 'chat-b' }).normalizedPath).toBe('places/old tavern')
 

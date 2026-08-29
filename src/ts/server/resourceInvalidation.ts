@@ -77,6 +77,12 @@ import { applyServerShellResource } from './shellHydration'
 import { SERVER_SHELL_SETTINGS_KEYS } from './shellProtocol'
 import type { ServerStandaloneSettingName } from './standaloneSettingsProtocol'
 import { SERVER_CHARACTER_SHELL_MARKER } from './characterSummaryProtocol'
+import {
+  isBardWikiChatResourceLoaded,
+  isBardWikiDocumentResourceLoaded,
+  refreshAllLoadedBardWikiResources,
+  refreshLoadedBardWikiChat,
+} from './bardWikiResource'
 
 export const FULL_RESOURCE_REFRESH_MAX_ATTEMPTS = 3
 
@@ -136,6 +142,8 @@ export interface ServerResourceTargetRefreshInput {
 }
 
 interface RefreshPlan {
+  bardWikiChatIds: Set<string>
+  bardWikiDocumentIds: Map<string, Set<string>>
   inlayCatalog: boolean
   settings: boolean
   settingsGroups: Set<SettingsGroup>
@@ -323,7 +331,9 @@ export async function refreshAllServerResources(
       ) {
         return { status: 'error', error: 'Failed to apply a complete server resource refresh' }
       }
-      return { status: 'ok', revision, scope: 'full' }
+      const bardWiki = await refreshAllLoadedBardWikiResources(revision, options.signal)
+      if (bardWiki.status !== 'ok') return bardWiki
+      return { status: 'ok', revision: Math.max(revision, bardWiki.revision), scope: 'full' }
     } catch (error) {
       return { status: 'error', error: error instanceof Error ? error.message : String(error) }
     }
@@ -480,11 +490,26 @@ async function executeTargetedRefreshPlan(
     }
   }
 
-  return { status: 'ok', revision: responseRevision, scope: 'targeted' }
+  let bardWikiRevision = responseRevision
+  for (const chatId of plan.bardWikiChatIds) {
+    const documentIds = plan.bardWikiDocumentIds.get(chatId)
+    const refreshed = await refreshLoadedBardWikiChat(
+      chatId,
+      documentIds ? [...documentIds] : [],
+      minimumRevision ?? responseRevision,
+      options.signal,
+    )
+    if (refreshed.status !== 'ok') return refreshed
+    bardWikiRevision = Math.max(bardWikiRevision, refreshed.revision)
+  }
+
+  return { status: 'ok', revision: bardWikiRevision, scope: 'targeted' }
 }
 
 function createRefreshPlan(): RefreshPlan {
   return {
+    bardWikiChatIds: new Set(),
+    bardWikiDocumentIds: new Map(),
     inlayCatalog: false,
     settings: false,
     settingsGroups: new Set(),
@@ -519,6 +544,17 @@ const SHELL_SETTINGS_GROUPS = new Set<SettingsGroup>(
  * remains a complete authoritative refresh.
  */
 function retainLoadedRefreshTargets(plan: RefreshPlan): void {
+  for (const chatId of [...plan.bardWikiChatIds]) {
+    if (!isBardWikiChatResourceLoaded(chatId)) {
+      plan.bardWikiChatIds.delete(chatId)
+      plan.bardWikiDocumentIds.delete(chatId)
+    }
+  }
+  for (const [chatId, documentIds] of plan.bardWikiDocumentIds) {
+    for (const documentId of [...documentIds]) {
+      if (!isBardWikiDocumentResourceLoaded(chatId, documentId)) documentIds.delete(documentId)
+    }
+  }
   if (plan.settings && settingsResourceState.fullRevision === null) {
     plan.settings = false
     for (const group of Object.keys(settingsResourceState.groupStatuses)) {
@@ -672,6 +708,22 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
   }
 
   switch (event.resource) {
+    case 'bardWikiChat':
+      if (!nonEmptyString(event.id)) {
+        plan.full = true
+        return
+      }
+      plan.bardWikiChatIds.add(event.id)
+      return
+    case 'bardWikiDocument':
+      if (!nonEmptyString(event.id) || !nonEmptyString(event.parentId)) {
+        plan.full = true
+        return
+      }
+      plan.bardWikiChatIds.add(event.parentId)
+      if (!plan.bardWikiDocumentIds.has(event.parentId)) plan.bardWikiDocumentIds.set(event.parentId, new Set())
+      plan.bardWikiDocumentIds.get(event.parentId)?.add(event.id)
+      return
     case 'asset':
     case 'revisionOnly':
       return

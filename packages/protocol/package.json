@@ -6,6 +6,7 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./bardwiki": "./src/bardWiki.ts",
     "./generation-sse": "./src/generationSse.ts",
     "./startup-telemetry": "./src/startupTelemetry.ts"
   },

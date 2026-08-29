@@ -19,6 +19,9 @@ const api = vi.hoisted(() => ({
   lorebook: vi.fn(),
   lorebooks: vi.fn(),
   inlay: vi.fn(),
+  bardWikiChat: vi.fn(),
+  bardWikiDocument: vi.fn(),
+  bardWikiVersions: vi.fn(),
 }))
 
 const sideEffects = vi.hoisted(() => ({
@@ -70,6 +73,9 @@ vi.mock('./resourceReads', () => ({
   fetchServerCharacterOrder: api.characterOrder,
   fetchServerCharacterSelection: api.characterSelection,
   fetchServerInlayCatalog: api.inlay,
+  fetchServerBardWikiChat: api.bardWikiChat,
+  fetchServerBardWikiDocument: api.bardWikiDocument,
+  fetchServerBardWikiVersions: api.bardWikiVersions,
 }))
 
 vi.mock('./hydrationReads', () => ({
@@ -134,6 +140,14 @@ import {
   getServerInlayCatalogResource,
   resetServerInlayCatalogResource,
 } from './inlayCatalog'
+import {
+  applyBardWikiChatResource,
+  applyBardWikiDocumentResource,
+  getBardWikiChatResource,
+  getBardWikiDocumentResource,
+  resetBardWikiResource,
+} from './bardWikiResource'
+import { BARDWIKI_PROTOCOL_VERSION, DEFAULT_BARDWIKI_GLOBAL_SETTINGS } from '@risuai/protocol/bardwiki'
 
 const hooks: ServerResourceInvalidationHooks = {
   reapplyPendingPresetProjections: sideEffects.reapplyPendingPresets,
@@ -298,6 +312,7 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 beforeEach(() => {
   resetServerResourceState()
   resetServerInlayCatalogResource()
+  resetBardWikiResource()
   for (const mock of Object.values(api)) mock.mockReset()
   api.inlay.mockImplementation(async () => {
     const settingsResult = await api.settings.mock.results.at(-1)?.value
@@ -2714,5 +2729,83 @@ describe('API-backed resource invalidation', () => {
     expect(result).toMatchObject({ status: 'error', error: expect.stringContaining('older than event revision 2') })
     expect(result).not.toHaveProperty('revision')
     expect(getResourceDatabase().language).toBe('en')
+  })
+
+  it('refreshes only resident BardWiki indexes and document bodies after a document event', async () => {
+    const document = {
+      id: 'document-a',
+      chatId: 'chat-a',
+      kind: 'location' as const,
+      title: 'Old Tavern',
+      logicalPath: 'Places/Old Tavern',
+      normalizedPath: 'places/old tavern',
+      aliases: [],
+      contextPolicy: 'relevant' as const,
+      reviewState: 'active' as const,
+      contentHash: 'a'.repeat(64),
+      version: 1,
+      createdAt: '2026-08-29T00:00:00.000Z',
+      updatedAt: '2026-08-29T00:00:00.000Z',
+    }
+    applyBardWikiChatResource({
+      protocolVersion: BARDWIKI_PROTOCOL_VERSION,
+      revision: 1,
+      chatId: 'chat-a',
+      globalSettings: DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
+      chatSettings: null,
+      effectiveSettings: DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
+      documents: [document],
+      receipts: [],
+      jobs: [],
+    })
+    applyBardWikiDocumentResource({
+      protocolVersion: BARDWIKI_PROTOCOL_VERSION,
+      revision: 1,
+      chatId: 'chat-a',
+      document: { ...document, markdown: 'old', deletedAt: null },
+      links: [],
+    })
+    const updated = { ...document, title: 'New Tavern', contentHash: 'b'.repeat(64), version: 2 }
+    api.bardWikiChat.mockResolvedValue({
+      status: 'ok',
+      protocolVersion: BARDWIKI_PROTOCOL_VERSION,
+      revision: 2,
+      chatId: 'chat-a',
+      globalSettings: DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
+      chatSettings: null,
+      effectiveSettings: DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
+      documents: [updated],
+      receipts: [],
+      jobs: [],
+    })
+    api.bardWikiDocument.mockResolvedValue({
+      status: 'ok',
+      protocolVersion: BARDWIKI_PROTOCOL_VERSION,
+      revision: 2,
+      chatId: 'chat-a',
+      document: { ...updated, markdown: 'new', deletedAt: null },
+      links: [],
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(
+        {
+          type: 'bardwiki.document.updated',
+          revision: 2,
+          resource: 'bardWikiDocument',
+          id: 'document-a',
+          parentId: 'chat-a',
+        },
+        { appliedRevision: 1, hooks },
+      ),
+    ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+
+    expect(api.bardWikiChat).toHaveBeenCalledOnce()
+    expect(api.bardWikiDocument).toHaveBeenCalledOnce()
+    expect(getBardWikiChatResource('chat-a')?.documents[0]).toMatchObject({ title: 'New Tavern', version: 2 })
+    expect(getBardWikiDocumentResource('chat-a', 'document-a')?.document).toMatchObject({
+      markdown: 'new',
+      version: 2,
+    })
   })
 })

@@ -119,6 +119,40 @@ export interface BardWikiLink {
   resolvedDocumentId: string | null
 }
 
+export interface BardWikiReceiptSummary {
+  id: string
+  chatId: string
+  userMessageId: string
+  userContentHash: string
+  assistantMessageId: string
+  assistantContentHash: string
+  confirmationMode: 'explicit' | 'automatic' | 'rebuild'
+  state: (typeof BARDWIKI_RECEIPT_STATES)[number]
+  eventDocumentId: string | null
+  jobId: string | null
+  errorCode: string | null
+  errorSummary: string | null
+  createdAt: string
+  updatedAt: string
+  appliedAt: string | null
+}
+
+export interface BardWikiJobSummary {
+  id: string
+  instanceId: string
+  chatId: string
+  receiptId: string | null
+  kind: (typeof BARDWIKI_JOB_KINDS)[number]
+  status: (typeof BARDWIKI_JOB_STATUSES)[number]
+  errorCode: string | null
+  errorSummary: string | null
+  attemptCount: number
+  maxAttempts: number
+  nextRunAt: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface BardWikiDocumentWriteInput {
   id?: string
   chatId: string
@@ -637,6 +671,87 @@ export function listBardWikiDocumentVersions(
   return rows.map(mapDocumentVersionRow)
 }
 
+export function listBardWikiDocumentVersionPage(
+  db: DatabaseSync,
+  documentId: string,
+  input: { limit: number; beforeVersion?: number },
+): { versions: BardWikiDocumentVersion[]; nextBeforeVersion: number | null } {
+  const limit = Math.max(1, Math.min(100, Math.trunc(input.limit)))
+  const rows = db
+    .prepare(
+      `SELECT * FROM bardwiki_document_versions
+       WHERE document_id = ?${input.beforeVersion === undefined ? '' : ' AND version < ?'}
+       ORDER BY version DESC LIMIT ?`,
+    )
+    .all(
+      documentId,
+      ...(input.beforeVersion === undefined ? [limit + 1] : [input.beforeVersion, limit + 1]),
+    ) as unknown as BardWikiDocumentVersionRow[]
+  const hasNext = rows.length > limit
+  const versions = rows.slice(0, limit).map(mapDocumentVersionRow)
+  return {
+    versions,
+    nextBeforeVersion: hasNext && versions.length > 0 ? versions[versions.length - 1].version : null,
+  }
+}
+
+export function listBardWikiReceiptSummaries(db: DatabaseSync, chatId: string, limit = 100): BardWikiReceiptSummary[] {
+  const safeLimit = Math.max(1, Math.min(100, Math.trunc(limit)))
+  const rows = db
+    .prepare(
+      `SELECT id, chat_id, user_message_id, user_content_hash, assistant_message_id,
+              assistant_content_hash, confirmation_mode, state, event_document_id,
+              job_id, error_code, error_summary, created_at, updated_at, applied_at
+       FROM bardwiki_turn_receipts WHERE chat_id = ?
+       ORDER BY updated_at DESC, id DESC LIMIT ?`,
+    )
+    .all(chatId, safeLimit) as unknown as BardWikiReceiptSummaryRow[]
+  return rows.map((row) => ({
+    id: row.id,
+    chatId: row.chat_id,
+    userMessageId: row.user_message_id,
+    userContentHash: row.user_content_hash,
+    assistantMessageId: row.assistant_message_id,
+    assistantContentHash: row.assistant_content_hash,
+    confirmationMode: row.confirmation_mode,
+    state: row.state,
+    eventDocumentId: row.event_document_id,
+    jobId: row.job_id,
+    errorCode: row.error_code,
+    errorSummary: row.error_summary,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    appliedAt: row.applied_at,
+  }))
+}
+
+export function listBardWikiJobSummaries(db: DatabaseSync, chatId: string, limit = 100): BardWikiJobSummary[] {
+  const safeLimit = Math.max(1, Math.min(100, Math.trunc(limit)))
+  const rows = db
+    .prepare(
+      `SELECT id, instance_id, chat_id, receipt_id, kind, status, error_code,
+              error_summary, attempt_count, max_attempts, next_run_at, created_at, updated_at
+       FROM bardwiki_jobs WHERE chat_id = ?
+       ORDER BY updated_at DESC, id DESC LIMIT ?`,
+    )
+    .all(chatId, safeLimit) as unknown as BardWikiJobSummaryRow[]
+  return rows.map((row) => ({
+    id: row.id,
+    instanceId: row.instance_id,
+    chatId: row.chat_id,
+    receiptId: row.receipt_id,
+    kind: row.kind,
+    status: row.status,
+    errorCode: row.error_code,
+    errorSummary: row.error_summary,
+    attemptCount: row.attempt_count,
+    maxAttempts: row.max_attempts,
+    nextRunAt: row.next_run_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }))
+}
+
 export function listBardWikiLinks(db: DatabaseSync, documentId: string, version?: number): BardWikiLink[] {
   const resolvedVersion =
     version ??
@@ -899,6 +1014,40 @@ interface BardWikiLinkRow {
   raw_target: string
   normalized_target: string
   resolved_document_id: string | null
+}
+
+interface BardWikiReceiptSummaryRow {
+  id: string
+  chat_id: string
+  user_message_id: string
+  user_content_hash: string
+  assistant_message_id: string
+  assistant_content_hash: string
+  confirmation_mode: BardWikiReceiptSummary['confirmationMode']
+  state: BardWikiReceiptSummary['state']
+  event_document_id: string | null
+  job_id: string | null
+  error_code: string | null
+  error_summary: string | null
+  created_at: string
+  updated_at: string
+  applied_at: string | null
+}
+
+interface BardWikiJobSummaryRow {
+  id: string
+  instance_id: string
+  chat_id: string
+  receipt_id: string | null
+  kind: BardWikiJobSummary['kind']
+  status: BardWikiJobSummary['status']
+  error_code: string | null
+  error_summary: string | null
+  attempt_count: number
+  max_attempts: number
+  next_run_at: string
+  created_at: string
+  updated_at: string
 }
 
 function mapChatSettingsRow(row: BardWikiChatSettingsRow): BardWikiChatSettings {

@@ -108,6 +108,103 @@ describe('BardWiki revisioned commands', () => {
       },
     })
     expect(response.statusCode).toBe(401)
+
+    const read = await app.inject({ method: 'GET', url: '/api/v1/bardwiki/chats/chat-a' })
+    expect(read.statusCode).toBe(401)
+  })
+
+  it('serves body-free indexes, lazy document bodies, ETags, and paginated versions', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/bardwiki/chats/chat-a/documents',
+      headers: authHeaders(),
+      payload: {
+        baseRevision: 0,
+        document: {
+          kind: 'location',
+          title: 'Old Tavern',
+          logicalPath: 'Places/Old Tavern',
+          markdown: '## Old Tavern\nAda waits at [[People/Ada]].',
+        },
+      },
+    })
+    const createdBody = created.json()
+
+    const index = await app.inject({
+      method: 'GET',
+      url: '/api/v1/bardwiki/chats/chat-a',
+      headers: authHeaders(),
+    })
+    expect(index.statusCode).toBe(200)
+    expect(index.headers.etag).toMatch(/^"[a-f0-9]{64}"$/u)
+    expect(index.json()).toMatchObject({
+      protocolVersion: 1,
+      revision: 1,
+      chatId: 'chat-a',
+      effectiveSettings: { enabledByDefault: false, memoryMode: 'hypa' },
+      documents: [{ id: createdBody.document.id, title: 'Old Tavern', version: 1 }],
+      receipts: [],
+      jobs: [],
+    })
+    expect(index.json().documents[0]).not.toHaveProperty('markdown')
+
+    const unchanged = await app.inject({
+      method: 'GET',
+      url: '/api/v1/bardwiki/chats/chat-a',
+      headers: authHeaders({ 'if-none-match': index.headers.etag as string }),
+    })
+    expect(unchanged.statusCode).toBe(304)
+    expect(unchanged.body).toBe('')
+
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/api/v1/bardwiki/chats/chat-a/documents/${createdBody.document.id}`,
+      headers: authHeaders(),
+    })
+    expect(detail.statusCode).toBe(200)
+    expect(detail.json()).toMatchObject({
+      document: { markdown: '## Old Tavern\nAda waits at [[People/Ada]].' },
+      links: [{ rawTarget: 'People/Ada', normalizedTarget: 'people/ada' }],
+    })
+
+    const updated = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/commands/bardwiki/chats/chat-a/documents/${createdBody.document.id}`,
+      headers: authHeaders(),
+      payload: {
+        baseRevision: 1,
+        expectedVersion: 1,
+        expectedContentHash: createdBody.document.contentHash,
+        patch: { markdown: '# Renovated' },
+      },
+    })
+    expect(updated.statusCode).toBe(200)
+
+    const firstPage = await app.inject({
+      method: 'GET',
+      url: `/api/v1/bardwiki/chats/chat-a/documents/${createdBody.document.id}/versions?limit=1`,
+      headers: authHeaders(),
+    })
+    expect(firstPage.statusCode).toBe(200)
+    expect(firstPage.json()).toMatchObject({
+      documentId: createdBody.document.id,
+      versions: [{ version: 2, markdown: '# Renovated' }],
+      nextBeforeVersion: 2,
+    })
+
+    const secondPage = await app.inject({
+      method: 'GET',
+      url: `/api/v1/bardwiki/chats/chat-a/documents/${createdBody.document.id}/versions?limit=1&beforeVersion=2`,
+      headers: authHeaders(),
+    })
+    expect(secondPage.json()).toMatchObject({ versions: [{ version: 1 }], nextBeforeVersion: null })
+
+    const wrongChat = await app.inject({
+      method: 'GET',
+      url: `/api/v1/bardwiki/chats/chat-b/documents/${createdBody.document.id}`,
+      headers: authHeaders(),
+    })
+    expect(wrongChat.statusCode).toBe(404)
   })
 
   it('updates settings and creates, edits, and soft-deletes one document with one event/revision each', async () => {

@@ -682,6 +682,66 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'bardwiki-chat-read',
+    methods: READ_METHODS,
+    path: '/api/v1/bardwiki/chats/:chatId',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'BardWiki chat resources contain private memory documents and job provenance.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only targeted BardWiki chat resource.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'bardwiki-document-read',
+    methods: READ_METHODS,
+    path: '/api/v1/bardwiki/chats/:chatId/documents/:documentId',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'BardWiki document reads return private Markdown memory content.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only targeted BardWiki document resource.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'bardwiki-document-versions-read',
+    methods: READ_METHODS,
+    path: '/api/v1/bardwiki/chats/:chatId/documents/:documentId/versions',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'BardWiki version reads return private historical Markdown memory content.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only cursor-paged BardWiki version resource.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'bardwiki-receipts-read',
+    methods: READ_METHODS,
+    path: '/api/v1/bardwiki/chats/:chatId/receipts',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'BardWiki receipts expose private transcript provenance and status.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only cursor-bounded BardWiki receipt resource.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'events',
     methods: GET_ONLY,
     path: '/api/v1/events',

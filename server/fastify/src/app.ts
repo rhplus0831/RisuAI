@@ -8,6 +8,7 @@ import rateLimit from '@fastify/rate-limit'
 import fastifyStatic from '@fastify/static'
 import fastifyWebsocket from '@fastify/websocket'
 import { createActiveWriterState, registerActiveWriterGuard } from './activeWriter.js'
+import { registerBardWikiReadRoutes } from './routes/bardWiki.js'
 import {
   assertAgentDevAuthBypassHost,
   DEFAULT_AUTOMATIC_BACKUP_RETENTION,
@@ -343,6 +344,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerActiveWriterGuard(app, activeWriterState)
   registerStartupTelemetryRoutes(app, authState)
   registerResourceReadRoutes(app, db, authState, config.dataDir)
+  registerBardWikiReadRoutes(app, db, authState)
   registerSaveRoutes(app, db, authState, config.dataDir, commandEventSink, {
     maxExpandedImportBytes: config.bodyLimit,
     importMaxBytes: config.importMaxBytes,

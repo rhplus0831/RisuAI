@@ -1,6 +1,6 @@
 # Phase 1: Persistence and Server Resources
 
-Status: in progress. Slice 1 (schema and low-level repository) is complete.
+Status: in progress. Slices 1-3 are complete.
 
 Goal: establish authoritative BardWiki storage, narrow repositories, targeted
 reads, revisioned settings/document commands, and complete backup ownership
@@ -44,6 +44,31 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts \
   server/fastify/__tests__/bardWikiRoutes.test.ts \
   server/fastify/__tests__/db.test.ts
 # 3 files, 37 tests passed
+```
+
+Slice 3 added the shared TypeBox wire contract, authenticated body-free chat
+indexes, lazy document bodies, paginated immutable versions, receipt summaries,
+ETags, browser decoders and resident resource caches. Narrow BardWiki events now
+refresh only loaded chat/document/version projections, while full revision-gap
+recovery refreshes every loaded BardWiki projection. The protocol and server
+route manifests classify the new surfaces and protection requirements.
+
+Additional validation on 2026-08-29:
+
+```text
+pnpm exec vitest run \
+  packages/protocol/src/bardWiki.test.ts \
+  src/ts/server/resourceInvalidation.test.ts
+# 2 files, 103 tests passed
+
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/bardWikiRepository.test.ts \
+  server/fastify/__tests__/bardWikiRoutes.test.ts \
+  server/fastify/__tests__/routeProtection.test.ts
+# 3 files, 35 tests passed
+
+pnpm check:server
+# protocol, client-library, browser-smoke, and Fastify typechecks passed
 ```
 
 ## Depends On
