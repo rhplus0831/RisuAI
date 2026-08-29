@@ -109,8 +109,12 @@ export async function replaceClientRegex(
   source: string,
   replacement: string,
   timeoutMs: number,
+  sizeLimit?: number,
 ): Promise<string> {
-  const result = await runClientRegexWorker({ operation: 'replace', pattern, flags, source, replacement }, timeoutMs)
+  const result = await runClientRegexWorker(
+    { operation: 'replace', pattern, flags, source, replacement, sizeLimit },
+    timeoutMs,
+  )
   return result.operation === 'replace' ? result.result : unexpectedResult('replace', result)
 }
 
@@ -120,9 +124,10 @@ export async function testReplaceClientRegex(
   source: string,
   replacement: string,
   timeoutMs: number,
+  sizeLimit?: number,
 ): Promise<{ matched: boolean; result: string }> {
   const result = await runClientRegexWorker(
-    { operation: 'testReplace', pattern, flags, source, replacement },
+    { operation: 'testReplace', pattern, flags, source, replacement, sizeLimit },
     timeoutMs,
   )
   return result.operation === 'testReplace' ? result : unexpectedResult('testReplace', result)
@@ -135,9 +140,10 @@ export async function testMoveClientRegex(
   replacement: string,
   toTop: boolean,
   timeoutMs: number,
+  sizeLimit?: number,
 ): Promise<{ matched: boolean; result: string }> {
   const result = await runClientRegexWorker(
-    { operation: 'testMove', pattern, flags, source, replacement, toTop },
+    { operation: 'testMove', pattern, flags, source, replacement, toTop, sizeLimit },
     timeoutMs,
   )
   return result.operation === 'testMove' ? result : unexpectedResult('testMove', result)

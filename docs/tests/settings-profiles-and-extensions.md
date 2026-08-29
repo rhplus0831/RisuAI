@@ -20,7 +20,7 @@ project from this Fastify fork and verifies both repository URLs, accessible
 labels, new-tab targets, and protected `rel` attributes. The Settings shell and
 router suites separately cover the Source Code navigation route and index.
 
-`src/ts/setting/advancedSettingsData.test.ts` keeps the legacy global lorebook/regex visibility toggle while refusing to advertise retired browser cold-storage, remote-save, preset-chain, and Realm-preview behaviors. This compact negative inventory keeps the advanced settings catalog aligned with the server-backed product surface.
+`src/ts/setting/advancedSettingsData.test.ts` keeps the legacy global lorebook/regex visibility toggle, pins the durable 1-64 MiB regex output-limit control, and refuses to advertise retired browser cold-storage, remote-save, preset-chain, and Realm-preview behaviors. This compact inventory keeps the advanced settings catalog aligned with the server-backed product surface.
 
 ## Translator preset editing
 

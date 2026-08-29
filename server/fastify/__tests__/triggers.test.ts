@@ -1573,6 +1573,15 @@ describe('trigger transcript and regex cache', () => {
   it('rejects unsafe trigger regexes before synchronous execution', async () => {
     const unsafeTrigger = (effect: triggerscript['effect'][number]) =>
       makeChar({ triggerscript: [triggerWithEffects([effect])] })
+    const limitedCtx = {
+      ...ctx,
+      database: {
+        ...ctx.database,
+        complexRegexCompatibilityMode: 'worker' as const,
+        complexRegexOutputTimeoutMs: 15_000,
+        regexOutputSizeLimitMiB: 1,
+      },
+    }
 
     await expect(
       runTrigger(
@@ -1596,7 +1605,7 @@ describe('trigger transcript and regex cache', () => {
 
     await expect(
       runTrigger(
-        ctx,
+        limitedCtx,
         unsafeTrigger(
           eff({
             type: 'v2RegexTest',
@@ -1636,7 +1645,7 @@ describe('trigger transcript and regex cache', () => {
 
     await expect(
       runTrigger(
-        ctx,
+        limitedCtx,
         unsafeTrigger(
           eff({
             type: 'v2ReplaceString',
@@ -1647,7 +1656,7 @@ describe('trigger transcript and regex cache', () => {
             resultType: 'value',
             result: '$0',
             replacementType: 'value',
-            replacement: 'r'.repeat(BOUNDED_REGEX_LIMITS.replacement + 1),
+            replacement: 'r'.repeat(1024 * 1024 + 1),
             flagsType: 'value',
             flags: '',
             outputVar: 'out',

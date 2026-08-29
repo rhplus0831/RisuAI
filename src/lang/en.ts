@@ -366,6 +366,8 @@ export const languageEnglish = {
       'If enabled, server prompt assembly blocks Lua scripts that reference browser dialog APIs before they run. When disabled, those scripts are blocked only if they actually call alertInput, alertSelect, or alertConfirm.',
     complexRegexCompatibilityMode:
       'Strict mode rejects risky nested regex patterns before they run. Compatibility mode runs those patterns in an isolated worker and fails the stage if the configured timeout is exceeded.',
+    regexOutputSizeLimitMiB:
+      'Maximum size of a regex script OUT replacement and its generated result, in MiB. Raising this limit may increase memory use.',
     imageCompression:
       "If enabled, it will compress images when exporting character. if animated images doesn't works, try disabling this option.",
     useExperimental: 'If enabled, it will show some experimental features.',
@@ -2565,6 +2567,7 @@ export const languageEnglish = {
   complexRegexInputTimeoutMs: 'Input Regex Timeout (ms)',
   complexRegexOutputTimeoutMs: 'Output Regex Timeout (ms)',
   complexRegexDisplayTimeoutMs: 'Display Regex Timeout (ms)',
+  regexOutputSizeLimitMiB: 'Regex Output Size Limit (MiB)',
   pluginDevelopMode: 'Plugin Develop Mode',
   pluginNetworkConsent:
     "Plugin {} is requesting access through RisuAI's public-internet network helper. This request may send chat or account data to third parties. The helper blocks private, local, metadata, and RisuAI service targets. Do you want to allow this?",

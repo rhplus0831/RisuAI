@@ -269,6 +269,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   complexRegexInputTimeoutMs: 'advanced',
   complexRegexOutputTimeoutMs: 'advanced',
   complexRegexDisplayTimeoutMs: 'advanced',
+  regexOutputSizeLimitMiB: 'advanced',
   pluginDevelopMode: 'advanced',
   PresensePenalty: 'runtime',
   presetChain: 'advanced',

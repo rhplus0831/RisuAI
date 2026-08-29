@@ -36,6 +36,7 @@ import {
   testReplaceClientRegex,
 } from './clientRegexWorker'
 import { assertClientRegexPatternSafe } from './regexSafety'
+import { regexOutputSizeLimitCodeUnits } from '../regexOutputSizeLimit'
 
 const dreg = /{{data}}/g
 const randomness = /\|\|\|/g
@@ -174,12 +175,14 @@ function generateScriptCacheKey(
   chatID = -1,
   cbsConditions: CbsConditions = {},
   cacheScope = '',
+  sizeLimit = regexOutputSizeLimitCodeUnits(undefined),
 ) {
   return JSON.stringify([
     'process-script-cache-v2',
     data,
     mode,
     cacheScope,
+    sizeLimit,
     chatID,
     scripts
       .filter((script) => script.type === mode)
@@ -213,7 +216,15 @@ export function hasProcessScriptCacheEntryForTesting(
   cbsConditions: CbsConditions = {},
 ) {
   return processScriptCache.has(
-    generateScriptCacheKey(scripts, data, mode, chatID, cbsConditions, currentScriptCacheScope(mode)),
+    generateScriptCacheKey(
+      scripts,
+      data,
+      mode,
+      chatID,
+      cbsConditions,
+      currentScriptCacheScope(mode),
+      regexOutputSizeLimitCodeUnits(getDatabase().regexOutputSizeLimitMiB),
+    ),
   )
 }
 
@@ -381,7 +392,16 @@ export async function processScriptFull(
     .concat(getProcessableCustomScripts(getActivePromptPresetRegexScripts(db)))
     .concat(getProcessableCustomScripts((char as { customscript?: unknown }).customscript))
     .concat(getProcessableCustomScripts(getModuleRegexScripts()))
-  const hash = generateScriptCacheKey(scripts, data, mode, chatID, cbsConditions, currentScriptCacheScope(mode))
+  const regexSizeLimit = regexOutputSizeLimitCodeUnits(db.regexOutputSizeLimitMiB)
+  const hash = generateScriptCacheKey(
+    scripts,
+    data,
+    mode,
+    chatID,
+    cbsConditions,
+    currentScriptCacheScope(mode),
+    regexSizeLimit,
+  )
   const cached = getScriptCache(hash)
   if (cached) {
     return { data: cached, emoChanged: false }
@@ -470,7 +490,7 @@ export async function processScriptFull(
             }
           }
         } else if (outScript.startsWith('@@inject') || pscript.actions.includes('inject')) {
-          const replaced = await testReplaceClientRegex(input, flag, data, '', regexTimeout)
+          const replaced = await testReplaceClientRegex(input, flag, data, '', regexTimeout, regexSizeLimit)
           matched = replaced.matched
           if (matched) {
             applyInjectMutation(data, mode, chatID)
@@ -490,11 +510,12 @@ export async function processScriptFull(
               outScript,
               outScript.startsWith('@@move_top') || pscript.actions.includes('move_top'),
               regexTimeout,
+              regexSizeLimit,
             )
             matched = moved.matched
             if (matched) data = moved.result
           } else {
-            const replaced = await testReplaceClientRegex(input, flag, data, outScript, regexTimeout)
+            const replaced = await testReplaceClientRegex(input, flag, data, outScript, regexTimeout, regexSizeLimit)
             matched = replaced.matched
             if (matched) {
               data = risuChatParser(replaced.result, { chatID: chatID, cbsConditions })
@@ -537,7 +558,7 @@ export async function processScriptFull(
           }
         }
       } else {
-        const replaced = await replaceClientRegex(input, flag, data, outScript, regexTimeout)
+        const replaced = await replaceClientRegex(input, flag, data, outScript, regexTimeout, regexSizeLimit)
         data = risuChatParser(replaced, { chatID: chatID, cbsConditions })
       }
     }

@@ -1,11 +1,17 @@
 import { Worker } from 'node:worker_threads'
 import type { Database } from '../../../../src/ts/storage/database.svelte'
+import {
+  DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB,
+  regexOutputSizeLimitCodeUnits,
+} from '../../../../src/ts/regexOutputSizeLimit.js'
+
+const DEFAULT_OUTPUT_SIZE_LIMIT = regexOutputSizeLimitCodeUnits(DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB)
 
 export const BOUNDED_REGEX_LIMITS = {
   pattern: 4_096,
   haystack: 128 * 1024,
-  replacement: 64 * 1024,
-  output: 128 * 1024,
+  replacement: DEFAULT_OUTPUT_SIZE_LIMIT,
+  output: DEFAULT_OUTPUT_SIZE_LIMIT,
 } as const
 
 export const DEFAULT_COMPLEX_REGEX_TIMEOUT_MS = 15_000
@@ -18,6 +24,7 @@ export interface BoundedRegexCompatibilityOptions {
   enabled: boolean
   stage: BoundedRegexStage
   timeoutMs: number
+  sizeLimit: number
 }
 
 export interface ComplexBoundedRegex {
@@ -75,12 +82,20 @@ export function assertBoundedRegexHaystack(haystack: string, context: string): v
   assertLength(haystack, BOUNDED_REGEX_LIMITS.haystack, 'haystack', context)
 }
 
-export function assertBoundedRegexReplacement(replacement: string, context: string): void {
-  assertLength(replacement, BOUNDED_REGEX_LIMITS.replacement, 'replacement', context)
+export function assertBoundedRegexReplacement(
+  replacement: string,
+  context: string,
+  limit: number = BOUNDED_REGEX_LIMITS.replacement,
+): void {
+  assertLength(replacement, limit, 'replacement', context)
 }
 
-export function assertBoundedRegexOutput(output: string, context: string): void {
-  assertLength(output, BOUNDED_REGEX_LIMITS.output, 'output', context)
+export function assertBoundedRegexOutput(
+  output: string,
+  context: string,
+  limit: number = BOUNDED_REGEX_LIMITS.output,
+): void {
+  assertLength(output, limit, 'output', context)
 }
 
 function isUnboundedQuantifier(source: string, index: number): { matched: boolean; end: number } {
@@ -392,6 +407,7 @@ export function complexRegexCompatibilityOptions(
     enabled: database.complexRegexCompatibilityMode === 'worker' && timeoutMs > 0,
     stage,
     timeoutMs,
+    sizeLimit: regexOutputSizeLimitCodeUnits(database.regexOutputSizeLimitMiB),
   }
 }
 
@@ -462,6 +478,7 @@ function expandReplacementTemplate(
   source: string,
   groups: Record<string, string | undefined> | undefined,
   context: string,
+  outputLimit: number,
 ): string {
   const tokenRegex = /\$(\$|&|`|'|<[^>]*>|\d{1,2})/g
   const chunks: string[] = []
@@ -469,8 +486,8 @@ function expandReplacementTemplate(
   let cursor = 0
   const append = (value: string): void => {
     outputLength += value.length
-    if (outputLength > BOUNDED_REGEX_LIMITS.output) {
-      reject(context, `output length ${outputLength} exceeds cap ${BOUNDED_REGEX_LIMITS.output}`)
+    if (outputLength > outputLimit) {
+      reject(context, `output length ${outputLength} exceeds cap ${outputLimit}`)
     }
     chunks.push(value)
   }
@@ -510,14 +527,15 @@ function replaceWithCallbackBounded(
   regex: RegExp,
   replacement: BoundedReplacement,
   context: string,
+  outputLimit: number,
 ): string {
   const chunks: string[] = []
   let outputLength = 0
   let cursor = 0
   const append = (value: string): void => {
     outputLength += value.length
-    if (outputLength > BOUNDED_REGEX_LIMITS.output) {
-      reject(context, `output length ${outputLength} exceeds cap ${BOUNDED_REGEX_LIMITS.output}`)
+    if (outputLength > outputLimit) {
+      reject(context, `output length ${outputLength} exceeds cap ${outputLimit}`)
     }
     chunks.push(value)
   }
@@ -541,23 +559,36 @@ function replaceWithCallbackBounded(
   return chunks.join('')
 }
 
-function replaceStringBounded(haystack: string, regex: RegExp, replacement: string, context: string): string {
+function replaceStringBounded(
+  haystack: string,
+  regex: RegExp,
+  replacement: string,
+  context: string,
+  outputLimit: number,
+): string {
   return replaceWithCallbackBounded(
     haystack,
     regex,
     (match, captures, offset, source, groups) =>
-      expandReplacementTemplate(replacement, match, captures, offset, source, groups, context),
+      expandReplacementTemplate(replacement, match, captures, offset, source, groups, context, outputLimit),
     context,
+    outputLimit,
   )
 }
 
-function replaceFirstStringBounded(source: string, target: string, replacement: string, context: string): string {
+function replaceFirstStringBounded(
+  source: string,
+  target: string,
+  replacement: string,
+  context: string,
+  outputLimit: number,
+): string {
   const offset = source.indexOf(target)
   if (offset < 0) return source
-  const expanded = expandReplacementTemplate(replacement, target, [], offset, source, undefined, context)
+  const expanded = expandReplacementTemplate(replacement, target, [], offset, source, undefined, context, outputLimit)
   const outputLength = source.length - target.length + expanded.length
-  if (outputLength > BOUNDED_REGEX_LIMITS.output) {
-    reject(context, `output length ${outputLength} exceeds cap ${BOUNDED_REGEX_LIMITS.output}`)
+  if (outputLength > outputLimit) {
+    reject(context, `output length ${outputLength} exceeds cap ${outputLimit}`)
   }
   return source.slice(0, offset) + expanded + source.slice(offset + target.length)
 }
@@ -567,6 +598,7 @@ function expandTriggerResultFormat(
   match: string,
   captures: Array<string | undefined>,
   context: string,
+  outputLimit: number,
 ): string {
   const chunks: string[] = []
   const tokenRegex = /\$\d+|\$&|\$\$/g
@@ -574,8 +606,8 @@ function expandTriggerResultFormat(
   let cursor = 0
   const append = (value: string): void => {
     outputLength += value.length
-    if (outputLength > BOUNDED_REGEX_LIMITS.output) {
-      reject(context, `output length ${outputLength} exceeds cap ${BOUNDED_REGEX_LIMITS.output}`)
+    if (outputLength > outputLimit) {
+      reject(context, `output length ${outputLength} exceeds cap ${outputLimit}`)
     }
     chunks.push(value)
   }
@@ -595,14 +627,19 @@ function expandTriggerResultFormat(
   return chunks.join('')
 }
 
-function assertTemplateExpansionBound(template: string, maximumExpansion: number, context: string): void {
+function assertTemplateExpansionBound(
+  template: string,
+  maximumExpansion: number,
+  context: string,
+  outputLimit: number,
+): void {
   let dollarCount = 0
   for (const character of template) {
     if (character === '$') dollarCount++
   }
   const projectedLength = template.length + dollarCount * maximumExpansion
-  if (projectedLength > BOUNDED_REGEX_LIMITS.output) {
-    reject(context, `output length ${projectedLength} exceeds cap ${BOUNDED_REGEX_LIMITS.output}`)
+  if (projectedLength > outputLimit) {
+    reject(context, `output length ${projectedLength} exceeds cap ${outputLimit}`)
   }
 }
 
@@ -614,7 +651,7 @@ function advanceStringIndex(value: string, index: number, unicode: boolean): num
   return second >= 0xdc00 && second <= 0xdfff ? index + 2 : index + 1
 }
 
-function splitStringBounded(haystack: string, regex: RegExp, context: string): string[] {
+function splitStringBounded(haystack: string, regex: RegExp, context: string, outputLimit: number): string[] {
   const flags = `${regex.flags.replace(/[gy]/g, '')}g`
   const scanner = new RegExp(regex.source, flags)
   let projectedLength = 0
@@ -626,15 +663,15 @@ function splitStringBounded(haystack: string, regex: RegExp, context: string): s
     const matchEnd = match.index + match[0].length
     if (matchEnd !== previousEnd) {
       projectedItems += match.length
-      if (projectedItems > BOUNDED_REGEX_LIMITS.output + 1) {
-        reject(context, `output item count ${projectedItems} exceeds cap ${BOUNDED_REGEX_LIMITS.output}`)
+      if (projectedItems > outputLimit + 1) {
+        reject(context, `output item count ${projectedItems} exceeds cap ${outputLimit}`)
       }
       projectedLength += match.index - previousEnd
       for (let index = 1; index < match.length; index++) {
         projectedLength += match[index]?.length ?? 0
       }
-      if (projectedLength > BOUNDED_REGEX_LIMITS.output) {
-        reject(context, `output length ${projectedLength} exceeds cap ${BOUNDED_REGEX_LIMITS.output}`)
+      if (projectedLength > outputLimit) {
+        reject(context, `output length ${projectedLength} exceeds cap ${outputLimit}`)
       }
       previousEnd = matchEnd
     }
@@ -644,20 +681,20 @@ function splitStringBounded(haystack: string, regex: RegExp, context: string): s
   }
   projectedItems++
   projectedLength += haystack.length - previousEnd
-  if (projectedItems > BOUNDED_REGEX_LIMITS.output + 1) {
-    reject(context, `output item count ${projectedItems} exceeds cap ${BOUNDED_REGEX_LIMITS.output}`)
+  if (projectedItems > outputLimit + 1) {
+    reject(context, `output item count ${projectedItems} exceeds cap ${outputLimit}`)
   }
-  if (projectedLength > BOUNDED_REGEX_LIMITS.output) {
-    reject(context, `output length ${projectedLength} exceeds cap ${BOUNDED_REGEX_LIMITS.output}`)
+  if (projectedLength > outputLimit) {
+    reject(context, `output length ${projectedLength} exceeds cap ${outputLimit}`)
   }
 
   const output = haystack.split(regex)
-  if (output.length > BOUNDED_REGEX_LIMITS.output) {
-    reject(context, `output item count ${output.length} exceeds cap ${BOUNDED_REGEX_LIMITS.output}`)
+  if (output.length > outputLimit) {
+    reject(context, `output item count ${output.length} exceeds cap ${outputLimit}`)
   }
   const outputLength = output.reduce((total, value) => total + value.length, 0)
-  if (outputLength > BOUNDED_REGEX_LIMITS.output) {
-    reject(context, `output length ${outputLength} exceeds cap ${BOUNDED_REGEX_LIMITS.output}`)
+  if (outputLength > outputLimit) {
+    reject(context, `output length ${outputLength} exceeds cap ${outputLimit}`)
   }
   return output
 }
@@ -665,7 +702,7 @@ function splitStringBounded(haystack: string, regex: RegExp, context: string): s
 const COMPLEX_REGEX_WORKER_SOURCE = `
 const { parentPort, workerData } = require('node:worker_threads')
 
-const limits = ${JSON.stringify(BOUNDED_REGEX_LIMITS)}
+const limits = workerData.limits
 
 function assertLength(value, limit, label) {
   if (typeof value !== 'string') throw new Error(label + ' must be a string')
@@ -885,7 +922,14 @@ function runComplexRegexWorker<T extends ComplexRegexWorkerValue>(
   return new Promise<T>((resolve, rejectPromise) => {
     const worker = new Worker(COMPLEX_REGEX_WORKER_SOURCE, {
       eval: true,
-      workerData: request,
+      workerData: {
+        ...request,
+        limits: {
+          ...BOUNDED_REGEX_LIMITS,
+          replacement: options.sizeLimit,
+          output: options.sizeLimit,
+        },
+      },
     })
     let settled = false
     const timeout = setTimeout(() => {
@@ -947,10 +991,10 @@ export async function replaceBoundedRegexWithCompatibility(
   options: BoundedRegexCompatibilityOptions,
 ): Promise<string> {
   assertBoundedRegexHaystack(haystack, context)
-  assertBoundedRegexReplacement(replacement, replacementContext)
+  assertBoundedRegexReplacement(replacement, replacementContext, options.sizeLimit)
   if (!isComplexBoundedRegex(regex)) {
     regex.lastIndex = 0
-    return replaceStringBounded(haystack, regex, replacement, context)
+    return replaceStringBounded(haystack, regex, replacement, context, options.sizeLimit)
   }
   return runComplexRegexWorker<string>(
     { operation: 'replace', pattern: regex.pattern, flags: regex.flags, haystack, replacement },
@@ -968,7 +1012,7 @@ export async function splitBoundedRegexWithCompatibility(
   assertBoundedRegexHaystack(haystack, context)
   if (!isComplexBoundedRegex(regex)) {
     regex.lastIndex = 0
-    return splitStringBounded(haystack, regex, context)
+    return splitStringBounded(haystack, regex, context, options.sizeLimit)
   }
   return runComplexRegexWorker<string[]>(
     { operation: 'split', pattern: regex.pattern, flags: regex.flags, haystack },
@@ -1005,19 +1049,19 @@ export async function moveBoundedRegexWithCompatibility(
   options: BoundedRegexCompatibilityOptions,
 ): Promise<string> {
   assertBoundedRegexHaystack(haystack, context)
-  assertBoundedRegexReplacement(replacement, replacementContext)
+  assertBoundedRegexReplacement(replacement, replacementContext, options.sizeLimit)
   if (!isComplexBoundedRegex(regex)) {
     regex.lastIndex = 0
     const isGlobal = regex.flags.includes('g')
     const matchAll = isGlobal ? Array.from(haystack.matchAll(regex)) : [haystack.match(regex)]
-    let next = replaceStringBounded(haystack, regex, '', context)
+    let next = replaceStringBounded(haystack, regex, '', context, options.sizeLimit)
     for (const matched of matchAll) {
       if (!matched) continue
       const template = replacement.replace('@@move_top ', '').replace('@@move_bottom ', '')
-      assertTemplateExpansionBound(template, matched[0].length, context)
+      assertTemplateExpansionBound(template, matched[0].length, context, options.sizeLimit)
       const out = substituteWorkerCompatibleMatch(template, matched as RegExpMatchArray)
       next = toTop ? out + '\n' + next : next + '\n' + out
-      assertBoundedRegexOutput(next, context)
+      assertBoundedRegexOutput(next, context, options.sizeLimit)
     }
     return next
   }
@@ -1046,8 +1090,8 @@ export async function triggerReplaceBoundedRegexWithCompatibility(
   options: BoundedRegexCompatibilityOptions,
 ): Promise<string> {
   assertBoundedRegexHaystack(haystack, context)
-  assertBoundedRegexReplacement(resultFormat, resultContext)
-  assertBoundedRegexReplacement(replacement, replacementContext)
+  assertBoundedRegexReplacement(resultFormat, resultContext, options.sizeLimit)
+  assertBoundedRegexReplacement(replacement, replacementContext, options.sizeLimit)
   if (!isComplexBoundedRegex(regex)) {
     regex.lastIndex = 0
     return replaceWithCallbackBounded(
@@ -1062,12 +1106,13 @@ export async function triggerReplaceBoundedRegexWithCompatibility(
           }
           const targetGroup = groups[targetIndex - 1]
           if (targetGroup) {
-            return replaceFirstStringBounded(match, targetGroup, replacement, context)
+            return replaceFirstStringBounded(match, targetGroup, replacement, context, options.sizeLimit)
           }
         }
-        return expandTriggerResultFormat(resultFormat, match, groups, context)
+        return expandTriggerResultFormat(resultFormat, match, groups, context, options.sizeLimit)
       },
       context,
+      options.sizeLimit,
     )
   }
   return runComplexRegexWorker<string>(

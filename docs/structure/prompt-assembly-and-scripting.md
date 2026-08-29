@@ -407,6 +407,12 @@ uses `DEFAULT_TRIGGER_WALL_CLOCK_BUDGET_MS` from
 `server/fastify/src/prompt/triggers.ts` alongside effect, loop, and recursion
 budgets.
 
+Regex replacement templates and generated results default to a 16 MiB limit.
+The durable `regexOutputSizeLimitMiB` Advanced Setting can select 1-64 MiB;
+Fastify direct/worker execution and the browser fallback use the same value.
+Pattern and source-text caps remain fixed independently of this compatibility
+setting. Oversized results are rejected rather than truncated.
+
 Low-level `LLM`/`simpleLLM` calls use `scriptMain` and `axLLM` uses
 `scriptAux`. A character- or module-owned `scriptModelOverrides` profile id
 wins for that owner's call. Server trigger-source attribution and the browser's

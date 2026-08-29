@@ -2107,6 +2107,8 @@ export const languageKorean = {
       '활성화하면 서버가 프롬프트를 구성할 때 브라우저 대화 상자 API를 참조하는 Lua 스크립트를 실행 전에 차단합니다. 비활성화하면 alertInput, alertSelect 또는 alertConfirm을 실제로 호출할 때만 차단합니다.',
     complexRegexCompatibilityMode:
       '엄격 모드는 과도한 백트래킹 위험이 있는 중첩 정규식 패턴을 실행 전에 거부합니다. 호환 모드는 해당 패턴을 격리된 워커에서 실행하고 제한 시간을 넘으면 단계를 실패 처리합니다.',
+    regexOutputSizeLimitMiB:
+      '정규식 스크립트 OUT 치환문과 생성 결과의 최대 크기(MiB)입니다. 제한을 높이면 메모리 사용량이 증가할 수 있습니다.',
     localNetworkModeDesc:
       '사설/LAN 모델 URL 요청을 브라우저에서 직접 전송하지 않고 Fastify 서버를 통해 중계합니다.\n\n**목적**\n- `192.168.x.x`, `10.x.x.x`, `localhost`, `.local` 등 로컬 호스트에 대한 브라우저의 사설 네트워크/CORS 제한을 우회합니다.\n- 로컬 추론 시 첫 토큰 생성이 지연될 때 발생할 수 있는 브라우저 연결 시간 초과 위험을 줄입니다.\n\n**작동 방식**\n- 로컬 네트워크 모드가 켜져 있고 대상 URL이 사설/로컬 IP 주소로 확인된 경우에만 적용됩니다.\n- 스트리밍은 `/api/v1/proxy/stream-jobs`를 우선 사용하고, 비스트리밍은 `/api/v1/proxy/fetch`를 사용합니다.\n- 로컬/사설 모델 호스트에 대한 브라우저 직접 호출은 자동으로 차단됩니다.\n\n**제약 사항**\n- OpenAI 호환 요청 경로에만 적용됩니다.\n- 서로 다른 외부 공인 도메인 간의 일반적인 CORS 제한은 우회하지 않습니다.\n- 이 기능을 적용하려면 Fastify 서버에서 제공하는 RisuAI URL로 접속하세요.',
     agentPresetPreparedInputs:
@@ -2567,6 +2569,7 @@ export const languageKorean = {
   complexRegexInputTimeoutMs: '입력 정규식 제한 시간 (ms)',
   complexRegexOutputTimeoutMs: '출력 정규식 제한 시간 (ms)',
   complexRegexDisplayTimeoutMs: '표시 정규식 제한 시간 (ms)',
+  regexOutputSizeLimitMiB: '정규식 출력 크기 제한 (MiB)',
   pluginDevelopMode: '플러그인 개발 모드',
   fetchLogConsent: '플러그인 {}이(가) 민감한 정보가 포함될 수 있는 로그 접근 권한을 요청합니다. 허용하시겠습니까?',
   getFullDatabaseConsent:

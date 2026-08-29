@@ -414,6 +414,7 @@ describe('settings database normalization', () => {
     delete (legacyData as Partial<Database>).complexRegexInputTimeoutMs
     delete (legacyData as Partial<Database>).complexRegexOutputTimeoutMs
     delete (legacyData as Partial<Database>).complexRegexDisplayTimeoutMs
+    delete (legacyData as Partial<Database>).regexOutputSizeLimitMiB
 
     setDatabase(legacyData)
 
@@ -422,6 +423,7 @@ describe('settings database normalization', () => {
       complexRegexInputTimeoutMs: 15000,
       complexRegexOutputTimeoutMs: 15000,
       complexRegexDisplayTimeoutMs: 15000,
+      regexOutputSizeLimitMiB: 16,
     })
 
     const configuredData = clonePlain(getDatabase())
@@ -429,6 +431,7 @@ describe('settings database normalization', () => {
     configuredData.complexRegexInputTimeoutMs = 1000
     configuredData.complexRegexOutputTimeoutMs = 2000
     configuredData.complexRegexDisplayTimeoutMs = 3000
+    configuredData.regexOutputSizeLimitMiB = 32
 
     setDatabase(configuredData)
 
@@ -437,6 +440,7 @@ describe('settings database normalization', () => {
       complexRegexInputTimeoutMs: 1000,
       complexRegexOutputTimeoutMs: 2000,
       complexRegexDisplayTimeoutMs: 3000,
+      regexOutputSizeLimitMiB: 32,
     })
   })
 

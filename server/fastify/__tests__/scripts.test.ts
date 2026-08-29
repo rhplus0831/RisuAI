@@ -92,6 +92,27 @@ describe('processScript', () => {
     expect(out).toBe('bar baz')
   })
 
+  it('allows regex OUT values above the former 128 KiB ceiling by default', () => {
+    const replacement = 'x'.repeat(256 * 1024)
+    const db = makeDatabase({
+      presetRegex: [regex('foo', replacement, 'editprocess')],
+    })
+
+    expect(processScript(ctxFor(db), db.characters[0], 'foo', 'editprocess')).toHaveLength(replacement.length)
+  })
+
+  it('honors a configured regex output size limit', () => {
+    const replacement = 'x'.repeat(1024 * 1024 + 1)
+    const db = makeDatabase({
+      regexOutputSizeLimitMiB: 1,
+      presetRegex: [regex('foo', replacement, 'editprocess')],
+    })
+
+    expect(() => processScript(ctxFor(db), db.characters[0], 'foo', 'editprocess')).toThrow(
+      /replacement length .* exceeds cap 1048576/,
+    )
+  })
+
   it('applies multiple scripts in declared order', () => {
     const db = makeDatabase({
       presetRegex: [regex('hello', 'hi', 'editprocess'), regex('hi', 'hey', 'editprocess')],

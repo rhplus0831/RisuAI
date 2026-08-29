@@ -91,6 +91,7 @@ describe('database defaults', () => {
     expect(database.complexRegexInputTimeoutMs).toBe(15000)
     expect(database.complexRegexOutputTimeoutMs).toBe(15000)
     expect(database.complexRegexDisplayTimeoutMs).toBe(15000)
+    expect(database.regexOutputSizeLimitMiB).toBe(16)
     expect(database.seperateModels).toMatchObject({
       memory: '',
       emotion: '',
@@ -190,6 +191,18 @@ describe('database defaults', () => {
 
     expect(database.chatLoadInitialPages).toBe(12)
     expect(database.chatLoadAdditionalPages).toBe(15)
+  })
+
+  it('normalizes the configurable regex output size limit', () => {
+    expect(normalizeDatabaseDefaults({ regexOutputSizeLimitMiB: 0 }, { providerDefaults: false })).toMatchObject({
+      regexOutputSizeLimitMiB: 1,
+    })
+    expect(normalizeDatabaseDefaults({ regexOutputSizeLimitMiB: 128 }, { providerDefaults: false })).toMatchObject({
+      regexOutputSizeLimitMiB: 64,
+    })
+    expect(normalizeDatabaseDefaults({ regexOutputSizeLimitMiB: 8.9 }, { providerDefaults: false })).toMatchObject({
+      regexOutputSizeLimitMiB: 8,
+    })
   })
 
   it('preserves an enabled app reduced-motion preference', () => {

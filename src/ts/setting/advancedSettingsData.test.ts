@@ -51,6 +51,19 @@ describe('advanced settings data', () => {
     )
   })
 
+  it('includes the configurable regex output size limit', () => {
+    expect(advancedSettingsItems).toContainEqual(
+      expect.objectContaining({
+        id: 'adv.regexOutputSizeLimitMiB',
+        type: 'number',
+        bindKey: 'regexOutputSizeLimitMiB',
+        labelKey: 'regexOutputSizeLimitMiB',
+        helpKey: 'regexOutputSizeLimitMiB',
+        options: { min: 1, max: 64, step: 1 },
+      }),
+    )
+  })
+
   it('does not advertise unsupported browser-side cold storage', () => {
     expect(advancedSettingsItems.some((item) => item.bindKey === 'coldstorage')).toBe(false)
   })

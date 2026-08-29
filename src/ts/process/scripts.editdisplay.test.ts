@@ -242,7 +242,9 @@ describe('editdisplay render path logging', () => {
   })
 
   it('preflights replacement and move amplification inside the regex worker runtime', () => {
-    const replacement = 'x'.repeat(CLIENT_REGEX_LIMITS.replacement)
+    expect(CLIENT_REGEX_LIMITS).toMatchObject({ replacement: 16 * 1024 * 1024, output: 16 * 1024 * 1024 })
+    const sizeLimit = 128 * 1024
+    const replacement = 'x'.repeat(sizeLimit)
     expect(() =>
       executeRegexWorkerRequest({
         operation: 'replace',
@@ -250,6 +252,7 @@ describe('editdisplay render path logging', () => {
         flags: 'g',
         source: 'a a a a',
         replacement,
+        sizeLimit,
       }),
     ).toThrow(/output length .* exceeds cap 131072/)
 
@@ -259,10 +262,25 @@ describe('editdisplay render path logging', () => {
         pattern: '(a)',
         flags: 'g',
         source: 'a a a a',
-        replacement: `@@move_bottom ${'x'.repeat(CLIENT_REGEX_LIMITS.replacement - '@@move_bottom '.length)}`,
+        replacement: `@@move_bottom ${'x'.repeat(sizeLimit - '@@move_bottom '.length)}`,
         toTop: false,
+        sizeLimit,
       }),
     ).toThrow(/output length .* exceeds cap 131072/)
+  })
+
+  it('allows browser regex OUT values above the former 128 KiB ceiling by default', () => {
+    const replacement = 'x'.repeat(256 * 1024)
+
+    expect(
+      executeRegexWorkerRequest({
+        operation: 'replace',
+        pattern: 'a',
+        flags: 'g',
+        source: 'a',
+        replacement,
+      }),
+    ).toEqual({ operation: 'replace', result: replacement })
   })
 
   it('a display-trigger render pass writes nothing to console.log', async () => {

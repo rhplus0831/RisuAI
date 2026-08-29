@@ -24,6 +24,7 @@ const workerOptions: BoundedRegexCompatibilityOptions = {
   enabled: true,
   stage: 'output',
   timeoutMs: DEFAULT_COMPLEX_REGEX_TIMEOUT_MS,
+  sizeLimit: 128 * 1024,
 }
 
 const disabledOptions: BoundedRegexCompatibilityOptions = {
@@ -77,6 +78,8 @@ async function runPublicOperations(regex: BoundedRegexLike) {
 
 describe('bounded regex limits', () => {
   it('accepts each exact cap and rejects the first code unit beyond it', async () => {
+    expect(BOUNDED_REGEX_LIMITS.replacement).toBe(16 * 1024 * 1024)
+    expect(BOUNDED_REGEX_LIMITS.output).toBe(16 * 1024 * 1024)
     const exactPattern = 'a'.repeat(BOUNDED_REGEX_LIMITS.pattern)
     expect(compileBoundedRegex(exactPattern, '', 'pattern boundary')).toBeInstanceOf(RegExp)
     expect(() => compileBoundedRegex(`${exactPattern}a`, '', 'pattern boundary')).toThrow(
@@ -89,7 +92,7 @@ describe('bounded regex limits', () => {
       `haystack length ${BOUNDED_REGEX_LIMITS.haystack + 1} exceeds cap ${BOUNDED_REGEX_LIMITS.haystack}`,
     )
 
-    const exactReplacement = 'x'.repeat(BOUNDED_REGEX_LIMITS.replacement)
+    const exactReplacement = 'x'.repeat(workerOptions.sizeLimit)
     await expect(
       replaceBoundedRegexWithCompatibility(
         /a/,
@@ -99,7 +102,7 @@ describe('bounded regex limits', () => {
         'replacement boundary',
         workerOptions,
       ),
-    ).resolves.toHaveLength(BOUNDED_REGEX_LIMITS.replacement)
+    ).resolves.toHaveLength(workerOptions.sizeLimit)
     await expect(
       replaceBoundedRegexWithCompatibility(
         /a/,
@@ -112,7 +115,7 @@ describe('bounded regex limits', () => {
     ).rejects.toMatchObject({
       code: 'RISU_BOUNDED_REGEX',
       message: expect.stringContaining(
-        `replacement length ${BOUNDED_REGEX_LIMITS.replacement + 1} exceeds cap ${BOUNDED_REGEX_LIMITS.replacement}`,
+        `replacement length ${workerOptions.sizeLimit + 1} exceeds cap ${workerOptions.sizeLimit}`,
       ),
     })
   })
@@ -166,22 +169,26 @@ describe('bounded regex compatibility selection', () => {
       complexRegexInputTimeoutMs: 12.9,
       complexRegexOutputTimeoutMs: -3,
       complexRegexDisplayTimeoutMs: 999_999,
+      regexOutputSizeLimitMiB: 4,
     } as unknown as Database
 
     expect(complexRegexCompatibilityOptions(database, 'input')).toEqual({
       enabled: true,
       stage: 'input',
       timeoutMs: 12,
+      sizeLimit: 4 * 1024 * 1024,
     })
     expect(complexRegexCompatibilityOptions(database, 'output')).toEqual({
       enabled: false,
       stage: 'output',
       timeoutMs: 0,
+      sizeLimit: 4 * 1024 * 1024,
     })
     expect(complexRegexCompatibilityOptions(database, 'display')).toEqual({
       enabled: true,
       stage: 'display',
       timeoutMs: 600_000,
+      sizeLimit: 4 * 1024 * 1024,
     })
 
     database.complexRegexInputTimeoutMs = Number.NaN
@@ -189,6 +196,7 @@ describe('bounded regex compatibility selection', () => {
       enabled: true,
       stage: 'input',
       timeoutMs: DEFAULT_COMPLEX_REGEX_TIMEOUT_MS,
+      sizeLimit: 4 * 1024 * 1024,
     })
 
     database.complexRegexCompatibilityMode = 'strict'
@@ -247,7 +255,7 @@ describe('bounded regex worker operations', () => {
         replaceBoundedRegexWithCompatibility(
           regex,
           'a a a',
-          'x'.repeat(BOUNDED_REGEX_LIMITS.replacement),
+          'x'.repeat(workerOptions.sizeLimit),
           'amplified replace',
           'amplified replacement',
           workerOptions,
@@ -259,7 +267,7 @@ describe('bounded regex worker operations', () => {
         moveBoundedRegexWithCompatibility(
           regex,
           'a a a',
-          `@@move_bottom ${'x'.repeat(BOUNDED_REGEX_LIMITS.replacement - '@@move_bottom '.length)}`,
+          `@@move_bottom ${'x'.repeat(workerOptions.sizeLimit - '@@move_bottom '.length)}`,
           false,
           'amplified move',
           'amplified move replacement',
@@ -273,7 +281,7 @@ describe('bounded regex worker operations', () => {
           regex,
           'a a a',
           '$1',
-          'x'.repeat(BOUNDED_REGEX_LIMITS.replacement),
+          'x'.repeat(workerOptions.sizeLimit),
           'amplified trigger replacement',
           'amplified trigger result',
           'amplified trigger value',
@@ -313,7 +321,7 @@ describe('bounded regex worker operations', () => {
   })
 
   it('rejects replacement-token amplification before direct or worker output construction', async () => {
-    const replacement = '$&'.repeat(BOUNDED_REGEX_LIMITS.replacement / 2)
+    const replacement = '$&'.repeat(workerOptions.sizeLimit / 2)
     const run = (regex: BoundedRegexLike) =>
       replaceBoundedRegexWithCompatibility(
         regex,
@@ -372,6 +380,7 @@ describe('bounded regex worker operations', () => {
         enabled: true,
         stage: 'display',
         timeoutMs: 50,
+        sizeLimit: workerOptions.sizeLimit,
       })
 
       vi.advanceTimersByTime(50)

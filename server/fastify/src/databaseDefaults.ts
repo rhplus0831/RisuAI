@@ -29,6 +29,10 @@ import {
 } from '../../../src/ts/model/modelProfileRecords.js'
 import { normalizeProviderCredentials } from '../../../src/ts/model/providerCredentialRecords.js'
 import { normalizeScriptModelOverrides } from '../../../src/ts/model/scriptModelOverrides.js'
+import {
+  DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB,
+  normalizeRegexOutputSizeLimitMiB,
+} from '../../../src/ts/regexOutputSizeLimit.js'
 import { normalizeAgentConfiguration, normalizeAgentPresetDefaultId } from '../../../src/ts/agentPresetRecords.js'
 import { normalizeTranslatorPresetState, type TranslatorPresetStateLike } from '../../../src/ts/translator/presets.js'
 import { normalizePromptTemplateValue } from './commands/prompts.js'
@@ -303,6 +307,8 @@ export function normalizeDatabaseDefaults(
   normalizeNumber(database, 'complexRegexOutputTimeoutMs', 15000)
   setDefault(database, 'complexRegexDisplayTimeoutMs', 15000)
   normalizeNumber(database, 'complexRegexDisplayTimeoutMs', 15000)
+  setDefault(database, 'regexOutputSizeLimitMiB', DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB)
+  database.regexOutputSizeLimitMiB = normalizeRegexOutputSizeLimitMiB(database.regexOutputSizeLimitMiB)
   setDefault(database, 'elevenLabKey', '')
   setDefault(database, 'voicevoxUrl', '')
   setDefault(database, 'showMemoryLimit', false)

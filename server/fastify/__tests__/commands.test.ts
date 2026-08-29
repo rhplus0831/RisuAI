@@ -1614,6 +1614,7 @@ describe('scalar settings groups', () => {
     const revision = await importDatabase(harness.app, assertion, {
       keepSessionAlive: 'off',
       showUnrecommended: false,
+      regexOutputSizeLimitMiB: 16,
     })
 
     const res = await harness.app.inject({
@@ -1625,13 +1626,14 @@ describe('scalar settings groups', () => {
         patch: {
           keepSessionAlive: 'pip',
           showUnrecommended: true,
+          regexOutputSizeLimitMiB: 32,
         },
       },
     })
 
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({
-      acknowledgedKeys: ['keepSessionAlive', 'showUnrecommended'],
+      acknowledgedKeys: ['keepSessionAlive', 'showUnrecommended', 'regexOutputSizeLimitMiB'],
       settings: { keepSessionAlive: 'sound' },
     })
 
@@ -1643,7 +1645,25 @@ describe('scalar settings groups', () => {
     expect(bootstrap.resourceDatabase).toMatchObject({
       keepSessionAlive: 'sound',
       showUnrecommended: true,
+      regexOutputSizeLimitMiB: 32,
     })
+  })
+
+  it('rejects regex output limits outside the supported range', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, { regexOutputSizeLimitMiB: 16 })
+
+    for (const regexOutputSizeLimitMiB of [0, 65, 1.5]) {
+      const res = await harness.app.inject({
+        method: 'PATCH',
+        url: '/api/v1/commands/settings/advanced',
+        headers: { 'risu-auth': assertion },
+        payload: { baseRevision: revision, patch: { regexOutputSizeLimitMiB } },
+      })
+
+      expect(res.statusCode).toBe(400)
+      expect(res.json().error).toBe('regexOutputSizeLimitMiB must be an integer from 1 to 64')
+    }
   })
 
   it('accepts grouped settings updates across resource families', async () => {

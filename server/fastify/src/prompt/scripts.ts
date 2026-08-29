@@ -4,6 +4,7 @@ import type { CbsConditions } from '../../../../src/ts/parser/risuChatParserHelp
 import type { RisuModule } from '../../../../src/ts/process/modules'
 import {
   assertBoundedRegexHaystack,
+  assertBoundedRegexOutput,
   assertBoundedRegexReplacement,
   type BoundedRegexCompatibilityOptions,
   type BoundedRegexLike,
@@ -22,6 +23,7 @@ import { expandVariables, type ExpandContext } from './variables.js'
 import { getActiveModules, getModuleRegexScripts } from './modules.js'
 import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
 import { serverUnsupportedRegexEffectType } from '../../../../src/ts/process/triggerServerSupport.js'
+import { regexOutputSizeLimitCodeUnits } from '../../../../src/ts/regexOutputSizeLimit.js'
 
 /**
  * Regex script processor ported from `src/ts/process/scripts.ts`
@@ -210,9 +212,16 @@ function substituteMatch(template: string, matched: RegExpMatchArray): string {
     })
 }
 
-function applyMove(data: string, reg: RegExp, flag: string, outScript: string, toTop: boolean): string {
+function applyMove(
+  data: string,
+  reg: RegExp,
+  flag: string,
+  outScript: string,
+  toTop: boolean,
+  sizeLimit: number,
+): string {
   assertBoundedRegexHaystack(data, 'customscript move source')
-  assertBoundedRegexReplacement(outScript, 'customscript move replacement')
+  assertBoundedRegexReplacement(outScript, 'customscript move replacement', sizeLimit)
   reg.lastIndex = 0
   const isGlobal = flag.includes('g')
   const matchAll = isGlobal ? Array.from(data.matchAll(reg)) : [data.match(reg)]
@@ -222,6 +231,7 @@ function applyMove(data: string, reg: RegExp, flag: string, outScript: string, t
     const template = outScript.replace('@@move_top ', '').replace('@@move_bottom ', '')
     const out = substituteMatch(template, matched as RegExpMatchArray)
     next = toTop ? out + '\n' + next : next + '\n' + out
+    assertBoundedRegexOutput(next, 'customscript move source', sizeLimit)
   }
   return next
 }
@@ -380,6 +390,7 @@ function applyOne(
   chatID: number,
   currentChat: Chat | undefined,
   mutationHooks: ScriptMutationHooks | undefined,
+  sizeLimit: number,
 ): string {
   const script = prepared.script
   const actions = prepared.actions
@@ -407,7 +418,7 @@ function applyOne(
   const isAction = outScript.startsWith('@@') || actions.length > 0
   if (isAction) {
     assertBoundedRegexHaystack(data, 'customscript action source')
-    assertBoundedRegexReplacement(outScript, 'customscript action replacement')
+    assertBoundedRegexReplacement(outScript, 'customscript action replacement', sizeLimit)
     const matched = testBoundedRegex(reg, data, 'customscript action source')
     // reg.test() advances `lastIndex` when the regex is global; both
     // matchAll() and a sticky-style match would then start past the
@@ -424,12 +435,13 @@ function applyOne(
         return applyInject(currentChat, chatID, data, reg, mutationHooks)
       }
       if (isMoveTop || isMoveBottom) {
-        return applyMove(data, reg, flag, outScript, isMoveTop)
+        return applyMove(data, reg, flag, outScript, isMoveTop, sizeLimit)
       }
       // Unknown @@ prefix or arbitrary action: fall through to plain replace.
       assertBoundedRegexHaystack(data, 'customscript action replace source')
-      assertBoundedRegexReplacement(outScript, 'customscript action replace replacement')
+      assertBoundedRegexReplacement(outScript, 'customscript action replace replacement', sizeLimit)
       const replaced = data.replace(reg, outScript)
+      assertBoundedRegexOutput(replaced, 'customscript action replace source', sizeLimit)
       return expandVariables(replaced, { ...ctx, chatID, cbsConditions }).text
     }
     // No match: only @@repeat_back / the 'repeat_back' action fires.
@@ -440,8 +452,9 @@ function applyOne(
   }
 
   assertBoundedRegexHaystack(data, 'customscript replace source')
-  assertBoundedRegexReplacement(outScript, 'customscript replace replacement')
+  assertBoundedRegexReplacement(outScript, 'customscript replace replacement', sizeLimit)
   const replaced = data.replace(reg, outScript)
+  assertBoundedRegexOutput(replaced, 'customscript replace source', sizeLimit)
   return expandVariables(replaced, { ...ctx, chatID, cbsConditions }).text
 }
 
@@ -453,7 +466,7 @@ async function applyMoveAsync(
   options: BoundedRegexCompatibilityOptions,
 ): Promise<string> {
   if (!isComplexBoundedRegex(reg)) {
-    return applyMove(data, reg, reg.flags, outScript, toTop)
+    return applyMove(data, reg, reg.flags, outScript, toTop, options.sizeLimit)
   }
   return moveBoundedRegexWithCompatibility(
     reg,
@@ -567,7 +580,7 @@ async function applyOneAsync(
   const isAction = outScript.startsWith('@@') || actions.length > 0
   if (isAction) {
     assertBoundedRegexHaystack(data, 'customscript action source')
-    assertBoundedRegexReplacement(outScript, 'customscript action replacement')
+    assertBoundedRegexReplacement(outScript, 'customscript action replacement', options.sizeLimit)
     const matched = await testBoundedRegexWithCompatibility(reg, data, 'customscript action source', options)
     if (!isComplexBoundedRegex(reg)) reg.lastIndex = 0
     if (matched) {
@@ -683,12 +696,13 @@ export function processScript(
   mutationHooks: ScriptMutationHooks | undefined = undefined,
 ): string {
   const prepared = getPreparedScripts(ctx.database, char, currentChat)
+  const sizeLimit = regexOutputSizeLimitCodeUnits(ctx.database.regexOutputSizeLimitMiB)
 
   let current = data
   for (const p of prepared) {
     if (p.script.type !== mode) continue
     try {
-      current = applyOne(ctx, char, current, p, cbsConditions, chatID, currentChat, mutationHooks)
+      current = applyOne(ctx, char, current, p, cbsConditions, chatID, currentChat, mutationHooks, sizeLimit)
     } catch (err) {
       if (isBoundedRegexError(err)) throw err
       // Mirror SPA behavior: one bad regex should not stop the rest of the chain.

@@ -1970,6 +1970,7 @@ describe('server command API adapter', () => {
     expect(settingsGroupForKey('doNotWarnExternalServers')).toBe('advanced')
     expect(settingsGroupForKey('pluginCompatibilityMode')).toBe('advanced')
     expect(settingsGroupForKey('strictScriptCheck')).toBe('advanced')
+    expect(settingsGroupForKey('regexOutputSizeLimitMiB')).toBe('advanced')
     expect(settingsGroupForKey('sdProvider')).toBe('media')
     expect(settingsGroupForKey('webUiUrl')).toBe('media')
     expect(settingsGroupForKey('sdSteps')).toBe('media')

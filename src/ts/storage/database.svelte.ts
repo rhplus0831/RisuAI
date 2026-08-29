@@ -45,6 +45,7 @@ import {
   type ProviderCredentialRecord,
 } from '../model/providerCredentialRecords'
 import { normalizeScriptModelOverrides, type ScriptModelOverrides } from '../model/scriptModelOverrides'
+import { DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB, normalizeRegexOutputSizeLimitMiB } from '../regexOutputSizeLimit'
 import {
   normalizeAgentConfiguration,
   normalizeAgentPresetDefaultId,
@@ -2936,6 +2937,8 @@ export function setDatabase(data: Database) {
   if (typeof data.complexRegexDisplayTimeoutMs !== 'number' || Number.isNaN(data.complexRegexDisplayTimeoutMs)) {
     data.complexRegexDisplayTimeoutMs = 15000
   }
+  data.regexOutputSizeLimitMiB ??= DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB
+  data.regexOutputSizeLimitMiB = normalizeRegexOutputSizeLimitMiB(data.regexOutputSizeLimitMiB)
   if (checkNullish(data.elevenLabKey)) {
     data.elevenLabKey = ''
   }
@@ -3937,6 +3940,7 @@ export interface Database {
   complexRegexInputTimeoutMs: number
   complexRegexOutputTimeoutMs: number
   complexRegexDisplayTimeoutMs: number
+  regexOutputSizeLimitMiB: number
   elevenLabKey: string
   voicevoxUrl: string
   useExperimental: boolean

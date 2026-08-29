@@ -59,6 +59,10 @@ import {
 } from '../../../../src/ts/model/providerCredentialRecords.js'
 import { normalizeChatGenerationTogglePresets } from '../../../../src/ts/chatGenerationTogglePresetRecords.js'
 import {
+  MAX_REGEX_OUTPUT_SIZE_LIMIT_MIB,
+  MIN_REGEX_OUTPUT_SIZE_LIMIT_MIB,
+} from '../../../../src/ts/regexOutputSizeLimit.js'
+import {
   normalizeAgentPresetDefaultId,
   normalizeAgentPresets,
   normalizeAgents,
@@ -1655,6 +1659,7 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'complexRegexInputTimeoutMs',
     'complexRegexOutputTimeoutMs',
     'complexRegexDisplayTimeoutMs',
+    'regexOutputSizeLimitMiB',
     'pluginDevelopMode',
     'showDeprecatedTriggerV1',
     'showDeprecatedTriggerV2',
@@ -1851,6 +1856,7 @@ const NUMBER_SETTING_KEYS = new Set([
   'complexRegexInputTimeoutMs',
   'complexRegexOutputTimeoutMs',
   'complexRegexDisplayTimeoutMs',
+  'regexOutputSizeLimitMiB',
   'customAPIFormat',
   'echoDelay',
   'falLoraScale',
@@ -10041,6 +10047,16 @@ function validateSettingValue(key: string, value: unknown): void {
     (typeof value !== 'number' || !Number.isFinite(value) || value < 0)
   ) {
     throw new ValidationError(`${key} must be a non-negative finite number`)
+  }
+  if (
+    key === 'regexOutputSizeLimitMiB' &&
+    (!Number.isSafeInteger(value) ||
+      (value as number) < MIN_REGEX_OUTPUT_SIZE_LIMIT_MIB ||
+      (value as number) > MAX_REGEX_OUTPUT_SIZE_LIMIT_MIB)
+  ) {
+    throw new ValidationError(
+      `regexOutputSizeLimitMiB must be an integer from ${MIN_REGEX_OUTPUT_SIZE_LIMIT_MIB} to ${MAX_REGEX_OUTPUT_SIZE_LIMIT_MIB}`,
+    )
   }
   if (
     key === 'requestHistoryLimit' &&

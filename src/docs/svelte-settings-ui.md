@@ -358,6 +358,12 @@ visibility used by these pages. Effective resolution and readiness live in
 `src/ts/model/modelProfileResolver.ts` and remain canonical in
 [Providers And Models](../../docs/structure/providers-and-models.md).
 
+The same page exposes `adv.regexOutputSizeLimitMiB`, a durable numeric control
+for regex `OUT` replacements and generated results. It defaults to 16 MiB and
+accepts 1-64 MiB. Increasing it improves compatibility with large legacy
+scripts at the cost of additional memory exposure; pattern and source limits
+remain fixed.
+
 Advanced Settings has an experimental data-driven OpenAI Flex Processing
 checkbox (`adv.openAIFlex`) bound to the durable `openAIFlexProcessing` field.
 This global control is separate from an LLM Gateway profile's service-tier

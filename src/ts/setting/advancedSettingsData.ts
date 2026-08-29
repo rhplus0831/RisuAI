@@ -1,5 +1,6 @@
 import type { SettingItem } from './types'
 import { updateHeightMode } from '../gui/heightMode'
+import { MAX_REGEX_OUTPUT_SIZE_LIMIT_MIB, MIN_REGEX_OUTPUT_SIZE_LIMIT_MIB } from '../regexOutputSizeLimit'
 
 export const advancedSettingsItems: SettingItem[] = [
   {
@@ -446,6 +447,20 @@ export const advancedSettingsItems: SettingItem[] = [
     helpKey: 'strictScriptCheck',
     keywords: ['lua', 'script', 'alertInput', 'alertSelect', 'alertConfirm'],
     classes: 'mt-4',
+  },
+  {
+    id: 'adv.regexOutputSizeLimitMiB',
+    type: 'number',
+    labelKey: 'regexOutputSizeLimitMiB',
+    bindKey: 'regexOutputSizeLimitMiB',
+    helpKey: 'regexOutputSizeLimitMiB',
+    keywords: ['regex', 'regular expression', 'out', 'replacement', 'output', 'size', 'limit'],
+    classes: 'mt-4',
+    options: {
+      min: MIN_REGEX_OUTPUT_SIZE_LIMIT_MIB,
+      max: MAX_REGEX_OUTPUT_SIZE_LIMIT_MIB,
+      step: 1,
+    },
   },
   {
     id: 'adv.complexRegexCompatibilityMode',

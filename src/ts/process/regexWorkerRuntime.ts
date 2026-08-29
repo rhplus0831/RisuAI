@@ -1,14 +1,24 @@
+import {
+  DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB,
+  MAX_REGEX_OUTPUT_SIZE_LIMIT_MIB,
+  regexOutputSizeLimitCodeUnits,
+} from '../regexOutputSizeLimit'
+
+const DEFAULT_OUTPUT_SIZE_LIMIT = regexOutputSizeLimitCodeUnits(DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB)
+const MAX_OUTPUT_SIZE_LIMIT = regexOutputSizeLimitCodeUnits(MAX_REGEX_OUTPUT_SIZE_LIMIT_MIB)
+
 export const CLIENT_REGEX_LIMITS = {
   pattern: 4_096,
   haystack: 128 * 1024,
-  replacement: 64 * 1024,
-  output: 128 * 1024,
+  replacement: DEFAULT_OUTPUT_SIZE_LIMIT,
+  output: DEFAULT_OUTPUT_SIZE_LIMIT,
 } as const
 
 interface RegexWorkerBaseRequest {
   pattern: string
   flags: string
   source: string
+  sizeLimit?: number
 }
 
 export type RegexWorkerRequest =
@@ -29,16 +39,21 @@ function assertLength(value: string, limit: number, label: string): void {
   if (value.length > limit) throw new Error(`${label} length ${value.length} exceeds cap ${limit}`)
 }
 
-function assertRequest(request: RegexWorkerRequest): void {
+function assertRequest(request: RegexWorkerRequest): number {
+  const sizeLimit = request.sizeLimit ?? CLIENT_REGEX_LIMITS.output
+  if (!Number.isSafeInteger(sizeLimit) || sizeLimit < 1 || sizeLimit > MAX_OUTPUT_SIZE_LIMIT) {
+    throw new Error(`size limit must be an integer from 1 to ${MAX_OUTPUT_SIZE_LIMIT}`)
+  }
   assertLength(request.pattern, CLIENT_REGEX_LIMITS.pattern, 'pattern')
   assertLength(request.source, CLIENT_REGEX_LIMITS.haystack, 'haystack')
   if ('replacement' in request) {
-    assertLength(request.replacement, CLIENT_REGEX_LIMITS.replacement, 'replacement')
+    assertLength(request.replacement, sizeLimit, 'replacement')
   }
+  return sizeLimit
 }
 
-function assertOutput(output: string): string {
-  assertLength(output, CLIENT_REGEX_LIMITS.output, 'output')
+function assertOutput(output: string, sizeLimit: number): string {
+  assertLength(output, sizeLimit, 'output')
   return output
 }
 
@@ -50,14 +65,19 @@ type ReplacementCallback = (
   groups: Record<string, string | undefined> | undefined,
 ) => string
 
-function replaceCallbackBounded(source: string, regex: RegExp, replacement: ReplacementCallback): string {
+function replaceCallbackBounded(
+  source: string,
+  regex: RegExp,
+  replacement: ReplacementCallback,
+  sizeLimit: number,
+): string {
   const chunks: string[] = []
   let cursor = 0
   let outputLength = 0
   const append = (value: string): void => {
     outputLength += value.length
-    if (outputLength > CLIENT_REGEX_LIMITS.output) {
-      throw new Error(`output length ${outputLength} exceeds cap ${CLIENT_REGEX_LIMITS.output}`)
+    if (outputLength > sizeLimit) {
+      throw new Error(`output length ${outputLength} exceeds cap ${sizeLimit}`)
     }
     chunks.push(value)
   }
@@ -86,40 +106,62 @@ function expandNativeReplacement(
   offset: number,
   source: string,
   groups: Record<string, string | undefined> | undefined,
+  sizeLimit: number,
 ): string {
-  return replaceCallbackBounded(template, /\$(\$|&|`|'|<[^>]*>|\d{1,2})/g, (placeholder, tokens) => {
-    const token = tokens[0] ?? ''
-    if (token === '$') return '$'
-    if (token === '&') return match
-    if (token === '`') return source.slice(0, offset)
-    if (token === "'") return source.slice(offset + match.length)
-    if (token.startsWith('<')) return groups ? (groups[token.slice(1, -1)] ?? '') : placeholder
-    const index = Number(token)
-    if (index > 0 && index <= captures.length) return captures[index - 1] ?? ''
-    if (token.length === 2) {
-      const firstIndex = Number(token[0])
-      if (firstIndex > 0 && firstIndex <= captures.length) return `${captures[firstIndex - 1] ?? ''}${token[1]}`
-    }
-    return placeholder
-  })
-}
-
-function replaceNativeBounded(source: string, regex: RegExp, replacement: string): string {
-  return replaceCallbackBounded(source, regex, (match, captures, offset, input, groups) =>
-    expandNativeReplacement(replacement, match, captures, offset, input, groups),
+  return replaceCallbackBounded(
+    template,
+    /\$(\$|&|`|'|<[^>]*>|\d{1,2})/g,
+    (placeholder, tokens) => {
+      const token = tokens[0] ?? ''
+      if (token === '$') return '$'
+      if (token === '&') return match
+      if (token === '`') return source.slice(0, offset)
+      if (token === "'") return source.slice(offset + match.length)
+      if (token.startsWith('<')) return groups ? (groups[token.slice(1, -1)] ?? '') : placeholder
+      const index = Number(token)
+      if (index > 0 && index <= captures.length) return captures[index - 1] ?? ''
+      if (token.length === 2) {
+        const firstIndex = Number(token[0])
+        if (firstIndex > 0 && firstIndex <= captures.length) {
+          return `${captures[firstIndex - 1] ?? ''}${token[1]}`
+        }
+      }
+      return placeholder
+    },
+    sizeLimit,
   )
 }
 
-function substituteMoveMatch(template: string, matched: RegExpMatchArray): string {
-  const numbered = replaceCallbackBounded(template, /(?<!\$)\$[0-9]+/g, (value) => {
-    const index = Number.parseInt(value.slice(1))
-    return index < matched.length ? (matched[index] ?? value) : value
-  })
-  const wholeMatch = replaceCallbackBounded(numbered, /\$&/g, () => matched[0])
-  return replaceCallbackBounded(wholeMatch, /(?<!\$)\$<([^>]+)>/g, (value) => {
-    const groupName = Number.parseInt(value.slice(2, -1))
-    return matched.groups?.[groupName as unknown as string] ?? value
-  })
+function replaceNativeBounded(source: string, regex: RegExp, replacement: string, sizeLimit: number): string {
+  return replaceCallbackBounded(
+    source,
+    regex,
+    (match, captures, offset, input, groups) =>
+      expandNativeReplacement(replacement, match, captures, offset, input, groups, sizeLimit),
+    sizeLimit,
+  )
+}
+
+function substituteMoveMatch(template: string, matched: RegExpMatchArray, sizeLimit: number): string {
+  const numbered = replaceCallbackBounded(
+    template,
+    /(?<!\$)\$[0-9]+/g,
+    (value) => {
+      const index = Number.parseInt(value.slice(1))
+      return index < matched.length ? (matched[index] ?? value) : value
+    },
+    sizeLimit,
+  )
+  const wholeMatch = replaceCallbackBounded(numbered, /\$&/g, () => matched[0], sizeLimit)
+  return replaceCallbackBounded(
+    wholeMatch,
+    /(?<!\$)\$<([^>]+)>/g,
+    (value) => {
+      const groupName = Number.parseInt(value.slice(2, -1))
+      return matched.groups?.[groupName as unknown as string] ?? value
+    },
+    sizeLimit,
+  )
 }
 
 function testAndMove(
@@ -127,25 +169,26 @@ function testAndMove(
   source: string,
   replacement: string,
   toTop: boolean,
+  sizeLimit: number,
 ): { matched: boolean; result: string } {
   const matched = regex.test(source)
   if (!matched) return { matched: false, result: source }
 
   const isGlobal = regex.flags.includes('g')
   const matches = isGlobal ? Array.from(source.matchAll(regex)) : [source.match(regex)]
-  let result = replaceNativeBounded(source, regex, '')
+  let result = replaceNativeBounded(source, regex, '', sizeLimit)
   for (const match of matches) {
     if (!match) continue
     const template = replacement.replace('@@move_top ', '').replace('@@move_bottom ', '')
-    const output = substituteMoveMatch(template, match)
+    const output = substituteMoveMatch(template, match, sizeLimit)
     result = toTop ? `${output}\n${result}` : `${result}\n${output}`
-    assertOutput(result)
+    assertOutput(result, sizeLimit)
   }
   return { matched: true, result }
 }
 
 export function executeRegexWorkerRequest(request: RegexWorkerRequest): RegexWorkerResult {
-  assertRequest(request)
+  const sizeLimit = assertRequest(request)
   const regex = new RegExp(request.pattern, request.flags)
 
   switch (request.operation) {
@@ -154,18 +197,18 @@ export function executeRegexWorkerRequest(request: RegexWorkerRequest): RegexWor
     case 'replace':
       return {
         operation: 'replace',
-        result: replaceNativeBounded(request.source, regex, request.replacement),
+        result: replaceNativeBounded(request.source, regex, request.replacement, sizeLimit),
       }
     case 'testReplace': {
       const matched = regex.test(request.source)
       return {
         operation: 'testReplace',
         matched,
-        result: matched ? replaceNativeBounded(request.source, regex, request.replacement) : request.source,
+        result: matched ? replaceNativeBounded(request.source, regex, request.replacement, sizeLimit) : request.source,
       }
     }
     case 'testMove': {
-      const moved = testAndMove(regex, request.source, request.replacement, request.toTop)
+      const moved = testAndMove(regex, request.source, request.replacement, request.toTop, sizeLimit)
       return { operation: 'testMove', ...moved }
     }
     case 'matchFirst':
