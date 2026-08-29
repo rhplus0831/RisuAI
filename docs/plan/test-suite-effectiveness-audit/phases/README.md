@@ -19,8 +19,8 @@ slice rules. [`../status.md`](../status.md) is the live execution cursor.
 | [9](phase-9-scripting-parsing-triggers-and-automation.md) | Complete | CBS, regex, triggers, Lua, parsing, display transforms, automation. |
 | [10](phase-10-plugins-modules-mcp-and-specialized-tools.md) | Complete | Plugins, modules, MCP, RisuAccess, Playground, developer tools. |
 | [11](phase-11-assets-import-export-and-backups.md) | Complete | Assets, saves, imports, exports, Realm/CharX, backup and restore. |
-| [12](phase-12-api-security-runtime-and-observability.md) | In progress | Auth, route protection, network limits, tracing, startup, operations. |
-| [13](phase-13-cross-suite-consolidation-and-remediation.md) | Pending | Cross-category duplication, replacements, shared harnesses, parity, gaps. |
+| [12](phase-12-api-security-runtime-and-observability.md) | Complete | Auth, route protection, network limits, tracing, startup, operations. |
+| [13](phase-13-cross-suite-consolidation-and-remediation.md) | In progress | Cross-category duplication, replacements, shared harnesses, parity, gaps. |
 | [14](phase-14-verification-and-closeout.md) | Pending | Final count/effectiveness proof, quality aggregate, docs, archive handoff. |
 
 ## Slice Rules

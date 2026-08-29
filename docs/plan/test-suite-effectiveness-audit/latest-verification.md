@@ -1206,3 +1206,114 @@ and runtime observability to Phase 12; streaming/materialization, central
 asset-owner parity, and bounded browser import/restore composition to Phase 13;
 and independent historical fixture plus final residual-support decisions to
 Phase 14.
+
+## Phase 12 Evidence
+
+### Opening review and focused remediation
+
+Phase 12 opened with 42 category-L owners and 432 cases: 21 frontend files /
+162 cases and 21 Fastify files / 270 cases, including 81 parameterized rows.
+Read-only parallel review covered composition, auth/sandbox, egress/client
+protocol, and resource budgets. One of eight Luna research tasks returned a
+complete composition report; seven timed out, so the successful evidence was
+preserved and the timed-out work was not represented as complete. Three
+focused read-only subagent reviews then cross-checked the remaining boundaries
+before scoped implementations were integrated as separate commits.
+
+Focused remediation commands passed throughout:
+
+- auth/config/sandbox hardening: 47/47;
+- reviewed route auth/writer exceptions: 16/16;
+- DNS-pinned local stream targets/routes: 82/82;
+- browser proxy classification/parser/cancellation: 50/50;
+- import abort and no-side-effect ordering: 70/70;
+- completion/backpressure/job lifetime/snapshot budgets: 190/190;
+- executable category boundaries and linked inventory: 13/13.
+
+The fixes constrain development auth bypass to loopback, reject whitespace-only
+password setup, make sandbox replacement symlink/canonical-overlap safe, pin
+every local-stream DNS/redirect connection, terminate abandoned browser proxy
+jobs, reject malformed WebSocket frames, cancel post-upload imports before
+destructive replacement, bound completion output/backpressure, enforce a direct
+absolute job lifetime, and cap durable terminal snapshots before side effects.
+
+### Exact reviewed set
+
+Commands:
+
+```sh
+mapfile -t phase12_frontend < <(jq -r '
+  .rows[] |
+  select(.primaryCategory == "L" and (.lane | startswith("frontend"))) |
+  .file' docs/plan/test-suite-effectiveness-audit/inventory.json)
+RISU_TEST_INCLUDE_GATES=true pnpm exec vitest run \
+  "${phase12_frontend[@]}" --config vitest.config.ts
+
+mapfile -t phase12_server < <(jq -r '
+  .rows[] |
+  select(
+    (.primaryCategory == "L" or
+      .file == "server/fastify/__tests__/echo.test.ts") and
+    .lane == "fastify-node"
+  ) | .file' docs/plan/test-suite-effectiveness-audit/inventory.json)
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  "${phase12_server[@]}"
+```
+
+The exact final review set passed 173/173 frontend cases across 21 files and
+285/285 Fastify cases across 21 files. The eight-case echo owner is included in
+this completed set but now routes to G because generation/provider compatibility
+is its dominant product risk. Current L is 41 owners; the completed Phase 12
+record remains 42 owners / 458 cases.
+
+### Complete gates
+
+Commands:
+
+```sh
+pnpm test:frontend:all
+pnpm test:server
+pnpm test:gates:perf
+pnpm check
+pnpm check:server
+pnpm test:smoke
+pnpm test:compat-current
+pnpm test:compat-harness
+pnpm test:affected --dry-run --base 527682a48
+pnpm check:test-inventories
+pnpm format:check
+git diff --check
+```
+
+The complete frontend universe passed 6,777/6,777 cases across 538 files.
+Complete Fastify passed 3,387 cases across 155 files with the one intentional
+direct-only Realm scale skip. The two isolated performance owners passed 6/6.
+Frontend, protocol, client-declaration, Fastify, and browser-smoke typechecks
+reported zero diagnostics.
+
+The production smoke build passed with the existing allowed CSS,
+externalization, plugin-timing, and chunk-size diagnostics. All 35/35 Chromium
+journeys passed in 1.1 minutes. Smoke supplies shipped-app composition but does
+not claim a real VAPID provider, external MCP/provider service, other browser
+engines, deployment proxy, or mid-stream multi-gigabyte import/export behavior.
+
+Affected selection found 29 changed paths relative to the Phase 11 closeout and
+selected inventories, frontend, performance, and Fastify lanes; each selected
+lane passed. Current-only compatibility passed 18/18 and matched 16 cells plus
+the healthy cluster-10 regressions. Full differential compatibility remains
+prerequisite-blocked by the absent exact
+`/home/codex/risu-baseline-71c476e9c` worktree. No substitute checkout was used
+and no golden or fixture was refreshed.
+
+Fresh Vitest/Playwright listings plus preserved measured skip metadata produce
+700 live owners and 10,200 collected cases, with one direct-only skip and 1,326
+parameterized rows. Primary categories are A=21, B=39, C=62, D=111, E=101,
+F=84, G=109, H=26, I=39, J=42, K=25, and L=41. Live decisions are 617 Keep
+and 83 Reclassify; no owner remains Pending. Support artifacts remain 252
+standalone and 64 mixed production seams.
+
+Eleven Phase 12 findings are done. `TSA-P12-012` routes large-entry
+streaming/materialization, absolute response budgets, structural route capture,
+bounded real browser/service composition, and cross-suite consolidation to
+Phase 13; Phase 14 owns final historical, external-service, cross-browser, and
+residual-support verdicts.

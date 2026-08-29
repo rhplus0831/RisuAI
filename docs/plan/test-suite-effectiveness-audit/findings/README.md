@@ -3472,3 +3472,282 @@ Every finding records:
   claims; the differential harness reports the missing pinned worktree.
 - Count delta: none.
 - Revisit condition: Phases 12-13 remediation and mandatory Phase 14 closeout.
+
+## Phase 12 Findings
+
+### TSA-P12-001: Development auth bypass and route exceptions could widen silently
+
+- State: Done.
+- Severity: Critical.
+- Category: L.
+- Decision: Strengthen, then Keep.
+- Tests/cases: auth/config/route-protection regressions, including two
+  independent reviewed-exception allowlists.
+- Production owner: config loading, explicit app composition, first-run auth,
+  and protocol route authorization.
+- Protected contract or plausible defect: the agent bypass accepted a wildcard
+  or remote bind, whitespace could initialize unusable auth, and a mistaken
+  manifest exemption could bless itself in the table-derived enforcement test.
+- Evidence: bypass now requires loopback in both config paths before filesystem
+  effects; setup rejects trimmed-empty passwords; literal allowlists pin every
+  non-required auth and mutating writer exception.
+- Companion/overlap analysis: crypto helpers, live route sweeps, and setup/login
+  smoke protect different identity, enforcement, and composition failures.
+- Action and rollback: retain loopback fail-closed validation and require
+  deliberate oracle review for any new exception.
+- Validation: 47 focused auth/config/sandbox cases, 16 route-policy cases,
+  exact and complete Fastify lanes passed.
+- Count delta: auth/config/route regressions contribute to the Phase 12 `+30`.
+- Revisit condition: a deliberate remotely reachable agent-auth design.
+
+### TSA-P12-002: Agent sandbox paths and replacement were not symlink-safe
+
+- State: Done.
+- Severity: Critical.
+- Category: L.
+- Decision: Strengthen, then Keep.
+- Tests/cases: canonical-overlap, direct symlink/file destination, invalid
+  SQLite, rollback, and staging-debris regressions.
+- Production owner: disposable agent data sandbox preparation.
+- Protected contract or plausible defect: lexical disjointness allowed a
+  symlink destination to resolve into live data, and eager replacement could
+  discard the prior sandbox before preparation succeeded.
+- Evidence: nearest existing ancestors are canonicalized; unsafe destinations
+  fail closed; clone/fresh replacement stages beside the destination and rolls
+  the prior directory back if install fails.
+- Companion/overlap analysis: startup auth/data-directory guards do not prove
+  filesystem identity or replacement recovery.
+- Action and rollback: retain canonical checks and staged replacement. Portable
+  Node's two-rename window is documented rather than described as atomic swap.
+- Validation: 16 complete sandbox cases and full server typecheck/lane passed.
+- Count delta: focused regressions included in the phase total.
+- Revisit condition: a portable rename-exchange primitive or sandbox redesign.
+
+### TSA-P12-003: Local proxy streams had DNS, redirect, parser, and cancellation gaps
+
+- State: Done.
+- Severity: High.
+- Category: L.
+- Decision: Strengthen, then Keep.
+- Tests/cases: server private/mixed/public DNS and redirect pinning; browser
+  classifier/parser matrices; cancellation, close, and malformed-order cases.
+- Production owner: local stream-job resolution/execution and browser
+  HTTP-to-WebSocket consumption.
+- Protected contract or plausible defect: hostname validation was not pinned to
+  the connected address, redirects could pivot, browser/server classification
+  disagreed, malformed frames were accepted by type only, and cancellation or
+  nonterminal close returned truncated success without deleting the server job.
+- Evidence: every DNS answer and redirect is validated, the selected address is
+  pinned, browser classification is HTTP(S)-only and normalized, frame payloads
+  form a validated discriminated union, and abandoned consumers DELETE jobs.
+- Companion/overlap analysis: client, route, registry, DNS, and socket tests are
+  intentional defense in depth; none can replace the others' failure oracle.
+- Action and rollback: retain per-hop pinning and terminal/nonterminal cleanup
+  distinctions.
+- Validation: 50 focused frontend cases, 82 focused stream-job route/execution
+  cases, exact/full lanes passed.
+- Count delta: focused regressions included in the phase total.
+- Revisit condition: a new local protocol, redirect policy, or frame vocabulary.
+
+### TSA-P12-004: Completion and durable stream output had unbounded paths
+
+- State: Done.
+- Severity: High.
+- Category: L/G.
+- Decision: Strengthen, then Keep.
+- Tests/cases: UTF-8 buffered completion cap, slow SSE consumer, exact absolute
+  deadline, timer cleanup, and oversized terminal snapshot no-side-effect cases.
+- Production owner: legacy completion route and shared stream-job registry.
+- Protected contract or plausible defect: direct SSE ignored backpressure,
+  buffered completion concatenated indefinitely, useful activity could refresh
+  a job forever, GC could delay abort, and a terminal snapshot could consume
+  unbounded memory/disk.
+- Evidence: bounded raw writes abort upstream; buffered output stops at 32 MiB;
+  unref'd inactivity and absolute timers fire directly; serialized durable
+  snapshots fail closed at 16 MiB before replay, disk, or fanout effects.
+- Companion/overlap analysis: request body/decompression caps do not constrain
+  provider output or durable terminal serialization.
+- Action and rollback: retain explicit byte/time constants and pre-side-effect
+  checks.
+- Validation: 190 focused completion/stream cases and complete Fastify lane.
+- Count delta: five direct regressions plus matrix rows in the phase total.
+- Revisit condition: deliberate raised limits with load evidence.
+
+### TSA-P12-005: Trace and startup observability owners provide distinct redaction evidence
+
+- State: Done.
+- Severity: High.
+- Category: L.
+- Decision: Keep.
+- Tests/cases: complete request trace, generation sidecar, and server/browser
+  startup telemetry owners.
+- Production owner: trace JSONL/sidecars, redaction/retention, telemetry schema,
+  bounded browser queue, and ingestion.
+- Protected contract or plausible defect: content, credentials, query values, or
+  unbounded diagnostic artifacts could escape through a different layer.
+- Evidence: exact sentinels cover body omission, header/query redaction,
+  compressed caps, selected-mode sidecars, 5,000-row cleanup, schema rejection,
+  queue/drop bounds, and logger/listener isolation.
+- Companion/overlap analysis: schema, browser, Fastify, and disk retention
+  owners observe non-equivalent leak paths.
+- Action and rollback: retain all layers; deployment sink retention remains an
+  operational responsibility.
+- Validation: exact Phase 12 and complete lanes passed.
+- Count delta: none beyond focused Phase 12 regressions.
+- Revisit condition: a new diagnostic field, sink, or trace mode.
+
+### TSA-P12-006: Platform composition and health owners are meaningful boundaries
+
+- State: Done.
+- Severity: High.
+- Category: L.
+- Decision: Keep.
+- Tests/cases: config, HTTP helper, entrypoint, static, smoke, browser local
+  surface, UUID, polyfill, and source-map owners.
+- Production owner: deployment configuration, compact protocol parsing,
+  process shutdown, SPA/static routing, and restricted-browser fallbacks.
+- Protected contract or plausible defect: wrong static/API routing, repeated or
+  hung shutdown, insecure fallback interpretation, or missing health/auth
+  composition can break deployments even when domain units pass.
+- Evidence: real temporary static roots, signal/timer sequencing, exact response
+  headers/bodies, RFC bit assertions, and composed health/setup/login smoke.
+- Companion/overlap analysis: focused helpers localize failure while Fastify and
+  Chromium prove shipped composition.
+- Action and rollback: retain. Replace route-tree text parsing only if a stable
+  structural Fastify registry becomes available.
+- Validation: exact/full lanes, zero-diagnostic typechecks, and 35/35 smoke.
+- Count delta: none beyond focused regressions.
+- Revisit condition: platform or deployment topology changes.
+
+### TSA-P12-007: Push, service-worker, retry, and teardown layers are not duplicates
+
+- State: Done.
+- Severity: High.
+- Category: L.
+- Decision: Keep.
+- Tests/cases: complete server push plus browser notification, setting, retry,
+  service-worker, and process-stop owners.
+- Production owner: bounded delivery, subscription pruning/mutation, durable
+  cleanup retry, service-worker messaging, setting sync, and teardown.
+- Protected contract or plausible defect: merging by feature name would leave
+  stale subscriptions, lost cleanup retry, unsafe payload, or leaked browser
+  work invisible.
+- Evidence: server state/send outcomes, bounded durable browser storage,
+  corruption recovery, message delivery, and teardown each have exact oracles.
+- Companion/overlap analysis: controlled send mocks do not prove a real push
+  service, but browser state tests cannot replace server pruning and auth.
+- Action and rollback: retain distinct owners; do not infer live VAPID exchange.
+- Validation: exact/full frontend and Fastify lanes passed.
+- Count delta: none.
+- Revisit condition: bounded live push-service composition is available.
+
+### TSA-P12-008: Post-upload imports ignored request abandonment
+
+- State: Done.
+- Severity: High.
+- Category: K/L.
+- Decision: Strengthen, then Keep under Phase 11 owners.
+- Tests/cases: pre-aborted local-backup decode and repository import
+  no-side-effect regressions; save routes propagate the signal and return 499.
+- Production owner: save/bundle upload, decode/staging, safety backup, and
+  destructive repository replacement.
+- Protected contract or plausible defect: after upload, a disconnected browser
+  could continue decode and replace live data it no longer observed.
+- Evidence: abort checks bracket upload/decode/snapshot yields and run after the
+  awaited safety backup but before the destructive transaction; cleanup remains
+  unconditional.
+- Companion/overlap analysis: request-abort helper tests define signal semantics
+  but could not prove import transaction ordering.
+- Action and rollback: retain signal plumbing; Phase 13 owns streaming large
+  entry materialization.
+- Validation: 70 focused codec/bundle-route cases and full Fastify lane.
+- Count delta: two cases.
+- Revisit condition: streaming import transaction redesign.
+
+### TSA-P12-009: Echo compatibility was misclassified as general runtime
+
+- State: Done.
+- Severity: Medium.
+- Category: L to G.
+- Decision: Reclassify.
+- Tests/cases: one unchanged owner / eight cases.
+- Production owner: legacy echo completion response and stream compatibility.
+- Protected contract or plausible defect: route-shaped naming hid its dominant
+  provider/generation contract and distorted cross-suite overlap review.
+- Evidence: exact first-match rule and executable category counterexample.
+- Companion/overlap analysis: Fastify remains the evidence lane; only the
+  product-risk owner changes.
+- Action and rollback: route to G and preserve all cases unchanged.
+- Validation: 13/13 inventory policy cases and checked 700-owner manifest.
+- Count delta: one category-policy case; no owner/case removal.
+- Revisit condition: dominant contract changes.
+
+### TSA-P12-010: Runtime layers are intentional defense in depth
+
+- State: Done.
+- Severity: Informational.
+- Category: L with G/K seams.
+- Decision: Keep.
+- Tests/cases: 42 reviewed owners / 458 final cases.
+- Production owner: auth, route policy, egress, caps, lifecycle, observability,
+  deployment, and browser runtime counterparts.
+- Protected contract or plausible defect: consolidating by endpoint or helper
+  name would replace parser, denial, transport, storage, or browser evidence
+  with a non-equivalent layer.
+- Evidence: complete file review traced each retained owner to a distinct
+  plausible defect and failure oracle; no pair met mandatory merge proof.
+- Companion/overlap analysis: unit, inject, live socket, and built-browser tests
+  deliberately fail at different boundaries.
+- Action and rollback: retain all reviewed owners.
+- Validation: exact slices, complete lanes, typechecks, smoke, and inventories.
+- Count delta: none beyond focused findings.
+- Revisit condition: Phase 13 may consolidate only with complete replacement proof.
+
+### TSA-P12-011: API security/runtime guidance predated the hardened contracts
+
+- State: Done.
+- Severity: Low.
+- Category: L/A.
+- Decision: Correct documentation.
+- Tests/cases: Phase 12 guide and complete reviewed set.
+- Production owner: authoritative test discovery, contract map, strengths, and
+  residual boundaries.
+- Protected contract or plausible defect: stale guidance still described
+  missing DNS/redirect and config protection and omitted cancellation/output
+  ceilings and independent route oracles.
+- Evidence: source, fresh collection, focused/full verification, and generated
+  inventories establish current behavior.
+- Companion/overlap analysis: explicit guidance distinguishes intentional
+  defense in depth from unsupported live-service claims.
+- Action and rollback: update the guide and keep it current with material policy
+  changes.
+- Validation: formatting, links, manifests, and recorded commands pass.
+- Count delta: none.
+- Revisit condition: material runtime/security ownership changes.
+
+### TSA-P12-012: Capacity, live-service, browser, and compatibility claims remain bounded
+
+- State: Deferred with retained owners and explicit phase ownership.
+- Severity: High.
+- Category: L with K/J/G and Phase 13/14 ownership.
+- Decision: Keep current bounded evidence; add only at named owners.
+- Tests/cases: payload/import/export, route inventory, auth crypto, proxy/push,
+  browser smoke, MCP/provider, and compatibility owners.
+- Production owner: large-entry streaming/materialization, representative
+  absolute response budgets, structural route capture, broader malformed-auth
+  matrices, trust-proxy deployment behavior, real VAPID/MCP/provider/browser
+  composition, and historical interoperability.
+- Protected contract or plausible defect: strong local/inject/Chromium evidence
+  cannot establish every external service, browser engine, deployment proxy, or
+  historical format, and large imports/exports still materialize whole entries.
+- Evidence: all confirmed Critical/High security and secret-exposure findings
+  discovered in Phase 12 are resolved. Remaining items require architectural
+  streaming work, external infrastructure, product policy, or the absent exact
+  baseline rather than another self-mocked assertion.
+- Companion/overlap analysis: Phase 13 owns cross-suite capacity/composition and
+  consolidation; Phase 14 owns final residual/historical support decisions.
+- Action and rollback: retain bounded layers. Do not add paid/live calls,
+  broaden proxy authority, substitute the pinned baseline, or refresh goldens.
+- Validation: exact/full/type/smoke/inventory gates bound current claims.
+- Count delta: none.
+- Revisit condition: Phase 13 remediation and mandatory Phase 14 closeout.

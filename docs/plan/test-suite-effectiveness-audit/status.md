@@ -9,13 +9,13 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Snapshot
 
-- Plan state: Active; Phases 0-11 complete and Phase 12 in progress.
-- Current phase: Phase 12 — API Security, Runtime, And Observability.
-- Active slice: Phase 12 opens with 42 category-L owners and 432 authentication,
-  authorization, network-policy, request-limit, tracing, startup/shutdown, and
-  platform-runtime cases, including 81 parameterized rows: 21 Fastify owners /
-  270 cases, 11 frontend Node owners / 77 cases, and 10 frontend DOM owners / 85
-  cases.
+- Plan state: Active; Phases 0-12 complete and Phase 13 in progress.
+- Current phase: Phase 13 — Cross-Suite Consolidation And Remediation.
+- Active slice: synthesize the named Phase 2-12 residuals: large-entry
+  streaming/materialization and absolute budgets, resource-adapter and
+  asset-owner parity, representative browser/provider/MCP/import composition,
+  shared oracle drift, and only those consolidation/removal candidates with a
+  complete evidence package. No owner remains Pending.
 - Implementation state: exhaustive test/case/support manifests and their local,
   affected, aggregate, coverage, and CI checks are live. The protocol import
   policy uses recursive AST evidence and the Realm scale case has isolated local
@@ -40,13 +40,18 @@ in [`latest-verification.md`](latest-verification.md).
   rewrote all legacy backup references, rolled back failed CharX assets,
   contained PDF/inlay cleanup, disabled unusable Fastify remote blocks,
   corrected 17 category boundaries, and removed one proven-dead Kei adapter.
+  Phase 12 constrained agent auth and sandbox paths, independently pinned route
+  exceptions, DNS-pinned local streams, terminated abandoned browser proxy
+  jobs, cancelled abandoned imports, bounded completion/job/snapshot output,
+  corrected the echo compatibility owner, and completed every live file
+  disposition.
 - Blockers: the full differential compatibility harness cannot run because its
   pinned external worktree is absent. The new current-only owner is green; the
   blocker applies only to historical baseline claims.
-- Next action: audit authentication and route protection, proxy/egress policy,
-  request and decompression limits, abort propagation, tracing/redaction,
-  startup/shutdown, service workers, and production observability; then complete
-  every Phase 12 disposition.
+- Next action: reconcile only the exact deferred parity, materialization,
+  composition, and duplicate-owner findings assigned to Phase 13; implement
+  approved gaps/removals, run the complete aggregate, and hand the bounded final
+  residual set to Phase 14.
 
 ## Planning Baseline
 
@@ -60,11 +65,11 @@ in [`latest-verification.md`](latest-verification.md).
 | Fastify Vitest                       | 155 files                                    |
 | Browser smoke                        | 7 files                                      |
 | Compatibility harness                | Current-only green; full differential blocked |
-| Collected cases                      | 10,170 total; 1 direct-only skip; 1,319 parameterized rows |
+| Collected cases                      | 10,200 total; 1 direct-only skip; 1,326 parameterized rows |
 | Support owners                       | 252 standalone; 64 mixed production seams   |
 | Primary-category assignments         | 700 of 700 ratified                          |
-| Complete file dispositions           | 586 Keep / 82 Reclassify; 2 removed historical owners |
-| Findings                             | 130 done / 11 deferred                       |
+| Complete file dispositions           | 617 Keep / 83 Reclassify; 2 removed historical owners |
+| Findings                             | 141 done / 12 deferred                       |
 
 The 698-file rows preserve the plan-creation anchor. The live counts, support
 owners, runtime evidence, and category totals are checked by the Phase 0
@@ -86,8 +91,8 @@ manifests and verification record.
 | [9](phases/phase-9-scripting-parsing-triggers-and-automation.md) | Complete | Audited scripting, parsing, triggers, Lua, and automation. |
 | [10](phases/phase-10-plugins-modules-mcp-and-specialized-tools.md) | Complete | Audited plugins, modules, MCP, Playground, and specialized tools. |
 | [11](phases/phase-11-assets-import-export-and-backups.md) | Complete | Audited assets, imports, exports, saves, and backups. |
-| [12](phases/phase-12-api-security-runtime-and-observability.md) | In progress | Audit API security, runtime, limits, tracing, and operations. |
-| [13](phases/phase-13-cross-suite-consolidation-and-remediation.md) | Pending | Resolve cross-suite duplication, removals, replacements, and gaps. |
+| [12](phases/phase-12-api-security-runtime-and-observability.md) | Complete | Audited API security, runtime, limits, tracing, and operations. |
+| [13](phases/phase-13-cross-suite-consolidation-and-remediation.md) | In progress | Resolve cross-suite duplication, removals, replacements, and gaps. |
 | [14](phases/phase-14-verification-and-closeout.md) | Pending | Verify final effectiveness, counts, documentation, and closeout. |
 
 See [`phases/README.md`](phases/README.md) for links and shared slice rules.
@@ -96,18 +101,18 @@ See [`phases/README.md`](phases/README.md) for links and shared slice rules.
 
 | Decision   | Count | Meaning                                                    |
 | ---------- | ----: | ---------------------------------------------------------- |
-| Keep       |   586 | Distinct contract and suitable evidence layer.             |
+| Keep       |   617 | Distinct contract and suitable evidence layer.             |
 | Strengthen |     0 | Valuable intent, but insufficient or self-fulfilling proof. |
 | Merge      |     0 | Equivalent failure mode can move into a stronger owner.    |
-| Reclassify |    82 | Valuable test belongs to another category, lane, or type.  |
+| Reclassify |    83 | Valuable test belongs to another category, lane, or type.  |
 | Remove     |     2 | Historical owner removed after mandatory replacement proof. |
 | Add        |     3 | Historical owner added for a material uncovered contract.  |
-| Pending    |    32 | Known live test owners awaiting their owning phase review.  |
+| Pending    |     0 | Every live owner has completed domain-phase review.         |
 
-Keep, Reclassify, and Pending partition the 700 live rows. Remove and Add are
-durable action-ledger counts; the added Button, PersonaSettings, and local
-backup owners are already included in Keep, while the removed Mobile and Kei
-owners are no longer live rows.
+Keep and Reclassify partition the 700 live rows; Pending is now zero. Remove and
+Add are durable action-ledger counts; the added Button, PersonaSettings, and
+local backup owners are already included in Keep, while the removed Mobile and
+Kei owners are no longer live rows.
 
 ## Current Decisions
 
@@ -157,34 +162,34 @@ owners are no longer live rows.
   stacked-alert/onboarding/full-screen accessibility, and broader UI-map
   claims. Phase 13 owns additions; Phase 14 must make the final residual
   decision.
-- Deferred authoring composition and asset cleanup: `TSA-P05-013` routes
-  save-then-stale asset cleanup to Phase 11, representative settings/restore
-  composition to Phase 13, and the final residual decision to Phase 14.
-- Deferred generation fidelity and recovery: `TSA-P06-013` routes malformed
-  finalization-journal/runtime observability to Phase 12, response-loss/effect/
-  provider-browser/prompt-walker composition to Phase 13, and the historical
-  compatibility plus final residual decision to Phase 14.
-- Deferred provider and media fidelity: `TSA-P07-013` routes credential/runtime
-  observability to Phase 12, recorded-provider/browser/media composition to
-  Phase 13, and the Ollama policy, historical compatibility, and final residual
-  decision to Phase 14.
-- Deferred memory lifecycle fidelity: `TSA-P08-012` routes worker/query
-  observability to Phase 12, live browser/provider/restart composition and the
-  summarized-memory invalidation policy to Phase 13, and historical
-  compatibility plus the final residual decision to Phase 14.
-- Deferred scripting/runtime fidelity: `TSA-P09-011` routes queued runtime and
-  timeout observability to Phase 12, CBS/trigger parity and saved-definition
-  browser composition to Phase 13, and historical compatibility plus the final
-  residual decision to Phase 14.
-- Deferred extension/tool fidelity: `TSA-P10-011` routes uploaded-asset cleanup
-  to Phase 11, plugin proxy/runtime threat modeling to Phase 12, bounded real
-  browser/MCP composition and support policy to Phase 13, and historical
-  compatibility plus the final residual decision to Phase 14.
-- Deferred asset/save fidelity: `TSA-P11-012` routes post-upload abort,
-  request-limit, and tracing ownership to Phase 12; streaming/materialization,
-  central asset-owner parity, and bounded browser import/restore composition to
-  Phase 13; and independent historical fixture plus final residual-support
-  verdicts to Phase 14.
+- Deferred authoring composition: `TSA-P05-013` had its asset-cleanup portion
+  resolved in Phase 11; representative settings/restore composition belongs to
+  Phase 13 and the final residual decision to Phase 14.
+- Deferred generation fidelity and recovery: `TSA-P06-013` had its queued
+  runtime/observability portion resolved in Phase 12. Phase 13 owns
+  response-loss/effect/provider-browser/prompt-walker composition; Phase 14
+  owns historical compatibility and the final residual decision.
+- Deferred provider and media fidelity: `TSA-P07-013` has bounded credential and
+  runtime observability. Phase 13 owns recorded-provider/browser/media
+  composition; Phase 14 owns Ollama policy, history, and the final residual.
+- Deferred memory lifecycle fidelity: `TSA-P08-012` has bounded worker/query
+  observability. Phase 13 owns live browser/provider/restart composition and
+  summarized-memory invalidation; Phase 14 owns history and final residuals.
+- Deferred scripting/runtime fidelity: `TSA-P09-011` has bounded queued runtime
+  and timeouts. Phase 13 owns CBS/trigger parity and saved-definition browser
+  composition; Phase 14 owns history and the final residual.
+- Deferred extension/tool fidelity: `TSA-P10-011` had asset cleanup and proxy
+  threat modeling resolved in Phases 11-12. Phase 13 owns bounded real
+  browser/MCP composition and support policy; Phase 14 owns historical and final
+  residual decisions.
+- Deferred asset/save fidelity: `TSA-P11-012` had post-upload abort,
+  request-limit, and tracing ownership resolved in Phase 12. Phase 13 owns
+  streaming/materialization, central asset-owner parity, and bounded browser
+  import/restore composition; Phase 14 owns independent history and support.
+- Deferred runtime synthesis: `TSA-P12-012` routes large-entry materialization,
+  absolute response budgets, structural route capture, and bounded real
+  browser/service composition to Phase 13; Phase 14 owns external-service,
+  cross-browser, historical, and final support verdicts.
 
 ## Maintenance Rules
 
