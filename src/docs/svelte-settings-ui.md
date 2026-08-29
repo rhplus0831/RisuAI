@@ -1,6 +1,6 @@
 # Svelte Settings UI Guide
 
-Last audited: 2026-08-27.
+Last audited: 2026-08-29.
 
 This guide owns settings navigation, data-driven rows, shared controls,
 authoring editors, model-profile presentation, and visible settings persistence
@@ -63,6 +63,15 @@ The `other-bots` URL is retained for compatibility, but the visible nav,
 `OtherBotSettings.svelte` heading, and Quick Settings button all say Memory.
 Keep `src/ts/router.ts` slug maps, `SettingsMenuIndex`, page branches, and nav
 conditions aligned.
+
+The Memory page owns five lazy inner tabs. Its BardWiki tab renders
+`BardWikiSettings.svelte` only when selected and edits the global defaults for
+enablement, Hypa/BardWiki/Hybrid selection, confirmation policy, model/prompt
+owners, canonical updates, and token/query/link limits. The page explains that
+automatic confirmation and rebuild can make background provider calls and
+therefore incur provider cost. Per-chat overrides belong to the active-chat
+workspace rather than this global page; see
+[BardWiki Memory](../../docs/structure/bardwiki.md#settings-and-workspace).
 
 The Data group contains Backup & Restore plus Request History. The latter reads
 private summaries/details through `src/ts/server/requestHistory.ts`; retention

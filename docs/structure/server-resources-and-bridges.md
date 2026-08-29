@@ -1,6 +1,6 @@
 # Server Resources And Hydration
 
-Last audited: 2026-08-27.
+Last audited: 2026-08-29.
 
 This guide owns the Fastify-to-browser read boundary: bootstrap resources,
 root and targeted REST reads, hash-verified cache substitution, lazy body
@@ -238,6 +238,9 @@ clearing the coherent shell.
 | Many chat bodies                                   | `POST /api/v1/chats/messages/bulk`                                                               | `ensureAllChatsHydrated()`                          |
 | Derived intermediate display text                  | `POST /api/v1/chats/:id/display-sources`                                                         | `displaySources.ts` batch/fallback bridge           |
 | Generation-effect status                           | `GET /api/v1/generation-effects/:generationId`                                                   | `generationEffectLedger.ts`, recovery               |
+| BardWiki chat summary/settings/index/receipts/jobs | `GET /api/v1/bardwiki/chats/:chatId`                                                             | `bardWikiResource.ts`, lazy active-chat workspace   |
+| One BardWiki document and bounded versions         | `GET /api/v1/bardwiki/chats/:chatId/documents/:documentId`; `.../versions`                        | Lazy BardWiki document/version hydration            |
+| BardWiki receipt page and deterministic vault      | `GET /api/v1/bardwiki/chats/:chatId/receipts`; `.../export`                                      | BardWiki workspace/lifecycle adapter                 |
 | Generation-effect claim                            | `POST /api/v1/generation-effects/:generationId/:effectKind/claims`                               | Active-writer live/recovered effect delivery        |
 | Generation-effect lease/receipt                    | `PUT /api/v1/generation-effects/:generationId/:effectKind/{lease,receipt}`                        | Claim renewal and exact settlement                  |
 | One character lorebook                             | Cache `POST /api/v1/characters/:id/lorebook`; full `GET` fallback                                | `hydrateActiveCharacterLorebook()` and invalidation |

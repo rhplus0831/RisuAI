@@ -335,6 +335,13 @@ reroll alternates reconstruct after reload and remain swipe-recoverable. It uses
 a direct generation request and the production swipe helper, so it proves
 persistence/reconstruction rather than visible gesture controls.
 
+`server/fastify/browser-smoke/bardWikiLifecycle.spec.ts` protects the visible
+BardWiki settings and provider-cost warning, active-chat workspace, manual
+document creation, explicit current-turn confirmation/job state, lifecycle and
+vault warnings, and persistence through reload. Repository/route/component
+tests retain the destructive, conflict, restart, and privacy edge cases that do
+not belong in a browser journey.
+
 ## TypeScript And Formatting
 
 - Root `tsconfig.json` is browser-oriented, `strict: false`, allows JS, and uses

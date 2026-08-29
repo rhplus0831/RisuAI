@@ -1,6 +1,6 @@
 # Durable Mutations And Recovery
 
-Last audited: 2026-08-27.
+Last audited: 2026-08-29.
 
 This guide owns browser-to-Fastify mutation durability and reconciliation:
 encrypted outbox intent, the serialized command queue, compact optimistic
@@ -146,6 +146,11 @@ coalesced event batch, then converts each resource key into concrete reads:
   events refresh the selected owner when ownership may have changed.
 - Inlay-catalog events read `/api/v1/inlay-assets`; catalog entries are a
   standalone projection and are not folded into the aggregate database view.
+- BardWiki settings/document/confirmation/import/rebuild publication events
+  refresh only the affected chat summary or currently hydrated document.
+  Bounded live `bardwiki.job` progress updates the operational projection
+  without advancing the domain revision; reconnect snapshots and targeted
+  resource reads recover missed progress.
 - Asset events require no application-data read; the applied revision still
   advances.
 - Broad `state`/`lorebook` events, unknown resources, missing required owner
@@ -183,13 +188,14 @@ bootstrap.
 Server replay is backed by SQLite `command_events` and retained for
 `COMMAND_EVENT_HISTORY_LIMIT` revisions. After the writer frame and connected
 comment, every successful connection receives an initial `memory_snapshot`
-frame before command replay; `memoryJobEvents.ts` uses it to seed current Hypa
-V3 job/progress state. The server subscribes to live command events before
-replay, queues live events that arrive during the replay flush, then switches to
-live delivery. Heartbeats and live memory-event fanout begin only after replay
-succeeds, and slow-consumer overflow tears down the stream. Memory progress is
-not replayed and does not invalidate database resources. The full SSE ordering
-contract is in [Data And Events](data-and-events.md#sse-and-streaming).
+frame before command replay; `memoryJobEvents.ts` and `bardWikiJobEvents.ts` use
+it to seed current Hypa V3 and BardWiki job/progress state. The server subscribes
+to live command events before replay, queues live events that arrive during the
+replay flush, then switches to live delivery. Heartbeats and live memory-event
+fanout begin only after replay succeeds, and slow-consumer overflow tears down
+the stream. Memory progress is not replayed and does not invalidate database
+resources. The full SSE ordering contract is in
+[Data And Events](data-and-events.md#sse-and-streaming).
 
 ## Resource Write Guard
 

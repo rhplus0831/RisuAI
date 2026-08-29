@@ -1,6 +1,6 @@
 # Data And Events
 
-Last audited: 2026-08-27.
+Last audited: 2026-08-29.
 
 Fastify owns authoritative application state. The browser reads authenticated
 REST resources and sends revision-checked commands or explicit server-owned
@@ -33,13 +33,15 @@ plus negative sequence positions. Regenerate preserves displaced/new candidates
 as alternates, while send/continue clears the reroll buffer for the appended
 path. Per-chat `hypaV3Data` lives in `chat_hypa_v3`.
 
-`CURRENT_SCHEMA_VERSION` is 32. SQLite includes settings; character, chat,
+`CURRENT_SCHEMA_VERSION` is 33. SQLite includes settings; character, chat,
 message, and per-chat memory rows; split collections; assets; command events and
 mutation receipts; the inlay catalog; push subscriptions; Hypa V3 memory state;
 generation finalization retries; greeting translations; and durable LLM request
 history. It also stores lineage-scoped generation operations and attempts, their
-projection epoch, and the generation-effect claim/lease/receipt ledger; active
-stream viewers and job attachments remain process-local. Migration v22 drops
+projection epoch, the generation-effect claim/lease/receipt ledger, and the
+BardWiki settings/document/version/source/link/receipt/job/staging/search
+tables; active stream viewers and job attachments remain process-local.
+Migration v22 drops
 the retired `collection_body_revisions` and `projection_body_cache_state`
 tables; v23
 persists stable ids for legacy global lorebooks and entries; v24 adds durable
@@ -267,6 +269,12 @@ not ordinary browser `/commands/*` resource endpoints:
   events without a domain revision. Worker writes and direct summary
   `PATCH`/`DELETE` also update memory tables outside the domain revision; only
   job lifecycle emits live memory events.
+- BardWiki settings, manual documents, exact-source confirmation, background
+  publication, receipt invalidation, vault import, and rebuild publication use
+  narrow revisioned commands/events. BardWiki job claims, progress, cancel,
+  retry, restart recovery, and staging checkpoints are durable operational
+  transitions outside the domain revision; only final domain publication bumps
+  it. The complete boundary is in [BardWiki Memory](bardwiki.md).
 - LLM request history is operational SQLite state outside the common-revision
   application snapshot. Provider work creates/finalizes rows best-effort;
   retention pruning and active-writer deletion neither bump the domain revision
@@ -363,9 +371,9 @@ cache-cap, shell/body, and stale-response workflow belongs to
 `GET /api/v1/events` sends a `writer` frame with the current
 `{ sessionId, epoch }` state (`sessionId` is null before the first writer is
 latched), a connected comment, and a `memory_snapshot` frame with the current
-memory stream/version/job projections. It then replays SQLite `command_events`
-for cursor reconnects and streams live command-sink, memory, and writer-change
-events. Writer and memory-snapshot frames have no
+Hypa and BardWiki stream/version/job projections. It then replays SQLite
+`command_events` for cursor reconnects and streams live command-sink, memory,
+BardWiki-job, and writer-change events. Writer and memory-snapshot frames have no
 revision semantics and are never replayed. Clients subscribe with
 `sinceRevision` or `Last-Event-ID`; replay gaps return
 `409 event_replay_unavailable`, after which the browser performs a read-only
@@ -375,7 +383,9 @@ suppression. The server emits 25-second heartbeat comments. The browser treats
 60 seconds of silence as stale, restarts immediately on visibility/online
 recovery, and retriggers current-scope outbox replay after reconnect. The live
 command sink can also carry non-replay notifications such as export events at
-the current revision. Memory events are never replayed.
+the current revision. Hypa `memory.job` and BardWiki `bardwiki.job` progress
+events are bounded, secret-free, and never replayed; the reconnect snapshot plus
+targeted resources are authoritative.
 
 Browser reconcile rules: process events serially, defer matching own-origin
 events into the active command batch, skip revisions already covered by the
@@ -391,7 +401,8 @@ arrives before its command response is retained and can be upgraded with the
 response's compact local-effect acknowledgement. When targeted reconciliation
 fails, the browser leaves the applied cursor unchanged and reconnects from it so
 command-event replay retries the event instead of waiting for a later mutation.
-Memory events update Hypa V3 job/progress UI directly.
+Memory events update Hypa V3 and BardWiki job/progress UI directly without
+advancing the applied domain revision.
 
 The optional pre-writer observer read does not seed command authority. It may
 install the coherent shell revision as the applied-resource cursor so later

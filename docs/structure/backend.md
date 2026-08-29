@@ -1,6 +1,6 @@
 # Backend Map
 
-Last audited: 2026-08-27.
+Last audited: 2026-08-29.
 
 The backend is the Fastify server under `server/fastify`. This guide owns its
 composition root, route policy, request-path boundaries, process-local jobs,
@@ -127,7 +127,7 @@ bulk asset uploads `180/min`, and generation submit `60/min`.
 | Provider/media ops    | `providerOperations.ts`, `embeddingOperations.ts`, `tts.ts`, `imageGeneration.ts`, `openAITranscription.ts`, `mcpOAuthRefresh.ts` | Authenticated, bounded provider/media operations and the MCP OAuth refresh route. MCP transport, credential, identity, and egress behavior is canonical in [Plugins And MCP](plugins-and-mcp.md).                                                                                                                             |
 | Proxy/compatibility   | `proxy.ts`, `streamJobs.ts`, `hub.ts`, `legacyStorage.ts`                                                                         | Generic proxy/stream jobs, retained hub passthrough, `/api/v1/storage/*` compatibility bytes, and the public auth crypto helper.                                                                                                                                                                                                                                                          |
 | Generation            | `generation.ts`, `generationChat.ts`, `generationOperations.ts`, `generationEffects.ts`                                           | Completion/preview, server-assembled chat generation, SQLite-backed operation acceptance/retry/cancel/stream attachment, and post-generation effect claims/receipts.                                                                                                                                                                                                                       |
-| Memory                | `memoryJobs.ts`, `memoryReads.ts`                                                                                                 | Queue/cancel/list jobs plus chunk/summary reads and active-writer summary edit/delete routes.                                                                                                                                                                                                                                                                                             |
+| Memory                | `memoryJobs.ts`, `memoryReads.ts`, `bardWiki.ts`, `bardWikiJobs.ts`                                                               | Hypa queue/summary resources plus BardWiki targeted settings/document/version/receipt/vault reads and operational job cancel/retry. Revisioned BardWiki writes remain in the Commands family.                                                                                                                                                                                             |
 | Request history       | `requestHistory.ts`                                                                                                               | Authenticated summary/detail reads and active-writer deletion for byte-bounded provider-attempt diagnostics; pruning is operational state outside domain revisions.                                                                                                                                                                                                                        |
 
 ## Route-Side Contracts
@@ -344,11 +344,12 @@ startup and then every 5 seconds by default. Retry selection uses capped
 exponential backoff; repeated transient failures remain retryable and become a
 visible stalled state. Terminal rows, including quarantined `stalled_legacy`
 history, are retained instead of being age-pruned.
-`MemoryWorker.start()` recovers interrupted running jobs, performs an immediate
-terminal-retention sweep, polls on a 1-second default idle interval, and later
-sweeps terminal retention hourly by default. Shutdown stops the memory worker
-and timers, removes registry jobs, settles generation runners, and only then
-closes SQLite.
+`MemoryWorker.start()` and the separate `BardWikiWorker.start()` recover their
+own interrupted running jobs, perform immediate terminal-retention sweeps, poll
+on independent idle intervals, and later sweep terminal retention. The
+BardWiki lane is chat-fair and cannot occupy the Hypa single-flight lane.
+Shutdown stops both workers and timers, removes registry jobs, settles
+generation runners, and only then closes SQLite.
 
 Compatibility job-stream use is measured by the opt-in
 `generation_compatibility_stream_attach` protocol metric, including whether the
@@ -361,6 +362,12 @@ before routes, and exposes its queue/read surfaces through `memoryJobs.ts` and
 `memoryReads.ts`. Prompt assembly may enqueue its work, but provider-backed
 memory jobs run in the worker rather than the chat request. Memory selection,
 provider, and prompt behavior belongs in the focused guides above.
+
+The BardWiki worker uses `apply_turn`, `reconcile_receipt`, and `rebuild_chat`
+handlers. Provider calls run outside revision transactions; final document,
+version, provenance, manifest, receipt, revision, and command-event publication
+is short and atomic. Its route, recovery, privacy, and lifecycle boundaries are
+owned by [BardWiki Memory](bardwiki.md).
 
 ## Static SPA
 

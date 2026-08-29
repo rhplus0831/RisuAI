@@ -1,6 +1,6 @@
 # Assets And Saves
 
-Last audited: 2026-08-27.
+Last audited: 2026-08-29.
 
 Fastify owns binary persistence, save import/export, Realm import, and backup
 snapshots. Browser code should use server asset URLs and server save routes
@@ -291,6 +291,17 @@ Module and MCP-bearing `.risum` exchange is owned by
 dataset/chat import guards are `src/ts/storage/exportAsDataset.test.ts` and
 `src/ts/characters.importChat.test.ts`.
 
+## BardWiki Vaults
+
+Portable `.risu`, bundle, local-backup, character-card, and chat exchange do not
+silently merge per-chat BardWiki state. BardWiki has a separate authenticated,
+deterministic Obsidian-compatible ZIP export and an explicit dry-run/apply
+import. The importer validates compression/expansion/document limits, safe
+paths, UTF-8, manifest/frontmatter/content hashes, and version/hash replace
+fences before one atomic revision. See
+[BardWiki Memory](bardwiki.md#lifecycle-interchange-and-recovery) for the vault,
+fork, rebuild, and recovery contract.
+
 ## Realm Import
 
 `POST /api/v1/import/realm-character` accepts JSON with a Realm id, fetches
@@ -390,6 +401,7 @@ policy is explicit:
 | Inlay catalog and asset store | Catalog metadata/catalog-only assets are excluded. Bundle/local formats can add portable database references and present asset files without replacing the target catalog/store. | `inlay_catalog` is restored and the asset directory is replaced. |
 | Provider credentials | Included unmasked in whole-database settings; portable save files must be handled as secrets. | Restored with settings. |
 | Push subscriptions | Excluded: endpoint and auth material is origin/device state. | Deliberately remains live across restore. The VAPID key file is outside every backup, so losing the live subscription table or moving origins requires users to re-enable notifications. |
+| BardWiki state | Excluded: use the explicit per-chat BardWiki vault workflow for portable interchange. | Authoritative documents, versions, links, sources, receipts, jobs, settings, manifests, and rebuild staging are restored. The derived search projection is excluded and rebuilt from restored documents. |
 
 Portable greeting-translation rows are extracted after character identity
 normalization/remint, so their final character ownership is preserved. Broad

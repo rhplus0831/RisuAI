@@ -1,6 +1,6 @@
 # Svelte Chat UI Guide
 
-Last audited: 2026-08-27.
+Last audited: 2026-08-29.
 
 This guide owns the visible chat frame, transcript, message rows, composer
 variants, generation/loading feedback, and in-chat confirmations. Return to the
@@ -33,6 +33,17 @@ is only an unmounted props stub and is not part of the live row-rendering path.
 Plugin V3 chat panels render in `DefaultChatScreen.svelte` inside the same chat
 content column. Plugin floating actions and chat-menu registrations are owned by
 [Plugins And MCP](../../docs/structure/plugins-and-mcp.md#ui-surfaces).
+
+The active-chat overflow menu also owns the BardWiki action. It lazy-loads a
+focus-trapped `BardWikiWorkspace.svelte` dialog scoped to the current chat. The
+workspace edits nullable chat overrides, lazily loads document bodies and
+versions, keeps unsaved drafts across recoverable failures, creates/edits/
+soft-deletes manual documents with version/hash fences, and exposes explicit
+current-turn confirmation plus receipt/job cancel/retry state. Rebuild preview,
+vault export, and dry-run/apply import remain explicit lifecycle actions with
+provider-cost and destructive/replace warnings. The dialog reflows to a
+single-column mobile layout and never treats queued intent as accepted. The
+cross-layer contract is in [BardWiki Memory](../../docs/structure/bardwiki.md).
 
 ## Transcript Hydration And Paging
 

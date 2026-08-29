@@ -1,6 +1,6 @@
 # Generation Client
 
-Last audited: 2026-08-27.
+Last audited: 2026-08-29.
 
 This guide owns the browser side of durable chat generation: operation
 acceptance, streaming, cancellation, reattach, terminal reconciliation,
@@ -194,6 +194,14 @@ bootstrap, polling, and smoke snapshots, while the transcript subscribes to an
 independent per-chat projection. Clearing or acknowledging another chat cannot
 rebuild the visible row model, and each visible projection builds message-id and
 generation-id indexes once instead of scanning the flat list for every row.
+
+Successful accepted sends may also schedule BardWiki automatic confirmation on
+the server for the preceding exact `user -> char` source pair when the effective
+chat policy enables it. Continue, regenerate, failed/cancelled work, alternates,
+and the just-created current send do not qualify. This detached memory work does
+not extend the generation stream or mutate the browser transcript; its bounded
+status arrives through the BardWiki job projection. See
+[BardWiki Memory](../../docs/structure/bardwiki.md#confirmation-and-background-jobs).
 
 The `generation.persisted` read applies its bounded suffix in place. Safe
 appends, replacements, and truncations preserve the resident prefix and message

@@ -1,6 +1,6 @@
 # Prompt Assembly And Scripting
 
-Last audited: 2026-08-27.
+Last audited: 2026-08-29.
 
 This guide owns server prompt construction, CBS and history variables,
 lorebook and memory injection, prompt-template precedence, generation
@@ -95,7 +95,7 @@ not rewrite global settings.
 | Static/plain slots | Build main, character, persona, author-note, jailbreak, and configured plain rows. |
 | Lorebook preflight | Activate ordinary lore, distribute positions, expand CBS for token accounting, build depth rows, and preflight the template. |
 | History and bias | Format the bounded transcript, per-message scripts/CBS, continuation markers, and logit-bias rows. |
-| Memory bridge | Select already-produced Hypa V3 summaries, insert memory rows, and enqueue missing follow-up work. |
+| Memory bridge | Select already-produced Hypa V3 summaries and committed BardWiki references, insert independently removable memory rows, and enqueue only Hypa follow-up work. |
 | Render and budget | Render the owned prompt template, execute remaining request-time script hooks, retokenize, trim removable history, and clamp response budget. |
 
 The stage order is explicit in `server/fastify/src/prompt/assemble.ts` and is
@@ -277,9 +277,9 @@ step in `server/fastify/src/prompt/chatDispatch.ts`. An empty or invalid
 `systemRoleReplacement` falls back to `user`; it never produces an empty wire
 role.
 
-## Hypa V3 Memory Phase
+## Hypa V3 And BardWiki Memory Phase
 
-Only Hypa V3 is maintained. During assembly,
+For Hypa V3, during assembly,
 `server/fastify/src/prompt/memory.ts` and
 `server/fastify/src/prompt/memoryAdapter.ts` snapshot existing summaries, plan
 chunks, select model-compatible rows, and inject nonempty summaries as system
@@ -302,6 +302,18 @@ execution time. Embeddings remain outside chat profiles on the separate
 Hypa/Voyage/custom model contract in
 `server/fastify/src/memoryEmbeddingModel.ts`. Detailed memory storage/routes
 remain backend/data ownership; this section owns only prompt-facing behavior.
+
+BardWiki uses the same memory bridge but a separate, deterministic selector.
+It builds a bounded lexical query from the current input and recent active
+transcript, selects committed active Markdown documents, expands resolved
+wikilinks within configured limits, and emits whole bounded
+`<bardwiki-reference>` system rows. Retrieval performs no provider work, does
+not wait for background jobs, and fails explicitly when pinned references do
+not fit. `hypa`, `bardwiki`, and `hybrid` modes define which selectors run and
+how their independent caps share the total memory budget. Preview, prompt SSE,
+request-history diagnostics, and provider dispatch use the same selected rows.
+See [BardWiki Memory](bardwiki.md) for settings, jobs, document lifecycle, and
+the complete selection contract.
 
 ## Final Budget And Confirmation Gate
 
