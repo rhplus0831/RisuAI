@@ -2,7 +2,8 @@
 
 Date: 2026-08-29
 
-The workstream is open. Phases 0-6 are complete and Phase 7 is current.
+The workstream is closed. Phases 0-7 are complete and the intact plan is
+archived under `.archived-docs/memory-and-context/bardwiki/`.
 BardWiki persistence, manual commands, targeted resources, backup recovery,
 global settings, and the chat-scoped manual workspace are implemented; prompt
 retrieval, explicit and automatic confirmation, isolated durable execution,
@@ -12,11 +13,11 @@ controls are implemented.
 
 ## Snapshot
 
-- Plan state: runtime implementation in progress.
-- Current phase: Phase 7, verification and closeout starting.
-- Current implementation cursor: run the aggregate affected/smoke and owning
-  matrices, audit current documentation, record `latest-verification.md`, and
-  archive the closed workstream.
+- Plan state: complete and archived.
+- Current phase: none.
+- Current implementation cursor: maintain the shipped behavior through
+  [`docs/structure/bardwiki.md`](../../../docs/structure/bardwiki.md) and its
+  owning tests.
 - Blockers: none.
 - Runtime changes in this workstream: schema v33, low-level repository,
   revisioned settings/manual-document commands, shared wire schemas, targeted
@@ -87,9 +88,22 @@ controls are implemented.
   fork/chat commands/client commands/events/workspace/protocol passed 8 files
   and 382 tests; client-library declarations, all server-facing typechecks, and
   Svelte diagnostics passed with zero errors or warnings on 2026-08-29.
-- Residual risk: Phase 7 must complete aggregate affected/browser proof and
-  ensure the shipped architecture and user-facing cost/destructive warnings
-  are documented before archive.
+- Phase 7 commits: `16019e1d1` verification gates; `01809a845` visible explicit
+  confirmation; `88cd140a2` lifecycle browser smoke; `47dcdb1b3` current
+  architecture documentation; `99fe03c1c` workspace projection measurement.
+- Phase 7 aggregate validation: `pnpm test:affected --base origin/fastify
+  --include-smoke` expanded to `test:all` and passed 6,619 frontend tests,
+  3,513 server tests plus the isolated Realm scale case, 206 UI coverage tests,
+  all 38 browser smoke scenarios, both typecheck families, Svelte diagnostics,
+  formatting, and six frontend performance gates on 2026-08-29.
+- Phase 7 focused validation: 14 BardWiki server files passed 100 tests; 14
+  client/protocol ownership files passed 658 tests; client-library and Fastify
+  TypeScript commands passed. The representative selector observed 7.76 ms for
+  2,000 documents/512 candidates/32 selected rows, and the body-free workspace
+  route observed 7.93 ms for 2,000 documents.
+- Residual risk: no accepted correctness gap. Local performance timings are
+  diagnostic rather than service-level guarantees; real-provider billing and
+  third-party Obsidian plugins are outside deterministic browser smoke.
 - Source investigation: complete for RisuBard semantics and the local settings,
   finalization, jobs/events, storage/API, and prompt-retrieval boundaries.
 
@@ -120,13 +134,13 @@ controls are implemented.
 | [4. Jobs and explicit confirmation](phases/phase-4-jobs-and-explicit-confirmation.md) | Complete | Separate durable worker execution, explicit event generation, status, and operational recovery are reliable. |
 | [5. Automatic and canonical updates](phases/phase-5-automatic-and-canonical-updates.md) | Complete | Successful sends confirm only their exact prior turn; bounded canonical change sets and safe stale-source reconciliation are live. |
 | [6. Lifecycle and interchange](phases/phase-6-lifecycle-and-interchange.md) | Complete | Bounded rebuild, fork/delete lifecycle, deterministic vault interchange, exact restore, derived recovery, and operational controls are proven. |
-| [7. Verification and closeout](phases/phase-7-verification-and-closeout.md) | In progress | Full regression, recovery, performance, browser, docs, and rollout proof closes the workstream. |
+| [7. Verification and closeout](phases/phase-7-verification-and-closeout.md) | Complete | Full regression, recovery, performance, browser, docs, and rollout proof closed the workstream. |
 
-## Next Action
+## Final Verification
 
-Run Phase 7's aggregate affected/smoke and owning matrices, audit the shipped
-architecture and UI warnings, write `latest-verification.md`, then close and
-archive the intact plan.
+[`latest-verification.md`](latest-verification.md) records exact commands,
+counts, the required behavior matrix, measured observations, caveats, and the
+no-gap closeout verdict.
 
 ## Maintenance Rules
 

@@ -1,10 +1,54 @@
 # Phase 7: Verification and Closeout
 
-Status: pending.
+Status: complete.
 
 Goal: prove the completed BardWiki system across persistence, commands,
 generation, prompt assembly, jobs, UI, lifecycle, recovery, security,
 performance, and documentation, then close and archive the workstream.
+
+## Completion Note
+
+The complete affected workflow expanded to `test:all` and passed every lane:
+6,619 frontend tests, 3,513 server tests plus the isolated Realm scale case,
+206 UI coverage tests, 38 Playwright scenarios, six frontend performance-gate
+tests, protocol/client/Fastify/browser-smoke typechecks, Svelte diagnostics,
+and repository formatting. The focused BardWiki matrices passed 100 server and
+658 client/protocol tests.
+
+The closeout added the visible explicit-confirmation action/status, filled the
+protocol fixture and server mutation-metric gates exposed by the first aggregate
+run, added the BardWiki lifecycle browser journey, documented every current
+owner, and measured both a bounded prompt selection and body-free workspace
+projection over 2,000 documents. No temporary rollout bypass remains and no
+accepted correctness gap is carried forward. Exact commands, behavior-to-test
+mapping, measurements, and caveats are in
+[`../latest-verification.md`](../latest-verification.md).
+
+Phase 7 commits:
+
+- `16019e1d1` closes the protocol/UI fixture and server mutation-metric gates.
+- `01809a845` exposes safe current-turn confirmation in the workspace.
+- `88cd140a2` adds the BardWiki lifecycle browser smoke journey.
+- `47dcdb1b3` documents the shipped architecture across current guides.
+- `99fe03c1c` records the representative body-free workspace projection.
+
+Validation on 2026-08-29:
+
+```text
+pnpm test:affected --base origin/fastify --include-smoke
+# Expanded to test:all; every lane passed in 4m 49.7s.
+# Frontend 536 files / 6,619 tests; server 169 files / 3,513 passed,
+# browser 38; UI coverage 6 files / 206 tests; performance 2 files / 6 tests.
+
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/bardWiki*.test.ts
+# 14 files, 100 tests passed
+
+# Focused protocol/client BardWiki matrix: 14 files, 658 tests passed.
+pnpm exec tsc -p tsconfig.client-lib.json
+pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
+# Passed with no diagnostics.
+```
 
 ## Depends On
 

@@ -1,7 +1,8 @@
 # BardWiki Phase Index
 
-The phases are intentionally sequenced so the feature remains useful and
-testable before autonomous model-authored canonical updates are enabled.
+The completed phases were intentionally sequenced so the feature remained
+useful and testable before autonomous model-authored canonical updates were
+enabled.
 
 - [Phase 0: Contract and Architecture](phase-0-contract-and-architecture.md)
 - [Phase 1: Persistence and Server Resources](phase-1-persistence-and-resources.md)

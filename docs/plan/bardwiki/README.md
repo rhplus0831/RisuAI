@@ -2,7 +2,8 @@
 
 Date: 2026-08-29
 
-This open workstream plans a per-chat BardWiki memory system: human-readable
+This completed workstream records the delivery of a per-chat BardWiki memory
+system: human-readable
 Markdown documents, wikilinks, deterministic prompt retrieval, and durable
 server-side background updates after an assistant turn is confirmed.
 
@@ -15,15 +16,18 @@ before the next one is enabled.
 1. [`status.md`](status.md) - live phase router, current cursor, and blockers.
 2. [`PLAN.md`](PLAN.md) - product decisions, target architecture, invariants,
    phase boundaries, and non-goals.
-3. [`phases/README.md`](phases/README.md) - phase index and execution rules.
-4. The current phase file under [`phases/`](phases/).
+3. [`latest-verification.md`](latest-verification.md) - final commands, counts,
+   behavior matrix, measurements, and caveats.
+4. [`phases/README.md`](phases/README.md) - completed phase index and execution
+   rules used during implementation.
 
 ## Primary Architecture Sources
 
 - [`../../../STRUCTURE.md`](../../../STRUCTURE.md)
-- [`../../structure/data-and-events.md`](../../structure/data-and-events.md)
-- [`../../structure/durable-mutations-and-recovery.md`](../../structure/durable-mutations-and-recovery.md)
-- [`../../structure/prompt-assembly-and-scripting.md`](../../structure/prompt-assembly-and-scripting.md)
+- [`../../../docs/structure/bardwiki.md`](../../../docs/structure/bardwiki.md)
+- [`../../../docs/structure/data-and-events.md`](../../../docs/structure/data-and-events.md)
+- [`../../../docs/structure/durable-mutations-and-recovery.md`](../../../docs/structure/durable-mutations-and-recovery.md)
+- [`../../../docs/structure/prompt-assembly-and-scripting.md`](../../../docs/structure/prompt-assembly-and-scripting.md)
 - [`../../../src/docs/svelte-settings-ui.md`](../../../src/docs/svelte-settings-ui.md)
 - [`../../../src/docs/svelte-chat-ui.md`](../../../src/docs/svelte-chat-ui.md)
 
