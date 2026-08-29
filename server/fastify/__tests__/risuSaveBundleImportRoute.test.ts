@@ -20,7 +20,7 @@ import {
 } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 import { setupAuthedClient } from './helpers/auth.js'
-import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
+import { injectComposedResourceDatabase } from './helpers/resourceDatabase.js'
 import { encodeLegacyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
 import { encodeRisuSaveBlockEnvelope, RisuSaveBlockType } from '../src/risuSave/blockCodec.js'
 import { RISUSAVE_EMPTY_DATABASE_ERROR, RISUSAVE_INCOMPLETE_BLOCKS_ERROR } from '../src/risuSave/importSnapshot.js'
@@ -60,7 +60,6 @@ async function startHarness(): Promise<Harness> {
     memoryWorker: false,
     commandEvents,
   })
-  installResourceDatabaseBootstrapAdapter(app)
   return { app, dataDir, commandEvents }
 }
 
@@ -280,6 +279,14 @@ function authedInject(opts: Record<string, unknown>) {
     ...opts,
     headers: { 'risu-auth': assertion, ...headers },
   })
+}
+
+function authedComposedResourceDatabase(opts: Record<string, unknown>) {
+  const headers = (opts.headers ?? {}) as Record<string, string>
+  return injectComposedResourceDatabase(harness.app, {
+    ...opts,
+    headers: { 'risu-auth': assertion, ...headers },
+  } as never)
 }
 
 async function exportBundleZip(): Promise<Buffer> {
@@ -513,13 +520,13 @@ describe('repository .risu bundle import route', () => {
       expect(Buffer.from(asset.rawPayload).equals(ASSET_BYTES)).toBe(true)
 
       // The database is restored with imported chats requiring local confirmation.
-      const bootstrap = await fresh.app.inject({
+      const bootstrap = await injectComposedResourceDatabase(fresh.app, {
         method: 'GET',
         url: '/api/v1/bootstrap',
         headers: { 'risu-auth': freshAssertion },
       })
       expect(bootstrap.statusCode).toBe(200)
-      expect(bootstrap.json().database.characters[0].chats[0].generationSettings).toEqual({
+      expect(bootstrap.resourceDatabase.characters[0].chats[0].generationSettings).toEqual({
         configured: false,
         personaId: 'persona-a',
         modelPresetId: 'model-a',
@@ -626,12 +633,12 @@ describe('repository .risu bundle import route', () => {
       } finally {
         targetDb.close()
       }
-      const bootstrap = await fresh.app.inject({
+      const bootstrap = await injectComposedResourceDatabase(fresh.app, {
         method: 'GET',
         url: '/api/v1/bootstrap',
         headers: { 'risu-auth': freshAssertion },
       })
-      expect(bootstrap.json().database).not.toHaveProperty(RISU_SERVER_DATA_KEY)
+      expect(bootstrap.resourceDatabase).not.toHaveProperty(RISU_SERVER_DATA_KEY)
     } finally {
       await stopHarness(fresh)
     }
@@ -744,7 +751,7 @@ describe('repository .risu bundle import route', () => {
     const fresh = await startHarness()
     try {
       const { assertion: freshAssertion } = await setupAuthedClient(fresh.app)
-      const before = await fresh.app.inject({
+      const before = await injectComposedResourceDatabase(fresh.app, {
         method: 'GET',
         url: '/api/v1/bootstrap',
         headers: { 'risu-auth': freshAssertion },
@@ -772,7 +779,7 @@ describe('repository .risu bundle import route', () => {
         })
       }
 
-      const after = await fresh.app.inject({
+      const after = await injectComposedResourceDatabase(fresh.app, {
         method: 'GET',
         url: '/api/v1/bootstrap',
         headers: { 'risu-auth': freshAssertion },
@@ -780,8 +787,8 @@ describe('repository .risu bundle import route', () => {
       expect(after.json()).toMatchObject({
         revision: before.json().revision,
         databaseLineage: before.json().databaseLineage,
-        database: before.json().database,
       })
+      expect(after.resourceDatabase).toEqual(before.resourceDatabase)
       expect(fresh.commandEvents.list().some((event) => event.type === 'state.imported')).toBe(false)
     } finally {
       await stopHarness(fresh)
@@ -790,7 +797,7 @@ describe('repository .risu bundle import route', () => {
 
   it('salvages supported bundle blocks and reports skipped standalone CHAT blocks', async () => {
     persistLiveDatabase(harness.dataDir)
-    const before = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const before = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
     const databaseBytes = encodeRisuSaveBlockEnvelope([
       {
         name: 'root',
@@ -830,12 +837,12 @@ describe('repository .risu bundle import route', () => {
       bundleReport: { includedAssetCount: 1, assetsCreated: true },
     })
 
-    const after = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
-    expect(after.json().database).toMatchObject({
+    const after = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(after.resourceDatabase).toMatchObject({
       tag: 'salvaged-bundle',
       characters: [expect.objectContaining({ chaId: 'bundle-char', name: 'Bundle Character' })],
     })
-    expect(after.json().database.tag).not.toBe(before.json().database.tag)
+    expect(after.resourceDatabase.tag).not.toBe(before.resourceDatabase.tag)
     expect(listBackups(harness.dataDir)).toHaveLength(1)
     const importedAsset = await authedInject({ method: 'GET', url: `/api/v1/assets/${ASSET_ID}` })
     expect(importedAsset.statusCode).toBe(200)
@@ -1048,7 +1055,7 @@ describe('repository .risu bundle import route', () => {
 
   it('rejects hollow bundle and legacy .bin databases before snapshots, assets, or live mutations', async () => {
     persistLiveDatabase(harness.dataDir)
-    const before = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const before = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
     const hollowDatabase = encodeLegacyRisuSaveEnvelope({}, 'legacy-compressed')
     const inputs = [
       { bytes: buildBundleZip(hollowDatabase), filename: 'hollow.risu.zip' },
@@ -1073,19 +1080,19 @@ describe('repository .risu bundle import route', () => {
       expect(imported.json()).toEqual({ error: RISUSAVE_EMPTY_DATABASE_ERROR })
     }
 
-    const after = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const after = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(after.json()).toMatchObject({
       revision: before.json().revision,
       databaseLineage: before.json().databaseLineage,
-      database: before.json().database,
     })
+    expect(after.resourceDatabase).toEqual(before.resourceDatabase)
     expect(listBackups(harness.dataDir)).toEqual([])
     await expectNoImportedAssetSideEffects(harness)
   })
 
   it('rejects an exact-block-boundary truncated bundle before snapshots, assets, or live mutations', async () => {
     persistLiveDatabase(harness.dataDir)
-    const before = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const before = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
     const blocks = [
       {
         name: 'root',
@@ -1120,12 +1127,12 @@ describe('repository .risu bundle import route', () => {
 
     expect(imported.statusCode).toBe(400)
     expect(imported.json()).toEqual({ error: RISUSAVE_INCOMPLETE_BLOCKS_ERROR })
-    const after = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const after = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(after.json()).toMatchObject({
       revision: before.json().revision,
       databaseLineage: before.json().databaseLineage,
-      database: before.json().database,
     })
+    expect(after.resourceDatabase).toEqual(before.resourceDatabase)
     expect(listBackups(harness.dataDir)).toEqual([])
     await expectNoImportedAssetSideEffects(harness)
   })
@@ -1376,7 +1383,7 @@ describe('repository .risu bundle import route', () => {
     const zip = await exportBundleZip()
 
     // Latch session-a as the active writer via the writer-intent bootstrap.
-    const bootstrap = await authedInject({
+    const bootstrap = await authedComposedResourceDatabase({
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },

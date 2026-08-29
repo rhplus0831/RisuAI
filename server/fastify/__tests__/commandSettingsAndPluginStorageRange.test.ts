@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { setupAuthedClient } from './helpers/auth.js'
-import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
+import { injectComposedResourceDatabase } from './helpers/resourceDatabase.js'
 import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 import { assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
 
@@ -45,7 +45,6 @@ async function startHarness(): Promise<Harness> {
     assetGc: false,
     memoryWorker: false,
   })
-  installResourceDatabaseBootstrapAdapter(app)
   return { app, dataDir }
 }
 
@@ -183,13 +182,13 @@ function mutateRawDb(mutator: (db: DatabaseSync) => void): void {
 }
 
 async function fetchBootstrapDatabase(): Promise<Record<string, unknown>> {
-  const res = await harness.app.inject({
+  const res = await injectComposedResourceDatabase(harness.app, {
     method: 'GET',
     url: '/api/v1/bootstrap',
     headers: { 'risu-auth': assertion },
   })
   expect(res.statusCode, JSON.stringify(res.json())).toBe(200)
-  return res.json().database as Record<string, unknown>
+  return res.resourceDatabase as Record<string, unknown>
 }
 
 /** Assert no character or chat row was rewritten (every rowid stayed put). */

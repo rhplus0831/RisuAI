@@ -14,34 +14,25 @@ interface ResourceEnvelope extends JsonRecord {
 type ResourceDatabase = JsonRecord | null
 
 /**
- * Legacy server tests used bootstrap as a convenient read-after-write API. Keep
- * those assertions API-backed while the suites are migrated: this adapter adds
- * a synthetic, message-free database to successful bootstrap responses by
- * composing the three public resource reads.
- *
- * Production bootstrap remains runtime-only. Install this adapter only on a
- * test-local Fastify instance.
+ * Read the real runtime bootstrap plus the message-free database projection
+ * composed from the named settings, collections, and character resources.
+ * The production bootstrap JSON is left untouched; callers must explicitly use
+ * `resourceDatabase` when asserting the composed resource state.
  */
-export function installResourceDatabaseBootstrapAdapter(app: FastifyInstance): void {
-  const inject = app.inject.bind(app)
+export async function injectComposedResourceDatabase(app: FastifyInstance, options: InjectOptions) {
+  if (options.method !== 'GET' || options.url !== '/api/v1/bootstrap') {
+    throw new Error('Composed resource reads require GET /api/v1/bootstrap')
+  }
 
-  app.inject = (async (options: InjectOptions) => {
-    const response = await inject(options)
-    if (options.method !== 'GET' || options.url !== '/api/v1/bootstrap' || response.statusCode !== 200) {
-      return response
-    }
-
-    const runtime = response.json<RuntimeBootstrap>()
-    const database = await readResourceDatabaseFromInject(inject, options.headers, runtime)
-    const adaptedBody = { ...runtime, database }
-
-    return new Proxy(response, {
-      get(target, property, receiver) {
-        if (property === 'json') return () => adaptedBody
-        return Reflect.get(target, property, receiver)
-      },
-    })
-  }) as FastifyInstance['inject']
+  const response = await app.inject(options)
+  const resourceDatabase =
+    response.statusCode === 200
+      ? await readResourceDatabaseFromInject(app.inject.bind(app), options.headers, response.json<RuntimeBootstrap>())
+      : null
+  // `inject().json()` was historically untyped in these broad integration
+  // suites. Preserve that test ergonomics while keeping the wire body and the
+  // explicit composed projection as separate values.
+  return Object.assign(response, { resourceDatabase: resourceDatabase as any })
 }
 
 export async function readResourceDatabaseFromFetch(

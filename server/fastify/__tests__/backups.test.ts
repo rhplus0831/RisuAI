@@ -21,7 +21,7 @@ import {
   loadPersistedWithMessages,
 } from '../src/repository.js'
 import type { FastifyInstance } from 'fastify'
-import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
+import { injectComposedResourceDatabase } from './helpers/resourceDatabase.js'
 import {
   createGenerationOperation,
   reserveGenerationOperationAttempt,
@@ -82,7 +82,6 @@ async function startHarness(
     commandEvents,
     generationChat: { finalizationRetry: false },
   })
-  installResourceDatabaseBootstrapAdapter(app)
   configureApp?.(app)
   return { app, dataDir, commandEvents }
 }
@@ -95,7 +94,6 @@ async function restartHarness(harness: Harness): Promise<void> {
     commandEvents,
     generationChat: { finalizationRetry: false },
   })
-  installResourceDatabaseBootstrapAdapter(app)
   harness.app = app
   harness.commandEvents = commandEvents
 }
@@ -415,12 +413,12 @@ describe('backups', () => {
 
       expect(imported.statusCode).toBe(500)
       expect(imported.json()).toEqual({ error: 'automatic_backup_failed' })
-      const bootstrap = await harness.app.inject({
+      const bootstrap = await injectComposedResourceDatabase(harness.app, {
         method: 'GET',
         url: '/api/v1/bootstrap',
         headers: { 'risu-auth': assertion },
       })
-      expect(bootstrap.json().database).toMatchObject({ tag: 'before-busy-safety-snapshot' })
+      expect(bootstrap.resourceDatabase).toMatchObject({ tag: 'before-busy-safety-snapshot' })
       expect(listBackups(harness.dataDir).filter((backup) => backup.kind === 'automatic')).toEqual(automaticBefore)
     } finally {
       reader.exec('ROLLBACK')
@@ -477,12 +475,12 @@ describe('backups', () => {
     const backupId = backup.json().id
 
     await importDb(harness.app, assertion, { tag: 'B' })
-    const beforeRestore = await harness.app.inject({
+    const beforeRestore = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(beforeRestore.json().database).toMatchObject({
+    expect(beforeRestore.resourceDatabase).toMatchObject({
       tag: 'B',
       characters: [],
       botPresets: [],
@@ -510,12 +508,12 @@ describe('backups', () => {
       revision: revisionAfter,
     })
 
-    const afterRestore = await harness.app.inject({
+    const afterRestore = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(afterRestore.json().database).toMatchObject({
+    expect(afterRestore.resourceDatabase).toMatchObject({
       tag: 'A',
       characters: [],
       botPresets: [],
@@ -560,7 +558,7 @@ describe('backups', () => {
       await importDb(harness.app, assertion, { tag: 'live-B', theme: 'dark' })
 
       const writerSession = 'tier4-held-command-writer'
-      const beforeReplacement = await harness.app.inject({
+      const beforeReplacement = await injectComposedResourceDatabase(harness.app, {
         method: 'GET',
         url: '/api/v1/bootstrap',
         headers: { 'risu-auth': assertion, 'risu-writer-session': writerSession },
@@ -608,12 +606,12 @@ describe('backups', () => {
         databaseLineage: replacement.json().databaseLineage,
       })
 
-      const afterReplacement = await harness.app.inject({
+      const afterReplacement = await injectComposedResourceDatabase(harness.app, {
         method: 'GET',
         url: '/api/v1/bootstrap',
         headers: { 'risu-auth': assertion, 'risu-writer-session': writerSession },
       })
-      expect(afterReplacement.json().database).toMatchObject({ tag: 'replacement-A', theme: 'dark' })
+      expect(afterReplacement.resourceDatabase).toMatchObject({ tag: 'replacement-A', theme: 'dark' })
     },
   )
 
@@ -1184,7 +1182,7 @@ describe('backups', () => {
     })
     expect(restored.statusCode).toBe(200)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -1321,12 +1319,12 @@ describe('backups', () => {
     })
     expect(restored.statusCode).toBe(200)
 
-    const afterRestore = await harness.app.inject({
+    const afterRestore = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(afterRestore.json().database).toMatchObject({ tag: 'A' })
+    expect(afterRestore.resourceDatabase).toMatchObject({ tag: 'A' })
 
     const automaticAfter = listBackups(harness.dataDir).filter((backup) => backup.kind === 'automatic')
     expect(automaticAfter.some((backup) => backup.id === automaticA!.id)).toBe(true)
@@ -1399,12 +1397,12 @@ describe('backups', () => {
     expect(restored.statusCode).toBe(500)
     expect(restored.json()).toEqual({ error: 'automatic_backup_failed' })
 
-    const after = await harness.app.inject({
+    const after = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(after.json().database).toMatchObject({ tag: 'B' })
+    expect(after.resourceDatabase).toMatchObject({ tag: 'B' })
     expect(listBackups(harness.dataDir).filter((backup) => backup.kind === 'automatic')).toEqual(automaticBefore)
   })
 
@@ -1475,7 +1473,7 @@ describe('backups', () => {
       writeFileSync(path.join(scratchDir, 'untouched'), 'sentinel')
     }
 
-    const before = await harness.app.inject({
+    const before = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -1492,13 +1490,13 @@ describe('backups', () => {
     expect(restored.json()).toEqual({ error: testCase.expectedError })
     expect(listBackups(harness.dataDir).filter((backup) => backup.kind === 'automatic')).toEqual([])
 
-    const after = await harness.app.inject({
+    const after = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(after.json().revision).toBe(revisionBefore)
-    expect(after.json().database).toMatchObject({ tag: liveTag })
+    expect(after.resourceDatabase).toMatchObject({ tag: liveTag })
     expect(readFileSync(liveAssetFile, 'utf8')).toBe('live-asset')
     expect(readFileSync(liveSaveFile, 'utf8')).toBe('live-save')
     for (const scratchDir of restoreScratchDirs) {
@@ -1532,12 +1530,12 @@ describe('backups', () => {
     expect(restored.statusCode).toBe(500)
     expect(readFileSync(path.join(parkedAssets, 'only-surviving-copy'), 'utf8')).toBe('preserve-me')
     expect(existsSync(path.join(harness.dataDir, `.restore-journal-${backupId}.json`))).toBe(false)
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database).toMatchObject({ tag: 'live-B' })
+    expect(bootstrap.resourceDatabase).toMatchObject({ tag: 'live-B' })
   })
 
   it('repairs stable lorebook ids while restoring a pre-v23 SQLite backup', async () => {
@@ -1590,12 +1588,12 @@ describe('backups', () => {
     })
     expect(restored.statusCode).toBe(200)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    const restoredLorebook = bootstrap.json().database.loreBook[0] as {
+    const restoredLorebook = bootstrap.resourceDatabase.loreBook[0] as {
       id: string
       data: Array<{ id: string }>
     }
@@ -1620,12 +1618,12 @@ describe('backups', () => {
     })
     expect(added.statusCode).toBe(200)
 
-    const reloaded = await harness.app.inject({
+    const reloaded = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(reloaded.json().database.loreBook[0]).toMatchObject({
+    expect(reloaded.resourceDatabase.loreBook[0]).toMatchObject({
       id: restoredLorebook.id,
       data: [
         expect.objectContaining({ id: restoredLorebook.data[0].id }),
@@ -1659,12 +1657,12 @@ describe('backups', () => {
       promptPresetsId: 0,
       promptPresets: [{ id: 'prompt-B', name: 'Prompt B', promptTemplate: [{ role: 'system', content: 'B' }] }],
     })
-    const beforeRestore = await harness.app.inject({
+    const beforeRestore = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(beforeRestore.json().database).toMatchObject({
+    expect(beforeRestore.resourceDatabase).toMatchObject({
       tag: 'preset-B',
       modelPresets: [{ id: 'model-B', name: 'Model B', aiModel: 'model-after-backup' }],
       promptPresets: [{ id: 'prompt-B', name: 'Prompt B' }],
@@ -1677,12 +1675,12 @@ describe('backups', () => {
     })
     expect(restored.statusCode).toBe(200)
 
-    const afterRestore = await harness.app.inject({
+    const afterRestore = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(afterRestore.json().database).toMatchObject({
+    expect(afterRestore.resourceDatabase).toMatchObject({
       tag: 'preset-A',
       modelPresetsId: 0,
       modelPresets: [{ id: 'model-A', name: 'Model A', aiModel: 'model-before-backup' }],
@@ -1714,13 +1712,13 @@ describe('backups', () => {
 
     expect(restored.statusCode).toBe(500)
     expect(harness.commandEvents.list()).toEqual([])
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(2)
-    expect(bootstrap.json().database).toMatchObject({
+    expect(bootstrap.resourceDatabase).toMatchObject({
       tag: 'B',
       characters: [],
       botPresets: [],
@@ -1781,12 +1779,12 @@ describe('backups', () => {
     cpSpy.mockRestore()
     await restartHarness(harness)
 
-    const afterBoot = await harness.app.inject({
+    const afterBoot = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(afterBoot.json().database).toMatchObject({ tag: 'live-B' })
+    expect(afterBoot.resourceDatabase).toMatchObject({ tag: 'live-B' })
     expect(readFileSync(liveAssetFile, 'utf8')).toBe('asset-B')
     expect(readFileSync(liveSaveFile, 'utf8')).toBe('save-B')
     expect(existsSync(path.join(harness.dataDir, `.restore-journal-${backupId}.json`))).toBe(false)
@@ -1834,12 +1832,12 @@ describe('backups', () => {
     rmSpy.mockRestore()
     await restartHarness(harness)
 
-    const afterBoot = await harness.app.inject({
+    const afterBoot = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(afterBoot.json().database).toMatchObject({ tag: 'restore-source-A' })
+    expect(afterBoot.resourceDatabase).toMatchObject({ tag: 'restore-source-A' })
     expect(readFileSync(liveAssetFile, 'utf8')).toBe('asset-A')
     expect(readFileSync(liveSaveFile, 'utf8')).toBe('save-A')
     expect(existsSync(path.join(harness.dataDir, `.restore-journal-${backupId}.json`))).toBe(false)
@@ -1891,12 +1889,12 @@ describe('backups', () => {
     renameSpy.mockRestore()
     await restartHarness(harness)
 
-    const afterBoot = await harness.app.inject({
+    const afterBoot = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(afterBoot.json().database).toMatchObject({ tag: 'lineage-source-A' })
+    expect(afterBoot.resourceDatabase).toMatchObject({ tag: 'lineage-source-A' })
     expect(readFileSync(liveAssetFile, 'utf8')).toBe('asset-A')
     expect(readFileSync(liveSaveFile, 'utf8')).toBe('save-A')
     expect(existsSync(journalFile)).toBe(false)
@@ -1939,12 +1937,12 @@ describe('backups', () => {
     consoleError.mockRestore()
 
     expect(restored.statusCode).toBe(200)
-    const after = await harness.app.inject({
+    const after = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(after.json().database).toMatchObject({ tag: 'restore-source-A' })
+    expect(after.resourceDatabase).toMatchObject({ tag: 'restore-source-A' })
     expect(readFileSync(liveAssetFile, 'utf8')).toBe('asset-A')
     expect(readFileSync(liveSaveFile, 'utf8')).toBe('save-A')
     expect(existsSync(path.join(harness.dataDir, `.restore-journal-${backupId}.json`))).toBe(false)
@@ -2006,12 +2004,12 @@ describe('backups', () => {
     })
     expect(restored.statusCode).toBe(200)
 
-    const afterRestore = await harness.app.inject({
+    const afterRestore = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    const chats = afterRestore.json().database.characters[0].chats
+    const chats = afterRestore.resourceDatabase.characters[0].chats
     expect(chats).toHaveLength(1)
     expect(chats[0].id).toBe('chat-1')
     expect(chats[0].message).toEqual([]) // stub — messages hydrate on open
@@ -2227,13 +2225,13 @@ describe('backups', () => {
       copyFileSpy.mock.calls.some(([, destination]) => String(destination) === path.join(harness.dataDir, 'db.json')),
     ).toBe(false)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.statusCode).toBe(200)
-    expect(bootstrap.json().database).toMatchObject({
+    expect(bootstrap.resourceDatabase).toMatchObject({
       tag: 'legacy-db-json',
       modules: [{ id: 'module-a', name: 'Legacy module' }],
       pluginCustomStorage: { 'plugin-a': { enabled: true } },
@@ -2310,12 +2308,12 @@ describe('backups', () => {
     expect(existsSync(path.join(harness.dataDir, 'db.json.migrated'))).toBe(false)
     expect(existsSync(legacySnapshotPath)).toBe(true)
 
-    const afterFailure = await harness.app.inject({
+    const afterFailure = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(afterFailure.json().database).toMatchObject({ tag: 'live-before-failed-legacy-restore' })
+    expect(afterFailure.resourceDatabase).toMatchObject({ tag: 'live-before-failed-legacy-restore' })
 
     const removeFailure = new DatabaseSync(liveDbPath)
     try {
@@ -2326,13 +2324,13 @@ describe('backups', () => {
     await importDb(harness.app, assertion, { tag: 'newer-write-after-failed-restore' })
 
     await restartHarness(harness)
-    const afterRestart = await harness.app.inject({
+    const afterRestart = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(afterRestart.statusCode).toBe(200)
-    expect(afterRestart.json().database).toMatchObject({ tag: 'newer-write-after-failed-restore' })
+    expect(afterRestart.resourceDatabase).toMatchObject({ tag: 'newer-write-after-failed-restore' })
     expect(existsSync(path.join(harness.dataDir, 'db.json'))).toBe(false)
   })
 
@@ -2369,7 +2367,7 @@ describe('backups', () => {
   it('rejects an unreadable legacy db.json before restore staging, with no restore event', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await importDb(harness.app, assertion, { tag: 'live-before-broken-legacy' })
-    const before = await harness.app.inject({
+    const before = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -2394,13 +2392,13 @@ describe('backups', () => {
     // Validation happens before the table clear and no restore event is emitted
     // or persisted.
     expect(harness.commandEvents.list()).toEqual([])
-    const after = await harness.app.inject({
+    const after = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(after.json().revision).toBe(revisionBefore)
-    expect(after.json().database).toMatchObject({ tag: 'live-before-broken-legacy' })
+    expect(after.resourceDatabase).toMatchObject({ tag: 'live-before-broken-legacy' })
   })
 
   it('restore of an unknown id returns 404', async () => {

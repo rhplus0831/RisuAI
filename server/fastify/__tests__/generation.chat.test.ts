@@ -28,7 +28,7 @@ import { summarizePromptRows, type PromptRowSummary } from '../src/prompt/prompt
 import type { GenerationTraceOptions, GenerationTraceSidecarEntry } from '../src/generation/generationTraceSidecar.js'
 import { runServerMessageTranslation } from '../src/translation/serverMessageTranslation.js'
 import type { ServerMessageTranslationRunner } from '../src/translation/generationCompletionTranslation.js'
-import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
+import { injectComposedResourceDatabase } from './helpers/resourceDatabase.js'
 import { createMemoryChunk, createMemoryEmbedding, createMemorySummary } from '../src/memoryRepository.js'
 
 vi.mock('../src/generation/horde.js', async (importOriginal) => {
@@ -67,7 +67,6 @@ async function startHarness(
     },
     generationChat,
   })
-  installResourceDatabaseBootstrapAdapter(app)
   return { app, dataDir }
 }
 
@@ -835,7 +834,7 @@ describe('POST /api/v1/generate/chat', () => {
 
     expect(providerCalls).toBe(0)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -1585,13 +1584,13 @@ describe('POST /api/v1/generate/chat', () => {
       warnings.filter((warning) => (warning.context as { effectType?: unknown } | undefined)?.effectType === '@@emo'),
     ).toHaveLength(1)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.characters[0].desc).toBe('DESC')
-    expect(bootstrap.json().database.characters[0].chats[0].scriptstate?.$llmResult).toBeUndefined()
+    expect(bootstrap.resourceDatabase.characters[0].desc).toBe('DESC')
+    expect(bootstrap.resourceDatabase.characters[0].chats[0].scriptstate?.$llmResult).toBeUndefined()
   })
 
   it('resolves browser language and screen dimensions from request-local client context', async () => {
@@ -1721,14 +1720,14 @@ describe('POST /api/v1/generate/chat', () => {
     const info = events.find((e) => e.type === 'info')
     expect(info?.data.revision).toBe(2)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.statusCode).toBe(200)
     expect(bootstrap.json().revision).toBe(2)
-    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $score: '9' })
+    expect(bootstrap.resourceDatabase.characters[0].chats[0].scriptstate).toEqual({ $score: '9' })
   })
 
   it('rejects a stale assembly chat-var write and preserves the newer durable value', async () => {
@@ -1775,7 +1774,7 @@ describe('POST /api/v1/generate/chat', () => {
     })
     await embeddingStarted
 
-    const bootstrapBeforeEdit = await harness.app.inject({
+    const bootstrapBeforeEdit = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -1796,12 +1795,12 @@ describe('POST /api/v1/generate/chat', () => {
     )
     expect(events.at(-1)?.type).toBe('done')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $score: '9' })
+    expect(bootstrap.resourceDatabase.characters[0].chats[0].scriptstate).toEqual({ $score: '9' })
   })
 
   it('persists lorebook @@keep_activate_after_match and uses it on the next send', async () => {
@@ -1857,13 +1856,13 @@ describe('POST /api/v1/generate/chat', () => {
     expect(firstPatch?.chatVarMutations).toEqual([{ key: '$__internal_ka_lore-keep', before: null, after: 'true' }])
     expect(firstEvents.find((e) => e.type === 'info')?.data.revision).toBe(2)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.statusCode).toBe(200)
-    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({
+    expect(bootstrap.resourceDatabase.characters[0].chats[0].scriptstate).toEqual({
       '$__internal_ka_lore-keep': 'true',
     })
 
@@ -2419,13 +2418,13 @@ describe('POST /api/v1/generate/chat', () => {
     const info = events.find((e) => e.type === 'info')
     expect(info?.data.revision).toBe(2)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.statusCode).toBe(200)
-    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $__turns: '3' })
+    expect(bootstrap.resourceDatabase.characters[0].chats[0].scriptstate).toEqual({ $__turns: '3' })
   })
 
   it.each([
@@ -2952,7 +2951,7 @@ describe('POST /api/v1/generate/chat', () => {
     message: Array<{ role: string; data: string }>
     scriptstate?: Record<string, unknown>
   }> {
-    const res = await harness.app.inject({
+    const res = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -2960,7 +2959,7 @@ describe('POST /api/v1/generate/chat', () => {
     expect(res.statusCode).toBe(200)
     // Chat metadata (incl. scriptstate) comes from the stub bootstrap; message[]
     // is hydrated separately.
-    const chat = res.json().database.characters[0].chats[0]
+    const chat = res.resourceDatabase.characters[0].chats[0]
     return { ...chat, message: await persistedMessages(assertion, chat.id) }
   }
 
@@ -3057,7 +3056,7 @@ describe('POST /api/v1/generate/chat', () => {
     })
     await embeddingStarted
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -3118,7 +3117,7 @@ describe('POST /api/v1/generate/chat', () => {
       })
       await embeddingStarted
 
-      const bootstrap = await harness.app.inject({
+      const bootstrap = await injectComposedResourceDatabase(harness.app, {
         method: 'GET',
         url: '/api/v1/bootstrap',
         headers: { 'risu-auth': assertion },
@@ -3919,13 +3918,13 @@ describe('POST /api/v1/generate/chat', () => {
     expect(firstSurvivingMessageId).not.toBe('message-1')
     expect(patch?.chatMetadataMutations).toEqual([{ key: 'lastMemory', before: null, after: firstSurvivingMessageId }])
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.statusCode).toBe(200)
-    expect(bootstrap.json().database.characters[0].chats[0].lastMemory).toBe(firstSurvivingMessageId)
+    expect(bootstrap.resourceDatabase.characters[0].chats[0].lastMemory).toBe(firstSurvivingMessageId)
   })
 
   it('requires one per-chat confirmation before durable non-Hypa generation can trim history', async () => {
@@ -3978,13 +3977,13 @@ describe('POST /api/v1/generate/chat', () => {
     })
     expect(dispatchProvider).not.toHaveBeenCalled()
 
-    const beforeConfirmation = await harness.app.inject({
+    const beforeConfirmation = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(beforeConfirmation.json().activeGenerationJobs).toEqual([])
-    expect(beforeConfirmation.json().database.characters[0].chats[0]).not.toHaveProperty(
+    expect(beforeConfirmation.resourceDatabase.characters[0].chats[0]).not.toHaveProperty(
       'hypaContextTruncationAcknowledged',
     )
 
@@ -4009,12 +4008,12 @@ describe('POST /api/v1/generate/chat', () => {
     expect(accepted.body).toContain('job_accepted')
     expect(dispatchProvider).toHaveBeenCalledTimes(1)
 
-    const afterConfirmation = await harness.app.inject({
+    const afterConfirmation = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(afterConfirmation.json().database.characters[0].chats[0].hypaContextTruncationAcknowledged).toBe(true)
+    expect(afterConfirmation.resourceDatabase.characters[0].chats[0].hypaContextTruncationAcknowledged).toBe(true)
   })
 
   it('emits a final prompt overflow error when pinned rows exceed the context window', async () => {
@@ -4076,14 +4075,14 @@ describe('POST /api/v1/generate/chat', () => {
     expect(res.statusCode).toBe(200)
     expect(parseEvents(res.body).find((e) => e.type === 'prompt')).toBeDefined()
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.statusCode).toBe(200)
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toBeUndefined()
+    expect(bootstrap.resourceDatabase.characters[0].chats[0].scriptstate).toBeUndefined()
   })
 
   it('renders stable cards from post-start-trigger state in preview without persisting it', async () => {
@@ -4129,14 +4128,14 @@ describe('POST /api/v1/generate/chat', () => {
     expect(response.statusCode).toBe(200)
     const prompt = parseEvents(response.body).find((event) => event.type === 'prompt')
     expect(prompt?.data.messages).toContainEqual({ role: 'system', content: 'Score=after' })
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.statusCode).toBe(200)
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $score: 'before' })
+    expect(bootstrap.resourceDatabase.characters[0].chats[0].scriptstate).toEqual({ $score: 'before' })
   })
 
   it('keeps preview-mode lorebook sticky writes read-only', async () => {
@@ -4180,14 +4179,14 @@ describe('POST /api/v1/generate/chat', () => {
       | undefined
     expect(patch?.chatVarMutations).toEqual([{ key: '$__internal_ka_preview-lore-keep', before: null, after: 'true' }])
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.statusCode).toBe(200)
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toBeUndefined()
+    expect(bootstrap.resourceDatabase.characters[0].chats[0].scriptstate).toBeUndefined()
   })
 
   it('does not persist when a non-active writer sends /chat (423 before the C-write)', async () => {
@@ -4206,7 +4205,7 @@ describe('POST /api/v1/generate/chat', () => {
     await seedDatabase(harness.app, assertion, db)
 
     // A first browser session claims the active-writer role via bootstrap.
-    const claim = await harness.app.inject({
+    const claim = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
@@ -4225,13 +4224,13 @@ describe('POST /api/v1/generate/chat', () => {
     expect(res.statusCode).toBe(423)
     expect(res.json()).toMatchObject({ error: 'active_writer_stale' })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toBeUndefined()
+    expect(bootstrap.resourceDatabase.characters[0].chats[0].scriptstate).toBeUndefined()
   })
 
   it('emits an SSE error (not a 400) when the character is unknown', async () => {
@@ -4408,13 +4407,13 @@ describe('POST /api/v1/generate/chat', () => {
       ],
     })
 
-    const importedBootstrap = await harness.app.inject({
+    const importedBootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(importedBootstrap.statusCode).toBe(200)
-    expect(importedBootstrap.json().database.characters[0].chats[0].generationSettings).toBeUndefined()
+    expect(importedBootstrap.resourceDatabase.characters[0].chats[0].generationSettings).toBeUndefined()
 
     const blocked = await harness.app.inject({
       method: 'POST',
@@ -4785,7 +4784,7 @@ describe('POST /api/v1/generate/chat', () => {
       )
 
       applyConcurrentEdit = async () => {
-        const bootstrap = await harness.app.inject({
+        const bootstrap = await injectComposedResourceDatabase(harness.app, {
           method: 'GET',
           url: '/api/v1/bootstrap',
           headers: { 'risu-auth': assertion },
@@ -4940,7 +4939,7 @@ describe('POST /api/v1/generate/chat', () => {
       }),
     )
     applyConcurrentEdit = async () => {
-      const bootstrap = await harness.app.inject({
+      const bootstrap = await injectComposedResourceDatabase(harness.app, {
         method: 'GET',
         url: '/api/v1/bootstrap',
         headers: { 'risu-auth': assertion },
@@ -5224,14 +5223,14 @@ describe('POST /api/v1/generate/chat', () => {
     expect(done.postGeneration?.revision).toBe(2)
 
     // Durable: bootstrap shows the post-gen scriptstate write + bumped revision.
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.statusCode).toBe(200)
     expect(bootstrap.json().revision).toBe(2)
-    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $mood: 'happy' })
+    expect(bootstrap.resourceDatabase.characters[0].chats[0].scriptstate).toEqual({ $mood: 'happy' })
   })
 
   it('notifies the push service after durable post-generation persistence', async () => {
@@ -5384,12 +5383,12 @@ describe('POST /api/v1/generate/chat', () => {
       autoTranslateNotificationDeferCapSeconds: 30,
       echoMessage: 'translated generated reply',
     })
-    const before = await harness.app.inject({
+    const before = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(before.json().database).toMatchObject({
+    expect(before.resourceDatabase).toMatchObject({
       notification: true,
       translator: 'ko',
       translatorType: 'llm',
@@ -5590,13 +5589,13 @@ describe('POST /api/v1/generate/chat', () => {
       expect(replay.status).toBe(200)
       expect(await replay.json()).toMatchObject({ disposition: 'already_cancelled', jobId })
 
-      const bootstrap = await harness.app.inject({
+      const bootstrap = await injectComposedResourceDatabase(harness.app, {
         method: 'GET',
         url: '/api/v1/bootstrap',
         headers: { 'risu-auth': assertion },
       })
       expect(bootstrap.statusCode).toBe(200)
-      expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toBeUndefined()
+      expect(bootstrap.resourceDatabase.characters[0].chats[0].scriptstate).toBeUndefined()
       expect((await persistedMessages(assertion)).at(-1)).toMatchObject({
         role: 'char',
         data: 'processed cancelled reply',
@@ -5752,12 +5751,12 @@ describe('POST /api/v1/generate/chat', () => {
     expect(done.postGeneration?.messagePatch?.chatVarMutations).toEqual([{ key: '$seen', before: null, after: '1' }])
     expect(done.postGeneration?.revision).toBe(2)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $seen: '1' })
+    expect(bootstrap.resourceDatabase.characters[0].chats[0].scriptstate).toEqual({ $seen: '1' })
   })
 
   it('runs a regex editoutput script server-side: the final text reflects the transform', async () => {
@@ -6723,12 +6722,12 @@ describe('POST /api/v1/generate/chat', () => {
     expect(done.postGeneration?.messagePatch?.chatVarMutations).toEqual([
       { key: '$editOutputCount', before: null, after: '1' },
     ])
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $editOutputCount: '1' })
+    expect(bootstrap.resourceDatabase.characters[0].chats[0].scriptstate).toEqual({ $editOutputCount: '1' })
   })
 
   it('excludes a Continue-displaced row and captures the extended row on a later regenerate', async () => {
@@ -7657,7 +7656,7 @@ describe('POST /api/v1/generate/preview-prompt', () => {
     })
     expect(body.missing.map((reason: { code: string }) => reason.code)).toContain('settings_missing')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -7758,7 +7757,7 @@ describe('POST /api/v1/generate/preview-prompt', () => {
     expect(res.json().error).toContain('profile-not-found')
     expect(dispatchProvider).not.toHaveBeenCalled()
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -8539,13 +8538,13 @@ describe('POST /api/v1/generate/preview-prompt', () => {
     expect((await preview('chat-deleted-persona')).statusCode).toBe(200)
     expect((await preview('chat-ok')).statusCode).toBe(200)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.statusCode).toBe(200)
-    const chats = bootstrap.json().database.characters[0].chats as Array<{
+    const chats = bootstrap.resourceDatabase.characters[0].chats as Array<{
       id: string
       generationSettings?: Record<string, unknown>
     }>
@@ -8558,10 +8557,10 @@ describe('POST /api/v1/generate/preview-prompt', () => {
     }
 
     expect(
-      bootstrap.json().database.promptPresets.find((preset: { id: string }) => preset.id === 'prompt-survivor'),
+      bootstrap.resourceDatabase.promptPresets.find((preset: { id: string }) => preset.id === 'prompt-survivor'),
     ).toMatchObject({ recommendedModelPresetId: null })
 
-    const loadouts = bootstrap.json().database.loadouts as Array<Record<string, unknown>>
+    const loadouts = bootstrap.resourceDatabase.loadouts as Array<Record<string, unknown>>
     expect(loadouts.find((loadout) => loadout.id === 'loadout-deleted-references')).toMatchObject({
       personaId: 'persona-survivor',
       modelPresetId: 'model-survivor',

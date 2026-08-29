@@ -176,6 +176,7 @@ describe('bootstrap runtime metadata', () => {
       activeMessageTranslations: [],
       activeGreetingTranslations: [],
     })
+    expect(response.json()).not.toHaveProperty('database')
   })
 
   it('reconstructs writer-scoped pending and terminal finalization state after an app restart', async () => {
