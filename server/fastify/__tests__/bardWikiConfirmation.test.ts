@@ -138,6 +138,23 @@ function inspect(sql: string): unknown[] {
 }
 
 describe('explicit BardWiki confirmation', () => {
+  it('projects only the current eligible source identity for the confirmation UI', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/bardwiki/chats/chat-a',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.json().confirmationCandidate).toEqual({
+      userMessageId: 'user-a',
+      userContentHash: hashBardWikiMessageContent(USER_TEXT),
+      assistantMessageId: 'assistant-a',
+      assistantContentHash: hashBardWikiMessageContent(ASSISTANT_TEXT),
+    })
+    expect(JSON.stringify(response.json().confirmationCandidate)).not.toContain(USER_TEXT)
+    expect(JSON.stringify(response.json().confirmationCandidate)).not.toContain(ASSISTANT_TEXT)
+  })
+
   it('atomically queues one exact-source receipt and identifier-only job', async () => {
     const response = await confirm()
     expect(response.statusCode).toBe(200)

@@ -61,6 +61,17 @@ export type BardWikiReceiptState = Static<typeof BardWikiReceiptStateSchema>
 export type BardWikiJobKind = Static<typeof BardWikiJobKindSchema>
 export type BardWikiJobStatus = Static<typeof BardWikiJobStatusSchema>
 
+export const BardWikiConfirmationCandidateSchema = Type.Object(
+  {
+    userMessageId: Type.String(),
+    userContentHash: Type.String({ pattern: '^[a-f0-9]{64}$' }),
+    assistantMessageId: Type.String(),
+    assistantContentHash: Type.String({ pattern: '^[a-f0-9]{64}$' }),
+  },
+  { additionalProperties: false },
+)
+export type BardWikiConfirmationCandidate = Static<typeof BardWikiConfirmationCandidateSchema>
+
 export const BardWikiGlobalSettingsSchema = Type.Object(
   {
     enabledByDefault: Type.Boolean(),
@@ -253,6 +264,7 @@ export const BardWikiChatResourceSchema = Type.Object(
     globalSettings: BardWikiGlobalSettingsSchema,
     chatSettings: Type.Union([BardWikiChatSettingsSchema, Type.Null()]),
     effectiveSettings: BardWikiGlobalSettingsSchema,
+    confirmationCandidate: Type.Union([BardWikiConfirmationCandidateSchema, Type.Null()]),
     documents: Type.Array(BardWikiDocumentIndexSchema),
     receipts: Type.Array(BardWikiReceiptSummarySchema),
     jobs: Type.Array(BardWikiJobSummarySchema),

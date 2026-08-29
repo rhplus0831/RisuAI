@@ -53,6 +53,12 @@ describe('BardWiki protocol', () => {
       globalSettings: DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
       chatSettings: null,
       effectiveSettings: DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
+      confirmationCandidate: {
+        userMessageId: 'user-1',
+        userContentHash: hash,
+        assistantMessageId: 'assistant-1',
+        assistantContentHash: hash,
+      },
       documents: [document],
       receipts: [],
       jobs: [],

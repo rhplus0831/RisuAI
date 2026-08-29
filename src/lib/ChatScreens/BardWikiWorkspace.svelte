@@ -31,6 +31,7 @@
   import {
     createBardWikiDocument,
     deleteBardWikiDocument,
+    confirmBardWikiAssistant,
     exportBardWikiVault,
     importBardWikiVault,
     previewBardWikiRebuild,
@@ -98,6 +99,9 @@
   let settingsMutationState = $state<MutationState>('idle')
   let settingsMutationError = $state('')
   let jobActionError = $state('')
+  let confirmationBusy = $state(false)
+  let confirmationError = $state('')
+  let confirmationStatus = $state('')
   let jobActionInstanceIds = $state<Set<string>>(new Set())
   let lifecycleBusy = $state(false)
   let lifecycleError = $state('')
@@ -267,6 +271,29 @@
 
   function receiptSourceLabel(receipt: BardWikiReceiptSummary): string {
     return language.bardWiki.receiptSource(receipt.userMessageId, receipt.assistantMessageId)
+  }
+
+  async function confirmLatestTurn(): Promise<void> {
+    const candidate = chatResource?.confirmationCandidate
+    if (!candidate || confirmationBusy) return
+    confirmationBusy = true
+    confirmationError = ''
+    confirmationStatus = ''
+    const outcome = await confirmBardWikiAssistant(chatId, candidate)
+    if (outcome.status === 'accepted') {
+      confirmationStatus = outcome.result.created
+        ? language.bardWiki.confirmationQueued
+        : language.bardWiki.confirmationAlreadyExists
+      await loadChat(false)
+    } else if (outcome.status === 'queued') {
+      confirmationStatus = language.bardWiki.queued
+      void outcome.settlement.then(async (final) => {
+        if (final.status === 'accepted') await loadChat(false)
+      })
+    } else {
+      confirmationError = mutationFailureMessage(outcome.result)
+    }
+    confirmationBusy = false
   }
 
   async function previewRebuild(): Promise<void> {
@@ -923,6 +950,21 @@
         open={chatResource.jobs.some((job) => isActiveJob(job) || job.status === 'failed')}
         class="border-b border-darkborderc px-4 py-2">
         <summary class="cursor-pointer font-medium">{language.bardWiki.activity}</summary>
+        <div class="mt-3 rounded-md border border-darkborderc p-3 text-sm">
+          <p class="mt-0 text-textcolor2">{language.bardWiki.confirmationDescription}</p>
+          <button
+            type="button"
+            disabled={!chatResource.confirmationCandidate ||
+              confirmationBusy ||
+              !chatResource.effectiveSettings.enabledByDefault}
+            class="rounded-md border border-darkborderc px-3 py-2 hover:bg-selected disabled:opacity-50"
+            onclick={() => void confirmLatestTurn()}>{language.bardWiki.confirmLatestTurn}</button>
+          {#if !chatResource.confirmationCandidate}
+            <p class="mb-0 text-textcolor2">{language.bardWiki.confirmationUnavailable}</p>
+          {/if}
+          {#if confirmationStatus}<p class="mb-0 text-textcolor2" role="status">{confirmationStatus}</p>{/if}
+          {#if confirmationError}<p class="mb-0 text-sm text-red-400" role="alert">{confirmationError}</p>{/if}
+        </div>
         <div class="mt-3 grid gap-4 lg:grid-cols-2">
           <section aria-labelledby="bardwiki-receipts-heading">
             <h3 id="bardwiki-receipts-heading" class="m-0 text-sm font-semibold">{language.bardWiki.receipts}</h3>

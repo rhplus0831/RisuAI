@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
-import type { BardWikiGlobalSettings } from '@risuai/protocol'
+import type { BardWikiConfirmationCandidate, BardWikiGlobalSettings } from '@risuai/protocol'
 import {
   BardWikiValidationError,
   getBardWikiReceiptSummary,
@@ -91,6 +91,31 @@ interface ActiveMessageRow {
 
 export function hashBardWikiMessageContent(content: string): string {
   return createHash('sha256').update(content, 'utf8').digest('hex')
+}
+
+export function getCurrentBardWikiConfirmationCandidate(
+  db: DatabaseSync,
+  chatId: string,
+): BardWikiConfirmationCandidate | null {
+  const rows = listActiveMessageRows(db, chatId)
+  const assistant = rows[0]
+  const user = rows[1]
+  if (
+    !assistant ||
+    !user ||
+    assistant.role !== 'char' ||
+    user.role !== 'user' ||
+    isSelectionBoundary(assistant) ||
+    isSelectionBoundary(user)
+  ) {
+    return null
+  }
+  return {
+    userMessageId: user.uid,
+    userContentHash: hashBardWikiMessageContent(user.data),
+    assistantMessageId: assistant.uid,
+    assistantContentHash: hashBardWikiMessageContent(assistant.data),
+  }
 }
 
 export function resolveExplicitBardWikiSourcePair(

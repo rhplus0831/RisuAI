@@ -2972,7 +2972,8 @@ export const languageKorean = {
   },
   bardWiki: {
     title: 'BardWiki',
-    description: '연결된 Markdown 문서로 저장되는 채팅별 구조화 메모리입니다.',
+    description:
+      '연결된 Markdown 문서로 저장되는 채팅별 구조화 메모리입니다. 대화 확인, 자동 업데이트, 재구성은 선택한 모델을 백그라운드에서 호출하며 제공자 비용이 발생할 수 있습니다.',
     enabledByDefault: '새 채팅에서 BardWiki 사용',
     memoryMode: '메모리 모드',
     modeHypa: 'Hypa만 사용',
@@ -2988,7 +2989,7 @@ export const languageKorean = {
     promptPreset: '분석 프롬프트 프리셋',
     useRoleDefault: '메모리 역할 기본값 사용',
     useBuiltInPrompt: '내장 프롬프트 사용',
-    autonomousUnavailable: '자동 확인과 정규 문서 업데이트는 이후 단계에서 사용할 수 있습니다.',
+    autonomousUnavailable: '자동 확인과 정규 문서 업데이트는 선택한 백그라운드 분석 모델을 사용합니다.',
     automaticConfirmation: '자동 확인',
     canonicalUpdates: '모델이 작성하는 정규 문서 업데이트',
     workspaceTitle: 'BardWiki 작업 공간',
@@ -3025,6 +3026,12 @@ export const languageKorean = {
     jobs: '작업',
     noReceipts: '확인된 대화가 아직 없습니다.',
     noJobs: 'BardWiki 작업이 아직 없습니다.',
+    confirmationDescription:
+      '현재 사용자/어시스턴트 대화를 백그라운드 분석 대상으로 확인합니다. 선택한 모델 호출로 제공자 비용이 발생할 수 있습니다.',
+    confirmLatestTurn: '최근 대화 확인',
+    confirmationUnavailable: '활성 채팅 기록이 확인 가능한 사용자/어시스턴트 대화로 끝나지 않습니다.',
+    confirmationQueued: '대화를 확인했고 분석 대기열에 추가했습니다.',
+    confirmationAlreadyExists: '이 대화 버전은 이미 확인되었습니다.',
     retryJob: '작업 재시도',
     retryAllFailed: '실패한 작업 모두 재시도',
     cancelJob: '작업 취소',
@@ -3034,7 +3041,8 @@ export const languageKorean = {
     jobActionFailed: (error: string) => `BardWiki 작업을 처리하지 못했습니다: ${error}`,
     lifecycleTools: '수명 주기 및 보관소 도구',
     rebuild: '기록 재구성',
-    rebuildDescription: '활성 채팅 기록에서 명시적이고 재개 가능한 재구성을 미리 봅니다.',
+    rebuildDescription:
+      '활성 채팅 기록의 재개 가능한 재구성을 미리 봅니다. 재구성은 선택한 모델을 호출하며, 새 파생 문서 모드는 사용자 작성 문서를 보존하고 파생 문서를 교체합니다.',
     rebuildPolicy: '재구성 정책',
     rebuildFull: '새 파생 문서 모음',
     rebuildMissing: '누락된 대화만 추가',
@@ -3048,7 +3056,8 @@ export const languageKorean = {
     rebuildAlreadyActive: '이 채팅에서 재구성이 이미 진행 중입니다.',
     rebuildProgress: (processed: number, total: number) => `대화 ${processed}/${total}`,
     vault: 'Markdown 보관소',
-    vaultDescription: 'Obsidian 호환 ZIP을 내보내거나 한 번의 리비전 가져오기 전에 검증합니다.',
+    vaultDescription:
+      '하나의 리비전으로 적용하기 전에 Obsidian 호환 ZIP을 내보내거나 검증합니다. 교체 모드는 미리 확인한 버전/해시 조건과 아직 일치하는 문서만 덮어씁니다.',
     exportVault: '보관소 내보내기',
     exportReady: 'BardWiki 보관소 다운로드가 준비되었습니다.',
     chooseVault: '보관소 선택',

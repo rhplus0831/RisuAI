@@ -13,6 +13,7 @@ const mutations = vi.hoisted(() => ({
   create: vi.fn(),
   update: vi.fn(),
   remove: vi.fn(),
+  confirm: vi.fn(),
   rebuildPreview: vi.fn(),
   rebuildQueue: vi.fn(),
   vaultExport: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock('src/ts/server/bardWikiCommands', () => ({
   createBardWikiDocument: mutations.create,
   updateBardWikiDocument: mutations.update,
   deleteBardWikiDocument: mutations.remove,
+  confirmBardWikiAssistant: mutations.confirm,
   previewBardWikiRebuild: mutations.rebuildPreview,
   queueBardWikiRebuild: mutations.rebuildQueue,
   exportBardWikiVault: mutations.vaultExport,
@@ -79,6 +81,12 @@ const chatResource = {
   globalSettings: DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
   chatSettings: null,
   effectiveSettings: { ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS, enabledByDefault: true },
+  confirmationCandidate: {
+    userMessageId: 'user-a',
+    userContentHash: 'a'.repeat(64),
+    assistantMessageId: 'assistant-a',
+    assistantContentHash: 'b'.repeat(64),
+  },
   documents: [index],
   receipts: [],
   jobs: [],
@@ -159,6 +167,10 @@ beforeEach(() => {
   mutations.create.mockReset().mockResolvedValue({ status: 'accepted', result: accepted })
   mutations.update.mockReset().mockResolvedValue({ status: 'accepted', result: accepted })
   mutations.remove.mockReset().mockResolvedValue({ status: 'accepted', result: accepted })
+  mutations.confirm.mockReset().mockResolvedValue({
+    status: 'accepted',
+    result: { status: 'ok', revision: 5, created: true },
+  })
   mutations.rebuildPreview.mockReset().mockResolvedValue({
     status: 'ok',
     revision: 4,
@@ -215,6 +227,22 @@ describe('BardWiki workspace', () => {
       signal: undefined,
     })
     expect(target.textContent).toContain('Version 1')
+  })
+
+  it('explicitly confirms the authoritative latest source candidate', async () => {
+    component = mount(BardWikiWorkspace, { target, props: { chatId: 'chat-a' } })
+    await settle()
+
+    const confirm = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim() === language.bardWiki.confirmLatestTurn,
+    )
+    expect(confirm?.disabled).toBe(false)
+    confirm?.click()
+    await settle()
+
+    expect(mutations.confirm).toHaveBeenCalledWith('chat-a', chatResource.confirmationCandidate)
+    expect(target.textContent).toContain(language.bardWiki.confirmationQueued)
+    expect(reads.chat).toHaveBeenCalledTimes(2)
   })
 
   it('shows distinct unavailable and retry states', async () => {

@@ -3065,7 +3065,8 @@ export const languageEnglish = {
   },
   bardWiki: {
     title: 'BardWiki',
-    description: 'Structured, chat-scoped memory stored as linked Markdown documents.',
+    description:
+      'Structured, chat-scoped memory stored as linked Markdown documents. Confirmed turns, automatic updates, and rebuilds can call the selected model in the background and may incur provider cost.',
     enabledByDefault: 'Enable BardWiki for new chats',
     memoryMode: 'Memory mode',
     modeHypa: 'Hypa only',
@@ -3081,7 +3082,7 @@ export const languageEnglish = {
     promptPreset: 'Analysis prompt preset',
     useRoleDefault: 'Use Memory role default',
     useBuiltInPrompt: 'Use built-in prompt',
-    autonomousUnavailable: 'Automatic confirmation and canonical updates become available in a later phase.',
+    autonomousUnavailable: 'Automatic confirmation and canonical updates use the selected background analysis model.',
     automaticConfirmation: 'Automatic confirmation',
     canonicalUpdates: 'Model-authored canonical updates',
     workspaceTitle: 'BardWiki workspace',
@@ -3118,6 +3119,12 @@ export const languageEnglish = {
     jobs: 'Jobs',
     noReceipts: 'No confirmed turns yet.',
     noJobs: 'No BardWiki jobs yet.',
+    confirmationDescription:
+      'Confirm the current user/assistant pair for background analysis. This can call the selected model and may incur provider cost.',
+    confirmLatestTurn: 'Confirm latest turn',
+    confirmationUnavailable: 'The active transcript does not end with an eligible user/assistant pair.',
+    confirmationQueued: 'The turn was confirmed and queued for analysis.',
+    confirmationAlreadyExists: 'This exact turn is already confirmed.',
     retryJob: 'Retry job',
     retryAllFailed: 'Retry all failed',
     cancelJob: 'Cancel job',
@@ -3127,7 +3134,8 @@ export const languageEnglish = {
     jobActionFailed: (error: string) => `The BardWiki job action failed: ${error}`,
     lifecycleTools: 'Lifecycle and vault tools',
     rebuild: 'Historical rebuild',
-    rebuildDescription: 'Preview an explicit, resumable rebuild from the active chat transcript.',
+    rebuildDescription:
+      'Preview a resumable rebuild from the active transcript. Rebuilds call the selected model; fresh mode replaces derived documents while preserving user-authored documents.',
     rebuildPolicy: 'Rebuild policy',
     rebuildFull: 'Fresh derived corpus',
     rebuildMissing: 'Add missing turns only',
@@ -3141,7 +3149,8 @@ export const languageEnglish = {
     rebuildAlreadyActive: 'A rebuild is already active for this chat.',
     rebuildProgress: (processed: number, total: number) => `${processed}/${total} turns`,
     vault: 'Markdown vault',
-    vaultDescription: 'Export or validate an Obsidian-compatible ZIP before applying one revisioned import.',
+    vaultDescription:
+      'Export or validate an Obsidian-compatible ZIP before one revisioned import. Replace mode overwrites only documents that still match the previewed version/hash fences.',
     exportVault: 'Export vault',
     exportReady: 'The BardWiki vault download is ready.',
     chooseVault: 'Choose vault',

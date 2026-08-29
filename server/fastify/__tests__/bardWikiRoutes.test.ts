@@ -288,6 +288,7 @@ describe('BardWiki revisioned commands', () => {
       revision: 1,
       chatId: 'chat-a',
       effectiveSettings: { enabledByDefault: false, memoryMode: 'hypa' },
+      confirmationCandidate: null,
       documents: [{ id: createdBody.document.id, title: 'Old Tavern', version: 1 }],
       receipts: [],
       jobs: [],

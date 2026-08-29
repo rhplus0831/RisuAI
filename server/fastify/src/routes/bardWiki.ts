@@ -24,6 +24,7 @@ import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
 import { loadSettingsFromSqlite } from '../repository.js'
 import { encodeBardWikiVault } from '../bardWikiVault.js'
+import { getCurrentBardWikiConfirmationCandidate } from '../bardWikiReceipts.js'
 
 const BARDWIKI_READ_DEFAULT_LIMIT = 50
 const BARDWIKI_READ_MAX_LIMIT = 100
@@ -57,6 +58,7 @@ export function registerBardWikiReadRoutes(app: FastifyInstance, db: DatabaseSyn
       globalSettings,
       chatSettings,
       effectiveSettings: resolveEffectiveBardWikiSettings(globalSettings, chatSettings),
+      confirmationCandidate: getCurrentBardWikiConfirmationCandidate(db, chatId),
       documents: listBardWikiDocuments(db, chatId).map(toDocumentIndex),
       receipts: listBardWikiReceiptSummaries(db, chatId),
       jobs: listBardWikiJobSummaries(db, chatId),
