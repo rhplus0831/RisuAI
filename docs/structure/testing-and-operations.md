@@ -118,6 +118,14 @@ commands retain their package-script process and environment behavior.
 Full-lane runs recreate their warm context first so deleted files or runner
 changes cannot use an old module graph.
 
+The long-running watcher eagerly starts initializing both ordinary Vitest
+contexts in the background at startup without executing tests. Vitest's
+standalone initialization populates each context's test-discovery cache, so a
+clean initial generation can use idle startup time to prepare the frontend and
+server runners before the first edit. A context that fails to warm logs the
+failure and retries initialization when its lane is selected. The diagnostic
+`--once` mode skips eager warm-up.
+
 The watcher writes `.test-watch/status.json` atomically and streams the latest
 generation to both the terminal and `.test-watch/latest.log`. Every relevant
 filesystem event marks the current result stale. A run is published as `passed`

@@ -1,6 +1,6 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Writable } from 'node:stream'
@@ -71,6 +71,15 @@ async function waitForWatcherState(
   timeoutMs = 15_000,
 ): Promise<TestWatchStatus> {
   return waitForWatcherStatus(repoRoot, (watched) => watched.state === expectedState, timeoutMs)
+}
+
+async function waitForFile(file: string, timeoutMs = 15_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (existsSync(file)) return
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  throw new Error(`file was not created: ${file}`)
 }
 
 async function stopWatcherProcess(child: ChildProcess): Promise<void> {
@@ -439,6 +448,45 @@ describe('watched result validation', () => {
     writeTestWatchStatus(statusPath, status())
     expect(readTestWatchStatus(statusPath)?.watcherId).toBe('watcher-id')
   })
+
+  it('warms both Vitest contexts before the first edit', async () => {
+    const repoRoot = initializedRepository()
+    const frontendMarker = path.join(temporaryDirectory('risu-test-watch-marker-'), 'frontend')
+    const serverMarker = path.join(temporaryDirectory('risu-test-watch-marker-'), 'server')
+    mkdirSync(path.join(repoRoot, 'server/fastify'), { recursive: true })
+    writeFileSync(
+      path.join(repoRoot, 'vitest.config.ts'),
+      `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(frontendMarker)}, 'ready')\nexport default { test: { passWithNoTests: true } }\n`,
+    )
+    writeFileSync(
+      path.join(repoRoot, 'server/fastify/vitest.config.ts'),
+      `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(serverMarker)}, 'ready')\nexport default { test: { passWithNoTests: true } }\n`,
+    )
+    git(repoRoot, ['add', 'vitest.config.ts', 'server/fastify/vitest.config.ts'])
+    git(repoRoot, ['commit', '-m', 'add Vitest configs'])
+
+    const child = spawn(
+      path.resolve('node_modules/.bin/tsx'),
+      [path.resolve('util/test-watch.ts'), '--debounce-ms=10'],
+      {
+        cwd: repoRoot,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    )
+    watcherProcesses.push(child)
+
+    try {
+      await Promise.all([waitForFile(frontendMarker), waitForFile(serverMarker)])
+      expect(await waitForWatcherState(repoRoot, 'passed')).toMatchObject({
+        changedPaths: [],
+        commandResults: [],
+        generation: 1,
+      })
+    } finally {
+      await stopWatcherProcess(child)
+      watcherProcesses.splice(watcherProcesses.indexOf(child), 1)
+    }
+  }, 20_000)
 
   it('reuses a passing baseline for newly added tests and modified test cases', async () => {
     const repoRoot = initializedRepository()

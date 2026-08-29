@@ -614,6 +614,10 @@ class WarmVitestLane {
     await context?.close()
   }
 
+  async warm(): Promise<void> {
+    await this.context()
+  }
+
   async recycle(): Promise<void> {
     await this.close()
     await this.context()
@@ -700,6 +704,21 @@ class TestCommandRunner {
   async close(): Promise<void> {
     if (this.activeChild && this.activeChild.exitCode === null) this.activeChild.kill('SIGTERM')
     await Promise.all([this.frontend.close(), this.server.close()])
+  }
+
+  async warm(): Promise<boolean> {
+    const results = await Promise.allSettled([this.frontend.warm(), this.server.warm()])
+    const labels = ['frontend', 'server']
+    let warmed = true
+    for (const [index, result] of results.entries()) {
+      if (result.status === 'fulfilled') continue
+      warmed = false
+      const failure = result.reason instanceof Error ? result.reason.message : String(result.reason)
+      this.log.stderr.write(
+        `[test:watch] ${labels[index]} Vitest warm-up failed; initialization will retry when selected: ${failure}\n`,
+      )
+    }
+    return warmed
   }
 
   private async runShell(command: TestCommand): Promise<{ failure?: string; passed: boolean }> {
@@ -1143,6 +1162,12 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
   console.log(
     `[test:watch] watching ${repoRoot} (base ${options.base}, debounce ${options.debounceMs}ms${options.includeSmoke ? ', smoke enabled' : ''})`,
   )
+  if (!options.once) {
+    log.stdout.write('[test:watch] warming frontend and server Vitest contexts\n')
+    void runner.warm().then((warmed) => {
+      if (warmed && !shutdownRequested) log.stdout.write('[test:watch] frontend and server Vitest contexts are warm\n')
+    })
+  }
   scheduleRun(0)
 
   await shutdownRequestedPromise
