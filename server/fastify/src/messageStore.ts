@@ -486,6 +486,26 @@ export function replaceAllChatMessages(
   }
 }
 
+/** Insert durable reroll candidates after {@link replaceAllChatMessages} has
+ *  cleared the message table. Input arrays use the hydration contract's
+ *  newest-first order; negative seq values preserve that order on reads. */
+export function insertAllChatAlternateMessages(
+  db: DatabaseSync,
+  chats: ReadonlyArray<{ chatId: string; alternates: readonly unknown[] }>,
+): void {
+  if (!chats.some(({ alternates }) => alternates.length > 0)) return
+  recordTableWrite('messages')
+  const insert = db.prepare(
+    'INSERT INTO messages (chat_id, seq, uid, role, data, disabled, json, alternate) VALUES (?, ?, ?, ?, ?, ?, ?, 1)',
+  )
+  for (const { chatId, alternates } of chats) {
+    for (let index = 0; index < alternates.length; index++) {
+      const row = toRow(readMessageObject(alternates[index]))
+      insert.run(chatId, index - alternates.length, row.uid, row.role, row.data, row.disabled, row.json)
+    }
+  }
+}
+
 /** Delete one chat's messages (logical cascade — the chats table owns lifecycle). */
 export function deleteChatMessages(db: DatabaseSync, chatId: string): void {
   recordTableWrite('messages')
@@ -584,6 +604,25 @@ export function getChatMessagesRange(db: DatabaseSync, chatId: string, start: nu
 /** Every chat's ACTIVE messages, grouped by chat id, in `seq` order (one query). */
 export function getAllChatMessagesGrouped(db: DatabaseSync): Map<string, JsonRecord[]> {
   const rows = db.prepare('SELECT chat_id, json FROM messages WHERE alternate = 0 ORDER BY chat_id, seq').all() as {
+    chat_id: string
+    json: string
+  }[]
+  const grouped = new Map<string, JsonRecord[]>()
+  for (const row of rows) {
+    let list = grouped.get(row.chat_id)
+    if (!list) {
+      list = []
+      grouped.set(row.chat_id, list)
+    }
+    list.push(JSON.parse(row.json) as JsonRecord)
+  }
+  return grouped
+}
+
+/** Every chat's durable reroll candidates, grouped by chat id in the same
+ *  newest-first order used by scoped hydration. */
+export function getAllChatAlternateMessagesGrouped(db: DatabaseSync): Map<string, JsonRecord[]> {
+  const rows = db.prepare('SELECT chat_id, json FROM messages WHERE alternate = 1 ORDER BY chat_id, seq ASC').all() as {
     chat_id: string
     json: string
   }[]

@@ -10,6 +10,7 @@ import { decodeRisuSaveImportSnapshot } from '../src/risuSave/importSnapshot.js'
 import { classifyRisuSaveEnvelope, decodeLegacyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
 import { RISU_SERVER_DATA_KEY } from '../src/risuSave/portableMetadata.js'
 import { writePersistedWithMessages } from '../src/repository.js'
+import { addAlternateMessage } from '../src/messageStore.js'
 import { openDatabase } from '../src/db.js'
 import { setupAuthedClient } from './helpers/auth.js'
 
@@ -200,6 +201,36 @@ describe('repository .risu export route', () => {
     const decoded = decodeRisuSaveImportSnapshot(bytes)
     expect(decoded.envelope).toBe('legacy-raw')
     expect((decoded.database.characters as Array<Record<string, unknown>>)[0].image).toBe(ASSET_ID)
+  })
+
+  it('exports durable reroll candidates with their owning chat', async () => {
+    persistExportableDatabase(harness.dataDir)
+    const db = openDatabase(harness.dataDir)
+    try {
+      addAlternateMessage(db, 'export-route-chat', {
+        role: 'char',
+        data: 'portable reroll candidate',
+        chatId: 'export-route-alternate',
+      })
+    } finally {
+      db.close()
+    }
+
+    const exported = await authedInject({
+      method: 'GET',
+      url: '/api/v1/export/risusave?envelope=legacy-raw',
+    })
+
+    expect(exported.statusCode).toBe(200)
+    const decoded = decodeRisuSaveImportSnapshot(new Uint8Array(exported.rawPayload))
+    const chat = (decoded.database.characters as Array<{ chats: Array<Record<string, unknown>> }>)[0].chats[0]
+    expect(chat.alternates).toEqual([
+      {
+        role: 'char',
+        data: 'portable reroll candidate',
+        chatId: 'export-route-alternate',
+      },
+    ])
   })
 
   it.each([

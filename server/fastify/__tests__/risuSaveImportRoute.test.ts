@@ -11,7 +11,13 @@ import { encodeRisuSaveBlockEnvelope, RisuSaveBlockType } from '../src/risuSave/
 import { encodeLegacyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
 import { RISUSAVE_EMPTY_DATABASE_ERROR, RISUSAVE_INCOMPLETE_BLOCKS_ERROR } from '../src/risuSave/importSnapshot.js'
 import { RISU_SERVER_DATA_KEY } from '../src/risuSave/portableMetadata.js'
-import { insertAssetMetadataBatch, listBackups, loadPersisted, loadPersistedWithMessages } from '../src/repository.js'
+import {
+  insertAssetMetadataBatch,
+  listBackups,
+  loadChatHydration,
+  loadPersisted,
+  loadPersistedWithMessages,
+} from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import { listMemoryChunks, listMemorySummaries } from '../src/memoryRepository.js'
@@ -142,6 +148,48 @@ function readBackupDatabase(dataDir: string, id: string): Record<string, unknown
 }
 
 describe('multipart .risu import route', () => {
+  it('restores portable reroll candidates into durable alternate rows', async () => {
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: {
+        database: {
+          characters: [
+            {
+              chaId: 'alternate-import-char',
+              name: 'Alternate Import',
+              chats: [
+                {
+                  id: 'alternate-import-chat',
+                  message: [{ role: 'user', data: 'active', chatId: 'active-message' }],
+                  alternates: [
+                    { role: 'char', data: 'newest candidate', chatId: 'alternate-newest' },
+                    { role: 'char', data: 'older candidate', chatId: 'alternate-older' },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    })
+
+    expect(imported.statusCode).toBe(200)
+    const db = openDatabase(harness.dataDir)
+    try {
+      expect(loadChatHydration(db, harness.dataDir, 'alternate-import-chat').alternates).toEqual([
+        { role: 'char', data: 'newest candidate', chatId: 'alternate-newest' },
+        { role: 'char', data: 'older candidate', chatId: 'alternate-older' },
+      ])
+      const storedChat = (
+        loadPersisted(db, harness.dataDir).database as { characters: Array<{ chats: Array<Record<string, unknown>> }> }
+      ).characters[0].chats[0]
+      expect(storedChat).not.toHaveProperty('alternates')
+    } finally {
+      db.close()
+    }
+  })
+
   it('keeps JSON fixture import behavior available', async () => {
     const imported = await authedInject({
       method: 'POST',

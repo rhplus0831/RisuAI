@@ -26,6 +26,7 @@ import {
   deleteChatHypaV3,
   deleteChatMessages,
   getAlternateMessagesGroupedByIds,
+  getAllChatAlternateMessagesGrouped,
   getAllChatHypaV3Grouped,
   getAllChatMessagesGrouped,
   getAlternateMessages,
@@ -35,6 +36,7 @@ import {
   getChatMessagesRange,
   getChatMessagesGroupedByIds,
   getActiveMessageLocationById,
+  insertAllChatAlternateMessages,
   replaceAllChatHypaV3,
   replaceAllChatMessages,
   setChatHypaV3,
@@ -1832,6 +1834,7 @@ function hasEmbeddedChatPayloadsOrBadIds(database: unknown): boolean {
 export function loadPersistedWithMessages(db: DatabaseSync, dataDir: string): Persisted {
   const persisted = loadPersisted(db, dataDir)
   const grouped = getAllChatMessagesGrouped(db)
+  const alternatesGrouped = getAllChatAlternateMessagesGrouped(db)
   const hypaGrouped = getAllChatHypaV3Grouped(db)
   eachChat(persisted.database, (chat) => {
     const chatId = chat.id
@@ -1852,6 +1855,10 @@ export function loadPersistedWithMessages(db: DatabaseSync, dataDir: string): Pe
     // table has a row; otherwise keep any embedded value.
     if (hypaGrouped.has(chatId)) {
       chat.hypaV3Data = hypaGrouped.get(chatId)
+    }
+    const alternates = alternatesGrouped.get(chatId)
+    if (alternates && alternates.length > 0) {
+      chat.alternates = alternates
     }
   })
   return persisted
@@ -2124,16 +2131,21 @@ function loadMemoryJobBoundPreset(
 export function splitChatMessagesIntoTable(db: DatabaseSync, next: Persisted): Persisted {
   repairChatIds(next.database)
   const chats: { chatId: string; messages: unknown[] }[] = []
+  const alternateChats: { chatId: string; alternates: unknown[] }[] = []
   const hypa: { chatId: string; hypaV3Data: unknown }[] = []
   eachChat(next.database, (chat) => {
     const messages = Array.isArray(chat.message) ? chat.message : []
+    const alternates = Array.isArray(chat.alternates) ? chat.alternates : []
     const chatId = chat.id as string
     chats.push({ chatId, messages })
+    alternateChats.push({ chatId, alternates })
     hypa.push({ chatId, hypaV3Data: chat.hypaV3Data })
     delete chat.message
+    delete chat.alternates
     delete chat.hypaV3Data
   })
   replaceAllChatMessages(db, chats)
+  insertAllChatAlternateMessages(db, alternateChats)
   replaceAllChatHypaV3(db, hypa)
   return next
 }
