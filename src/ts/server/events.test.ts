@@ -10,6 +10,7 @@ import { subscribeServerCommandEvents } from './events'
 import { ACTIVE_WRITER_SESSION_HEADER } from './activeWriterSession'
 import type { CommandEvent } from './commands'
 import type { ServerMemoryEvent, ServerMemoryJobSnapshot, ServerWriterEvent } from './events'
+import type { ServerBardWikiJobEvent } from './bardWikiJobEvents'
 
 interface CapturedFetch {
   url: string
@@ -102,6 +103,41 @@ describe('server command event subscription helper', () => {
           updatedAt: '2026-08-11T00:00:00.000Z',
         },
       ],
+      bardWikiJobs: [
+        {
+          id: 'bard-job-1',
+          instanceId: 'bard-instance-1',
+          chatId: 'chat-1',
+          receiptId: 'receipt-1',
+          kind: 'apply_turn',
+          status: 'running',
+          errorCode: null,
+          errorSummary: null,
+          attemptCount: 1,
+          maxAttempts: 3,
+          nextRunAt: '2026-08-11T00:00:00.000Z',
+          createdAt: '2026-08-11T00:00:00.000Z',
+          updatedAt: '2026-08-11T00:00:00.000Z',
+        },
+      ],
+    }
+    const bardWikiEvent: ServerBardWikiJobEvent = {
+      type: 'bardwiki.job',
+      streamId: 'memory-stream-1',
+      version: 3,
+      chatId: 'chat-1',
+      job: {
+        id: 'bard-job-1',
+        instanceId: 'bard-instance-1',
+        receiptId: 'receipt-1',
+        kind: 'apply_turn',
+        status: 'failed',
+        errorCode: 'provider_error',
+        errorSummary: 'Provider failed',
+        attemptCount: 3,
+        maxAttempts: 3,
+        updatedAt: '2026-08-11T00:01:00.000Z',
+      },
     }
     const writerEvent: ServerWriterEvent = { sessionId: 'writer-b', epoch: 2 }
     const calls = stubEventsFetch(
@@ -124,6 +160,9 @@ describe('server command event subscription helper', () => {
         `data: ${JSON.stringify(memoryEvent)}`,
         '',
         'event: memory',
+        `data: ${JSON.stringify(bardWikiEvent)}`,
+        '',
+        'event: memory',
         'data: {"type":"memory.job","chatId":"chat-1"}',
         '',
       ].join('\n'),
@@ -131,11 +170,13 @@ describe('server command event subscription helper', () => {
     const seen: CommandEvent[] = []
     const memorySeen: ServerMemoryEvent[] = []
     const memorySnapshots: ServerMemoryJobSnapshot[] = []
+    const bardWikiSeen: ServerBardWikiJobEvent[] = []
     const writerSeen: ServerWriterEvent[] = []
 
     const subscription = await subscribeServerCommandEvents({
       onCommandEvent: (event) => seen.push(event),
       onMemoryEvent: (event) => memorySeen.push(event),
+      onBardWikiEvent: (event) => bardWikiSeen.push(event),
       onMemorySnapshot: (snapshot) => memorySnapshots.push(snapshot),
       onWriterEvent: (event) => writerSeen.push(event),
     })
@@ -144,10 +185,12 @@ describe('server command event subscription helper', () => {
     await waitFor(() => seen.length === 1)
     await waitFor(() => memorySeen.length === 1)
     await waitFor(() => memorySnapshots.length === 1)
+    await waitFor(() => bardWikiSeen.length === 1)
     await waitFor(() => writerSeen.length === 1)
     expect(seen).toEqual([commandEvent])
     expect(memorySeen).toEqual([memoryEvent])
     expect(memorySnapshots).toEqual([memorySnapshot])
+    expect(bardWikiSeen).toEqual([bardWikiEvent])
     expect(writerSeen).toEqual([writerEvent])
     expect(calls).toHaveLength(1)
     expect(calls[0]).toMatchObject({

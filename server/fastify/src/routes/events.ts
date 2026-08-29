@@ -18,6 +18,7 @@ import {
   type MemoryJobSnapshot,
 } from '../memoryEvents.js'
 import { listMemoryJobItems } from '../memoryRepository.js'
+import { listBardWikiJobSnapshotSummaries } from '../bardWikiRepository.js'
 import { emitProtocolMetric, protocolDurationMs, protocolMetricsEnabled, protocolNowMs } from '../protocolMetrics.js'
 import { writeBoundedRaw } from '../streamBackpressure.js'
 import type { WriterEvent } from '../writerEvents.js'
@@ -198,6 +199,11 @@ export function registerEventsRoutes(
       jobs: listMemoryJobItems(db, { statuses: ['pending', 'running'] }).map((job) => ({
         ...job,
         error: sanitizeMemoryJobError(job.error),
+      })),
+      bardWikiJobs: listBardWikiJobSnapshotSummaries(db).map((job) => ({
+        ...job,
+        errorCode: sanitizeMemoryJobError(job.errorCode),
+        errorSummary: sanitizeMemoryJobError(job.errorSummary),
       })),
     }
     req.raw.once('aborted', onRequestAborted)

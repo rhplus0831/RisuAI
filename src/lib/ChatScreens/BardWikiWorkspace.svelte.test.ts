@@ -15,6 +15,11 @@ const mutations = vi.hoisted(() => ({
   remove: vi.fn(),
 }))
 
+const jobActions = vi.hoisted(() => ({
+  retry: vi.fn(),
+  cancel: vi.fn(),
+}))
+
 vi.mock('src/ts/server/resourceReads', async (importOriginal) => ({
   ...(await importOriginal<typeof import('src/ts/server/resourceReads')>()),
   fetchServerBardWikiChat: reads.chat,
@@ -27,6 +32,11 @@ vi.mock('src/ts/server/bardWikiCommands', () => ({
   createBardWikiDocument: mutations.create,
   updateBardWikiDocument: mutations.update,
   deleteBardWikiDocument: mutations.remove,
+}))
+
+vi.mock('src/ts/process/request/serverBardWikiJobs', () => ({
+  retryServerBardWikiJob: jobActions.retry,
+  cancelServerBardWikiJob: jobActions.cancel,
 }))
 
 import BardWikiWorkspace from './BardWikiWorkspace.svelte'
@@ -138,6 +148,8 @@ beforeEach(() => {
   mutations.create.mockReset().mockResolvedValue({ status: 'accepted', result: accepted })
   mutations.update.mockReset().mockResolvedValue({ status: 'accepted', result: accepted })
   mutations.remove.mockReset().mockResolvedValue({ status: 'accepted', result: accepted })
+  jobActions.retry.mockReset()
+  jobActions.cancel.mockReset()
   target = document.createElement('div')
   document.body.appendChild(target)
 })
@@ -392,5 +404,105 @@ describe('BardWiki workspace', () => {
     })
     expect(target.textContent).not.toContain('Automatic confirmation')
     expect(target.textContent).not.toContain('canonical updates')
+  })
+
+  it('shows receipt and failed-job errors and retries against the authoritative chat resource', async () => {
+    const failedJob = {
+      id: 'job-a',
+      instanceId: 'instance-a',
+      chatId: 'chat-a',
+      receiptId: 'receipt-a',
+      kind: 'apply_turn' as const,
+      status: 'failed' as const,
+      errorCode: 'provider_error',
+      errorSummary: 'The analysis provider failed',
+      attemptCount: 3,
+      maxAttempts: 3,
+      nextRunAt: '2026-08-29T00:00:00.000Z',
+      createdAt: '2026-08-29T00:00:00.000Z',
+      updatedAt: '2026-08-29T00:01:00.000Z',
+    }
+    const receipt = {
+      id: 'receipt-a',
+      chatId: 'chat-a',
+      userMessageId: 'user-a',
+      userContentHash: 'a'.repeat(64),
+      assistantMessageId: 'assistant-a',
+      assistantContentHash: 'b'.repeat(64),
+      confirmationMode: 'explicit' as const,
+      state: 'failed' as const,
+      eventDocumentId: null,
+      jobId: 'job-a',
+      errorCode: 'provider_error',
+      errorSummary: 'Receipt failed too',
+      createdAt: '2026-08-29T00:00:00.000Z',
+      updatedAt: '2026-08-29T00:01:00.000Z',
+      appliedAt: null,
+    }
+    const failedResource = { ...chatResource, receipts: [receipt], jobs: [failedJob] }
+    const pendingJob = {
+      ...failedJob,
+      instanceId: 'instance-b',
+      status: 'pending' as const,
+      errorCode: null,
+      errorSummary: null,
+      attemptCount: 0,
+    }
+    const pendingResource = {
+      ...chatResource,
+      revision: 5,
+      receipts: [{ ...receipt, state: 'queued' as const }],
+      jobs: [pendingJob],
+    }
+    reads.chat.mockResolvedValueOnce(failedResource).mockResolvedValue(pendingResource)
+    jobActions.retry.mockResolvedValue({ status: 'ok', job: pendingJob })
+
+    component = mount(BardWikiWorkspace, { target, props: { chatId: 'chat-a' } })
+    await settle()
+
+    expect(target.querySelector('[data-testid="bardwiki-activity"]')?.hasAttribute('open')).toBe(true)
+    expect(target.textContent).toContain('The analysis provider failed')
+    expect(target.textContent).toContain('Receipt failed too')
+    const retry = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim() === 'Retry job',
+    )
+    retry?.click()
+    await settle()
+
+    expect(jobActions.retry).toHaveBeenCalledWith('job-a')
+    expect(reads.chat).toHaveBeenCalledTimes(2)
+    expect(target.textContent).toContain('Pending')
+  })
+
+  it('cancels active jobs and reports operational API failures without hiding status', async () => {
+    const pendingJob = {
+      id: 'job-a',
+      instanceId: 'instance-a',
+      chatId: 'chat-a',
+      receiptId: null,
+      kind: 'rebuild_chat' as const,
+      status: 'running' as const,
+      errorCode: null,
+      errorSummary: null,
+      attemptCount: 1,
+      maxAttempts: 3,
+      nextRunAt: '2026-08-29T00:00:00.000Z',
+      createdAt: '2026-08-29T00:00:00.000Z',
+      updatedAt: '2026-08-29T00:01:00.000Z',
+    }
+    reads.chat.mockResolvedValue({ ...chatResource, jobs: [pendingJob] })
+    jobActions.cancel.mockResolvedValue({ status: 'error', error: 'bardwiki_job_not_cancellable' })
+    component = mount(BardWikiWorkspace, { target, props: { chatId: 'chat-a' } })
+    await settle()
+
+    const cancel = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim() === 'Cancel job',
+    )
+    cancel?.click()
+    await settle()
+
+    expect(jobActions.cancel).toHaveBeenCalledWith('job-a')
+    expect(target.textContent).toContain('bardwiki_job_not_cancellable')
+    expect(target.textContent).toContain('Running')
   })
 })

@@ -40,7 +40,7 @@ function event(version: number, value: ServerMemoryJob, streamId = 'stream-1'): 
 }
 
 function snapshot(version: number, jobs: ServerMemoryJob[], streamId = 'stream-1'): ServerMemoryJobSnapshot {
-  return { type: 'memory.snapshot', streamId, version, jobs }
+  return { type: 'memory.snapshot', streamId, version, jobs, bardWikiJobs: [] }
 }
 
 describe('memory job projection', () => {

@@ -18,6 +18,7 @@ import { updateGuisize } from './gui/guisize'
 import { fetchServerBootstrap, fetchServerBootstrapReadOnly, type ServerBootstrapRuntime } from './server/bootstrap'
 import { subscribeServerCommandEvents, type ServerMemoryEvent, type ServerMemoryJobSnapshot } from './server/events'
 import { publishServerMemoryJobEvent } from './server/memoryJobEvents'
+import { publishServerBardWikiJobEvent, publishServerBardWikiJobSnapshot } from './server/bardWikiJobEvents'
 import {
   deferOwnServerCommandReconciliation,
   initializeServerDatabaseForBootstrap,
@@ -949,6 +950,7 @@ async function startServerResourceEvents(options: { replayPendingMutations?: boo
     sinceRevision: peekAppliedServerResourceRevision(),
     onCommandEvent: handleServerCommandEvent,
     onMemoryEvent: applyServerMemoryEvent,
+    onBardWikiEvent: publishServerBardWikiJobEvent,
     onMemorySnapshot: applyServerMemorySnapshot,
     onWriterEvent: (event) => {
       if (event.sessionId !== null && event.sessionId !== getActiveWriterSessionId()) {
@@ -1159,6 +1161,11 @@ function applyServerMemoryEvent(event: ServerMemoryEvent) {
 
 function applyServerMemorySnapshot(snapshot: ServerMemoryJobSnapshot) {
   applyServerMemoryJobSnapshot(snapshot)
+  publishServerBardWikiJobSnapshot({
+    streamId: snapshot.streamId,
+    version: snapshot.version,
+    jobs: snapshot.bardWikiJobs,
+  })
 }
 
 /**

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { FastifyBaseLogger } from 'fastify'
 import type { MemoryJob, MemoryJobListItem } from './memoryRepository.js'
 import type { BardWikiJob } from './bardWikiJobs.js'
+import type { BardWikiJobSummary } from './bardWikiRepository.js'
 import { emitProtocolMetric, jsonPayloadBytes } from './protocolMetrics.js'
 
 export interface MemoryJobEvent {
@@ -39,6 +40,7 @@ export interface MemoryJobSnapshot {
   streamId: string
   version: number
   jobs: MemoryJobListItem[]
+  bardWikiJobs: BardWikiJobSummary[]
 }
 
 export type MemoryEventSink = (event: MemoryEvent) => void

@@ -8,6 +8,8 @@ import type {
   ServerMemoryJobStatus,
 } from '../process/request/serverMemory'
 import { activeWriterSessionHeader, isWriterAccessLost } from './activeWriterSession'
+import type { BardWikiJobSummary } from '@risuai/protocol'
+import type { ServerBardWikiJobEvent } from './bardWikiJobEvents'
 
 const EVENTS_ENDPOINT = '/api/v1/events'
 
@@ -33,6 +35,7 @@ export interface ServerMemoryJobSnapshot {
   streamId: string
   version: number
   jobs: ServerMemoryJob[]
+  bardWikiJobs: BardWikiJobSummary[]
 }
 
 export type ServerMemorySnapshotHandler = (snapshot: ServerMemoryJobSnapshot) => void
@@ -47,6 +50,7 @@ export type ServerWriterEventHandler = (event: ServerWriterEvent) => void
 export interface SubscribeServerCommandEventsInput {
   onCommandEvent: ServerCommandEventHandler
   onMemoryEvent?: ServerMemoryEventHandler
+  onBardWikiEvent?: (event: ServerBardWikiJobEvent) => void
   onMemorySnapshot?: ServerMemorySnapshotHandler
   onWriterEvent?: ServerWriterEventHandler
   onFrame?: (frame: { event: string; data: string; id?: string }) => void
@@ -152,7 +156,12 @@ export async function subscribeServerCommandEvents(
           input.onCommandEvent(event)
         } else if (frame.event === 'memory') {
           const event = parseMemoryEvent(frame.data)
-          if (event) input.onMemoryEvent?.(event)
+          if (event) {
+            input.onMemoryEvent?.(event)
+          } else {
+            const bardWikiEvent = parseBardWikiJobEvent(frame.data)
+            if (bardWikiEvent) input.onBardWikiEvent?.(bardWikiEvent)
+          }
         } else if (frame.event === 'memory_snapshot') {
           const snapshot = parseMemorySnapshot(frame.data)
           if (snapshot) input.onMemorySnapshot?.(snapshot)
@@ -304,12 +313,137 @@ function parseMemorySnapshot(data: string): ServerMemoryJobSnapshot | null {
     if (!job) return null
     jobs.push(job)
   }
+  const bardWikiJobs: BardWikiJobSummary[] = []
+  if (record.bardWikiJobs !== undefined) {
+    if (!Array.isArray(record.bardWikiJobs)) return null
+    for (const value of record.bardWikiJobs) {
+      const job = parseBardWikiSnapshotJob(value)
+      if (!job) return null
+      bardWikiJobs.push(job)
+    }
+  }
   return {
     type: 'memory.snapshot',
     streamId: record.streamId,
     version: record.version as number,
     jobs,
+    bardWikiJobs,
   }
+}
+
+function parseBardWikiJobEvent(data: string): ServerBardWikiJobEvent | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(data)
+  } catch {
+    return null
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  const record = parsed as Record<string, unknown>
+  if (record.type !== 'bardwiki.job') return null
+  if (typeof record.streamId !== 'string' || record.streamId.length === 0) return null
+  if (!Number.isSafeInteger(record.version) || (record.version as number) < 0) return null
+  if (typeof record.chatId !== 'string' || record.chatId.length === 0) return null
+  const job = parseBardWikiEventJob(record.job)
+  if (!job) return null
+  return {
+    type: 'bardwiki.job',
+    streamId: record.streamId,
+    version: record.version as number,
+    chatId: record.chatId,
+    job,
+  }
+}
+
+function parseBardWikiEventJob(value: unknown): ServerBardWikiJobEvent['job'] | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const record = value as Record<string, unknown>
+  if (!isBardWikiJobCore(record, false)) return null
+  if (typeof record.updatedAt !== 'string') return null
+  return {
+    id: record.id,
+    instanceId: record.instanceId,
+    receiptId: record.receiptId,
+    kind: record.kind,
+    status: record.status,
+    errorCode: record.errorCode === undefined ? null : record.errorCode,
+    errorSummary: record.errorSummary === undefined ? null : record.errorSummary,
+    attemptCount: record.attemptCount,
+    maxAttempts: record.maxAttempts,
+    updatedAt: record.updatedAt,
+  }
+}
+
+function parseBardWikiSnapshotJob(value: unknown): BardWikiJobSummary | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const record = value as Record<string, unknown>
+  if (
+    !isBardWikiJobCore(record, true) ||
+    typeof record.chatId !== 'string' ||
+    (record.errorCode !== null && typeof record.errorCode !== 'string') ||
+    (record.errorSummary !== null && typeof record.errorSummary !== 'string')
+  ) {
+    return null
+  }
+  if (
+    typeof record.nextRunAt !== 'string' ||
+    typeof record.createdAt !== 'string' ||
+    typeof record.updatedAt !== 'string'
+  ) {
+    return null
+  }
+  return {
+    id: record.id,
+    instanceId: record.instanceId,
+    chatId: record.chatId,
+    receiptId: record.receiptId,
+    kind: record.kind,
+    status: record.status,
+    errorCode: record.errorCode,
+    errorSummary: record.errorSummary,
+    attemptCount: record.attemptCount,
+    maxAttempts: record.maxAttempts,
+    nextRunAt: record.nextRunAt,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  }
+}
+
+function isBardWikiJobCore(
+  record: Record<string, unknown>,
+  requireChatId: boolean,
+): record is Record<string, unknown> & {
+  id: string
+  instanceId: string
+  chatId?: string
+  receiptId: string | null
+  kind: BardWikiJobSummary['kind']
+  status: BardWikiJobSummary['status']
+  errorCode?: string | null
+  errorSummary?: string | null
+  attemptCount: number
+  maxAttempts: number
+} {
+  return (
+    typeof record.id === 'string' &&
+    record.id.length > 0 &&
+    typeof record.instanceId === 'string' &&
+    record.instanceId.length > 0 &&
+    (!requireChatId || (typeof record.chatId === 'string' && record.chatId.length > 0)) &&
+    (record.receiptId === null || (typeof record.receiptId === 'string' && record.receiptId.length > 0)) &&
+    (record.kind === 'apply_turn' || record.kind === 'reconcile_receipt' || record.kind === 'rebuild_chat') &&
+    (record.status === 'pending' ||
+      record.status === 'running' ||
+      record.status === 'completed' ||
+      record.status === 'failed' ||
+      record.status === 'cancelled') &&
+    (record.errorCode === undefined || record.errorCode === null || typeof record.errorCode === 'string') &&
+    (record.errorSummary === undefined || record.errorSummary === null || typeof record.errorSummary === 'string') &&
+    Number.isInteger(record.attemptCount) &&
+    (record.attemptCount as number) >= 0 &&
+    Number.isInteger(record.maxAttempts) &&
+    (record.maxAttempts as number) > 0
+  )
 }
 
 function parseMemorySnapshotJob(value: unknown): ServerMemoryJob | null {

@@ -325,8 +325,8 @@ export function retryFailedBardWikiJob(
        WHERE id = ? AND status = 'failed'
        RETURNING *`,
     )
-    .get(options.instanceId ?? randomUUID(), now, now, requireBoundedString(id, 'job id')) as
-    | (BardWikiJobRow & {})
+    .get(options.instanceId ?? randomUUID(), now, now, requireBoundedString(id, 'job id')) as unknown as
+    | BardWikiJobRow
     | undefined
   if (!row) return null
   const retried = mapBardWikiJobRow(row)

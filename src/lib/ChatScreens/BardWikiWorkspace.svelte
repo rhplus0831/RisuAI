@@ -1,9 +1,12 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte'
   import { BookOpenIcon, HistoryIcon, PlusIcon, RotateCcwIcon, Trash2Icon, XIcon } from '@lucide/svelte'
   import type {
     BardWikiContextPolicy,
     BardWikiDocument,
     BardWikiDocumentKind,
+    BardWikiJobSummary,
+    BardWikiReceiptSummary,
     BardWikiReviewState,
   } from '@risuai/protocol'
   import { language } from 'src/lang'
@@ -25,6 +28,8 @@
     type BardWikiMutationFinalOutcome,
     type BardWikiMutationOutcome,
   } from 'src/ts/server/bardWikiCommands'
+  import { subscribeServerBardWikiJobEvents } from 'src/ts/server/bardWikiJobEvents'
+  import { cancelServerBardWikiJob, retryServerBardWikiJob } from 'src/ts/process/request/serverBardWikiJobs'
 
   interface Props {
     chatId: string
@@ -73,6 +78,8 @@
   let documentMutationError = $state('')
   let settingsMutationState = $state<MutationState>('idle')
   let settingsMutationError = $state('')
+  let jobActionError = $state('')
+  let jobActionInstanceIds = $state<Set<string>>(new Set())
   let enabledOverrideDraft = $state<'inherit' | 'enabled' | 'disabled'>('inherit')
   let memoryModeOverrideDraft = $state<'inherit' | 'hypa' | 'bardwiki' | 'hybrid'>('inherit')
   let totalTokenBudgetOverrideDraft = $state('')
@@ -181,6 +188,41 @@
     chatLoadState = failure.state
     chatLoadError = failure.error
     return false
+  }
+
+  function isActiveJob(job: BardWikiJobSummary): boolean {
+    return job.status === 'pending' || job.status === 'running'
+  }
+
+  function setJobActionPending(instanceId: string, pending: boolean): void {
+    const next = new Set(jobActionInstanceIds)
+    if (pending) next.add(instanceId)
+    else next.delete(instanceId)
+    jobActionInstanceIds = next
+  }
+
+  async function mutateJob(job: BardWikiJobSummary, action: 'retry' | 'cancel'): Promise<void> {
+    if (jobActionInstanceIds.has(job.instanceId)) return
+    setJobActionPending(job.instanceId, true)
+    jobActionError = ''
+    const result = action === 'retry' ? await retryServerBardWikiJob(job.id) : await cancelServerBardWikiJob(job.id)
+    if (result.status !== 'ok') {
+      jobActionError = language.bardWiki.jobActionFailed(
+        result.status === 'error' ? result.error : language.bardWiki.unavailable,
+      )
+      setJobActionPending(job.instanceId, false)
+      return
+    }
+    await loadChat(false)
+    setJobActionPending(job.instanceId, false)
+  }
+
+  function jobUpdatedLabel(job: BardWikiJobSummary): string {
+    return language.bardWiki.jobUpdated(new Date(job.updatedAt).toLocaleString())
+  }
+
+  function receiptSourceLabel(receipt: BardWikiReceiptSummary): string {
+    return language.bardWiki.receiptSource(receipt.userMessageId, receipt.assistantMessageId)
   }
 
   function confirmDiscard(): boolean {
@@ -456,8 +498,21 @@
     documentMutationSequence += 1
     settingsMutationSequence += 1
     settingsMutationState = 'idle'
+    jobActionError = ''
+    jobActionInstanceIds = new Set()
     void loadChat()
   })
+
+  const unsubscribeBardWikiJobs = subscribeServerBardWikiJobEvents(
+    (event) => {
+      if (event.chatId === chatId) void loadChat(false)
+    },
+    () => {
+      if (chatLoadState === 'ready') void loadChat(false)
+    },
+  )
+
+  onDestroy(unsubscribeBardWikiJobs)
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -554,6 +609,81 @@
             onclick={() => void saveChatSettings()}>{language.bardWiki.saveOverrides}</button>
           <span class="text-sm text-textcolor2" role="status" aria-live="polite"
             >{mutationStatusText(settingsMutationState, settingsMutationError)}</span>
+        </div>
+      </details>
+
+      <details
+        data-testid="bardwiki-activity"
+        open={chatResource.jobs.some((job) => isActiveJob(job) || job.status === 'failed')}
+        class="border-b border-darkborderc px-4 py-2">
+        <summary class="cursor-pointer font-medium">{language.bardWiki.activity}</summary>
+        <div class="mt-3 grid gap-4 lg:grid-cols-2">
+          <section aria-labelledby="bardwiki-receipts-heading">
+            <h3 id="bardwiki-receipts-heading" class="m-0 text-sm font-semibold">{language.bardWiki.receipts}</h3>
+            {#if chatResource.receipts.length === 0}
+              <p class="text-sm text-textcolor2">{language.bardWiki.noReceipts}</p>
+            {:else}
+              <ul class="m-0 mt-2 flex list-none flex-col gap-2 p-0">
+                {#each chatResource.receipts as receipt (receipt.id)}
+                  <li class="rounded-md border border-darkborderc p-2 text-sm">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <span>{receiptSourceLabel(receipt)}</span>
+                      <span class="text-textcolor2">{language.bardWiki.receiptStates[receipt.state]}</span>
+                    </div>
+                    {#if receipt.errorSummary}
+                      <p class="mb-0 text-red-400" role="alert">{receipt.errorSummary}</p>
+                    {/if}
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </section>
+
+          <section aria-labelledby="bardwiki-jobs-heading">
+            <div class="flex items-center justify-between gap-2">
+              <h3 id="bardwiki-jobs-heading" class="m-0 text-sm font-semibold">{language.bardWiki.jobs}</h3>
+              <button
+                type="button"
+                class="rounded-md border border-darkborderc px-2 py-1 text-sm hover:bg-selected"
+                onclick={() => void loadChat(false)}>{language.bardWiki.refreshStatus}</button>
+            </div>
+            {#if chatResource.jobs.length === 0}
+              <p class="text-sm text-textcolor2">{language.bardWiki.noJobs}</p>
+            {:else}
+              <ul class="m-0 mt-2 flex list-none flex-col gap-2 p-0">
+                {#each chatResource.jobs as job (job.instanceId)}
+                  <li class="rounded-md border border-darkborderc p-2 text-sm" data-job-instance={job.instanceId}>
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <span>{language.bardWiki.jobKinds[job.kind]}</span>
+                      <span class="text-textcolor2">{language.bardWiki.jobStatuses[job.status]}</span>
+                    </div>
+                    <p class="my-1 text-xs text-textcolor2">
+                      {language.bardWiki.jobAttempt(job.attemptCount, job.maxAttempts)} · {jobUpdatedLabel(job)}
+                    </p>
+                    {#if job.errorSummary}
+                      <p class="my-1 text-red-400" role="alert">{job.errorSummary}</p>
+                    {/if}
+                    {#if job.status === 'failed'}
+                      <button
+                        type="button"
+                        disabled={jobActionInstanceIds.has(job.instanceId)}
+                        class="mt-1 rounded-md border border-darkborderc px-2 py-1 hover:bg-selected disabled:opacity-50"
+                        onclick={() => void mutateJob(job, 'retry')}>{language.bardWiki.retryJob}</button>
+                    {:else if isActiveJob(job)}
+                      <button
+                        type="button"
+                        disabled={jobActionInstanceIds.has(job.instanceId)}
+                        class="mt-1 rounded-md border border-darkborderc px-2 py-1 hover:bg-selected disabled:opacity-50"
+                        onclick={() => void mutateJob(job, 'cancel')}>{language.bardWiki.cancelJob}</button>
+                    {/if}
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+            {#if jobActionError}
+              <p class="mb-0 text-sm text-red-400" role="alert">{jobActionError}</p>
+            {/if}
+          </section>
         </div>
       </details>
 

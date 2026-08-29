@@ -751,7 +751,31 @@ export function listBardWikiJobSummaries(db: DatabaseSync, chatId: string, limit
        ORDER BY updated_at DESC, id DESC LIMIT ?`,
     )
     .all(chatId, safeLimit) as unknown as BardWikiJobSummaryRow[]
-  return rows.map((row) => ({
+  return rows.map(mapJobSummaryRow)
+}
+
+export function listBardWikiJobSnapshotSummaries(db: DatabaseSync, terminalLimit = 50): BardWikiJobSummary[] {
+  const active = db
+    .prepare(
+      `SELECT id, instance_id, chat_id, receipt_id, kind, status, error_code,
+              error_summary, attempt_count, max_attempts, next_run_at, created_at, updated_at
+       FROM bardwiki_jobs WHERE status IN ('pending', 'running')
+       ORDER BY created_at, id`,
+    )
+    .all() as unknown as BardWikiJobSummaryRow[]
+  const terminal = db
+    .prepare(
+      `SELECT id, instance_id, chat_id, receipt_id, kind, status, error_code,
+              error_summary, attempt_count, max_attempts, next_run_at, created_at, updated_at
+       FROM bardwiki_jobs WHERE status IN ('completed', 'failed', 'cancelled')
+       ORDER BY updated_at DESC, id DESC LIMIT ?`,
+    )
+    .all(Math.max(0, Math.min(100, Math.trunc(terminalLimit)))) as unknown as BardWikiJobSummaryRow[]
+  return [...active, ...terminal].map(mapJobSummaryRow)
+}
+
+function mapJobSummaryRow(row: BardWikiJobSummaryRow): BardWikiJobSummary {
+  return {
     id: row.id,
     instanceId: row.instance_id,
     chatId: row.chat_id,
@@ -765,7 +789,7 @@ export function listBardWikiJobSummaries(db: DatabaseSync, chatId: string, limit
     nextRunAt: row.next_run_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  }))
+  }
 }
 
 export function listBardWikiLinks(db: DatabaseSync, documentId: string, version?: number): BardWikiLink[] {

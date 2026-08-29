@@ -21,6 +21,7 @@ import { bumpRevision, openDatabase } from '../src/db.js'
 import { ACTIVE_WRITER_SESSION_HEADER, DISCONNECT_EXISTING_WRITER_HEADER } from '../src/activeWriter.js'
 import { createMemoryEventBus, type MemoryEvent, type MemoryEventSink } from '../src/memoryEvents.js'
 import { createEventStreamMetricTracker } from '../src/routes/events.js'
+import { enqueueBardWikiJob } from '../src/bardWikiJobs.js'
 
 interface CapturedProtocolMetric extends Record<string, unknown> {
   metric: string
@@ -93,6 +94,7 @@ async function startHarness(opts: { dataDir?: string; memoryEvents?: MemoryEvent
     commandEvents,
     memoryEvents: opts.memoryEvents,
     memoryWorker: false,
+    bardWikiWorker: false,
   })
   return { app, dataDir, commandEvents, closed: false }
 }
@@ -903,7 +905,7 @@ describe('command events stream', () => {
     })
   })
 
-  it('hydrates active memory jobs on startup and clears them authoritatively on reconnect', async () => {
+  it('hydrates active jobs on startup and clears memory jobs authoritatively on reconnect', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const pending = await harness.app.inject({
       method: 'POST',
@@ -917,6 +919,49 @@ describe('command events stream', () => {
     })
     expect(pending.statusCode).toBe(201)
     const pendingJob = pending.json().job as { id: string; instanceId: string }
+    const db = openDatabase(harness.dataDir)
+    try {
+      db.prepare('INSERT INTO characters (id, position, data_json) VALUES (?, 0, ?)').run('character-snapshot', '{}')
+      db.prepare('INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, 0, ?)').run(
+        'chat-bard-snapshot',
+        'character-snapshot',
+        '{}',
+      )
+      enqueueBardWikiJob(db, {
+        id: 'bard-job-active',
+        instanceId: 'bard-instance-active',
+        chatId: 'chat-bard-snapshot',
+        kind: 'rebuild_chat',
+        payload: {
+          chatId: 'chat-bard-snapshot',
+          generation: 1,
+          sourceCursor: 0,
+          policy: 'full',
+          stagingManifestId: 'manifest-active',
+        },
+      })
+      enqueueBardWikiJob(db, {
+        id: 'bard-job-failed',
+        instanceId: 'bard-instance-failed',
+        chatId: 'chat-bard-snapshot',
+        kind: 'rebuild_chat',
+        payload: {
+          chatId: 'chat-bard-snapshot',
+          generation: 2,
+          sourceCursor: 0,
+          policy: 'full',
+          stagingManifestId: 'manifest-failed',
+        },
+      })
+      db.prepare(
+        `UPDATE bardwiki_jobs
+         SET status = 'failed', error_code = 'provider_error',
+             error_summary = 'authorization: secret-token'
+         WHERE id = 'bard-job-failed'`,
+      ).run()
+    } finally {
+      db.close()
+    }
     const baseUrl = await listen(harness.app)
 
     const firstAbort = new AbortController()
@@ -930,13 +975,20 @@ describe('command events stream', () => {
       streamId: string
       version: number
       jobs: Array<{ id: string; instanceId: string; status: string }>
+      bardWikiJobs: Array<Record<string, unknown>>
     }>
     expect(firstSnapshots).toHaveLength(1)
     expect(firstSnapshots[0]).toMatchObject({
       streamId: expect.any(String),
       version: expect.any(Number),
       jobs: [{ id: pendingJob.id, instanceId: pendingJob.instanceId, status: 'pending' }],
+      bardWikiJobs: [
+        { id: 'bard-job-active', instanceId: 'bard-instance-active', status: 'pending' },
+        { id: 'bard-job-failed', instanceId: 'bard-instance-failed', status: 'failed' },
+      ],
     })
+    expect(firstSnapshots[0].bardWikiJobs[0]).not.toHaveProperty('payload')
+    expect(firstSnapshots[0].bardWikiJobs[1].errorSummary).toBe('authorization: [redacted]')
     firstAbort.abort()
     firstReader.releaseLock()
 
@@ -959,11 +1011,13 @@ describe('command events stream', () => {
         streamId: string
         version: number
         jobs: unknown[]
+        bardWikiJobs: unknown[]
       }>
       expect(reconnectSnapshots).toHaveLength(1)
       expect(reconnectSnapshots[0].streamId).toBe(firstSnapshots[0].streamId)
       expect(reconnectSnapshots[0].version).toBeGreaterThan(firstSnapshots[0].version)
       expect(reconnectSnapshots[0].jobs).toEqual([])
+      expect(reconnectSnapshots[0].bardWikiJobs).toHaveLength(2)
     } finally {
       reconnectAbort.abort()
       reconnectReader.releaseLock()
