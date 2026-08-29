@@ -532,8 +532,12 @@ export async function buildHistoryWindow(
   // Start-trigger handoff (SPA `buildHistoryWindow.ts`). The
   // trigger may mutate the chat, so re-run `makeMs` and add its token
   // contribution; on `stopSending` the assemble root aborts the send.
-  const triggerResult = await runStartTrigger(ctx, currentChar, currentChat)
+  const rawTriggerResult = await runStartTrigger(ctx, currentChar, currentChat)
+  const triggerResult = rawTriggerResult?.aborted ? null : rawTriggerResult
   let varChanged = false
+  if (rawTriggerResult?.aborted) {
+    varChanged = rawTriggerResult.varChanged
+  }
   if (triggerResult) {
     currentChat = triggerResult.chat
     ms = makeMs(currentChat)

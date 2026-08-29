@@ -694,7 +694,9 @@ export function registerCBS(arg: CBSRegisterArg) {
       const db = getDatabase()
       const selchar = db.characters[getSelectedCharID()]
       const chat = selchar.chats[selchar.chatPage]
-      return (chat.fmIndex ?? -1).toString()
+      // Legacy malformed chats without fmIndex make the callback throw; the
+      // parser catches that callback error and preserves {{firstmsgindex}}.
+      return (chat.fmIndex as number).toString()
     },
     alias: ['firstmessageindex', 'first_msg_index'],
     description:

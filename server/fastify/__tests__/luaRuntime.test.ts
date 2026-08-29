@@ -751,11 +751,13 @@ describe('server Lua runtime — getLoreBooksMain', () => {
     const books = JSON.parse((result.res as OpenAIChat[])[0].content) as loreBook[]
     expect(books).toHaveLength(1)
     expect(books[0]).toMatchObject({
+      id: expect.any(String),
       comment: 'preset',
       content: 'added for Operator',
       insertorder: 7,
       key: 'preset-key',
     })
+    expect(books[0].id).not.toBe('')
   })
 })
 

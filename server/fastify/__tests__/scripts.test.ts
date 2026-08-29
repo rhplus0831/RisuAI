@@ -154,6 +154,16 @@ describe('processScript', () => {
     expect(processScript(ctxFor(db), char, 'A', 'editprocess')).toBe('D')
   })
 
+  it('restarts a reused sticky action regex from index zero on every transformation', () => {
+    const db = makeDatabase({
+      presetRegex: [regex('foo', '@@bogus replacement', 'editprocess', 'y', true)],
+    })
+    const char = db.characters[0]
+
+    expect(processScript(ctxFor(db), char, 'foo', 'editprocess')).toBe('@@bogus replacement')
+    expect(processScript(ctxFor(db), char, 'foo', 'editprocess')).toBe('@@bogus replacement')
+  })
+
   it('respects the `g` flag for global replacement', () => {
     const db = makeDatabase({
       presetRegex: [regex('a', 'z', 'editprocess', 'g')],

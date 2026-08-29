@@ -2,6 +2,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { Chat, Database, character } from '../../../src/ts/storage/database.svelte'
 import type { RisuModule } from '../../../src/ts/process/modules'
 import type { triggerCondition, triggerscript } from '../../../src/ts/process/triggers'
+import { serverUnsupportedTriggerEffectTypes } from '../../../src/ts/process/triggerServerSupport.js'
 import { getModuleTriggers } from '../src/prompt/modules.js'
 import {
   collectTriggers,
@@ -1943,11 +1944,30 @@ describe('safe data helpers', () => {
     expect(result?.chat.scriptstate?.['$last']).toBe('second')
   })
 
-  it('does not abort the run when a make-var name is malformed', async () => {
+  it.each([
+    { type: 'v2MakeArrayVar', var: '[]' },
+    { type: 'v2MakeDictVar', var: '{}' },
+    { type: 'v2ClearDict', var: '{}' },
+    { type: 'v2GetDisplayState' },
+    { type: 'v2SetDisplayState' },
+    { type: 'v2GetRequestState' },
+    { type: 'v2SetRequestState' },
+    { type: 'v2GetRequestStateRole' },
+    { type: 'v2SetRequestStateRole' },
+    { type: 'v2GetRequestStateLength' },
+  ])('retains the whole-trigger guard for $type before later effects', async (badEffect) => {
     const char = makeChar({
       triggerscript: [
         triggerWithEffects([
-          eff({ type: 'v2MakeArrayVar', var: '[]' }),
+          eff({
+            type: 'v2SetVar',
+            operator: '=',
+            var: 'beforeAbort',
+            valueType: 'value',
+            value: 'kept',
+            indent: 0,
+          }),
+          eff(badEffect),
           eff({
             type: 'v2SetVar',
             operator: '=',
@@ -1960,9 +1980,33 @@ describe('safe data helpers', () => {
       ],
     })
     const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
-    expect(result).not.toBeNull()
-    expect(result?.chat.scriptstate?.['$after']).toBe('ok')
+    expect(result).toMatchObject({ aborted: true, varChanged: true })
+    expect(result?.chat.scriptstate?.['$beforeAbort']).toBe('kept')
+    expect(result?.chat.scriptstate?.['$after']).toBeUndefined()
   })
+})
+
+describe('unsupported trigger effects', () => {
+  it.each([...serverUnsupportedTriggerEffectTypes].filter((type) => type !== '@@emo'))(
+    'keeps %s as a diagnosed no-op without partially mutating trigger state',
+    async (type) => {
+      const chat = makeChat({ scriptstate: { $before: 'kept' } })
+      const char = makeChar({
+        chats: [chat],
+        triggerscript: [triggerWithEffects([eff({ type })])],
+      })
+      const database = makeDb({ characters: [char] })
+      const unsupportedEffectTypes = new Set<string>()
+      const before = structuredClone({ char, chat })
+
+      const result = await runTrigger(makeCtx({ database, unsupportedEffectTypes }), char, 'output', { chat })
+
+      expect(result?.chat.scriptstate).toEqual({ $before: 'kept' })
+      expect(char).toEqual(before.char)
+      expect(chat).toEqual(before.chat)
+      expect(unsupportedEffectTypes).toEqual(new Set([type]))
+    },
+  )
 })
 
 describe('request/display state adapters', () => {

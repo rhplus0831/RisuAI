@@ -1579,4 +1579,28 @@ describe('start trigger handoff', () => {
     expect(result.varChanged).toBe(true)
     expect(char.chats[0].scriptstate?.['$x']).toBe('7')
   })
+
+  it('persists prior variables but discards transient output when a legacy container guard aborts', async () => {
+    const chat = makeChat({ message: [makeMessage({ data: 'original' })] })
+    const char = makeCharacter({
+      chats: [chat],
+      triggerscript: [
+        startTrigger([
+          { type: 'setvar', operator: '=', var: 'kept', value: 'yes' },
+          { type: 'impersonate', role: 'char', value: 'discarded' },
+          { type: 'v2MakeArrayVar', var: '[]' },
+          { type: 'systemprompt', location: 'promptend', value: 'also discarded' },
+        ]),
+      ],
+    })
+    const db = makeDatabase({ characters: [char], currentChar: 0 } as Partial<Database>)
+
+    const result = await buildHistoryWindow(ctxFor(db), char, chat)
+
+    expect(result.triggerResult).toBeNull()
+    expect(result.varChanged).toBe(true)
+    expect(result.currentChat.message).toEqual([makeMessage({ data: 'original' })])
+    expect(result.messages.some((message) => message.content === 'discarded')).toBe(false)
+    expect(chat.scriptstate?.$kept).toBe('yes')
+  })
 })

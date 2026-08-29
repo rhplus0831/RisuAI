@@ -1,5 +1,16 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import type { Chat, Database, character } from '../../../src/ts/storage/database.svelte'
+import { PHASE9_CBS_COMPATIBILITY_CORPUS } from '../../../src/ts/parser/tests/cbs/phase9CompatibilityCorpus.js'
+import {
+  PHASE9_BASELINE_DRIFT_FIXTURES,
+  PHASE9_OVER_BUDGET_EACH_COUNT,
+  phase9DriftCharacter,
+  phase9DriftChat,
+  phase9DriftDatabase,
+  phase9DriftGroup,
+  phase9OverBudgetEachInput,
+} from '../../../src/ts/parser/tests/cbs/phase9BaselineDriftFixtures.js'
+import { RisuParserBudgetError } from '../../../src/ts/parser/risuChatParser.js'
 import { expandVariables, type ExpandContext } from '../src/prompt/variables.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 
@@ -77,6 +88,10 @@ function ctx(overrides: Partial<ExpandContext> = {}): ExpandContext {
 }
 
 describe('expandVariables — basic substitution', () => {
+  it.each(PHASE9_CBS_COMPATIBILITY_CORPUS)('runs the shared Phase 9 corpus: $name', ({ input, expected }) => {
+    expect(expandVariables(input, ctx()).text).toBe(expected)
+  })
+
   it('substitutes {{user}} with the database username', () => {
     expect(expandVariables('Hi {{user}}', ctx()).text).toBe('Hi Alex')
   })
@@ -128,6 +143,52 @@ describe('expandVariables — basic substitution', () => {
     })
 
     expect(JSON.parse(expandVariables('{{history::2}}', { database }).text)).toEqual(['middle', 'newest'])
+  })
+
+  it('pins the RH+-authorized baseline parser drifts through the Fastify adapter', () => {
+    const fixtures = PHASE9_BASELINE_DRIFT_FIXTURES
+    const group = phase9DriftGroup()
+    const groupDatabase = phase9DriftDatabase([group, phase9DriftCharacter()]) as unknown as Database
+    const historyCharacter = phase9DriftCharacter() as unknown as character
+    historyCharacter.chats = [phase9DriftChat(fixtures.historyWindow.messages) as unknown as Chat]
+    const historyDatabase = phase9DriftDatabase([historyCharacter]) as unknown as Database
+    const metadataDatabase = phase9DriftDatabase([phase9DriftCharacter()]) as unknown as Database
+
+    expect(
+      expandVariables(fixtures.groupCharacter.input, { database: groupDatabase, chara: group as never }).text,
+    ).toBe(fixtures.groupCharacter.currentExpected)
+    expect(JSON.parse(expandVariables(fixtures.historyWindow.input, { database: historyDatabase }).text)).toEqual(
+      fixtures.historyWindow.currentExpected,
+    )
+    expect(expandVariables(fixtures.reverse.input, { database: metadataDatabase }).text).toBe(
+      fixtures.reverse.currentExpected,
+    )
+    expect(expandVariables(fixtures.metadata.input, { database: metadataDatabase }).text).toBe(
+      fixtures.metadata.currentExpected,
+    )
+    expect(
+      expandVariables(fixtures.standaloneSlot.input, {
+        database: metadataDatabase,
+        slot: { phase9: 'slot-value' },
+      }).text,
+    ).toBe(fixtures.standaloneSlot.currentExpected)
+  })
+
+  it('preserves malformed missing-fmIndex tags like the baseline', () => {
+    const database = phase9DriftDatabase([phase9DriftCharacter()]) as unknown as Database
+
+    expect(expandVariables(PHASE9_BASELINE_DRIFT_FIXTURES.missingFirstMessageIndex.input, { database }).text).toBe(
+      PHASE9_BASELINE_DRIFT_FIXTURES.missingFirstMessageIndex.expected,
+    )
+  })
+
+  it('propagates the RH+-authorized #each element cap through Fastify', () => {
+    const database = phase9DriftDatabase([phase9DriftCharacter()]) as unknown as Database
+
+    expect(() => expandVariables(phase9OverBudgetEachInput(), { database })).toThrow(RisuParserBudgetError)
+    expect(() => expandVariables(phase9OverBudgetEachInput(), { database })).toThrow(
+      `{{#each}} element budget exceeded: ${PHASE9_OVER_BUDGET_EACH_COUNT} > 4096`,
+    )
   })
 })
 

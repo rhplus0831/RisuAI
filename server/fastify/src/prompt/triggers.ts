@@ -178,6 +178,8 @@ export interface TriggerRunResult {
   displayData: string | undefined
   tempVars: Record<string, string> | undefined
   varChanged: boolean
+  /** Retained legacy whole-trigger guard; callers persist prior var writes but discard transient trigger output. */
+  aborted?: true
 }
 
 /**
@@ -959,7 +961,7 @@ export async function runTrigger(
   // `arg.displayData` in place. The result surfaces `displayState.data`.
   const displayState = { data: arg.displayData }
 
-  const buildResult = (): TriggerRunResult => {
+  const buildResult = (aborted = false): TriggerRunResult => {
     // Terminal additional-system-prompt token accounting
     // (`triggers.ts`). Populated by `systemprompt` effects.
     let tokens = 0
@@ -977,6 +979,7 @@ export async function runTrigger(
       displayData: displayState.data,
       tempVars: arg.tempVars,
       varChanged: engine.varChanged || recursionVarChanged,
+      ...(aborted ? { aborted: true as const } : {}),
     }
   }
 
@@ -1109,11 +1112,16 @@ export async function runTrigger(
               triggerCache,
             })
             if (r) {
-              additonalSysPrompt = r.additonalSysPrompt
-              chat = r.chat
-              engine.setChat(chat)
-              stopSending = r.stopSending
               recursionVarChanged ||= r.varChanged
+              if (r.aborted) {
+                chat.scriptstate = r.chat.scriptstate
+                engine.setChat(chat)
+              } else {
+                additonalSysPrompt = r.additonalSysPrompt
+                chat = r.chat
+                engine.setChat(chat)
+                stopSending = r.stopSending
+              }
             }
             if (shouldStopTriggerExecution(ctx, budget, 'after runtrigger')) {
               return buildResult()
@@ -1351,11 +1359,16 @@ export async function runTrigger(
               triggerCache,
             })
             if (r) {
-              additonalSysPrompt = r.additonalSysPrompt
-              chat = r.chat
-              engine.setChat(chat)
-              stopSending = r.stopSending
               recursionVarChanged ||= r.varChanged
+              if (r.aborted) {
+                chat.scriptstate = r.chat.scriptstate
+                engine.setChat(chat)
+              } else {
+                additonalSysPrompt = r.additonalSysPrompt
+                chat = r.chat
+                engine.setChat(chat)
+                stopSending = r.stopSending
+              }
             }
             if (shouldStopTriggerExecution(ctx, budget, 'after v2RunTrigger')) {
               return buildResult()
@@ -1479,7 +1492,9 @@ export async function runTrigger(
         default: {
           // Safe data helpers (message readers, string / array / dict / math,
           // random, tokenize, regex, quick chat search) plus request/display
-          // state arms. Returns false for unsupported arms (`command`; the
+          // state arms. Returns `abort-run` for retained whole-trigger guards
+          // (malformed literal-container names or state effects outside display mode),
+          // and false for unsupported arms (`command`; the
           // `lowLevelAccess`-gated alert/LLM/image/similarity/regex; the
           // persistent lorebook / character / persona / note arms;
           // `v2UpdateGUI` / `v2UpdateChatAt` / `v2Wait`; `triggercode`),
@@ -1496,6 +1511,9 @@ export async function runTrigger(
             triggerCache,
             regexCompatibility: complexRegexCompatibilityOptions(ctx.database, stageForTriggerMode(mode)),
           })
+          if (handled === 'abort-run') {
+            return buildResult(true)
+          }
           if (!handled && isServerUnsupportedTriggerEffectType(effect.type)) {
             ctx.unsupportedEffectTypes?.add(effect.type)
           }

@@ -4,6 +4,7 @@ import { expect, test, vi } from 'vitest'
 import { risuChatParser } from '../../parser.svelte'
 import { registerRisuChatParserMatcher } from '../../risuChatParser'
 import { cbs, trimVarPrefix, validCBSArgProp } from './lib'
+import { PHASE9_CBS_COMPATIBILITY_CORPUS } from './phase9CompatibilityCorpus'
 
 //#region module mocks
 
@@ -71,6 +72,10 @@ vi.mock(import('../../../stores.svelte'), () => {
 const validCBSArgPropLong = validCBSArgProp.filter((s) => s.length > 1)
 
 const quickParse = (op: string, ...args: (string | number)[]) => risuChatParser(cbs(op, ...args.map(String)))
+
+test.each(PHASE9_CBS_COMPATIBILITY_CORPUS)('shared Phase 9 corpus: $name', ({ input, expected }) => {
+  expect(risuChatParser(input)).toBe(expected)
+})
 
 test('normalizes matcher aliases with case and separators while preserving args', () => {
   expect(risuChatParser('{{NOT_EQUAL::a::b}}')).toBe('1')

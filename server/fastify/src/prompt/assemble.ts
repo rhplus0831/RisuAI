@@ -1213,6 +1213,7 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
   // the route persists the delta.
   state.varChanged = !!state.varChanged || result.varChanged
   syncWorkingScriptstate(state)
+  if (result.aborted) return
 
   // Lore upserts replace the array on the shallow trigger chat, so carry that
   // durable field back independently of transcript bookkeeping.
@@ -2980,6 +2981,7 @@ async function runOutputTrigger(
 
   state.varChanged = !!state.varChanged || result.varChanged
   syncWorkingScriptstate(state)
+  if (result.aborted) return false
   state.currentChat = result.chat
   // No-op when the trigger left the transcript untouched.
   captureMessageReplacement(state, 'output_trigger')

@@ -23,7 +23,11 @@ export default defineConfig({
     allowOnly: false,
     environment: 'happy-dom',
     pool: 'threads',
-    include: ['test/compat-harness/baseline.runner.ts'],
+    include: [
+      'test/compat-harness/baseline.runner.ts',
+      'test/compat-harness/phase9CbsBaseline.test.ts',
+      'test/compat-harness/phase9LuaFailureSemantics.test.ts',
+    ],
     setupFiles: ['vitest.setup.ts'],
     testTimeout: 120_000,
   },
